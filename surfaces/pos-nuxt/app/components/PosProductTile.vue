@@ -75,7 +75,9 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     </div>
 
     <div class="grid gap-0.5 px-2.5 py-1.5">
-      <p class="line-clamp-2 text-sm font-semibold leading-tight">{{ product.name }}</p>
+      <!-- Nome longo (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
+           90g") corta em duas linhas; o nome inteiro fica no `title`. -->
+      <p class="line-clamp-2 text-sm font-semibold leading-tight" :title="product.name">{{ product.name }}</p>
       <strong class="text-base tabular-nums">{{ product.price_display }}</strong>
     </div>
   </UiCard>

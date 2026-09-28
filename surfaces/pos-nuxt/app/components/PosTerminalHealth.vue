@@ -81,7 +81,7 @@ function meta(status: string): StatusMeta {
         v-if="compact"
         type="button"
         data-terminal-health-trigger
-        class="flex h-11 items-center rounded-md text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
+        class="flex min-h-11 items-center rounded-md py-1 text-left text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
         :class="showLabels ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
         :aria-label="`Saúde do terminal: ${overall.label}`"
         :title="showLabels ? undefined : `${pos.terminal_label}: ${overall.label}`"
@@ -90,7 +90,7 @@ function meta(status: string): StatusMeta {
           <Icon name="lucide:monitor" class="size-5" />
           <span class="absolute -bottom-0.5 -right-1 size-2 rounded-full ring-2 ring-rail" :class="overall.dot" />
         </span>
-        <span v-if="showLabels" class="min-w-0 truncate text-sm">Terminal · {{ overall.label }}</span>
+        <span v-if="showLabels" class="min-w-0 text-sm leading-tight">Terminal · {{ overall.label }}</span>
       </button>
       <UiButton v-else variant="ghost" size="sm" class="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" :aria-label="`Saúde do terminal: ${overall.label}`">
         <span class="size-2 rounded-full" :class="overall.dot" />

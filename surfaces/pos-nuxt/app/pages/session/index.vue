@@ -554,8 +554,8 @@ async function confirmClose() {
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
       <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <RailToggle />
-        <h1 class="min-w-0 truncate text-lg font-semibold">Sessão de caixa</h1>
-        <span v-if="pos" class="ml-auto truncate text-sm text-muted-foreground">
+        <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Sessão de caixa</h1>
+        <span v-if="pos" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
           {{ pos.terminal_label || "Terminal" }}
           <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
         </span>

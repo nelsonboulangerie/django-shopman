@@ -46,7 +46,7 @@ onBeforeUnmount(() => {
         >
           Retirada no balcão
         </p>
-        <h1 class="truncate text-3xl font-bold md:text-5xl">Seu pedido</h1>
+        <h1 class="text-3xl font-bold md:text-5xl">Seu pedido</h1>
       </div>
       <ClientOnly>
         <div v-if="now" class="flex flex-col items-end leading-none">

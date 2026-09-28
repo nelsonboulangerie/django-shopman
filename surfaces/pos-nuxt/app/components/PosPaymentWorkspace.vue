@@ -845,7 +845,7 @@ const ctaBlock = computed<{
   })) {
     return {
       message: "Entrega com nota fiscal: falta o CPF ou CNPJ do cliente.",
-      hint: "A SEFAZ exige o documento na nota da entrega. Sem ele, a entrega não fecha; a retirada continua.",
+      hint: "Sem ele, a entrega não fecha; a retirada continua.",
       action: {
         label: "Preencher CPF na nota",
         run: () => {
@@ -1227,7 +1227,7 @@ defineExpose({
          abertura do atendimento, e agora moram na barra do topo, que segue
          visível durante o checkout. Perguntar de novo aqui era ter o mesmo botão
          em dois lugares da mesma tela. -->
-    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden lg:flex-row">
+    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden lg:flex-row lg:gap-4 xl:gap-6">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
            espalhado não responde "qual é a próxima ação"). Quatro seções, na
@@ -1239,7 +1239,10 @@ defineExpose({
            `overflow-y-auto`: com a nota aberta a coluna pode passar da altura
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
-      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[360px] lg:shrink-0">
+      <!-- As laterais cedem largura antes do meio: com 360px fixos de cada lado,
+           1024px de tela com a barra lateral estendida deixavam ~30px para o
+           centro, e o aviso da cozinha virava uma palavra por linha. -->
+      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[clamp(17rem,31%,22.5rem)] lg:shrink-0 @container">
         <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
              + teclado de valor. Última seção de propósito: desagua no Validar. -->
         <!-- CONTEXTO DA VENDA — quem compra, como recebe, se tem desconto.
@@ -1277,27 +1280,30 @@ defineExpose({
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               type="button"
-              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
               :aria-pressed="hasDiscount"
               :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
               @click="discountSheetOpen = true"
             >
               <Icon name="lucide:tag" class="size-4 shrink-0" />
-              <span class="min-w-0 flex-1 truncate text-left">Desconto</span>
+              <span class="min-w-0 flex-1 text-left leading-tight">Desconto</span>
               <!-- O BADGE É O ESTADO. Ligado, o botão diz o quanto — ninguém
                    precisa abrir o modal para conferir se há desconto e de que
                    tamanho. Desligado, o mesmo canto carrega o atalho. -->
               <UiBadge v-if="hasDiscount" class="shrink-0 tabular-nums">−{{ discountSummary }}</UiBadge>
+              <!-- Coluna estreita (1024px com a barra lateral estendida): o
+                   atalho sai antes que o rótulo encolha. -->
               <OperatorKbd
                 v-else
+                class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F9</OperatorKbd>
             </button>
 
             <button
               type="button"
-              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="[
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
               ]"
@@ -1314,7 +1320,7 @@ defineExpose({
               @click="splitSheetOpen = true"
             >
               <Icon name="lucide:users" class="size-4 shrink-0" />
-              <span class="min-w-0 flex-1 truncate text-left">Dividir conta</span>
+              <span class="min-w-0 flex-1 text-left leading-tight">Dividir conta</span>
               <!-- "3" enquanto armado, "1/3" a partir da primeira parte: ARMADO
                    e EM USO são estados diferentes, e o segundo é o que impede o
                    operador de desligar a divisão sem perceber que já lançou. -->
@@ -1323,6 +1329,7 @@ defineExpose({
                    desligado, ele carrega o atalho. -->
               <OperatorKbd
                 v-else
+                class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F10</OperatorKbd>
             </button>
@@ -1346,7 +1353,7 @@ defineExpose({
               v-for="collection in deliveryCollections"
               :key="collection.ref"
               type="button"
-              class="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 text-sm font-semibold transition"
+              class="flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 py-1 text-sm font-semibold leading-tight transition"
               :class="paymentCollection === collection.ref
                 ? 'bg-primary text-primary-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground'"
@@ -1354,7 +1361,7 @@ defineExpose({
               @click="$emit('update:paymentCollection', collection.ref)"
             >
               <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : fulfillmentType === 'pickup' ? 'lucide:hand-coins' : 'lucide:bike'" class="size-4 shrink-0" />
-              <span class="truncate">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
+              <span>{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
             </button>
           </div>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
@@ -1427,7 +1434,8 @@ defineExpose({
                  rótulo e o texto vazando por cima da borda assim que o trilho de
                  cédulas aparecia e estreitava o teclado. Em linha própria, cada
                  um tem metade da largura do teclado e o rótulo cabe em qualquer
-                 zoom; `min-w-0` + `truncate` fecham a porta do estouro. -->
+                 zoom. Sem `truncate`: rótulo de ação não se corta — "Exa…" não
+                 diz nada ao operador (guardrails.copyNeverTruncates). -->
             <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
@@ -1437,7 +1445,7 @@ defineExpose({
               title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
-              <span class="truncate">Exato</span>
+              <span>Exato</span>
               <OperatorKbd aria-hidden="true">=</OperatorKbd>
             </button>
             <button
@@ -1449,7 +1457,7 @@ defineExpose({
               @click="$emit('tenderClear')"
             >
               <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
-              <span class="truncate">Limpar</span>
+              <span>Limpar</span>
             </button>
             </div>
           </div>
@@ -1512,7 +1520,10 @@ defineExpose({
            A largura é a que resta das duas colunas fixas; por isso o total
            escala com a janela (no `xl` a faixa do meio é a mais estreita das
            três configurações, e um `text-8xl` ali transbordava). -->
-      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 lg:order-none">
+      <!-- `overflow-y-auto`: aviso de bloqueio grande (o CPF da nota da entrega)
+           numa tela de 768px empurrava as linhas de pagamento e o RESTANTE para
+           fora da coluna — cortados, sem rolagem. -->
+      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto py-1 lg:order-none">
 
         <!-- AVISOS — o que finalizar VAI fazer, e o que a review RESSALVA.
              Nada aqui pede ação: o que pede ação mora no rodapé, encostado no
@@ -1547,16 +1558,20 @@ defineExpose({
               >{{ note.message }}</span>
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
+            <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do
+                 aviso. Ao lado, ele disputava a linha com a frase: na coluna do
+                 meio de um balcão de 1024px, "Entrega com nota fiscal: falta o
+                 CPF…" virava uma palavra por linha, espremida pelo botão. -->
             <div
               v-if="noticeActions(note).length || note.link"
-              class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"
+              class="flex w-full flex-wrap gap-2"
             >
               <!-- A menção ao app vizinho vira porta. Ver `noticeLink()`. -->
               <UiButton
                 v-if="note.link"
                 size="lg"
                 variant="outline"
-                class="h-11 w-full shrink-0 gap-1.5 sm:w-auto"
+                class="h-auto min-h-11 max-w-full gap-1.5 whitespace-normal py-2 text-left"
                 :href="note.link.href"
                 v-bind="crossAppAttrs(note.link.href)"
                 data-notice-app-link
@@ -1569,7 +1584,7 @@ defineExpose({
                 :key="action.label"
                 size="lg"
                 variant="outline"
-                class="h-11 w-full shrink-0 sm:w-auto"
+                class="h-auto min-h-11 max-w-full whitespace-normal py-2 text-left"
                 @click="action.run()"
               >
                 {{ action.label }}
@@ -1616,19 +1631,19 @@ defineExpose({
             <li
               v-for="(tender, idx) in tenderLines"
               :key="idx"
-              class="flex h-11 items-center gap-1 rounded-md border pr-1 transition"
+              class="flex min-h-11 items-center gap-1 rounded-md border pr-1 transition"
               :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
             >
               <button
                 type="button"
-                class="flex h-full min-w-0 flex-1 items-center justify-between gap-2 rounded-l-md px-3 text-left"
+                class="flex min-h-11 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 self-stretch rounded-l-md px-3 py-1 text-left"
                 :aria-current="idx === selectedTenderIndex ? 'true' : undefined"
                 :aria-label="`Editar ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('selectTender', idx)"
               >
                 <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
                   <Icon :name="tender.icon" class="size-4 shrink-0" />
-                  <span class="truncate">{{ tender.label }}</span>
+                  <span class="leading-tight">{{ tender.label }}</span>
                 </span>
                 <strong class="shrink-0 text-lg tabular-nums">{{ tender.amountDisplay }}</strong>
               </button>
@@ -1689,7 +1704,7 @@ defineExpose({
            fiscais com ela — abaixo de 1024px o operador não teria onde dizer
            "CPF na nota?". Agora as três colunas empilham em vez de sumir: o
            corte de layout virou `lg`, e abaixo dele a tela é uma coluna só. -->
-      <div class="order-3 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[360px] lg:shrink-0">
+      <div class="order-3 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[clamp(16rem,28%,22.5rem)] lg:shrink-0">
         <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e
@@ -1707,7 +1722,7 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
-                  <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.name">{{ line.name }}</span>
                   <span
                     v-if="line.listDisplay"
                     class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"

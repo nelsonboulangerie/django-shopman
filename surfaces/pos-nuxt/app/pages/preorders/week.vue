@@ -95,8 +95,11 @@ const toReceive = computed(() => (preorders.list.value
         </p>
       </template>
 
-      <!-- GRADE (tela larga): sete colunas, a conta do dia no topo. -->
-      <div class="hidden gap-2 md:grid md:grid-cols-7" data-week-grid>
+      <!-- GRADE (área larga): sete colunas, a conta do dia no topo. Decide a
+           largura da ÁREA, não a da tela: com a barra lateral estendida, 1024px
+           de tela davam colunas de 100px e o "R$ 120,00 a receber" em 69px. -->
+      <div class="@container">
+      <div class="hidden gap-2 @4xl:grid @4xl:grid-cols-7" data-week-grid>
         <section
           v-for="day in days"
           :key="day.date"
@@ -121,8 +124,8 @@ const toReceive = computed(() => (preorders.list.value
         </section>
       </div>
 
-      <!-- LISTA (tela estreita): um bloco por dia, os dias vazios numa linha só. -->
-      <div class="grid gap-4 md:hidden" data-week-list>
+      <!-- LISTA (área estreita): um bloco por dia, os dias vazios numa linha só. -->
+      <div class="grid gap-4 @4xl:hidden" data-week-list>
         <section v-for="day in days" :key="day.date" class="grid gap-2">
           <h2 class="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold">
             <span class="capitalize" :class="day.is_today ? 'text-primary' : ''">{{ dayColumnTitle(day) }}</span>
@@ -137,6 +140,7 @@ const toReceive = computed(() => (preorders.list.value
             <PosPreorderRow v-for="card in group.orders" :key="card.ref" :card="card" />
           </template>
         </section>
+      </div>
       </div>
     </template>
   </PosPreordersShell>

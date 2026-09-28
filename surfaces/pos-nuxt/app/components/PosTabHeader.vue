@@ -200,7 +200,7 @@ function runClear() {
       <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="truncate text-lg font-semibold">Venda rápida</h1>
+    <h1 v-else class="whitespace-nowrap text-lg font-semibold">Venda rápida</h1>
 
     <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
@@ -234,8 +234,8 @@ function runClear() {
         class="size-4 shrink-0"
         :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
-      <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-else class="whitespace-nowrap" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
       <OperatorKbd
         aria-hidden="true"
       >F6</OperatorKbd>

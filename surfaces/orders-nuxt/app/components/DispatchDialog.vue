@@ -75,7 +75,7 @@ const code = (ref_: string) => splitRef(ref_).code;
           @click="toggle(other.ref)"
         >
           <Icon :name="together.includes(other.ref) ? 'lucide:check-square' : 'lucide:square'" class="size-4 shrink-0" />
-          <span class="truncate">Pedido {{ code(other.ref) }}<template v-if="other.customer_name"> · {{ other.customer_name }}</template></span>
+          <span class="min-w-0">Pedido {{ code(other.ref) }}<template v-if="other.customer_name"> · {{ other.customer_name }}</template></span>
         </button>
       </div>
 
