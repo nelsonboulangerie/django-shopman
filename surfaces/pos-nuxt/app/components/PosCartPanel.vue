@@ -42,7 +42,22 @@ const props = defineProps<{
   unfireAction: ActionAffordance;
   firing: boolean;
   discountReasons?: Array<{ ref: string; label?: string } | string>;
+  /**
+   * O gesto principal do carrinho. Na venda é "Pagamento"; na edição de uma
+   * encomenda (a mesma tela, em modo edição) é "Salvar alterações" — o carrinho
+   * não cobra, grava a encomenda.
+   */
+  primaryLabel?: string;
+  primaryIcon?: string;
+  /**
+   * Esconde "Transferir" linhas entre comandas: não existe na edição de
+   * encomenda. (Negativo de propósito: prop booleana ausente vira `false`.)
+   */
+  hideMove?: boolean;
 }>();
+const primaryText = computed(() => props.primaryLabel || "Pagamento");
+const primaryIconName = computed(() => props.primaryIcon || "lucide:credit-card");
+const canMove = computed(() => !props.hideMove);
 
 // ⚠️ Cada evento de linha carrega o `line_id`, nunca o sku. Com duas linhas do
 // mesmo produto na comanda — que é o que este WP passou a permitir — o sku
@@ -1163,7 +1178,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <!-- Secondary actions stack on the left; Pagamento is the highlight column
            spanning their full height — saves a vertical row. -->
       <div
-        v-if="!batchMode && (fireBar.visible || (hasOpenTab && items.length))"
+        v-if="!batchMode && (fireBar.visible || (canMove && hasOpenTab && items.length))"
         class="grid grid-cols-2 gap-2"
       >
         <div class="flex flex-col gap-2">
@@ -1197,7 +1212,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
           </UiButton>
           <UiButton
-            v-if="hasOpenTab && items.length"
+            v-if="canMove && hasOpenTab && items.length"
             variant="outline"
             class="justify-center gap-1.5"
             :disabled="loading"
@@ -1214,8 +1229,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
           :loading="loading"
           @click="$emit('prepare')"
         >
-          <Icon name="lucide:credit-card" class="size-6" />
-          Pagamento
+          <Icon :name="primaryIconName" class="size-6" />
+          {{ primaryText }}
           <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
         </UiButton>
       </div>
@@ -1227,8 +1242,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
         :loading="loading"
         @click="$emit('prepare')"
       >
-        <Icon name="lucide:credit-card" class="size-5" />
-        Pagamento
+        <Icon :name="primaryIconName" class="size-5" />
+        {{ primaryText }}
         <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
       </UiButton>
     </div>

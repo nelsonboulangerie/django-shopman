@@ -232,6 +232,18 @@ export interface POSPendingCashRefundProjection {
   amount_display: string;
   customer_name: string;
   cancelled_at: string;
+  /** "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda que ficou mais barata: a diferença). */
+  reason?: "cancelled" | "reduced";
+  reason_label?: string;
+}
+
+/** Encomenda paga na maquininha que ficou mais barata: estornar NA maquininha e registrar. */
+export interface POSPendingCardMachineRefundProjection {
+  order_ref: string;
+  amount_q: number;
+  amount_display: string;
+  customer_name: string;
+  method_label: string;
 }
 
 /**
@@ -266,6 +278,7 @@ export interface POSCashRuntimeProjection {
   pending_change_requests?: POSChangeRequestProjection[];
   /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
   pending_cash_refunds?: POSPendingCashRefundProjection[];
+  pending_card_machine_refunds?: POSPendingCardMachineRefundProjection[];
   /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
   account_balances?: POSAccountBalanceProjection[];
   /**
@@ -663,6 +676,8 @@ export interface POSTabPayload {
   tab_session_key: string;
   tab_ref: string;
   tab_display: string;
+  /** Ref da encomenda quando esta é a comanda virtual da EDIÇÃO dela; "" numa comanda comum. */
+  edit_of?: string;
   items: POSCartItem[];
   customer_phone: string;
   customer_name: string;

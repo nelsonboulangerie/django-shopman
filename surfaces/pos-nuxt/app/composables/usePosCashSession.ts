@@ -365,6 +365,28 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     });
   }
 
+  // Estorno na maquininha de encomenda que ficou mais barata (WP-E6): o sistema
+  // não fala com a maquininha, então o operador estorna NELA e registra aqui,
+  // com o PIN do gerente (volta dinheiro para o cartão do cliente). Nada sai da
+  // gaveta — a gaveta não abre.
+  const pendingCardMachineRefunds = computed(
+    () => pos.value?.cash_runtime?.pending_card_machine_refunds ?? [],
+  );
+
+  function recordCardMachineRefund(payload: {
+    orderRef: string;
+    managerApproval?: ManagerApproval | null;
+  }): Promise<boolean> {
+    const body: Record<string, unknown> = {};
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
+    return run(
+      `/api/v1/backstage/pos/card-machine-refund/${encodeURIComponent(payload.orderRef)}/`,
+      body,
+      "O estorno não foi registrado.",
+      "O estorno segue pendente. Confira na maquininha se ele saiu antes de registrar de novo.",
+    );
+  }
+
   // Conta na casa: o cliente acerta (parte d)a conta. Em dinheiro, entra neste
   // turno; pix/cartão é atestado no balcão. O servidor captura por venda inteira
   // (FIFO) e recusa valor que não cobre nem a mais antiga.
@@ -420,6 +442,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     // Devolução em dinheiro de venda cancelada: o gesto físico, com PIN.
     pendingCashRefunds,
     refundCash,
+    // Estorno na maquininha (encomenda que ficou mais barata): registrado com PIN.
+    pendingCardMachineRefunds,
+    recordCardMachineRefund,
     // Conta na casa: saldos em aberto e o acerto.
     accountBalances,
     settleAccount,

@@ -62,6 +62,8 @@ const {
   pendingChangeRequests,
   pendingCashRefunds,
   refundCash,
+  pendingCardMachineRefunds,
+  recordCardMachineRefund,
   accountBalances,
   settleAccount,
   requestChange,
@@ -93,6 +95,7 @@ const canAuditCash = computed(() => cashRuntime.value?.can_audit_cash === true);
 // acontecer antes de o formulário aparecer.
 const openShiftDialogOpen = ref(false);
 const refundsDialogOpen = ref(false);
+const cardMachineDialogOpen = ref(false);
 const changeRequestsDialogOpen = ref(false);
 const accountsDialogOpen = ref(false);
 const changeDialogOpen = ref(false);
@@ -110,6 +113,7 @@ const salesCount = computed(() => shift.value?.count ?? 0);
 // Zero = o bloco não existe; a antesala sem pendência é só status e ações.
 const attention = computed(() => attentionCount({
   pendingCashRefunds: pendingCashRefunds.value,
+  pendingCardMachineRefunds: pendingCardMachineRefunds.value,
   pendingChangeRequests: pendingChangeRequests.value,
   accountBalances: accountBalances.value,
 }));
@@ -118,6 +122,7 @@ const attention = computed(() => attentionCount({
 // navega) que o card nomeia.
 const needsYouTiles = computed(() => attentionTiles({
   pendingCashRefunds: pendingCashRefunds.value,
+  pendingCardMachineRefunds: pendingCardMachineRefunds.value,
   pendingChangeRequests: pendingChangeRequests.value,
   accountBalances: accountBalances.value,
 }));
@@ -161,6 +166,7 @@ function selectTile(tile: SessionTile) {
   if (key === "open_shift") openShiftDialogOpen.value = true;
   else if (key === "continue_selling") void goToSaleBoard();
   else if (key === "attention:refunds") refundsDialogOpen.value = true;
+  else if (key === "attention:card_machine") cardMachineDialogOpen.value = true;
   else if (key === "attention:change") changeRequestsDialogOpen.value = true;
   else if (key === "attention:accounts") accountsDialogOpen.value = true;
   else if (key === "request_change") changeDialogOpen.value = true;
@@ -174,6 +180,7 @@ function selectTile(tile: SessionTile) {
 // A lista de pendência que zerou fecha o próprio diálogo: resolvida a última
 // devolução, ficar olhando uma lista vazia é pedir um toque a mais para nada.
 watch(() => pendingCashRefunds.value.length, (n) => { if (!n) refundsDialogOpen.value = false; });
+watch(() => pendingCardMachineRefunds.value.length, (n) => { if (!n) cardMachineDialogOpen.value = false; });
 watch(() => pendingChangeRequests.value.length, (n) => { if (!n) changeRequestsDialogOpen.value = false; });
 watch(() => accountBalances.value.length, (n) => { if (!n) accountsDialogOpen.value = false; });
 
@@ -316,7 +323,8 @@ watch(movementReasonOther, (typed) => {
 type ManagerIntent =
   | { action: "movement" }
   | { action: "serve_change"; ref: string }
-  | { action: "refund_cash"; orderRef: string };
+  | { action: "refund_cash"; orderRef: string }
+  | { action: "card_machine_refund"; orderRef: string };
 const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
@@ -325,6 +333,7 @@ watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = 
 const managerAuthAction = computed<ManagerAction>(() => {
   if (managerIntent.value.action === "serve_change") return "serve_change";
   if (managerIntent.value.action === "refund_cash") return "refund_cash";
+  if (managerIntent.value.action === "card_machine_refund") return "card_machine_refund";
   return "cash_out";
 });
 
@@ -345,6 +354,7 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
   const intent = managerIntent.value;
   if (intent.action === "serve_change") serveChange(intent.ref, aprovacao);
   else if (intent.action === "refund_cash") refundPending(intent.orderRef, aprovacao);
+  else if (intent.action === "card_machine_refund") recordMachineRefund(intent.orderRef, aprovacao);
   else submitMovement(aprovacao);
 }
 
@@ -354,6 +364,17 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
 async function refundPending(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "refund_cash", orderRef };
   const ok = await refundCash({ orderRef, managerApproval });
+  if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
+  }
+}
+
+// Encomenda paga na maquininha que ficou mais barata: o operador estorna NA
+// maquininha (o sistema não fala com ela) e registra aqui, com o PIN do gerente.
+async function recordMachineRefund(orderRef: string, managerApproval: ManagerApproval | null = null) {
+  managerIntent.value = { action: "card_machine_refund", orderRef };
+  const ok = await recordCardMachineRefund({ orderRef, managerApproval });
   if (ok) {
     managerChallenge.value = null;
     managerAuthOpen.value = false;
@@ -710,7 +731,7 @@ async function confirmClose() {
             <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
               <span class="text-xs text-muted-foreground">
-                pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template>
+                pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template><template v-if="refund.reason_label"> · {{ refund.reason_label }}</template>
               </span>
             </div>
             <UiButton size="sm" :disabled="busy" @click="refundPending(refund.order_ref)">
@@ -721,6 +742,41 @@ async function confirmClose() {
         </ul>
         <p class="text-xs text-muted-foreground">
           O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
+        </p>
+      </UiDialogContent>
+    </UiDialog>
+
+    <!-- Estornos na maquininha: encomenda paga no cartão do balcão que ficou mais
+         barata. O estorno é feito NA maquininha; aqui só se registra que saiu. -->
+    <UiDialog v-model:open="cardMachineDialogOpen">
+      <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="attention:card_machine">
+        <UiDialogHeader>
+          <div class="flex items-center gap-2">
+            <Icon name="lucide:credit-card" class="size-4 text-muted-foreground" />
+            <UiDialogTitle>Estornos na maquininha</UiDialogTitle>
+          </div>
+          <UiDialogDescription>Faça o estorno na maquininha e toque em Estornei na maquininha.</UiDialogDescription>
+        </UiDialogHeader>
+        <ul class="grid gap-2" aria-label="Estornos na maquininha pendentes">
+          <li
+            v-for="refund in pendingCardMachineRefunds"
+            :key="refund.order_ref"
+            class="grid gap-2 rounded-md border bg-muted/30 p-3"
+          >
+            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }} no {{ refund.method_label.toLowerCase() }}</span>
+              <span class="text-xs text-muted-foreground">
+                pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template> · encomenda ficou mais barata
+              </span>
+            </div>
+            <UiButton size="sm" :disabled="busy" data-card-machine-refund @click="recordMachineRefund(refund.order_ref)">
+              <Icon name="lucide:check" class="size-4" />
+              Estornei na maquininha
+            </UiButton>
+          </li>
+        </ul>
+        <p class="text-xs text-muted-foreground">
+          Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido.
         </p>
       </UiDialogContent>
     </UiDialog>

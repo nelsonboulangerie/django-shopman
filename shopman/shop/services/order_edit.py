@@ -618,7 +618,11 @@ def _receiving(order, fulfillment, before: str, fee_lines, products_q: int, next
     override_q = None if override in (None, "") else max(0, _int(override))
     tax_id = str(fulfillment.get("fiscal_tax_id") or "").strip()
 
-    same_address = before == "delivery" and (structured or {}) == (structured_now or {}) and address_text == address_now
+    same_address = before == "delivery" and (
+        _address_key(structured) == _address_key(structured_now)
+        if structured is not None and structured_now
+        else address_text == address_now
+    )
     updates: dict = {}
     if before != "delivery":
         updates["fulfillment_type"] = "delivery"
@@ -663,6 +667,17 @@ def _receiving(order, fulfillment, before: str, fee_lines, products_q: int, next
         "meta": {"type": "delivery_fee", "non_production": True},
     }]
     return {"type": "delivery", "changed": True, "fee_lines": fee_payload, "data_updates": updates, "address": address_text}
+
+
+#: O que faz de um endereço o MESMO endereço. A tela remonta o dicionário
+#: (chaves vazias, instruções, ordem): comparar o dicionário inteiro faria uma
+#: entrega sem mudança nenhuma recalcular a taxa.
+_ADDRESS_IDENTITY = ("route", "street_number", "neighborhood", "postal_code", "city", "state_code", "complement")
+
+
+def _address_key(structured) -> tuple:
+    structured = structured if isinstance(structured, dict) else {}
+    return tuple(str(structured.get(key) or "").strip().casefold() for key in _ADDRESS_IDENTITY)
 
 
 def _require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:

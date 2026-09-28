@@ -2668,6 +2668,52 @@ class POSPreorderHandOverView(APIView):
 
 
 @extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Open (or resume) the virtual tab that edits a preorder in the POS sale screen",
+        responses={200: OpenApiResponse(description="Virtual tab + edit context."), 409: OpenApiResponse(description="Not editable.")},
+    ),
+)
+class POSPreorderEditSessionView(APIView):
+    """A tela de venda em modo edição: a comanda virtual pré-montada com a encomenda.
+
+    ``POST`` abre (ou retoma, se o pedido não mudou) a sessão de
+    ``shop.services.pos_edit_session`` e devolve a comanda no formato de
+    sempre (``tab``) mais o contexto da edição (``edit``): o pedido, a revisão
+    ``edit`` que a gravação vai conferir, quem está identificado e o
+    ``original`` — a encomenda como estava, para a tela mandar só o que mudou.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections.pos import build_open_tab
+        from shopman.shop.services import operator_orders, pos_edit_session
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        try:
+            session = pos_edit_session.open_edit_session(
+                order, channel_ref=POS_CHANNEL_REF, actor=_actor_pos(request), operator_username=_username(request),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=409)
+        info = pos_edit_session.edit_info(session)
+        return Response({
+            "ok": True,
+            "tab": build_open_tab(session),
+            "edit": {
+                "order_ref": order.ref,
+                "base_revision": info.get("base_revision", ""),
+                "actor_id": request.user.pk,
+                "original": pos_edit_session.cart_payload(order),
+            },
+        })
+
+
+@extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",

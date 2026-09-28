@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { toast } from "vue-sonner";
 
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { orderEditTitle } from "~/presentation/orderEdit";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
@@ -33,10 +35,16 @@ const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : unde
 
 const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
 
+// MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
+// encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
+// pagamento. Editar não mexe na gaveta: não pede turno aberto.
+const editRef = String(useRoute().query.edit || "").trim();
+
 // ANTESALA (benchmark Odoo): sem turno aberto não há venda — o operador cai no
 // lobby de sessão para abrir o caixa. O gate lê o contrato da Projection.
 if (
   pos.value
+  && !editRef
   && requiresOpenShiftForSale(pos.value.checkout?.capabilities?.cash_management)
   && !pos.value.has_open_cash_session
 ) {
@@ -195,6 +203,8 @@ const {
   sendPaymentNotice,
   onExternalSaleCancelled,
   clearCurrentTab,
+  loadEditTab,
+  editIntent,
   openMoveDialog,
   submitMove,
   fireTab,
@@ -206,6 +216,71 @@ const {
   cancelRecentSaleWithBadge,
   drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
+
+// ── Editar a encomenda (WP-E6) ────────────────────────────────────────────
+const orderEdit = usePosOrderEdit();
+const {
+  editing,
+  orderRef: editOrderRef,
+  preview: editPreview,
+  reviewOpen: editReviewOpen,
+  busy: editBusy,
+  error: editError,
+  needsPaymentMethod: editNeedsMethod,
+  deliveryPaymentMethod: editPaymentMethod,
+  managerChallenge: editChallenge,
+} = orderEdit;
+const editManagerOpen = ref(false);
+
+async function startOrderEdit(ref: string) {
+  const tab = await orderEdit.start(ref);
+  if (!tab) {
+    toast.error(editError.value);
+    await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+    return;
+  }
+  await loadEditTab(tab);
+}
+
+/** F4 / "Salvar alterações": a prévia do servidor, antes de gravar. */
+function saveOrderEdit() {
+  if (!editing.value || !cart.items.length) return;
+  void orderEdit.review(editIntent());
+}
+
+async function confirmOrderEdit(managerApproval: ManagerApproval | null = null) {
+  // Encomenda paga que fica mais barata: o PIN sobe antes da ida ao servidor.
+  if (editPreview.value?.requires_manager_approval && !managerApproval) {
+    editManagerOpen.value = true;
+    return;
+  }
+  const response = await orderEdit.confirm(editIntent(), managerApproval);
+  if (!response) {
+    editManagerOpen.value = Boolean(editChallenge.value);
+    return;
+  }
+  editManagerOpen.value = false;
+  const ref = editOrderRef.value;
+  toast.success(response.changed ? `Encomenda ${ref} atualizada. O cliente foi avisado.` : "Nada mudou na encomenda.");
+  await leaveOrderEdit(ref);
+}
+
+async function leaveOrderEdit(ref: string) {
+  // A comanda virtual some; o pedido fica como o servidor gravou (ou como
+  // estava, no descarte).
+  await clearCurrentTab();
+  orderEdit.reset();
+  await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+}
+
+function discardOrderEdit() {
+  void leaveOrderEdit(editOrderRef.value);
+}
+
+function clearOrDiscard() {
+  if (editing.value) discardOrderEdit();
+  else void clearCurrentTab();
+}
 
 const confirmCounterMode = ref(false);
 const uncertainCloseRecoveryOpen = ref(false);
@@ -227,6 +302,10 @@ async function confirmUncertainCloseRecovery() {
 }
 function requestSalesMode(mode: "counter" | "order") {
   if (mode === (cart.salesMode || "counter")) return;
+  if (editing.value) {
+    toast.info("Na edição, a encomenda continua encomenda. Para vender no balcão, descarte as alterações.");
+    return;
+  }
   if (mode === "counter") { confirmCounterMode.value = true; return; }
   void setSalesMode(mode);
 }
@@ -273,7 +352,9 @@ onBeforeUnmount(() => {
 
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
-const fireAction = computed(() => resolveAffordance(actions.value, "fire_tab"));
+// Na edição de encomenda não há cozinha a disparar: o pedido já existe e a
+// cozinha acompanha a edição pelo servidor.
+const fireAction = computed(() => resolveAffordance(editing.value ? [] : actions.value, "fire_tab"));
 const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab"));
 
 // Top context bar title (unified layout language, Arc 5): one band names the
@@ -289,6 +370,7 @@ const screenTitle = computed(() => {
     return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
   }
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
+  if (editing.value) return orderEditTitle(editOrderRef.value);
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
 });
@@ -749,6 +831,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     case "F2":
       event.preventDefault();
+      if (editing.value) return; // a edição sai por Salvar ou Descartar, nunca pelo quadro
       gotoTabInput();
       return;
     case "F3":
@@ -757,7 +840,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     case "F4":
       event.preventDefault();
-      if (checkoutMode.value) reviewCheckout();
+      if (editing.value) saveOrderEdit();
+      else if (checkoutMode.value) reviewCheckout();
       else if (cart.items.length) prepareCheckout();
       return;
     case "F6":
@@ -799,12 +883,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F9":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
-      else if (inSaleView.value && cart.items.length) fireTab();
+      else if (inSaleView.value && cart.items.length && !editing.value) fireTab();
       return;
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length) openMoveDialog();
+      else if (inSaleView.value && cart.items.length && !editing.value) openMoveDialog();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -833,6 +917,7 @@ function restoreUncertainCloseFromStorage() {
   void restoreUncertainClose();
 }
 onMounted(() => {
+  if (editRef) void startOrderEdit(editRef);
   void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
@@ -865,7 +950,7 @@ onBeforeUnmount(() => {
              para que o rail suma por inteiro quando colapsado. -->
         <RailToggle />
         <UiButton
-          v-if="inSaleView"
+          v-if="inSaleView && !editing"
           variant="ghost"
           size="icon-sm"
           class="-ml-1 shrink-0"
@@ -890,6 +975,25 @@ onBeforeUnmount(() => {
              carregando durante o checkout. Antes ela sumia ali, e a informação
              tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
              agora ela acompanha a venda inteira, do primeiro item ao troco. -->
+        <!-- MODO EDIÇÃO: o que está sendo mexido é a encomenda, não uma venda nova. -->
+        <div
+          v-if="inSaleView && editing"
+          class="flex shrink-0 items-center gap-2 rounded-md border border-info/40 bg-info/10 py-1 pl-2 pr-1 text-sm font-medium text-info"
+          role="status"
+          data-order-edit-banner
+        >
+          <Icon name="lucide:pencil" class="size-4" />
+          {{ orderEditTitle(editOrderRef) }}
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :disabled="busy || editBusy"
+            data-order-edit-discard
+            @click="discardOrderEdit"
+          >
+            Descartar alterações
+          </UiButton>
+        </div>
         <PosTabHeader
           v-if="inSaleView"
           ref="tabHeaderRef"
@@ -923,8 +1027,8 @@ onBeforeUnmount(() => {
           :loading="busy"
           @sales-mode-change="requestSalesMode"
           @customer-closed="focusOrderEntry"
-          @rename="renameTab"
-          @clear="clearCurrentTab"
+          @rename="(ref: string) => { if (!editing) void renameTab(ref); }"
+          @clear="clearOrDiscard"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
           @resolve-customer="(done) => { void resolveCustomer().then(done) }"
@@ -1229,6 +1333,9 @@ onBeforeUnmount(() => {
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
+            :primary-label="editing ? 'Salvar alterações' : undefined"
+            :primary-icon="editing ? 'lucide:save' : undefined"
+            :hide-move="editing"
             @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
             @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
             @remove="(lineId) => setQty(lineId, 0)"
@@ -1236,7 +1343,7 @@ onBeforeUnmount(() => {
             @set-qty="(lineId, qty) => setQty(lineId, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
-            @prepare="prepareCheckout"
+            @prepare="editing ? saveOrderEdit() : prepareCheckout()"
             @move="openMoveDialog"
             @fire="fireTab"
             @unfire="unfireTab"
@@ -1412,6 +1519,33 @@ onBeforeUnmount(() => {
       </div>
     </Teleport>
     <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" @cancelled="onExternalSaleCancelled" />
+    <!-- EDIÇÃO DA ENCOMENDA: a prévia do servidor antes de gravar, e o PIN do
+         gerente quando a encomenda paga fica mais barata. -->
+    <PosOrderEditReview
+      v-if="editing"
+      v-model:delivery-payment-method="editPaymentMethod"
+      :open="editReviewOpen"
+      :order-ref="editOrderRef"
+      :preview="editPreview"
+      :busy="editBusy"
+      :error="editError"
+      :needs-payment-method="editNeedsMethod"
+      @update:open="(isOpen: boolean) => { if (!isOpen) orderEdit.closeReview(); }"
+      @retry="saveOrderEdit"
+      @confirm="confirmOrderEdit()"
+    />
+    <OperatorManagerAuth
+      v-if="editing"
+      :open="editManagerOpen"
+      action="order_edit_refund"
+      :operator-name="activeOperator?.name || ''"
+      :managers="pos?.managers || []"
+      :busy="editBusy"
+      :error="editChallenge?.code === 'manager_approval_invalid' ? editChallenge.message : ''"
+      @update:open="(isOpen: boolean) => { editManagerOpen = isOpen; }"
+      @authorize="(username: string, pin: string) => confirmOrderEdit({ username, pin })"
+      @authorize-badge="(badge: string) => confirmOrderEdit({ badge })"
+    />
     <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
     <PosDisplayPublisher :sources="displaySources" />
   </main>

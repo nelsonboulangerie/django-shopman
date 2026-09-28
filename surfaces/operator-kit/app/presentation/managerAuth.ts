@@ -23,6 +23,8 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
+  | "order_edit_refund"
+  | "card_machine_refund"
   | "sale_approval"
   | "emit_fiscal"
   | "channel_off"
@@ -61,6 +63,14 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   cancel_sale: {
     title: "Autorizar cancelamento",
     reason: "A venda já foi fechada.",
+  },
+  order_edit_refund: {
+    title: "Autorizar a devolução",
+    reason: "A encomenda paga ficou mais barata.",
+  },
+  card_machine_refund: {
+    title: "Autorizar o estorno",
+    reason: "Volta dinheiro para o cartão do cliente.",
   },
   sale_approval: {
     title: "Autorizar a venda",

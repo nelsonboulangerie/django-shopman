@@ -153,10 +153,14 @@ sob lock do pedido, transacional:
   (`production_order_sync`), dinheiro na porta (`cash_due_on_delivery_q`), conciliação
   financeira, total do aviso (`order_total_display`).
 
-**PR 2 — o modo edição na tela de venda** (depende da PR 1): comanda virtual, cabeçalho
-"Editando a encomenda …" + "Descartar alterações", "Salvar alterações" com a prévia e o
-PIN, "Cancelar e refazer" com a nota autorizada, cards "Estorno na maquininha" e a
-devolução "encomenda ficou mais barata" no *Precisa de você*.
+**PR 2 — o modo edição na tela de venda** (`claude/encomenda-editar-tela`, depende da
+PR 1): `shop/services/pos_edit_session.py` — a comanda virtual (`handle_type="pos_edit"`,
+sem `tab_ref`, preço vendido, não dispara cozinha nem fecha venda) aberta por
+`POST pos/preorders/<ref>/edit-session/`; `/?edit=<ref>` abre a venda nela, com
+cabeçalho "Editando a encomenda …" + "Descartar alterações", "Salvar alterações" (F4)
+com a prévia do servidor e o PIN; "Editar encomenda" e "Cancelar e refazer" no
+detalhe; cards "Estorno na maquininha" e a devolução "encomenda ficou mais barata" no
+*Precisa de você*.
 
 ## Fora de escopo, registrado
 

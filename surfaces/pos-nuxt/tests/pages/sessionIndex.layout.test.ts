@@ -8,6 +8,7 @@ import type { DayClosingProjection } from "~/types/closing";
 import type {
   POSAccountBalanceProjection,
   POSChangeRequestProjection,
+  POSPendingCardMachineRefundProjection,
   POSPendingCashRefundProjection,
   POSProjection,
 } from "~/types/pos";
@@ -40,6 +41,8 @@ function makeCashSession() {
     pendingChangeRequests: ref<POSChangeRequestProjection[]>([]),
     pendingCashRefunds: ref<POSPendingCashRefundProjection[]>([]),
     refundCash: vi.fn().mockResolvedValue(true),
+    pendingCardMachineRefunds: ref<POSPendingCardMachineRefundProjection[]>([]),
+    recordCardMachineRefund: vi.fn().mockResolvedValue(true),
     accountBalances: ref<POSAccountBalanceProjection[]>([]),
     settleAccount: vi.fn().mockResolvedValue(true),
     requestChange: vi.fn().mockResolvedValue(true),
@@ -173,6 +176,29 @@ describe("antesala — turno aberto, organização da tela", () => {
     await flushPromises();
     expect(dialog("attention:accounts")?.textContent).toContain("Receber acerto");
     expect(dialog("attention:accounts")?.querySelector("[data-house-accounts]")).not.toBeNull();
+  });
+
+  it("(b') encomenda mais barata paga na maquininha: card próprio, e o gesto é registrar o estorno", async () => {
+    cash.pendingCardMachineRefunds.value = [
+      { order_ref: "o-12", amount_q: 600, amount_display: "R$ 6,00", customer_name: "Ana", method_label: "Crédito" },
+    ];
+    cash.pendingCashRefunds.value = [
+      { order_ref: "o-13", amount_q: 800, amount_display: "R$ 8,00", customer_name: "Bia", cancelled_at: "", reason: "reduced", reason_label: "Encomenda ficou mais barata" },
+    ];
+    const wrapper = await openLobby();
+
+    expect(tile(wrapper, "attention:card_machine").find("[data-session-tile-badge]").text()).toBe("1");
+    await tile(wrapper, "attention:card_machine").trigger("click");
+    await flushPromises();
+    const machine = dialog("attention:card_machine")!;
+    expect(machine.textContent).toContain("R$ 6,00 no crédito");
+    machine.querySelector<HTMLButtonElement>("[data-card-machine-refund]")!.click();
+    await flushPromises();
+    expect(cash.recordCardMachineRefund).toHaveBeenCalledWith({ orderRef: "o-12", managerApproval: null });
+
+    await tile(wrapper, "attention:refunds").trigger("click");
+    await flushPromises();
+    expect(dialog("attention:refunds")?.textContent).toContain("Encomenda ficou mais barata");
     // O bloco vem ANTES da gaveta: pendência primeiro, ação rara depois.
     const html = wrapper.html();
     expect(html.indexOf("data-needs-you")).toBeLessThan(html.indexOf('data-session-tile="request_change"'));
