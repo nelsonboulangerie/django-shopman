@@ -34,15 +34,21 @@ describe("a configuração de plataforma tem casa", () => {
   });
 
   it("o aviso do painel aponta a casa em vez de configurar", () => {
-    expect(read("../app/components/MarketingBoard.vue")).toContain("/platforms");
+    const board = read("../app/components/MarketingBoard.vue");
+    expect(board).toContain("path: '/v2'");
+    expect(board).toContain("area: 'platforms'");
   });
 
   it("o teste preserva idempotência no BFF e não serializa destinatário livre", () => {
     const composable = read("../app/composables/useWhatsAppTemplate.ts");
     expect(composable).toContain('"Idempotency-Key"');
     expect(composable).toContain("target_ref: targetRef");
-    expect(composable).toContain('event: options.event || "announcement_published"');
-    expect(read("../app/pages/platforms.vue")).toContain("event: testEvent.value");
+    expect(composable).toContain(
+      'event: options.event || "announcement_published"',
+    );
+    expect(read("../app/pages/platforms.vue")).toContain(
+      "event: testEvent.value",
+    );
     expect(composable).not.toContain("body: { recipient");
   });
 

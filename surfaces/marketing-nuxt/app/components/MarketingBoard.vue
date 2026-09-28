@@ -20,10 +20,9 @@ import {
 import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 import { splitByGrandeza } from "~/presentation/marketingCounters";
 
-const props = withDefaults(
-  defineProps<{ experience?: "current" | "v2" }>(),
-  { experience: "current" },
-);
+const props = withDefaults(defineProps<{ experience?: "current" | "v2" }>(), {
+  experience: "current",
+});
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
@@ -297,7 +296,7 @@ useHead(() => ({
             {{ limit.action }}
           </p>
           <NuxtLink
-            to="/platforms"
+            :to="{ path: '/v2', query: { area: 'platforms' } }"
             class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold underline"
           >
             Ver em Plataformas
@@ -320,15 +319,21 @@ useHead(() => ({
       aria-label="Situação operacional"
     >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.pending_decision_count) }}</p>
+        <p class="text-2xl font-bold tabular-nums">
+          {{ formatCount(stats.pending_decision_count) }}
+        </p>
         <p class="text-xs text-muted-foreground">Aguardando decisão</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_people_today) }}</p>
+        <p class="text-2xl font-bold tabular-nums">
+          {{ formatCount(stats.confirmed_people_today) }}
+        </p>
         <p class="text-xs text-muted-foreground">Pessoas que receberam hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_posts_today) }}</p>
+        <p class="text-2xl font-bold tabular-nums">
+          {{ formatCount(stats.confirmed_posts_today) }}
+        </p>
         <p class="text-xs text-muted-foreground">Postagens publicadas hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
@@ -336,7 +341,9 @@ useHead(() => ({
           {{ formatCount(acceptedUnconfirmed.total) }}
         </p>
         <p class="text-xs text-muted-foreground">Sem confirmação ainda</p>
-        <p class="text-xs text-muted-foreground">{{ acceptedUnconfirmed.breakdown }}</p>
+        <p class="text-xs text-muted-foreground">
+          {{ acceptedUnconfirmed.breakdown }}
+        </p>
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
@@ -383,12 +390,7 @@ useHead(() => ({
       <p class="font-semibold text-destructive">
         Não conseguimos carregar o painel.
       </p>
-      <UiButton
-        type="button"
-        variant="link"
-        class="mt-1"
-        @click="refresh()"
-      >
+      <UiButton type="button" variant="link" class="mt-1" @click="refresh()">
         Tentar de novo
       </UiButton>
     </div>
@@ -554,7 +556,10 @@ useHead(() => ({
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
              com pressa. Quando o gestor escreve, a recusa passa a explicar a campanha. -->
         <div>
-          <label for="reject-reason" class="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            for="reject-reason"
+            class="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Motivo (opcional)
           </label>
           <UiInput
@@ -567,18 +572,10 @@ useHead(() => ({
           />
         </div>
         <UiDialogFooter>
-          <UiButton
-            type="button"
-            variant="outline"
-            @click="rejecting = null"
-          >
+          <UiButton type="button" variant="outline" @click="rejecting = null">
             Manter na fila
           </UiButton>
-          <UiButton
-            type="button"
-            variant="destructive"
-            @click="confirmReject"
-          >
+          <UiButton type="button" variant="destructive" @click="confirmReject">
             Recusar
           </UiButton>
         </UiDialogFooter>

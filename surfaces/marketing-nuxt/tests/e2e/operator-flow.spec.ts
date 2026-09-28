@@ -15,8 +15,12 @@ async function enterAsSyntheticOperator(page: Page) {
   await username.fill("operadora-e2e");
   await page.getByLabel("Senha").fill("senha-sintética");
   await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page).toHaveURL(/\/v2\?area=today/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Painel" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: "Uma campanha, consequências honestas em cada destino",
+    }),
   ).toBeVisible();
 }
 
@@ -25,13 +29,20 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await page.getByRole("link", { name: "Campanhas", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Campanhas", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/v2\?area=campaigns/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Campanhas" }),
+    page.getByRole("heading", {
+      level: 2,
+      name: "Planeje uma vez, adapte por destino",
+    }),
   ).toBeVisible();
   await expect(page.getByText("Fornada artesanal 01")).toBeVisible();
 
-  await page.getByRole("button", { name: "Nova campanha" }).click();
+  await page.getByRole("link", { name: "Nova campanha" }).click();
   const editor = page.getByRole("dialog").last();
   await expect(editor).toBeVisible();
   await expect(editor.getByLabel("Nome da campanha")).toBeVisible();
@@ -52,17 +63,23 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
 
-  await page.getByRole("link", { name: "Plataformas", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Plataformas", exact: true })
+    .first()
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Plataformas" }),
+    page.getByRole("heading", {
+      level: 2,
+      name: "Plataformas possíveis e situação real",
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("Instagram", { exact: true }).first(),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Painel", exact: true }).click();
+  await page.getByRole("link", { name: "Hoje", exact: true }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Painel" }),
+    page.getByRole("heading", { level: 2, name: "O que pede sua atenção" }),
   ).toBeVisible();
 });
 
@@ -102,6 +119,51 @@ test("entrada V2 preserva o painel operacional autenticado", async ({
   await expect(
     page.getByRole("navigation", { name: "Áreas do Marketing V2" }),
   ).toHaveCount(0);
+});
+
+test("Plataformas usa detalhe modal e volta para a área canônica", async ({
+  page,
+}) => {
+  await enterAsSyntheticOperator(page);
+
+  await page.goto("/platforms");
+  await expect(page).toHaveURL(/\/v2\?area=platforms/);
+
+  const googleCard = page.locator("li").filter({ hasText: "Google" }).first();
+  await googleCard
+    .getByRole("link", { name: "Ver conexão e configuração" })
+    .click();
+
+  await expect(page).toHaveURL(/\/platforms\?.*platform=google_business/);
+  const dialog = page.getByRole("dialog").last();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Google" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Fechar" }).click();
+
+  await expect(page).toHaveURL(/\/v2\?area=platforms/);
+  await expect(
+    page.locator('[data-marketing-platform="google_business"]'),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Plataformas possíveis e situação real",
+    }),
+  ).toBeVisible();
+});
+
+test("composer usa modal amplo no desktop", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await enterAsSyntheticOperator(page);
+  await page.goto("/v2?area=campaigns");
+  await page.getByRole("link", { name: "Nova campanha" }).click();
+
+  const dialog = page.getByRole("dialog").last();
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box?.width).toBeGreaterThanOrEqual(1100);
+  expect(box?.height).toBeGreaterThanOrEqual(800);
 });
 
 test("V2 mostra Google e abre o composer funcional com a oferta escolhida", async ({

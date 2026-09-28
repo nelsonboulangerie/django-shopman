@@ -114,7 +114,8 @@ confirmação, nunca automático.
 
 ## Rotas Nuxt
 
-`/v2` é a entrada autenticada do workspace Marketing V2. Ela organiza Hoje,
+`/v2` é a entrada autenticada e canônica do workspace Marketing V2. `/` redireciona
+para `/v2?area=today`. Ela organiza Hoje,
 Campanhas, Ofertas e Plataformas em uma experiência própria, mas não cria um segundo
 backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
 confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
@@ -123,6 +124,15 @@ plataforma específica. Hoje, Campanhas, Ofertas e cupons e Plataformas ocupam a
 superior canônica do app na V2; não existe uma segunda barra de abas dentro do
 workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
 somente referência de design, sem capacidade operacional.
+
+Os fluxos densos de campanha, disparo manual, modelo e configuração de plataforma
+abrem em um workspace modal. No desktop ele usa a largura disponível para etapas,
+composições e prévias; no mobile ocupa a tela. Fechar um deep link devolve o operador
+à área correspondente e restaura o foco no acionador. `/platforms` sem uma plataforma
+específica redireciona para `/v2?area=platforms`, evitando alternância entre o catálogo
+novo e a lista anterior. As rotas secundárias `/campaigns`, `/templates`, `/history`,
+`/platforms?platform=...` e `/announcements/:id` continuam hospedando as capacidades
+operacionais existentes sob a mesma barra superior da V2.
 
 O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
 opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma

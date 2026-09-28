@@ -70,11 +70,7 @@ useHead({ title: "Modelos" });
   <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <div class="mb-4 flex items-center gap-3">
       <h1 class="text-lg font-semibold">Modelos</h1>
-      <UiButton
-        type="button"
-        class="ml-auto"
-        @click="openNew"
-      >
+      <UiButton type="button" class="ml-auto" @click="openNew">
         <Icon name="lucide:plus" class="size-4" />
         Novo modelo
       </UiButton>
@@ -109,7 +105,11 @@ useHead({ title: "Modelos" });
       </div>
     </div>
 
-    <div v-else-if="loading && !templates.length" class="space-y-2" aria-busy="true">
+    <div
+      v-else-if="loading && !templates.length"
+      class="space-y-2"
+      aria-busy="true"
+    >
       <div
         v-for="n in 3"
         :key="n"
@@ -128,14 +128,10 @@ useHead({ title: "Modelos" });
       />
       <p class="mt-3 font-semibold">Nenhum modelo ainda</p>
       <p class="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        O modelo é o texto que o cliente recebe. Sem pelo menos um, não há
-        como criar campanha.
+        O modelo é o texto que o cliente recebe. Sem pelo menos um, não há como
+        criar campanha.
       </p>
-      <UiButton
-        type="button"
-        class="mt-4"
-        @click="openNew"
-      >
+      <UiButton type="button" class="mt-4" @click="openNew">
         <Icon name="lucide:plus" class="size-4" />
         Criar o primeiro
       </UiButton>
@@ -193,38 +189,29 @@ useHead({ title: "Modelos" });
       </li>
     </ul>
 
-    <UiSheet
+    <MarketingWorkspaceDialog
       :open="panelOpen"
+      :title="editing ? 'Editar modelo' : 'Novo modelo'"
+      description="Defina o conteúdo comum e adapte somente as composições que precisam de formato ou texto próprio."
       @update:open="
         (v) => {
           if (!v) close();
         }
       "
     >
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>{{
-            editing ? "Editar modelo" : "Novo modelo"
-          }}</UiSheetTitle>
-          <UiSheetDescription>
-            O texto que o cliente recebe. As variáveis são substituídas no
-            envio.
-          </UiSheetDescription>
-        </UiSheetHeader>
-        <div class="flex-1 overflow-y-auto p-4">
-          <AnnouncementTemplateForm
-            :template="editing"
-            :variables="variables"
-            :delivery-capabilities="deliveryCapabilities"
-            :ai-available="aiAssistAvailable"
-            :busy="busy"
-            :draft-owner="draftOwner"
-            @submit="onSubmit"
-            @cancel="close"
-          />
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+      <div class="mx-auto w-full max-w-5xl">
+        <AnnouncementTemplateForm
+          :template="editing"
+          :variables="variables"
+          :delivery-capabilities="deliveryCapabilities"
+          :ai-available="aiAssistAvailable"
+          :busy="busy"
+          :draft-owner="draftOwner"
+          @submit="onSubmit"
+          @cancel="close"
+        />
+      </div>
+    </MarketingWorkspaceDialog>
 
     <!-- Apagar é destrutivo: dependências aparecem antes da confirmação. -->
     <UiDialog
@@ -269,11 +256,7 @@ useHead({ title: "Modelos" });
           </li>
         </ul>
         <UiDialogFooter>
-          <UiButton
-            type="button"
-            variant="outline"
-            @click="removing = null"
-          >
+          <UiButton type="button" variant="outline" @click="removing = null">
             Manter
           </UiButton>
           <NuxtLink

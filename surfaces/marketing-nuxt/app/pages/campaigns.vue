@@ -2,8 +2,8 @@
 // Campanhas — o que a operação dispara sozinha.
 //
 // O gesto mais comum é ligar/desligar, então ele fica a um toque na própria
-// linha. Editar abre um painel lateral: a lista continua visível, e o gestor
-// não perde o contexto de quais outras campanhas já existem.
+// linha. Editar abre um workspace modal: há espaço para etapas, composições e
+// prévias sem perder o contexto da campanha que originou o gesto.
 import {
   audienceRulesSummary,
   choiceLabels,
@@ -249,9 +249,20 @@ function openEdit(rule: Campaign) {
   editingPk.value = rule.pk;
 }
 
-function close() {
+async function close() {
+  const returnToV2 = route.query.experience === "v2";
   creating.value = false;
   editingPk.value = null;
+  if (returnToV2) {
+    await navigateTo(
+      { path: "/v2", query: { area: "campaigns" } },
+      { replace: true },
+    );
+    await nextTick();
+    document
+      .querySelector<HTMLElement>("[data-marketing-new-campaign]")
+      ?.focus();
+  }
 }
 
 /** Abre "Definir público" — a campanha manual, sem esperar evento da padaria. Daqui
@@ -379,7 +390,7 @@ async function onSubmit(payload: Record<string, unknown>) {
     : await create(payload);
   busy.value = false;
   if (ok) {
-    close();
+    await close();
     await nextTick();
     clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
   }
@@ -712,84 +723,64 @@ useHead({ title: "Campanhas" });
       </nav>
     </template>
 
-    <!-- Painel lateral: edita sem tirar a lista da vista -->
-    <UiSheet
+    <MarketingWorkspaceDialog
       :open="panelOpen"
+      :title="editing ? 'Editar campanha' : 'Nova campanha'"
+      description="Um evento da padaria vira um anúncio para as pessoas certas. Configure cada destino e confira as composições antes de salvar."
       @update:open="
         (v) => {
           if (!v) close();
         }
       "
     >
-      <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
-           rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>{{
-            editing ? "Editar campanha" : "Nova campanha"
-          }}</UiSheetTitle>
-          <UiSheetDescription>
-            Um evento da padaria vira um anúncio para as pessoas certas.
-          </UiSheetDescription>
-        </UiSheetHeader>
-        <div class="flex-1 overflow-y-auto p-4">
-          <CampaignForm
-            :rule="editing"
-            :triggers="triggers"
-            :platform-options="platforms"
-            :delivery-capabilities="deliveryCapabilities"
-            :templates="templates"
-            :offers="offers"
-            :price-tiers="priceTiers"
-            :tags="tags"
-            :rfm-segments="rfmSegments"
-            :platform-labels="platformLabels"
-            :platform-readiness="platformReadiness"
-            :whatsapp-template="waTemplate.current.value"
-            :busy="busy"
-            :draft-owner="draftOwner"
-            :shop-timezone="shopTimezone"
-            :initial-promotion-ref="initialPromotionRef"
-            @submit="onSubmit"
-            @cancel="close"
-          />
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+      <CampaignForm
+        :rule="editing"
+        :triggers="triggers"
+        :platform-options="platforms"
+        :delivery-capabilities="deliveryCapabilities"
+        :templates="templates"
+        :offers="offers"
+        :price-tiers="priceTiers"
+        :tags="tags"
+        :rfm-segments="rfmSegments"
+        :platform-labels="platformLabels"
+        :platform-readiness="platformReadiness"
+        :whatsapp-template="waTemplate.current.value"
+        :busy="busy"
+        :draft-owner="draftOwner"
+        :shop-timezone="shopTimezone"
+        :initial-promotion-ref="initialPromotionRef"
+        @submit="onSubmit"
+        @cancel="close"
+      />
+    </MarketingWorkspaceDialog>
 
-    <!-- Disparo manual: painel próprio, para não se confundir com editar a campanha -->
-    <UiSheet
+    <!-- Disparo manual: workspace próprio, para não se confundir com editar a campanha. -->
+    <MarketingWorkspaceDialog
       :open="firing !== null"
+      title="Definir público"
+      :description="`${firing?.name || 'Campanha'}: escolha o público. O texto vem do modelo e o anúncio nasce para revisão.`"
       @update:open="
         (v) => {
           if (!v) closeFire();
         }
       "
     >
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>Definir público</UiSheetTitle>
-          <UiSheetDescription>
-            {{ firing?.name }} — escolha o público. O texto vem do modelo e o
-            anúncio nasce para revisão.
-          </UiSheetDescription>
-        </UiSheetHeader>
-        <div class="flex-1 overflow-y-auto p-4">
-          <FireCampaignPanel
-            :rule="firing"
-            :price-tiers="priceTiers"
-            :tags="tags"
-            :rfm-segments="rfmSegments"
-            :products="products"
-            :product-required="firingTemplateRequiresProduct"
-            :busy="busy"
-            :error="fireError"
-            @submit="onFire"
-            @cancel="closeFire"
-          />
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+      <div class="mx-auto w-full max-w-3xl">
+        <FireCampaignPanel
+          :rule="firing"
+          :price-tiers="priceTiers"
+          :tags="tags"
+          :rfm-segments="rfmSegments"
+          :products="products"
+          :product-required="firingTemplateRequiresProduct"
+          :busy="busy"
+          :error="fireError"
+          @submit="onFire"
+          @cancel="closeFire"
+        />
+      </div>
+    </MarketingWorkspaceDialog>
 
     <MarketingCommandConfirmationDialog
       :command="pendingFireCommand"
