@@ -360,12 +360,13 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
-# Canário manual autorizado pelo owner em 28/09/2026: este ambiente ainda não
-# tem tráfego público capaz de produzir 500 observações antes do teste. Shadow
-# e endpoint estrutural ficam ligados; nenhum cliente/Nuxt consome o snapshot.
+# Piloto completo autorizado pelo owner em 28/09/2026: este ambiente ainda não
+# tem tráfego público capaz de produzir 500 observações antes do teste. O shadow
+# já cumpriu a amostragem e fica desligado para não onerar o menu canônico; o
+# endpoint estrutural e o consumidor Nuxt ficam ligados em todo o /menu.
 - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
   scope: RUN_TIME

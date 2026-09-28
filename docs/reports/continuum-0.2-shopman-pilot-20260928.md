@@ -199,6 +199,13 @@ ligar endpoint e consumidor Nuxt em todo o `/menu` do Live de teste. O snapshot 
 o menu canônico continua sendo autoridade e converge preço, disponibilidade, carrinho e
 preferências antes de permitir compra.
 
+Uma leitura posterior encontrou somente linhas reais do shadow com `shadow_equal=true` e
+`shadow_error=false`; a linha inicialmente contada como divergência era na verdade um registro
+`cache_status=off` do intervalo desligado. As três observações reais mais recentes, porém, mediram
+27,353 ms, 37,169 ms e 28,647 ms. Como o consumidor completo não precisa executar a comparação em
+paralelo a cada menu, o rollout desliga o shadow e elimina esse custo adicional do caminho canônico,
+mantendo snapshot, reconciliação periódica e fallback monolítico.
+
 O consumidor Nuxt usa um BFF credentialless dedicado, sem encaminhar Cookie/Authorization nem
 aceitar query livre. Se o snapshot estiver desligado, inválido ou indisponível no SSR, a página
 volta ao fetch monolítico. Quando o snapshot está utilizável, os produtos e suas fotos aparecem no
