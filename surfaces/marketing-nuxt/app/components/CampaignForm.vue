@@ -52,6 +52,8 @@ const props = defineProps<{
   busy?: boolean;
   draftOwner?: string;
   shopTimezone?: string;
+  /** Oferta escolhida antes de abrir uma campanha nova (atalho da V2). */
+  initialPromotionRef?: string;
 }>();
 
 const emit = defineEmits<{
@@ -248,7 +250,7 @@ watch(
     platforms.value = [...(rule?.platforms ?? [])];
     requiresApproval.value = rule?.requires_approval ?? true;
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
-    promotionRef.value = rule?.promotion_ref ?? "";
+    promotionRef.value = rule?.promotion_ref ?? props.initialPromotionRef ?? "";
     isActive.value = rule?.is_active ?? true;
     currentStep.value = 0;
 

@@ -233,6 +233,22 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   ).not.toBe("none");
 });
 
+test("workspace V2 preserva reflow, toque e semântica no mobile", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/v2?area=campaigns");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Planeje uma vez, adapte por destino",
+    }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, "Marketing V2 campanhas 320×568");
+  await expectNoHorizontalOverflow(page, "Marketing V2 campanhas 320×568");
+  await expectTouchTargets(page, "Marketing V2 campanhas 320×568");
+});
+
 declare global {
   interface Window {
     axe: typeof axe;

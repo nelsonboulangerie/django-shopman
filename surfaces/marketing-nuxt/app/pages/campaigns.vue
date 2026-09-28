@@ -92,6 +92,9 @@ const fireError = ref("");
 const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
 const route = useRoute();
+const initialPromotionRef = computed(() =>
+  typeof route.query.offer === "string" ? route.query.offer : "",
+);
 
 const firingTemplateRequiresProduct = computed(
   () =>
@@ -232,6 +235,14 @@ function openNew() {
   creating.value = true;
 }
 
+watch(
+  () => route.query.new,
+  (value) => {
+    if (value === "1" && !panelOpen.value) openNew();
+  },
+  { immediate: true },
+);
+
 function openEdit(rule: Campaign) {
   if (!editState(rule).enabled) return;
   creating.value = false;
@@ -300,7 +311,14 @@ async function showFireResult(response: MarketingCommandResponse) {
   preserveMarketingReceipt(announcementId, response.receipt);
   closeFire();
   await refresh();
-  await navigateTo(fireDispatchRoute(response));
+  const destination = fireDispatchRoute(response);
+  await navigateTo({
+    ...destination,
+    query: {
+      ...destination.query,
+      ...(route.query.experience === "v2" ? { experience: "v2" } : {}),
+    },
+  });
 }
 
 async function onFire(request: {
@@ -731,6 +749,7 @@ useHead({ title: "Campanhas" });
             :busy="busy"
             :draft-owner="draftOwner"
             :shop-timezone="shopTimezone"
+            :initial-promotion-ref="initialPromotionRef"
             @submit="onSubmit"
             @cancel="close"
           />
