@@ -199,7 +199,7 @@ def test_trocar_item_reserva_o_novo_solta_o_velho_e_avisa_o_cliente(vitrine):
 
     (aviso,) = _updated_notices(order)
     assert aviso.payload["status_note"] == (
-        "Saiu 1 Baguete e entraram 2 Croissant. Novo total R$ 18,00, a pagar na retirada"
+        "Saiu 1 Baguete e entraram 2 Croissant. O novo total é R$ 18,00, a pagar na retirada."
     )
     assert aviso.dedupe_key.startswith("notification.send:ED-2:order_updated:")
 
@@ -285,7 +285,7 @@ def test_reduzir_com_cartao_online_estorna_parte_no_stripe(vitrine, django_captu
     assert order.events.get(type="order_edited").payload["approved_by"] == "gerente"
     (aviso,) = _updated_notices(order)
     assert aviso.payload["status_note"] == (
-        "Baguete passou de 3 para 2. Novo total R$ 24,00; devolvemos R$ 12,00 no seu cartão"
+        "Baguete passou de 3 para 2. O novo total é R$ 24,00. Devolvemos R$ 12,00 no seu cartão."
     )
 
 
@@ -321,7 +321,7 @@ def test_reduzir_com_pix_devolve_parte_na_efi(vitrine, django_capture_on_commit_
     assert len(puts) == 1 and puts[0][0].startswith("/v2/pix/E2E-ED7/devolucao/")
     assert puts[0][1] == {"valor": "12.00"}
     assert PaymentService.refunded_total(intent.ref) == 1200
-    assert "devolvemos R$ 12,00 pelo Pix" in result.plan.customer_note
+    assert "Devolvemos R$ 12,00 pelo Pix." in result.plan.customer_note
 
 
 def test_reduzir_pago_em_dinheiro_vira_devolucao_da_gaveta_so_da_diferenca(vitrine):
@@ -334,7 +334,7 @@ def test_reduzir_pago_em_dinheiro_vira_devolucao_da_gaveta_so_da_diferenca(vitri
     )
 
     assert result.plan.settlement == order_edit.Settlement(order_edit.SETTLE_REFUND_CASH, 2400, "cash")
-    assert "devolvemos R$ 24,00 em dinheiro na retirada" in result.plan.customer_note
+    assert "Devolvemos R$ 24,00 em dinheiro na retirada." in result.plan.customer_note
     (pendente,) = payment.pending_cash_refunds()
     assert pendente.order_ref == "ED-8" and pendente.amount_q == 2400 and pendente.reason == "reduced"
 
@@ -480,8 +480,8 @@ def test_retirada_paga_no_pix_vira_entrega_com_taxa_e_saldo_na_porta(vitrine):
     # A taxa não é produção: a reserva segue só com o pão.
     assert _holds_by_sku(order) == {BAGUETE: Decimal("2")}
     assert result.plan.customer_note == (
-        "Agora é entrega em Rua Sergipe, 100 - Centro, Londrina - PR; taxa de entrega R$ 8,00. "
-        "Novo total R$ 32,00; a diferença de R$ 8,00 fica para a entrega"
+        "Agora é entrega em Rua Sergipe, 100 - Centro, Londrina - PR, com taxa de R$ 8,00. "
+        "O novo total é R$ 32,00. A diferença de R$ 8,00 fica para a entrega."
     )
 
 
@@ -503,7 +503,7 @@ def test_entrega_vira_retirada_e_a_taxa_sai(vitrine):
     assert [item.sku for item in order_composition.effective_items(order)] == [BAGUETE]
     assert order_composition.effective_total_q(order) == 2400
     assert result.revision == 2
-    assert result.plan.customer_note.startswith("Agora é retirada na loja")
+    assert result.plan.customer_note.startswith("Agora é retirada na loja.")
 
 
 def test_entrega_com_nota_exige_cpf_como_na_venda(vitrine):
@@ -553,7 +553,7 @@ def test_data_nova_vai_pelo_reagendar_com_um_aviso_so(vitrine):
     assert not Directive.objects.filter(payload__order_ref=order.ref, payload__template="order_rescheduled").exists()
     (aviso,) = _updated_notices(order)
     assert aviso.payload["status_note"].startswith("Nova data: ")
-    assert aviso.payload["status_note"].endswith("Anotamos a sua observação")
+    assert aviso.payload["status_note"].endswith("Anotamos sua observação.")
     assert result.revision is None  # itens não mudaram: sem ajuste novo
 
 
@@ -586,8 +586,18 @@ def test_o_aviso_usa_a_frase_da_edicao(vitrine):
     from shopman.shop.services.notification import _status_note
 
     order = SimpleNamespace(status="accepted", data={})
-    assert _status_note(order, "order_updated", None, note="Anotamos a sua observação") == "Anotamos a sua observação"
-    assert _status_note(order, "order_updated", None) == "Os detalhes estão no acompanhamento"
+    assert _status_note(order, "order_updated", None, note="Anotamos sua observação.") == "Anotamos sua observação."
+    assert _status_note(order, "order_updated", None) == "Os detalhes estão no acompanhamento."
+
+
+def test_edicao_grande_vira_resumo_e_o_dinheiro_sai_sempre():
+    """Um aviso não é extrato: acima de 3 mudanças de itens, a frase resume."""
+    from shopman.shop.services.order_edit import MAX_ITEM_CHANGES_DESCRIBED, _describe_for_customer
+
+    diff = {"added": [{"sku": f"S{i}", "name": f"Pão {i}", "qty": 1} for i in range(MAX_ITEM_CHANGES_DESCRIBED + 2)]}
+
+    assert _describe_for_customer(diff) == f"Ajustamos {MAX_ITEM_CHANGES_DESCRIBED + 2} itens."
+    assert _describe_for_customer({"added": diff["added"][:1]}) == "Entrou 1 Pão 0."
 
 
 # ── Vendido por peso: entra como na venda ────────────────────────────────────

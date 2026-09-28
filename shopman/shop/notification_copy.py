@@ -122,23 +122,22 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "order_rescheduled": {
         "subject": "Pedido {order_ref_short}: nova data",
         "body": (
-            "Oi{customer_name_greeting}! Tudo certo: seu pedido *{order_ref_short}* agora está marcado para "
-            "{status_note}. Qualquer dúvida, estamos à disposição. 💛\n"
+            "Oi{customer_name_greeting}! Seu pedido *{order_ref_short}* foi reagendado para "
+            "{status_note}. Qualquer dúvida, estamos à disposição.\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
     # A encomenda foi editada no balcão (``services/order_edit``): itens,
     # recebimento, data ou observação. Quase sempre a pedido do cliente — tom de
     # confirmação. ``{status_note}`` diz o que mudou, o total novo e o destino da
-    # diferença ("Saiu 1 Baguete e entrou 1 Croissant. Novo total R$ 42,00;
-    # devolvemos R$ 6,00 no seu cartão"), SEM ponto final.
-    # ⚠️ RASCUNHO (28/09/2026): o dono vai revisar a frase para casar com os
-    # demais avisos antes de o template ir para a Meta.
+    # diferença, em frases INTEIRAS com o próprio ponto ("Saiu 1 Baguete e entrou
+    # 1 Croissant. O novo total é R$ 42,00. Devolvemos R$ 6,00 no seu cartão.") —
+    # o padrão do "Motivo: …." do cancelado. Texto aprovado pelo dono em 28/09/2026.
     "order_updated": {
         "subject": "Pedido {order_ref_short} atualizado",
         "body": (
-            "Oi{customer_name_greeting}! Tudo certo: atualizamos seu pedido *{order_ref_short}*. "
-            "{status_note}. Qualquer dúvida, estamos à disposição. 💛\n"
+            "Oi{customer_name_greeting}! Atualizamos seu pedido *{order_ref_short}* conforme combinado. "
+            "{status_note} Qualquer dúvida, estamos à disposição.\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },

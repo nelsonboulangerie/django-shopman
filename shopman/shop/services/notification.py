@@ -1042,7 +1042,7 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
     """
     template = _canonical_template(template)
     if template == "order_updated":
-        return str(note or "").strip() or "Os detalhes estão no acompanhamento"
+        return str(note or "").strip() or "Os detalhes estão no acompanhamento."
     if template == "order_preparing":
         clock = _eta_clock(order)
         if clock:

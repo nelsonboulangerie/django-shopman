@@ -125,7 +125,7 @@ def test_previa_nao_grava_e_devolve_a_revisao(client, operator):
     assert preview["previous_total_q"] == 3000 and preview["total_q"] == 3500 and preview["difference_q"] == 500
     assert preview["settlement"] == {"kind": "collect", "amount_q": 3500, "method": ""}
     assert [item["is_new"] for item in preview["items"]] == [False, True]
-    assert preview["customer_note"] == "Entrou 1 Novo. Novo total R$ 35,00, a pagar na retirada"
+    assert preview["customer_note"] == "Entrou 1 Novo. O novo total é R$ 35,00, a pagar na retirada."
     order.refresh_from_db()
     assert not order_composition.is_adjusted(order)
 
@@ -149,7 +149,7 @@ def test_edita_e_aparece_no_historico(client, operator):
     assert "edit" in body["order"]["revisions"]
     (event,) = [e for e in body["order"]["timeline"] if e["event_type"] == "order_edited"]
     assert event["label"] == "Encomenda editada"
-    assert event["detail"].startswith("Produto passou de 2 para 3. Anotamos a sua observação.")
+    assert event["detail"].startswith("Produto passou de 2 para 3. Anotamos sua observação.")
 
 
 def test_revisao_velha_e_conflito(client, operator):
