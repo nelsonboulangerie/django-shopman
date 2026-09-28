@@ -56,7 +56,9 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
   ).toBeVisible();
-  await expect(page.getByText("Instagram", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("Instagram", { exact: true }).first(),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "Painel", exact: true }).click();
   await expect(
@@ -64,15 +66,15 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   ).toBeVisible();
 });
 
-test("entrada V2 preserva o painel operacional autenticado", async ({ page }) => {
+test("entrada V2 preserva o painel operacional autenticado", async ({
+  page,
+}) => {
   await enterAsSyntheticOperator(page);
 
   await page.goto("/v2");
 
   await expect(page).toHaveURL(/\/v2$/);
-  await expect(
-    page.locator('[data-marketing-experience="v2"]'),
-  ).toBeVisible();
+  await expect(page.locator('[data-marketing-experience="v2"]')).toBeVisible();
   await expect(
     page.getByRole("heading", { level: 1, name: "Painel" }),
   ).toBeVisible();
@@ -82,4 +84,60 @@ test("entrada V2 preserva o painel operacional autenticado", async ({ page }) =>
   await expect(
     page.getByRole("link", { name: "Plataformas", exact: true }),
   ).toBeVisible();
+});
+
+test("entrada V2 liga ou desliga campanha com CAS e recuperação de conflito", async ({
+  page,
+}) => {
+  await enterAsSyntheticOperator(page);
+  await page.goto("/v2");
+  await page.getByRole("link", { name: "Campanhas", exact: true }).click();
+
+  const activation = page.getByRole("switch", {
+    name: "Desligar a campanha Fornada artesanal 01",
+  });
+  await expect(activation).toBeEnabled();
+  const conflict = page.getByText(/mudou em outra sessão/);
+  await expect(async () => {
+    await activation.click();
+    await expect(conflict).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
+  await expect(activation).toHaveAttribute("aria-checked", "true");
+});
+
+test("entrada V2 prepara disparo idempotente e leva o receipt à revisão", async ({
+  page,
+}) => {
+  await enterAsSyntheticOperator(page);
+  await page.context().addCookies([
+    {
+      name: "visual_scenario",
+      value: "fire-accepted",
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
+  await page.goto("/v2");
+  await page.getByRole("link", { name: "Campanhas", exact: true }).click();
+  const prepare = page.getByRole("button", {
+    name: /Preparar o disparo da campanha Fornada artesanal 01/,
+  });
+  const fireDialog = page.getByRole("dialog");
+  // Em runner carregado, o HTML SSR pode ficar acionável um instante antes de o
+  // Vue anexar o handler. Retry exige a consequência do gesto e não mascara um
+  // botão quebrado: sem diálogo depois da hidratação, a asserção continua falhando.
+  await expect(async () => {
+    await prepare.click();
+    await expect(fireDialog).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
+  await expect(page.getByText("Contando…")).toHaveCount(0);
+  const review = page.getByRole("button", { name: "Revisar anúncio" });
+  await expect(review).toBeEnabled();
+  await review.click();
+
+  await expect(page).toHaveURL(/\/announcements\/77\?dispatch=new#review/);
+  await expect(
+    page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),
+  ).toBeVisible();
+  await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
 });

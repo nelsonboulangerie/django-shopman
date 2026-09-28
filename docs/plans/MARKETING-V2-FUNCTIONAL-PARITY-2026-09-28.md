@@ -1,7 +1,7 @@
 # Marketing V2 — baseline de paridade funcional
 
 **Estado:** gate obrigatório para implementação e cutover  
-**Base verificada:** `origin/main` em `cbf082f71`
+**Base verificada:** `origin/main` em `8ee9b1c49`
 **Superfície:** `surfaces/marketing-nuxt` e contratos canônicos de Marketing
 
 ## Decisão
@@ -97,8 +97,8 @@ desenvolvimento da V2; bloqueia torná-la padrão ou remover a V1.
 | --- | --- | --- |
 | Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Compartilhada por `/` e `/v2` |
 | Criar e editar campanha | component/e2e contra contrato real | Composer de cinco etapas integrado; modelos já aceitam composição explícita por destino executável; múltiplas composições da mesma plataforma ainda pendentes |
-| Ligar/desligar campanha | teste de Action e CAS | Pendente na V2 |
-| Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Pendente na V2 |
+| Ligar/desligar campanha | teste de Action e CAS | Integrado: `edit_campaign` exata/versionada habilita o controle; `base_updated_at` é obrigatório, conflito recarrega e mutação concorrente não duplica PATCH |
+| Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Integrado: entrada V2 usa `fire_campaign`, chave idempotente e challenge do servidor; receipt segue direto para a revisão, antes de qualquer entrega |
 | Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Painel compartilhado; matriz completa pendente |
 | Configurar e testar plataforma | capability + teste seguro por conector | Pendente na V2 |
 | Criar/editar/excluir modelo | CRUD e dependência protegida | CRUD preservado; Google Atualização/Evento/Oferta e CTAs configuráveis no modelo |
@@ -123,15 +123,16 @@ Todo PR da V2 deve declarar:
 
 É proibido aprovar um PR cuja única evidência seja a fidelidade à prévia estática.
 
-## Área assumida na fatia de composição por destino
+## Área assumida na fatia de operação de campanhas
 
-- `surfaces/marketing-nuxt/app/components/AnnouncementTemplateForm.vue`;
-- `surfaces/marketing-nuxt/app/components/PlatformCompositionEditor.vue`;
-- testes de componente correspondentes;
+- `surfaces/marketing-nuxt/app/pages/campaigns.vue`;
+- `surfaces/marketing-nuxt/app/composables/useCampaigns.ts`;
+- `surfaces/marketing-nuxt/app/presentation/campaignActions.ts`;
+- testes unitários/E2E e fixture hermética correspondentes;
 - este baseline e o contrato da superfície.
 
 Não há mudança de API, projection Django, migration, adapter, configuração,
-`package.json` ou lockfile. O payload existente de `platform_variants` passa a ser
-editado de forma explícita por destino: texto comum como padrão, exceção opcional e
-somente formatos/campos da allow-list executável. O catálogo teórico permanece fora
-das escolhas operacionais.
+`package.json` ou lockfile. A tela passa a obedecer à Action `edit_campaign` já
+projetada pelo servidor; o PATCH existente continua sendo o dono da escrita e exige
+`base_updated_at`. O disparo reutiliza sem alteração a Action `fire_campaign`, o
+challenge, a idempotência e o receipt atuais.

@@ -15,7 +15,11 @@ describe("campaign activation switch", () => {
 
     expect(page).toContain("<UiSwitch");
     expect(page).toContain(':model-value="rule.is_active"');
+    expect(page).toContain(
+      ':disabled="mutatingCampaignPk !== null || !editState(rule).enabled"',
+    );
     expect(page).toContain('@update:model-value="toggle(rule)"');
+    expect(page).toContain("campaignEditAvailability(rule, actions.value)");
     // O trilho à mão não volta: nem o `role="switch"` nem as classes dele.
     expect(page).not.toContain('role="switch"');
     expect(page).not.toContain("rounded-full transition-colors");
@@ -23,7 +27,10 @@ describe("campaign activation switch", () => {
 
   it("o interruptor do kit mantém o alvo de toque no token, e o contrato do ARIA", () => {
     const primitive = readFileSync(
-      new URL("../../operator-kit/app/components/UiSwitch.vue", import.meta.url),
+      new URL(
+        "../../operator-kit/app/components/UiSwitch.vue",
+        import.meta.url,
+      ),
       "utf8",
     );
 
@@ -50,6 +57,17 @@ describe("campaign activation switch", () => {
     expect(page).toContain("fireActionFor(rule, actions.value)");
     expect(presentation).toContain('action.kind === "fire_campaign"');
     expect(page).toContain('"Indisponível"');
+  });
+
+  it("never opens editing when the projected Action is disabled", () => {
+    const page = readFileSync(
+      new URL("../app/pages/campaigns.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(page).toContain(':disabled="!editState(rule).enabled"');
+    expect(page).toContain("if (!editState(rule).enabled) return");
+    expect(page).toContain("{{ editState(rule).reason }}");
   });
 
   it("keeps the open editor across the authentication gate", () => {
