@@ -120,6 +120,20 @@ projeções e executa os mesmos Actions, confirmações e receipts da entrada `/
 prévia em `/marketing-v2-preview/index.html` continua sendo somente referência de
 design, sem capacidade operacional.
 
+Na lista de campanhas, editar e ligar/desligar exigem a Action `edit_campaign` exata
+para o recurso e a versão visíveis. A Action decide se o controle existe e está
+habilitado; o navegador não deduz permissão. O PATCH continua same-origin no recurso
+canônico e sempre leva `base_updated_at`. Action ausente/desatualizada ou relógio de
+leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeção e não
+aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
+bloqueado para não duplicar a intenção.
+
+“Preparar disparo” obedece separadamente à Action `fire_campaign`: recurso, versão,
+href, método, idempotência e exigência de token precisam coincidir. O primeiro POST
+apenas sela a intenção; o challenge `none` é consumido automaticamente porque a
+consequência é criar um anúncio para revisão. O receipt viaja para a tela desse anúncio
+e nenhuma plataforma recebe conteúdo no `fire`.
+
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`

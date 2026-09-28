@@ -601,6 +601,15 @@ class Handler(BaseHTTPRequestHandler):
             actions = [
                 action(
                     f"campaign:{rule['pk']}",
+                    "edit_campaign",
+                    f"/campaigns#campaign-{rule['pk']}",
+                    enabled=True,
+                    version=rule["version"],
+                )
+                for rule in rules
+            ] + [
+                action(
+                    f"campaign:{rule['pk']}",
                     "fire_campaign",
                     f"/api/v1/backstage/marketing/rules/{rule['pk']}/fire/",
                     enabled=fire_enabled and rule["is_active"],
@@ -1059,8 +1068,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path
-        self._body()
+        body = self._body()
         if re.fullmatch(r"/api/v1/backstage/marketing/rules/\d+/", path):
+            if body.get("base_updated_at") != campaign(1)["updated_at"]:
+                self._send(422, {
+                    "code": "invalid_base_version",
+                    "detail": "A versão de leitura é obrigatória.",
+                })
+                return
             self._send(409, {
                 "code": "version_conflict",
                 "detail": "A campanha mudou em outra sessão.",
