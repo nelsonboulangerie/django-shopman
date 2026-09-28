@@ -360,15 +360,16 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
-# Segunda amostra: a correção de orçamento já está ACTIVE e passou pelo smoke.
-# Somente o shadow volta; snapshot e cliente continuam fechados.
+# Canário manual autorizado pelo owner em 28/09/2026: este ambiente ainda não
+# tem tráfego público capaz de produzir 500 observações antes do teste. Shadow
+# e endpoint estrutural ficam ligados; nenhum cliente/Nuxt consome o snapshot.
 - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_KILL_SWITCH
   scope: RUN_TIME

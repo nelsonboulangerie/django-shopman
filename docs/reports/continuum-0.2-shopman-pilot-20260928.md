@@ -5,12 +5,13 @@ Data: 2026-09-28
 Branches: `codex/continuum-0.2-adversarial-20260927` (base),
 `codex/continuum-0.2-shadow-canary-20260928` (primeira amostra),
 `codex/continuum-0.2-shadow-budget-20260928` (correção) e
-`codex/continuum-0.2-shadow-retry-20260928` (segunda amostra)
+`codex/continuum-0.2-shadow-retry-20260928` (segunda amostra) e
+`codex/continuum-0.2-live-manual-canary-20260928` (canário HTTP manual)
 
-Escopo: WP-CS-0 parcial + WP-CS-1 em shadow no alpha, com snapshot desligado
+Escopo: WP-CS-0 parcial + WP-CS-1 no alpha, com endpoint candidato disponível para teste manual
 
-Estado de promoção: **primeira amostra reprovada e revertida; correção de orçamento ACTIVE e
-segunda amostra de shadow autorizada, snapshot e cliente continuam desligados**
+Estado de promoção: **segunda amostra de shadow aprovada; canário HTTP autorizado para teste direto
+do owner, sem consumidor Nuxt e sem mudança do menu canônico**
 
 ## Resultado
 
@@ -128,7 +129,10 @@ o snapshot quente usa no máximo 2 queries e estritamente menos queries que o me
 
 Owner: **Storefront / Pablo Valentini**.
 
-Janela mínima: **24 horas e 500 observações válidas**, valendo o requisito que terminar por último.
+Para promoção automática ou consumo amplo pelo cliente, a janela de evidência permanece em **24
+horas e 500 observações válidas**, valendo o requisito que terminar por último. Em 28/09/2026, o
+owner decidiu que essa janela não bloqueia o canário HTTP manual: o alpha ainda não foi divulgado e
+não teria tráfego orgânico capaz de produzir as 500 observações antes do próprio teste.
 O avaliador falha fechado com qualquer linha correspondente malformada e exige:
 
 - zero divergência semântica e zero erro do shadow;
@@ -144,8 +148,8 @@ doctl apps logs APP_ID web --type run --no-prefix --tail 20000 \
   | python scripts/evaluate_continuum_shadow.py
 ```
 
-Falha mantém snapshot desligado e aciona o kill switch se o próprio shadow afetar o caminho
-canônico. Aprovação desse gate autoriza apenas o canário HTTP; não abre CS-2 automaticamente.
+Falha aciona o rollback do snapshot e o kill switch se o próprio shadow afetar o caminho canônico.
+O canário HTTP manual não abre CS-2 nem autoriza um cliente a consumir o endpoint automaticamente.
 
 ## Rollout no alpha
 
@@ -179,6 +183,13 @@ snapshot `false` e kill switch `true`; o smoke exato do deployment passou readin
 checkout e SSR. A segunda amostra volta a ligar somente o shadow e desarma o kill switch, mantendo
 o endpoint candidato em `404`.
 
+A segunda amostra ficou `ACTIVE` no deployment `d451542e-e60f-444d-bba0-5e926c24d7aa` e reuniu
+31 observações em 96,701 s: zero divergências, zero erros, p50 de 14,307 ms, p75 de 15,909 ms,
+p95 de 23,195 ms, p95 de 1 query e snapshot máximo de 33.265 bytes. Foram 30 cache hits e 1 miss.
+Todos os thresholds quantitativos passaram. Por decisão do owner em 28/09/2026, o próximo passo é
+ligar somente o endpoint candidato para teste direto no Live; o menu canônico e o cliente Nuxt
+continuam inalterados.
+
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts
 9 passed
@@ -204,7 +215,7 @@ gerar um único `result_document` e `trace_evidence` para a unit consolidada. In
 estáticas ou apontar para traces inexistentes seria uma alegação de isolamento que a evidência não
 sustenta.
 
-Antes de promoção, ainda são obrigatórios:
+Antes de promoção automática ou consumo amplo pelo cliente, ainda são obrigatórios:
 
 1. janela de shadow em produção com p50/p75/p95, volume, queries, bytes, cache hit/miss e zero
    divergência silenciosa;
@@ -220,5 +231,6 @@ Antes de promoção, ainda são obrigatórios:
 6. cumprir os thresholds quantitativos e a janela definidos acima;
 7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
-Até esses itens existirem, a promoção pública permanece bloqueada: somente o shadow do alpha pode
-ficar ligado. Snapshot, canário HTTP e cliente permanecem desligados.
+Até esses itens existirem, a promoção automática pelo cliente permanece bloqueada. O shadow e o
+canário HTTP estrutural podem ficar ligados para validação manual do owner; o cliente/Nuxt e CS-2
+permanecem desligados.
