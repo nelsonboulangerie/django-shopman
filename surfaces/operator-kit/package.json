@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@nuxt/test-utils": "^4.1.0",
+    "@nuxt/test-utils": "^4.3.2",
     "@vue/test-utils": "^2.5.0",
     "@vueuse/core": "^14.4.0",
     "eslint": "^10.10.0",
