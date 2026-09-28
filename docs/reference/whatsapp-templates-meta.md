@@ -292,6 +292,8 @@ com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_fl
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pedido_nova_data` — evento `order_rescheduled`
+> ⚠️ **Rascunho — aguardando revisão do dono (não submeter).** Ele valida a linguagem contra os demais templates; depois da aprovação, a submissão à Meta é feita via ManyChat.
+
 A data combinada mudou (`services/reschedule`); quase sempre a pedido do cliente, por isso o tom de confirmação.
 - Corpo: `Olá, {{1}}! Tudo certo: o seu pedido {{2}} agora está marcado para {{3}}. Qualquer dúvida, estamos à disposição.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`sábado, 04/10, a partir das 9h` (campo `status_note`, nunca vazio)
