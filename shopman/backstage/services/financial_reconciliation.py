@@ -27,9 +27,11 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 from shopman.cashman.models import Entry
 from shopman.orderman.models import Order
+from shopman.payman import PaymentService
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 
 from shopman.backstage.models import DayClosing
+from shopman.shop.services import order_composition
 
 Severity = Literal["warning", "error", "critical"]
 
@@ -315,7 +317,7 @@ def build_financial_reconciliation(
             created_at__date=reconciliation_date,
         ).count(),
         order_gross_q=sum(
-            int(order.total_q or 0)
+            order_composition.effective_total_q(order)
             for order in orders_on_date
             if order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED)
         ),
@@ -437,7 +439,13 @@ def _check_order_intent_amounts(
     order_intents: list[PaymentIntent],
     issues: list[FinancialReconciliationIssue],
 ) -> None:
-    """O que o Payman liquidou para o pedido tem de somar o total selado.
+    """O que o Payman liquidou para o pedido tem de somar o total que VALE.
+
+    O total é o efetivo (``order_composition``): a encomenda editada no balcão e
+    o pedido alterado no iFood valem pelo total novo. No pedido com ajuste, a
+    soma é LÍQUIDA de devolução (a encomenda que ficou mais barata devolveu a
+    diferença) e dois intents do mesmo método não são cobrança em dobro quando
+    somam exatamente o total — é a diferença recebida depois, na retirada.
 
     Uma venda mista do terminal tem um intent por MÉTODO (dinheiro + pix
     atestado, dinheiro + external), cada um com a sua parte: nenhum deles
@@ -454,10 +462,13 @@ def _check_order_intent_amounts(
       soar como divergência.
     """
     settled = [intent for intent in order_intents if intent.status in _SETTLED_STATUSES]
-    order_total_q = int(order.total_q or 0)
+    order_total_q = order_composition.effective_total_q(order)
+    adjusted = order_composition.is_adjusted(order)
 
     if settled:
         settled_q = sum(int(intent.amount_q or 0) for intent in settled)
+        if adjusted:
+            settled_q -= sum(PaymentService.refunded_total(intent.ref) for intent in settled)
         if settled_q != order_total_q:
             context: dict[str, int | str] = {
                 "order_total_q": order_total_q,
@@ -478,7 +489,7 @@ def _check_order_intent_amounts(
             )
         by_method = Counter(intent.method for intent in settled)
         for method, count in sorted(by_method.items()):
-            if count > 1:
+            if count > 1 and not (adjusted and settled_q == order_total_q):
                 issues.append(
                     FinancialReconciliationIssue(
                         code="multiple_captured_intents_for_order",
@@ -686,7 +697,11 @@ def _check_intent(
         Order.Status.DELIVERED,
         Order.Status.COMPLETED,
     }
-    if order.status in strict_paid_statuses and _payment_method(order) in _AUDITED_METHODS and net_q < order.total_q:
+    if (
+        order.status in strict_paid_statuses
+        and _payment_method(order) in _AUDITED_METHODS
+        and net_q < order_composition.effective_total_q(order)
+    ):
         issues.append(
             FinancialReconciliationIssue(
                 code="fulfilled_digital_order_underpaid",
@@ -694,7 +709,11 @@ def _check_intent(
                 message="Pedido digital em fluxo operacional avançado tem saldo capturado abaixo do total.",
                 order_ref=order.ref,
                 intent_ref=intent.ref,
-                context={"net_q": net_q, "order_total_q": int(order.total_q or 0), "status": order.status},
+                context={
+                    "net_q": net_q,
+                    "order_total_q": order_composition.effective_total_q(order),
+                    "status": order.status,
+                },
             )
         )
 

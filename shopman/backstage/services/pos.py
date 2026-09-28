@@ -421,7 +421,7 @@ def unlock_drawer(
 def refund_cash(
     *, operator, order_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
 ) -> int:
-    """Devolve ao cliente o dinheiro de uma venda cancelada, pela gaveta deste turno.
+    """Devolve ao cliente o dinheiro de uma venda cancelada (ou a diferença de uma encomenda reduzida).
 
     Cancelar não é devolver: o cancel (PDV fora da janela, gestor, de noite)
     deixa o dinheiro pendente; este é o gesto físico, com turno aberto e PIN de
@@ -442,18 +442,51 @@ def refund_cash(
     order = Order.objects.filter(ref=str(order_ref or "").strip()).first()
     if order is None:
         raise POSError("Pedido não encontrado.")
-    if order.status not in {Order.Status.CANCELLED, Order.Status.RETURNED}:
-        raise POSError("Só se devolve dinheiro de venda cancelada ou devolvida.")
+    cancelled = order.status in {Order.Status.CANCELLED, Order.Status.RETURNED}
+    if not cancelled and payment_service.overpaid_q(order) <= 0:
+        raise POSError("Só se devolve dinheiro de venda cancelada ou de encomenda que ficou mais barata.")
     refunded_q = payment_service.refund_cash(
         order,
         shift=shift,
         actor=operator,
         approved_by=approved_by,
-        reason="devolução de venda cancelada",
+        reason="devolução de venda cancelada" if cancelled else "devolução da diferença da encomenda editada",
     )
     if refunded_q <= 0:
         raise POSError("Esta venda não tem dinheiro pendente de devolução.")
     return refunded_q
+
+
+def record_card_machine_refund(*, operator, order_ref: str, manager_approval: dict | None = None) -> int:
+    """O operador estornou na maquininha a diferença de uma encomenda reduzida.
+
+    O sistema não fala com a maquininha: o estorno é declarado, como a captura
+    foi. Por isso pede o PIN de gerente (dinheiro volta para o cartão do
+    cliente, com segunda assinatura, como a devolução em dinheiro) e não pede
+    gaveta aberta — nada sai dela.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+    from shopman.shop.services.pos import validate_manager_override
+
+    approved_by = validate_manager_override(
+        manager_approval or {},
+        operator_username=operator.get_username(),
+        action="card_machine_refund",
+    )
+    order = Order.objects.filter(ref=str(order_ref or "").strip()).first()
+    if order is None:
+        raise POSError("Pedido não encontrado.")
+    try:
+        recorded_q = payment_service.record_card_machine_refund(
+            order, actor=operator.get_username(), approved_by=approved_by,
+        )
+    except ValueError as exc:
+        raise POSError(str(exc)) from exc
+    if recorded_q <= 0:
+        raise POSError("Esta encomenda não tem estorno pendente na maquininha.")
+    return recorded_q
 
 
 def settle_account(

@@ -805,7 +805,9 @@ def cash_due_on_delivery_q(order: Order) -> int:
         return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "cash")
     if payment.get("method") not in {"cash", "mixed"}:
         return 0
-    return int(order.total_q or 0)
+    from shopman.shop.services import order_composition
+
+    return order_composition.effective_total_q(order)
 
 
 def change_out_suggested_q(order: Order) -> int:
@@ -1602,6 +1604,19 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     elif field == "schedule":
         # Reagendar: o que a tela leu da data combinada e do estado do pedido.
         state = {"status": order.status, **{key: data.get(key) for key in ("delivery_date", "delivery_time_slot")}}
+    elif field == "edit":
+        # Editar a encomenda: o que a tela leu dos itens, do total, do
+        # recebimento, da data, da observação e do dinheiro. Qualquer um mudou
+        # por outra porta (outra tela, pagamento que entrou), a edição recusa.
+        state = {
+            "status": order.status,
+            "total_q": order.total_q,
+            **{key: data.get(key) for key in (
+                "adjustment", "order_notes", "fulfillment_type", "delivery_address",
+                "delivery_address_structured", "delivery_date", "delivery_time_slot",
+                "payment", "nfce_access_key",
+            )},
+        }
     elif field == "comment":
         # Append-only comments commute; unrelated comments/notes need no overwrite.
         state = {"channel_ref": order.channel_ref}

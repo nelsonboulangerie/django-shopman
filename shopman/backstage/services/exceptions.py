@@ -69,6 +69,20 @@ class RescheduleError(OrderError):
         self.field = field
 
 
+class OrderEditError(OrderError):
+    """Edição da encomenda recusada (``shop.services.order_edit.EditRefused``).
+
+    Mesmo formato do :class:`RescheduleError`: ``code`` estável para a tela
+    decidir, ``field`` para apontar a entrada (``items.<n>``, ``notes``,
+    ``fulfillment.<campo>``, ``date``/``slot``).
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
 class POSError(BackstageServiceError):
     """Raised when a POS mutation cannot be applied."""
 

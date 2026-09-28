@@ -97,7 +97,8 @@ beforeEach(() => {
       suggested_method: "cash", block_reason: "", digital_charge_notice: "",
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
-    reschedule: { allowed: true, block_reason: "", date: "2026-09-26", slot: "slot-09", skus: ["PAO"] },
+    reschedule: { allowed: true, block_reason: "", date: "2026-09-26", slot: "slot-09", skus: ["PAO"], revision: "rev-schedule" },
+    edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-edit" },
     managers: [{ username: "gerente", name: "Gerente" }],
   };
   printOne.mockClear();
@@ -424,7 +425,7 @@ describe("Semana — o a receber de cada dia", () => {
 });
 
 describe("Detalhe — reagendar", () => {
-  it("escolher outro dia chama a rota do Gestor com a data, a revisão e quem está identificado", async () => {
+  it("escolher outro dia chama a rota do Gestor com a data, a revisão DA DATA e quem está identificado", async () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-reschedule]").trigger("click");
     await settle();
@@ -436,7 +437,7 @@ describe("Detalhe — reagendar", () => {
 
     const [path, options] = call.mock.calls[0]!;
     expect(path).toBe("/api/v1/backstage/orders/NB-7/reschedule/");
-    expect(options.body).toMatchObject({ date: "2026-09-28", slot: "", base_revision: "rev-1", expected_actor_id: 7 });
+    expect(options.body).toMatchObject({ date: "2026-09-28", slot: "", base_revision: "rev-schedule", expected_actor_id: 7 });
     expect(options.body.idempotency_key).toBeTruthy();
   });
 

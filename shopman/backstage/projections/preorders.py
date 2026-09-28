@@ -202,6 +202,24 @@ class PreorderRescheduleProjection:
     slot: str
     # Os itens: a janela oferecível depende deles (``/pos/schedule/?skus=``).
     skus: tuple[str, ...]
+    # A base do gesto: a revisão da DATA (``operational_revision(field="schedule")``),
+    # que é a que o reagendar confere — não a revisão geral do detalhe.
+    revision: str = ""
+
+
+@dataclass(frozen=True)
+class PreorderEditProjection:
+    """Editar pelo PDV: a régua do orquestrador (``order_edit.state_refusal``).
+
+    Com a NFC-e já autorizada a edição não acontece no pedido: o caminho é
+    cancelar e refazer (``cancel_and_redo``), e a tela troca o botão.
+    """
+
+    allowed: bool
+    block_reason: str
+    cancel_and_redo: bool
+    # A base da gravação (``operational_revision(field="edit")``).
+    revision: str
 
 
 @dataclass(frozen=True)
@@ -226,6 +244,7 @@ class PreorderDetailProjection:
     hand_over: PreorderHandOverProjection
     cancel: PreorderCancelProjection
     reschedule: PreorderRescheduleProjection
+    edit: PreorderEditProjection
     # Quem pode assinar o cancelamento de pedido pago (a lista do PDV).
     managers: tuple[dict, ...]
 
@@ -356,6 +375,7 @@ def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | 
         hand_over=_hand_over(order, card, method),
         cancel=_cancel(order, user),
         reschedule=_reschedule(order, card),
+        edit=_edit(order),
         managers=tuple(order_queue._approver_options(user)) if user is not None else (),
     )
 
@@ -378,7 +398,7 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
 
 
 def _reschedule(order, card: PreorderCardProjection) -> PreorderRescheduleProjection:
-    from shopman.shop.services import order_composition, reschedule
+    from shopman.shop.services import operator_orders, order_composition, reschedule
 
     data = order.data or {}
     reason = reschedule.state_refusal(order)
@@ -388,6 +408,19 @@ def _reschedule(order, card: PreorderCardProjection) -> PreorderRescheduleProjec
         date=str(data.get("delivery_date") or card.commitment_date),
         slot=str(data.get("delivery_time_slot") or ""),
         skus=tuple(dict.fromkeys(item.sku for item in order_composition.effective_items(order) if item.sku)),
+        revision=operator_orders.operational_revision(order, field="schedule"),
+    )
+
+
+def _edit(order) -> PreorderEditProjection:
+    from shopman.shop.services import operator_orders, order_edit
+
+    code, reason = order_edit.state_refusal(order)
+    return PreorderEditProjection(
+        allowed=not code,
+        block_reason=reason,
+        cancel_and_redo=code == "fiscal_authorized",
+        revision=operator_orders.operational_revision(order, field="edit"),
     )
 
 

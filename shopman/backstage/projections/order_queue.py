@@ -737,7 +737,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         ref=order.ref,
         status=order.status,
         actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
-        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule")},
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule", "edit")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
@@ -2247,6 +2247,8 @@ _EVENT_LABELS = {
     "payment_collected": "Pagamento recebido",
     "equipment_returned": "Maquininha devolvida",
     "order_rescheduled": "Data combinada alterada",
+    "order_edited": "Encomenda editada",
+    "card_machine_refund_recorded": "Estorno na maquininha registrado",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -2305,6 +2307,10 @@ def _event_detail(payload: dict) -> str:
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
         return f"{moved} — {payload['reason']}" if payload.get("reason") else moved
+    if payload.get("source") == "pos:edit" and payload.get("customer_note"):
+        # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
+        # mudou, o total novo e o destino da diferença.
+        return str(payload["customer_note"])
     for key in ("reason", "note", "error"):
         value = payload.get(key)
         if value:

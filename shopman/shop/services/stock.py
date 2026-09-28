@@ -492,12 +492,13 @@ def revert(order) -> None:
             )
 
 
-def reconcile_to_items(order, *, items: list[dict], reference: str) -> dict:
+def reconcile_to_items(order, *, items: list[dict], reference: str, require_all: bool = False) -> dict:
     """Traz as reservas e baixas do pedido para a lista de itens que vale AGORA.
 
-    Chamada quando o pedido muda depois de já existir — hoje só pelo
-    ``ORDER_PATCHED`` do iFood, em que o cliente acrescenta, tira ou troca a
-    quantidade de um item depois de confirmado. Não é uma segunda reserva nem
+    Chamada quando o pedido muda depois de já existir — pelo ``ORDER_PATCHED``
+    do iFood, em que o cliente acrescenta, tira ou troca a quantidade de um item
+    depois de confirmado, e pela edição da encomenda no balcão
+    (``order_edit``). Não é uma segunda reserva nem
     uma reserva do zero: é a DIFERENÇA entre o que está reservado/baixado e o
     que o pedido pede agora.
 
@@ -518,7 +519,11 @@ def reconcile_to_items(order, *, items: list[dict], reference: str) -> dict:
 
     O que não cabe em reserva nenhuma vira ``stock_hold_gap``, o mesmo alerta do
     caminho brando do ``hold``: venda acima do estoque de verdade é fato
-    operacional, não erro de programa.
+    operacional, não erro de programa. ``require_all=True`` é o gate do balcão:
+    quem edita a encomenda está com o cliente na linha e pode escolher outra
+    coisa, então o que falta levanta ``ValidationError(insufficient_stock)`` e a
+    transação do chamador desfaz tudo — reservas inclusive. O iFood segue no
+    caminho brando: lá a alteração já aconteceu do lado do cliente.
 
     Devolve um resumo ``{released, returned, held, fulfilled, gaps}`` para o
     chamador registrar no pedido. SYNC, e para ser chamada DENTRO de uma
@@ -580,7 +585,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str) -> dict:
         if delta > 0:
             _reconcile_increase(
                 adapter, order, sku, delta, entries, summary,
-                hold_kwargs=hold_kwargs, fulfill_now=order_fulfilled,
+                hold_kwargs=hold_kwargs, fulfill_now=order_fulfilled, require_all=require_all,
             )
         else:
             _reconcile_decrease(
@@ -609,9 +614,15 @@ def _component_quantities(items: list[dict]) -> dict[str, Decimal]:
     return quantities
 
 
-def _reconcile_increase(adapter, order, sku, qty, entries, summary, *, hold_kwargs, fulfill_now) -> None:
+def _reconcile_increase(
+    adapter, order, sku, qty, entries, summary, *, hold_kwargs, fulfill_now, require_all=False,
+) -> None:
     """Reserva o que o pedido passou a pedir a mais (e baixa, se o resto já baixou)."""
     parts = adapter.create_holds_up_to(sku=sku, qty=qty, **hold_kwargs)
+    if require_all:
+        covered = sum((part_qty for _hold_id, part_qty in parts), Decimal("0"))
+        if covered < qty:
+            raise _insufficient_stock_error({"sku": sku}, sku, qty, "")
     remaining = qty
     for hold_id, part_qty in parts:
         entries.append({"sku": sku, "hold_id": hold_id, "qty": float(part_qty)})

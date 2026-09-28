@@ -132,6 +132,8 @@ from .operations import (
     OrderCourierQuoteView,
     OrderDanfeEscposView,
     OrderDetailView,
+    OrderEditPreviewView,
+    OrderEditView,
     OrderEquipmentBackView,
     OrderIFoodEvidenceView,
     OrderIFoodHandshakeView,
@@ -149,6 +151,7 @@ from .operations import (
     POSAccountBalancesView,
     POSAccountSettleView,
     POSCancelRecentSaleView,
+    POSCardMachineRefundView,
     POSCashCloseView,
     POSCashDrawerBlindView,
     POSCashDrawerBlockView,
@@ -584,6 +587,8 @@ urlpatterns = [
     path("orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"),
     path("orders/<str:ref>/resend-payment-link/", OrderResendPaymentLinkView.as_view(), name="api-backstage-order-resend-payment-link"),
     path("orders/<str:ref>/reschedule/", OrderRescheduleView.as_view(), name="api-backstage-order-reschedule"),
+    path("orders/<str:ref>/edit/", OrderEditView.as_view(), name="api-backstage-order-edit"),
+    path("orders/<str:ref>/edit/preview/", OrderEditPreviewView.as_view(), name="api-backstage-order-edit-preview"),
     path("orders/<str:ref>/notes/", OrderNotesView.as_view(), name="api-backstage-order-notes"),
     path("orders/<str:ref>/courier-dispatch/", OrderCourierDispatchView.as_view(), name="api-backstage-order-courier-dispatch"),
     path("orders/<str:ref>/courier-cancel/", OrderCourierCancelView.as_view(), name="api-backstage-order-courier-cancel"),
@@ -704,6 +709,7 @@ urlpatterns = [
     # Cancelar não é devolver: o dinheiro de venda cancelada sai pela gaveta de
     # quem devolve, com PIN, e só então Payman e livro registram.
     path("pos/cash/refund/<str:order_ref>/", POSCashRefundView.as_view(), name="api-backstage-pos-cash-refund"),
+    path("pos/card-machine-refund/<str:order_ref>/", POSCardMachineRefundView.as_view(), name="api-backstage-pos-card-machine-refund"),
     # Conta na casa: quem deve quanto, e o acerto (em dinheiro entra na gaveta aberta).
     path("pos/accounts/", POSAccountBalancesView.as_view(), name="api-backstage-pos-accounts"),
     path("pos/accounts/<str:customer_ref>/settle/", POSAccountSettleView.as_view(), name="api-backstage-pos-account-settle"),

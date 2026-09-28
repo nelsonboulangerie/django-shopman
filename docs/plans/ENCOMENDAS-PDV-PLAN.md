@@ -52,8 +52,8 @@ Pedido**.
 | Cancelar fora da janela de 5 min | sim | `operator_orders.cancel_order` + `operator_cancel_policy` + PIN | expor; Caixa não cancela pronto/concluído (é do Gerente) |
 | Devolver dinheiro | sim | `payment.pending_cash_refunds` · `refund_cash` | já está na antesala (*Precisa de você*) |
 | **Reagendar** | **não** | peças: `lifecycle._schedule_preorder_activation`, `stock.hold/release`, `production_order_sync`, validadores de data | serviço `reschedule` (WP-E5) |
-| **Editar itens** | parcial (só iFood) | `order_composition.record` + `stock.reconcile_to_items` + `kds.reconcile_to_lines` (`ifood_events._apply_patch`) | generalizar para fonte `pos:edit` (WP-E6) |
-| Editar observação do cliente / recebimento | não | `save_kitchen_note` só cobre a nota do operador | WP-E6 |
+| **Editar itens** | sim (serviço + API, WP-E6 PR 1) | `order_edit.plan/edit` → `apply_final_items` (o mesmo do iFood) | a tela (WP-E6 PR 2) |
+| Editar observação do cliente / recebimento | sim (serviço + API, WP-E6 PR 1) | `order_edit` (`order_notes`, retirada ↔ entrega com a taxa como linha) | a tela (WP-E6 PR 2) |
 
 ## Work packages
 
@@ -116,20 +116,47 @@ sob lock do pedido, transacional:
 8. de passagem: `activate_preorder` antecipado só loga e o comentário promete reagendar
    (`lifecycle.py` ~970) — a promessa vira código ou sai.
 
-### WP-E6 — Editar  *(decisões do dono pendentes — ver abaixo)*
-- Generalizar o `_apply_patch` do iFood para uma fonte `pos:edit`: lista final de itens
-  (nunca delta) em `order_composition.record`, `stock.reconcile_to_items`,
-  `kds.reconcile_to_lines`, preço do catálogo, aprovação conforme a política.
-- Observação do cliente (`order_notes`) e forma de recebimento (retirada ↔ entrega,
-  recalculando a taxa como ajuste).
+### WP-E6 — Editar  *(decidido pelo dono, 26–28/09; em duas PRs)*
 
-## Perguntas abertas ao dono (bloqueiam só o WP-E6)
+**Decisões (26–28/09/2026):**
+1. Editar no PRÓPRIO pedido (mesmo ref, pagamento e acompanhamento). Com a NFC-e já
+   autorizada, **cancelar e refazer** — depois da #1173 a nota da encomenda só sai na
+   saída da mercadoria, então quase sempre não há nota e a edição acontece.
+2. Diferença a MAIS vira saldo a receber (retirada: "Receber e entregar"; entrega: na
+   porta). A MENOS volta pelo **mesmo meio**: cartão online e Pix pelo gateway (estorno
+   parcial), dinheiro pela gaveta (*Precisa de você*), maquininha por pendência guiada
+   registrada. Meio que não devolve parte recusa com o motivo, nunca devolve em outro.
+3. O editor É a tela de venda do PDV em **modo edição** (comanda virtual pré-montada,
+   sem disparar cozinha, "Salvar alterações" com a prévia). Trocar retirada ↔ entrega
+   entra (F7, taxa, CPF da entrega de 24/09); data/janela (F8) vai pelo reagendar na
+   mesma operação.
+4. Aviso ao cliente `order_updated` (template Meta `pedido_atualizado`) — ⚠️ texto em
+   RASCUNHO, o dono revisa antes de qualquer submissão à Meta/ManyChat.
 
-1. **Encomenda paga cuja NFC-e já foi autorizada** (o PDV emite no fechamento quando pago):
-   editar itens exige cancelar a nota e emitir outra. Permitir com esse custo, ou bloquear a
-   edição e oferecer "cancelar e refazer a encomenda"?
-2. **Diferença de valor numa encomenda já paga:** a mais, recebe no balcão na retirada
-   (vira saldo); a menos, devolve como? (dinheiro na gaveta · estorno no meio original)
+**PR 1 — serviço + API** (`claude/encomenda-editar`):
+- `shop/services/order_edit.py`: `plan` (prévia, nada gravado) e `edit` (sob lock,
+  transacional). Caminho comum `apply_final_items` (ajuste + `stock.reconcile_to_items`
+  + `kds.reconcile_to_lines`) — o `_apply_patch` do iFood passa por ele.
+  `reconcile_to_items(require_all=True)` recusa sem saldo na data (o iFood segue brando).
+- Preço: o que já estava mantém o vendido; o que entra, catálogo no canal do pedido
+  (`OffermanPricingBackend`); a mais com preço diferente vira linha própria. Descontos
+  não são reavaliados; a taxa é linha `__DELIVERY_FEE__` do ajuste, pelo motor da venda
+  (`pos.resolve_delivery_fee`).
+- Pagamento segue a invariante do valor final (`amount_q`, `tenders`); pendências
+  derivadas `payment.pending_cash_refunds` (agora também "encomenda reduzida") e
+  `payment.pending_card_machine_refunds` + `record_card_machine_refund`.
+- API: `POST orders/<ref>/edit/preview/` e `POST orders/<ref>/edit/` (revisão `edit`,
+  409, `{detail, field, errors, error.code}`, PIN de gerente na redução paga);
+  `POST pos/card-machine-refund/<ref>/`. Detalhe da encomenda expõe `edit` e a revisão
+  certa do reagendar (o PDV mandava a revisão geral e o reagendar voltava 409).
+- Leitores que somavam o selado passaram a ler o efetivo: vínculo de produção
+  (`production_order_sync`), dinheiro na porta (`cash_due_on_delivery_q`), conciliação
+  financeira, total do aviso (`order_total_display`).
+
+**PR 2 — o modo edição na tela de venda** (depende da PR 1): comanda virtual, cabeçalho
+"Editando a encomenda …" + "Descartar alterações", "Salvar alterações" com a prévia e o
+PIN, "Cancelar e refazer" com a nota autorizada, cards "Estorno na maquininha" e a
+devolução "encomenda ficou mais barata" no *Precisa de você*.
 
 ## Fora de escopo, registrado
 
