@@ -116,7 +116,9 @@ useHead({ title: "Marketing V2" });
       <UiButton
         type="button"
         variant="outline"
+        class="disabled:opacity-100"
         :disabled="busy"
+        :aria-busy="busy"
         @click="refreshWorkspace"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
