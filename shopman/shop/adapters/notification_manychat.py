@@ -81,12 +81,25 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
             if resp_data.get("status") == "success":
                 # Subscriber identity is not a delivery receipt.
                 return {"success": True}
-            return {"success": False, "error": "provider_rejected"}
+            return {
+                "success": False,
+                "error": "provider_rejected",
+                "provider_code": _provider_error_code(resp_data),
+            }
     except HTTPError as exc:
         # Explicit request rejection: no acceptance to reconcile. 408/5xx and
         # transport failures remain uncertain, so the chain must stop there.
         if exc.code in {400, 401, 403, 404, 405, 413, 415, 422, 429}:
-            return {"success": False, "error": "provider_rejected"}
+            try:
+                provider_payload = json.loads(exc.read(4096).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                provider_payload = {}
+            return {
+                "success": False,
+                "error": "provider_rejected",
+                "provider_code": _provider_error_code(provider_payload),
+                "provider_http_status": exc.code,
+            }
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
     except URLError:
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
@@ -94,6 +107,19 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
         logger.warning("manychat acceptance unconfirmed; response unavailable")
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
 
+
+def _provider_error_code(payload) -> str:
+    """Keep a bounded provider code without logging bodies or customer data."""
+    if not isinstance(payload, dict):
+        return "unspecified"
+    candidates = [payload.get("code"), payload.get("error_code")]
+    details = payload.get("details")
+    if isinstance(details, dict):
+        candidates.extend([details.get("code"), details.get("error_code")])
+    for candidate in candidates:
+        if isinstance(candidate, (str, int)) and str(candidate).strip():
+            return str(candidate).strip()[:64]
+    return "unspecified"
 
 
 def _build_message(template: str, context: dict) -> str:
@@ -132,8 +158,41 @@ def _message_buttons(template: str, context: dict) -> list[dict[str, str]]:
 
     revoke_url = str(context.get("revoke_url") or "").strip()
     if template == "access_link_site" and revoke_url:
-        buttons.append({"type": "url", "caption": "Não fui eu", "url": revoke_url})
+        buttons.append({"type": "url", "caption": "Encerrar acesso", "url": revoke_url})
     return buttons
+
+
+def _message_contents(
+    template: str,
+    message: str,
+    buttons: list[dict[str, str]],
+) -> list[dict]:
+    """Build WhatsApp messages within the one URL button per bubble contract.
+
+    The site initiated login needs a primary access action and a defensive revoke
+    action. ManyChat allows one URL button in a WhatsApp text bubble, so the
+    security action goes first and the primary action remains the final, visually
+    dominant bubble. Both are still sent atomically in one SendContent call.
+    """
+    if template == "access_link_site" and len(buttons) == 2:
+        primary, revoke = buttons
+        return [
+            {
+                "type": "text",
+                "text": "Não reconhece este acesso?",
+                "buttons": [revoke],
+            },
+            {
+                "type": "text",
+                "text": message,
+                "buttons": [primary],
+            },
+        ]
+
+    message_content: dict = {"type": "text", "text": message}
+    if buttons:
+        message_content["buttons"] = buttons
+    return [message_content]
 
 
 def _plain_text_button_fallback(message: str, buttons: list[dict[str, str]]) -> str:
@@ -300,9 +359,6 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     else:
         message = _build_message(template, ctx)
         buttons = _message_buttons(template, ctx)
-        message_content: dict = {"type": "text", "text": message}
-        if buttons:
-            message_content["buttons"] = buttons
         payload = {
             "subscriber_id": subscriber_id,
             "data": {
@@ -317,7 +373,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
                     # que é conceito do Messenger — o WhatsApp tem template e
                     # janela, não tag.
                     "type": "whatsapp",
-                    "messages": [message_content],
+                    "messages": _message_contents(template, message, buttons),
                 },
             },
         }
@@ -325,20 +381,30 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         if buttons and result.get("error") == "provider_rejected":
             # A rejeição explícita significa que nada foi aceito. Tentar uma vez
             # como texto mantém o acesso recuperável sem risco de mensagem dupla.
+            logger.warning(
+                "manychat.buttons_rejected template=%s provider_code=%s http_status=%s fallback=plain_text",
+                template,
+                result.get("provider_code", "unspecified"),
+                result.get("provider_http_status", "unspecified"),
+            )
             fallback_payload = {
                 "subscriber_id": subscriber_id,
                 "data": {
                     "version": "v2",
                     "content": {
                         "type": "whatsapp",
-                        "messages": [{
-                            "type": "text",
-                            "text": _plain_text_button_fallback(message, buttons),
-                        }],
+                        "messages": [
+                            {
+                                "type": "text",
+                                "text": _plain_text_button_fallback(message, buttons),
+                            }
+                        ],
                     },
                 },
             }
             result = _api_call("/sending/sendContent", fallback_payload, mc_config)
+            if result.get("success"):
+                logger.info("manychat.buttons_fallback_accepted template=%s", template)
 
     if result.get("outcome_unknown"):
         raise RuntimeError("acceptance_unconfirmed")
