@@ -725,11 +725,12 @@ Entrega:
 - previews por destino;
 - revisão exata e acompanhamento do bundle.
 
-O rollout pode coexistir com o composer atual sob flag até a paridade de fluxos existentes.
-Essa coexistência é obrigatória: fidelidade visual à prévia não substitui nenhuma linha
-do baseline funcional. Enquanto uma jornada estiver pendente na matriz de paridade, a
-V2 deve encaminhar o operador ao fluxo atual no mesmo app, sem esconder ou duplicar o
-efeito externo.
+O composer atual pode continuar servindo a operação enquanto a V2 é construída, mas
+não é requisito de produto oferecer as duas interfaces ao operador em paralelo. O
+cutover pode ser direto quando toda a matriz de paridade estiver verde. Fidelidade
+visual à prévia não substitui nenhuma linha do baseline funcional, e uma jornada
+pendente bloqueia o corte em vez de ganhar um fallback permanente para a interface
+anterior.
 
 ### WP-10 — Ofertas
 

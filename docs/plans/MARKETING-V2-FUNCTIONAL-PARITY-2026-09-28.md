@@ -77,16 +77,16 @@ não mudar a consequência. Nunca é permitido “dar um jeito” silencioso no 
 
 ## Estratégia de integração sem regressão
 
-1. A V1 permanece o caminho padrão e plenamente funcional.
-2. A V2 nasce autenticada dentro de `marketing-nuxt`, usando o mesmo casco.
-3. Primeiro, a V2 lê as projeções canônicas e compara resultado sem efeito externo.
-4. Cada escrita é liberada por capacidade/destino reutilizando o Action, comando,
+1. A V2 nasce autenticada dentro de `marketing-nuxt`, usando o mesmo casco.
+2. Primeiro, a V2 lê as projeções canônicas e compara resultado sem efeito externo.
+3. Cada escrita é liberada por capacidade/destino reutilizando o Action, comando,
    confirmação, receipt e idempotência atuais.
-5. Funcionalidade ainda não portada abre o fluxo atual no mesmo app; não desaparece.
-6. A flag/coorte seleciona experiência, nunca concede autorização.
-7. O kill switch volta para a V1 sem cancelar nem duplicar comandos em voo.
-8. A V1 só pode ser removida depois de a matriz abaixo estar verde e de a janela de
-   rollback terminar.
+4. Funcionalidade ainda não portada bloqueia o cutover; a V2 não oferece um atalho
+   permanente de volta à interface antiga.
+5. A seleção da experiência nunca concede autorização.
+6. O rollback volta ao artefato estável sem cancelar nem duplicar comandos em voo.
+7. Quando a matriz estiver verde, o corte pode substituir diretamente a interface
+   antiga; não há obrigação de manter V1 e V2 disponíveis ao operador em paralelo.
 
 ## Matriz de aceite do cutover
 
@@ -114,10 +114,10 @@ Todo PR da V2 deve declarar:
 
 - qual linha da matriz preserva ou expande;
 - quais rotas, contratos e efeitos externos toca;
-- qual fluxo atual continua disponível durante a convivência;
+- qual evidência impede regressão quando a fatia substituir o fluxo anterior;
 - se há nova capacidade teórica ou nova capacidade executável;
 - como provar que não houve ampliação de permissão;
-- como desligar a fatia sem perder rascunho, comando ou receipt;
+- como reverter o artefato sem perder rascunho, comando ou receipt;
 - evidência de lint, typecheck, testes, build e, quando visual, viewport mobile e
   desktop.
 
