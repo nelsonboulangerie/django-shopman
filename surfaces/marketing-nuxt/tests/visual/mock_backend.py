@@ -628,11 +628,15 @@ class Handler(BaseHTTPRequestHandler):
                     {"value": "production_finished", "label": "Lote concluído"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
-                # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos
-                # mexeria numa pílula a mais em cada baseline que já existe.
-                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
-                + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
-                + [{"value": "whatsapp", "label": "WhatsApp"}],
+                # A fixture de produto não pode esconder uma capacidade executável para
+                # preservar screenshots antigos. Plataforma desconectada continua visível
+                # com seu estado; quem limita a escolha é a allow-list do contrato.
+                "platforms": [
+                    {"value": "instagram", "label": "Instagram"},
+                    {"value": "facebook", "label": "Facebook"},
+                    {"value": "google_business", "label": "Google"},
+                    {"value": "whatsapp", "label": "WhatsApp"},
+                ],
                 "delivery_capabilities": [
                     {
                         "platform": "instagram",
@@ -691,7 +695,12 @@ class Handler(BaseHTTPRequestHandler):
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
                 "tags": [{"value": "clientes-da-casa", "label": "clientes da casa (1.999)"}],
                 "rfm_segments": [{"value": "champion", "label": "Campeões"}],
-                "offers": [],
+                "offers": [
+                    {
+                        "value": "hibisco-primavera",
+                        "label": "Hibisco Primavera · 15% OFF · PRIMAVERA15",
+                    }
+                ],
                 "shop_timezone": "America/Sao_Paulo",
             }})
             return
