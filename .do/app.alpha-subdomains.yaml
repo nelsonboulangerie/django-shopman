@@ -849,6 +849,12 @@ services:
     scope: RUN_TIME
     value: '/'
     type: GENERAL
+  # Runtime público do piloto: o /menu nasce do snapshot estrutural e converge
+  # preço/estoque/sessão pelo menu canônico. Desligar restaura o SSR monolítico.
+  - key: NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED
+    scope: RUN_TIME
+    value: 'true'
+    type: GENERAL
   # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
   # pedido veio deste BFF, para o IP gravado ser o do cliente e não o do Nitro.
   - key: NUXT_DJANGO_PROXY_SECRET

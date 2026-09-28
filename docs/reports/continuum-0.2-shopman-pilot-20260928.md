@@ -8,10 +8,10 @@ Branches: `codex/continuum-0.2-adversarial-20260927` (base),
 `codex/continuum-0.2-shadow-retry-20260928` (segunda amostra) e
 `codex/continuum-0.2-live-manual-canary-20260928` (canário HTTP manual)
 
-Escopo: WP-CS-0 parcial + WP-CS-1 no alpha, com endpoint candidato disponível para teste manual
+Escopo: WP-CS-0 parcial + WP-CS-1 + perfil público inicial do WP-CS-2 no Live de teste
 
-Estado de promoção: **segunda amostra de shadow aprovada; canário HTTP autorizado para teste direto
-do owner, sem consumidor Nuxt e sem mudança do menu canônico**
+Estado de promoção: **segunda amostra de shadow aprovada; endpoint e consumidor Nuxt autorizados
+em todo o `/menu` do Live de teste, com fallback monolítico preservado**
 
 ## Resultado
 
@@ -24,11 +24,16 @@ adiciona, ao lado dele:
   shadow, sem payload, sessão, SKU ou pessoa;
 - read model descartável e versionada do cardápio estrutural público;
 - snapshot CloudEvents validado pelo schema 0.2, com ETag forte e `If-None-Match`;
+- SSR do `/menu` a partir do quadro estrutural, seguido da projeção canônica de preço, estoque,
+  carrinho e preferências no cliente;
+- cache em memória revisionado, descarte de regressão, falha em equivocation e revalidação
+  condicional com polling de 30 s e jitter;
 - feature flags server-side e kill switch que não dependem de deploy de cliente.
 
-Não foram implementados runtime Nuxt, invalidate/SSE, patch, replay, personalização, dados
-protegidos, receipts, dependência cross-partition nem integração Backstage. CS-2 e CS-3
-permanecem fechados porque CS-1 ainda não produziu evidência de produção.
+Não foram implementados invalidate/SSE Continuum, patch, replay, projeções protegidas, receipts,
+dependência cross-partition nem integração Backstage. A personalização continua vindo da projeção
+canônica existente e nunca entra no snapshot público. O slice público do CS-2 está aberto; CS-3
+e as capabilities deliberadamente `no-go` permanecem fora deste piloto.
 
 ## Contrato público e audiência
 
@@ -125,14 +130,17 @@ falha fechada por limite, métricas estruturadas, orçamento quente, convergênc
 bulk update, queda antes do commit, perda do cache e rotação de epoch em restore. No seed de teste,
 o snapshot quente usa no máximo 2 queries e estritamente menos queries que o menu canônico.
 
-## Gate operacional do shadow
+## Decisão operacional do rollout
 
 Owner: **Storefront / Pablo Valentini**.
 
-Para promoção automática ou consumo amplo pelo cliente, a janela de evidência permanece em **24
-horas e 500 observações válidas**, valendo o requisito que terminar por último. Em 28/09/2026, o
-owner decidiu que essa janela não bloqueia o canário HTTP manual: o alpha ainda não foi divulgado e
-não teria tráfego orgânico capaz de produzir as 500 observações antes do próprio teste.
+Em 28/09/2026, o owner retirou a janela de **24 horas e 500 observações válidas** como pré-condição
+do rollout neste ambiente. O Live ainda é um ambiente de teste, não foi divulgado e não possui
+tráfego orgânico capaz de produzir a amostra antes do próprio uso que precisa ser validado. A
+experiência completa do piloto fica disponível para o teste do owner e para qualquer acesso
+ocasional, sob o aviso já existente de ambiente de teste.
+
+Os thresholds técnicos continuam sendo guardrails de regressão, mas não exigem volume mínimo:
 O avaliador falha fechado com qualquer linha correspondente malformada e exige:
 
 - zero divergência semântica e zero erro do shadow;
@@ -148,8 +156,8 @@ doctl apps logs APP_ID web --type run --no-prefix --tail 20000 \
   | python scripts/evaluate_continuum_shadow.py
 ```
 
-Falha aciona o rollback do snapshot e o kill switch se o próprio shadow afetar o caminho canônico.
-O canário HTTP manual não abre CS-2 nem autoriza um cliente a consumir o endpoint automaticamente.
+Falha aciona o rollback coordenado das flags Django/Nuxt; o `/menu` volta ao fetch monolítico. Se o
+shadow afetar o caminho canônico, o kill switch também é armado.
 
 ## Rollout no alpha
 
@@ -187,8 +195,15 @@ A segunda amostra ficou `ACTIVE` no deployment `d451542e-e60f-444d-bba0-5e926c24
 31 observações em 96,701 s: zero divergências, zero erros, p50 de 14,307 ms, p75 de 15,909 ms,
 p95 de 23,195 ms, p95 de 1 query e snapshot máximo de 33.265 bytes. Foram 30 cache hits e 1 miss.
 Todos os thresholds quantitativos passaram. Por decisão do owner em 28/09/2026, o próximo passo é
-ligar somente o endpoint candidato para teste direto no Live; o menu canônico e o cliente Nuxt
-continuam inalterados.
+ligar endpoint e consumidor Nuxt em todo o `/menu` do Live de teste. O snapshot entrega estrutura;
+o menu canônico continua sendo autoridade e converge preço, disponibilidade, carrinho e
+preferências antes de permitir compra.
+
+O consumidor Nuxt usa um BFF credentialless dedicado, sem encaminhar Cookie/Authorization nem
+aceitar query livre. Se o snapshot estiver desligado, inválido ou indisponível no SSR, a página
+volta ao fetch monolítico. Quando o snapshot está utilizável, os produtos e suas fotos aparecem no
+primeiro quadro; preço, disponibilidade e controles permanecem indisponíveis até o overlay
+canônico autorizado chegar. Revalidações posteriores preservam o quadro instalado.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts
@@ -207,7 +222,7 @@ O adapter reutiliza diretamente `message.schema.json`. A validação acima prova
 normativo versionado permanece íntegro; ela **não** significa que este adapter executou todos os
 vetores.
 
-## Gates ainda abertos
+## Escopo ainda não alegado
 
 Este documento não publica um manifest de conformance do deployment. A identidade efetiva de DB e
 cache precisa ser derivada e atestada no ambiente real, e o harness target-scoped ainda precisa
@@ -215,7 +230,8 @@ gerar um único `result_document` e `trace_evidence` para a unit consolidada. In
 estáticas ou apontar para traces inexistentes seria uma alegação de isolamento que a evidência não
 sustenta.
 
-Antes de promoção automática ou consumo amplo pelo cliente, ainda são obrigatórios:
+Antes de declarar conformance ampla da 0.2 ou levar o mecanismo além deste Live de teste, ainda são
+obrigatórios:
 
 1. janela de shadow em produção com p50/p75/p95, volume, queries, bytes, cache hit/miss e zero
    divergência silenciosa;
@@ -228,9 +244,9 @@ Antes de promoção automática ou consumo amplo pelo cliente, ainda são obriga
 5. rollback N/N-1 simultâneo com cliente N-1 restaurado de bfcache, service worker N-1, bytes
    candidate já no cache e operação N em voo; nenhum byte ou callback tardio pode reinstalar o
    candidate depois do kill switch;
-6. cumprir os thresholds quantitativos e a janela definidos acima;
+6. cumprir os thresholds quantitativos definidos acima em observações reais;
 7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
-Até esses itens existirem, a promoção automática pelo cliente permanece bloqueada. O shadow e o
-canário HTTP estrutural podem ficar ligados para validação manual do owner; o cliente/Nuxt e CS-2
-permanecem desligados.
+Esses itens não bloqueiam o piloto completo no Live de teste autorizado pelo owner. Eles bloqueiam
+somente alegações maiores: conformance completa, patches/replay, dados protegidos, receipts,
+integração Backstage e uso como padrão genérico fora deste cardápio.
