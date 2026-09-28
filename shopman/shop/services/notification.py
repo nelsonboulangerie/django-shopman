@@ -77,13 +77,18 @@ _IDENTITY_ABSENT = "absent"
 _IDENTITY_UNAVAILABLE = "unavailable"
 
 
-def send(order, template: str, **extra) -> None:
+def send(order, template: str, *, occurrence: str = "", **extra) -> None:
     """
     Schedule a notification for the order.
 
     Creates a Directive with topic="notification.send". The handler that
     processes the Directive resolves the adapter, builds context, and
     executes the configured fallback chain (for example, manychat → sms → email).
+
+    ``occurrence`` distingue avisos legítimos repetidos do MESMO tipo no mesmo
+    pedido (a segunda troca de data, a terceira edição): entra na chave de
+    dedupe (``…:<template>:<occurrence>``). Sem ele, o aviso é um por pedido —
+    o retry de quem chamou continua não mandando dois.
 
     ASYNC — does not block the request.
     """
@@ -101,6 +106,8 @@ def send(order, template: str, **extra) -> None:
 
     template = _canonical_template(template)
     dedupe_key = _dedupe_key(order, template)
+    if occurrence:
+        dedupe_key = f"{dedupe_key}:{occurrence}"
 
     payload = {
         "order_ref": order.ref,
@@ -756,7 +763,11 @@ def _build_context(order, payload: dict, template: str) -> dict:
     if order.total_q:
         # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
         # que o cliente recebe. O formatador da casa é um só.
-        context["order_total_display"] = f"R$ {format_money(order.total_q)}"
+        # O total que VALE: a encomenda editada no balcão (ou alterada no iFood)
+        # não fala mais pelo ``total_q`` selado.
+        from shopman.shop.services import order_composition
+
+        context["order_total_display"] = f"R$ {format_money(order_composition.effective_total_q(order))}"
 
     from shopman.shop.services import storefront_links
 
@@ -829,7 +840,7 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # frase que NUNCA fica vazia: sem o dado, entra a frase-padrão. É o que a deixa
     # caber no template aprovado do WhatsApp, que não aceita variável vazia
     # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
-    context["status_note"] = _status_note(order, template, reason)
+    context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
 
     # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
     # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
@@ -1020,13 +1031,18 @@ def _last_carrier_still_ahead(order) -> bool:
     return str(order.status) in _LAST_CARRIER_AHEAD[fulfillment_type]
 
 
-def _status_note(order, template: str, reason) -> str:
+def _status_note(order, template: str, reason, *, note=None) -> str:
     """A frase do pedido em ``{status_note}``, com a frase-padrão quando falta o dado.
 
     Preparo: a hora prevista, SEM ponto final (o ponto é do texto: o template da
     Meta não pode terminar em variável). Cancelado e não confirmado: o motivo.
+    Pedido atualizado: a frase que a edição montou no momento do gesto (o que
+    mudou, o total novo e a diferença — ``order_edit.customer_note``), que chega
+    pronta no payload porque o "antes" não está mais no pedido quando o aviso sai.
     """
     template = _canonical_template(template)
+    if template == "order_updated":
+        return str(note or "").strip() or "Os detalhes estão no acompanhamento"
     if template == "order_preparing":
         clock = _eta_clock(order)
         if clock:

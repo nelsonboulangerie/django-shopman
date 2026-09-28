@@ -2834,6 +2834,28 @@ def _resolve_delivery_fee(payload: dict) -> DeliveryFeeResolution:
     return resolution
 
 
+def resolve_delivery_fee(
+    *, address_structured: dict | None, address_text: str = "", merchandise_q: int, override_q=None,
+) -> DeliveryFeeResolution:
+    """A taxa de entrega pelo MESMO motor da venda, para quem não tem um carrinho do PDV.
+
+    É a porta da edição da encomenda (``order_edit``): a retirada que vira
+    entrega paga a taxa que a venda cobraria para aquele endereço — zona,
+    faixa de distância e frete grátis acima de um valor —, ou a exceção que o
+    operador assume (``override_q``). ``merchandise_q`` é o valor dos produtos,
+    que decide o frete grátis.
+    """
+    payload: dict = {
+        "fulfillment_type": "delivery",
+        "delivery_address_structured": dict(address_structured or {}),
+        "delivery_address": str(address_text or ""),
+        "items": [{"sku": "_merchandise", "qty": 1, "unit_price_q": max(0, int(merchandise_q or 0))}],
+    }
+    if override_q not in (None, ""):
+        payload["delivery_fee_override_q"] = override_q
+    return _compute_delivery_fee(payload)
+
+
 def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
     if _payload_fulfillment_type(payload) != "delivery":
         return DeliveryFeeResolution(fee_q=0)

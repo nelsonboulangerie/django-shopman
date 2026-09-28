@@ -130,7 +130,8 @@ export function usePosPreorderActions(options: {
     if (!detail || busy.value) return false;
     busy.value = true;
     const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.card.ref)}/reschedule/`;
-    const payload = { ...choice, base_revision: detail.revision, expected_actor_id: detail.actor_id };
+    // A revisão da DATA (`reschedule.revision`): é a que o reagendar confere.
+    const payload = { ...choice, base_revision: detail.reschedule.revision, expected_actor_id: detail.actor_id };
     try {
       const response = await action.call<PreorderRescheduleResponse>(path, {
         body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) },

@@ -297,6 +297,12 @@ A data combinada mudou (`services/reschedule`); quase sempre a pedido do cliente
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`sábado, 04/10, a partir das 9h` (campo `status_note`, nunca vazio)
 - Botão URL: `Acompanhar pedido`
 
+### `pedido_atualizado` — evento `order_updated` · ⚠️ RASCUNHO — aguardando revisão do dono (NÃO SUBMETER)
+A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, data ou observação. Quase sempre a pedido do cliente, por isso o tom de confirmação. O dono vai revisar a frase para casar com a linguagem dos demais templates (28/09/2026); até lá, nada vai para a Meta nem para o ManyChat.
+- Corpo: `Olá, {{1}}! Tudo certo: atualizamos o seu pedido {{2}}. {{3}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. Novo total R$ 42,00; devolvemos R$ 6,00 no seu cartão` (campo `status_note`, nunca vazio e sem ponto final)
+- Botão URL: `Acompanhar pedido`
+
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
@@ -445,6 +451,7 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
 | `preorder_reminder` | `pedido_agendado_lembrete` | Utility |
 | `order_rescheduled` | `pedido_nova_data` | Utility |
+| `order_updated` | `pedido_atualizado` (rascunho — não submeter) | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |

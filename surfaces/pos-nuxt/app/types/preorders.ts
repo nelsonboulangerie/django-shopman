@@ -102,6 +102,7 @@ export interface PreorderDetailResponse {
   hand_over: PreorderHandOver;
   cancel: PreorderCancel;
   reschedule: PreorderReschedule;
+  edit: PreorderEdit;
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
 }
@@ -141,6 +142,22 @@ export interface PreorderReschedule {
   slot: string;
   /** Os itens: a janela oferecível depende deles. */
   skus: string[];
+  /**
+   * A base do gesto: a revisão da DATA, que é a que o reagendar confere. A
+   * revisão geral do detalhe (`revision`) é outra, e mandá-la aqui fazia todo
+   * reagendamento pelo PDV voltar 409.
+   */
+  revision: string;
+}
+
+/** Editar pelo PDV — a régua do orquestrador (`order_edit.state_refusal`). */
+export interface PreorderEdit {
+  allowed: boolean;
+  block_reason: string;
+  /** A NFC-e já saiu: o caminho é cancelar e refazer, não editar. */
+  cancel_and_redo: boolean;
+  /** A base da gravação da edição (revisão `edit`). */
+  revision: string;
 }
 
 export interface PreorderRescheduleResponse {

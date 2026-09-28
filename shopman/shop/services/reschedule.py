@@ -84,8 +84,13 @@ class RescheduleResult:
     activated_now: bool = False
 
 
-def reschedule(order, *, date, slot, actor: str, reason: str = "") -> RescheduleResult:
-    """Troca a data/janela combinada do pedido, levando junto tudo que depende dela."""
+def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool = True) -> RescheduleResult:
+    """Troca a data/janela combinada do pedido, levando junto tudo que depende dela.
+
+    ``notify=False`` é para quem reagenda DENTRO de outra mudança e manda o
+    próprio aviso ao cliente (a edição da encomenda, ``order_edit``): um gesto,
+    uma mensagem.
+    """
     new_day = _parse_day(date)
     new_slot = str(slot or "").strip()
     reason = str(reason or "").strip()
@@ -152,7 +157,8 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "") -> Reschedule
         if reason:
             event_payload["reason"] = reason
         locked.emit_event(event_type=EVENT_TYPE, actor=actor, payload=event_payload)
-        _notify_customer(locked)
+        if notify:
+            _notify_customer(locked, occurrence=len(history))
 
     order.refresh_from_db()
     logger.info(
@@ -174,6 +180,19 @@ def _parse_day(value) -> date_type:
         return date_type.fromisoformat(str(value or "").strip())
     except ValueError:
         raise RescheduleRefused("Data inválida. Escolha uma data da lista.", code="invalid_date", field="date") from None
+
+
+def validate_choice(order, *, date, slot) -> tuple[date_type, str]:
+    """Confere uma data/janela nova sem gravar nada — a prévia da edição.
+
+    Mesmas réguas de :func:`reschedule` (estado, marketplace, data, janela);
+    o que depende de estoque e de preparo só se sabe ao gravar.
+    """
+    day = _parse_day(date)
+    new_slot = str(slot or "").strip()
+    _refuse_by_state(order)
+    _validate(order, day, new_slot)
+    return day, new_slot
 
 
 def state_refusal(order) -> str:
@@ -415,7 +434,7 @@ def _relink_production(order) -> None:
     queue_order_to_work_order_sync(order=order, event_type="")
 
 
-def _notify_customer(order) -> None:
+def _notify_customer(order, *, occurrence: int) -> None:
     from shopman.shop.notification_copy import CUSTOMER_COPY
 
     if CUSTOMER_NOTICE_TEMPLATE not in CUSTOMER_COPY:
@@ -426,7 +445,9 @@ def _notify_customer(order) -> None:
         return
     from shopman.shop.services import notification
 
-    notification.send(order, CUSTOMER_NOTICE_TEMPLATE)
+    # Um aviso POR troca: o dedupe de ``send`` é por pedido+aviso, e sem a
+    # ocorrência a segunda troca de data calava.
+    notification.send(order, CUSTOMER_NOTICE_TEMPLATE, occurrence=str(occurrence))
 
 
 # ── Leituras ─────────────────────────────────────────────────────────────────

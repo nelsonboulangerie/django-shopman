@@ -151,6 +151,7 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "order_cancelled": (*_CUSTOMER, *_ORDER),
     "preorder_reminder": (*_CUSTOMER, *_ORDER),
     "order_rescheduled": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "order_updated": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "fiscal_note_ready": _ORDER_BUTTON,
     "payment_requested": (*_CUSTOMER, *_ORDER_BUTTON),
     "payment_link_sent": (

@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
-from shopman.backstage.services.exceptions import OrderConflict, OrderError, RescheduleError
+from shopman.backstage.services.exceptions import OrderConflict, OrderEditError, OrderError, RescheduleError
 from shopman.shop.services import operator_orders
 from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -398,6 +398,38 @@ def reschedule_order(order, *, date, slot, reason: str, actor: str, expected_rev
             return reschedule_service.reschedule(locked, date=date, slot=slot, actor=actor, reason=reason)
         except reschedule_service.RescheduleRefused as exc:
             raise RescheduleError(exc.message, code=exc.code, field=exc.field) from exc
+
+
+def preview_order_edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None):
+    """A prévia da edição (``shop.services.order_edit.plan``): nada é gravado."""
+    from shopman.shop.services import order_edit
+
+    try:
+        return order_edit.plan(order, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule)
+    except order_edit.EditRefused as exc:
+        raise OrderEditError(exc.message, code=exc.code, field=exc.field) from exc
+
+
+def edit_order(
+    order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None,
+    expected_revision=None,
+):
+    """Edita a encomenda (``shop.services.order_edit``) sob a revisão que a tela leu."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import order_edit
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and operator_orders.operational_revision(locked, field="edit") != expected_revision:
+            raise OrderConflict("A encomenda mudou. Atualize a encomenda antes de salvar as alterações.")
+        try:
+            return order_edit.edit(
+                locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule,
+                actor=actor, approved_by=approved_by,
+            )
+        except order_edit.EditRefused as exc:
+            raise OrderEditError(exc.message, code=exc.code, field=exc.field) from exc
 
 
 def recent_history(*, limit: int = 20):

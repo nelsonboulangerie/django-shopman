@@ -46,6 +46,7 @@ WHATSAPP_EVENT_LABELS = {
     "order_cancelled": "Pedido cancelado",
     "preorder_reminder": "Lembrete da encomenda",
     "order_rescheduled": "Nova data da encomenda",
+    "order_updated": "Encomenda atualizada",
     "fiscal_note_ready": "Nota fiscal disponível",
     "payment_requested": "Pagamento solicitado",
     "payment_link_sent": "Link de pagamento enviado",

@@ -788,27 +788,79 @@ def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
 
 @dataclass(frozen=True)
 class PendingCashRefund:
-    """Um pedido cancelado cujo dinheiro ainda não saiu de nenhuma gaveta."""
+    """Dinheiro que ainda não saiu de nenhuma gaveta: venda cancelada ou encomenda reduzida."""
 
     order_ref: str
     amount_q: int
     intent_refs: tuple[str, ...]
-    cancelled_at: str  # ISO datetime, "" quando o pedido não guarda
+    cancelled_at: str  # ISO datetime, "" quando o pedido não guarda (ou não foi cancelado)
     customer_name: str
     channel_ref: str
+    #: ``"cancelled"`` (venda cancelada/devolvida, devolve tudo) ou ``"reduced"``
+    #: (encomenda editada que ficou mais barata, devolve a diferença).
+    reason: str = "cancelled"
+
+
+#: Status em que o pedido devolve TUDO o que entrou (a venda deixou de existir).
+_REFUND_ALL_STATUSES = frozenset({"cancelled", "returned"})
+
+
+def overpaid_q(order, *, payment_reads=None) -> int:
+    """Quanto entrou A MAIS do que o pedido vale agora — o que falta devolver.
+
+    Só existe no pedido editado que ficou mais barato (``order_composition``):
+    o dinheiro capturado passou do total efetivo. Venda cancelada/devolvida não
+    passa por aqui — ela devolve tudo. ``0`` quando não há o que devolver ou o
+    Payman não respondeu.
+    """
+    from shopman.shop.services import order_composition
+
+    if str(order.status) in _REFUND_ALL_STATUSES:
+        return 0
+    captured = captured_balance_q(order, payment_reads=payment_reads)
+    if captured is None:
+        return 0
+    return max(0, captured - order_composition.effective_total_q(order))
+
+
+def _held_refund_balance(intents) -> tuple[int, list[str]]:
+    from shopman.payman import PaymentService
+
+    refs = []
+    balance_q = 0
+    for intent in intents:
+        net = PaymentService.captured_total(intent.ref) - PaymentService.refunded_total(intent.ref)
+        if net > 0:
+            balance_q += net
+            refs.append(intent.ref)
+    return balance_q, refs
+
+
+def _customer_name(data: dict) -> str:
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    return str(data.get("customer_name") or customer.get("name") or "")
 
 
 def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashRefund]:
-    """Pedidos cancelados/devolvidos com dinheiro capturado e ainda não devolvido.
+    """Pedidos com dinheiro capturado que ainda precisa voltar para o cliente.
 
-    A pendência NÃO é uma tabela: é derivada de dois fatos que já existem
-    (status do pedido no Orderman, saldo capturado − estornado do intent em
-    dinheiro no Payman). Inventar estado para ela seria o segundo dono da mesma
-    pergunta. Dinheiro só: pix/cartão o gateway já devolveu no cancel.
+    Dois casos, os dois derivados de fatos que já existem — nunca uma tabela:
+
+    - **venda cancelada/devolvida**: status do pedido no Orderman + saldo
+      capturado − devolvido do intent em dinheiro no Payman. Devolve tudo.
+    - **encomenda reduzida** (``order_edit``): o pedido segue vivo, editado, e
+      o dinheiro capturado passou do total efetivo (:func:`overpaid_q`).
+      Devolve só a diferença, e só do dinheiro.
+
+    Inventar estado para ela seria o segundo dono da mesma pergunta. Dinheiro
+    só: pix/cartão o gateway devolve sozinho, e a maquininha tem a sua lista
+    (:func:`pending_card_machine_refunds`).
     """
+    from django.db.models import Q
     from shopman.orderman.models import Order
-    from shopman.payman import PaymentService
     from shopman.payman.models import PaymentIntent
+
+    from shopman.shop.services import order_composition
 
     intents = PaymentIntent.objects.filter(method="cash", gateway="", status__in={"captured", "refunded"}).order_by(
         "order_ref", "id"
@@ -818,19 +870,18 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
         by_order.setdefault(intent.order_ref, []).append(intent)
     if not by_order:
         return []
-    orders = Order.objects.filter(ref__in=list(by_order), status__in={"cancelled", "returned"})
+    orders = Order.objects.filter(ref__in=list(by_order)).filter(
+        Q(status__in=_REFUND_ALL_STATUSES) | Q(data__has_key=order_composition.KEY)
+    )
     if channel_ref:
         orders = orders.filter(channel_ref=channel_ref)
     pending: list[PendingCashRefund] = []
     for order in orders.order_by("updated_at"):
-        refs = []
-        balance_q = 0
-        for intent in by_order.get(order.ref, []):
-            captured = PaymentService.captured_total(intent.ref)
-            refunded = PaymentService.refunded_total(intent.ref)
-            if captured - refunded > 0:
-                balance_q += captured - refunded
-                refs.append(intent.ref)
+        balance_q, refs = _held_refund_balance(by_order.get(order.ref, []))
+        reason = "cancelled"
+        if str(order.status) not in _REFUND_ALL_STATUSES:
+            balance_q = min(balance_q, overpaid_q(order))
+            reason = "reduced"
         if balance_q <= 0:
             continue
         data = order.data or {}
@@ -840,11 +891,127 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
                 amount_q=balance_q,
                 intent_refs=tuple(refs),
                 cancelled_at=str(data.get("cancelled_at") or ""),
-                customer_name=str(data.get("customer_name") or ""),
+                customer_name=_customer_name(data),
+                channel_ref=order.channel_ref,
+                reason=reason,
+            )
+        )
+    return pending
+
+
+@dataclass(frozen=True)
+class PendingCardMachineRefund:
+    """Encomenda reduzida paga na maquininha do balcão: o estorno é feito NELA.
+
+    A maquininha é física e o sistema só atesta (``METHODS_WITHOUT_GATEWAY``):
+    a captura foi declarada pelo operador, e o estorno também é. A pendência
+    fica no *Precisa de você* até alguém estornar na maquininha e registrar
+    (:func:`record_card_machine_refund`).
+    """
+
+    order_ref: str
+    amount_q: int
+    method: str  # "credit" · "debit" · "external" · "pix"/"card" atestados no balcão
+    intent_refs: tuple[str, ...]
+    customer_name: str
+    channel_ref: str
+
+
+def _card_machine_intents(order_refs):
+    from shopman.payman.models import PaymentIntent
+
+    from shopman.shop.services.order_edit import ROUTE_CARD_MACHINE, refund_route
+
+    rows = (
+        PaymentIntent.objects.filter(order_ref__in=list(order_refs), status__in={"captured", "refunded"})
+        .exclude(method__in={"cash", "account"})
+        .order_by("order_ref", "id")
+    )
+    return [intent for intent in rows if refund_route(intent) == ROUTE_CARD_MACHINE]
+
+
+def pending_card_machine_refunds(*, channel_ref: str | None = None) -> list[PendingCardMachineRefund]:
+    """Encomendas reduzidas cuja diferença volta pela maquininha do balcão.
+
+    Derivada como a do dinheiro: pedido vivo e editado (``adjustment``), com
+    dinheiro capturado acima do total efetivo, pago na maquininha.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import order_composition
+
+    orders = Order.objects.filter(data__has_key=order_composition.KEY).exclude(status__in=_REFUND_ALL_STATUSES)
+    if channel_ref:
+        orders = orders.filter(channel_ref=channel_ref)
+    orders = list(orders.order_by("updated_at"))
+    if not orders:
+        return []
+    by_order: dict[str, list] = {}
+    for intent in _card_machine_intents({order.ref for order in orders}):
+        by_order.setdefault(intent.order_ref, []).append(intent)
+    pending: list[PendingCardMachineRefund] = []
+    for order in orders:
+        intents = by_order.get(order.ref) or []
+        if not intents:
+            continue
+        balance_q, refs = _held_refund_balance(intents)
+        amount_q = min(balance_q, overpaid_q(order))
+        if amount_q <= 0:
+            continue
+        pending.append(
+            PendingCardMachineRefund(
+                order_ref=order.ref,
+                amount_q=amount_q,
+                method=str(intents[-1].method or ""),
+                intent_refs=tuple(refs),
+                customer_name=_customer_name(order.data or {}),
                 channel_ref=order.channel_ref,
             )
         )
     return pending
+
+
+def record_card_machine_refund(order, *, actor, approved_by=None) -> int:
+    """O operador estornou na maquininha: o Payman registra o estorno declarado.
+
+    Mesmo dialeto da captura (atestada no balcão): não há gateway a chamar, o
+    fato é o papel da maquininha. Devolve o valor registrado (zero quando não
+    havia o que estornar). A pendência é derivada do saldo, então a segunda
+    chamada não encontra o que registrar.
+    """
+    from django.db import transaction as db_transaction
+    from shopman.payman.models import PaymentTransaction
+
+    intents = _card_machine_intents({order.ref})
+    remaining = overpaid_q(order)
+    if remaining <= 0 or not intents:
+        return 0
+    recorded = 0
+    with db_transaction.atomic():
+        for intent in reversed(intents):
+            if remaining <= 0:
+                break
+            take = min(_payman_refundable_amount(intent.ref) or 0, remaining)
+            if take <= 0:
+                continue
+            count = PaymentTransaction.objects.filter(intent__ref=intent.ref, type="refund").count()
+            key = f"card-machine-refund:{order.ref}:{intent.ref}:{count + 1}"
+            result = _refund_without_gateway(intent.ref, amount_q=take, idempotency_key=key)
+            if not result.success:
+                raise ValueError(result.message or "Não deu para registrar o estorno.")
+            recorded += take
+            remaining -= take
+        if recorded:
+            order.emit_event(
+                event_type="card_machine_refund_recorded",
+                actor=str(actor),
+                payload={
+                    "amount_q": recorded,
+                    "approved_by": approved_by.get_username() if hasattr(approved_by, "get_username") else "",
+                },
+            )
+    logger.info("payment.record_card_machine_refund: %s for order %s", recorded, order.ref)
+    return recorded
 
 
 def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancelamento") -> int:
@@ -864,6 +1031,7 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
     from shopman.cashman import Entry
     from shopman.cashman import services as cash_ledger
     from shopman.payman import PaymentService
+    from shopman.payman.models import PaymentTransaction
 
     if shift is None or not getattr(shift, "is_open", False):
         raise ValueError(f"Abra o caixa para devolver o dinheiro da venda {order.ref}.")
@@ -873,18 +1041,28 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
         for method, ref in _refundable_intents(order, payment_data=(order.data or {}).get("payment") or {})
         if method == "cash"
     ]
+    # Venda cancelada devolve tudo; encomenda viva (editada, mais barata)
+    # devolve só o que passou do total — nunca o dinheiro do que ela ainda vale.
+    limit_q = None if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
     with db_transaction.atomic():
         refunded_q = 0
         refunded_refs = []
         for intent_ref in cash_intents:
             balance_q = _payman_refundable_amount(intent_ref) or 0
+            if limit_q is not None:
+                balance_q = min(balance_q, limit_q - refunded_q)
             if balance_q <= 0:
                 continue
+            # A chave é por DEVOLUÇÃO: a encomenda reduzida devolve a diferença e,
+            # se depois for cancelada, devolve o resto — a mesma chave para as
+            # duas calaria a segunda. A primeira mantém a chave histórica.
+            prior = PaymentTransaction.objects.filter(intent__ref=intent_ref, type="refund").count()
+            gateway_id = f"cash-refund:{order.ref}:{intent_ref}" + (f":{prior + 1}" if prior else "")
             PaymentService.refund(
                 intent_ref,
                 amount_q=balance_q,
-                reason="order_cancelled",
-                gateway_id=f"cash-refund:{order.ref}:{intent_ref}",
+                reason="order_cancelled" if limit_q is None else "order_edited",
+                gateway_id=gateway_id,
             )
             refunded_q += balance_q
             refunded_refs.append(intent_ref)

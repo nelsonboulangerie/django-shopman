@@ -127,6 +127,21 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
+    # A encomenda foi editada no balcão (``services/order_edit``): itens,
+    # recebimento, data ou observação. Quase sempre a pedido do cliente — tom de
+    # confirmação. ``{status_note}`` diz o que mudou, o total novo e o destino da
+    # diferença ("Saiu 1 Baguete e entrou 1 Croissant. Novo total R$ 42,00;
+    # devolvemos R$ 6,00 no seu cartão"), SEM ponto final.
+    # ⚠️ RASCUNHO (28/09/2026): o dono vai revisar a frase para casar com os
+    # demais avisos antes de o template ir para a Meta.
+    "order_updated": {
+        "subject": "Pedido {order_ref_short} atualizado",
+        "body": (
+            "Oi{customer_name_greeting}! Tudo certo: atualizamos seu pedido *{order_ref_short}*. "
+            "{status_note}. Qualquer dúvida, estamos à disposição. 💛\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
     "fiscal_note_ready": {
         "subject": "Nota fiscal do pedido {order_ref_short}",
         "body": "A nota fiscal do pedido *{order_ref_short}* está disponível: {danfe_url}{fiscal_test_note}",

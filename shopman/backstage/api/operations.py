@@ -1726,6 +1726,9 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
                 code = getattr(exc, "code", "")
                 if code:
                     body["code"] = code
+                    # O mesmo código onde as telas de operador o procuram
+                    # (``httpErrorCode`` lê ``error.code``).
+                    body["error"] = {"code": code, "message": str(exc)}
                 return body, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
@@ -2218,6 +2221,183 @@ class OrderRescheduleView(_OrderActionBase):
                 "to_date": result.to_date, "to_slot": result.to_slot, "activated_now": result.activated_now}
 
         return self._context_response(request, order, "reschedule", {"date": day, "slot": slot, "reason": reason}, execute)
+
+
+def _order_edit_inputs(request) -> tuple[dict | None, Response | None]:
+    """O corpo da edição: só o que veio muda; o que não veio fica como está."""
+    data = request.data
+    inputs: dict = {"lines": None, "notes": None, "fulfillment": None, "schedule": None}
+    if "items" in data:
+        if not isinstance(data.get("items"), list):
+            return None, Response({"detail": "Lista de itens inválida.", "field": "items",
+                "errors": {"items": ["Lista de itens inválida."]}}, status=400)
+        inputs["lines"] = data.get("items")
+    if "notes" in data:
+        if data.get("notes") is not None and not isinstance(data.get("notes"), str):
+            return None, Response({"detail": "Observação inválida.", "field": "notes",
+                "errors": {"notes": ["Observação inválida."]}}, status=400)
+        inputs["notes"] = data.get("notes") or ""
+    if data.get("fulfillment") is not None:
+        if not isinstance(data.get("fulfillment"), dict):
+            return None, Response({"detail": "Recebimento inválido.", "field": "fulfillment",
+                "errors": {"fulfillment": ["Recebimento inválido."]}}, status=400)
+        inputs["fulfillment"] = data.get("fulfillment")
+    if "date" in data or "slot" in data:
+        inputs["schedule"] = {"date": data.get("date"), "slot": data.get("slot")}
+    return inputs, None
+
+
+def _order_edit_preview_data(order, result) -> dict:
+    """A prévia no formato da tela: novo total, diferença e o que acontece com ela."""
+    new_lines = set(result.new_line_ids)
+    return {
+        "changed": result.changed,
+        "items_changed": result.items_changed,
+        "items": [
+            {
+                "line_id": item["line_id"],
+                "sku": item["sku"],
+                "name": item["name"],
+                "qty": item["qty"],
+                "unit_price_q": item["unit_price_q"],
+                "line_total_q": item["line_total_q"],
+                "is_new": item["line_id"] in new_lines,
+                "is_delivery_fee": (item.get("meta") or {}).get("type") == "delivery_fee",
+            }
+            for item in result.items
+        ],
+        "previous_total_q": result.previous_total_q,
+        "total_q": result.total_q,
+        "difference_q": result.difference_q,
+        "diff": result.diff,
+        "notes": {"before": result.notes_before, "after": result.notes_after, "changed": result.notes_changed},
+        "fulfillment": {
+            "before": result.fulfillment_before,
+            "after": result.fulfillment_after,
+            "changed": result.fulfillment_changed,
+            "delivery_address": result.delivery_address_after,
+            "delivery_fee_before_q": result.delivery_fee_before_q,
+            "delivery_fee_after_q": result.delivery_fee_after_q,
+        },
+        "schedule": {"changed": result.schedule_changed, "date": result.date_after, "slot": result.slot_after},
+        "settlement": {
+            "kind": result.settlement.kind,
+            "amount_q": result.settlement.amount_q,
+            "method": result.settlement.method,
+        },
+        "balance_before_q": result.balance_before_q,
+        "balance_after_q": result.balance_after_q,
+        "requires_manager_approval": result.requires_manager_approval,
+        "customer_note": result.customer_note,
+    }
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Preview an order edit (items, notes, receiving, date): new total, difference and what happens to it",
+        responses={
+            200: OpenApiResponse(description="Preview — nothing is written."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+        },
+    ),
+)
+class OrderEditPreviewView(APIView):
+    """A prévia de ``OrderEditView``: o que muda, o total novo e o destino da diferença.
+
+    Mesmo corpo da edição, nada gravado. Devolve também a ``base_revision``
+    que a gravação deve mandar (a revisão ``edit`` do pedido lido agora).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        inputs, err = _order_edit_inputs(request)
+        if err:
+            return err
+        try:
+            result = orders_service.preview_order_edit(order, **inputs)
+        except OrderError as exc:
+            code = getattr(exc, "code", "")
+            field = getattr(exc, "field", "")
+            body = {"detail": str(exc), "code": code, "error": {"code": code, "message": str(exc)}}
+            if field:
+                body.update({"field": field, "errors": {field: [str(exc)]}})
+            return Response(body, status=400)
+        return Response({
+            "ok": True,
+            "ref": order.ref,
+            "base_revision": operator_orders.operational_revision(order, field="edit"),
+            "preview": _order_edit_preview_data(order, result),
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Edit an order in place: final item list, notes, receiving and date — the difference goes back by the same payment method",
+        responses={
+            200: OpenApiResponse(description="Order edited (or nothing to change)."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code} — nothing changed."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class OrderEditView(_OrderActionBase):
+    """Editar a encomenda no próprio pedido — ``shop.services.order_edit``.
+
+    ``POST {items?, notes?, fulfillment?, date?, slot?, manager_approval?,
+    base_revision, expected_actor_id, idempotency_key}``. ``base_revision`` é a
+    revisão ``edit`` (da prévia ou do detalhe). Redução com dinheiro recebido
+    exige o PIN de um gerente (a régua do cancelamento de pedido pago): sem ele,
+    ``manager_approval_required``.
+    """
+
+    intention_operation = "edit"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs, err = _order_edit_inputs(request)
+        if err:
+            return err
+        prepared: dict = {}
+
+        def prepare():
+            try:
+                result = orders_service.preview_order_edit(order, **inputs)
+            except OrderError:
+                return None  # a recusa sai no dialeto da gravação, logo abaixo
+            if not result.requires_manager_approval:
+                return None
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_edit_refund",
+                    message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            return None
+
+        def execute(base):
+            result = orders_service.edit_order(
+                order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
+                expected_revision=base,
+            )
+            return {
+                "changed": result.plan.changed,
+                "revision": result.revision,
+                "preview": _order_edit_preview_data(order, result.plan),
+            }
+
+        return self._context_response(request, order, "edit", inputs, execute, prepare=prepare)
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -4420,6 +4600,41 @@ class POSChangeRequestCancelView(APIView):
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="cancel_change_request", executar=lambda: _executar(request_ref))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Record the refund made on the counter card machine for an order that got cheaper",
+        responses={200: OpenApiResponse(description="Card machine refund recorded.")},
+    ),
+)
+class POSCardMachineRefundView(APIView):
+    """O operador estornou na maquininha: registrar (encomenda que ficou mais barata).
+
+    O sistema não fala com a maquininha; a captura foi atestada e o estorno
+    também é. PIN de gerente, como a devolução em dinheiro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, order_ref: str):
+        def _executar(order_ref):
+            try:
+                recorded_q = pos_service.record_card_machine_refund(
+                    operator=request.user,
+                    order_ref=order_ref,
+                    manager_approval=request.data.get("manager_approval"),
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_card_machine_refund_failed user=%s", _actor(request), exc_info=True)
+                return _falha_do_caixa(exc, "Falha ao registrar o estorno.")
+            return Response({"ok": True, "refunded_q": recorded_q})
+
+        return _cash_idempotent(request, acao="card_machine_refund", executar=lambda: _executar(order_ref))
 
 
 @extend_schema_view(

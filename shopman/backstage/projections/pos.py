@@ -209,6 +209,26 @@ class POSPendingCashRefundProjection:
     amount_display: str
     customer_name: str
     cancelled_at: str  # ISO datetime, "" quando o pedido não guarda
+    # "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda editada
+    # que ficou mais barata: devolve a diferença). A tela diz qual é.
+    reason: str = "cancelled"
+    reason_label: str = "Venda cancelada"
+
+
+@dataclass(frozen=True)
+class POSPendingCardMachineRefundProjection:
+    """Encomenda reduzida paga na maquininha: o estorno é feito NA maquininha.
+
+    O sistema não fala com a maquininha (o cartão do balcão é atestado), então o
+    estorno também é: o operador estorna nela e toca "Estornei na maquininha", e
+    só então o Payman registra. Até lá a pendência fica no *Precisa de você*.
+    """
+
+    order_ref: str
+    amount_q: int
+    amount_display: str
+    customer_name: str
+    method_label: str  # "Crédito" · "Débito" · "Cartão"
 
 
 @dataclass(frozen=True)
@@ -240,6 +260,9 @@ class POSCashRuntimeProjection:
     # turno aberto do canal (não são "deste turno": são do caixa), porque quem
     # estiver com a gaveta aberta é quem vai devolver.
     pending_cash_refunds: tuple[POSPendingCashRefundProjection, ...] = ()
+    # Estornos a fazer na maquininha (encomenda paga no cartão do balcão que
+    # ficou mais barata). Como o dinheiro: do caixa, não deste turno.
+    pending_card_machine_refunds: tuple[POSPendingCardMachineRefundProjection, ...] = ()
     # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
     # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
     account_balances: tuple[POSAccountBalanceProjection, ...] = ()
@@ -2041,6 +2064,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
+        pending_card_machine_refunds=_pending_card_machine_refunds(cash_shift),
         account_balances=account_balances(),
         default_float_q=default_float_q,
         default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
@@ -2089,8 +2113,28 @@ def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, .
             amount_display=f"R$ {format_money(item.amount_q)}",
             customer_name=item.customer_name,
             cancelled_at=item.cancelled_at,
+            reason=item.reason,
+            reason_label="Encomenda ficou mais barata" if item.reason == "reduced" else "Venda cancelada",
         )
         for item in payment_service.pending_cash_refunds(channel_ref=cash_shift.terminal.channel_ref)
+    )
+
+
+_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito"}
+
+
+def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefundProjection, ...]:
+    from shopman.shop.services import payment as payment_service
+
+    return tuple(
+        POSPendingCardMachineRefundProjection(
+            order_ref=item.order_ref,
+            amount_q=item.amount_q,
+            amount_display=f"R$ {format_money(item.amount_q)}",
+            customer_name=item.customer_name,
+            method_label=_CARD_MACHINE_METHOD_LABELS.get(item.method, "Cartão"),
+        )
+        for item in payment_service.pending_card_machine_refunds(channel_ref=cash_shift.terminal.channel_ref)
     )
 
 

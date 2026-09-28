@@ -370,19 +370,6 @@ def _brl(value_q: int | None) -> str:
     return f"R$ {value_q / 100:.2f}".replace(".", ",")
 
 
-#: Enquanto o pedido está num destes, a mercadoria ainda está na casa e mexer em
-#: estoque e cozinha é mexer em coisa que existe. Depois que ele saiu
-#: (despachado, entregue) o pão foi junto com o entregador: creditar o estoque de
-#: volta inventaria pão que não está na prateleira. O AJUSTE continua valendo —
-#: o Gestor, as vias e o B.I. passam a mostrar o que a plataforma vai pagar —,
-#: mas o físico não se desfaz por evento.
-#:
-#: O conjunto mora em ``services.fiscal`` porque a mesma saída da mercadoria é a
-#: segunda condição do art. 35 do RICMS/PR para cancelar a NFC-e. Um fato
-#: físico, dois leitores — não dois conjuntos que um dia divergem.
-_GOODS_STILL_IN_THE_HOUSE = fiscal_service.GOODS_NOT_DISPATCHED
-
-
 def _patch_block_reason(order, *, fiscal_authorized: bool) -> str:
     """Por que este pedido NÃO pode ser reconciliado; ``""`` quando pode.
 
@@ -578,10 +565,11 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
 
     Chamada com o pedido travado, dentro da transação do chamador: se o estoque
     recusar no meio, nada fica meio feito e o evento segue sem ACK para o iFood
-    reentregar.
+    reentregar. O caminho (ajuste + estoque + cozinha) é o MESMO da edição pelo
+    balcão — ``order_edit.apply_final_items`` —, e aqui só mora o que é do iFood:
+    a lista e o total vêm do pedido relido na plataforma.
     """
-    from shopman.shop.services import kds as kds_service
-    from shopman.shop.services import order_composition, stock
+    from shopman.shop.services import order_edit
 
     items = ifood_ingest.normalize_items(payload["items"])
     subtotal_q = sum(int(item["line_total_q"]) for item in items)
@@ -589,37 +577,14 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
     # (subtotal + entrega + taxas − benefícios), porque é o que a plataforma
     # paga. Sem ele (simulação de dev), o subtotal das linhas.
     total_q = int((payload.get("totals") or {}).get("order_amount_q") or 0) or subtotal_q
-
-    before = order_composition.effective_items(order)
-    previous_total_q = order_composition.effective_total_q(order)
-    previous_lines = kds_service.order_lines(order)
-
-    adjustment = order_composition.record(
-        order, items=items, total_q=total_q, source="ifood:ORDER_PATCHED", event_id=event_id,
+    return order_edit.apply_final_items(
+        order,
+        items=items,
+        total_q=total_q,
+        source="ifood:ORDER_PATCHED",
+        event_id=event_id,
+        stock_reference=f"ifood_patch:{order.ref}",
     )
-    data = dict(order.data or {})
-    data[order_composition.KEY] = adjustment
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
-
-    difference = order_composition.diff(before, order_composition.effective_items(order))
-    outcome = {
-        "revision": adjustment["revision"],
-        "total_q": total_q,
-        "previous_total_q": previous_total_q,
-        "diff": difference,
-    }
-    if order.status in _GOODS_STILL_IN_THE_HOUSE:
-        outcome["stock"] = stock.reconcile_to_items(
-            order, items=items, reference=f"ifood_patch:{order.ref}",
-        )
-        outcome["kds"] = kds_service.reconcile_to_lines(order, previous_lines=previous_lines)
-    else:
-        # A mercadoria já saiu com o entregador. O ajuste vale (é o que o iFood
-        # vai pagar), o físico não se desfaz por evento.
-        outcome["stock"] = {"skipped": "goods_left"}
-        outcome["kds"] = {"skipped": "goods_left"}
-    return outcome
 
 
 def _fiscal_authorized_explanation(order) -> str:
