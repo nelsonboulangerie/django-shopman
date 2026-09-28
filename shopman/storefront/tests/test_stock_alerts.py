@@ -1792,6 +1792,42 @@ def test_delivery_sla_command_alerts_with_counts_and_runbook():
     assert PHONE not in message
 
 
+def test_delivery_sla_backfills_critical_manager_incident_for_unknown_result():
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Permission
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.models import UserNotification
+
+    gestor = get_user_model().objects.create_user(
+        "gestor-stock-alert-recovery", password="x", is_staff=True, is_active=True
+    )
+    gestor.user_permissions.add(
+        Permission.objects.get(content_type__app_label="shop", codename="manage_orders")
+    )
+    sub = stock_alerts.subscribe("SKU-UNKNOWN-RECOVERY", phone=PHONE, adult_declared=True)
+    with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
+        stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-unknown-recovery")
+    delivery = StockAlertDelivery.objects.get()
+    delivery.status = StockAlertDelivery.Status.INDETERMINATE
+    delivery.last_error_code = "acceptance_unconfirmed"
+    delivery.save(update_fields=["status", "last_error_code", "updated_at"])
+    StockAlertDelivery.objects.filter(pk=delivery.pk).update(
+        updated_at=timezone.now() - timedelta(minutes=11)
+    )
+
+    with patch("shopman.shop.services.critical_alerts.enqueue"):
+        call_command("check_stock_alert_delivery_sla", minutes=10, stdout=StringIO())
+
+    incident = OperatorAlert.objects.get(type="stock_alert_dispatch_unknown")
+    assert incident.severity == "critical"
+    assert UserNotification.objects.filter(
+        user=gestor,
+        source_condition="stock_alert_delivery_incident",
+        severity="critical",
+    ).exists()
+
+
 def test_partial_failure_keeps_independent_receipts_and_same_occurrence():
     stock_alerts.subscribe("SKU-PARTIAL", phone=PHONE, adult_declared=True)
     stock_alerts.subscribe("SKU-PARTIAL", phone="+5543999990002", adult_declared=True)

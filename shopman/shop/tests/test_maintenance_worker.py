@@ -585,6 +585,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
         call("run_intent_pilot"),
         call("check_directive_health"),
+        call("check_stock_alert_delivery_sla"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por
         # estado, não um por ciclo) é do comando, não do worker.

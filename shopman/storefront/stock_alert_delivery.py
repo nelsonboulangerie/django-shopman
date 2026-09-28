@@ -279,7 +279,11 @@ def _alert_indeterminate(delivery_id: int) -> None:
             "Consulte o provedor antes de repetir; "
             f"delivery_ref={delivery.ref}; runbook=docs/runbooks/stock-alert-delivery.md"
         ),
-        dedupe_key=f"stock-alert:{delivery.ref}",
+        # Chave nova separa o incidente crítico dos warnings legados já
+        # gravados antes deste tratamento. Uma entrega incerta gera uma página,
+        # não uma a cada ciclo do reconciliador.
+        dedupe_key=f"stock-alert-critical:{delivery.ref}",
+        debounce_minutes=365 * 24 * 60,
     )
     if alert is None:
         return
