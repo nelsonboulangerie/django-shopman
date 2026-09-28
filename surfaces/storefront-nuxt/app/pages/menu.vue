@@ -38,7 +38,7 @@ const continuum = continuumEnabled
 const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
 // Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
 // canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
-const canonicalOnServer = !continuumEnabled || !structureCatalog.value
+const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
 const {
   data,
   pending: canonicalPending,
@@ -47,7 +47,7 @@ const {
 } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
   server: canonicalOnServer,
-  lazy: !canonicalOnServer
+  lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
 

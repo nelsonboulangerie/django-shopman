@@ -67,6 +67,9 @@ export async function useContinuousProjection<TState> (
     {
       server: options.enabled,
       immediate: options.enabled,
+      // SSR entrega o snapshot completo; numa troca de rota no cliente a página
+      // monta primeiro e o snapshot chega nela, sem manter a tela anterior presa.
+      lazy: true,
       dedupe: 'defer'
     }
   )
