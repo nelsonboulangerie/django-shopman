@@ -1,0 +1,551 @@
+{
+  "snapshot_10": {
+    "specversion": "1.0",
+    "id": "evt_snapshot_10",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.snapshot.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:00Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/snapshotData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "snapshot",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000010"
+        },
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 125
+      },
+      "state": {
+        "entities": {
+          "alpha": {"label": "Alpha", "value": 1}
+        },
+        "order": ["alpha"]
+      },
+      "reset_reason": "bootstrap"
+    }
+  },
+  "patch_10_11": {
+    "specversion": "1.0",
+    "id": "evt_patch_10_11",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000010"
+        },
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 40
+      },
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {
+            "op": "replace",
+            "path": "/entities/alpha/value",
+            "value": 2
+          }
+        ]
+      }
+    }
+  },
+  "patch_10_11_replay": {
+    "specversion": "1.0",
+    "id": "evt_patch_10_11_replay_01",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:05:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "continuumreplayed": true,
+    "continuumoriginalid": "evt_patch_10_11",
+    "continuumage": 300000,
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000010"
+        },
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 40
+      },
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {
+            "op": "replace",
+            "path": "/entities/alpha/value",
+            "value": 2
+          }
+        ]
+      }
+    }
+  },
+  "merge_patch_11_12": {
+    "specversion": "1.0",
+    "id": "evt_merge_patch_11_12",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:02Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000012"
+        },
+        "state_token": "t_state_12",
+        "state_digest": "sha256-jTR4vaZMy11GrlefjJ4Vod5XrG47QHZiMlwkrvD4Fgo"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 75
+      },
+      "patch": {
+        "media_type": "application/merge-patch+json",
+        "document": {
+          "entities": {
+            "alpha": {"label": "Alpha", "value": 3}
+          }
+        }
+      }
+    }
+  },
+  "invalidate_13": {
+    "specversion": "1.0",
+    "id": "evt_invalidate_13",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.invalidate.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:03Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/invalidateData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "invalidate",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "head": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000013"
+        },
+        "state_token": "t_state_13",
+        "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+      },
+      "reason": "data_changed"
+    }
+  },
+  "gap_20_floor_15": {
+    "specversion": "1.0",
+    "id": "evt_gap_20_floor_15",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.gap.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:10Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/gapData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "gap",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "head": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000020"
+        },
+        "state_token": "t_state_20",
+        "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+      },
+      "oldest_repairable_base": {
+        "epoch": "e_alpha",
+        "sequence": "00000000000000000015"
+      },
+      "reason": "retention"
+    }
+  },
+  "commit_accepted": {
+    "specversion": "1.0",
+    "id": "evt_commit_accepted_01",
+    "source": "urn:example:continuum:command-service",
+    "type": "continuum.command.receipt.v0.2",
+    "subject": "command/cmd_example_01",
+    "time": "2026-09-27T12:01:00Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/commitData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "commit",
+      "command": {
+        "command_id": "cmd_example_01",
+        "operation": "example.set-value",
+        "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+        "status": "accepted",
+        "receipt_revision": "00000000000000000001",
+        "receipt_token": "r_example_01_accepted",
+        "retry_for_ms": 86400000,
+        "observations": []
+      }
+    }
+  },
+  "commit_committed": {
+    "specversion": "1.0",
+    "id": "evt_commit_committed_01",
+    "source": "urn:example:continuum:command-service",
+    "type": "continuum.command.receipt.v0.2",
+    "subject": "command/cmd_example_01",
+    "time": "2026-09-27T12:01:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/commitData",
+    "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "commit",
+      "command": {
+        "command_id": "cmd_example_01",
+        "operation": "example.set-value",
+        "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+        "status": "committed",
+        "receipt_revision": "00000000000000000002",
+        "receipt_token": "r_example_01_committed",
+        "retry_for_ms": 86400000,
+        "observations": [
+          {
+            "stream_id": "s_example_public_list",
+            "cursor": {
+              "epoch": "e_alpha",
+              "sequence": "00000000000000000013"
+            },
+            "state_token": "t_state_13",
+            "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+          }
+        ],
+        "result": {"accepted_value": 4}
+      }
+    }
+  },
+  "commit_rejected": {
+    "specversion": "1.0",
+    "id": "evt_commit_rejected_02",
+    "source": "urn:example:continuum:command-service",
+    "type": "continuum.command.receipt.v0.2",
+    "subject": "command/cmd_example_02",
+    "time": "2026-09-27T12:01:02Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/commitData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "commit",
+      "command": {
+        "command_id": "cmd_example_02",
+        "operation": "example.set-value",
+        "request_fingerprint": "sha256-7bPbzpr72PBW2kSblWZ2fHVZjSPpH_GbaLHaNiq3XiQ",
+        "status": "rejected",
+        "receipt_revision": "00000000000000000001",
+        "receipt_token": "r_example_02_rejected",
+        "retry_for_ms": 86400000,
+        "observations": [],
+        "problem": {
+          "type": "https://problems.example.test/precondition-failed",
+          "title": "Precondition failed",
+          "status": 412,
+          "detail": "The expected state token is no longer current."
+        }
+      }
+    }
+  },
+  "commit_indeterminate": {
+    "specversion": "1.0",
+    "id": "evt_commit_indeterminate_03",
+    "source": "urn:example:continuum:command-service",
+    "type": "continuum.command.receipt.v0.2",
+    "subject": "command/cmd_example_03",
+    "time": "2026-09-27T12:01:03Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/commitData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "commit",
+      "command": {
+        "command_id": "cmd_example_03",
+        "operation": "example.set-value",
+        "request_fingerprint": "sha256-YYrxtPMyGXgf7MznBc1DgOOVr6VEvbq5SkzhH8boqHY",
+        "status": "indeterminate",
+        "receipt_revision": "00000000000000000002",
+        "receipt_token": "r_example_03_indeterminate",
+        "retry_for_ms": 86400000,
+        "observations": [],
+        "problem": {
+          "type": "https://problems.example.test/outcome-indeterminate",
+          "title": "Outcome requires operational resolution",
+          "status": 500
+        }
+      }
+    }
+  },
+  "snapshot_protected_10": {
+    "specversion": "1.0",
+    "id": "evt_snapshot_protected_10",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.snapshot.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:00Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/snapshotData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "snapshot",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "target": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000010"},
+        "state_token": "t_protected_10",
+        "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 0,
+        "age_ms": 0
+      },
+      "state": {"display_label": "Example protected account"},
+      "reset_reason": "bootstrap"
+    }
+  },
+  "snapshot_protected_11": {
+    "specversion": "1.0",
+    "id": "evt_snapshot_protected_11",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.snapshot.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/snapshotData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "snapshot",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "target": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000011"},
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "freshness": {"fresh_for_ms": 30000, "stale_if_error_ms": 0, "age_ms": 0},
+      "state": {"display_label": "Updated protected account"},
+      "reset_reason": "repair"
+    }
+  }
+,
+  "json_patch_11_12": {
+    "specversion": "1.0",
+    "id": "evt_json_patch_11_12",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:02Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000012"
+        },
+        "state_token": "t_state_12",
+        "state_digest": "sha256-jTR4vaZMy11GrlefjJ4Vod5XrG47QHZiMlwkrvD4Fgo"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 75
+      },
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {
+            "op": "replace",
+            "path": "/entities/alpha/value",
+            "value": 3
+          }
+        ]
+      }
+    }
+  },
+  "merge_patch_10_11": {
+    "specversion": "1.0",
+    "id": "evt_merge_patch_10_11",
+    "source": "urn:example:continuum:producer-a",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_public_list",
+    "time": "2026-09-27T12:00:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000010"
+        },
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_alpha",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 120000,
+        "age_ms": 40
+      },
+      "patch": {
+        "media_type": "application/merge-patch+json",
+        "document": {
+          "entities": {
+            "alpha": {
+              "label": "Alpha",
+              "value": 2
+            }
+          }
+        }
+      }
+    }
+  }
+}

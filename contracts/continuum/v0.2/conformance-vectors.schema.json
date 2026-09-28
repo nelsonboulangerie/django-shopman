@@ -1,0 +1,523 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.test/continuum/v0.2/conformance-vectors.schema.json",
+  "title": "Continuum 0.2 conformance vectors",
+  "type": "object",
+  "required": ["protocol_version", "fixture_file", "semantics", "vectors"],
+  "properties": {
+    "protocol_version": {"const": "0.2"},
+    "fixture_file": {"type": "string", "const": "examples.json"},
+    "semantics": {"type": "string", "minLength": 1},
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/vector"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "capability": {
+      "enum": [
+        "continuum.snapshot.v0.2",
+        "continuum.invalidate.v0.2",
+        "continuum.patch.json.v0.2",
+        "continuum.patch.merge.v0.2",
+        "continuum.replay.v0.2",
+        "continuum.command-receipt.v0.2"
+      ]
+    },
+    "deploymentProfile": {
+      "enum": ["protected-data"]
+    },
+    "cursor": {
+      "type": "object",
+      "required": ["epoch", "sequence"],
+      "properties": {
+        "epoch": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+        "sequence": {"type": "string", "pattern": "^[0-9]{20}$"}
+      },
+      "additionalProperties": false
+    },
+    "version": {
+      "type": "object",
+      "required": ["cursor", "state_token", "state_digest"],
+      "properties": {
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {"type": "string", "minLength": 1},
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dataState": {
+      "enum": ["absent", "fresh", "stale_usable", "stale_blocked", "invalid"]
+    },
+    "transportState": {
+      "enum": ["idle", "connecting", "live", "backoff", "closed"]
+    },
+    "reconcileState": {
+      "enum": ["idle", "repairing", "reset_required", "fatal"]
+    },
+    "commandState": {
+      "enum": [
+        "pending",
+        "accepted",
+        "committed",
+        "adjusted",
+        "rejected",
+        "indeterminate",
+        "unknown",
+        "invalid"
+      ]
+    },
+    "clientState": {
+      "type": "object",
+      "required": [
+        "security_generation",
+        "data_state",
+        "transport_state",
+        "reconcile_state"
+      ],
+      "properties": {
+        "security_generation": {"type": "string", "minLength": 1, "maxLength": 128},
+        "data_state": {"$ref": "#/$defs/dataState"},
+        "transport_state": {"$ref": "#/$defs/transportState"},
+        "reconcile_state": {"$ref": "#/$defs/reconcileState"},
+        "stream_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "projection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "partition": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "schema": {"type": "string", "format": "uri", "maxLength": 2048},
+        "classification": {
+          "enum": ["public", "tenant", "principal", "command"]
+        },
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        },
+        "representation_etag": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^\"[!#-~]*\"$"
+        },
+        "latest_head": {"$ref": "#/$defs/version"},
+        "state": {},
+        "command_states": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z0-9._~-]{1,256}$"},
+          "additionalProperties": {"$ref": "#/$defs/commandState"}
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"data_state": {"const": "absent"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["stream_id"]},
+                {"required": ["projection"]},
+                {"required": ["partition"]},
+                {"required": ["schema"]},
+                {"required": ["classification"]},
+                {"required": ["cursor"]},
+                {"required": ["state_token"]},
+                {"required": ["state_digest"]},
+                {"required": ["representation_etag"]},
+                {"required": ["latest_head"]},
+                {"required": ["state"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "data_state": {"enum": ["fresh", "stale_usable", "stale_blocked"]}
+            }
+          },
+          "then": {
+            "required": [
+              "stream_id",
+              "projection",
+              "partition",
+              "schema",
+              "classification",
+              "cursor",
+              "state_token",
+              "state_digest",
+              "state"
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "fatal"}}},
+          "then": {"properties": {"data_state": {"const": "invalid"}}}
+        },
+        {
+          "if": {"properties": {"data_state": {"const": "invalid"}}},
+          "then": {"properties": {"reconcile_state": {"const": "fatal"}}}
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "fatal"}}},
+          "then": {"properties": {"transport_state": {"const": "closed"}}}
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "reset_required"}}},
+          "then": {
+            "properties": {
+              "data_state": {"enum": ["absent", "stale_usable", "stale_blocked"]}
+            }
+          }
+        }
+      ]
+    },
+    "replacement": {
+      "type": "object",
+      "required": ["path", "value"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?:|(?:/(?:[^~/]|~[01])*)*)$"},
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "messageAction": {
+      "type": "object",
+      "required": ["op", "message_ref"],
+      "properties": {
+        "op": {
+          "enum": [
+            "deliver_http",
+            "deliver_stream",
+            "repair_result",
+            "canonical_poll_result"
+          ]
+        },
+        "message_ref": {"type": "string", "minLength": 1},
+        "replace": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/replacement"}
+        },
+        "captured_security_generation": {"type": "string", "minLength": 1},
+        "captured_repair_generation": {"type": "integer", "minimum": 0},
+        "representation_etag": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^\"[!#-~]*\"$"
+        },
+        "expected_semantic_violation": {
+          "enum": ["subject_stream_mismatch"]
+        },
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"op": {"const": "repair_result"}}, "required": ["op"]},
+          "then": {
+            "required": ["captured_security_generation", "captured_repair_generation"]
+          }
+        },
+        {
+          "if": {
+            "properties": {"op": {"const": "canonical_poll_result"}},
+            "required": ["op"]
+          },
+          "then": {"required": ["captured_security_generation"]}
+        }
+      ]
+    },
+    "advanceAction": {
+      "type": "object",
+      "required": ["op", "milliseconds"],
+      "properties": {
+        "op": {"const": "advance_monotonic_ms"},
+        "milliseconds": {"type": "integer", "minimum": 0},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "securityAction": {
+      "type": "object",
+      "required": ["op", "security_generation"],
+      "properties": {
+        "op": {"const": "security_generation_change"},
+        "security_generation": {"type": "string", "minLength": 1, "maxLength": 128},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "overflowAction": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {"const": "buffer_overflow"},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "transportAction": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "enum": [
+            "transport_connecting",
+            "transport_live",
+            "transport_backoff",
+            "transport_closed"
+          ]
+        },
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "revalidationAction": {
+      "type": "object",
+      "required": [
+        "op",
+        "authorized",
+        "etag",
+        "stream_id",
+        "cursor",
+        "state_token",
+        "state_digest",
+        "fresh_for_ms",
+        "stale_if_error_ms",
+        "age_ms",
+        "captured_security_generation",
+        "captured_repair_generation"
+      ],
+      "properties": {
+        "op": {"const": "validated_not_modified"},
+        "authorized": {"type": "boolean"},
+        "etag": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^\"[!#-~]*\"$"
+        },
+        "stream_id": {"type": "string", "minLength": 1},
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {"type": "string", "minLength": 1},
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        },
+        "fresh_for_ms": {"type": "integer", "minimum": 0},
+        "stale_if_error_ms": {"type": "integer", "minimum": 0},
+        "age_ms": {"type": "integer", "minimum": 0},
+        "captured_security_generation": {"type": "string", "minLength": 1},
+        "captured_repair_generation": {"type": "integer", "minimum": 0},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "commandAction": {
+      "type": "object",
+      "required": ["op", "command_id", "request_fingerprint", "request_body"],
+      "properties": {
+        "op": {"enum": ["submit_command", "retry_command"]},
+        "command_id": {"type": "string", "minLength": 1},
+        "request_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        },
+        "request_body": {},
+        "precondition": {},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "commandControlAction": {
+      "type": "object",
+      "required": ["op", "command_id"],
+      "properties": {
+        "op": {"enum": ["lose_response", "lookup_receipt"]},
+        "command_id": {"type": "string", "minLength": 1},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "oneOf": [
+        {"$ref": "#/$defs/messageAction"},
+        {"$ref": "#/$defs/advanceAction"},
+        {"$ref": "#/$defs/securityAction"},
+        {"$ref": "#/$defs/overflowAction"},
+        {"$ref": "#/$defs/transportAction"},
+        {"$ref": "#/$defs/revalidationAction"},
+        {"$ref": "#/$defs/commandAction"},
+        {"$ref": "#/$defs/commandControlAction"}
+      ]
+    },
+    "expected": {
+      "type": "object",
+      "required": ["data_state", "transport_state", "reconcile_state"],
+      "properties": {
+        "data_state": {"$ref": "#/$defs/dataState"},
+        "transport_state": {"$ref": "#/$defs/transportState"},
+        "reconcile_state": {"$ref": "#/$defs/reconcileState"},
+        "security_generation": {"type": "string", "minLength": 1},
+        "stream_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "projection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "partition": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "schema": {"type": "string", "format": "uri", "maxLength": 2048},
+        "classification": {
+          "enum": ["public", "tenant", "principal", "command"]
+        },
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        },
+        "representation_etag": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^\"[!#-~]*\"$"
+        },
+        "absent_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "/stream_id",
+              "/projection",
+              "/partition",
+              "/schema",
+              "/classification",
+              "/cursor",
+              "/state_token",
+              "/state_digest",
+              "/representation_etag",
+              "/latest_head",
+              "/state"
+            ]
+          }
+        },
+        "state": {},
+        "latest_head": {"$ref": "#/$defs/version"},
+        "purged": {"type": "boolean"},
+        "fatal_reason": {"type": "string"},
+        "receipt_http_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "effect_count": {"type": "integer", "minimum": 0},
+        "command_states": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z0-9._~-]{1,256}$"},
+          "additionalProperties": {"$ref": "#/$defs/commandState"}
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"data_state": {"const": "absent"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["stream_id"]},
+                {"required": ["projection"]},
+                {"required": ["partition"]},
+                {"required": ["schema"]},
+                {"required": ["classification"]},
+                {"required": ["cursor"]},
+                {"required": ["state_token"]},
+                {"required": ["state_digest"]},
+                {"required": ["representation_etag"]},
+                {"required": ["latest_head"]},
+                {"required": ["state"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "fatal"}}},
+          "then": {"properties": {"data_state": {"const": "invalid"}}}
+        },
+        {
+          "if": {"properties": {"data_state": {"const": "invalid"}}},
+          "then": {"properties": {"reconcile_state": {"const": "fatal"}}}
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "fatal"}}},
+          "then": {"properties": {"transport_state": {"const": "closed"}}}
+        },
+        {
+          "if": {"properties": {"reconcile_state": {"const": "reset_required"}}},
+          "then": {
+            "properties": {
+              "data_state": {"enum": ["absent", "stale_usable", "stale_blocked"]}
+            }
+          }
+        }
+      ]
+    },
+    "vector": {
+      "type": "object",
+      "required": ["id", "description", "capabilities", "initial", "actions", "expected"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,127}$"},
+        "description": {"type": "string", "minLength": 1},
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/capability"}
+        },
+        "requires_profiles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/deploymentProfile"}
+        },
+        "initial": {"$ref": "#/$defs/clientState"},
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/action"}
+        },
+        "expected": {"$ref": "#/$defs/expected"},
+        "notes": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

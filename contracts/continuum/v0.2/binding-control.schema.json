@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.test/continuum/v0.2/binding-control.schema.json",
+  "title": "Continuum 0.2 binding controls",
+  "oneOf": [
+    {"$ref": "#/$defs/ready"},
+    {"$ref": "#/$defs/caughtUp"},
+    {"$ref": "#/$defs/securityLease"}
+  ],
+  "$defs": {
+    "streamId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+    },
+    "stateToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+    },
+    "deliveryCursor": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,512}$"
+    },
+    "transportGenerationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,128}$"
+    },
+    "securityGenerationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{1,128}$"
+    },
+    "cursor": {
+      "type": "object",
+      "required": ["epoch", "sequence"],
+      "properties": {
+        "epoch": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+        "sequence": {"type": "string", "pattern": "^[0-9]{20}$"}
+      },
+      "additionalProperties": false
+    },
+    "version": {
+      "type": "object",
+      "required": ["cursor", "state_token", "state_digest"],
+      "properties": {
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {"$ref": "#/$defs/stateToken"},
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "manifestDigest": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+    },
+    "readyStream": {
+      "type": "object",
+      "required": ["stream_id", "schema", "head"],
+      "properties": {
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "schema": {"type": "string", "format": "uri", "maxLength": 2048},
+        "head": {"$ref": "#/$defs/version"}
+      },
+      "additionalProperties": false
+    },
+    "ready": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "subscription_id",
+        "delivery_cursor",
+        "transport_generation_id",
+        "subscription_manifest_digest",
+        "streams"
+      ],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "ready"},
+        "subscription_id": {"$ref": "#/$defs/subscriptionId"},
+        "delivery_cursor": {"$ref": "#/$defs/deliveryCursor"},
+        "transport_generation_id": {"$ref": "#/$defs/transportGenerationId"},
+        "subscription_manifest_digest": {"$ref": "#/$defs/manifestDigest"},
+        "streams": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/readyStream"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "caughtUpStream": {
+      "type": "object",
+      "required": ["stream_id", "schema", "head"],
+      "properties": {
+        "stream_id": {"$ref": "#/$defs/streamId"},
+        "schema": {"type": "string", "format": "uri", "maxLength": 2048},
+        "head": {"$ref": "#/$defs/version"}
+      },
+      "additionalProperties": false
+    },
+    "caughtUp": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "subscription_id",
+        "delivery_cursor",
+        "transport_generation_id",
+        "subscription_manifest_digest",
+        "streams"
+      ],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "caught_up"},
+        "subscription_id": {"$ref": "#/$defs/subscriptionId"},
+        "delivery_cursor": {"$ref": "#/$defs/deliveryCursor"},
+        "transport_generation_id": {"$ref": "#/$defs/transportGenerationId"},
+        "subscription_manifest_digest": {"$ref": "#/$defs/manifestDigest"},
+        "streams": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/caughtUpStream"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "securityLease": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "event",
+        "subscription_id",
+        "subscription_manifest_digest",
+        "security_generation_id",
+        "lease_revision",
+        "action",
+        "lease_for_ms"
+      ],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "security_generation"},
+        "event": {"const": "continuum-security-generation"},
+        "subscription_id": {"$ref": "#/$defs/subscriptionId"},
+        "subscription_manifest_digest": {"$ref": "#/$defs/manifestDigest"},
+        "security_generation_id": {"$ref": "#/$defs/securityGenerationId"},
+        "previous_subscription_id": {"$ref": "#/$defs/subscriptionId"},
+        "previous_security_generation_id": {"$ref": "#/$defs/securityGenerationId"},
+        "next_security_generation_id": {"$ref": "#/$defs/securityGenerationId"},
+        "lease_revision": {"type": "string", "pattern": "^[0-9]{20}$"},
+        "action": {"enum": ["grant", "renew", "reauthorize", "purge"]},
+        "lease_for_ms": {"type": "integer", "minimum": 0, "maximum": 2147483647}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["previous_security_generation_id"]},
+          "then": {"required": ["previous_subscription_id"]}
+        },
+        {
+          "if": {"required": ["previous_subscription_id"]},
+          "then": {"required": ["previous_security_generation_id"]}
+        },
+        {
+          "if": {"properties": {"action": {"const": "purge"}}, "required": ["action"]},
+          "then": {
+            "properties": {"lease_for_ms": {"const": 0}},
+            "not": {
+              "anyOf": [
+                {"required": ["previous_security_generation_id"]},
+                {"required": ["next_security_generation_id"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"action": {"const": "renew"}}, "required": ["action"]},
+          "then": {
+            "properties": {"lease_for_ms": {"minimum": 1}},
+            "not": {
+              "anyOf": [
+                {"required": ["previous_security_generation_id"]},
+                {"required": ["next_security_generation_id"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"action": {"const": "grant"}}, "required": ["action"]},
+          "then": {
+            "properties": {
+              "lease_for_ms": {"minimum": 1},
+              "lease_revision": {"const": "00000000000000000001"}
+            },
+            "not": {"required": ["next_security_generation_id"]}
+          }
+        },
+        {
+          "if": {
+            "properties": {"action": {"const": "reauthorize"}},
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["next_security_generation_id"],
+            "properties": {
+              "lease_for_ms": {"const": 0}
+            },
+            "not": {"required": ["previous_security_generation_id"]}
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

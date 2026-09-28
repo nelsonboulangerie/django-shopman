@@ -1,0 +1,460 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.test/continuum/v0.2/message.schema.json",
+  "title": "Continuum 0.2 CloudEvent message",
+  "description": "Normative wire envelope for projection snapshots, patches, invalidations, gaps, and command receipts.",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "subject",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "data"
+  ],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "source": {"type": "string", "format": "uri", "maxLength": 2048},
+    "type": {
+      "enum": [
+        "continuum.projection.snapshot.v0.2",
+        "continuum.projection.patch.v0.2",
+        "continuum.projection.invalidate.v0.2",
+        "continuum.projection.gap.v0.2",
+        "continuum.command.receipt.v0.2"
+      ]
+    },
+    "subject": {"type": "string", "minLength": 1, "maxLength": 512},
+    "time": {"type": "string", "format": "date-time"},
+    "datacontenttype": {"const": "application/json"},
+    "dataschema": {"type": "string", "format": "uri", "maxLength": 2048},
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-(?!00000000000000000000000000000000)[0-9a-f]{32}-(?!0000000000000000)[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "tracestate": {"type": "string", "maxLength": 512, "pattern": "^[ -~]*$"},
+    "continuumreplayed": {"const": true},
+    "continuumoriginalid": {"type": "string", "minLength": 1, "maxLength": 256},
+    "continuumage": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+    "data": {
+      "oneOf": [
+        {"$ref": "#/$defs/snapshotData"},
+        {"$ref": "#/$defs/patchData"},
+        {"$ref": "#/$defs/invalidateData"},
+        {"$ref": "#/$defs/gapData"},
+        {"$ref": "#/$defs/commitData"}
+      ]
+    }
+  },
+  "propertyNames": {
+    "pattern": "^[a-z0-9]{1,20}$"
+  },
+  "additionalProperties": {
+    "oneOf": [
+      {"type": "boolean"},
+      {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+      {"type": "string"}
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {"required": ["continuumreplayed"]},
+          {"required": ["continuumoriginalid"]},
+          {"required": ["continuumage"]}
+        ]
+      },
+      "then": {
+        "required": ["continuumreplayed", "continuumoriginalid", "continuumage"]
+      }
+    },
+    {
+      "if": {"properties": {"type": {"const": "continuum.projection.snapshot.v0.2"}}},
+      "then": {"properties": {"data": {"$ref": "#/$defs/snapshotData"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "continuum.projection.patch.v0.2"}}},
+      "then": {"properties": {"data": {"$ref": "#/$defs/patchData"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "continuum.projection.invalidate.v0.2"}}},
+      "then": {"properties": {"data": {"$ref": "#/$defs/invalidateData"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "continuum.projection.gap.v0.2"}}},
+      "then": {"properties": {"data": {"$ref": "#/$defs/gapData"}}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "continuum.command.receipt.v0.2"}}},
+      "then": {"properties": {"data": {"$ref": "#/$defs/commitData"}}}
+    }
+  ],
+  "$defs": {
+    "cursor": {
+      "type": "object",
+      "required": ["epoch", "sequence"],
+      "properties": {
+        "epoch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "sequence": {
+          "type": "string",
+          "pattern": "^[0-9]{20}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "version": {
+      "type": "object",
+      "required": ["cursor", "state_token", "state_digest"],
+      "properties": {
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stream": {
+      "type": "object",
+      "required": ["id", "projection", "partition", "schema", "classification"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "projection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "partition": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "schema": {"type": "string", "format": "uri", "maxLength": 2048},
+        "classification": {
+          "enum": ["public", "tenant", "principal", "command"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "freshness": {
+      "type": "object",
+      "required": ["fresh_for_ms", "stale_if_error_ms", "age_ms"],
+      "properties": {
+        "fresh_for_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "stale_if_error_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "age_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "allOf": [
+          {"pattern": "^[a-z][a-z0-9_.-]{0,63}$"},
+          {"not": {"enum": ["prototype", "constructor"]}}
+        ]
+      },
+      "additionalProperties": true
+    },
+    "snapshotData": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "stream", "target", "freshness", "state"],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "snapshot"},
+        "stream": {"$ref": "#/$defs/stream"},
+        "target": {"$ref": "#/$defs/version"},
+        "freshness": {"$ref": "#/$defs/freshness"},
+        "state": {},
+        "reset_reason": {
+          "enum": ["bootstrap", "repair", "epoch_changed"]
+        },
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "jsonPatchOperation": {
+      "type": "object",
+      "required": ["op", "path"],
+      "properties": {
+        "op": {"enum": ["add", "remove", "replace", "move", "copy", "test"]},
+        "path": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~/]|~[01])*)*$",
+          "maxLength": 2048
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~/]|~[01])*)*$",
+          "maxLength": 2048
+        },
+        "value": {}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"op": {"enum": ["move", "copy"]}}, "required": ["op"]},
+          "then": {"required": ["from"]}
+        },
+        {
+          "if": {
+            "properties": {"op": {"enum": ["add", "replace", "test"]}},
+            "required": ["op"]
+          },
+          "then": {"required": ["value"]}
+        }
+      ]
+    },
+    "jsonPatch": {
+      "type": "object",
+      "required": ["media_type", "document"],
+      "properties": {
+        "media_type": {"const": "application/json-patch+json"},
+        "document": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {"$ref": "#/$defs/jsonPatchOperation"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "mergePatch": {
+      "type": "object",
+      "required": ["media_type", "document"],
+      "properties": {
+        "media_type": {"const": "application/merge-patch+json"},
+        "document": {}
+      },
+      "additionalProperties": false
+    },
+    "patchData": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "stream",
+        "base",
+        "target",
+        "freshness",
+        "patch"
+      ],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "patch"},
+        "stream": {"$ref": "#/$defs/stream"},
+        "base": {"$ref": "#/$defs/version"},
+        "target": {"$ref": "#/$defs/version"},
+        "freshness": {"$ref": "#/$defs/freshness"},
+        "patch": {
+          "oneOf": [
+            {"$ref": "#/$defs/jsonPatch"},
+            {"$ref": "#/$defs/mergePatch"}
+          ]
+        },
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "invalidateData": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "stream", "head", "reason"],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "invalidate"},
+        "stream": {"$ref": "#/$defs/stream"},
+        "head": {"$ref": "#/$defs/version"},
+        "reason": {"enum": ["data_changed", "unknown"]},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "gapData": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "stream",
+        "head",
+        "oldest_repairable_base",
+        "reason"
+      ],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "gap"},
+        "stream": {"$ref": "#/$defs/stream"},
+        "head": {"$ref": "#/$defs/version"},
+        "oldest_repairable_base": {"$ref": "#/$defs/cursor"},
+        "reason": {
+          "enum": [
+            "retention",
+            "overflow",
+            "epoch_changed",
+            "unknown"
+          ]
+        },
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": ["stream_id", "cursor", "state_token", "state_digest"],
+      "properties": {
+        "stream_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "cursor": {"$ref": "#/$defs/cursor"},
+        "state_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "state_digest": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "problem": {
+      "type": "object",
+      "required": ["type", "title", "status"],
+      "properties": {
+        "type": {"type": "string", "format": "uri-reference", "maxLength": 2048},
+        "title": {"type": "string", "minLength": 1, "maxLength": 512},
+        "status": {"type": "integer", "minimum": 400, "maximum": 599},
+        "detail": {"type": "string", "maxLength": 4096},
+        "instance": {"type": "string", "format": "uri-reference", "maxLength": 2048}
+      },
+      "propertyNames": {
+        "not": {"enum": ["__proto__", "prototype", "constructor"]}
+      },
+      "additionalProperties": true
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "operation",
+        "request_fingerprint",
+        "status",
+        "receipt_revision",
+        "receipt_token",
+        "retry_for_ms",
+        "observations"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "request_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9_-]{43}$"
+        },
+        "status": {
+          "enum": ["accepted", "committed", "adjusted", "rejected", "indeterminate"]
+        },
+        "receipt_revision": {
+          "type": "string",
+          "pattern": "^[0-9]{20}$"
+        },
+        "receipt_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{1,256}$"
+        },
+        "retry_for_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "observations": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/observation"}
+        },
+        "result": {},
+        "problem": {"$ref": "#/$defs/problem"}
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "status": {"const": "accepted"},
+            "observations": {"maxItems": 0}
+          },
+          "required": ["status"],
+          "not": {"anyOf": [{"required": ["result"]}, {"required": ["problem"]}]}
+        },
+        {
+          "properties": {"status": {"const": "committed"}},
+          "required": ["status"],
+          "not": {"required": ["problem"]}
+        },
+        {
+          "properties": {"status": {"const": "adjusted"}},
+          "required": ["status", "result"],
+          "not": {"required": ["problem"]}
+        },
+        {
+          "properties": {
+            "status": {"const": "rejected"},
+            "observations": {"maxItems": 0}
+          },
+          "required": ["status", "problem"],
+          "not": {"required": ["result"]}
+        },
+        {
+          "properties": {
+            "status": {"const": "indeterminate"},
+            "observations": {"maxItems": 0}
+          },
+          "required": ["status", "problem"],
+          "not": {"required": ["result"]}
+        }
+      ]
+    },
+    "commitData": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "command"],
+      "properties": {
+        "protocol_version": {"const": "0.2"},
+        "kind": {"const": "commit"},
+        "command": {"$ref": "#/$defs/command"},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    }
+  }
+}
