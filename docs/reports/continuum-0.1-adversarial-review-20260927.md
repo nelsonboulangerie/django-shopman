@@ -5,8 +5,9 @@
 [WP de SSR/SSE](../plans/WP-PROGRESSIVE-SSR-SSE-CONTINUITY.md)\
 **Resultado:** a hipótese de produto permanece útil; o protocolo 0.1 não está pronto para
 implementação\
-**Recomendação:** **no-go** para patches, replay e commitment frames no piloto; **go** apenas
-para medição, read model público em shadow mode e snapshots condicionais/invalidações
+**Recomendação:** **no-go** para patches, replay e commitment frames; **go** para medição,
+read model público em shadow mode e snapshot condicional depois da equivalência; **go
+condicional** para invalidação + refetch após os gates de auth/cache/race/limites
 
 ---
 
@@ -55,18 +56,18 @@ consistência, event store, CRDT, protocolo de transporte ou mecanismo de cache.
 
 | Antecedente | O que já fornece | Lacuna que o perfil pode preencher |
 |---|---|---|
-| [CloudEvents 1.0.2](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) | Envelope, identidade `source + id`, tipo, subject, schema e binding | Semântica de partição/epoch, instalação de estado, freshness, repair e commit |
+| [CloudEvents 1.0.2](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) + [JSON Event Format](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/formats/json-format.md) | Envelope estruturado, identidade `source + id`, tipo, subject e schema | Semântica de partição/epoch, instalação de estado, freshness, repair e commit |
 | [RFC 8895](https://datatracker.ietf.org/doc/html/rfc8895) | SSE com full replacement, JSON Patch/Merge Patch, capabilities, dependências, recovery, keepalive e limites | Perfil genérico fora de ALTO, cursor semântico, freshness, privacidade e recibo de comando |
 | [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) / [RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396) | Formatos de patch JSON | Base/result version, dedupe, replay, autorização e convergência |
 | [HTTP Semantics](https://datatracker.ietf.org/doc/html/rfc9110) / [Caching](https://datatracker.ietf.org/doc/html/rfc9111) | ETag, condicionais, cache, precondições e status | Continuidade entre snapshot, fluxo e repair |
 | [WHATWG SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) | Fluxo servidor→cliente, reconexão e `Last-Event-ID` | Journal, ACK de aplicação, retenção, gap, schema e backpressure |
 | [Mercure](https://mercure.rocks/spec) | Tópicos SSE, updates completos/parciais, replay e refetch após perda | Estado formal do consumidor, cursor de estado, freshness e commit |
 | [OData Delta 4.01](https://docs.oasis-open.org/odata/odata/v4.01/os/part1-protocol/odata-v4.01-os-part1-protocol.html) | Token opaco ligado à consulta, páginas ordenadas, novo delta link e `410 Gone` para reset | Push, UI state, cache policy e comando |
-| [Braid-HTTP draft](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-braid-http) | Versions, parents, snapshots, patches e subscriptions | É mais amplo e multiwriter; o caso de projeção autoritativa não precisa de DAG/CRDT |
+| [Braid-HTTP individual draft -04, expirado](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-braid-http-04) | Versions, parents, snapshots, patches e subscriptions | É mais amplo e multiwriter; o caso de projeção autoritativa não precisa de DAG/CRDT |
 | [GraphQL `@defer`/`@stream` draft](https://github.com/graphql/graphql-wg/blob/main/rfcs/DeferStream.md) | Entrega incremental curta de uma única execução | Atualização contínua, reconexão, replay e repair |
 | [CQRS](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs) / [Materialized View](https://learn.microsoft.com/en-us/azure/architecture/patterns/materialized-view) | Separação read/write e view descartável otimizada | Contrato de instalação e reparação da view no consumidor |
 | [RSocket](https://github.com/rsocket/rsocket/blob/master/Protocol.md) / [gRPC flow control](https://grpc.io/docs/guides/flow-control/) | Crédito/flow control, cancelamento e, no RSocket, resume | Semântica da projeção e política de cache/freshness |
-| [CRDTs](https://inria.hal.science/inria-00555588/document) | Convergência multiwriter sob propriedades algébricas específicas | Não se aplica a patch arbitrário ou a comando autoritativo |
+| [CRDTs](https://inria.hal.science/inria-00555588) | Convergência multiwriter sob propriedades algébricas específicas | Não se aplica a patch arbitrário ou a comando autoritativo |
 
 O antecedente mais embaraçoso para uma alegação de novidade é a RFC 8895. Ela discute inclusive
 o custo de manter replay para `Last-Event-ID`, o risco de memória com eventos SSE grandes, a
@@ -127,9 +128,9 @@ padrão e recomenda precondição forte quando o formato depende de uma base.
 Logo, o documento de patch não é a unidade idempotente. A **transição** é duplicate-safe:
 
 ```text
-stream + epoch + base(sequence, state_token)
+stream + epoch + base(sequence, state_token, state_digest)
   -- patch atômico -->
-stream + epoch + target(sequence, state_token)
+stream + epoch + target(sequence, state_token, state_digest)
 ```
 
 O consumidor só aplica se seu estado coincide exatamente com `base`. Se já está em `target`,
@@ -180,9 +181,9 @@ fora de ordem não podem adotar “o último a terminar”.
 ### 3.6 Compactação não pode ficar aberta
 
 Um journal finito deve declarar retention floor, tamanho/tempo máximo, política de tombstones,
-limite da cadeia de deltas e resposta a cursor expirado. OData fornece precedente simples: token
-inválido ou expirado recebe `410 Gone` e referência para refetch integral. Retry infinito não é
-repair.
+limite da cadeia de deltas e resposta a cursor expirado. OData fornece precedente simples: delta
+link que deixou de ser válido recebe `410 Gone` e referência para refetch integral. Retry infinito
+não é repair.
 
 Salto numérico também não prova perda. Coalescing, filtragem e compactação podem pular posições.
 Um patch declara sua base; uma invalidação provoca refetch; o consumidor não inventa semântica a
@@ -195,8 +196,8 @@ compactação ou mudar de epoch. Mesmo satisfeita, “A ≥ 7 e B ≥ 9” não 
 estado que existiu junto.
 
 A 0.2 remove dependências arbitrárias do núcleo. Quando várias partes exigem coerência atômica,
-o produtor deve colocá-las no mesmo stream ou entregar um bundle de snapshots obtido no mesmo
-corte. Consistência causal/multi-partição fica fora do perfil inicial.
+o produtor deve colocá-las no mesmo stream. Bundle atômico cross-stream fica fora da 0.2 até ter
+wire, algoritmo e vetores próprios.
 
 ---
 
@@ -213,10 +214,13 @@ corte. Consistência causal/multi-partição fica fora do perfil inicial.
 - o que ocorre se a resposta se perder;
 - quando o read model refletirá o efeito.
 
-Um recibo correto exige chave no escopo `(authority, tenant, principal, operation, command_id)`,
-fingerprint da request e persistência do efeito + resultado na mesma transação. Mesmo ID e mesmo
-fingerprint devolvem o recibo original; mesmo ID e fingerprint diferente é conflito. Após timeout
-ambíguo, o estado é `unknown` e o cliente consulta o recibo — não deduz sucesso de SSE.
+Um recibo correto exige chave no escopo
+`(authority, environment, tenant, principal, operation, command_id)`,
+fingerprint da request e fronteira atômica. Efeito local persiste mutação + terminal junto;
+efeito externo atomiza aceitação/reserva/outbox e só depois atomiza prova/mutação final/terminal.
+Mesmo ID e mesmo fingerprint devolvem a revisão durável; mesmo ID e fingerprint diferente é
+conflito. Após timeout ambíguo, o estado é `unknown` e o cliente consulta o recibo — não deduz
+sucesso de SSE.
 
 ### 4.2 Read-your-writes precisa de fence
 
@@ -240,10 +244,11 @@ A máquina `empty → usable → converging/repairing/committing/unavailable` mi
 coexistir. O modelo precisa de regiões independentes:
 
 ```text
-data       absent | fresh | stale_usable | stale_blocked | invalid
-sync       idle | connecting | live | repairing | backoff | reset_required | fatal
-commands   command_id -> pending | accepted | committed | adjusted | rejected | unknown
-security   generation atual do principal/tenant/audiência
+data        absent | fresh | stale_usable | stale_blocked | invalid
+transport   idle | connecting | live | backoff | closed
+reconcile   idle | repairing | reset_required | fatal
+commands    command_id -> pending | accepted | committed | adjusted | rejected | indeterminate | unknown | invalid
+security    generation + authorization fence + lease deadline
 ```
 
 “Utilizável nunca volta a vazio” é preferência de UX, não invariante de segurança. Logout, troca
@@ -251,7 +256,8 @@ de tenant/principal, revogação, hard expiry e corrupção devem apagar ou bloq
 
 `generated_at` serve a observabilidade, não à ordem nem à validade. Relógios divergem. Freshness
 deve usar durações conservadoras descontadas da idade informada pelo servidor/cache e relógio
-monotônico local. Heartbeat prova somente que bytes chegaram; não renova freshness do estado.
+monotônico sleep-inclusive ou elapsed conservador em que wall clock só encurta. Heartbeat prova
+somente que bytes chegaram; não renova freshness do estado.
 
 Offline não autoriza fila de comandos. A 0.2 permite reapresentar snapshot dentro da política do
 domínio, mas uma capability separada seria necessária para journal local, conflito e replay de
@@ -327,7 +333,8 @@ como `__proto__`, `prototype` e `constructor`. Payload é dado, nunca HTML/scrip
 
 `specversion` é a versão de CloudEvents, não do Continuum. O payload precisa de versão de
 protocolo e `dataschema` imutável. Patch só atravessa estados com o mesmo schema e epoch. Mudança
-breaking, canonicalização incompatível ou restauração do sequenciador gera novo epoch + snapshot.
+breaking de schema-major ou canonicalização incompatível gera novo stream + snapshot; restauração
+do sequenciador que perde continuidade dentro da mesma identidade gera novo epoch + snapshot.
 
 Rollout blue/green precisa manter N-1 por mais tempo que abas antigas, bfcache e service worker.
 Endpoint/media type deve ser versionado; workers mistos não podem publicar schemas diferentes no
