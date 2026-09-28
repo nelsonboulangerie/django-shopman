@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NuxtError } from '#app'
-import type { HomeResponse } from '~/types/shopman'
+import type { ShellResponse } from '~/types/shopman'
 
 const props = defineProps<{ error: NuxtError }>()
 
@@ -13,12 +13,12 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 // app (mesma `key` ⇒ reaproveita o cache quando o erro é lançado depois do app já ter
 // carregado). Se a própria API caiu, o fetch falha em silêncio e degradamos para
 // neutro/sem CTA — aceitável só no pior caso.
-const { data: shellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
+const { data: shellState } = await useFetch<ShellResponse>(apiPath('/api/v1/storefront/shell/'), {
   credentials: 'include',
   headers: requestHeaders,
-  key: 'shopman-shell-home'
+  key: 'shopman-shell'
 })
-watch(() => shellHome.value, value => session.setFromHome(value?.home), { immediate: true })
+watch(() => shellState.value, value => session.setFromHome(value?.shell), { immediate: true })
 
 useShopTheme(session.shop)
 

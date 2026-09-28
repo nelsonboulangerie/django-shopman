@@ -155,10 +155,33 @@ def availability_dates(max_preorder_days: int) -> tuple[tuple[str, ...], tuple[i
         return (), ()
 
 
+def customer_checkout_defaults(customer_ref: str, channel_ref: str) -> dict:
+    """Preferências lembradas pelo checkout, no read-side canônico.
+
+    A apresentação não importa serviços de mutação diretamente. Falha de
+    conveniência degrada para vazio: nunca impede comprar.
+    """
+    if not customer_ref:
+        return {}
+    try:
+        from shopman.shop.services.checkout_defaults import CheckoutDefaultsService
+
+        return CheckoutDefaultsService.get_defaults(customer_ref, channel_ref)
+    except Exception:
+        logger.debug(
+            "checkout_projection_customer_defaults_failed customer=%s channel=%s",
+            customer_ref,
+            channel_ref,
+            exc_info=True,
+        )
+        return {}
+
+
 __all__ = [
     "RepricingChangeProjection",
     "StockShortfallProjection",
     "availability_dates",
     "cart_stock_shortfalls",
+    "customer_checkout_defaults",
     "repricing_changes",
 ]

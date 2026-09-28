@@ -36,6 +36,6 @@ def backwards(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0081_order_updated_notification_template")]
+    dependencies = [("shop", "0082_access_link_button_copy")]
 
     operations = [migrations.RunPython(forwards, backwards)]

@@ -53,7 +53,7 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 
 const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
-  { credentials: 'include', headers: requestHeaders }
+  { credentials: 'include', headers: requestHeaders, lazy: true }
 )
 
 const tracking = computed(() => data.value || null)

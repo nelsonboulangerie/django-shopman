@@ -41,4 +41,25 @@ describe("tela de venda em modo edição", () => {
     expect(page).toContain("if (editing.value) return; // a edição sai por Salvar ou Descartar");
     expect(page).toContain("Na edição, a encomenda continua encomenda.");
   });
+
+  it("desconto e observação de item e troca de cliente saem da tela, com a frase do porquê", () => {
+    expect(page).toContain(':line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"');
+    expect(page).toContain(':customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"');
+    expect(page).toContain('@customer-locked="(reason: string) => toast.info(reason)"');
+  });
+
+  it("o CPF da entrega é pedido na caixa de Salvar alterações", () => {
+    expect(page).toContain('v-model:delivery-tax-id="editTaxId"');
+    expect(page).toContain(':needs-tax-id="editNeedsTaxId"');
+  });
+});
+
+describe("cancelar e refazer", () => {
+  it("/?redo=<ref> abre a comanda comum pré-montada, com a trava da gaveta, e limpa a URL", () => {
+    expect(page).toContain('const redoRef = String(useRoute().query.redo || "").trim();');
+    expect(page).toContain("else if (redoRef) void openRedoTab(redoRef);");
+    expect(page).toContain("/redo-tab/`");
+    expect(page).toContain("await drawerLock.guard(() => loadPreparedTab(response.tab));");
+    expect(page).toContain('void router.replace({ path: "/", query: {} });');
+  });
 });

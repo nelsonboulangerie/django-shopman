@@ -345,6 +345,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   têm um nome só nos nove apps e a lista do que já foi decidido e não se reabre — em
   [docs/reference/suite-vocabulary.md](docs/reference/suite-vocabulary.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
+- **Copy sem travessão**: nenhum texto visível ao usuário usa travessão, especialmente o travessão longo (`—`). Reescreva com ponto, vírgula, dois-pontos ou parênteses, conforme o sentido. A regra vale para defaults, fallbacks, seeds, migrações de dados, notificações e textos configuráveis.
 - **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
   as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
   `scripts/check_surface_versions.py` (`make test-surface-versions`, job no

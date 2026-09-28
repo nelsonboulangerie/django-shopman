@@ -8,25 +8,63 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
+import {
+  catalogFromStructureSnapshot,
+  continuumFeatureEnabled,
+  isCatalogStructureSnapshot,
+  installCatalogStructureSnapshot
+} from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogStructureState } from '~/types/continuum'
+import type { CatalogResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
-const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 const router = useRouter()
 const session = useShopSession()
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
-const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
-  credentials: 'include'
+const runtimeConfig = useRuntimeConfig()
+const continuumEnabled = continuumFeatureEnabled(runtimeConfig.public.continuumCatalogEnabled)
+const continuum = continuumEnabled
+  ? await useContinuousProjection<CatalogStructureState>({
+      key: 'storefront-menu-continuum-v0.2',
+      path: '/api/v1/storefront/continuum/v0.2/catalog-structure/',
+      enabled: true,
+      accepts: isCatalogStructureSnapshot,
+      install: installCatalogStructureSnapshot,
+      pollMs: 30_000
+    })
+  : null
+const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
+// Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
+// canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
+const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
+const {
+  data,
+  pending: canonicalPending,
+  error: canonicalError,
+  refresh: refreshCanonical
+} = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
+  credentials: 'include',
+  server: canonicalOnServer,
+  lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
 
-requireContentOnSsr(error.value, !!data.value?.catalog, 'Cardápio')
+const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
+const pending = computed(() => !catalog.value && (canonicalPending.value || continuum?.pending.value))
+const error = computed(() => !catalog.value ? (canonicalError.value || continuum?.error.value) : null)
+const continuumPending = computed(() => !!structureCatalog.value && !data.value?.catalog)
+const continuumFailed = computed(() => continuumPending.value && !!canonicalError.value)
 
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
+async function refresh () {
+  await Promise.all([
+    continuum?.refresh(),
+    refreshCanonical()
+  ])
+}
+
+requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
 
 const route = useRoute()
 const activeSection = ref('all')
@@ -36,7 +74,6 @@ const appliedFilterKeys = ref<string[]>([])
 // com aviso dietético, de forma transparente e reversível (contador de ocultos).
 const dietaryFilterOn = ref(false)
 
-const catalog = computed(() => data.value?.catalog || null)
 const sections = computed(() => catalog.value?.sections || [])
 const allItems = computed(() => catalog.value?.items || [])
 const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
@@ -82,6 +119,7 @@ const activeSectionCount = computed(() => {
 })
 const menuFocusLabel = computed(() => {
   if (pending.value) return 'Carregando o cardápio.'
+  if (continuumPending.value) return 'Cardápio aberto. Confirmando preços e disponibilidade.'
   const count = formatCount(activeSectionCount.value, 'item encontrado', 'itens encontrados')
   if (hasAppliedFilters.value) return `${count} no filtro ativo.`
   if (activeSection.value !== 'all') return `${count} em ${activeSectionLabel.value}.`
@@ -216,7 +254,17 @@ let programmaticScrollRef = ''
 let programmaticScrollUntil = 0
 let lastCenteredPillRef = ''
 let pageScrollTarget: ShopScrollTarget | null = null
+let canonicalRefreshTimer: ReturnType<typeof setTimeout> | undefined
 const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 1_800
+
+function scheduleCanonicalRefresh () {
+  if (!import.meta.client || !continuumEnabled) return
+  const delay = Math.round(30_000 * (0.9 + Math.random() * 0.2))
+  canonicalRefreshTimer = setTimeout(async () => {
+    if (document.visibilityState === 'visible') await refreshCanonical()
+    scheduleCanonicalRefresh()
+  }, delay)
+}
 
 function holdActiveSection (ref: string) {
   programmaticScrollRef = ref
@@ -340,6 +388,7 @@ onMounted(() => {
   pageScrollTarget.addEventListener('touchstart', cancelProgrammaticScroll, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
+  scheduleCanonicalRefresh()
   queueActiveSectionSync()
 })
 
@@ -352,6 +401,7 @@ onBeforeUnmount(() => {
   pageScrollTarget = null
   window.removeEventListener('resize', updatePillRailTailWidth)
   window.removeEventListener('resize', queueActiveSectionSync)
+  if (canonicalRefreshTimer) clearTimeout(canonicalRefreshTimer)
   if (scrollRaf) window.cancelAnimationFrame(scrollRaf)
 })
 
@@ -500,6 +550,21 @@ useHead({
         </UiAlert>
 
         <template v-else-if="catalog">
+          <UiAlert
+            v-if="continuumPending"
+            :variant="continuumFailed ? 'warning' : 'info'"
+            :icon="continuumFailed ? 'lucide:refresh-cw' : 'lucide:loader-circle'"
+            data-continuum-catalog-status
+          >
+            <UiAlertTitle>{{ continuumFailed ? 'A vitrine está aberta' : 'Confirmando o cardápio' }}</UiAlertTitle>
+            <UiAlertDescription>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{{ continuumFailed ? 'Os produtos já estão visíveis, mas preços e disponibilidade precisam ser consultados novamente.' : 'Preços, disponibilidade e sua sacola chegam logo em seguida.' }}</span>
+                <UiButton v-if="continuumFailed" size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
+              </div>
+            </UiAlertDescription>
+          </UiAlert>
+
           <UiAlert v-if="catalog.happy_hour?.active" variant="warning" icon="lucide:badge-percent">
             <UiAlertTitle>Happy hour ativo</UiAlertTitle>
             <UiAlertDescription>{{ catalog.happy_hour.discount_percent }}% de desconto aplicado no cardápio.</UiAlertDescription>
@@ -547,6 +612,7 @@ useHead({
                     v-for="item in section.items"
                     :key="`${section.ref}-${item.sku}`"
                     :item="item"
+                    :pending="continuumPending"
                     framed
                     class="border-b"
                   />

@@ -1,6 +1,6 @@
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DeliveryPaymentMethod } from "~/presentation/orderEdit";
-import { needsDeliveryPaymentMethod, orderEditBody } from "~/presentation/orderEdit";
+import { needsDeliveryPaymentMethod, needsDeliveryTaxId, orderEditBody } from "~/presentation/orderEdit";
 import type {
   OrderEditContext,
   OrderEditPreview,
@@ -33,6 +33,13 @@ export function usePosOrderEdit() {
   /** O servidor pediu como o entregador recebe o que falta (retirada → entrega). */
   const needsPaymentMethod = ref(false);
   const deliveryPaymentMethod = ref<DeliveryPaymentMethod | "">("");
+  /**
+   * O servidor pediu o CPF/CNPJ da entrega com nota (regra de 24/09): a caixa de
+   * "Salvar alterações" pede ali mesmo, com a mesma conferência da venda. O
+   * cadastro do cliente só empresta o valor inicial — o operador vê e confirma.
+   */
+  const needsTaxId = ref(false);
+  const deliveryTaxId = ref("");
   const managerChallenge = ref<{ code: string; message: string } | null>(null);
 
   const editing = computed(() => Boolean(context.value));
@@ -67,7 +74,21 @@ export function usePosOrderEdit() {
   }
 
   function body(intent: Record<string, unknown>) {
-    return orderEditBody(intent, context.value!.original, { deliveryPaymentMethod: deliveryPaymentMethod.value });
+    return orderEditBody(intent, context.value!.original, {
+      deliveryPaymentMethod: deliveryPaymentMethod.value,
+      deliveryTaxId: needsTaxId.value ? deliveryTaxId.value : "",
+    });
+  }
+
+  /** A recusa pede um dado que a própria caixa colhe? Abre o campo dele. */
+  function askForMissing(code: string, intent: Record<string, unknown>) {
+    if (needsDeliveryPaymentMethod(code)) needsPaymentMethod.value = true;
+    if (needsDeliveryTaxId(code)) {
+      if (!needsTaxId.value && !deliveryTaxId.value) {
+        deliveryTaxId.value = String(intent.fiscal_tax_id || intent.customer_tax_id || "").replace(/\D/g, "");
+      }
+      needsTaxId.value = true;
+    }
   }
 
   /** A prévia: o que muda, o total novo e o destino da diferença. Nada é gravado. */
@@ -86,8 +107,7 @@ export function usePosOrderEdit() {
       return true;
     } catch (err) {
       preview.value = null;
-      const code = httpErrorCode(err);
-      if (needsDeliveryPaymentMethod(code)) needsPaymentMethod.value = true;
+      askForMissing(httpErrorCode(err), intent);
       error.value = `${httpErrorMessage(err, "Não deu para calcular as alterações.")} Nada foi gravado: corrija na venda e tente de novo.`;
       return false;
     } finally {
@@ -125,7 +145,7 @@ export function usePosOrderEdit() {
         return null;
       }
       managerChallenge.value = null;
-      if (needsDeliveryPaymentMethod(code)) needsPaymentMethod.value = true;
+      askForMissing(code, intent);
       error.value = `${httpErrorMessage(err, "Não deu para salvar as alterações.")} Nada foi gravado: confira a encomenda e tente de novo.`;
       return null;
     } finally {
@@ -145,12 +165,14 @@ export function usePosOrderEdit() {
     error.value = "";
     needsPaymentMethod.value = false;
     deliveryPaymentMethod.value = "";
+    needsTaxId.value = false;
+    deliveryTaxId.value = "";
     managerChallenge.value = null;
     lastAttempt = null;
   }
 
   return {
-    context, preview, reviewOpen, busy, error, needsPaymentMethod, deliveryPaymentMethod, managerChallenge,
-    editing, orderRef, start, review, confirm, closeReview, reset,
+    context, preview, reviewOpen, busy, error, needsPaymentMethod, deliveryPaymentMethod, needsTaxId, deliveryTaxId,
+    managerChallenge, editing, orderRef, start, review, confirm, closeReview, reset,
   };
 }

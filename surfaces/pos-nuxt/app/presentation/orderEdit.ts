@@ -10,8 +10,11 @@ import type { OrderEditOriginal, OrderEditPreview } from "~/types/preorders";
 
 export type DeliveryPaymentMethod = "cash" | "debit" | "credit";
 
+/** O que o operador tinha em mãos para a peça pesada (etiqueta ou peso). */
+export type OrderEditWeighed = { entry: "label"; label_q: number } | { entry: "weight"; weight_g: number };
+
 export interface OrderEditBody {
-  items: { line_id: string; sku: string; qty: number | string }[];
+  items: { line_id: string; sku: string; qty: number | string; weighed?: OrderEditWeighed }[];
   notes?: string;
   fulfillment?: {
     type: "pickup" | "delivery";
@@ -37,6 +40,18 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function digits(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\D/g, "") : "";
+}
+
+function weighedOf(raw: unknown): OrderEditWeighed | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (value.entry === "label" && Number(value.label_q) > 0) return { entry: "label", label_q: Number(value.label_q) };
+  if (value.entry === "weight" && Number(value.weight_g) > 0) return { entry: "weight", weight_g: Number(value.weight_g) };
+  return null;
+}
+
 /**
  * O corpo de "Salvar alterações" a partir da intenção da comanda virtual.
  *
@@ -48,24 +63,31 @@ function text(value: unknown): string {
 export function orderEditBody(
   intent: Record<string, unknown>,
   original: OrderEditOriginal,
-  options: { deliveryPaymentMethod?: DeliveryPaymentMethod | "" } = {},
+  options: { deliveryPaymentMethod?: DeliveryPaymentMethod | ""; deliveryTaxId?: string } = {},
 ): OrderEditBody {
   const rawItems = Array.isArray(intent.items) ? (intent.items as Record<string, unknown>[]) : [];
   const body: OrderEditBody = {
-    items: rawItems.map((item) => ({
-      line_id: String(item.line_id ?? ""),
-      sku: String(item.sku ?? ""),
-      qty: item.qty as number | string,
-    })),
+    items: rawItems.map((item) => {
+      // A peça pesada NOVA entra pela etiqueta (ou pelo peso), como na venda; a
+      // que já estava o servidor reconhece pelo `line_id` e mantém a vendida.
+      const weighed = weighedOf(item.weighed);
+      return {
+        line_id: String(item.line_id ?? ""),
+        sku: String(item.sku ?? ""),
+        qty: item.qty as number | string,
+        ...(weighed ? { weighed } : {}),
+      };
+    }),
   };
 
   const notes = text(intent.order_notes);
   if (notes !== text(original.order_notes)) body.notes = notes;
 
   const type = intent.fulfillment_type === "delivery" ? "delivery" : "pickup";
-  // O CPF da nota da entrega: o pedido na nota, senão o do cadastro do cliente
-  // (F6) — na edição não há a tela de pagamento onde o "CPF na nota" mora.
-  const taxId = text(intent.fiscal_tax_id) || text(intent.customer_tax_id);
+  // O CPF da nota da entrega: o que o operador digitou em "Salvar alterações"
+  // (o servidor pediu), senão o que o pedido já tem. Nunca o cadastro calado:
+  // na venda o cadastro só EMPRESTA o valor inicial, e o operador vê.
+  const taxId = digits(options.deliveryTaxId) || text(intent.fiscal_tax_id);
   const override = typeof intent.delivery_fee_override_q === "number" ? intent.delivery_fee_override_q : null;
   const originalOverride = typeof original.delivery_fee_override_q === "number" ? original.delivery_fee_override_q : null;
   const receivingChanged = type !== original.fulfillment_type
@@ -139,6 +161,26 @@ export function orderEditSettlementLine(
 export function needsDeliveryPaymentMethod(code: string): boolean {
   return code === "delivery_payment_method_required";
 }
+
+/**
+ * A recusa que pede o CPF/CNPJ da entrega com nota (regra de 24/09). O pedido
+ * sai ali mesmo, na caixa de "Salvar alterações" — não em outra tela.
+ */
+export function needsDeliveryTaxId(code: string): boolean {
+  return code === "delivery_tax_id_required" || code === "delivery_tax_id_invalid";
+}
+
+/**
+ * Por que desconto e observação de item não aparecem na edição: o serviço de
+ * edição não os grava (o que já estava mantém o preço vendido, o que entra sai
+ * pelo catálogo), e gesto que não grava é tela mentindo.
+ */
+export const ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED =
+  "Na edição da encomenda não há desconto nem observação por item: o que já estava mantém o preço vendido, e o que entra sai pelo preço do catálogo. Desconto é numa venda nova: cancele e refaça a encomenda.";
+
+/** Por que o cliente não troca na edição: a encomenda é dele (aviso, acompanhamento). */
+export const ORDER_EDIT_CUSTOMER_LOCKED =
+  "O cliente da encomenda não muda na edição. Para trocar o cliente, cancele e refaça a encomenda.";
 
 export const DELIVERY_PAYMENT_METHODS: readonly { key: DeliveryPaymentMethod; label: string }[] = [
   { key: "cash", label: "Dinheiro" },

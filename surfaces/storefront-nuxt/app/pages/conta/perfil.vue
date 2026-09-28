@@ -37,7 +37,8 @@ function validateProfile (): boolean {
 
 const { data: profile, pending } = await useFetch<AccountProfile>(apiPath('/api/v1/account/profile/'), {
   credentials: 'include',
-  headers: requestHeaders
+  headers: requestHeaders,
+  lazy: true
 })
 
 // Labels e textos vêm do registro omotenashi (configurável no Admin), com fallback

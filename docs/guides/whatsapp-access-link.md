@@ -29,9 +29,12 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 4. O create libera a aba de origem e devolve `access_url` ao ManyChat.
 5. Cliente volta ao site → `POST /api/v1/auth/whatsapp/claim/`
    → loga a sessão + mantém a sacola e o destino naquele navegador.
-6. ManyChat também entrega um botão apontando para `access_url`, como reserva. Se o
-   cliente tocar: `/a?t=<token>` → `POST /api/v1/auth/access/` (exchange) → loga a
-   sessão + adota a sacola (`cart_session_key`) + redireciona (`metadata.next`).
+6. O Shopman envia pelo ManyChat uma mensagem curta com botões nativos. O botão
+   principal aponta para `access_url` e funciona como reserva. O segundo botão,
+   quando existe, encerra um acesso não reconhecido. Nenhuma URL aparece no texto.
+7. Se o cliente usar o botão principal: `/a?t=<token>` →
+   `POST /api/v1/auth/access/` (exchange) → loga a sessão + adota a sacola
+   (`cart_session_key`) + redireciona (`metadata.next`).
 ```
 
 ### A aba de origem entra sozinha (26/09/2026)
@@ -53,8 +56,8 @@ termina onde começou.**
    e, enquanto está na tela, com backoff de 4 s, 7 s e 15 s. Achou a liberação → troca
    o token pelo MESMO
    caminho do link (`exchange_access_token`) e entra, lembrando o dispositivo.
-4. A mensagem (`access_link_site`) manda voltar ao site, traz o link como reserva e
-   um "Não foi você? Encerre este acesso" → `/encerrar-acesso#<ref>` →
+4. A mensagem (`access_link_site`) manda voltar ao site e oferece dois botões:
+   `Entrar na loja`, como reserva, e `Não fui eu`, para `/encerrar-acesso#<ref>` →
    `POST /api/v1/auth/whatsapp/revoke/`: cancela a liberação pendente ou derruba a
    sessão e o dispositivo que ela abriu. A referência vale 24 h.
 ```
@@ -184,29 +187,24 @@ O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
      automação ponte via Default Reply/Last Text Input para capturar a mensagem e
      chamar o mesmo flow. Sem a mensagem inteira, o backend ainda consegue logar pelo
      WhatsApp, mas não consegue recuperar a sacola anônima do site.
-3. **Resposta ao cliente** — mapeie `access_url`, `has_context`, `handoff_expired` e,
-   se quiser legibilidade, `access_flow` da resposta em custom fields do ManyChat, por
-   exemplo `shopman_access_url`, `shopman_has_context`,
-   `shopman_handoff_expired` e `shopman_access_flow`. O
-   ManyChat não precisa olhar para o texto enviado pelo cliente:
-   - `shopman_access_url` vazio: não mostre botão de loja. Copy: `Não consegui gerar seu
-     link agora. Toque em tentar novamente ou envie uma mensagem por aqui que vamos
-     ajudar.` Ações: tag `shopman_login_access_url_failed`, marcar conversa como aberta,
-     atribuir ao atendimento e notificar os assignees. Opcionalmente ofereça um
-     botão/quick reply `Tentar novamente` que retorna ao External Request.
-   - `shopman_has_context = true`: copy `Pronto. Toque para continuar seu pedido.`
-     Botão `Continuar pedido`, URL `shopman_access_url`.
-   - `shopman_has_context = false` e `shopman_handoff_expired = true`: copy `Pronto,
-     gerei seu link, mas não consegui recuperar sua sacola desta vez. Toque para entrar
-     na loja.` Botão `Entrar na loja`, URL `shopman_access_url`; tagueie
-     `shopman_login_handoff_expired` para o atendimento poder acompanhar.
-   - `shopman_has_context = false`: copy `Pronto. Toque para entrar na loja.` Botão
-     `Ver cardápio`, URL `shopman_access_url`.
+3. **Resposta ao cliente**: não monte uma segunda mensagem no Flow. O sinal
+   `access_link_created` entrega a resposta pela API SendContent do ManyChat, dentro
+   da janela aberta pela mensagem que a pessoa acabou de enviar. A copy fica em
+   `NotificationTemplate` e os botões ficam no adapter do Shopman:
+   - com sacola: `Continuar pedido`;
+   - sem sacola: `Entrar na loja`;
+   - quando o login começou no site: envia primeiro um balão curto com
+     `Encerrar acesso` e depois o balão principal;
+   - cada balão contém somente um botão de URL, conforme o contrato real do
+     WhatsApp na conta ManyChat;
+   - se o ManyChat rejeitar explicitamente os botões, o Shopman tenta uma única vez
+     em texto simples, com os links nomeados, e registra a degradação sem dados do
+     cliente.
 
-   `has_context` significa **sacola real recuperada**, não apenas "havia um `NB-` na
-   mensagem". É um booleano JSON (`true`/`false`, minúsculo e sem aspas). Na UI do
-   ManyChat ele pode aparecer como `True/False`; use uma condição de booleano ("is true")
-   em vez de comparar texto com `"True"`.
+   O External Request ainda recebe `access_url`, `has_context`, `handoff_expired` e
+   `access_flow` para diagnóstico. Não grave o token em campo persistente do contato
+   e não envie outra mensagem no Flow. Isso evita duplicidade e mantém as credenciais
+   fora do perfil do cliente.
 
    Ao tocar, a loja abre em `/a?t=<token>`, troca o token, loga e cai no destino
    (cardápio/checkout/conta) já com a sacola quando havia contexto. Se o código do site
@@ -260,7 +258,7 @@ POST /api/v1/auth/verify-code/   { "phone": "+55...", "code": "123456" }
 
 Uma tela só (`app/pages/entrar.vue`), WhatsApp como caminho primário:
 
-- **`app/components/WhatsappVerifyPanel.vue`** — antes do toque: o porquê
+- **`app/components/WhatsappVerifyPanel.vue`** — antes do toque: a explicação
   (`LOGIN_WA_WHY`), três passos (`LOGIN_WA_STEPS`) e um botão (deep link `wa.me`
   pré-aquecido). Depois do toque: a espera (`LOGIN_WA_WAITING`) e, só aí, o plano B —
   envio manual (mensagem + copiar + abrir de novo). O SMS é um link discreto abaixo.

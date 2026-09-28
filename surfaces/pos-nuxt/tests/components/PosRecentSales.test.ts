@@ -71,6 +71,23 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
 });
 
 /**
+ * A encomenda paga há dias e retirada hoje entra na lista pela SAÍDA (#1173): a
+ * linha diz quando a mercadoria saiu, além de quando o pedido nasceu.
+ */
+describe("PosRecentSales — a encomenda que saiu hoje", () => {
+  it("mostra a saída da mercadoria quando é ela que traz o pedido", async () => {
+    const w = await montar([
+      sale({ order_ref: "PDV-ENC", created_at_display: "25/09 09:40", handoff_display: "Retirada hoje às 14:10" }),
+      sale({ order_ref: "PDV-BALCAO" }),
+    ]);
+    const handoffs = Array.from(document.body.querySelectorAll("[data-sale-handoff]")).map((el) => el.textContent?.trim());
+    expect(handoffs).toEqual(["Retirada hoje às 14:10"]);
+    expect(document.body.textContent).toContain("25/09 09:40");
+    w.unmount();
+  });
+});
+
+/**
  * Emissão avulsa: a venda não pediu nota, o cliente voltou pedindo. O botão
  * segue o servidor (`can_emit_fiscal`) e a emissão só sai com o gerente — o
  * MESMO `OperatorManagerAuth` das outras exceções do PDV.

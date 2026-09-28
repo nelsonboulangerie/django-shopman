@@ -7,8 +7,8 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
-BEFORE = [("shop", "0081_order_updated_notification_template")]
-AFTER = [("shop", "0082_avisos_de_encomenda_na_voz_aprovada")]
+BEFORE = [("shop", "0082_access_link_button_copy")]
+AFTER = [("shop", "0083_avisos_de_encomenda_na_voz_aprovada")]
 
 
 @pytest.mark.django_db(transaction=True)

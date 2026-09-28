@@ -360,15 +360,17 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
-# Fase 2 do rollout: somente o shadow do alpha fica ligado. Snapshot e cliente
-# continuam fechados até a janela de 24 h/500 observações passar pelo gate.
+# Piloto completo autorizado pelo owner em 28/09/2026: este ambiente ainda não
+# tem tráfego público capaz de produzir 500 observações antes do teste. O shadow
+# já cumpriu a amostragem e fica desligado para não onerar o menu canônico; o
+# endpoint estrutural e o consumidor Nuxt ficam ligados em todo o /menu.
 - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_KILL_SWITCH
   scope: RUN_TIME
@@ -376,7 +378,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
   scope: RUN_TIME
-  value: '30000'
+  value: '300000'
   type: GENERAL
 - key: SHOPMAN_EXPOSE_DEBUG_OTP
   scope: RUN_TIME
@@ -847,6 +849,12 @@ services:
   - key: NUXT_APP_BASE_URL
     scope: RUN_TIME
     value: '/'
+    type: GENERAL
+  # Runtime público do piloto: o /menu nasce do snapshot estrutural e converge
+  # preço/estoque/sessão pelo menu canônico. Desligar restaura o SSR monolítico.
+  - key: NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED
+    scope: RUN_TIME
+    value: 'true'
     type: GENERAL
   # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
   # pedido veio deste BFF, para o IP gravado ser o do cliente e não o do Nitro.

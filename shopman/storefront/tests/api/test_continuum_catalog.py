@@ -190,6 +190,23 @@ def test_periodic_reconciliation_recovers_when_signal_or_callback_is_lost(client
     assert reconciled.json()["data"]["state"]["items"][product.sku]["name"] == "Pão reconciliado"
 
 
+def test_http_freshness_does_not_force_expensive_origin_reconciliation(client):
+    _seed_surface()
+    config = _config(fresh_for_ms=30_000, reconcile_after_ms=300_000)
+    with override_settings(SHOPMAN_CONTINUUM=config):
+        client.get(SNAPSHOT_URL)
+        head = CatalogStructureHead.objects.get(channel_ref="web")
+        CatalogStructureHead.objects.filter(pk=head.pk).update(
+            dirty=False,
+            verified_at=timezone.now() - timedelta(milliseconds=30_001),
+        )
+
+        response = client.get(SNAPSHOT_URL)
+
+    assert response.status_code == 200
+    assert response["Continuum-Sequence"] == f"{head.sequence:020d}"
+
+
 def test_reconciliation_recovers_after_crash_before_head_commit(monkeypatch):
     product = _seed_surface()
     config = _config(reconcile_after_ms=0)
@@ -271,6 +288,31 @@ def test_shadow_is_side_effect_free_for_visible_contract_and_kill_switch_rolls_b
     assert rolled_back.json() == baseline.json()
     assert candidate.status_code == 404
     assert not CatalogStructureHead.objects.exists()
+
+
+def test_warm_shadow_reuses_canonical_projection_and_adds_one_query(client, monkeypatch):
+    _seed_surface()
+    observations = []
+
+    from shopman.storefront import continuum
+    from shopman.storefront.api import surface
+
+    monkeypatch.setattr(
+        continuum,
+        "catalog_structure_state",
+        lambda catalog: pytest.fail("shadow recalculou a projeção canônica"),
+    )
+    monkeypatch.setattr(surface, "log_catalog_observation", lambda **fields: observations.append(fields))
+
+    with override_settings(SHOPMAN_CONTINUUM=_config(catalog_snapshot_enabled=False)):
+        client.get("/api/v1/storefront/menu/")
+        observations.clear()
+        response = client.get("/api/v1/storefront/menu/")
+
+    assert response.status_code == 200
+    assert observations[-1]["shadow_equal"] is True
+    assert observations[-1]["shadow_query_count"] == 1
+    assert observations[-1]["cache_status"] == "hit:hit"
 
 
 def test_snapshot_limits_fail_closed_without_affecting_canonical_menu(client):

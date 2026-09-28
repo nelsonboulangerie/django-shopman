@@ -12,15 +12,42 @@ function read(relativePath: string): string {
 describe("entrada funcional do Marketing V2", () => {
   const currentEntry = read("../app/pages/index.vue");
   const v2Entry = read("../app/pages/v2.vue");
+  const workspace = read("../app/components/MarketingV2Workspace.vue");
+  const topBar = read("../app/components/CampaignTopBar.vue");
   const board = read("../app/components/MarketingBoard.vue");
   const shell = read("../app/app.vue");
 
-  it("compartilha o painel operacional em vez de redirecionar para a prévia", () => {
-    expect(currentEntry).toContain("<MarketingBoard />");
-    expect(v2Entry).toContain('<MarketingBoard experience="v2" />');
-    expect(v2Entry).toContain('data-marketing-experience="v2"');
+  it("torna o workspace V2 operacional a entrada canônica", () => {
+    expect(currentEntry).toContain("navigateTo(");
+    expect(currentEntry).toContain('path: "/v2"');
+    expect(currentEntry).toContain('area: "today"');
+    expect(currentEntry).not.toContain("<MarketingBoard />");
+    expect(v2Entry).toContain("<MarketingV2Workspace />");
+    expect(workspace).toContain('data-marketing-experience="v2"');
+    expect(workspace).toContain("useCampaignBoard()");
+    expect(workspace).toContain("useCampaigns()");
+    expect(workspace).toContain("usePlatforms()");
     expect(v2Entry).not.toContain("window.location");
     expect(v2Entry).not.toContain("marketing-v2-preview");
+  });
+
+  it("torna as áreas esperadas alcançáveis sem inventar comandos", () => {
+    for (const area of [
+      "Hoje",
+      "Campanhas",
+      "Ofertas e cupons",
+      "Plataformas",
+    ]) {
+      expect(topBar).toContain(area);
+    }
+    expect(topBar).toContain("activeV2Section");
+    expect(topBar).not.toContain("legacySections");
+    expect(workspace).not.toContain('aria-label="Áreas do Marketing V2"');
+    expect(workspace).toContain("marketingV2Destinations");
+    expect(workspace).toContain("Action versionada e auditável");
+    expect(workspace).toContain("TikTok via Relay");
+    expect(workspace).not.toContain("fetch(");
+    expect(workspace).not.toContain("$fetch(");
   });
 
   it("mantém a V2 atrás do mesmo gate de operador", () => {
@@ -31,7 +58,7 @@ describe("entrada funcional do Marketing V2", () => {
 
   it("preserva as decisões e comprovantes do painel atual", () => {
     expect(board).toContain("useCampaignBoard()");
-    expect(board).toContain("@approve=\"onApprove\"");
+    expect(board).toContain('@approve="onApprove"');
     expect(board).toContain("confirmReject");
     expect(board).toContain("confirmServerDecision");
     expect(board).toContain("resumeServerDecision");

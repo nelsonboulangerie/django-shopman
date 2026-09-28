@@ -8,7 +8,7 @@ import {
   listingDescription,
   truncateClean
 } from '~/presentation/seo'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 
 // Página de coleção indexável (rota própria, self-canonical) — diferente das
 // variantes de filtro do /menu (que canonicalizam para /menu). Alimentada pelo
@@ -17,7 +17,6 @@ const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
 const session = useShopSession()
-const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 
 const collectionRef = computed(() => String(route.params.ref || ''))
@@ -27,22 +26,26 @@ if (dynamicRedirectTarget.value) {
   await navigateTo(dynamicRedirectTarget.value, { redirectCode: 301, replace: true })
 }
 
-const { data, pending, error, refresh } = await useFetch<MenuResponse>(
-  () => apiPath(`/api/v1/storefront/menu/${encodeURIComponent(collectionRef.value)}/`),
-  { credentials: 'include', immediate: !dynamicRedirectTarget.value }
+const { data, pending, error, refresh } = await useFetch<CatalogResponse>(
+  () => apiPath(`/api/v1/storefront/catalog/${encodeURIComponent(collectionRef.value)}/`),
+  { credentials: 'include', immediate: !dynamicRedirectTarget.value, lazy: true }
 )
 
 // Coleção inexistente: 404 de verdade — o endpoint levanta Http404 via
 // ensure_active_collection(); a SSR responde 404 + noindex (error.vue).
-if (!dynamicRedirectTarget.value && error.value?.statusCode === 404) {
+if (import.meta.server && !dynamicRedirectTarget.value && error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true })
 }
 
-if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?.catalog, 'Coleção')
+if (import.meta.client) {
+  watch(error, (failure) => {
+    if (!dynamicRedirectTarget.value && failure?.statusCode === 404) {
+      showError(createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true }))
+    }
+  })
+}
 
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
+if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?.catalog, 'Coleção')
 
 const catalog = computed(() => data.value?.catalog || null)
 const section = computed(() => {

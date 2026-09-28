@@ -8,6 +8,11 @@ import type {
   OptionsResponse,
   RulesResponse,
 } from "~/types/campaign";
+import {
+  campaignEditActionFor,
+  campaignPatchPayload,
+  isExactCampaignEditAction,
+} from "~/presentation/campaignActions";
 
 export function useCampaigns() {
   const { data, refresh, pending, error } = useFetch<RulesResponse>(
@@ -44,6 +49,7 @@ export function useCampaigns() {
   // Só ofertas que montam sacola chegam aqui — o servidor já filtrou.
   const offers = computed(() => options.value?.offers ?? []);
   const shopTimezone = computed(() => options.value?.shop_timezone ?? "UTC");
+  const mutatingCampaignPk = ref<number | null>(null);
 
   /** Rótulo por ref de plataforma — o que `platformsSummary` espera. */
   const platformLabels = computed<Record<string, string>>(() =>
@@ -52,8 +58,8 @@ export function useCampaigns() {
     ),
   );
 
-  async function toggle(rule: Campaign): Promise<void> {
-    await patch(rule.pk, { is_active: !rule.is_active });
+  async function toggle(rule: Campaign): Promise<boolean> {
+    return await patch(rule.pk, { is_active: !rule.is_active });
   }
 
   async function patch(
@@ -61,9 +67,27 @@ export function useCampaigns() {
     body: Partial<Campaign> & Record<string, unknown>,
   ) {
     const current = rules.value.find((rule) => rule.pk === pk);
-    const payload = current?.updated_at
-      ? { ...body, base_updated_at: current.updated_at }
-      : body;
+    const action = current
+      ? campaignEditActionFor(current, actions.value)
+      : undefined;
+    if (!current || !isExactCampaignEditAction(current, action)) {
+      useSonner.error(
+        "A ação segura de edição não está disponível. Atualize a lista.",
+      );
+      return false;
+    }
+    if (mutatingCampaignPk.value !== null) return false;
+    let payload: Record<string, unknown>;
+    try {
+      payload = campaignPatchPayload(current, body);
+    } catch {
+      useSonner.error(
+        "A versão da campanha está incompleta. Atualize a lista antes de alterar.",
+      );
+      await refresh();
+      return false;
+    }
+    mutatingCampaignPk.value = pk;
     try {
       await $fetch(`/api/v1/backstage/marketing/rules/${pk}/`, {
         method: "PATCH",
@@ -85,6 +109,8 @@ export function useCampaigns() {
         );
       }
       return false;
+    } finally {
+      mutatingCampaignPk.value = null;
     }
   }
 
@@ -99,7 +125,9 @@ export function useCampaigns() {
       return true;
     } catch (err) {
       flagMarketingSessionError(err);
-      useSonner.error(httpErrorMessage(err, "Não foi possível criar a campanha."));
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível criar a campanha."),
+      );
       return false;
     }
   }
@@ -120,6 +148,7 @@ export function useCampaigns() {
     products,
     offers,
     shopTimezone,
+    mutatingCampaignPk,
     loading: pending,
     error,
     refresh,

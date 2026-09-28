@@ -70,15 +70,18 @@ describe('NavigationFeedback', () => {
     wrapper.unmount()
   })
 
-  it('ignora um segundo clique no mesmo destino enquanto a navegação está ativa', async () => {
+  it('nunca engole um segundo clique no mesmo destino enquanto a navegação está ativa', async () => {
     vi.useFakeTimers()
     const wrapper = await mountSuspended(NavigationFeedback)
     const link = navigationLink('/menu')
 
     link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
     link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+    vi.advanceTimersByTime(217)
+    await nextTick()
 
-    expect(link.dataset.receivedClicks).toBe('1')
+    expect(link.dataset.receivedClicks).toBe('2')
+    expect(wrapper.get('[data-navigation-wait-overlay]').classes()).toContain('pointer-events-none')
     wrapper.unmount()
   })
 

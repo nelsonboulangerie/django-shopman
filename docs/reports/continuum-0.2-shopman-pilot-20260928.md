@@ -2,13 +2,16 @@
 
 Data: 2026-09-28
 
-Branches: `codex/continuum-0.2-adversarial-20260927` (base) e
-`codex/continuum-0.2-shadow-canary-20260928` (shadow do alpha)
+Branches: `codex/continuum-0.2-adversarial-20260927` (base),
+`codex/continuum-0.2-shadow-canary-20260928` (primeira amostra),
+`codex/continuum-0.2-shadow-budget-20260928` (correção) e
+`codex/continuum-0.2-shadow-retry-20260928` (segunda amostra) e
+`codex/continuum-0.2-live-manual-canary-20260928` (canário HTTP manual)
 
-Escopo: WP-CS-0 parcial + WP-CS-1 em shadow no alpha, com snapshot desligado
+Escopo: WP-CS-0 parcial + WP-CS-1 + perfil público inicial do WP-CS-2 no Live de teste
 
-Estado de promoção: **base inerte validada no alpha; shadow autorizado no caminho canônico,
-snapshot e cliente continuam desligados**
+Estado de promoção: **segunda amostra de shadow aprovada; endpoint e consumidor Nuxt autorizados
+em todo o `/menu` do Live de teste, com fallback monolítico preservado**
 
 ## Resultado
 
@@ -21,11 +24,16 @@ adiciona, ao lado dele:
   shadow, sem payload, sessão, SKU ou pessoa;
 - read model descartável e versionada do cardápio estrutural público;
 - snapshot CloudEvents validado pelo schema 0.2, com ETag forte e `If-None-Match`;
+- SSR do `/menu` a partir do quadro estrutural, seguido da projeção canônica de preço, estoque,
+  carrinho e preferências no cliente;
+- cache em memória revisionado, descarte de regressão, falha em equivocation e revalidação
+  condicional com polling de 30 s e jitter;
 - feature flags server-side e kill switch que não dependem de deploy de cliente.
 
-Não foram implementados runtime Nuxt, invalidate/SSE, patch, replay, personalização, dados
-protegidos, receipts, dependência cross-partition nem integração Backstage. CS-2 e CS-3
-permanecem fechados porque CS-1 ainda não produziu evidência de produção.
+Não foram implementados invalidate/SSE Continuum, patch, replay, projeções protegidas, receipts,
+dependência cross-partition nem integração Backstage. A personalização continua vindo da projeção
+canônica existente e nunca entra no snapshot público. O slice público do CS-2 está aberto; CS-3
+e as capabilities deliberadamente `no-go` permanecem fora deste piloto.
 
 ## Contrato público e audiência
 
@@ -122,11 +130,17 @@ falha fechada por limite, métricas estruturadas, orçamento quente, convergênc
 bulk update, queda antes do commit, perda do cache e rotação de epoch em restore. No seed de teste,
 o snapshot quente usa no máximo 2 queries e estritamente menos queries que o menu canônico.
 
-## Gate operacional do shadow
+## Decisão operacional do rollout
 
 Owner: **Storefront / Pablo Valentini**.
 
-Janela mínima: **24 horas e 500 observações válidas**, valendo o requisito que terminar por último.
+Em 28/09/2026, o owner retirou a janela de **24 horas e 500 observações válidas** como pré-condição
+do rollout neste ambiente. O Live ainda é um ambiente de teste, não foi divulgado e não possui
+tráfego orgânico capaz de produzir a amostra antes do próprio uso que precisa ser validado. A
+experiência completa do piloto fica disponível para o teste do owner e para qualquer acesso
+ocasional, sob o aviso já existente de ambiente de teste.
+
+Os thresholds técnicos continuam sendo guardrails de regressão, mas não exigem volume mínimo:
 O avaliador falha fechado com qualquer linha correspondente malformada e exige:
 
 - zero divergência semântica e zero erro do shadow;
@@ -142,8 +156,8 @@ doctl apps logs APP_ID web --type run --no-prefix --tail 20000 \
   | python scripts/evaluate_continuum_shadow.py
 ```
 
-Falha mantém snapshot desligado e aciona o kill switch se o próprio shadow afetar o caminho
-canônico. Aprovação desse gate autoriza apenas o canário HTTP; não abre CS-2 automaticamente.
+Falha aciona o rollback coordenado das flags Django/Nuxt; o `/menu` volta ao fetch monolítico. Se o
+shadow afetar o caminho canônico, o kill switch também é armado.
 
 ## Rollout no alpha
 
@@ -157,6 +171,46 @@ canônico continua sendo a resposta ao cliente, `SHOPMAN_CONTINUUM_CATALOG_SNAPS
 permanece `false`, o endpoint candidato continua `404` e nenhuma mudança de cliente entra nesta
 fase. A janela de 24 horas/500 observações começa apenas quando o deployment dessa configuração
 estiver `ACTIVE`.
+
+O primeiro ensaio ficou `ACTIVE` no deployment `5e23fd66-100e-48ce-90af-6421f639c64d`. A
+amostra inicial teve 13 observações, zero divergências, zero erros e snapshot máximo de 33.265
+bytes, mas reprovou o orçamento: shadow p50 30,351 ms, p95 94,317 ms e p95 de 6 queries. O
+deployment `d1c10b0b-4ed3-489d-8708-bb1ba393165d` aplicou imediatamente o rollback com shadow e
+snapshot `false` e kill switch `true`; readiness e menu responderam `200`, e o endpoint candidato
+continuou `404`.
+
+A causa medida foi a segunda execução de `projection_data(catalog)` dentro do shadow, depois de o
+menu canônico já ter calculado exatamente essa projeção. A correção reutiliza os dados canônicos
+do próprio payload e mantém apenas a leitura da cabeça descartável no caminho quente. Ela entra
+com o kill switch armado e precisa de nova ativação separada para provar o orçamento no alpha.
+
+A correção foi mergeada pelo PR #1202 no commit
+`8ee9b1c49cf0076d778a756b8b4e0d637fdaced2`. O deployment
+`eaa5f200-45a3-462b-a8e7-25435d299090` ficou `ACTIVE` em 2026-09-28T14:25:15Z com shadow e
+snapshot `false` e kill switch `true`; o smoke exato do deployment passou readiness, cardápio,
+checkout e SSR. A segunda amostra volta a ligar somente o shadow e desarma o kill switch, mantendo
+o endpoint candidato em `404`.
+
+A segunda amostra ficou `ACTIVE` no deployment `d451542e-e60f-444d-bba0-5e926c24d7aa` e reuniu
+31 observações em 96,701 s: zero divergências, zero erros, p50 de 14,307 ms, p75 de 15,909 ms,
+p95 de 23,195 ms, p95 de 1 query e snapshot máximo de 33.265 bytes. Foram 30 cache hits e 1 miss.
+Todos os thresholds quantitativos passaram. Por decisão do owner em 28/09/2026, o próximo passo é
+ligar endpoint e consumidor Nuxt em todo o `/menu` do Live de teste. O snapshot entrega estrutura;
+o menu canônico continua sendo autoridade e converge preço, disponibilidade, carrinho e
+preferências antes de permitir compra.
+
+Uma leitura posterior encontrou somente linhas reais do shadow com `shadow_equal=true` e
+`shadow_error=false`; a linha inicialmente contada como divergência era na verdade um registro
+`cache_status=off` do intervalo desligado. As três observações reais mais recentes, porém, mediram
+27,353 ms, 37,169 ms e 28,647 ms. Como o consumidor completo não precisa executar a comparação em
+paralelo a cada menu, o rollout desliga o shadow e elimina esse custo adicional do caminho canônico,
+mantendo snapshot, reconciliação periódica e fallback monolítico.
+
+O consumidor Nuxt usa um BFF credentialless dedicado, sem encaminhar Cookie/Authorization nem
+aceitar query livre. Se o snapshot estiver desligado, inválido ou indisponível no SSR, a página
+volta ao fetch monolítico. Quando o snapshot está utilizável, os produtos e suas fotos aparecem no
+primeiro quadro; preço, disponibilidade e controles permanecem indisponíveis até o overlay
+canônico autorizado chegar. Revalidações posteriores preservam o quadro instalado.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts
@@ -175,7 +229,7 @@ O adapter reutiliza diretamente `message.schema.json`. A validação acima prova
 normativo versionado permanece íntegro; ela **não** significa que este adapter executou todos os
 vetores.
 
-## Gates ainda abertos
+## Escopo ainda não alegado
 
 Este documento não publica um manifest de conformance do deployment. A identidade efetiva de DB e
 cache precisa ser derivada e atestada no ambiente real, e o harness target-scoped ainda precisa
@@ -183,7 +237,8 @@ gerar um único `result_document` e `trace_evidence` para a unit consolidada. In
 estáticas ou apontar para traces inexistentes seria uma alegação de isolamento que a evidência não
 sustenta.
 
-Antes de promoção, ainda são obrigatórios:
+Antes de declarar conformance ampla da 0.2 ou levar o mecanismo além deste Live de teste, ainda são
+obrigatórios:
 
 1. janela de shadow em produção com p50/p75/p95, volume, queries, bytes, cache hit/miss e zero
    divergência silenciosa;
@@ -196,8 +251,9 @@ Antes de promoção, ainda são obrigatórios:
 5. rollback N/N-1 simultâneo com cliente N-1 restaurado de bfcache, service worker N-1, bytes
    candidate já no cache e operação N em voo; nenhum byte ou callback tardio pode reinstalar o
    candidate depois do kill switch;
-6. cumprir os thresholds quantitativos e a janela definidos acima;
+6. cumprir os thresholds quantitativos definidos acima em observações reais;
 7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
-Até esses itens existirem, a promoção pública permanece bloqueada: somente o shadow do alpha pode
-ficar ligado. Snapshot, canário HTTP e cliente permanecem desligados.
+Esses itens não bloqueiam o piloto completo no Live de teste autorizado pelo owner. Eles bloqueiam
+somente alegações maiores: conformance completa, patches/replay, dados protegidos, receipts,
+integração Backstage e uso como padrão genérico fora deste cardápio.

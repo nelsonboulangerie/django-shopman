@@ -49,11 +49,17 @@ function unidades(qty: number): string {
  * virou artefato interno, que ninguém fala em voz alta. O botão de enviar já
  * conta unidades; esta frase concorda com ele.
  */
-export function kitchenHandoffNote(items: POSCartItem[]): string {
+export function kitchenHandoffNote(items: POSCartItem[], options: { deferred?: boolean } = {}): string {
   if (!items.length) return "";
   const naCozinha = firedKitchenQty(items);
   const aEnviar = unfiredCount(items);
   if (!naCozinha) {
+    // Encomenda para outro dia não vai para a cozinha ao finalizar: o pedido
+    // espera a data combinada (`lifecycle._physical_work_deferred`) e só então
+    // aparece no KDS. "Ao finalizar, vai para a cozinha" era promessa falsa.
+    if (options.deferred) {
+      return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha no dia da encomenda.`;
+    }
     return `Ao finalizar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
   }
   if (aEnviar) {

@@ -115,6 +115,12 @@ registerEndpoint('/api/v1/checkout/', {
 })
 registerEndpoint('/api/v1/account/passkeys/', () => ({ passkeys: [] }))
 
+async function mountCheckout () {
+  const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+  await vi.waitFor(() => expect(page.find('[data-checkout-step="fulfillment"]').exists()).toBe(true))
+  return page
+}
+
 beforeEach(() => {
   navigateToMock.mockReset()
   servedAfterRefusal = null
@@ -140,7 +146,7 @@ describe('checkout Pix — recuperação do limite temporário', () => {
   it('renderiza alerta, bloqueia o avanço e executa as duas recuperações', async () => {
     served = projection()
     clearNuxtData()
-    const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+    const page = await mountCheckout()
     mounted = page
 
     const alert = page.find('[data-pix-provider-test]')
@@ -167,7 +173,7 @@ describe('checkout Pix — recuperação do limite temporário', () => {
   it('até R$ 10,00 inclusive: não bloqueia, não oferece saída e não manda trocar nada', async () => {
     served = projection(1000)
     clearNuxtData()
-    const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+    const page = await mountCheckout()
     mounted = page
 
     const alert = page.find('[data-pix-provider-test]')
@@ -184,7 +190,7 @@ describe('checkout Pix — recuperação do limite temporário', () => {
   it('sem a constraint (produção ou Pix simulado) nada aparece, mesmo acima de R$ 10,00', async () => {
     served = projection(1500, {})
     clearNuxtData()
-    const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+    const page = await mountCheckout()
     mounted = page
 
     expect(page.find('[data-pix-provider-test]').exists()).toBe(false)
@@ -196,7 +202,7 @@ describe('checkout Pix — recuperação do limite temporário', () => {
     served = projection(1000)
     servedAfterRefusal = projection(1050)
     clearNuxtData()
-    const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+    const page = await mountCheckout()
     mounted = page
 
     const review = page.findAll('button').find(button => button.text().includes('Revisar pedido'))

@@ -20,7 +20,8 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 
 const { data: summary, pending } = await useFetch<AccountSummary>(apiPath('/api/v1/account/summary/'), {
   credentials: 'include',
-  headers: requestHeaders
+  headers: requestHeaders,
+  lazy: true
 })
 
 const greeting = computed(() => accountGreeting(

@@ -52,6 +52,8 @@ const props = defineProps<{
   busy?: boolean;
   draftOwner?: string;
   shopTimezone?: string;
+  /** Oferta escolhida antes de abrir uma campanha nova (atalho da V2). */
+  initialPromotionRef?: string;
 }>();
 
 const emit = defineEmits<{
@@ -248,7 +250,7 @@ watch(
     platforms.value = [...(rule?.platforms ?? [])];
     requiresApproval.value = rule?.requires_approval ?? true;
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
-    promotionRef.value = rule?.promotion_ref ?? "";
+    promotionRef.value = rule?.promotion_ref ?? props.initialPromotionRef ?? "";
     isActive.value = rule?.is_active ?? true;
     currentStep.value = 0;
 
@@ -733,7 +735,7 @@ function submit() {
 </script>
 
 <template>
-  <form class="space-y-5" @submit.prevent="submit">
+  <form class="mx-auto w-full max-w-5xl space-y-5" @submit.prevent="submit">
     <DraftRecoveryNotice
       :state="draft.state.value"
       :saved-at="draft.savedAt.value"
@@ -1130,7 +1132,10 @@ function submit() {
           {{ note.text }}
           <template v-if="note.tone !== 'limited'">
             A campanha pode ser salva assim mesmo.
-            <NuxtLink to="/platforms" class="font-semibold underline">
+            <NuxtLink
+              :to="{ path: '/v2', query: { area: 'platforms' } }"
+              class="font-semibold underline"
+            >
               Ver em Plataformas
             </NuxtLink>
           </template>

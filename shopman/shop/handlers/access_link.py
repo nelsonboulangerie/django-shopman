@@ -67,21 +67,26 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
         from shopman.shop.services import storefront_links
 
         event = EVENT_SITE
-        label = str(metadata.get("origin_label") or "").strip()
         context_extra = {
             "revoke_url": storefront_links.login_revoke_url(revoke_ref),
-            "origin_note": f" ({label})" if label else "",
         }
 
     context = {
         "access_url": url,
         "customer_name": getattr(customer, "name", "") or "",
+        "has_cart_context": bool(metadata.get("cart_session_key")),
         # Sufixo auto-suprimível (padrão da casa). Aqui ele divide a LINHA com o
         # aviso de prazo, então termina em espaço e não em quebra: sem sacola, a
         # frase do prazo assume a linha inteira sem deixar buraco. Foi por isso
         # que os dois não viraram um texto só — o prazo vale sempre, a sacola não.
         "cart_note": (
-            "Seus itens continuam na sacola. " if metadata.get("cart_session_key") else ""
+            "Sua sacola está guardada. "
+            if metadata.get("cart_session_key")
+            else (
+                "Sua sacola não veio desta vez. "
+                if metadata.get("handoff_expired")
+                else ""
+            )
         ),
         **context_extra,
     }

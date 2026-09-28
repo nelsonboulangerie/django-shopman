@@ -372,11 +372,16 @@ describe('surface UX guardrails', () => {
     const labelSheet = read('app/components/AddressLabelSheet.vue')
     expect(labelSheet).toContain('data-address-label-sheet')
     expect(labelSheet).toContain('Agora não')
-    expect(checkout).toContain('<AddressLabelSheet')
-    expect(checkout).toContain('findNewlySavedAddress')
+    // Nomear o endereço é conveniência de cadastro: não interrompe mais a
+    // compra nem o acesso ao acompanhamento depois do pedido confirmado.
+    expect(checkout).not.toContain('<AddressLabelSheet')
+    expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
-    // Default = primeira data disponível do backend (nunca dia fechado).
-    expect(checkout).toContain('checkout.value?.available_dates?.[0]')
+    // Default = primeira data disponível do backend (nunca um "hoje" local
+    // escolhido antes da projection lazy terminar).
+    expect(checkout).toContain('if (!checkout.value) return')
+    expect(checkout).toContain('checkout.value.available_dates?.[0]')
+    expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")
     expect(checkout).toContain('data-checkout-progress-stack')
@@ -400,7 +405,10 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('<CheckoutProgressSection')
     expect(checkout).toContain('stepState')
     expect(read('app/components/CheckoutProgressSection.vue')).toContain(':data-checkout-section-state="state"')
-    expect(checkout).toContain('<UiRadioGroup v-model="state.fulfillment_type" class="grid gap-2 sm:grid-cols-2">')
+    expect(read('app/components/CheckoutProgressSection.vue')).toContain('class="shop-focus-ruler')
+    expect(read('app/assets/css/tailwind.css')).toContain('scroll-margin-top: calc(4rem + 6px)')
+    expect(checkout).toContain(':model-value="state.fulfillment_type"')
+    expect(checkout).toContain('@update:model-value="onFulfillmentSelected(String($event))"')
     expect(checkout).toContain('<UiRadioGroup v-model="state.payment_method" class="grid gap-2 sm:grid-cols-2">')
     expect(checkout).toContain('<UiFieldLabel v-if="availableFulfillment.includes(\'pickup\')" for="checkout-fulfillment-pickup" class="bg-card')
     expect(checkout).toContain('<UiFieldLabel v-for="method in paymentMethods"')
@@ -430,6 +438,8 @@ describe('surface UX guardrails', () => {
     // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
     expect(checkout).toContain('shop-action-dock')
     expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).toContain('v-show="!keyboardActive"')
+    expect(checkout).toContain('useMobileFormViewport(checkoutRoot)')
     expect(checkout).not.toContain('class="sticky bottom-20')
     expect(checkout).toContain('data-checkout-action-card')
     // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
@@ -600,10 +610,10 @@ describe('surface UX guardrails', () => {
     const authPresentation = read('app/presentation/auth.ts')
 
     // A home canônica já foi aguardada pelo shell; /entrar não duplica a busca.
-    expect(login).toContain("useNuxtData<HomeResponse>('shopman-shell-home')")
+    expect(login).toContain("useNuxtData<ShellResponse>('shopman-shell')")
     expect(login).not.toContain("key: 'storefront-login-home'")
-    expect(login).toContain('home.auth_copy')
-    expect(login).toContain('home.public_config.whatsapp_url')
+    expect(login).toContain('shell.auth_copy')
+    expect(login).toContain('shell.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
     expect(login).toContain('const cartHasItems')
     // A copy da sacola pergunta pela SACOLA, não pela rota de origem: quem entra
@@ -820,15 +830,15 @@ describe('surface UX guardrails', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
     const session = read('app/composables/useShopSession.ts')
-    const home = read('app/composables/useStorefrontHome.ts')
+    const shell = read('app/composables/useStorefrontShell.ts')
 
     expect(app).toContain('const AUTH_SHELL_ROUTES')
     expect(app).toContain('const authShellRoute')
     expect(app).toContain("new Set(['/entrar', '/a'])")
     expect(app).toContain('AUTH_SHELL_ROUTES.has(route.path)')
-    expect(app).toContain('await useStorefrontHome()')
-    expect(home).toContain('server: true')
-    expect(home).toContain("dedupe: 'defer'")
+    expect(app).toContain('await useStorefrontShell()')
+    expect(shell).toContain('server: true')
+    expect(shell).toContain("dedupe: 'defer'")
     expect(app).toContain('preserveAuthenticated: authRoute')
     expect(app).toContain('if (!authRoute) setFromServer(value?.cart)')
     expect(session).toContain('preserveAuthenticated')

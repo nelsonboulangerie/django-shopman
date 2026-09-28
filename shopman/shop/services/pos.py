@@ -17,6 +17,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from shopman.cashman import services as cash_ledger
+from shopman.orderman.exceptions import CommitError as OrderCommitError
+from shopman.orderman.exceptions import ValidationError as OrderValidationError
 from shopman.orderman.models import Order, Session
 from shopman.utils.monetary import format_money, monetary_mult
 
@@ -340,6 +342,7 @@ def close_sale(
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
+    _require_delivery_minimum(payload)
     _require_house_account_if_on_account(
         payload,
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
@@ -394,16 +397,23 @@ def close_sale(
                         message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
                 direct_checkout = False
 
-            result, session, tab_ref = _commit_sale_session(
-                session=session,
-                channel=channel,
-                config=config,
-                payload=payload,
-                actor=actor,
-                operator_username=operator_username,
-                direct_checkout=direct_checkout,
-                approved_by=approved_by,
-            )
+            try:
+                result, session, tab_ref = _commit_sale_session(
+                    session=session,
+                    channel=channel,
+                    config=config,
+                    payload=payload,
+                    actor=actor,
+                    operator_username=operator_username,
+                    direct_checkout=direct_checkout,
+                    approved_by=approved_by,
+                )
+            except (OrderValidationError, OrderCommitError) as exc:
+                # A regra do commit recusou: NADA nasceu (a transação desfaz o
+                # claim e a sessão). Sem esta tradução a recusa subia crua, virava
+                # 500, e o PDV acendia "Resultado da cobrança não confirmado" —
+                # a trava contra cobrança dupla — por um pedido que nunca existiu.
+                raise _commit_refusal(exc) from exc
             _answer_sale_claim(claim, order_ref=result.order_ref)
 
             from shopman.shop.services.pos_sale_recovery import prepare
@@ -722,6 +732,17 @@ def review_sale(
     address_warning = _delivery_address_warning(payload, channel_ref=channel.ref)
     if address_warning:
         warnings.append(address_warning)
+    # Mínimo de entrega: aviso aqui, com a frase da recusa; a tela trava o
+    # Validar com ele (a recusa mora em `_require_delivery_minimum`).
+    delivery_minimum_q = _delivery_minimum_shortfall_q(payload)
+    if delivery_minimum_q:
+        from shopman.shop.rules.validation import delivery_minimum_message
+
+        warnings.append({
+            "code": "below_delivery_minimum",
+            "field": "items",
+            "message": delivery_minimum_message(delivery_minimum_q),
+        })
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
     # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
@@ -1186,6 +1207,93 @@ def _require_delivery_fiscal_identity(payload: dict, *, channel_ref: str) -> Non
     )
 
 
+def _delivery_minimum_shortfall_q(payload: dict) -> int:
+    """O mínimo de entrega que esta venda NÃO alcança; ``0`` quando alcança ou não há.
+
+    A mesma conta do commit (``rules.validation.DeliveryZoneRule``): as linhas de
+    mercadoria já com os descontos manuais, sem a taxa de entrega. Retirada nunca
+    tem mínimo.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return 0
+    from shopman.shop.projections.cart import shop_rule_q
+
+    minimum_q = shop_rule_q("delivery_minimum_q")
+    if not minimum_q:
+        return 0
+    goods = {**payload, "items": [i for i in payload.get("items", []) if not _is_delivery_fee_item(i)]}
+    goods_q = (
+        _payload_subtotal_q(goods)
+        - _payload_line_discounts_q(goods)
+        - _payload_applied_order_discount_q(goods)
+    )
+    return minimum_q if goods_q < minimum_q else 0
+
+
+DELIVERY_MINIMUM_RECOVERY = "Acrescente itens até o mínimo, ou troque a entrega por retirada."
+
+
+def _require_delivery_minimum(payload: dict) -> None:
+    """Entrega abaixo do mínimo não fecha — perguntado antes do commit, com a frase do commit."""
+    minimum_q = _delivery_minimum_shortfall_q(payload)
+    if not minimum_q:
+        return
+    from shopman.shop.rules.validation import delivery_minimum_message
+
+    raise PosIntentError(
+        code="below_delivery_minimum",
+        message=delivery_minimum_message(minimum_q),
+        field="items",
+        focus="cart",
+        recovery=DELIVERY_MINIMUM_RECOVERY,
+    )
+
+
+#: Recusas do commit que se consertam no endereço da entrega.
+_COMMIT_ADDRESS_CODES = frozenset({
+    "delivery_zone_not_covered", "delivery_zone_unverified", "delivery_address_mismatch",
+})
+#: Recusas do commit que dizem "o estado mudou": conferir e tentar de novo.
+_COMMIT_CONFLICT_CODES = frozenset({
+    "revision_changed", "in_progress", "blocking_issues", "stale_checks", "hold_expired",
+})
+
+
+def _commit_refusal(exc) -> PosIntentError:
+    """Uma recusa das regras do commit, no dialeto do PDV (``PosIntentError``).
+
+    Cobre TODA regra de ``rules/validation.py`` (e as do Orderman) de uma vez: a
+    frase é a da regra; ``field``/``focus`` levam o operador ao lugar que conserta.
+    As que o PDV sabe perguntar antes (CPF da nota, endereço, mínimo, preço)
+    chegam antes por ``_require_*``; esta é a rede para o resto.
+    """
+    from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES, TAX_ID_FIELD
+
+    code = str(getattr(exc, "code", "") or "commit_refused")
+    message = str(getattr(exc, "message", "") or "") or "A venda foi recusada pelas regras da loja."
+    context = dict(getattr(exc, "context", None) or {})
+    field, focus, recovery = "", "cart", ""
+    if code == "below_delivery_minimum":
+        field, recovery = "items", DELIVERY_MINIMUM_RECOVERY
+    elif code == "price_missing":
+        field = "items"
+    elif code in _COMMIT_ADDRESS_CODES:
+        field = focus = "delivery_address"
+    elif code in REFUSAL_CODES:
+        if context.get("field") == TAX_ID_FIELD:
+            field, focus = "fiscal_tax_id", "receipt"
+        else:
+            field = focus = "delivery_address"
+    return PosIntentError(
+        code=code,
+        message=message,
+        field=field,
+        focus=focus,
+        status=409 if code in _COMMIT_CONFLICT_CODES else 422,
+        recovery=recovery,
+    )
+
+
 #: A frase do balcão para a entrega com nota sem CPF (a tela usa a mesma).
 DELIVERY_TAX_ID_REQUIRED_MESSAGE = "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente."
 
@@ -1291,16 +1399,19 @@ def save_pos_tab(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
-    weighed_sale.apply_to_payload(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    from shopman.shop.services import pos_edit_session
+
+    # Na comanda da edição, a peça pesada que já estava no pedido fica com o peso
+    # e o preço vendidos (não se reconverte pela etiqueta de hoje).
+    pinned = pos_edit_session.pin_session_lines(session, payload) if pos_edit_session.is_edit_session(session) else set()
+    weighed_sale.apply_to_payload(payload, channel=channel, skip_line_ids=pinned)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
     if payload.get("sales_mode") == "order" and payload.get("items"):
         _validate_schedule(payload)
     before_items = session.items
-    from shopman.shop.services import pos_edit_session
-
     if pos_edit_session.is_edit_session(session):
         return _save_edit_session(session, payload, channel=channel, config=config, actor=actor,
             operator_username=operator_username)

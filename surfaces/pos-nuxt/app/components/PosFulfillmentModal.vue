@@ -40,6 +40,14 @@ const props = defineProps<{
   /** A taxa RESOLVIDA pelo servidor, e de onde ela veio. */
   deliveryFeeQ: number;
   deliveryFeeSource: string;
+  /**
+   * Em que pé está a taxa. `resolved`: a review respondeu (e `deliveryFeeSource`
+   * diz de onde veio). `calculating`: a review está a caminho. `failed`: a review
+   * falhou. `at_payment`: fora do pagamento a review não roda — a taxa só é
+   * calculada lá. Sem ela, R$ 0,00 + "Preencha o endereço" aparecia com o
+   * endereço preenchido, e as duas coisas eram falsas.
+   */
+  deliveryFeeStatus?: "resolved" | "calculating" | "failed" | "at_payment";
   deliveryDistanceKm: number | null;
   orderNotes: string;
 }>();
@@ -83,8 +91,26 @@ watch(() => props.fulfillmentType, async (type) => {
 
 // De onde a taxa saiu, em palavras. O operador precisa poder responder "por que
 // deu isso?" sem abrir o Admin.
+const hasAddress = computed(() => Boolean(props.deliveryAddress.trim() || props.deliveryNeighborhood.trim()));
+/** A taxa na tela é um número que a loja calculou — senão, travessão. */
+const deliveryFeeKnown = computed(() =>
+  !props.deliveryFeeOverride
+  && hasAddress.value
+  && (props.deliveryFeeStatus ?? "resolved") === "resolved"
+  && Boolean(props.deliveryFeeSource)
+  && props.deliveryFeeSource !== "blocked",
+);
 const deliveryFeeNote = computed(() => {
   if (props.deliveryFeeOverride) return "Valor combinado por você para esta entrega.";
+  if (!hasAddress.value) return "Preencha o endereço para a loja calcular a taxa.";
+  switch (props.deliveryFeeStatus ?? "resolved") {
+    case "at_payment":
+      return "A taxa deste endereço é calculada no pagamento.";
+    case "calculating":
+      return "Calculando a taxa deste endereço…";
+    case "failed":
+      return "Não deu para calcular a taxa agora. Combine o valor com o cliente.";
+  }
   const km = props.deliveryDistanceKm;
   switch (props.deliveryFeeSource) {
     case "zone":
@@ -98,7 +124,9 @@ const deliveryFeeNote = computed(() => {
     case "manual":
       return "Valor combinado para esta entrega.";
     default:
-      return "Preencha o endereço para a loja calcular a taxa.";
+      // A review respondeu e não achou zona, bairro nem distância para este
+      // endereço: a taxa não foi calculada — não é grátis.
+      return "Não deu para calcular a taxa deste endereço. Confira o CEP e o bairro, ou combine o valor.";
   }
 });
 
@@ -187,7 +215,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
           <div class="grid gap-1.5 rounded-md border bg-card p-3 text-sm">
             <div class="flex items-center justify-between gap-2">
               <span class="font-medium text-muted-foreground">Taxa de entrega</span>
-              <strong class="tabular-nums">{{ deliveryFeeOverride ? "—" : formatBRL(deliveryFeeQ) }}</strong>
+              <strong class="tabular-nums">{{ deliveryFeeKnown ? formatBRL(deliveryFeeQ) : "—" }}</strong>
             </div>
             <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
             <button

@@ -41,7 +41,7 @@ describe('WhatsappVerifyPanel — envio manual', () => {
   it('depois do toque, a tela espera a mensagem', async () => {
     const wrapper = await mountSuspended(WhatsappVerifyPanel, { props: base })
     expect(wrapper.find('[data-login-whatsapp-open]').exists()).toBe(false)
-    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Enviou a mensagem?')
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Mensagem enviada?')
     expect(wrapper.find('[data-login-whatsapp-reopen]').exists()).toBe(true)
   })
 

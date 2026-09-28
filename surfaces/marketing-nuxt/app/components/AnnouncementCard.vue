@@ -408,7 +408,9 @@ const publishesOnGoogle = computed(() =>
 );
 /** A prévia confere o post do Google com as escolhas feitas aqui, antes de aprovar. */
 const previewGoogleBusiness = computed(() =>
-  publishesOnGoogle.value ? googleBusinessEdits(googleOptions.value) : undefined,
+  publishesOnGoogle.value
+    ? googleBusinessEdits(googleOptions.value)
+    : undefined,
 );
 
 function edits(): AnnouncementEdits {
@@ -727,7 +729,7 @@ function askToReject() {
           <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
                quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
           <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-          <!-- ⚠️ `UiToggleChip` do kit: escolha múltipla desenhada como pílula, que é
+            <!-- ⚠️ `UiToggleChip` do kit: escolha múltipla desenhada como pílula, que é
                o que estas sempre foram. Antes era um `<input type="checkbox">` `sr-only`
                embrulhado num `<label>` pintado — semântica escondida num lugar, alvo de
                toque noutro, e o desenho da seleção escrito à mão em cada tela.
@@ -744,7 +746,9 @@ function askToReject() {
             >
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
-              <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
+              <span v-if="readinessNote(option).badge" class="text-xs"
+                >· {{ readinessNote(option).badge }}</span
+              >
             </UiToggleChip>
           </div>
           <p
@@ -769,7 +773,7 @@ function askToReject() {
               {{ note.text }}
               <NuxtLink
                 v-if="note.tone !== 'limited'"
-                to="/platforms"
+                :to="{ path: '/v2', query: { area: 'platforms' } }"
                 class="font-semibold underline"
               >
                 Ver em Plataformas

@@ -23,7 +23,8 @@ const addressDefaultPending = ref<Record<number, boolean>>({})
 const { data: addressData, pending, refresh: refreshAddresses } = await useFetch<AddressListResponse>(apiPath('/api/v1/account/addresses/'), {
   credentials: 'include',
   headers: requestHeaders,
-  query: { include: 'copy' }
+  query: { include: 'copy' },
+  lazy: true
 })
 
 const addresses = computed(() => addressData.value?.addresses ?? [])

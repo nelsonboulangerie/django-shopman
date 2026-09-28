@@ -161,11 +161,15 @@ async function seedDraft(
 test.describe("gate global", () => {
   test("entrada anônima e erro de credenciais em 320", async ({ page }) => {
     await openScenario(page, "login-invalid", "/", V320);
-    await expect(page.getByRole("heading", { name: "Entre para operar" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Entre para operar" }),
+    ).toBeVisible();
     await page.getByLabel("Usuário").fill("operadora-visual");
     await page.getByLabel("Senha").fill("senha-incorreta");
     await page.getByRole("button", { name: "Entrar" }).click();
-    await expect(page.getByRole("alert")).toContainText("Usuário ou senha incorretos");
+    await expect(page.getByRole("alert")).toContainText(
+      "Usuário ou senha incorretos",
+    );
     await expectStableScreenshot(page, "login__anonymous-invalid", V320);
   });
 
@@ -176,7 +180,9 @@ test.describe("gate global", () => {
 
   test("acesso proibido não recomenda novo login", async ({ page }) => {
     await openScenario(page, "login-forbidden", "/", V1280);
-    await expect(page.getByRole("heading", { name: "Seu acesso não inclui Marketing" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Seu acesso não inclui Marketing" }),
+    ).toBeVisible();
     // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
     // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
     await expect(page.getByText("Entrar de novo não resolve")).toBeVisible();
@@ -188,7 +194,9 @@ test.describe("gate global", () => {
 
   test("falha de sessão mantém o app fechado", async ({ page }) => {
     await openScenario(page, "login-offline", "/", V390);
-    await expect(page.getByText("nenhum dado de Marketing foi carregado")).toBeVisible();
+    await expect(
+      page.getByText("nenhum dado de Marketing foi carregado"),
+    ).toBeVisible();
     await expectStableScreenshot(page, "login__offline", V390);
   });
 
@@ -208,7 +216,9 @@ test.describe("gate global", () => {
     await expectStableScreenshot(page, "login__rate-limited", V390);
   });
 
-  test("sessão expirada explica que o rascunho foi preservado", async ({ page }) => {
+  test("sessão expirada explica que o rascunho foi preservado", async ({
+    page,
+  }) => {
     await seedDraft(
       page,
       "announcement:41",
@@ -217,7 +227,9 @@ test.describe("gate global", () => {
       { body: "Rascunho preservado" },
     );
     await openScenario(page, "login-expired", "/", V1280);
-    await expect(page.getByRole("heading", { name: "Sua sessão terminou" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Sua sessão terminou" }),
+    ).toBeVisible();
     await expect(page.getByText(/rascunho.*preservados/i)).toBeVisible();
     await expectStableScreenshot(page, "login__expired-with-draft", V1280);
   });
@@ -231,8 +243,10 @@ test.describe("painel", () => {
     ["board-normal", "normal", V1280],
   ] as const) {
     test(`${state} em ${viewport.label}`, async ({ page }) => {
-      await openScenario(page, scenario, "/", viewport);
-      await expect(page.getByRole("heading", { level: 1, name: "Painel" })).toBeVisible();
+      await openScenario(page, scenario, "/__visual_board", viewport);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Painel" }),
+      ).toBeVisible();
       if (scenario !== "board-empty" && scenario !== "board-normal")
         await waitForFaithfulPreview(page);
       if (scenario === "board-pending") {
@@ -241,7 +255,9 @@ test.describe("painel", () => {
         ).toBeVisible();
         // O "quando" é campo (Imediato | Agendado) e a decisão é binária: o botão que
         // leva à caixa se chama "Continuar", porque daqui nada dispara.
-        await expect(page.getByRole("group", { name: "Disparo" })).toBeVisible();
+        await expect(
+          page.getByRole("group", { name: "Disparo" }),
+        ).toBeVisible();
         await expect(
           page.getByRole("button", { name: "Continuar", exact: true }),
         ).toBeVisible();
@@ -251,9 +267,12 @@ test.describe("painel", () => {
         // O rodapé mandava "Aprovar" num card sem botão "Aprovar"; agora ele descreve
         // o que a PRÓXIMA tela mostra, que é o que o "Continuar" abre.
         await expect(
-          page.getByText("é o que será disparado — agora ou na hora que você marcar", {
-            exact: false,
-          }),
+          page.getByText(
+            "é o que será disparado — agora ou na hora que você marcar",
+            {
+              exact: false,
+            },
+          ),
         ).toBeVisible();
         await expect(
           page.getByText("Publicar em", { exact: true }),
@@ -275,17 +294,50 @@ test.describe("painel", () => {
     });
   }
 
-  test("SSE desconectado fica explícito na caixa de alertas", async ({ page }) => {
-    await openScenario(page, "notifications-dedupe", "/", V1440);
+  test("SSE desconectado fica explícito na caixa de alertas", async ({
+    page,
+  }) => {
+    await openScenario(page, "notifications-dedupe", "/__visual_board", V1440);
     await page.getByRole("button", { name: /^Alertas:/ }).click();
-    await expect(page.getByRole("dialog", { name: "Alertas pessoais" })).toContainText("reconectando");
+    await expect(
+      page.getByRole("dialog", { name: "Alertas pessoais" }),
+    ).toContainText("reconectando");
     await expectStableScreenshot(page, "panel__sse-disconnected", V1440);
+  });
+});
+
+test.describe("workspace Marketing V2", () => {
+  test("campanhas mostram Google e formatos no mobile", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=campaigns", V390);
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Planeje uma vez, adapte por destino",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Google", { exact: true })).toBeVisible();
+    await expect(page.getByText("Atualização · Evento · Oferta")).toBeVisible();
+    await expectStableScreenshot(page, "v2__campaigns", V390);
+  });
+
+  test("plataformas distinguem prontidão e catálogo no desktop", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-normal", "/v2?area=platforms", V1280);
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Plataformas possíveis e situação real",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("TikTok via Relay")).toBeVisible();
+    await expectStableScreenshot(page, "v2__platforms", V1280);
   });
 });
 
 test.describe("cartão de anúncio", () => {
   test("edição longa não perde ações no menor mobile", async ({ page }) => {
-    await openScenario(page, "board-pending", "/", V320);
+    await openScenario(page, "board-pending", "/__visual_board", V320);
     await waitForFaithfulPreview(page);
     const body = page.getByLabel("Texto do anúncio");
     await body.fill(
@@ -325,7 +377,7 @@ test.describe("cartão de anúncio", () => {
   // O único retrato de caixa de confirmação que sobrou, porque é a única caixa que
   // sobrou: o disparo deixou de pedir cerimônia (ADR-031). Ela diz o efeito pelo nome.
   test("entregar agora abre confirmação factual", async ({ page }) => {
-    await openScenario(page, "board-pending", "/", V390);
+    await openScenario(page, "board-pending", "/__visual_board", V390);
     await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
@@ -337,7 +389,13 @@ test.describe("cartão de anúncio", () => {
     await expect(page.getByRole("dialog")).not.toContainText(
       "Confirmar consequência",
     );
-    await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "announcement-card__confirm-now",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("conflito de rascunho compara as duas versões", async ({ page }) => {
@@ -352,10 +410,16 @@ test.describe("cartão de anúncio", () => {
       ...base,
       body: "Minha edição local para a fornada",
     });
-    await openScenario(page, "board-pending", "/", V768);
-    await expect(page.getByText("Este conteúdo também mudou em outra sessão.")).toBeVisible();
+    await openScenario(page, "board-pending", "/__visual_board", V768);
+    await expect(
+      page.getByText("Este conteúdo também mudou em outra sessão."),
+    ).toBeVisible();
     await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
-    await expectStableScreenshot(page, "announcement-card__draft-conflict", V768);
+    await expectStableScreenshot(
+      page,
+      "announcement-card__draft-conflict",
+      V768,
+    );
   });
 
   // A prévia em tamanho real: um retrato por FORMATO, no lugar onde a pessoa vai ver.
@@ -370,7 +434,12 @@ test.describe("cartão de anúncio", () => {
     ["whatsapp-message", "whatsapp_message", V390],
   ] as const) {
     test(`prévia simulada de ${format}`, async ({ page }) => {
-      await openScenario(page, "board-all-formats", "/", viewport);
+      await openScenario(
+        page,
+        "board-all-formats",
+        "/__visual_board",
+        viewport,
+      );
       await waitForFaithfulPreview(page);
       await page
         .getByRole("button", { name: "Ver a prévia em tamanho real" })
@@ -394,7 +463,7 @@ test.describe("cartão de anúncio", () => {
   test("a prévia em tamanho real da confirmação sai do conteúdo congelado", async ({
     page,
   }) => {
-    await openScenario(page, "board-all-formats", "/", V390);
+    await openScenario(page, "board-all-formats", "/__visual_board", V390);
     await waitForFaithfulPreview(page);
     await page.getByLabel("Texto do anúncio").fill("Texto selado na decisão");
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
@@ -407,7 +476,9 @@ test.describe("cartão de anúncio", () => {
     const overlay = page.getByTestId("simulated-preview");
     // O Story retrata só a imagem — é o contrato da plataforma. O texto selado se lê
     // no retrato que tem texto, e é ele que prova de onde o conteúdo saiu.
-    await overlay.getByRole("tab", { name: SCENE_TABS.whatsapp_message }).click();
+    await overlay
+      .getByRole("tab", { name: SCENE_TABS.whatsapp_message })
+      .click();
     await expect(overlay).toContainText("Texto selado na decisão");
     await expectStableScreenshot(
       page,
@@ -418,11 +489,17 @@ test.describe("cartão de anúncio", () => {
     );
   });
 
-  test("prévia de plataforma permanece ao lado da decisão", async ({ page }) => {
-    await openScenario(page, "board-pending", "/", V1280);
+  test("prévia de plataforma permanece ao lado da decisão", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-pending", "/__visual_board", V1280);
     await expect(page.getByText("Prévia", { exact: true })).toBeVisible();
     await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
-    await expectStableScreenshot(page, "announcement-card__platform-preview", V1280);
+    await expectStableScreenshot(
+      page,
+      "announcement-card__platform-preview",
+      V1280,
+    );
   });
 });
 
@@ -439,14 +516,18 @@ test.describe("listas operacionais", () => {
       "/campaigns?state=inactive&platform=facebook&q=artesanal",
       V390,
     );
-    await expect(page.getByRole("heading", { level: 2, name: "Encontrar uma campanha" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Encontrar uma campanha" }),
+    ).toBeVisible();
     await expect(page.getByLabel("Situação")).toHaveValue("inactive");
     await expectStableScreenshot(page, "campaigns__filters", V390);
   });
 
   test("campanhas densas paginam sem ocultar estado", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1280);
-    await expect(page.getByRole("navigation", { name: "Páginas de campanhas" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Páginas de campanhas" }),
+    ).toBeVisible();
     await expectStableScreenshot(page, "campaigns__dense-paginated", V1280);
   });
 
@@ -473,14 +554,26 @@ test.describe("listas operacionais", () => {
     await expect(
       dialog.getByRole("checkbox", { name: "dom", exact: true }),
     ).toBeVisible();
-    await expectStableScreenshot(page, "campaign-form__weekdays-320", V320, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__weekdays-320",
+      V320,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("nova campanha preserva formulário e CTA com foco", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V320);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Nome da campanha").focus();
-    await expectStableScreenshot(page, "campaign-form__new-keyboard", V320, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__new-keyboard",
+      V320,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("edição longa mostra schema completo", async ({ page }) => {
@@ -492,7 +585,13 @@ test.describe("listas operacionais", () => {
     // dizia "Atualizando todas as plataformas…", às vezes já tinha chegado, e o
     // baseline guardava o que a máquina daquele dia decidiu. O estado assentado é um só.
     await waitForFaithfulPreview(page);
-    await expectStableScreenshot(page, "campaign-form__long-rules", V390, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__long-rules",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("intervalo recorrente inválido explica o campo", async ({ page }) => {
@@ -503,7 +602,13 @@ test.describe("listas operacionais", () => {
     await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
     await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
     await expect(page.getByRole("alert")).toContainText("data final");
-    await expectStableScreenshot(page, "campaign-form__validation", V768, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__validation",
+      V768,
+      "light",
+      { fullPage: false },
+    );
   });
 
   // ⚠️ Os sete checkboxes de público ficam ABAIXO da dobra do diálogo: os retratos que
@@ -528,7 +633,13 @@ test.describe("listas operacionais", () => {
     await expect(
       page.getByRole("checkbox", { name: "Quem favoritou o produto" }),
     ).toBeInViewport();
-    await expectStableScreenshot(page, "campaign-form__audience-choices", V390, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__audience-choices",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("edição completa em desktop", async ({ page }) => {
@@ -536,10 +647,18 @@ test.describe("listas operacionais", () => {
     await page.locator("main li").first().locator("button").nth(1).click();
     await waitForFaithfulPreview(page);
     await openCampaignStep(page, "Revisar");
-    await expectStableScreenshot(page, "campaign-form__edit-full", V1280, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__edit-full",
+      V1280,
+      "light",
+      { fullPage: false },
+    );
   });
 
-  test("conflito de campanha mostra diff antes de decidir", async ({ page }) => {
+  test("conflito de campanha mostra diff antes de decidir", async ({
+    page,
+  }) => {
     const base = {
       name: "Nome anterior",
       trigger: "production_finished",
@@ -557,35 +676,61 @@ test.describe("listas operacionais", () => {
     });
     await openScenario(page, "campaigns-dense", "/campaigns", V1440);
     await page.locator("main li").first().locator("button").nth(1).click();
-    await expect(page.getByText("Este conteúdo também mudou em outra sessão.")).toBeVisible();
+    await expect(
+      page.getByText("Este conteúdo também mudou em outra sessão."),
+    ).toBeVisible();
     await waitForFaithfulPreview(page);
-    await expectStableScreenshot(page, "campaign-form__conflict-diff", V1440, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "campaign-form__conflict-diff",
+      V1440,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("falha de modelos não parece lista vazia", async ({ page }) => {
     await openScenario(page, "templates-outage", "/templates", V390);
-    await expect(page.getByRole("alert")).toContainText("não significa que ela esteja vazia");
+    await expect(page.getByRole("alert")).toContainText(
+      "não significa que ela esteja vazia",
+    );
     await expectStableScreenshot(page, "templates__outage", V390);
   });
 
   test("modelo mostra dependências antes de apagar", async ({ page }) => {
     await openScenario(page, "templates-dependency", "/templates", V1280);
-    await page.getByRole("button", { name: "Apagar o modelo Novidades da padaria" }).click();
+    await page
+      .getByRole("button", { name: "Apagar o modelo Novidades da padaria" })
+      .click();
     await expect(page.getByRole("dialog")).toContainText("está em uso");
-    await expectStableScreenshot(page, "templates__dependency-blocked", V1280, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "templates__dependency-blocked",
+      V1280,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("edição de modelo cabe no menor mobile", async ({ page }) => {
     await openScenario(page, "templates-list", "/templates", V320);
     await page.locator("main ul li").first().locator("button").first().click();
-    await expectStableScreenshot(page, "templates__edit", V320, "light", { fullPage: false });
+    await expectStableScreenshot(page, "templates__edit", V320, "light", {
+      fullPage: false,
+    });
   });
 
   test("documentação de variável fica no contexto", async ({ page }) => {
     await openScenario(page, "templates-list", "/templates", V390);
     await page.getByRole("button", { name: "Novo modelo" }).click();
     await expect(page.getByText("Variáveis disponíveis")).toBeVisible();
-    await expectStableScreenshot(page, "templates__placeholder-help", V390, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "templates__placeholder-help",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("variantes reais aparecem no formulário", async ({ page }) => {
@@ -599,7 +744,13 @@ test.describe("listas operacionais", () => {
     await expect(
       google.getByText("Tipo de postagem", { exact: true }),
     ).toBeInViewport();
-    await expectStableScreenshot(page, "templates__platform-variant", V768, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "templates__platform-variant",
+      V768,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("lista de modelos realmente vazia", async ({ page }) => {
@@ -607,38 +758,68 @@ test.describe("listas operacionais", () => {
     await expectStableScreenshot(page, "templates__empty", V1440);
   });
 
-  test("falha de plataformas não parece ausência de configuração", async ({ page }) => {
-    await openScenario(page, "platforms-outage", "/platforms", V390);
-    await expect(page.getByRole("alert")).toContainText("indisponibilidade de leitura");
+  test("falha de plataformas não parece ausência de configuração", async ({
+    page,
+  }) => {
+    await openScenario(page, "platforms-outage", "/v2?area=platforms", V390);
+    await expect(page.getByRole("alert")).toContainText(
+      "situação das conexões não pôde ser verificada",
+    );
     await expectStableScreenshot(page, "platforms__outage", V390);
   });
 
   test("plataforma pronta em desktop", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/platforms", V1280);
+    await openScenario(page, "platforms-ready", "/v2?area=platforms", V1280);
     await expectStableScreenshot(page, "platforms__ready", V1280);
   });
 
   test("plataforma bloqueada explica reparo no mobile", async ({ page }) => {
-    await openScenario(page, "platforms-blocked", "/platforms", V320);
-    await page.locator("main ul li").first().locator("button").click();
-    await expectStableScreenshot(page, "platforms__blocked", V320, "light", { fullPage: false });
+    await openScenario(page, "platforms-blocked", "/v2?area=platforms", V320);
+    await page
+      .getByRole("link", { name: "Ver conexão e configuração" })
+      .first()
+      .click();
+    await expect(page.getByRole("dialog").last()).toBeVisible();
+    await expectStableScreenshot(page, "platforms__blocked", V320, "light", {
+      fullPage: false,
+    });
   });
 
   test("teste sandbox preserva comprovante", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/platforms", V768);
-    await page.getByRole("button", { name: /WhatsApp/ }).click();
+    await openScenario(page, "platforms-ready", "/v2?area=platforms", V768);
+    await page
+      .locator("li")
+      .filter({ hasText: "WhatsApp" })
+      .getByRole("link", { name: "Ver conexão e configuração" })
+      .click();
     await page.getByRole("button", { name: "Enviar teste" }).click();
-    await expect(page.getByText(/Comprovante visual-test-receipt/)).toBeVisible();
-    await expectStableScreenshot(page, "platforms__test-receipt", V768, "light", { fullPage: false });
+    await expect(
+      page.getByText(/Comprovante visual-test-receipt/),
+    ).toBeVisible();
+    await expectStableScreenshot(
+      page,
+      "platforms__test-receipt",
+      V768,
+      "light",
+      { fullPage: false },
+    );
   });
 
-  test("conflito de configuração mantém consequência visível", async ({ page }) => {
-    await openScenario(page, "platforms-conflict", "/platforms", V1440);
-    await page.getByRole("button", { name: /WhatsApp/ }).click();
+  test("conflito de configuração mantém consequência visível", async ({
+    page,
+  }) => {
+    await openScenario(page, "platforms-conflict", "/v2?area=platforms", V1440);
+    await page
+      .locator("li")
+      .filter({ hasText: "WhatsApp" })
+      .getByRole("link", { name: "Ver conexão e configuração" })
+      .click();
     // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
     // em vez de um cartão por modelo.
     await page.getByRole("button", { name: /Modelo aprovado/ }).click();
-    await page.getByRole("option", { name: /Aviso de fornada — versão revisada/ }).click();
+    await page
+      .getByRole("option", { name: /Aviso de fornada — versão revisada/ })
+      .click();
     const code = page.getByRole("group", {
       name: "Código de 6 dígitos do autenticador",
     });
@@ -647,7 +828,13 @@ test.describe("listas operacionais", () => {
     }
     await page.getByRole("button", { name: "Salvar configuração" }).click();
     await expect(page.getByText(/mudou em outra sessão/)).toBeVisible();
-    await expectStableScreenshot(page, "platforms__configuration-conflict", V1440, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "platforms__configuration-conflict",
+      V1440,
+      "light",
+      { fullPage: false },
+    );
   });
 });
 
@@ -660,11 +847,17 @@ test.describe("disparo manual seguro", () => {
   ] as const) {
     test(`${state}`, async ({ page }) => {
       await openScenario(page, scenario, "/campaigns", viewport);
-      await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+      await page
+        .getByRole("button", {
+          name: /Preparar o disparo da campanha Fornada artesanal 01/,
+        })
+        .click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.waitForTimeout(450);
       if (scenario === "fire-large") {
-        await expect(page.getByRole("dialog").getByText("1.999", { exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("dialog").getByText("1.999", { exact: true }),
+        ).toBeVisible();
       }
       // ⚠️ A contagem chega depois e MUDA A ALTURA do painel. Rolar antes dela assentar
       // deixa o retrato numa posição que ninguém decidiu — e `scrollIntoViewIfNeeded`
@@ -675,41 +868,84 @@ test.describe("disparo manual seguro", () => {
       await page
         .getByRole("dialog")
         .evaluate((element) => element.scrollTo(0, element.scrollHeight));
-      await expectStableScreenshot(page, `fire-campaign__${state}`, viewport, "light", { fullPage: false });
+      await expectStableScreenshot(
+        page,
+        `fire-campaign__${state}`,
+        viewport,
+        "light",
+        { fullPage: false },
+      );
     });
   }
 
   test("contagem em andamento mantém o CTA bloqueado", async ({ page }) => {
     await openScenario(page, "fire-loading", "/campaigns", V390);
-    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await page
+      .getByRole("button", {
+        name: /Preparar o disparo da campanha Fornada artesanal 01/,
+      })
+      .click();
     await page.waitForTimeout(400);
     await expect(page.getByText("Contando…")).toBeVisible();
-    await expect(page.getByRole("dialog").locator('button[type="submit"]')).toBeDisabled();
-    await expectStableScreenshot(page, "fire-campaign__count-loading", V390, "light", { fullPage: false });
+    await expect(
+      page.getByRole("dialog").locator('button[type="submit"]'),
+    ).toBeDisabled();
+    await expectStableScreenshot(
+      page,
+      "fire-campaign__count-loading",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
-
 
   test("throttle explica a espera sem perder o painel", async ({ page }) => {
     await openScenario(page, "fire-throttled", "/campaigns", V768);
-    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await page
+      .getByRole("button", {
+        name: /Preparar o disparo da campanha Fornada artesanal 01/,
+      })
+      .click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
-    await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
+    await expect(page.getByRole("alert")).toContainText(
+      "em cerca de 20 minutos",
+    );
     await expect(page.getByRole("alert")).toContainText("Nada foi criado");
-    await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "fire-campaign__throttled",
+      V768,
+      "light",
+      { fullPage: false },
+    );
   });
 
-  test("conflito atualiza a versão e mantém recuperação inline", async ({ page }) => {
+  test("conflito atualiza a versão e mantém recuperação inline", async ({
+    page,
+  }) => {
     await openScenario(page, "fire-conflict", "/campaigns", V1024);
-    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await page
+      .getByRole("button", {
+        name: /Preparar o disparo da campanha Fornada artesanal 01/,
+      })
+      .click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
-    await expect(page.getByLabel("Definir público").getByRole("alert")).toContainText("mudou em outra sessão");
+    await expect(
+      page.getByLabel("Definir público").getByRole("alert"),
+    ).toContainText("mudou em outra sessão");
     // ⚠️ O conflito manda recontar o público. Sem esperar o número assentado, o retrato
     // guardava "Contando…" num dia e o total no outro — cara ou coroa decidida pela
     // velocidade da máquina, não pela tela.
     await expect(page.getByText("Contando…")).toHaveCount(0);
-    await expectStableScreenshot(page, "fire-campaign__conflict", V1024, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "fire-campaign__conflict",
+      V1024,
+      "light",
+      { fullPage: false },
+    );
   });
 
   // ⚠️ O seletor de produto NÃO tinha retrato nenhum: ele só aparece quando o modelo
@@ -719,7 +955,11 @@ test.describe("disparo manual seguro", () => {
     page,
   }) => {
     await openScenario(page, "fire-product", "/campaigns", V390);
-    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await page
+      .getByRole("button", {
+        name: /Preparar o disparo da campanha Fornada artesanal 01/,
+      })
+      .click();
     await expect(page.getByText("Produto desta ocorrência")).toBeVisible();
     await page.getByRole("button", { name: "Escolha o produto" }).click();
     // Acima de doze opções o primitivo abre a busca — é o que separa escolher de rolar.
@@ -727,19 +967,33 @@ test.describe("disparo manual seguro", () => {
     // "artesanal 1" casa com o 01 e com o 10 ao 14 — seis de catorze.
     await page.getByPlaceholder("Buscar produto").fill("artesanal 1");
     await expect(page.getByRole("option")).toHaveCount(6);
-    await expectStableScreenshot(page, "fire-campaign__product-search", V390, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "fire-campaign__product-search",
+      V390,
+      "light",
+      { fullPage: false },
+    );
   });
 
-  test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({ page }) => {
+  test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({
+    page,
+  }) => {
     await openScenario(page, "fire-accepted", "/campaigns", V1440);
-    await page.getByRole("button", { name: /Preparar o disparo da campanha Fornada artesanal 01/ }).click();
+    await page
+      .getByRole("button", {
+        name: /Preparar o disparo da campanha Fornada artesanal 01/,
+      })
+      .click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Revisar anúncio" }).click();
     // Sem senha e sem frase digitada: o servidor declara o disparo dispensado de
     // cerimônia (ADR-031) e o navegador consome o token sozinho. O toque em "Disparar
     // agora" é a última coisa que o gestor faz antes de estar na revisão.
     await expect(page).toHaveURL(/\/announcements\/\d+\?dispatch=new#review/);
-    await expect(page.getByText("Este anúncio acabou de ser criado pelo seu disparo")).toBeVisible();
+    await expect(
+      page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),
+    ).toBeVisible();
     await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
     // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
     await waitForFaithfulPreview(page);
@@ -749,7 +1003,13 @@ test.describe("disparo manual seguro", () => {
     // mudanças desta frente. A URL acima já prova que a tela chegou na revisão; o
     // retrato quer o conteúdo, não a posição de rolagem que ninguém decidiu.
     await page.evaluate(() => window.scrollTo(0, 0));
-    await expectStableScreenshot(page, "fire-campaign__review-handoff", V1440, "light", { fullPage: false });
+    await expectStableScreenshot(
+      page,
+      "fire-campaign__review-handoff",
+      V1440,
+      "light",
+      { fullPage: false },
+    );
   });
 });
 
@@ -791,16 +1051,24 @@ test.describe("alertas pessoais", () => {
     ["notifications-stale", "stale-action", V375],
   ] as const) {
     test(`${state} em ${viewport.label}`, async ({ page }) => {
-      await openScenario(page, scenario, "/", viewport);
+      await openScenario(page, scenario, "/__visual_board", viewport);
       await waitForFaithfulPreview(page);
       await page.getByRole("button", { name: /^Alertas:/ }).click();
       const dialog = page.getByRole("dialog", { name: "Alertas pessoais" });
       await expect(dialog).toBeVisible();
       if (scenario === "notifications-stale") {
-        await expect(dialog.getByRole("button", { name: "Revisar anúncio" })).toBeDisabled();
+        await expect(
+          dialog.getByRole("button", { name: "Revisar anúncio" }),
+        ).toBeDisabled();
         await expect(dialog).toContainText("já foi decidido");
       }
-      await expectStableScreenshot(page, `notifications__${state}`, viewport, "light", { fullPage: false });
+      await expectStableScreenshot(
+        page,
+        `notifications__${state}`,
+        viewport,
+        "light",
+        { fullPage: false },
+      );
     });
   }
 });
@@ -810,59 +1078,97 @@ test.describe("erros globais", () => {
     await openScenario(page, "board-normal", "/__visual_error/500", V320);
     await context.setOffline(true);
     await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-    await expect(page.getByRole("heading", { name: "Você está sem conexão" })).toBeVisible();
-    await expectStableScreenshot(page, "global-error__offline", V320, "light", { fullPage: false });
+    await expect(
+      page.getByRole("heading", { name: "Você está sem conexão" }),
+    ).toBeVisible();
+    await expectStableScreenshot(page, "global-error__offline", V320, "light", {
+      fullPage: false,
+    });
   });
 
   test("404 verdadeiro em 390", async ({ page }) => {
     await openScenario(page, "board-normal", "/__visual_error/404", V390);
-    await expect(page.getByRole("heading", { name: "Esta página não existe" })).toBeVisible();
-    await expectStableScreenshot(page, "global-error__404", V390, "light", { fullPage: false });
+    await expect(
+      page.getByRole("heading", { name: "Esta página não existe" }),
+    ).toBeVisible();
+    await expectStableScreenshot(page, "global-error__404", V390, "light", {
+      fullPage: false,
+    });
   });
 
   test("500 preserva referência segura em 1280", async ({ page }) => {
     await openScenario(page, "board-normal", "/__visual_error/500", V1280);
     await expect(page.getByText("visual-mkt046-request")).toBeVisible();
-    await expectStableScreenshot(page, "global-error__500", V1280, "light", { fullPage: false });
+    await expectStableScreenshot(page, "global-error__500", V1280, "light", {
+      fullPage: false,
+    });
   });
 
   test("manutenção se distingue de falha genérica", async ({ page }) => {
     await openScenario(page, "board-normal", "/__visual_error/503", V1024);
-    await expect(page.getByRole("heading", { name: "Marketing temporariamente indisponível" })).toBeVisible();
-    await expectStableScreenshot(page, "global-error__maintenance", V1024, "light", { fullPage: false });
+    await expect(
+      page.getByRole("heading", {
+        name: "Marketing temporariamente indisponível",
+      }),
+    ).toBeVisible();
+    await expectStableScreenshot(
+      page,
+      "global-error__maintenance",
+      V1024,
+      "light",
+      { fullPage: false },
+    );
   });
 
   test("contrato incompatível não recomenda novo login", async ({ page }) => {
     await openScenario(page, "board-normal", "/__visual_error/426", V375);
-    await expect(page.getByRole("heading", { name: "Esta versão precisa ser atualizada" })).toBeVisible();
-    await expectStableScreenshot(page, "global-error__unsupported-contract", V375, "light", { fullPage: false });
+    await expect(
+      page.getByRole("heading", { name: "Esta versão precisa ser atualizada" }),
+    ).toBeVisible();
+    await expectStableScreenshot(
+      page,
+      "global-error__unsupported-contract",
+      V375,
+      "light",
+      { fullPage: false },
+    );
   });
 });
 
 test.describe("modos transversais", () => {
   test("tema escuro", async ({ page }) => {
-    await openScenario(page, "board-normal", "/", V390, "dark");
+    await openScenario(page, "board-normal", "/__visual_board", V390, "dark");
     await expect(page.locator("html")).toHaveClass(/dark/);
     await expectStableScreenshot(page, "panel__normal", V390, "dark");
   });
 
   test("equivalente a zoom 200% sem perder ação", async ({ page }) => {
     const zoom = { width: 640, height: 800, label: "zoom-200" };
-    await openScenario(page, "platforms-blocked", "/platforms", zoom);
-    await expectStableScreenshot(page, "platforms__blocked", zoom, "light", { fullPage: false });
+    await openScenario(page, "platforms-blocked", "/v2?area=platforms", zoom);
+    await expectStableScreenshot(page, "platforms__blocked", zoom, "light", {
+      fullPage: false,
+    });
   });
 
   test("foco visível com cores forçadas", async ({ page }) => {
-    await openScenario(page, "board-normal", "/", V390);
-    await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
-    const campaigns = page.getByRole("link", { name: "Campanhas", exact: true });
+    await openScenario(page, "board-normal", "/__visual_board", V390);
+    await page.emulateMedia({
+      forcedColors: "active",
+      reducedMotion: "reduce",
+    });
+    const campaigns = page.getByRole("link", {
+      name: "Campanhas",
+      exact: true,
+    });
     await campaigns.focus();
     await expect(campaigns).toBeFocused();
     await expectStableScreenshot(page, "panel__focus-forced-colors", V390);
   });
 
-  test("espaçamento de texto WCAG preserva conteúdo e ações", async ({ page }) => {
-    await openScenario(page, "board-pending", "/", V1024);
+  test("espaçamento de texto WCAG preserva conteúdo e ações", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-pending", "/__visual_board", V1024);
     await waitForFaithfulPreview(page);
     await page.addStyleTag({
       content: `

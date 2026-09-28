@@ -16,7 +16,8 @@ const { setStockNotifyState, clearStockNotifyState } = useStockNotifyTransientSt
 
 const { data: summary, pending, refresh: refreshSummary } = await useFetch<AccountSummary>(apiPath('/api/v1/account/summary/'), {
   credentials: 'include',
-  headers: requestHeaders
+  headers: requestHeaders,
+  lazy: true
 })
 
 async function toggleFood (pref: { key: string, is_active: boolean }) {

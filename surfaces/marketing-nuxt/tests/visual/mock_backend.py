@@ -601,6 +601,15 @@ class Handler(BaseHTTPRequestHandler):
             actions = [
                 action(
                     f"campaign:{rule['pk']}",
+                    "edit_campaign",
+                    f"/campaigns#campaign-{rule['pk']}",
+                    enabled=True,
+                    version=rule["version"],
+                )
+                for rule in rules
+            ] + [
+                action(
+                    f"campaign:{rule['pk']}",
                     "fire_campaign",
                     f"/api/v1/backstage/marketing/rules/{rule['pk']}/fire/",
                     enabled=fire_enabled and rule["is_active"],
@@ -619,11 +628,15 @@ class Handler(BaseHTTPRequestHandler):
                     {"value": "production_finished", "label": "Lote concluído"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
-                # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos
-                # mexeria numa pílula a mais em cada baseline que já existe.
-                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
-                + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
-                + [{"value": "whatsapp", "label": "WhatsApp"}],
+                # A fixture de produto não pode esconder uma capacidade executável para
+                # preservar screenshots antigos. Plataforma desconectada continua visível
+                # com seu estado; quem limita a escolha é a allow-list do contrato.
+                "platforms": [
+                    {"value": "instagram", "label": "Instagram"},
+                    {"value": "facebook", "label": "Facebook"},
+                    {"value": "google_business", "label": "Google"},
+                    {"value": "whatsapp", "label": "WhatsApp"},
+                ],
                 "delivery_capabilities": [
                     {
                         "platform": "instagram",
@@ -682,7 +695,12 @@ class Handler(BaseHTTPRequestHandler):
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
                 "tags": [{"value": "clientes-da-casa", "label": "clientes da casa (1.999)"}],
                 "rfm_segments": [{"value": "champion", "label": "Campeões"}],
-                "offers": [],
+                "offers": [
+                    {
+                        "value": "hibisco-primavera",
+                        "label": "Hibisco Primavera · 15% OFF · PRIMAVERA15",
+                    }
+                ],
                 "shop_timezone": "America/Sao_Paulo",
             }})
             return
@@ -1059,8 +1077,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path
-        self._body()
+        body = self._body()
         if re.fullmatch(r"/api/v1/backstage/marketing/rules/\d+/", path):
+            if body.get("base_updated_at") != campaign(1)["updated_at"]:
+                self._send(422, {
+                    "code": "invalid_base_version",
+                    "detail": "A versão de leitura é obrigatória.",
+                })
+                return
             self._send(409, {
                 "code": "version_conflict",
                 "detail": "A campanha mudou em outra sessão.",

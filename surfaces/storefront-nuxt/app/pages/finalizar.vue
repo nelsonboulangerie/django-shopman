@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
-import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
+import type { AddressSelection } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
@@ -58,6 +58,12 @@ const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 const { setFromServer, clearCart, applyCoupon, removeCoupon } = useCartState()
 const session = useShopSession()
+const checkoutRoot = ref<HTMLElement | null>(null)
+const {
+  keyboardActive,
+  onFocusIn: onCheckoutFocusIn,
+  onFocusOut: onCheckoutFocusOut
+} = useMobileFormViewport(checkoutRoot)
 // DDD padrão da loja (config admin) — assumido quando o cliente digita telefone
 // sem DDD, para o número nunca virar "(55) …" nem falhar a validação por isso.
 // O checkout carrega o DDD padrão direto (crítico p/ normalizar telefone mesmo
@@ -155,13 +161,6 @@ const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm(
 const quotingZone = ref(false)
 const draftSyncing = ref(false)
 const changePhoneOpen = ref(false)
-const addressLabelOpen = ref(false)
-const savedAddressIdForLabel = ref<number | null>(null)
-// Etiqueta escolhida ao ADICIONAR um endereço novo no checkout (coletada na hora,
-// aplicada quando o pedido fecha — o endereço só ganha ID na confirmação).
-const collectLabelOpen = ref(false)
-const pendingAddressLabel = ref<{ key: AddressLabelKey, custom: string } | null>(null)
-const pendingTrackingUrl = ref('')
 const confirmOpen = ref(false)
 const receiptOpen = ref(false)
 const datePopoverOpen = ref(false)
@@ -293,7 +292,8 @@ const checkoutQuery = computed(() => state.delivery_date ? { delivery_date: stat
 const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPath('/api/v1/storefront/checkout/'), {
   credentials: 'include',
   headers: requestHeaders,
-  query: checkoutQuery
+  query: checkoutQuery,
+  lazy: true
 })
 
 // Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
@@ -641,20 +641,24 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
 // vive em utils/checkoutDraft (puro, testado); o save só liga após restaurar, pra não
 // sobrescrever o rascunho antigo com os defaults desta carga. Validade 6h.
 let draftRestored = false
+let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
 }
-// SÍNCRONO no setup (client), ANTES do watch(checkout) e demais abaixo — assim eles
-// veem o rascunho restaurado e o respeitam (em onMounted já teriam rodado com o default
-// e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
-if (import.meta.client) {
+// No SSR/hydration o checkout já existe e isto continua síncrono. Em navegação
+// cliente a projeção é lazy: esperamos o draft_context verdadeiro antes de
+// validar o rascunho, sem manter a página anterior presa à requisição.
+function restoreCheckoutDraft () {
+  if (!import.meta.client || draftRestored) return
+  if (!checkout.value) return
+  const draftContext = cart.value?.draft_context || ''
   try {
-    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), cart.value?.draft_context || '')
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), draftContext)
     if (draft) {
+      hasRestoredCheckoutDraft = true
       Object.assign(state, draft.state)
       if (draft.attemptKey) attemptKey.value = draft.attemptKey
       if (draft.activeStep) activeStep.value = draft.activeStep
-      if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
       // A seleção de endereço restaurada alimenta o AddressPicker (prop
       // `selection`): salvo re-marca o rádio; novo reabre o form preenchido.
       // Sem ela, o preselect do picker SOBRESCREVIA o endereço do rascunho.
@@ -665,8 +669,9 @@ if (import.meta.client) {
       clearCheckoutDraft()
     }
   } catch { /* rascunho corrompido: ignora */ }
+  draftRestored = true
 }
-draftRestored = true
+watch(checkout, restoreCheckoutDraft, { immediate: true })
 function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {
@@ -677,13 +682,12 @@ function saveCheckoutDraft () {
       // Documento não fica guardado no aparelho: o CPF sai do rascunho.
       state: { ...state, fiscal_tax_id: '', fiscal_tax_id_on_pickup: false, save_fiscal_tax_id: false },
       activeStep: activeStep.value,
-      pendingAddressLabel: pendingAddressLabel.value,
       addressSelection: addressSelection.value,
       savedAt: Date.now()
     }))
   } catch { /* quota/serialização: ignora */ }
 }
-watch([state, activeStep, pendingAddressLabel, addressSelection, attemptKey], saveCheckoutDraft, { deep: true })
+watch([state, activeStep, addressSelection, attemptKey], saveCheckoutDraft, { deep: true })
 
 function pickDeliveryDate (value: string) {
   if (isCheckoutDateUnavailable(value, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) return
@@ -732,13 +736,19 @@ watch(() => checkout.value, value => {
   } else if (!state.phone) {
     state.phone = value.customer_phone || ''
   }
-  if (!state.payment_method) state.payment_method = value.default_payment_method || methods[0]?.ref || ''
+  if (!methods.some(method => method.ref === state.payment_method)) {
+    state.payment_method = value.default_payment_method || methods[0]?.ref || ''
+  }
   // O CPF que a casa já conhece (cadastro ou última entrega) vem na nota da
   // entrega e vale; a pessoa troca aqui para a nota sair no documento de outra
   // pessoa. Nunca sobre o que já digitou.
   if (!state.fiscal_tax_id && value.prefill_tax_id) state.fiscal_tax_id = formatTaxId(value.prefill_tax_id)
   if (!state.delivery_time_slot) state.delivery_time_slot = value.earliest_slot_ref || projectedSlots.find(slot => slot.enabled)?.ref || ''
-  if (!checkoutHydrated && !fulfillments.includes(state.fulfillment_type)) {
+  if (!checkoutHydrated && !hasRestoredCheckoutDraft) {
+    state.fulfillment_type = fulfillments.includes(value.default_fulfillment_type)
+      ? value.default_fulfillment_type
+      : fulfillments[0] || 'pickup'
+  } else if (!checkoutHydrated && !fulfillments.includes(state.fulfillment_type)) {
     state.fulfillment_type = fulfillments[0] || 'pickup'
   }
   // Quem chega sem nome já encontra o campo aberto — mas por decisão tomada
@@ -750,20 +760,24 @@ watch(() => checkout.value, value => {
   reconcileDeliverySlot()
 }, { immediate: true })
 
-// Pré-seleciona "hoje" só APÓS a hidratação: fazê-lo no setup (client-only)
-// divergia do HTML do servidor (que não tem data) — o resumo mostrava "Hoje"
-// e a query do checkout mudava, re-disparando o fetch (skeleton) em plena
-// hidratação. Em onMounted a mudança é pós-paint e o re-render é limpo.
-onMounted(() => {
+// Pré-seleciona a primeira data REALMENTE disponível só depois que a projection
+// existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
+// ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
+// os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
+function initializeDeliveryDate () {
   if (chosenDate.value) return
-  // Default = primeira data REALMENTE disponível (não "hoje", que pode estar
-  // fechado: domingo, feriado, férias). Fallback p/ hoje só sem projection.
-  const value = checkout.value?.available_dates?.[0] || localDateValue(new Date())
+  if (!checkout.value) return
+  const restoredDate = state.delivery_date
+  const value = restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+    ? restoredDate
+    : checkout.value.available_dates?.[0] || localDateValue(new Date())
   const parsed = parseLocalDate(value)
   if (!parsed) return
   chosenDate.value = parsed
   state.delivery_date = value
-})
+}
+onMounted(initializeDeliveryDate)
+watch(checkout, initializeDeliveryDate, { flush: 'post' })
 
 // O AddressPicker é o dono do passo de endereço: a seleção dele (salvo ou
 // novo) é a única fonte do que vai no payload do checkout. Flush síncrono:
@@ -884,6 +898,10 @@ watchEffect(() => {
 })
 
 function stepState (step: Step): CheckoutSectionState {
+  // Contato é a única etapa atual enquanto estiver incompleto/em edição. Manter
+  // também "Como receber" como current produziria dois "Agora" e duas tarefas
+  // concorrentes, justamente quando a pessoa precisa de condução.
+  if (contactState.value !== 'done') return 'upcoming'
   return checkoutStepState({
     step,
     steps: steps.value,
@@ -1036,6 +1054,11 @@ function saveContact () {
   if (validateContact()) nameEditing.value = false
 }
 
+function focusCheckoutControl (id: string) {
+  if (!import.meta.client) return
+  document.getElementById(id)?.focus({ preventScroll: true })
+}
+
 // Omotenashi: um gate de validação NUNCA falha em silêncio. O erro vem até o
 // cliente (toast) e a tela mostra o primeiro campo com erro (role="alert"),
 // em vez de ficar quietinho num campo fora da view. Se o erro abriu OUTRA
@@ -1057,6 +1080,18 @@ async function continueFromFulfillment () {
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
 }
 
+// Escolher Entrega já É a decisão deste passo. Exigir outro toque em
+// "Continuar" fazia a pessoa confirmar a mesma intenção duas vezes. O gesto
+// abre o endereço e o alvo contextual do AddressPicker recebe o foco; se o
+// mínimo não foi atingido, permanecemos aqui com a saída já visível.
+function onFulfillmentSelected (value: string) {
+  if (value !== 'pickup' && value !== 'delivery') return
+  state.fulfillment_type = value
+  if (value === 'delivery' && !deliveryBelowMinimum.value) {
+    activeStep.value = 'address'
+  }
+}
+
 // O picker confirma o endereço e o fluxo avançaria sozinho. Com o CPF ainda em
 // branco, o próximo gesto é o CPF, no mesmo passo: a página vai até ele sem
 // acusar erro (ninguém errou ainda). O erro fica para quem tenta seguir sem ele.
@@ -1075,11 +1110,6 @@ async function continueFromAddress () {
   // servidor acabou de aceitar.
   await draftSyncTail
   activeStep.value = 'when'
-  // Endereço NOVO (não-salvo) em entrega: pergunta a etiqueta na hora. A escolha é
-  // guardada e aplicada quando o pedido fecha (o endereço só ganha ID na confirmação).
-  if (state.fulfillment_type === 'delivery' && !state.saved_address_id && state.delivery_address.trim() && !pendingAddressLabel.value) {
-    collectLabelOpen.value = true
-  }
 }
 
 function continueFromWhen () {
@@ -1112,50 +1142,6 @@ function validate (): boolean {
   if (!validateWhenStep()) return false
   if (!validatePaymentStep()) return false
   return true
-}
-
-// O Core já grava o endereço de entrega no perfil ao confirmar o pedido
-// (shop/services/customer._save_delivery_address). Aqui só LOCALIZAMOS o
-// endereço recém-salvo (por place_id ou linha formatada) para oferecer a
-// etiqueta — sem POST, sem duplicar. Endereço já conhecido (saved_address_id)
-// ou que já existia no perfil não dispara etiqueta.
-async function findNewlySavedAddress (): Promise<number | null> {
-  const selection = addressSelection.value
-  if (state.fulfillment_type !== 'delivery' || !selection || selection.savedAddressId) return null
-  const structured = selection.structured || {}
-  if (!structured.route) return null
-  const knownBefore = savedAddresses.value.some(saved =>
-    (structured.place_id && saved.place_id === structured.place_id) ||
-    saved.formatted_address === selection.formattedAddress
-  )
-  if (knownBefore) return null
-  // Detecta o endereço recém-salvo pela DIFERENÇA de ids (robusto): o Core pode
-  // reformatar o formatted_address ao gravar, então casar por string falha calado
-  // e a etiqueta nunca é pedida. Preferimos o match por conteúdo entre os novos;
-  // senão, se exatamente um endereço novo apareceu, é ele.
-  const beforeIds = new Set(savedAddresses.value.map(saved => saved.id))
-  try {
-    const list = await $fetch<Array<{ id: number, place_id?: string | null, formatted_address: string }>>(
-      apiPath('/api/v1/account/addresses/'),
-      { credentials: 'include', headers: await csrfHeaders() }
-    )
-    const fresh = list.filter(addr => !beforeIds.has(addr.id))
-    const byContent = fresh.find(addr =>
-      (structured.place_id && addr.place_id === structured.place_id) ||
-      addr.formatted_address === selection.formattedAddress
-    )
-    const resolved = byContent || (fresh.length === 1 ? fresh[0] : null)
-    return resolved?.id ?? null
-  } catch {
-    return null
-  }
-}
-
-async function finishAfterCheckout () {
-  const target = pendingTrackingUrl.value
-  pendingTrackingUrl.value = ''
-  savedAddressIdForLabel.value = null
-  if (target) await navigateTo(target)
 }
 
 async function goToMenu () {
@@ -1227,7 +1213,7 @@ async function submitCheckout () {
         'Idempotency-Key': idempotencyKey
       },
       credentials: 'include',
-      body: { ...buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision), ...(pendingAddressLabel.value ? { address_label: pendingAddressLabel.value } : {}) }
+      body: buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision)
     })
     if (response.convenience_pending?.length && import.meta.client) useSonner.info('Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez.')
     // "Guardar no seu cadastro?" não tem resposta na tela, de propósito: dizer
@@ -1243,23 +1229,9 @@ async function submitCheckout () {
     // quando a loja confirma. Não existe mais tela intermediária.
     const confirmedUrl = response.next_url
       || `/pedido/${encodeURIComponent(response.order_ref)}`
-    // O Core já salvou o endereço de entrega ao confirmar (só em pedido que
-    // de fato fechou — fora-de-zona/abandonado nunca poluem o perfil). Se foi
-    // um endereço novo, oferecemos a etiqueta nele antes de seguir.
-    if (pendingAddressLabel.value) {
-      // The same confirmed intention durably saves the chosen label server-side.
-      await navigateTo(confirmedUrl)
-      return
-    }
-    const newAddressId = await findNewlySavedAddress().catch(() => null)
-    if (newAddressId) {
-      // Sem etiqueta escolhida antes: oferece agora (fallback pós-pedido).
-      savedAddressIdForLabel.value = newAddressId
-      pendingTrackingUrl.value = confirmedUrl
-      addressLabelOpen.value = true
-      submitting.value = false
-      return
-    }
+    // O endereço novo já foi guardado pelo Core com rótulo neutro. Nomeá-lo é
+    // conveniência de cadastro, não pode interromper a compra nem atrasar o
+    // acompanhamento do pedido confirmado.
     await navigateTo(confirmedUrl)
   } catch (e) {
     if (confirmedTrackingUrl.value) {
@@ -1378,7 +1350,13 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section shop-dock-reserve pt-0 md:pb-24 lg:pb-0">
+  <main
+    ref="checkoutRoot"
+    class="shop-section shop-dock-reserve pt-0 md:pb-24 lg:pb-0"
+    :data-checkout-keyboard-active="keyboardActive || undefined"
+    @focusin="onCheckoutFocusIn"
+    @focusout="onCheckoutFocusOut"
+  >
     <div class="shop-breadcrumb-bar mb-4">
       <div class="shop-container py-2">
         <UiBreadcrumbs
@@ -1503,7 +1481,16 @@ useSeoMeta({
                     />
                   </div>
                   <!-- Com o nome em aberto, a próxima ação é digitar: o foco cai no campo. -->
-                  <UiInput id="checkout-name" ref="nameInput" v-model="state.name" autocomplete="name" data-focus-control />
+                  <UiInput
+                    id="checkout-name"
+                    ref="nameInput"
+                    v-model="state.name"
+                    autocomplete="name"
+                    enterkeyhint="done"
+                    class="h-11"
+                    data-focus-control
+                    @keydown.enter.prevent="saveContact"
+                  />
                   <UiFieldError v-if="fieldErrors.name" :errors="fieldErrors.name" />
                 </div>
                 <div class="divide-y">
@@ -1538,7 +1525,12 @@ useSeoMeta({
               body-class="space-y-4"
               @edit="goToStep('fulfillment')"
             >
-              <UiRadioGroup v-model="state.fulfillment_type" class="grid gap-2 sm:grid-cols-2">
+              <UiRadioGroup
+                :model-value="state.fulfillment_type"
+                class="grid gap-2 sm:grid-cols-2"
+                aria-label="Como receber o pedido"
+                @update:model-value="onFulfillmentSelected(String($event))"
+              >
                 <UiFieldLabel v-if="availableFulfillment.includes('pickup')" for="checkout-fulfillment-pickup" class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary">
                   <UiField orientation="horizontal">
                     <UiRadioGroupItem id="checkout-fulfillment-pickup" value="pickup" />
@@ -1675,10 +1667,10 @@ useSeoMeta({
                   inputmode="numeric"
                   autocomplete="off"
                   :maxlength="18"
+                  enterkeyhint="done"
                   placeholder="000.000.000-00"
                   :aria-invalid="!!fieldErrors.fiscal_tax_id"
-                  class="bg-background"
-                  data-focus-control
+                  class="h-11 bg-background"
                   @update:model-value="onTaxIdInput"
                 />
                 <UiFieldError v-if="fieldErrors.fiscal_tax_id" :errors="fieldErrors.fiscal_tax_id" />
@@ -1911,8 +1903,9 @@ useSeoMeta({
                     v-model="state.change_for"
                     inputmode="decimal"
                     autocomplete="off"
+                    enterkeyhint="done"
                     placeholder="Troco para quanto?"
-                    class="bg-background"
+                    class="h-11 bg-background"
                   />
                 </UiInputGroup>
                 <UiFieldDescription>Opcional. Informe o valor da nota para o entregador levar o troco certinho.</UiFieldDescription>
@@ -1953,9 +1946,10 @@ useSeoMeta({
                     inputmode="numeric"
                     autocomplete="off"
                     :maxlength="18"
+                    enterkeyhint="done"
                     placeholder="000.000.000-00"
                     :aria-invalid="!!fieldErrors.fiscal_tax_id"
-                    class="bg-background"
+                    class="h-11 bg-background"
                     @update:model-value="onTaxIdInput"
                   />
                   <UiFieldError v-if="fieldErrors.fiscal_tax_id" :errors="fieldErrors.fiscal_tax_id" />
@@ -2000,7 +1994,10 @@ useSeoMeta({
                       v-model="coupon"
                       placeholder="Código do cupom"
                       autocomplete="off"
-                      class="min-w-0 flex-1 bg-background"
+                      autocapitalize="characters"
+                      enterkeyhint="done"
+                      :spellcheck="false"
+                      class="h-11 min-w-0 flex-1 bg-background"
                       :aria-invalid="!!couponIssue"
                       :aria-describedby="couponIssue ? 'checkout-coupon-error' : undefined"
                       @keyup.enter="submitCoupon"
@@ -2028,12 +2025,12 @@ useSeoMeta({
                   <template v-if="!isPickup">
                     <UiField>
                       <UiFieldLabel for="gift-recipient-name">Nome de quem recebe</UiFieldLabel>
-                      <UiInput id="gift-recipient-name" v-model="state.recipient_name" autocomplete="off" placeholder="Ex: Maria Silva" />
+                      <UiInput id="gift-recipient-name" v-model="state.recipient_name" autocomplete="shipping name" enterkeyhint="next" class="h-11" placeholder="Ex: Maria Silva" @keydown.enter.prevent="focusCheckoutControl('gift-recipient-phone')" />
                       <UiFieldError v-if="fieldErrors.recipient_name" :errors="fieldErrors.recipient_name" />
                     </UiField>
                     <UiField>
                       <UiFieldLabel for="gift-recipient-phone">Telefone de quem recebe</UiFieldLabel>
-                      <UiInput id="gift-recipient-phone" v-model="state.recipient_phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(43) 99999-0000" />
+                      <UiInput id="gift-recipient-phone" v-model="state.recipient_phone" type="tel" inputmode="tel" autocomplete="shipping tel" enterkeyhint="done" class="h-11" placeholder="(43) 99999-0000" />
                       <UiFieldError v-if="fieldErrors.recipient_phone" :errors="fieldErrors.recipient_phone" />
                     </UiField>
                     <p class="shop-meta">O endereço de entrega escolhido acima é o de quem vai receber o presente.</p>
@@ -2122,6 +2119,7 @@ useSeoMeta({
                acima de `md`). `lg:static` porque a partir de `lg` o resumo
                lateral assume e o card volta ao fim do fluxo. -->
           <div
+            v-show="!keyboardActive"
             class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:sticky md:bottom-4 lg:static"
             data-checkout-action-card
             data-focus-obstruction
@@ -2279,21 +2277,6 @@ useSeoMeta({
               <CartSummaryBreakdown v-if="cart" :cart="cart" compact />
             </div>
           </BottomSheet>
-
-          <!-- Etiqueta do endereço novo — só APÓS o pedido confirmar; ao
-               resolver (escolher/pular/fechar), segue para o acompanhamento. -->
-          <AddressLabelSheet
-            v-model:open="addressLabelOpen"
-            :address-id="savedAddressIdForLabel"
-            @resolved="finishAfterCheckout"
-          />
-          <!-- Modo "coletar" (endereço novo, ainda sem ID): pergunta a etiqueta ao
-               adicionar; a escolha é guardada e aplicada quando o pedido fecha. -->
-          <AddressLabelSheet
-            v-model:open="collectLabelOpen"
-            :address-id="null"
-            @chosen="(key, custom) => { pendingAddressLabel = { key, custom } }"
-          />
 
           <!-- Trocar telefone = entrar com outra conta: confirmação obrigatória. -->
           <UiAlertDialog v-model:open="changePhoneOpen">

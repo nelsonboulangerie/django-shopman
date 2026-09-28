@@ -223,3 +223,30 @@ def test_notification_exception_is_redacted_from_result_and_log(monkeypatch, cap
     assert result.outcome_unknown is True
     assert recipient not in caplog.text
     assert "vendor leaked" not in caplog.text
+
+
+def test_notification_preserves_unknown_acceptance_code(monkeypatch):
+    class AcceptanceUnknown:
+        @staticmethod
+        def send(**kwargs):
+            raise RuntimeError("acceptance_unconfirmed")
+
+    monkeypatch.setattr(notifications, "_adapters", {"manychat": AcceptanceUnknown()})
+    warning = []
+    monkeypatch.setattr(notifications.logger, "warning", lambda *args, **kwargs: warning.append(args))
+
+    result = notifications.notify(
+        event="production_ready",
+        recipient="subscriber-opaque",
+        context={},
+        backend="manychat",
+    )
+
+    assert result.error == "acceptance_unconfirmed"
+    assert result.outcome_unknown is True
+    assert warning == [(
+        "Notification acceptance unknown: event=%s backend=%s exception_type=%s",
+        "production_ready",
+        "manychat",
+        "RuntimeError",
+    )]

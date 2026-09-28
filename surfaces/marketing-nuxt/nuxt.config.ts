@@ -8,7 +8,8 @@ const immutableAssetHeaders = {
   "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
   "cross-origin-opener-policy": "same-origin",
   "cross-origin-resource-policy": "same-origin",
-  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
+  "permissions-policy":
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
   "referrer-policy": "no-referrer",
   "strict-transport-security": "max-age=31536000; includeSubDomains",
   "x-content-type-options": "nosniff",
@@ -34,31 +35,43 @@ export default defineNuxtConfig({
       // (era djangoPublicBaseUrl) a env do App Platform é ignorada em runtime
       // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
       djangoBaseUrl:
-        process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+        process.env.NUXT_PUBLIC_DJANGO_BASE_URL ||
+        process.env.NUXT_DJANGO_BASE_URL ||
+        "http://127.0.0.1:8000",
     },
   },
 
-  // A página sintética só entra no roteador hermético da matriz. O app normal não
-  // publica uma rota capaz de fabricar erros.
-  hooks: process.env.MARKETING_VISUAL_MATRIX === "1"
-    ? {
-        "pages:extend": (pages) => {
-          pages.push({
-            name: "visual-error",
-            path: "/__visual_error/:status",
-            file: fileURLToPath(
-              new URL("./app/visual/VisualErrorPage.vue", import.meta.url),
-            ),
-          });
-        },
-      }
-    : {},
+  // As páginas sintéticas só entram no roteador hermético da matriz. O app normal não
+  // publica rota capaz de fabricar erros nem reexpõe o painel substituído pela V2.
+  hooks:
+    process.env.MARKETING_VISUAL_MATRIX === "1"
+      ? {
+          "pages:extend": (pages) => {
+            pages.push({
+              name: "visual-error",
+              path: "/__visual_error/:status",
+              file: fileURLToPath(
+                new URL("./app/visual/VisualErrorPage.vue", import.meta.url),
+              ),
+            });
+            pages.push({
+              name: "visual-board",
+              path: "/__visual_board",
+              file: fileURLToPath(
+                new URL("./app/visual/VisualBoardPage.vue", import.meta.url),
+              ),
+            });
+          },
+        }
+      : {},
 
   // A notificação acionável do backend aponta para /campaign/announcements/<pk>/
   // (``UserNotification.action_url``). Servido na raiz do subdomínio, o prefixo
   // sobra — este redirect faz o link do celular cair no card certo.
   routeRules: {
-    "/campaign/announcements/**": { redirect: { to: "/announcements/**", statusCode: 302 } },
+    "/campaign/announcements/**": {
+      redirect: { to: "/announcements/**", statusCode: 302 },
+    },
     "/_nuxt/**": { headers: immutableAssetHeaders },
     "/fonts/**": { headers: immutableAssetHeaders },
   },
@@ -77,48 +90,52 @@ export default defineNuxtConfig({
         { name: "Campanhas", shortName: "Campanhas", url: "/campaigns" },
       ],
     }),
-    '@nuxtjs/color-mode',
-    'motion-v/nuxt',
-    '@vueuse/nuxt',
-    '@nuxt/icon',
-    '@nuxt/eslint',
-    "vue-sonner/nuxt"
+    "@nuxtjs/color-mode",
+    "motion-v/nuxt",
+    "@vueuse/nuxt",
+    "@nuxt/icon",
+    "@nuxt/eslint",
+    "vue-sonner/nuxt",
   ],
 
   imports: {
-    imports: [{
-      from: 'tailwind-variants',
-      name: 'tv'
-    }, {
-      from: 'tailwind-variants',
-      name: 'VariantProps',
-      type: true
-    }, {
-      from: "vue-sonner",
-      name: "toast",
-      as: "useSonner"
-    }]
+    imports: [
+      {
+        from: "tailwind-variants",
+        name: "tv",
+      },
+      {
+        from: "tailwind-variants",
+        name: "VariantProps",
+        type: true,
+      },
+      {
+        from: "vue-sonner",
+        name: "toast",
+        as: "useSonner",
+      },
+    ],
   },
 
   colorMode: {
     // LIGHT-first — o Marketing é superfície de escritório (gestor revisando texto e
     // foto, em ambiente claro), como o Gestor e o PDV; o escuro segue no toggle.
-    preference: 'light',
-    fallback: 'light',
-    storageKey: 'marketing-nuxt-color-mode',
-    classSuffix: ''
+    preference: "light",
+    fallback: "light",
+    storageKey: "marketing-nuxt-color-mode",
+    classSuffix: "",
   },
 
   icon: {
     clientBundle: {
       scan: true,
-      sizeLimitKb: 0
+      sizeLimitKb: 0,
     },
 
-    mode: 'svg',
-    class: 'shrink-0',
+    mode: "svg",
+    class: "shrink-0",
     fetchTimeout: 2000,
-    serverBundle: 'local'
+    serverBundle: "local",
   },
 
   css: ["~/assets/css/tailwind.css"],
@@ -133,7 +150,10 @@ export default defineNuxtConfig({
       // app-identity.json): o rótulo do app e a cor do ícone, iguais em manifesto,
       // barra de título e aba.
       meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+        {
+          name: "viewport",
+          content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },
@@ -150,5 +170,5 @@ export default defineNuxtConfig({
       // Vale SÓ para `nuxt dev` — `vite.server` não entra no build de produção.
       allowedHosts: [".ngrok-free.app"],
     },
-  }
-})
+  },
+});

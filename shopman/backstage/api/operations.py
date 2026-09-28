@@ -2714,6 +2714,51 @@ class POSPreorderEditSessionView(APIView):
 
 
 @extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Open the sale tab pre-filled with a cancelled preorder (cancel and redo)",
+        responses={200: OpenApiResponse(description="Sale tab + redo context."), 409: OpenApiResponse(description="Not redoable.")},
+    ),
+)
+class POSPreorderRedoTabView(APIView):
+    """"Cancelar e refazer": a comanda de venda comum pré-montada com a encomenda cancelada.
+
+    ``POST`` abre (ou retoma) a comanda ``Refazer <ref>`` de
+    ``shop.services.pos_edit_session.open_redo_tab`` e a devolve no formato de
+    sempre (``tab``), com o contexto (``redo``): de qual encomenda ela veio, se
+    foi retomada e, quando a data antiga não vale mais, a razão.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections.pos import build_open_tab
+        from shopman.shop.services import operator_orders, pos_edit_session
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        try:
+            redo = pos_edit_session.open_redo_tab(
+                order, channel_ref=POS_CHANNEL_REF, actor=_actor_pos(request), operator_username=_username(request),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=409)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({
+            "ok": True,
+            "tab": build_open_tab(redo.session),
+            "redo": {
+                "order_ref": order.ref,
+                "resumed": redo.resumed,
+                "schedule_dropped": redo.schedule_dropped,
+            },
+        })
+
+
+@extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",

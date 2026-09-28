@@ -67,3 +67,44 @@ export function deliveryTaxIdMissing(input: {
   if (input.fulfillmentType !== "delivery" || !input.required) return false;
   return !(input.wantsCpfOnInvoice && isValidTaxId(input.invoiceTaxId));
 }
+
+/**
+ * O documento com a máscara de CPF (até 11 dígitos) ou de CNPJ (12 a 14).
+ *
+ * A MÁSCARA E O VALOR GUARDADO precisam parar no mesmo dígito: guardamos só
+ * dígitos (é o que o intent envia) e cortamos em 14 na origem.
+ */
+export function maskTaxId(value: string): string {
+  const d = digitsOf(value).slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
+}
+
+/**
+ * "Sai na nota" é uma PROMESSA, e promessa se confere: o eco do documento, com
+ * o dígito verificador. Onze dígitos quaisquer viravam um check verde, e a
+ * rejeição da NFC-e chegava com o cliente já na rua.
+ */
+export function taxIdEcho(value: string): { ok: boolean; text: string } {
+  const digits = digitsOf(value);
+  if (!digits) return { ok: false, text: "Digite o documento. Sem ele, a nota sai sem CPF." };
+  if (digits.length !== 11 && digits.length !== 14) {
+    return { ok: false, text: "Documento incompleto: a nota sai sem CPF." };
+  }
+  if (!isValidTaxId(digits)) {
+    return { ok: false, text: "Documento inválido. Confira com o cliente." };
+  }
+  if (digits.length === 11) {
+    return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
+  }
+  return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
+}

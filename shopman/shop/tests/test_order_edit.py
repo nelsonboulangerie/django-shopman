@@ -598,3 +598,135 @@ def test_edicao_grande_vira_resumo_e_o_dinheiro_sai_sempre():
 
     assert _describe_for_customer(diff) == f"Ajustamos {MAX_ITEM_CHANGES_DESCRIBED + 2} itens."
     assert _describe_for_customer({"added": diff["added"][:1]}) == "Entrou 1 Pão 0."
+
+
+# ── Vendido por peso: entra como na venda ────────────────────────────────────
+
+QUEIJO = "QUEIJO-KG"
+
+
+@pytest.fixture
+def queijo(db):
+    from shopman.offerman.models import Product
+
+    # R$ 89,90 o quilo; a etiqueta de R$ 28,05 é a peça de 312 g.
+    return Product.objects.create(
+        sku=QUEIJO, name="Queijo", unit="kg", base_price_q=8990, is_published=True, is_sellable=True,
+    )
+
+
+def _plan_kg(sku: str, offset: int, qty: str, position) -> None:
+    product = SimpleNamespace(sku=sku, name=sku.title(), shelf_life_days=None)
+    StockPlanning.plan(Decimal(qty), product, _day(offset), position=position)
+
+
+def test_peca_pesada_entra_pela_etiqueta_com_o_peso_da_venda(vitrine, queijo):
+    _plan(BAGUETE, 3, 10, vitrine)
+    _plan_kg(QUEIJO, 3, "5", vitrine)
+    order = _encomenda("ED-KG-1")
+
+    result = order_edit.edit(
+        order,
+        lines=[
+            {"line_id": "L1", "sku": BAGUETE, "qty": 2},
+            {"sku": QUEIJO, "qty": 1, "weighed": {"entry": "label", "label_q": 2805}},
+        ],
+        actor="pos:marina",
+    )
+
+    order.refresh_from_db()
+    by_line = {item.line_id: item for item in order_composition.effective_items(order)}
+    piece = by_line["E1-1"]
+    assert piece.qty == Decimal("0.312") and piece.unit_price_q == 8990 and piece.line_total_q == 2805
+    assert piece.meta["weighed"] == {
+        "entry": "label", "weight_g": 312, "price_per_kg_q": 8990, "total_q": 2805, "label_q": 2805,
+    }
+    assert result.plan.total_q == 2400 + 2805
+    # A reserva é do peso, com fração.
+    assert _holds_by_sku(order)[QUEIJO] == Decimal("0.312")
+
+
+def test_duas_etiquetas_sao_duas_pecas(vitrine, queijo):
+    order = _encomenda("ED-KG-2")
+
+    result = order_edit.plan(
+        order,
+        lines=[
+            {"line_id": "L1", "sku": BAGUETE, "qty": 2},
+            {"sku": QUEIJO, "qty": 1, "weighed": {"entry": "label", "label_q": 2805}},
+            {"sku": QUEIJO, "qty": 1, "weighed": {"entry": "label", "label_q": 2805}},
+        ],
+    )
+
+    pieces = [item for item in result.items if item["sku"] == QUEIJO]
+    assert [piece["line_id"] for piece in pieces] == ["E1-1", "E1-2"]
+    assert result.total_q == 2400 + 2 * 2805
+
+
+def test_item_por_peso_sem_etiqueta_recusa_com_a_frase_da_venda(vitrine, queijo):
+    order = _encomenda("ED-KG-3")
+
+    with pytest.raises(EditRefused) as refused:
+        order_edit.plan(order, lines=[{"line_id": "L1", "sku": BAGUETE, "qty": 2}, {"sku": QUEIJO, "qty": 1}])
+
+    assert refused.value.code == "weight_entry_required"
+    assert refused.value.message == "Queijo é vendido por peso: informe o valor da etiqueta."
+    assert refused.value.field == "items.1.weighed"
+
+
+def test_peso_digitado_so_com_a_entrada_por_peso_ligada(vitrine, queijo):
+    order = _encomenda("ED-KG-4")
+    lines = [
+        {"line_id": "L1", "sku": BAGUETE, "qty": 2},
+        {"sku": QUEIJO, "qty": 1, "weighed": {"entry": "weight", "weight_g": 500}},
+    ]
+
+    with pytest.raises(EditRefused) as refused:
+        order_edit.plan(order, lines=lines)
+    assert refused.value.code == "weight_entry_disabled"
+
+    shop = Shop.load()
+    shop.defaults = {**(shop.defaults or {}), "pos": {"weighed_weight_entry": True}}
+    shop.save()
+    result = order_edit.plan(order, lines=lines)
+    (piece,) = [item for item in result.items if item["sku"] == QUEIJO]
+    assert Decimal(str(piece["qty"])) == Decimal("0.5")
+    assert piece["line_total_q"] == 4495
+
+
+def test_etiqueta_em_item_por_unidade_recusa(vitrine, queijo):
+    order = _encomenda("ED-KG-5")
+
+    with pytest.raises(EditRefused) as refused:
+        order_edit.plan(order, lines=[{"sku": CROISSANT, "qty": 1, "weighed": {"entry": "label", "label_q": 900}}])
+
+    assert refused.value.code == "not_sold_by_weight"
+
+
+def _com_peca(ref: str) -> Order:
+    order = _encomenda(ref)
+    OrderItem.objects.create(
+        order=order, line_id="L2", sku=QUEIJO, name="Queijo", qty=Decimal("0.312"), unit_price_q=8990,
+        line_total_q=2805,
+        meta={"weighed": {"entry": "label", "label_q": 2805, "weight_g": 312, "price_per_kg_q": 8990, "total_q": 2805}},
+    )
+    Order.objects.filter(pk=order.pk).update(total_q=2400 + 2805)
+    return Order.objects.get(pk=order.pk)
+
+
+def test_peca_que_ja_estava_fica_e_nao_muda_de_peso(vitrine, queijo):
+    order = _com_peca("ED-KG-6")
+
+    kept = order_edit.plan(
+        order,
+        lines=[{"line_id": "L1", "sku": BAGUETE, "qty": 3}, {"line_id": "L2", "sku": QUEIJO, "qty": "0.312"}],
+    )
+    by_line = {item["line_id"]: item for item in kept.items}
+    assert by_line["L2"]["line_total_q"] == 2805 and kept.total_q == 3600 + 2805
+
+    with pytest.raises(EditRefused) as refused:
+        order_edit.plan(
+            order,
+            lines=[{"line_id": "L1", "sku": BAGUETE, "qty": 2}, {"line_id": "L2", "sku": QUEIJO, "qty": 1}],
+        )
+    assert refused.value.code == "weighed_line_changed"

@@ -176,17 +176,18 @@ class TestAMensagemMandaVoltar:
         assert kw["event"] == "access_link_site"
         assert kw["context"]["access_url"]  # o link segue como reserva
         assert "/encerrar-acesso#" in kw["context"]["revoke_url"]
-        assert kw["context"]["origin_note"] == " (Safari / iPhone)"
+        assert "origin_note" not in kw["context"]
 
     def test_o_texto_nao_deixa_placeholder_sobrando(self):
         from shopman.shop.notification_copy import CUSTOMER_COPY
 
         body = CUSTOMER_COPY["access_link_site"]["body"].format(
-            customer_name_greeting=", Joyce", origin_note=" (Safari / iPhone)",
-            access_url="https://loja/a?t=x", revoke_url="https://loja/encerrar-acesso#r",
+            customer_name_greeting=", Joyce",
+            cart_note="Sua sacola está guardada. ",
         )
         assert "{" not in body
-        assert body.startswith("Pronto, Joyce! Pode voltar ao site")
+        assert body.startswith("Pronto, Joyce! Seu acesso foi liberado.")
+        assert "https://" not in body
 
 
 @pytest.mark.django_db

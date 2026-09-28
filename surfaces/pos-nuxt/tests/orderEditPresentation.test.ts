@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  needsDeliveryTaxId,
   orderEditBody,
   orderEditSettlementLine,
   orderEditTitle,
@@ -80,12 +81,46 @@ describe("orderEditBody — a lista final e só o que mudou", () => {
     expect(body.fulfillment).toBeUndefined();
   });
 
-  it("sem CPF na nota, a entrega usa o CPF do cadastro do cliente (F6)", () => {
-    const body = orderEditBody(
+  it("o CPF do cadastro NÃO sobe calado: a entrega leva o que a caixa de salvar pediu", () => {
+    const semPedir = orderEditBody(
       intent({ fulfillment_type: "delivery", delivery_address_structured: ENDERECO, customer_tax_id: "52998224725" }),
       original(),
     );
-    expect(body.fulfillment?.fiscal_tax_id).toBe("52998224725");
+    expect(semPedir.fulfillment?.fiscal_tax_id).toBeUndefined();
+
+    const pedido = orderEditBody(
+      intent({ fulfillment_type: "delivery", delivery_address_structured: ENDERECO }),
+      original(),
+      { deliveryTaxId: "529.982.247-25" },
+    );
+    expect(pedido.fulfillment?.fiscal_tax_id).toBe("52998224725");
+  });
+
+  it("o CPF pedido numa entrega que não mudou de endereço também sobe (a encomenda ficou sem ele)", () => {
+    const body = orderEditBody(
+      intent({ fulfillment_type: "delivery", delivery_address_structured: ENDERECO }),
+      original({ fulfillment_type: "delivery", delivery_address_structured: ENDERECO }),
+      { deliveryTaxId: "52998224725" },
+    );
+    expect(body.fulfillment).toMatchObject({ type: "delivery", fiscal_tax_id: "52998224725" });
+  });
+
+  it("a peça pesada nova sobe com a etiqueta; a linha por unidade, sem", () => {
+    const body = orderEditBody(
+      intent({
+        items: [
+          { line_id: "L1", sku: "PAO", qty: 2 },
+          { line_id: "tmp-9", sku: "QUEIJO", qty: 0.312, weighed: { entry: "label", label_q: 2805, weight_g: 312 } },
+          { line_id: "tmp-10", sku: "QUEIJO", qty: 0.5, weighed: { entry: "weight", weight_g: 500 } },
+        ],
+      }),
+      original(),
+    );
+    expect(body.items).toEqual([
+      { line_id: "L1", sku: "PAO", qty: 2 },
+      { line_id: "tmp-9", sku: "QUEIJO", qty: 0.312, weighed: { entry: "label", label_q: 2805 } },
+      { line_id: "tmp-10", sku: "QUEIJO", qty: 0.5, weighed: { entry: "weight", weight_g: 500 } },
+    ]);
   });
 
   it("entrega que vira retirada sobe só o tipo", () => {
@@ -145,5 +180,13 @@ describe("frases — quem paga ou devolve, quanto e onde", () => {
     expect(plain(orderEditSettlementLine(preview({ settlement: { kind: "none", amount_q: 0, method: "" }, difference_q: 0 })))).toBe(
       "O valor não muda.",
     );
+  });
+});
+
+describe("o que a caixa de salvar colhe ali mesmo", () => {
+  it("a recusa do CPF da entrega abre o campo do documento", () => {
+    expect(needsDeliveryTaxId("delivery_tax_id_required")).toBe(true);
+    expect(needsDeliveryTaxId("delivery_tax_id_invalid")).toBe(true);
+    expect(needsDeliveryTaxId("delivery_address_incomplete")).toBe(false);
   });
 });

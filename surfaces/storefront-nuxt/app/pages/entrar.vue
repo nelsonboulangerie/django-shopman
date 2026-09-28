@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
-import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
+import type { AuthSessionResponse, CopyEntryProjection, ShellResponse } from '~/types/shopman'
 import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
 
 interface RequestCodeResponse {
@@ -82,7 +82,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // O shell já busca e aplica esta projeção antes de montar a página. Reusar a mesma
 // chave evita uma segunda home só para copy/config/sacola do login.
-const { data: loginHome } = useNuxtData<HomeResponse>('shopman-shell-home')
+const { data: loginShell } = useNuxtData<ShellResponse>('shopman-shell')
 
 const nextUrl = computed(() => safeInternalPath(route.query.next))
 // Chegada pelo access link com boas-vindas pendentes (`/entrar?welcome=1`, vindo
@@ -109,16 +109,16 @@ const step = computed(() => authStep({
 const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
-const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
+const authCopy = computed(() => loginShell.value?.shell.auth_copy || null)
 // DDD padrão da loja (config): assume-se quando o cliente entra sem DDD, para o
 // telefone ser guardado no formato certo (e não virar "(55) …" depois).
-const defaultDdd = computed(() => loginHome.value?.home.public_config?.default_ddd || '')
+const defaultDdd = computed(() => loginShell.value?.shell.public_config?.default_ddd || '')
 // Volta do checkout: o gate manda `next=/finalizar`; o backend usa `/checkout`. Cobre os dois.
 const isCheckoutReturn = computed(() => /checkout|finalizar/.test(nextUrl.value))
 // Omotenashi aqui precisa ser factual: `next=/finalizar` não prova que existe sacola.
 // Só a projeção canônica do carrinho autoriza copy de "sacola guardada".
 const cartHasItems = computed(() => {
-  const cart = loginHome.value?.cart
+  const cart = loginShell.value?.cart
   return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
 })
 // ⚠️ A copy da sacola pergunta pela SACOLA, não pela rota. Ela era
@@ -131,7 +131,7 @@ const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
-  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre com seu WhatsApp')
+  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre pelo WhatsApp')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
   return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
@@ -149,17 +149,17 @@ const stepDescription = computed(() => {
 // O porquê, os passos e a espera alimentam o WhatsappVerifyPanel (configuráveis no
 // Admin). Respondem às duas queixas de quem chega pelo site: "pra que eu tenho que
 // fazer isso?" e "o que eu tenho que fazer?".
-const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'É por lá que avisamos cada passo do seu pedido e tiramos suas dúvidas. Sem senha.'))
+const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'Sem senha e sem código. A mensagem pronta confirma que o número é seu.'))
 const waSteps = computed(() => copyMessage(
   authCopy.value?.wa_steps,
-  'Toque no botão abaixo\nEnvie a mensagem que já vai pronta\nVolte para cá: você já estará dentro'
+  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nVolte para esta tela. A entrada será automática'
 ).split('\n').map(step => step.trim()).filter(Boolean))
-const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Enviou a mensagem?'))
-const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Assim que ela chegar, você entra por aqui, sem fazer mais nada.'))
+const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Mensagem enviada?'))
+const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
-  loginHome.value?.home.public_config.whatsapp_url || '',
+  loginShell.value?.shell.public_config.whatsapp_url || '',
   hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
 ))
 // A ajuda só aparece esperando algo: o código do SMS ou a volta do WhatsApp. Cada

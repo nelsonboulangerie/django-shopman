@@ -2,8 +2,8 @@
 // Campanhas — o que a operação dispara sozinha.
 //
 // O gesto mais comum é ligar/desligar, então ele fica a um toque na própria
-// linha. Editar abre um painel lateral: a lista continua visível, e o gestor
-// não perde o contexto de quais outras campanhas já existem.
+// linha. Editar abre um workspace modal: há espaço para etapas, composições e
+// prévias sem perder o contexto da campanha que originou o gesto.
 import {
   audienceRulesSummary,
   choiceLabels,
@@ -15,6 +15,7 @@ import {
   fireAvailability,
   fireDispatchRoute,
 } from "~/presentation/campaignFire";
+import { campaignEditAvailability } from "~/presentation/campaignActions";
 import type {
   Campaign,
   ChosenAudience,
@@ -41,6 +42,7 @@ const {
   products,
   offers,
   shopTimezone,
+  mutatingCampaignPk,
   loading,
   error,
   refresh,
@@ -83,13 +85,16 @@ const creating = useState<boolean>("marketing-campaign-creating", () => false);
 const editing = computed<Campaign | null>(() =>
   editingPk.value === null
     ? null
-    : rules.value.find((rule) => rule.pk === editingPk.value) ?? null,
+    : (rules.value.find((rule) => rule.pk === editingPk.value) ?? null),
 );
 const firing = ref<Campaign | null>(null);
 const fireError = ref("");
 const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
 const route = useRoute();
+const initialPromotionRef = computed(() =>
+  typeof route.query.offer === "string" ? route.query.offer : "",
+);
 
 const firingTemplateRequiresProduct = computed(
   () =>
@@ -112,8 +117,8 @@ const currentPage = computed(() => {
   const value = Number(route.query.page || 1);
   return Number.isSafeInteger(value) && value > 0 ? value : 1;
 });
-const hasListFilters = computed(
-  () => Boolean(search.value.trim() || stateFilter.value || platformFilter.value),
+const hasListFilters = computed(() =>
+  Boolean(search.value.trim() || stateFilter.value || platformFilter.value),
 );
 
 function searchable(value: unknown): string {
@@ -128,10 +133,7 @@ const filteredRules = computed(() => {
   return rules.value.filter((rule) => {
     if (stateFilter.value === "active" && !rule.is_active) return false;
     if (stateFilter.value === "inactive" && rule.is_active) return false;
-    if (
-      platformFilter.value &&
-      !rule.platforms.includes(platformFilter.value)
-    )
+    if (platformFilter.value && !rule.platforms.includes(platformFilter.value))
       return false;
     if (!term) return true;
     return searchable(
@@ -171,7 +173,8 @@ function changeSearch(value: string) {
   search.value = value;
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(
-    () => void replaceListQuery({ q: search.value.trim() || undefined, page: 1 }),
+    () =>
+      void replaceListQuery({ q: search.value.trim() || undefined, page: 1 }),
     250,
   );
 }
@@ -190,7 +193,12 @@ function changePlatform(event: Event) {
 
 function clearListFilters() {
   search.value = "";
-  void replaceListQuery({ q: undefined, state: undefined, platform: undefined, page: 1 });
+  void replaceListQuery({
+    q: undefined,
+    state: undefined,
+    platform: undefined,
+    page: 1,
+  });
 }
 
 watch(
@@ -218,19 +226,43 @@ function fireState(rule: Campaign) {
   return fireAvailability(rule, actions.value);
 }
 
+function editState(rule: Campaign) {
+  return campaignEditAvailability(rule, actions.value);
+}
+
 function openNew() {
   editingPk.value = null;
   creating.value = true;
 }
 
+watch(
+  () => route.query.new,
+  (value) => {
+    if (value === "1" && !panelOpen.value) openNew();
+  },
+  { immediate: true },
+);
+
 function openEdit(rule: Campaign) {
+  if (!editState(rule).enabled) return;
   creating.value = false;
   editingPk.value = rule.pk;
 }
 
-function close() {
+async function close() {
+  const returnToV2 = route.query.experience === "v2";
   creating.value = false;
   editingPk.value = null;
+  if (returnToV2) {
+    await navigateTo(
+      { path: "/v2", query: { area: "campaigns" } },
+      { replace: true },
+    );
+    await nextTick();
+    document
+      .querySelector<HTMLElement>("[data-marketing-new-campaign]")
+      ?.focus();
+  }
 }
 
 /** Abre "Definir público" — a campanha manual, sem esperar evento da padaria. Daqui
@@ -290,7 +322,14 @@ async function showFireResult(response: MarketingCommandResponse) {
   preserveMarketingReceipt(announcementId, response.receipt);
   closeFire();
   await refresh();
-  await navigateTo(fireDispatchRoute(response));
+  const destination = fireDispatchRoute(response);
+  await navigateTo({
+    ...destination,
+    query: {
+      ...destination.query,
+      ...(route.query.experience === "v2" ? { experience: "v2" } : {}),
+    },
+  });
 }
 
 async function onFire(request: {
@@ -301,7 +340,8 @@ async function onFire(request: {
   if (!firing.value) return;
   const action = fireAction(firing.value);
   if (!action) {
-    fireError.value = "A ação segura de disparo não está disponível. Atualize a lista.";
+    fireError.value =
+      "A ação segura de disparo não está disponível. Atualize a lista.";
     return;
   }
   busy.value = true;
@@ -350,7 +390,7 @@ async function onSubmit(payload: Record<string, unknown>) {
     : await create(payload);
   busy.value = false;
   if (ok) {
-    close();
+    await close();
     await nextTick();
     clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
   }
@@ -373,10 +413,7 @@ useHead({ title: "Campanhas" });
         <Icon name="lucide:file-text" class="size-3.5" />
         Modelos
       </NuxtLink>
-      <UiButton
-        type="button"
-        @click="openNew"
-      >
+      <UiButton type="button" @click="openNew">
         <Icon name="lucide:plus" class="size-4" />
         Nova campanha
       </UiButton>
@@ -390,12 +427,7 @@ useHead({ title: "Campanhas" });
       <p class="font-semibold text-destructive">
         Não conseguimos carregar as campanhas.
       </p>
-      <UiButton
-        type="button"
-        variant="link"
-        class="mt-1"
-        @click="refresh()"
-      >
+      <UiButton type="button" variant="link" class="mt-1" @click="refresh()">
         Tentar de novo
       </UiButton>
     </div>
@@ -422,14 +454,9 @@ useHead({ title: "Campanhas" });
       />
       <p class="mt-2 font-semibold">Nenhuma campanha ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma campanha liga um evento da padaria a um anúncio. Comece pelo
-        lote.
+        Uma campanha liga um evento da padaria a um anúncio. Comece pelo lote.
       </p>
-      <UiButton
-        type="button"
-        class="mt-3"
-        @click="openNew"
-      >
+      <UiButton type="button" class="mt-3" @click="openNew">
         <Icon name="lucide:plus" class="size-4" />
         Criar a primeira
       </UiButton>
@@ -465,10 +492,7 @@ useHead({ title: "Campanhas" });
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Situação
-            <UiNativeSelect
-              :value="stateFilter"
-              @change="changeState"
-            >
+            <UiNativeSelect :value="stateFilter" @change="changeState">
               <option value="">Todas</option>
               <option value="active">Ligadas</option>
               <option value="inactive">Desligadas</option>
@@ -476,10 +500,7 @@ useHead({ title: "Campanhas" });
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Plataforma
-            <UiNativeSelect
-              :value="platformFilter"
-              @change="changePlatform"
-            >
+            <UiNativeSelect :value="platformFilter" @change="changePlatform">
               <option value="">Todas</option>
               <option
                 v-for="platform in platforms"
@@ -502,12 +523,7 @@ useHead({ title: "Campanhas" });
         <p class="mt-1 text-muted-foreground">
           Não foi possível atualizar agora. Nenhuma campanha foi alterada.
         </p>
-        <UiButton
-          type="button"
-          variant="link"
-          class="mt-2"
-          @click="refresh()"
-        >
+        <UiButton type="button" variant="link" class="mt-2" @click="refresh()">
           Atualizar
         </UiButton>
       </div>
@@ -520,7 +536,9 @@ useHead({ title: "Campanhas" });
           name="lucide:search-x"
           class="mx-auto size-8 text-muted-foreground"
         />
-        <p class="mt-2 font-semibold">Nenhuma campanha combina com os filtros</p>
+        <p class="mt-2 font-semibold">
+          Nenhuma campanha combina com os filtros
+        </p>
         <p class="mt-1 text-sm text-muted-foreground">
           Limpe ou ajuste os filtros para ampliar a busca.
         </p>
@@ -538,123 +556,138 @@ useHead({ title: "Campanhas" });
         v-else
         class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card"
       >
-      <li
-        v-for="rule in pageRules"
-        :key="rule.pk"
-        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
-      >
-        <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
+        <li
+          v-for="rule in pageRules"
+          :key="rule.pk"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
+        >
+          <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
              aria-checked que esta página escrevia à mão, e agora o alvo de 44 px
              vem do token, não de um `size-11` que esta tela precisava lembrar. -->
-        <UiSwitch
-          :model-value="rule.is_active"
-          :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
-          @update:model-value="toggle(rule)"
-        />
+          <UiSwitch
+            :model-value="rule.is_active"
+            :disabled="mutatingCampaignPk !== null || !editState(rule).enabled"
+            :aria-busy="mutatingCampaignPk === rule.pk"
+            :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
+            @update:model-value="toggle(rule)"
+          />
 
-        <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
-        <button
-          type="button"
-          class="col-start-2 min-w-0 text-left sm:flex-1"
-          @click="openEdit(rule)"
-        >
-          <p
-            class="font-semibold"
-            :class="rule.is_active ? '' : 'text-muted-foreground'"
-          >
-            {{ rule.name }}
-          </p>
-          <p class="mt-0.5 text-sm text-muted-foreground">
-            {{ rule.trigger_label }} →
-            {{ platformsSummary(rule.platforms, platformLabels) }}
-          </p>
-          <p class="mt-0.5 text-xs text-muted-foreground">
-            {{ audienceRulesSummary(rule.audience_rules, audienceLabels) }}
-          </p>
-          <!-- Desempenho onde dá para agir: a causa da falha ao lado da campanha que falhou,
-               não numa lista cronológica onde ela é só lamento. -->
-          <p
-            v-if="rule.sent_count || rule.failed_count"
-            class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
-          >
-            <span class="text-muted-foreground">
-              Disparou {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }}
-              {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
-            </span>
-            <span v-if="rule.failed_count" class="text-destructive">
-              {{ formatCount(rule.failed_count) }}
-              {{ rule.failed_count === 1 ? "falha" : "falhas"
-              }}<template v-if="rule.last_failure"
-                >, a última por {{ rule.last_failure }}</template
-              >
-            </span>
-          </p>
-          <!-- Uma campanha agendada que nunca mais dispara é indistinguível de uma
-               que ainda não disparou. A frase vem do servidor pronta. -->
-          <p
-            v-if="rule.fires_on_its_own"
-            class="mt-1 inline-flex items-center gap-1 text-xs"
-            :class="
-              rule.exhausted ? 'text-destructive' : 'text-muted-foreground'
+          <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
+          <button
+            type="button"
+            class="col-start-2 min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1"
+            :disabled="!editState(rule).enabled"
+            :aria-label="
+              editState(rule).enabled
+                ? `Editar a campanha ${rule.name}`
+                : `${editState(rule).reason} Campanha ${rule.name}`
             "
+            @click="openEdit(rule)"
           >
-            <Icon
-              :name="
-                rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'
+            <p
+              class="font-semibold"
+              :class="rule.is_active ? '' : 'text-muted-foreground'"
+            >
+              {{ rule.name }}
+            </p>
+            <p class="mt-0.5 text-sm text-muted-foreground">
+              {{ rule.trigger_label }} →
+              {{ platformsSummary(rule.platforms, platformLabels) }}
+            </p>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              {{ audienceRulesSummary(rule.audience_rules, audienceLabels) }}
+            </p>
+            <!-- Desempenho onde dá para agir: a causa da falha ao lado da campanha que falhou,
+               não numa lista cronológica onde ela é só lamento. -->
+            <p
+              v-if="rule.sent_count || rule.failed_count"
+              class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+            >
+              <span class="text-muted-foreground">
+                Disparou {{ formatCount(rule.sent_count) }}× ·
+                {{ formatCount(rule.reached_total) }}
+                {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
+              </span>
+              <span v-if="rule.failed_count" class="text-destructive">
+                {{ formatCount(rule.failed_count) }}
+                {{ rule.failed_count === 1 ? "falha" : "falhas"
+                }}<template v-if="rule.last_failure"
+                  >, a última por {{ rule.last_failure }}</template
+                >
+              </span>
+            </p>
+            <!-- Uma campanha agendada que nunca mais dispara é indistinguível de uma
+               que ainda não disparou. A frase vem do servidor pronta. -->
+            <p
+              v-if="rule.fires_on_its_own"
+              class="mt-1 inline-flex items-center gap-1 text-xs"
+              :class="
+                rule.exhausted ? 'text-destructive' : 'text-muted-foreground'
               "
-              class="size-3.5"
-            />
-            {{ rule.exhausted ? "Não dispara mais" : rule.schedule_label }}
-          </p>
-        </button>
+            >
+              <Icon
+                :name="
+                  rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'
+                "
+                class="size-3.5"
+              />
+              {{ rule.exhausted ? "Não dispara mais" : rule.schedule_label }}
+            </p>
+          </button>
 
-        <div
-          class="col-start-2 flex min-h-11 shrink-0 items-center justify-end gap-2 sm:min-h-0"
-        >
-          <span
-            v-if="!rule.requires_approval"
-            class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
-            title="Publica sem passar por revisão"
+          <div
+            class="col-start-2 flex min-h-11 shrink-0 items-center justify-end gap-2 sm:min-h-0"
           >
-            Automática
-          </span>
-          <!-- ⚠️ Este botão NÃO dispara: ele abre "Definir público", e é o painel que
+            <span
+              v-if="!rule.requires_approval"
+              class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
+              title="Publica sem passar por revisão"
+            >
+              Automática
+            </span>
+            <!-- ⚠️ Este botão NÃO dispara: ele abre "Definir público", e é o painel que
                cria um anúncio para a revisão. Por isso o rótulo visível e o nome
                acessível falam em PREPARAR — a mesma palavra que a razão do botão
                desabilitado já usava, dois centímetros abaixo.
                E o rótulo é o mesmo nos dois estados: rótulo que vira adjetivo descreve
                o botão em vez do que ele faz, e manda o gestor procurar na linha o que
                está indisponível. Quem explica o bloqueio é a frase de baixo. -->
-          <UiButton
-            type="button"
-            :disabled="!fireAction(rule)?.enabled"
-            :aria-label="
-              fireAction(rule)?.enabled
-                ? `Preparar o disparo da campanha ${rule.name}`
-                : `${fireState(rule).reason} Campanha ${rule.name}`
-            "
-            variant="outline"
-            size="xs"
-            @click="openFire(rule)"
-          >
-            <Icon name="lucide:send" class="size-3.5" />
-            Preparar disparo
-          </UiButton>
-          <Icon
-            name="lucide:chevron-right"
-            class="size-4 text-muted-foreground"
-          />
-        </div>
-        <!-- ⚠️ A razão morava só no `title` do botão desabilitado, e o Firefox não
+            <UiButton
+              type="button"
+              :disabled="!fireAction(rule)?.enabled"
+              :aria-label="
+                fireAction(rule)?.enabled
+                  ? `Preparar o disparo da campanha ${rule.name}`
+                  : `${fireState(rule).reason} Campanha ${rule.name}`
+              "
+              variant="outline"
+              size="xs"
+              @click="openFire(rule)"
+            >
+              <Icon name="lucide:send" class="size-3.5" />
+              Preparar disparo
+            </UiButton>
+            <Icon
+              name="lucide:chevron-right"
+              class="size-4 text-muted-foreground"
+            />
+          </div>
+          <!-- ⚠️ A razão morava só no `title` do botão desabilitado, e o Firefox não
              mostra tooltip em botão desabilitado: "Indisponível" ficava sem porquê.
              Botão morto sem frase é defeito — a frase vai por extenso, sob a linha. -->
-        <p
-          v-if="!fireState(rule).enabled"
-          class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
-        >
-          {{ fireState(rule).reason }}
-        </p>
-      </li>
+          <p
+            v-if="!editState(rule).enabled"
+            class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+          >
+            {{ editState(rule).reason }}
+          </p>
+          <p
+            v-if="!fireState(rule).enabled"
+            class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+          >
+            {{ fireState(rule).reason }}
+          </p>
+        </li>
       </ul>
 
       <nav
@@ -690,83 +723,64 @@ useHead({ title: "Campanhas" });
       </nav>
     </template>
 
-    <!-- Painel lateral: edita sem tirar a lista da vista -->
-    <UiSheet
+    <MarketingWorkspaceDialog
       :open="panelOpen"
+      :title="editing ? 'Editar campanha' : 'Nova campanha'"
+      description="Um evento da padaria vira um anúncio para as pessoas certas. Configure cada destino e confira as composições antes de salvar."
       @update:open="
         (v) => {
           if (!v) close();
         }
       "
     >
-      <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
-           rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>{{
-            editing ? "Editar campanha" : "Nova campanha"
-          }}</UiSheetTitle>
-          <UiSheetDescription>
-            Um evento da padaria vira um anúncio para as pessoas certas.
-          </UiSheetDescription>
-        </UiSheetHeader>
-        <div class="flex-1 overflow-y-auto p-4">
-          <CampaignForm
-            :rule="editing"
-            :triggers="triggers"
-            :platform-options="platforms"
-            :delivery-capabilities="deliveryCapabilities"
-            :templates="templates"
-            :offers="offers"
-            :price-tiers="priceTiers"
-            :tags="tags"
-            :rfm-segments="rfmSegments"
-            :platform-labels="platformLabels"
-            :platform-readiness="platformReadiness"
-            :whatsapp-template="waTemplate.current.value"
-            :busy="busy"
-            :draft-owner="draftOwner"
-            :shop-timezone="shopTimezone"
-            @submit="onSubmit"
-            @cancel="close"
-          />
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+      <CampaignForm
+        :rule="editing"
+        :triggers="triggers"
+        :platform-options="platforms"
+        :delivery-capabilities="deliveryCapabilities"
+        :templates="templates"
+        :offers="offers"
+        :price-tiers="priceTiers"
+        :tags="tags"
+        :rfm-segments="rfmSegments"
+        :platform-labels="platformLabels"
+        :platform-readiness="platformReadiness"
+        :whatsapp-template="waTemplate.current.value"
+        :busy="busy"
+        :draft-owner="draftOwner"
+        :shop-timezone="shopTimezone"
+        :initial-promotion-ref="initialPromotionRef"
+        @submit="onSubmit"
+        @cancel="close"
+      />
+    </MarketingWorkspaceDialog>
 
-    <!-- Disparo manual: painel próprio, para não se confundir com editar a campanha -->
-    <UiSheet
+    <!-- Disparo manual: workspace próprio, para não se confundir com editar a campanha. -->
+    <MarketingWorkspaceDialog
       :open="firing !== null"
+      title="Definir público"
+      :description="`${firing?.name || 'Campanha'}: escolha o público. O texto vem do modelo e o anúncio nasce para revisão.`"
       @update:open="
         (v) => {
           if (!v) closeFire();
         }
       "
     >
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>Definir público</UiSheetTitle>
-          <UiSheetDescription>
-            {{ firing?.name }} — escolha o público. O texto vem do modelo e o
-            anúncio nasce para revisão.
-          </UiSheetDescription>
-        </UiSheetHeader>
-        <div class="flex-1 overflow-y-auto p-4">
-          <FireCampaignPanel
-            :rule="firing"
-            :price-tiers="priceTiers"
-            :tags="tags"
-            :rfm-segments="rfmSegments"
-            :products="products"
-            :product-required="firingTemplateRequiresProduct"
-            :busy="busy"
-            :error="fireError"
-            @submit="onFire"
-            @cancel="closeFire"
-          />
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+      <div class="mx-auto w-full max-w-3xl">
+        <FireCampaignPanel
+          :rule="firing"
+          :price-tiers="priceTiers"
+          :tags="tags"
+          :rfm-segments="rfmSegments"
+          :products="products"
+          :product-required="firingTemplateRequiresProduct"
+          :busy="busy"
+          :error="fireError"
+          @submit="onFire"
+          @cancel="closeFire"
+        />
+      </div>
+    </MarketingWorkspaceDialog>
 
     <MarketingCommandConfirmationDialog
       :command="pendingFireCommand"
