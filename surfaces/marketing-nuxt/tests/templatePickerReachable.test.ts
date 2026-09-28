@@ -27,14 +27,14 @@ describe("a configuração de plataforma tem casa", () => {
   });
 
   it("o painel NÃO configura plataforma — só decide", () => {
-    const board = read("../app/pages/index.vue");
+    const board = read("../app/components/MarketingBoard.vue");
     expect(board).not.toContain("onChooseTemplate");
     expect(board).not.toContain("Teste seguro do WhatsApp");
     expect(board).not.toContain("useWhatsAppTemplate");
   });
 
   it("o aviso do painel aponta a casa em vez de configurar", () => {
-    expect(read("../app/pages/index.vue")).toContain("/platforms");
+    expect(read("../app/components/MarketingBoard.vue")).toContain("/platforms");
   });
 
   it("o teste preserva idempotência no BFF e não serializa destinatário livre", () => {

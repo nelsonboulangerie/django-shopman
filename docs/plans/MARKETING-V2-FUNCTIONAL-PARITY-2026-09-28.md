@@ -95,11 +95,11 @@ desenvolvimento da V2; bloqueia torná-la padrão ou remover a V1.
 
 | Jornada | Prova mínima | Estado inicial |
 | --- | --- | --- |
-| Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Preservada na V1 |
+| Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Compartilhada por `/` e `/v2` |
 | Criar e editar campanha | component/e2e contra contrato real | Pendente na V2 |
 | Ligar/desligar campanha | teste de Action e CAS | Pendente na V2 |
 | Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Pendente na V2 |
-| Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Pendente na V2 |
+| Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Painel compartilhado; matriz completa pendente |
 | Configurar e testar plataforma | capability + teste seguro por conector | Pendente na V2 |
 | Criar/editar/excluir modelo | CRUD e dependência protegida | Pendente na V2 |
 | Consultar histórico e detalhe | cursor, legado e resultado por destino | Pendente na V2 |
@@ -131,4 +131,3 @@ Somente documentação de produto/arquitetura:
 - referência a ele no plano do Capability Composer.
 
 Não há mudança de runtime, API, migration, adapter, configuração, lockfile ou deploy.
-

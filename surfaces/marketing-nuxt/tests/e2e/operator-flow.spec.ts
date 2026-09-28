@@ -49,3 +49,23 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
     page.getByRole("heading", { level: 1, name: "Painel" }),
   ).toBeVisible();
 });
+
+test("entrada V2 preserva o painel operacional autenticado", async ({ page }) => {
+  await enterAsSyntheticOperator(page);
+
+  await page.goto("/v2");
+
+  await expect(page).toHaveURL(/\/v2$/);
+  await expect(
+    page.locator('[data-marketing-experience="v2"]'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Painel" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Campanhas", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Plataformas", exact: true }),
+  ).toBeVisible();
+});
