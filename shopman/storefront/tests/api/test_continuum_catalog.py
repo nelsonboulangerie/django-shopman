@@ -137,7 +137,10 @@ def test_public_snapshot_rejects_every_audience_dimension_before_lookup(client, 
 
 def test_public_snapshot_bytes_do_not_vary_by_host_and_warm_path_is_fixed(client, django_assert_max_num_queries):
     _seed_surface()
-    with override_settings(SHOPMAN_CONTINUUM=_config()):
+    with override_settings(
+        SHOPMAN_CONTINUUM=_config(),
+        ALLOWED_HOSTS=["public-a.example.test", "public-b.example.test"],
+    ):
         first = client.get(SNAPSHOT_URL, HTTP_HOST="public-a.example.test")
         with django_assert_max_num_queries(2):
             second = client.get(SNAPSHOT_URL, HTTP_HOST="public-b.example.test")
