@@ -2,11 +2,13 @@
 
 Data: 2026-09-28
 
-Branch: `codex/continuum-0.2-adversarial-20260927`
+Branches: `codex/continuum-0.2-adversarial-20260927` (base) e
+`codex/continuum-0.2-shadow-canary-20260928` (shadow do alpha)
 
-Escopo: WP-CS-0 parcial + WP-CS-1 em shadow/snapshot desligado
+Escopo: WP-CS-0 parcial + WP-CS-1 em shadow no alpha, com snapshot desligado
 
-Estado de promoção: **pronto para deploy inerte; shadow e snapshot continuam desligados**
+Estado de promoção: **base inerte validada no alpha; shadow autorizado no caminho canônico,
+snapshot e cliente continuam desligados**
 
 ## Resultado
 
@@ -143,6 +145,19 @@ doctl apps logs APP_ID web --type run --no-prefix --tail 20000 \
 Falha mantém snapshot desligado e aciona o kill switch se o próprio shadow afetar o caminho
 canônico. Aprovação desse gate autoriza apenas o canário HTTP; não abre CS-2 automaticamente.
 
+## Rollout no alpha
+
+A base foi mergeada pelo PR #1189 no commit `c685d7264a30cf0aadc771993083772967ddce4e`.
+O deployment `a9ec6a4e-eb69-4248-b024-264b26de2248` ficou `ACTIVE` em
+2026-09-28T12:24:25Z com todas as flags desligadas. O smoke pós-deploy validou `/ready/`,
+cardápio, checkout e SSR; a conferência direta confirmou menu `200` e endpoint candidato `404`.
+
+A fase seguinte liga somente `SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED` no alpha. O menu
+canônico continua sendo a resposta ao cliente, `SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED`
+permanece `false`, o endpoint candidato continua `404` e nenhuma mudança de cliente entra nesta
+fase. A janela de 24 horas/500 observações começa apenas quando o deployment dessa configuração
+estiver `ACTIVE`.
+
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts
 9 passed
@@ -184,4 +199,5 @@ Antes de promoção, ainda são obrigatórios:
 6. cumprir os thresholds quantitativos e a janela definidos acima;
 7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
-Até esses itens existirem, o estado correto do PR é draft e as flags permanecem desligadas.
+Até esses itens existirem, a promoção pública permanece bloqueada: somente o shadow do alpha pode
+ficar ligado. Snapshot, canário HTTP e cliente permanecem desligados.
