@@ -44,6 +44,8 @@ surface depends on it.
 | Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
 | Preorder hand-over (receive balance + deliver) | POST | `/api/v1/backstage/pos/preorders/{ref}/hand-over/` | `operator_orders.hand_over_at_counter` (settle in this station's open shift + advance to completed, one transaction; idempotent by `client_request_id`) |
 | Preorder cancel | POST | `/api/v1/backstage/orders/{ref}/cancel/` (the Gestor route) | `operator_orders.cancel_order` + `operator_cancel_policy` + manager PIN |
+| Preorder edit (sale screen in edit mode) | POST | `/api/v1/backstage/pos/preorders/{ref}/edit-session/` | `pos_edit_session.open_edit_session` (virtual tab, no `tab_ref`; saved by `orders/{ref}/edit/preview/` + `orders/{ref}/edit/`) |
+| Preorder redo (after "Cancelar e refazer") | POST | `/api/v1/backstage/pos/preorders/{ref}/redo-tab/` | `pos_edit_session.open_redo_tab` (a regular sale tab `Refazer {ref}` pre-filled with the cancelled preorder; only after the cancel; resumed while open; refused once a sale closed on it) |
 | Preorders realtime (SSE) | GET | BFF `/sse/orders` → `/events/orders/` (`backstage-orders-main`) | push-only; the Encomendas screens refetch the list on each event (ADR-016) |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
 

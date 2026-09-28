@@ -1526,7 +1526,11 @@ export function usePosSale(deps: PosSaleDeps) {
    * a monta com os itens (preço vendido), o cliente, o recebimento, a data e a
    * observação do pedido. Carrega como qualquer comanda e vai direto à venda.
    */
-  async function loadEditTab(payload: POSTabPayload) {
+  /**
+   * Carrega na venda uma comanda que o SERVIDOR montou: a comanda virtual da
+   * edição de encomenda e a comanda do "Cancelar e refazer".
+   */
+  async function loadPreparedTab(payload: POSTabPayload) {
     await setFromTabPayload(payload);
     showTabs.value = false;
   }
@@ -3417,7 +3421,7 @@ export function usePosSale(deps: PosSaleDeps) {
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
-    loadEditTab,
+    loadPreparedTab,
     editIntent,
     openMoveDialog,
     submitMove,

@@ -55,7 +55,7 @@ from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.shop.services import fiscal as fiscal_service
-from shopman.shop.services import order_composition
+from shopman.shop.services import order_composition, weighed_sale
 
 logger = logging.getLogger(__name__)
 
@@ -273,10 +273,13 @@ def state_refusal(order) -> tuple[str, str]:
 def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None) -> EditPlan:
     """Calcula a edição sem gravar nada: itens, total, diferença e o destino dela.
 
-    - ``lines``: a lista FINAL de itens de produto, ``[{line_id?, sku, qty}]``.
-      ``line_id`` de uma linha que já existia mantém o preço vendido; sem
-      ``line_id`` (ou desconhecido) é item novo, a preço de catálogo. ``None``
-      mantém os itens como estão.
+    - ``lines``: a lista FINAL de itens de produto, ``[{line_id?, sku, qty,
+      weighed?}]``. ``line_id`` de uma linha que já existia mantém o preço
+      vendido; sem ``line_id`` (ou desconhecido) é item novo, a preço de
+      catálogo. O item vendido por peso entra como na venda: ``weighed`` traz a
+      etiqueta (``{entry: "label", label_q}``) ou o peso (``{entry: "weight",
+      weight_g}``), e cada peça é uma linha; a peça que já estava não muda de
+      peso. ``None`` mantém os itens como estão.
     - ``notes``: a observação do cliente (``order_notes``); ``None`` mantém.
     - ``fulfillment``: ``{type: "pickup"|"delivery", delivery_address,
       delivery_address_structured, delivery_fee_override_q, fiscal_tax_id,
@@ -500,10 +503,11 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
         if product is None:
             raise EditRefused(f"O item {sku} não está no catálogo.", code="unknown_sku", field=f"items.{index}")
         display = name or product["name"] or sku
-        if product["unit"] == "kg":
+        if weighed_sale.is_sold_by_weight(product["unit"]):
+            # A mesma frase da venda: a peça entra pela etiqueta (ou pelo peso).
             raise EditRefused(
-                f"{display} é vendido por peso e não entra pela edição. Acrescente no balcão, na retirada.",
-                code="sold_by_weight", field=f"items.{index}",
+                f"{display} é vendido por peso: informe o valor da etiqueta.",
+                code="weight_entry_required", field=f"items.{index}.weighed",
             )
         price_q = pricing.price(sku)
         if not price_q:
@@ -517,7 +521,7 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
             line["qty"] = line["qty"] + qty
             line["line_total_q"] = monetary_mult(line["qty"], int(price_q))
             return
-        line_id = f"E{next_revision}-{len(new_lines) + 1}"
+        line_id = f"E{next_revision}-{len(new_line_ids) + 1}"
         line = {
             "line_id": line_id,
             "sku": sku,
@@ -531,10 +535,62 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
         new_line_ids.append(line_id)
         out.append(line)
 
-    for index, (line_id, sku, qty) in enumerate(parsed):
+    def add_weighed(index: int, sku: str, declared: dict) -> None:
+        """A peça pesada que ENTRA: uma linha por peça, como na venda.
+
+        O que o operador tem em mãos (etiqueta ou peso) vira peso pelo preço do
+        quilo da vitrine do canal — a mesma conversão da venda
+        (``weighed_sale.resolve``) —, e o peso é cobrado pelo preço do catálogo
+        no canal do pedido (a cascata do item novo).
+        """
+        field = f"items.{index}.weighed"
+        product = pricing.product(sku)
+        if product is None:
+            raise EditRefused(f"O item {sku} não está no catálogo.", code="unknown_sku", field=f"items.{index}")
+        display = product["name"] or sku
+        if not weighed_sale.is_sold_by_weight(product["unit"]):
+            raise EditRefused(f"{display} é vendido por unidade, não por peso.", code="not_sold_by_weight", field=field)
+        entry = str(declared.get("entry") or "").strip().lower()
+        if entry == weighed_sale.ENTRY_WEIGHT and not weighed_sale.weight_entry_enabled():
+            raise EditRefused(
+                f"Esta loja lança {display} pelo valor da etiqueta, não pelo peso.",
+                code="weight_entry_disabled", field=field,
+            )
+        try:
+            piece = weighed_sale.resolve(
+                name=display,
+                entry=entry,
+                price_per_kg_q=weighed_sale.price_per_kg_q(sku, pricing.channel),
+                label_q=_int(declared.get("label_q")) or None,
+                weight_g=_int(declared.get("weight_g")) or None,
+            )
+        except weighed_sale.WeighedEntryError as exc:
+            raise EditRefused(exc.message, code=exc.code, field=field) from None
+        price_q = pricing.price(sku)
+        if not price_q:
+            raise EditRefused(
+                f"{display} está sem preço no cadastro e não pode entrar na encomenda.",
+                code="price_missing", field=f"items.{index}",
+            )
+        line_id = f"E{next_revision}-{len(new_line_ids) + 1}"
+        out.append({
+            "line_id": line_id,
+            "sku": sku,
+            "name": display,
+            "qty": piece.qty,
+            "unit_price_q": int(price_q),
+            "line_total_q": monetary_mult(piece.qty, int(price_q)),
+            "meta": {"added_by": SOURCE, "weighed": piece.as_meta()},
+        })
+        new_line_ids.append(line_id)
+
+    for index, (line_id, sku, qty, weighed) in enumerate(parsed):
         old = by_line.get(line_id) if line_id else None
         if old is None:
-            add_new(index, sku, qty)
+            if weighed:
+                add_weighed(index, sku, weighed)
+            else:
+                add_new(index, sku, qty)
             continue
         if line_id in seen:
             raise EditRefused("A mesma linha apareceu duas vezes.", code="duplicate_line", field=f"items.{index}")
@@ -544,6 +600,16 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
                 "Uma linha trocou de produto. Tire a linha e acrescente o outro item.",
                 code="line_sku_changed", field=f"items.{index}",
             )
+        if _is_weighed_line(old):
+            # A peça pesada é a peça: o peso não se digita (na venda também não).
+            if qty != old.qty:
+                raise EditRefused(
+                    f"{old.name or old.sku} é peça pesada: o peso não muda. "
+                    "Para trocar a peça, remova a linha e lance a outra etiqueta.",
+                    code="weighed_line_changed", field=f"items.{index}",
+                )
+            out.append(_kept(old, old.qty))
+            continue
         if qty != qty.to_integral_value() and old.qty == old.qty.to_integral_value():
             raise EditRefused(
                 f"A quantidade de {old.name or old.sku} precisa ser inteira.",
@@ -1107,6 +1173,11 @@ class _Pricing:
             except Exception:
                 logger.warning("order_edit: faixa do cliente indisponível order=%s", self.order.ref, exc_info=True)
 
+    @property
+    def channel(self):
+        self._load()
+        return self._channel
+
     def price(self, sku: str) -> int | None:
         if sku not in self._prices:
             self._load()
@@ -1125,7 +1196,7 @@ class _Pricing:
         return self._products[sku]
 
 
-def _parse_lines(lines) -> list[tuple[str, str, Decimal]]:
+def _parse_lines(lines) -> list[tuple[str, str, Decimal, dict | None]]:
     if not isinstance(lines, list | tuple):
         raise EditRefused("Lista de itens inválida.", code="invalid_items", field="items")
     parsed = []
@@ -1148,8 +1219,17 @@ def _parse_lines(lines) -> list[tuple[str, str, Decimal]]:
             raise EditRefused(
                 "A taxa de entrega muda pelo recebimento, não pelos itens.", code="invalid_items", field=f"items.{index}",
             )
-        parsed.append((line_id, sku, qty))
+        weighed = raw.get("weighed")
+        if weighed not in (None, "", {}) and not isinstance(weighed, dict):
+            raise EditRefused("Venda por peso inválida.", code="invalid_weighed", field=f"items.{index}.weighed")
+        parsed.append((line_id, sku, qty, weighed or None))
     return parsed
+
+
+def _is_weighed_line(item) -> bool:
+    """A linha é uma peça vendida por peso (registro ``meta.weighed`` ou kg fracionado)."""
+    meta = item.meta if isinstance(item.meta, dict) else {}
+    return isinstance(meta.get("weighed"), dict) or item.qty != item.qty.to_integral_value()
 
 
 def _is_fee_line(item) -> bool:

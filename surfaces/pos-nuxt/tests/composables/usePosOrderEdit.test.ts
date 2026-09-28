@@ -102,4 +102,38 @@ describe("usePosOrderEdit", () => {
     expect(edit.needsPaymentMethod.value).toBe(true);
     expect(edit.error.value).toContain("Nada foi gravado");
   });
+
+  it("entrega com nota sem CPF: a caixa pede o documento ali mesmo, com o cadastro de valor inicial", async () => {
+    const { edit } = await started();
+    const entrega = {
+      ...INTENT,
+      fulfillment_type: "delivery",
+      delivery_address: "Rua Sergipe",
+      delivery_address_structured: { route: "Rua Sergipe", street_number: "100" },
+      customer_tax_id: "52998224725",
+    };
+    call.mockRejectedValueOnce({
+      status: 400,
+      data: { detail: "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente.", error: { code: "delivery_tax_id_required" } },
+    });
+
+    expect(await edit.review(entrega)).toBe(false);
+    expect(edit.needsTaxId.value).toBe(true);
+    // O cadastro EMPRESTA o valor inicial; o operador vê e confirma.
+    expect(edit.deliveryTaxId.value).toBe("52998224725");
+    expect(call.mock.calls.at(-1)![1].body.fulfillment.fiscal_tax_id).toBeUndefined();
+
+    edit.deliveryTaxId.value = "11144477735";
+    call.mockResolvedValueOnce({ ok: true, preview: { changed: true, total_q: 1200 } });
+    expect(await edit.review(entrega)).toBe(true);
+    expect(call.mock.calls.at(-1)![1].body.fulfillment.fiscal_tax_id).toBe("11144477735");
+
+    call.mockResolvedValueOnce({ ok: true, changed: true, revision: 1, preview: {} });
+    await edit.confirm(entrega);
+    expect(call.mock.calls.at(-1)![1].body.fulfillment.fiscal_tax_id).toBe("11144477735");
+
+    edit.reset();
+    expect(edit.needsTaxId.value).toBe(false);
+    expect(edit.deliveryTaxId.value).toBe("");
+  });
 });
