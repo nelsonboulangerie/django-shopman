@@ -77,7 +77,7 @@ export default defineNuxtConfig({
       // titleTemplate vive no app.vue (useHead): lá é função com a marca dinâmica do
       // tenant — e nuxt.config só aceita string, então aqui ele não tem vez.
       meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
         // Primeiro paint e overscroll nativo antes da hidratação: Dark Burgundy/ink.
         { name: 'theme-color', content: '#531D22' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },

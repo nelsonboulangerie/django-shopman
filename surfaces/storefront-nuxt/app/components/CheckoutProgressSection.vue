@@ -59,10 +59,11 @@ const titleClass = computed(() => props.state === 'upcoming' ? 'text-muted-foreg
        hyper-focus continua: só a etapa atual expande; as outras viram resumo.
 
        Alvo de foco (useNextFocus): a seção é focável (tabindex=-1, sem anel —
-       o "Agora" burgundy já é o sinal) e `scroll-mt-20` põe a linha de foco
-       logo abaixo da navbar colapsada (4rem) com uma folga de 1rem. -->
+       o "Agora" burgundy já é o sinal). A própria hairline superior é a régua:
+       `shop-focus-ruler` soma exatamente os 6px do fio dourado, fazendo a
+       hairline da etapa coincidir com a base visual da navbar e desaparecer. -->
   <section
-    class="-mx-4 scroll-mt-20 border-t px-4 py-4 outline-none first:border-t-0 sm:mx-0 sm:px-0"
+    class="shop-focus-ruler -mx-4 border-t px-4 py-4 outline-none first:border-t-0 sm:mx-0 sm:px-0"
     tabindex="-1"
     data-checkout-section
     :data-checkout-section-state="state"

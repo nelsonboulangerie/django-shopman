@@ -124,6 +124,9 @@ let mapMarker: google.maps.Marker | null = null
 const routeInput = ref<FocusableInput>(null)
 const numberInput = ref<FocusableInput>(null)
 const complementInput = ref<FocusableInput>(null)
+const neighborhoodInput = ref<FocusableInput>(null)
+const cepInput = ref<FocusableInput>(null)
+const cityInput = ref<FocusableInput>(null)
 const searchInput = ref<FocusableInput>(null)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -241,7 +244,15 @@ function focusUiInput (target: FocusableInput) {
   const el = target?.$el
   const native = target?.inputRef?.value
     || (el?.tagName === 'INPUT' ? (el as HTMLInputElement) : el?.querySelector?.('input'))
-  native?.focus?.()
+  native?.focus?.({ preventScroll: true })
+}
+
+function focusNextInput (target: FocusableInput) {
+  focusUiInput(target)
+}
+
+function finishTextEntry (event: KeyboardEvent) {
+  (event.currentTarget as HTMLInputElement | null)?.blur?.()
 }
 
 async function focusSearch () {
@@ -651,7 +662,11 @@ function onLabelResolved () {
       >
         <UiFieldLabel v-for="address in savedAddresses" :key="address.id" :for="`address-saved-${address.id}`" class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary">
           <UiField orientation="horizontal">
-            <UiRadioGroupItem :id="`address-saved-${address.id}`" :value="address.id" />
+            <UiRadioGroupItem
+              :id="`address-saved-${address.id}`"
+              :value="address.id"
+              :data-focus-control="address.id === selectedSavedId ? '' : undefined"
+            />
             <UiFieldContent>
               <UiFieldTitle>
                 <Icon name="lucide:map-pin-house" class="size-4" />
@@ -706,9 +721,13 @@ function onLabelResolved () {
             v-model="query"
             type="text"
             autocomplete="off"
+            autocapitalize="words"
+            enterkeyhint="search"
             placeholder="Rua, número ou CEP"
             data-address-search
+            data-focus-control
             @input="onQueryInput"
+            @keydown.enter.prevent="runSearch(query)"
           />
         </UiInputGroup>
         <!-- Sugestões inline (fluxo de bloco) — sem overlay/clipping. -->
@@ -805,36 +824,86 @@ function onLabelResolved () {
       <div class="grid grid-cols-1 gap-4">
         <div class="space-y-2">
           <UiLabel for="address-route">Rua</UiLabel>
-          <UiInput id="address-route" ref="routeInput" v-model="draft.route" autocomplete="address-line1" />
+          <UiInput
+            id="address-route"
+            ref="routeInput"
+            v-model="draft.route"
+            autocomplete="address-line1"
+            enterkeyhint="next"
+            class="h-11"
+            @keydown.enter.prevent="focusNextInput(numberInput)"
+          />
           <UiFieldError v-if="fieldErrors.route" :errors="fieldErrors.route" />
         </div>
         <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4">
           <div class="space-y-2">
             <UiLabel for="address-number">Número</UiLabel>
-            <UiInput id="address-number" ref="numberInput" v-model="draft.street_number" inputmode="numeric" />
+            <UiInput
+              id="address-number"
+              ref="numberInput"
+              v-model="draft.street_number"
+              enterkeyhint="next"
+              class="h-11"
+              @keydown.enter.prevent="focusNextInput(complementInput)"
+            />
             <UiFieldError v-if="fieldErrors.street_number" :errors="fieldErrors.street_number" />
           </div>
           <div class="space-y-2">
             <UiLabel for="address-complement">Complemento</UiLabel>
-            <UiInput id="address-complement" ref="complementInput" v-model="draft.complement" placeholder="Apto, bloco, referência" />
+            <UiInput
+              id="address-complement"
+              ref="complementInput"
+              v-model="draft.complement"
+              enterkeyhint="next"
+              class="h-11"
+              placeholder="Apto, bloco, referência"
+              @keydown.enter.prevent="focusNextInput(neighborhoodInput)"
+            />
           </div>
         </div>
         <div class="grid grid-cols-[minmax(0,1fr)_8rem] gap-4">
           <div class="space-y-2">
             <UiLabel for="address-neighborhood">Bairro</UiLabel>
-            <UiInput id="address-neighborhood" v-model="draft.neighborhood" autocomplete="address-level3" />
+            <UiInput
+              id="address-neighborhood"
+              ref="neighborhoodInput"
+              v-model="draft.neighborhood"
+              autocomplete="address-level3"
+              enterkeyhint="next"
+              class="h-11"
+              @keydown.enter.prevent="focusNextInput(cepInput)"
+            />
             <UiFieldError v-if="fieldErrors.neighborhood" :errors="fieldErrors.neighborhood" />
           </div>
           <div class="space-y-2">
             <UiLabel for="address-cep">CEP</UiLabel>
-            <UiInput id="address-cep" v-model="draft.postal_code" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" @input="onCepInput" />
+            <UiInput
+              id="address-cep"
+              ref="cepInput"
+              v-model="draft.postal_code"
+              inputmode="numeric"
+              autocomplete="postal-code"
+              enterkeyhint="next"
+              class="h-11"
+              placeholder="00000-000"
+              @input="onCepInput"
+              @keydown.enter.prevent="focusNextInput(cityInput)"
+            />
             <UiFieldError v-if="fieldErrors.postal_code" :errors="fieldErrors.postal_code" />
           </div>
         </div>
         <div class="grid grid-cols-[minmax(0,1fr)_6rem] gap-4">
           <div class="space-y-2">
             <UiLabel for="address-city">Cidade</UiLabel>
-            <UiInput id="address-city" v-model="draft.city" autocomplete="address-level2" />
+            <UiInput
+              id="address-city"
+              ref="cityInput"
+              v-model="draft.city"
+              autocomplete="address-level2"
+              enterkeyhint="done"
+              class="h-11"
+              @keydown.enter.prevent="finishTextEntry"
+            />
             <UiFieldError v-if="fieldErrors.city" :errors="fieldErrors.city" />
           </div>
           <div class="space-y-2">
@@ -850,7 +919,14 @@ function onLabelResolved () {
         </div>
         <div class="space-y-2">
           <UiLabel for="address-instructions">Instruções de entrega</UiLabel>
-          <UiInput id="address-instructions" v-model="draft.delivery_instructions" placeholder="Portaria, interfone, melhor acesso" />
+          <UiInput
+            id="address-instructions"
+            v-model="draft.delivery_instructions"
+            enterkeyhint="done"
+            class="h-11"
+            placeholder="Portaria, interfone, melhor acesso"
+            @keydown.enter.prevent="finishTextEntry"
+          />
         </div>
       </div>
 
