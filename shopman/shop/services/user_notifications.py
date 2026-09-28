@@ -415,13 +415,9 @@ def reconcile_stock_alert_delivery_incident(source_ref: str) -> int:
             outcome_code="invalid_stock_alert_delivery_ref",
         )
 
-    from shopman.storefront.models import StockAlertDelivery
+    from shopman.shop.adapters import audience_sources
 
-    status = (
-        StockAlertDelivery.objects.filter(pk=delivery_id)
-        .values_list("status", flat=True)
-        .first()
-    )
+    status = audience_sources.stock_alert_delivery_status(delivery_id)
     if status is None:
         return reconcile_condition(
             source_condition=STOCK_ALERT_DELIVERY_INCIDENT,
@@ -429,7 +425,7 @@ def reconcile_stock_alert_delivery_incident(source_ref: str) -> int:
             state=NotificationLifecycle.EXPIRED,
             outcome_code="stock_alert_delivery_missing",
         )
-    if status == StockAlertDelivery.Status.INDETERMINATE:
+    if status == "indeterminate":
         return 0
     return reconcile_condition(
         source_condition=STOCK_ALERT_DELIVERY_INCIDENT,

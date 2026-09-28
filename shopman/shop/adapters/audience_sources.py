@@ -69,6 +69,18 @@ def notified_alert_count(sku: str) -> int:
     )
 
 
+def stock_alert_delivery_status(delivery_id: int) -> str | None:
+    """Estado canônico de uma entrega, sem vazar o model da superfície."""
+
+    from shopman.storefront.models import StockAlertDelivery
+
+    return (
+        StockAlertDelivery.objects.filter(pk=delivery_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+
+
 def pending_alert_contacts(sku: str) -> list[tuple[str, str, object, bool]]:
     """Contact plus ref and 18+ declaration for each active SKU opt-in."""
     from shopman.storefront.models import StockAlertSubscription
