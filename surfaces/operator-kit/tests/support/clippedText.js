@@ -18,7 +18,6 @@
 //
 // Arquivo JS puro, sem import: é serializado e injetado como está.
 
-/* eslint-disable */
 export function findClippedText(options) {
   const opts = Object.assign({ tolerance: 1 }, options || {});
   const results = [];

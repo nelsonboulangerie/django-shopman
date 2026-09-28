@@ -28,7 +28,7 @@ const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 const CLIPS = /(?:^|[\s:])(?:truncate|text-ellipsis|line-clamp-\d)(?=\s|$)/;
 
 function vueFiles(dir: string, found: string[] = []): string[] {
-  let entries: string[] = [];
+  let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
