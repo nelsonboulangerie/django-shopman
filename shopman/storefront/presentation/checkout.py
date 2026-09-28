@@ -31,7 +31,7 @@ from shopman.shop.projections.types import (
     SavedAddressProjection,
 )
 from shopman.storefront.constants import get_default_ddd
-from shopman.storefront.identity import knows_only_the_number
+from shopman.storefront.identity import get_authenticated_customer, knows_only_the_number
 from shopman.storefront.presentation.address_privacy import address_projection
 from shopman.storefront.presentation.status import payment_method_label
 from shopman.storefront.presentation.types import PaymentMethodOptionProjection
@@ -108,6 +108,7 @@ class CheckoutProjection:
     # Resolved options/actions for the surface
     actions: tuple[Action, ...]
     fulfillment_options: tuple[str, ...]
+    default_fulfillment_type: str
     has_pickup: bool
     has_delivery: bool
 
@@ -206,6 +207,17 @@ def build_checkout(
             customer_info, reduced=knows_only_the_number(request),
         )
 
+    remembered_defaults: dict = {}
+    if customer_info:
+        try:
+            customer = get_authenticated_customer(request)
+            remembered_defaults = checkout_projection.customer_checkout_defaults(
+                customer.ref if customer else "",
+                channel_ref,
+            )
+        except Exception:
+            logger.debug("checkout_projection_customer_defaults_identity_failed", exc_info=True)
+
     interaction = InteractionContext.from_request(
         request,
         channel_ref=channel_ref,
@@ -226,6 +238,35 @@ def build_checkout(
     reduced_identity = knows_only_the_number(request) if customer_info else True
     prefill = _delivery_tax_id_prefill(customer_info=customer_info, reduced=reduced_identity)
 
+    fulfillment_options = policy.fulfillment_types
+    remembered_fulfillment = str(remembered_defaults.get("fulfillment_type") or "")
+    default_fulfillment_type = (
+        remembered_fulfillment
+        if remembered_fulfillment in fulfillment_options
+        else (fulfillment_options[0] if fulfillment_options else "pickup")
+    )
+
+    payment_refs = {method.ref for method in payment_methods}
+    remembered_payment = str(remembered_defaults.get("payment_method") or "")
+    default_payment_method = (
+        remembered_payment
+        if remembered_payment in payment_refs
+        else (payment_methods[0].ref if payment_methods else "cash")
+    )
+
+    try:
+        remembered_address_id = int(remembered_defaults.get("delivery_address_id") or 0)
+    except (TypeError, ValueError):
+        remembered_address_id = 0
+    saved_address_ids = {address.id for address in saved_addresses}
+    if remembered_address_id in saved_address_ids:
+        preselected_address_id = remembered_address_id
+
+    remembered_slot = str(remembered_defaults.get("delivery_time_slot") or "")
+    enabled_slot_refs = {slot.ref for slot in pickup_slots if slot.enabled}
+    if remembered_slot in enabled_slot_refs:
+        earliest_slot_ref = remembered_slot
+
     return CheckoutProjection(
         copy=_checkout_copy(),
         cart=cart,
@@ -237,7 +278,7 @@ def build_checkout(
         saved_addresses=saved_addresses,
         preselected_address_id=preselected_address_id,
         payment_methods=payment_methods,
-        default_payment_method=payment_methods[0].ref if payment_methods else "cash",
+        default_payment_method=default_payment_method,
         payment_constraints=_payment_constraints(),
         actions=_checkout_actions(
             policy,
@@ -245,9 +286,10 @@ def build_checkout(
             is_authenticated=is_authenticated,
             requires_authentication=requires_authentication,
         ),
-        fulfillment_options=policy.fulfillment_types,
-        has_pickup="pickup" in policy.fulfillment_types,
-        has_delivery="delivery" in policy.fulfillment_types,
+        fulfillment_options=fulfillment_options,
+        default_fulfillment_type=default_fulfillment_type,
+        has_pickup="pickup" in fulfillment_options,
+        has_delivery="delivery" in fulfillment_options,
         pickup_slots=pickup_slots,
         earliest_slot_ref=earliest_slot_ref,
         loyalty_balance_q=loyalty_balance_q,

@@ -372,8 +372,10 @@ describe('surface UX guardrails', () => {
     const labelSheet = read('app/components/AddressLabelSheet.vue')
     expect(labelSheet).toContain('data-address-label-sheet')
     expect(labelSheet).toContain('Agora não')
-    expect(checkout).toContain('<AddressLabelSheet')
-    expect(checkout).toContain('findNewlySavedAddress')
+    // Nomear o endereço é conveniência de cadastro: não interrompe mais a
+    // compra nem o acesso ao acompanhamento depois do pedido confirmado.
+    expect(checkout).not.toContain('<AddressLabelSheet')
+    expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
     // Default = primeira data disponível do backend (nunca dia fechado).
     expect(checkout).toContain('checkout.value?.available_dates?.[0]')
@@ -400,7 +402,8 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('<CheckoutProgressSection')
     expect(checkout).toContain('stepState')
     expect(read('app/components/CheckoutProgressSection.vue')).toContain(':data-checkout-section-state="state"')
-    expect(checkout).toContain('<UiRadioGroup v-model="state.fulfillment_type" class="grid gap-2 sm:grid-cols-2">')
+    expect(checkout).toContain(':model-value="state.fulfillment_type"')
+    expect(checkout).toContain('@update:model-value="onFulfillmentSelected(String($event))"')
     expect(checkout).toContain('<UiRadioGroup v-model="state.payment_method" class="grid gap-2 sm:grid-cols-2">')
     expect(checkout).toContain('<UiFieldLabel v-if="availableFulfillment.includes(\'pickup\')" for="checkout-fulfillment-pickup" class="bg-card')
     expect(checkout).toContain('<UiFieldLabel v-for="method in paymentMethods"')
@@ -430,6 +433,8 @@ describe('surface UX guardrails', () => {
     // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
     expect(checkout).toContain('shop-action-dock')
     expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).toContain('v-show="!keyboardActive"')
+    expect(checkout).toContain('useMobileFormViewport(checkoutRoot)')
     expect(checkout).not.toContain('class="sticky bottom-20')
     expect(checkout).toContain('data-checkout-action-card')
     // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA

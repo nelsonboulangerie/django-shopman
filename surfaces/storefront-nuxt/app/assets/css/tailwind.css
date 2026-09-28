@@ -546,6 +546,14 @@
    * decide sozinha (a coluna do desktop leva a ação no fluxo).
    */
   @media (max-width: 767px) {
+    /* Ao digitar, a prioridade é enxergar o campo e o que ele explica. Dock,
+     * navegação e dica de rolagem disputariam a pequena visual viewport com o
+     * teclado. Eles voltam no blur — nenhuma ação ou estado é perdido. */
+    html.shop-form-keyboard-open .shop-bottomnav-bar,
+    html.shop-form-keyboard-open [data-more-below] {
+      display: none;
+    }
+
     .shop-action-dock {
       position: fixed;
       left: 1rem;

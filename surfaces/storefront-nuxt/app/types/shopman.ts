@@ -813,6 +813,7 @@ export interface CheckoutProjection {
   default_payment_method: string
   actions: Action[]
   fulfillment_options: Array<'pickup' | 'delivery' | string>
+  default_fulfillment_type: 'pickup' | 'delivery'
   has_pickup: boolean
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
