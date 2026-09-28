@@ -8,14 +8,15 @@ import type {
   AnnouncementTemplate,
   MarketingPlatformCapability,
 } from "~/types/campaign";
+import GoogleBusinessPostOptions from "~/components/GoogleBusinessPostOptions.vue";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import { marketingVariableLabel } from "~/presentation/marketingVariables";
 import {
-  GOOGLE_CALL_TO_ACTIONS,
+  googleBusinessEdits,
   googleBusinessOptions,
 } from "~/presentation/googleBusinessPost";
-import type { GoogleCallToAction } from "~/presentation/googleBusinessPost";
+import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -40,8 +41,10 @@ const aiPrompt = ref("");
 const isActive = ref(true);
 const platformVariants = ref<Record<string, Record<string, unknown>>>({});
 const instagramFormat = ref("story");
-/** Botão padrão do post do Google deste modelo; a revisão pode trocar. */
-const googleCallToAction = ref<GoogleCallToAction>("none");
+/** Tipo, CTA e campos próprios do Google. A revisão ainda pode trocar antes de publicar. */
+const googleOptions = ref<GoogleBusinessOptions>(
+  googleBusinessOptions(undefined),
+);
 const customImageUrl = ref("");
 
 const platformCapabilities = computed(() => props.deliveryCapabilities ?? []);
@@ -69,8 +72,7 @@ const instagramFormats = computed(
 // plataforma diz quais formatos existem, e a recomendação diz qual é o nosso
 // padrão e por quê.
 const FORMAT_HINTS: Record<string, string> = {
-  story:
-    "Efêmero e urgente: é o padrão para lotes e oportunidades do momento.",
+  story: "Efêmero e urgente: é o padrão para lotes e oportunidades do momento.",
   feed: "Permanente. Só será usado quando você escolher esta opção.",
 };
 
@@ -155,9 +157,17 @@ function publicationVariants(): Record<string, Record<string, unknown>> {
     variants[capability.platform] = variant;
   }
   const google = { ...(variants.google_business || {}) };
-  if (googleCallToAction.value === "none")
-    Reflect.deleteProperty(google, "call_to_action");
-  else google.call_to_action = googleCallToAction.value;
+  for (const key of [
+    "publication_format",
+    "call_to_action",
+    "event_title",
+    "event_start",
+    "event_end",
+    "offer_terms",
+  ]) {
+    Reflect.deleteProperty(google, key);
+  }
+  Object.assign(google, googleBusinessEdits(googleOptions.value));
   variants.google_business = google;
   for (const platform of knownPlatforms.value) {
     const variant = { ...(variants[platform] || {}) };
@@ -187,19 +197,30 @@ watch(
         "story",
     ).toLowerCase();
     instagramFormat.value = storedFormat === "feed" ? "feed" : "story";
-    googleCallToAction.value = googleBusinessOptions(
+    googleOptions.value = googleBusinessOptions(
       t?.platform_variants?.google_business,
-    ).call_to_action;
+    );
     customImageUrl.value = imageFromVariants(platformVariants.value);
   },
   { immediate: true },
 );
 
+const googleReady = computed(() => {
+  if (googleOptions.value.publication_format !== "event") return true;
+  return Boolean(
+    googleOptions.value.event_title.trim() &&
+    googleOptions.value.event_start &&
+    googleOptions.value.event_end &&
+    googleOptions.value.event_end > googleOptions.value.event_start,
+  );
+});
+const templateHasLink = computed(() => body.value.includes("{{link}}"));
 const canSubmit = computed(
   () =>
     !props.busy &&
     name.value.trim().length > 0 &&
     body.value.trim().length > 0 &&
+    googleReady.value &&
     (imageSource.value !== "custom" || customImageUrl.value.trim().length > 0),
 );
 
@@ -253,9 +274,9 @@ function applyTemplateDraft(payload: MarketingDraftPayload) {
       "story",
   ).toLowerCase();
   instagramFormat.value = restoredFormat === "feed" ? "feed" : "story";
-  googleCallToAction.value = googleBusinessOptions(
+  googleOptions.value = googleBusinessOptions(
     platformVariants.value.google_business,
-  ).call_to_action;
+  );
   customImageUrl.value = imageFromVariants(platformVariants.value);
 }
 
@@ -416,32 +437,11 @@ function submit() {
       </p>
     </fieldset>
 
-    <fieldset class="rounded-lg border border-border bg-card p-4">
-      <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Botão no Google
-      </legend>
-      <label for="tpl-google-button" class="sr-only">Botão no post do Google</label>
-      <UiNativeSelect
-        id="tpl-google-button"
-        v-model="googleCallToAction"
-        class="w-full"
-      >
-        <option
-          v-for="option in GOOGLE_CALL_TO_ACTIONS"
-          :key="option.value"
-          :value="option.value"
-        >
-          {{ option.label }}
-        </option>
-      </UiNativeSelect>
-      <p class="mt-2 text-xs text-muted-foreground">
-        {{
-          GOOGLE_CALL_TO_ACTIONS.find((option) => option.value === googleCallToAction)
-            ?.hint
-        }}
-        Na revisão dá para trocar o botão e publicar como evento ou oferta.
-      </p>
-    </fieldset>
+    <GoogleBusinessPostOptions
+      v-model="googleOptions"
+      id-prefix="tpl-google"
+      :has-link="templateHasLink"
+    />
 
     <!-- Two server-side gates plus the credential decide availability. -->
     <fieldset

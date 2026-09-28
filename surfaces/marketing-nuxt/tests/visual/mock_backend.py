@@ -624,6 +624,47 @@ class Handler(BaseHTTPRequestHandler):
                 "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
                 + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
                 + [{"value": "whatsapp", "label": "WhatsApp"}],
+                "delivery_capabilities": [
+                    {
+                        "platform": "instagram",
+                        "label": "Instagram",
+                        "delivery_kind": "publication",
+                        "default_format": "story",
+                        "formats": [
+                            {"ref": "story", "label": "Stories", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": True},
+                            {"ref": "feed", "label": "Feed", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": True},
+                        ],
+                    },
+                    {
+                        "platform": "facebook",
+                        "label": "Facebook",
+                        "delivery_kind": "publication",
+                        "default_format": "feed",
+                        "formats": [
+                            {"ref": "feed", "label": "Feed", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": False},
+                        ],
+                    },
+                    {
+                        "platform": "google_business",
+                        "label": "Google Meu Negócio",
+                        "delivery_kind": "publication",
+                        "default_format": "standard",
+                        "formats": [
+                            {"ref": "standard", "label": "Atualização", "provider_fields": ["publication_format", "call_to_action"], "required_provider_fields": ["publication_format"], "media_required": False},
+                            {"ref": "event", "label": "Evento", "provider_fields": ["publication_format", "call_to_action", "event_title", "event_start", "event_end"], "required_provider_fields": ["publication_format", "event_title", "event_start", "event_end"], "media_required": False},
+                            {"ref": "offer", "label": "Oferta", "provider_fields": ["publication_format", "offer_title", "offer_start", "offer_end", "offer_terms"], "required_provider_fields": ["publication_format"], "media_required": False},
+                        ],
+                    },
+                    {
+                        "platform": "whatsapp",
+                        "label": "WhatsApp",
+                        "delivery_kind": "direct_message",
+                        "default_format": "message",
+                        "formats": [
+                            {"ref": "message", "label": "Mensagem", "provider_fields": ["template_name"], "required_provider_fields": [], "media_required": False},
+                        ],
+                    },
+                ],
                 "templates": [template(requires_product=scenario == "fire-product")],
                 "variables": ["product_name", "link"],
                 # ⚠️ Catálogo LONGO de propósito neste cenário: o `UiSelect` só abre o

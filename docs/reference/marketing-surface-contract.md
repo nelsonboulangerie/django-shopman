@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-25
+- **Última verificação:** 2026-09-28
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -42,7 +42,9 @@ e a decisão completas estão em
 Para novas entregas, as três dimensões são obrigatórias desde o schema 4 e são
 persistidas no artefato, outbox e destino. A resposta de `/marketing/options/`
 projeta `delivery_capabilities` com modalidade, formatos, default, campos aceitos e
-exigência de mídia; o formulário consome essa projeção. Linhas e artefatos anteriores
+exigência de mídia; o composer de campanha consome essa projeção na etapa Destinos e
+na revisão das composições. Ele não consome `provider_capabilities`, que é inventário
+teórico e pode conter formatos planejados ou bloqueados. Linhas e artefatos anteriores
 continuam legíveis pela compatibilidade histórica, mas não podem originar uma nova
 identidade incompleta.
 
@@ -86,6 +88,13 @@ mídia, sem seguir redirecionamento, com cache de 10 min por URL — é a única
 mídia que o servidor faz. A prévia mostra a foto no recorte do cartão e desaconselha
 texto dentro da imagem (o Google corta as laterais conforme a tela). As mesmas travas
 puras voltam no adapter antes da rede.
+
+O editor de modelo mostra os três formatos com seus próprios campos; não existe um
+“tipo de publicação” genérico aplicado a destinos não-Google. Evento exige título,
+início e fim antes de salvar. Oferta recebe apenas condições editoriais no modelo; a
+promoção escolhida na campanha sela título, validade e link. Atualização e Evento
+oferecem somente os CTAs aceitos pelo contrato e desabilitam os que precisam de link
+quando o texto não usa `{{link}}`.
 
 Depois do aceite, a passada de entrega (`process_marketing_delivery --with-reconciliation`,
 no `maintenance-worker`) consulta `localPosts.get` dos posts do Google aceitos nas últimas

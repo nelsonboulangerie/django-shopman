@@ -100,7 +100,27 @@ async function waitForFaithfulPreview(page: Page) {
     // passar com a prévia ainda em "Atualizando…". "Exemplo com:" só existe no rodapé
     // da prévia, e só depois que ela responde.
     page.getByText("Exemplo com:").first(),
-  ).toBeVisible();
+  ).toHaveCount(1);
+}
+
+async function openCampaignStep(
+  page: Page,
+  label: "Destinos" | "Conteúdo" | "Público e momento" | "Revisar",
+) {
+  const dialog = page.getByRole("dialog").last();
+  const target = dialog.getByRole("button", {
+    name: new RegExp(`^\\d+\\. ${label}$`),
+  });
+  await expect(target).toBeEnabled();
+  await target.click();
+}
+
+async function prepareNewCampaignForMoment(page: Page) {
+  const dialog = page.getByRole("dialog").last();
+  await dialog.getByLabel("Nome da campanha").fill("Campanha visual");
+  await openCampaignStep(page, "Destinos");
+  await dialog.getByRole("checkbox", { name: /Instagram/ }).click();
+  await openCampaignStep(page, "Público e momento");
 }
 
 async function seedDraft(
@@ -444,6 +464,7 @@ test.describe("listas operacionais", () => {
     await page.getByRole("button", { name: "Nova campanha" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Quando acontecer").selectOption("schedule");
+    await prepareNewCampaignForMoment(page);
     await expect(dialog.getByText("Nos dias")).toBeVisible();
     await dialog
       .getByText("Nos dias")
@@ -465,6 +486,7 @@ test.describe("listas operacionais", () => {
   test("edição longa mostra schema completo", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
+    await openCampaignStep(page, "Público e momento");
     await expect(page.getByRole("dialog")).toContainText("Público alvo");
     // ⚠️ Sem esta espera o retrato era cara ou coroa: às vezes a prévia fiel ainda
     // dizia "Atualizando todas as plataformas…", às vezes já tinha chegado, e o
@@ -477,6 +499,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V768);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Quando acontecer").selectOption("schedule");
+    await prepareNewCampaignForMoment(page);
     await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
     await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
     await expect(page.getByRole("alert")).toContainText("data final");
@@ -489,6 +512,7 @@ test.describe("listas operacionais", () => {
   test("as escolhas de público são as peças do kit", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
     await page.locator("main li").first().locator("button").nth(1).click();
+    await openCampaignStep(page, "Público e momento");
     // A prévia fiel chega DEPOIS e empurra o conteúdo; rolar antes dela assentar
     // retrataria o topo do diálogo, que é o que este retrato não quer.
     await waitForFaithfulPreview(page);
@@ -511,6 +535,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1280);
     await page.locator("main li").first().locator("button").nth(1).click();
     await waitForFaithfulPreview(page);
+    await openCampaignStep(page, "Revisar");
     await expectStableScreenshot(page, "campaign-form__edit-full", V1280, "light", { fullPage: false });
   });
 

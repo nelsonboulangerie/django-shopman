@@ -1,7 +1,7 @@
 # Marketing V2 — baseline de paridade funcional
 
 **Estado:** gate obrigatório para implementação e cutover  
-**Base verificada:** `origin/main` em `207232c20`  
+**Base verificada:** `origin/main` em `cbf082f71`
 **Superfície:** `surfaces/marketing-nuxt` e contratos canônicos de Marketing
 
 ## Decisão
@@ -96,12 +96,12 @@ desenvolvimento da V2; bloqueia torná-la padrão ou remover a V1.
 | Jornada | Prova mínima | Estado inicial |
 | --- | --- | --- |
 | Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Compartilhada por `/` e `/v2` |
-| Criar e editar campanha | component/e2e contra contrato real | Pendente na V2 |
+| Criar e editar campanha | component/e2e contra contrato real | Composer de cinco etapas integrado; edição inline de composição por destino ainda pendente |
 | Ligar/desligar campanha | teste de Action e CAS | Pendente na V2 |
 | Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Pendente na V2 |
 | Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Painel compartilhado; matriz completa pendente |
 | Configurar e testar plataforma | capability + teste seguro por conector | Pendente na V2 |
-| Criar/editar/excluir modelo | CRUD e dependência protegida | Pendente na V2 |
+| Criar/editar/excluir modelo | CRUD e dependência protegida | CRUD preservado; Google Atualização/Evento/Oferta e CTAs configuráveis no modelo |
 | Consultar histórico e detalhe | cursor, legado e resultado por destino | Pendente na V2 |
 | Recuperar falha/`unknown` | retry seguro e reconcile sem reenvio | Pendente na V2 |
 | Retomar rascunho/sessão | conflito, expiração e owner boundary | Pendente na V2 |
@@ -123,11 +123,15 @@ Todo PR da V2 deve declarar:
 
 É proibido aprovar um PR cuja única evidência seja a fidelidade à prévia estática.
 
-## Área assumida nesta entrega
+## Área assumida na fatia do composer
 
-Somente documentação de produto/arquitetura:
+- `surfaces/marketing-nuxt/app/components/CampaignForm.vue`;
+- `surfaces/marketing-nuxt/app/components/AnnouncementTemplateForm.vue`;
+- `surfaces/marketing-nuxt/app/pages/campaigns.vue`;
+- testes de componente correspondentes;
+- este baseline e o contrato da superfície.
 
-- este baseline de paridade;
-- referência a ele no plano do Capability Composer.
-
-Não há mudança de runtime, API, migration, adapter, configuração, lockfile ou deploy.
+Não há mudança de API, projection Django, migration, adapter, configuração,
+`package.json` ou lockfile. O payload de campanha permanece idêntico; a mudança
+organiza o fluxo existente em cinco etapas e mostra, na revisão, somente formatos da
+allow-list executável. O catálogo teórico permanece fora das escolhas operacionais.

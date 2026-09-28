@@ -33,6 +33,7 @@ const {
   templates,
   triggers,
   platforms,
+  deliveryCapabilities,
   platformLabels,
   priceTiers,
   tags,
@@ -714,6 +715,7 @@ useHead({ title: "Campanhas" });
             :rule="editing"
             :triggers="triggers"
             :platform-options="platforms"
+            :delivery-capabilities="deliveryCapabilities"
             :templates="templates"
             :offers="offers"
             :price-tiers="priceTiers"

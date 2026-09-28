@@ -28,9 +28,52 @@ const TEMPLATES = [
     pk: 1,
     name: "Relâmpago",
     body: "oi",
+    platform_variants: {
+      instagram: { publication_format: "feed" },
+      whatsapp: {},
+    },
     variables: [],
     use_ai_generation: false,
     image_source: "",
+  },
+];
+const DELIVERY_CAPABILITIES = [
+  {
+    platform: "instagram",
+    label: "Instagram",
+    delivery_kind: "publication" as const,
+    default_format: "story",
+    formats: [
+      {
+        ref: "story",
+        label: "Stories",
+        provider_fields: ["publication_format"],
+        required_provider_fields: ["publication_format"],
+        media_required: true,
+      },
+      {
+        ref: "feed",
+        label: "Feed",
+        provider_fields: ["publication_format"],
+        required_provider_fields: ["publication_format"],
+        media_required: true,
+      },
+    ],
+  },
+  {
+    platform: "whatsapp",
+    label: "WhatsApp",
+    delivery_kind: "direct_message" as const,
+    default_format: "message",
+    formats: [
+      {
+        ref: "message",
+        label: "Mensagem",
+        provider_fields: ["template_name"],
+        required_provider_fields: [],
+        media_required: false,
+      },
+    ],
   },
 ];
 const OFFERS = [{ value: "relampago-17h30", label: "Relâmpago das 17h30" }];
@@ -45,6 +88,7 @@ function form(rule: Campaign | null = null, draftOwner = "") {
       triggers: TRIGGERS,
       platformOptions: PLATFORMS,
       templates: TEMPLATES as never,
+      deliveryCapabilities: DELIVERY_CAPABILITIES,
       offers: OFFERS,
       priceTiers: PRICE_TIERS,
       tags: TAGS,
@@ -119,6 +163,57 @@ describe("CampaignForm — a oferta anunciada", () => {
       global: { stubs: { Icon: true, UiNativeSelect: UiNativeSelectStub } },
     });
     expect(wrapper.find("#rule-offer").exists()).toBe(false);
+  });
+});
+
+describe("CampaignForm — composer V2", () => {
+  it("guia pelas cinco etapas e revisa somente as composições selecionadas", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
+    );
+
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
+      "1. Objetivo",
+    );
+    for (let step = 0; step < 4; step += 1) {
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "Continuar")!
+        .trigger("click");
+    }
+
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
+      "5. Revisar",
+    );
+    const rows = wrapper
+      .find('[data-testid="campaign-compositions"]')
+      .findAll("li");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.text()).toContain("Instagram");
+    expect(rows[0]!.text()).toContain("Publicação pública");
+    expect(rows[0]!.text()).toContain("Feed");
+    expect(rows[0]!.text()).not.toContain("WhatsApp");
+    expect(wrapper.text()).toContain(
+      "Recursos apenas catalogados para o futuro não entram nesta campanha",
+    );
+  });
+
+  it("não avança de Destinos enquanto nenhuma plataforma foi escolhida", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: [] }),
+    );
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Continuar")!
+      .trigger("click");
+
+    const next = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Continuar")!;
+    expect(next.attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
+      "2. Destinos",
+    );
   });
 });
 
@@ -621,7 +716,10 @@ describe("CampaignForm — a voz do gestor", () => {
     const text = form(
       makeRule({
         trigger: "production_finished",
-        audience_rules: { bought_skus: ["BAGUETE"], bought_collections: ["paes"] },
+        audience_rules: {
+          bought_skus: ["BAGUETE"],
+          bought_collections: ["paes"],
+        },
       }),
     ).text();
 
@@ -647,7 +745,8 @@ describe("CampaignForm — a voz do gestor", () => {
             platform: "instagram",
             state: "blocked",
             ready: false,
-            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            reason:
+              "A integração existe, mas está sem credencial neste ambiente.",
             limitation: "",
             source_status: "live",
           },
@@ -655,7 +754,8 @@ describe("CampaignForm — a voz do gestor", () => {
             platform: "whatsapp",
             state: "unknown",
             ready: false,
-            reason: "Não foi possível verificar o transporte do WhatsApp agora.",
+            reason:
+              "Não foi possível verificar o transporte do WhatsApp agora.",
             limitation: "",
             source_status: "live",
           },
