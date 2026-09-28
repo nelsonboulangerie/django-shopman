@@ -17,6 +17,9 @@ interface RecentSale {
   order_ref: string;
   status: string;
   created_at_display: string;
+  /** A saída da encomenda registrada em outro dia ("Retirada hoje às 14:10"):
+   *  é ela que traz o pedido para a lista (a venda fiscal é a da saída). */
+  handoff_display?: string;
   total_display: string;
   payment_label: string;
   customer_name: string;
@@ -354,7 +357,7 @@ function fiscalChipClass(status: string): string {
 
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <p v-if="!loading && !sales.length" class="py-8 text-center text-sm text-muted-foreground">
-          Nenhuma venda nas últimas 24 horas.
+          Nenhuma venda nas últimas 24 horas, nem encomenda retirada ou entregue.
         </p>
         <ul class="grid gap-3">
           <li v-for="sale in sales" :key="sale.order_ref" class="rounded-md border border-border p-3">
@@ -367,6 +370,9 @@ function fiscalChipClass(status: string): string {
                 <p class="mt-0.5 text-xs text-muted-foreground">
                   R$ {{ sale.total_display }} · {{ sale.payment_label }}
                   <template v-if="sale.customer_name"> · {{ sale.customer_name }}</template>
+                </p>
+                <p v-if="sale.handoff_display" class="mt-0.5 text-xs font-medium text-foreground" data-sale-handoff>
+                  {{ sale.handoff_display }}
                 </p>
               </div>
               <span
