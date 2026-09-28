@@ -70,11 +70,8 @@ def sha256_digest(value: Any) -> str:
     return "sha256-" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def catalog_structure_state(catalog) -> dict[str, Any]:
-    """Extrai só estrutura pública do construtor canônico do cardápio."""
-    from shopman.storefront.api.projections import projection_data
-
-    data = projection_data(catalog)
+def catalog_structure_state_from_projection(data: dict[str, Any]) -> dict[str, Any]:
+    """Extrai a estrutura pública de uma projeção canônica já calculada."""
     item_fields = (
         "sku",
         "slug",
@@ -116,6 +113,13 @@ def catalog_structure_state(catalog) -> dict[str, Any]:
         "search_empty_state": data.get("search_empty_state"),
         "has_items": bool(data.get("has_items")),
     }
+
+
+def catalog_structure_state(catalog) -> dict[str, Any]:
+    """Extrai só estrutura pública do construtor canônico do cardápio."""
+    from shopman.storefront.api.projections import projection_data
+
+    return catalog_structure_state_from_projection(projection_data(catalog))
 
 
 def _sequence(value: int) -> str:
@@ -203,8 +207,16 @@ def rendered_message(head: CatalogStructureHead) -> tuple[bytes, str]:
     return body, "miss"
 
 
-def materialize_catalog_structure(catalog, *, channel_ref: str) -> CatalogStructureHead:
-    state = catalog_structure_state(catalog)
+def materialize_catalog_structure(
+    catalog=None,
+    *,
+    channel_ref: str,
+    state: dict[str, Any] | None = None,
+) -> CatalogStructureHead:
+    if state is None:
+        if catalog is None:
+            raise ValueError("catalog_or_state_required")
+        state = catalog_structure_state(catalog)
     digest = sha256_digest(state)
     verified_at = timezone.now()
     with transaction.atomic():
@@ -246,12 +258,13 @@ def current_or_build_head(*, channel_ref: str) -> tuple[CatalogStructureHead, st
     return materialize_catalog_structure(catalog, channel_ref=channel_ref), status
 
 
-def compare_shadow(catalog, *, channel_ref: str) -> ShadowComparison:
-    state = catalog_structure_state(catalog)
+def compare_shadow(projection: dict[str, Any], *, channel_ref: str) -> ShadowComparison:
+    """Compara sem recalcular a projeção que o menu acabou de produzir."""
+    state = catalog_structure_state_from_projection(projection)
     digest = sha256_digest(state)
     head = CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
     if head is None or head.dirty or not head.message:
-        head = materialize_catalog_structure(catalog, channel_ref=channel_ref)
+        head = materialize_catalog_structure(channel_ref=channel_ref, state=state)
         body, body_cache_status = rendered_message(head)
         return ShadowComparison(
             equal=True,
@@ -261,7 +274,7 @@ def compare_shadow(catalog, *, channel_ref: str) -> ShadowComparison:
         )
     equal = secrets.compare_digest(head.state_digest, digest)
     if not equal:
-        head = materialize_catalog_structure(catalog, channel_ref=channel_ref)
+        head = materialize_catalog_structure(channel_ref=channel_ref, state=state)
     body, body_cache_status = rendered_message(head)
     return ShadowComparison(
         equal=equal,

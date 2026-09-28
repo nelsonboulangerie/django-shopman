@@ -438,8 +438,9 @@ class StorefrontMenuView(APIView):
                     request=request,
                 )
                 with catalog_stage("personalization"):
+                    catalog_projection = projection_data(catalog)
                     payload = {
-                        "catalog": projection_data(catalog),
+                        "catalog": catalog_projection,
                         "cart": _cart_payload(request),
                     }
 
@@ -450,7 +451,10 @@ class StorefrontMenuView(APIView):
                 try:
                     queries_before_shadow = timing.query_count
                     with catalog_stage("shadow"):
-                        shadow = compare_shadow(catalog, channel_ref=STOREFRONT_CHANNEL_REF)
+                        shadow = compare_shadow(
+                            catalog_projection,
+                            channel_ref=STOREFRONT_CHANNEL_REF,
+                        )
                     shadow_query_count = timing.query_count - queries_before_shadow
                 except Exception:
                     # Shadow nunca muda disponibilidade do caminho canônico.
