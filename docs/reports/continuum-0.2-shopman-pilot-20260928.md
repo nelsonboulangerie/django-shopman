@@ -7,8 +7,8 @@ Branches: `codex/continuum-0.2-adversarial-20260927` (base) e
 
 Escopo: WP-CS-0 parcial + WP-CS-1 em shadow no alpha, com snapshot desligado
 
-Estado de promoção: **base inerte validada no alpha; shadow autorizado no caminho canônico,
-snapshot e cliente continuam desligados**
+Estado de promoção: **primeira amostra de shadow reprovada e revertida; correção de orçamento
+entra inerte, snapshot e cliente continuam desligados**
 
 ## Resultado
 
@@ -157,6 +157,18 @@ canônico continua sendo a resposta ao cliente, `SHOPMAN_CONTINUUM_CATALOG_SNAPS
 permanece `false`, o endpoint candidato continua `404` e nenhuma mudança de cliente entra nesta
 fase. A janela de 24 horas/500 observações começa apenas quando o deployment dessa configuração
 estiver `ACTIVE`.
+
+O primeiro ensaio ficou `ACTIVE` no deployment `5e23fd66-100e-48ce-90af-6421f639c64d`. A
+amostra inicial teve 13 observações, zero divergências, zero erros e snapshot máximo de 33.265
+bytes, mas reprovou o orçamento: shadow p50 30,351 ms, p95 94,317 ms e p95 de 6 queries. O
+deployment `d1c10b0b-4ed3-489d-8708-bb1ba393165d` aplicou imediatamente o rollback com shadow e
+snapshot `false` e kill switch `true`; readiness e menu responderam `200`, e o endpoint candidato
+continuou `404`.
+
+A causa medida foi a segunda execução de `projection_data(catalog)` dentro do shadow, depois de o
+menu canônico já ter calculado exatamente essa projeção. A correção reutiliza os dados canônicos
+do próprio payload e mantém apenas a leitura da cabeça descartável no caminho quente. Ela entra
+com o kill switch armado e precisa de nova ativação separada para provar o orçamento no alpha.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts

@@ -273,6 +273,31 @@ def test_shadow_is_side_effect_free_for_visible_contract_and_kill_switch_rolls_b
     assert not CatalogStructureHead.objects.exists()
 
 
+def test_warm_shadow_reuses_canonical_projection_and_adds_one_query(client, monkeypatch):
+    _seed_surface()
+    observations = []
+
+    from shopman.storefront import continuum
+    from shopman.storefront.api import surface
+
+    monkeypatch.setattr(
+        continuum,
+        "catalog_structure_state",
+        lambda catalog: pytest.fail("shadow recalculou a projeção canônica"),
+    )
+    monkeypatch.setattr(surface, "log_catalog_observation", lambda **fields: observations.append(fields))
+
+    with override_settings(SHOPMAN_CONTINUUM=_config(catalog_snapshot_enabled=False)):
+        client.get("/api/v1/storefront/menu/")
+        observations.clear()
+        response = client.get("/api/v1/storefront/menu/")
+
+    assert response.status_code == 200
+    assert observations[-1]["shadow_equal"] is True
+    assert observations[-1]["shadow_query_count"] == 1
+    assert observations[-1]["cache_status"] == "hit:hit"
+
+
 def test_snapshot_limits_fail_closed_without_affecting_canonical_menu(client):
     _seed_surface()
     constrained = _config()
