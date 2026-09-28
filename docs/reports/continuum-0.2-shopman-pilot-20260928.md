@@ -2,13 +2,15 @@
 
 Data: 2026-09-28
 
-Branches: `codex/continuum-0.2-adversarial-20260927` (base) e
-`codex/continuum-0.2-shadow-canary-20260928` (shadow do alpha)
+Branches: `codex/continuum-0.2-adversarial-20260927` (base),
+`codex/continuum-0.2-shadow-canary-20260928` (primeira amostra),
+`codex/continuum-0.2-shadow-budget-20260928` (correção) e
+`codex/continuum-0.2-shadow-retry-20260928` (segunda amostra)
 
 Escopo: WP-CS-0 parcial + WP-CS-1 em shadow no alpha, com snapshot desligado
 
-Estado de promoção: **primeira amostra de shadow reprovada e revertida; correção de orçamento
-entra inerte, snapshot e cliente continuam desligados**
+Estado de promoção: **primeira amostra reprovada e revertida; correção de orçamento ACTIVE e
+segunda amostra de shadow autorizada, snapshot e cliente continuam desligados**
 
 ## Resultado
 
@@ -169,6 +171,13 @@ A causa medida foi a segunda execução de `projection_data(catalog)` dentro do 
 menu canônico já ter calculado exatamente essa projeção. A correção reutiliza os dados canônicos
 do próprio payload e mantém apenas a leitura da cabeça descartável no caminho quente. Ela entra
 com o kill switch armado e precisa de nova ativação separada para provar o orçamento no alpha.
+
+A correção foi mergeada pelo PR #1202 no commit
+`8ee9b1c49cf0076d778a756b8b4e0d637fdaced2`. O deployment
+`eaa5f200-45a3-462b-a8e7-25435d299090` ficou `ACTIVE` em 2026-09-28T14:25:15Z com shadow e
+snapshot `false` e kill switch `true`; o smoke exato do deployment passou readiness, cardápio,
+checkout e SSR. A segunda amostra volta a ligar somente o shadow e desarma o kill switch, mantendo
+o endpoint candidato em `404`.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts

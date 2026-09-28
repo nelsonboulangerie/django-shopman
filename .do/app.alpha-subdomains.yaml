@@ -360,11 +360,11 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
-# Rollback do primeiro shadow: orçamento excedido na amostra inicial. A correção
-# entra inerte; nova ativação exige outro deploy e nova amostra de prova.
+# Segunda amostra: a correção de orçamento já está ACTIVE e passou pelo smoke.
+# Somente o shadow volta; snapshot e cliente continuam fechados.
 - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
   scope: RUN_TIME
@@ -372,7 +372,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_KILL_SWITCH
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
   scope: RUN_TIME
