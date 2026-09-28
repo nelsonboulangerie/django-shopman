@@ -697,6 +697,12 @@ services:
         value: /
         scope: RUN_TIME
         type: GENERAL
+      # Template de produção nasce no fallback monolítico. O Live de teste usa
+      # a ativação explícita no spec alpha versionado.
+      - key: NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED
+        value: "false"
+        scope: RUN_TIME
+        type: GENERAL
       # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
       # pedido veio deste BFF, para o IP gravado ser o do cliente.
       - key: NUXT_DJANGO_PROXY_SECRET

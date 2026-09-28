@@ -43,7 +43,12 @@ export default defineNuxtConfig({
     // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o
     // IP do cliente um salto mais fundo no X-Forwarded-For. Só no servidor (nunca
     // em `public`); em runtime vem de NUXT_DJANGO_PROXY_SECRET. Vazio = desligado.
-    djangoProxySecret: ''
+    djangoProxySecret: '',
+    public: {
+      // O runtime já contém o fallback monolítico. A flag abre o consumidor
+      // Continuum sem novo build e permite rollback junto da flag do Django.
+      continuumCatalogEnabled: false
+    }
   },
 
   // Foto de catálogo é imutável por convenção: trocar a foto = trocar o NOME do
