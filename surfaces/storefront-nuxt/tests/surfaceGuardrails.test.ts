@@ -402,6 +402,8 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('<CheckoutProgressSection')
     expect(checkout).toContain('stepState')
     expect(read('app/components/CheckoutProgressSection.vue')).toContain(':data-checkout-section-state="state"')
+    expect(read('app/components/CheckoutProgressSection.vue')).toContain('class="shop-focus-ruler')
+    expect(read('app/assets/css/tailwind.css')).toContain('scroll-margin-top: calc(4rem + 6px)')
     expect(checkout).toContain(':model-value="state.fulfillment_type"')
     expect(checkout).toContain('@update:model-value="onFulfillmentSelected(String($event))"')
     expect(checkout).toContain('<UiRadioGroup v-model="state.payment_method" class="grid gap-2 sm:grid-cols-2">')

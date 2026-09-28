@@ -506,6 +506,13 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
+  /* Régua exata do checkout. Em `scroll-margin-top`, aumentar o valor traz o
+   * alvo para BAIXO. A navbar ocupa 4rem e o fio Brass externo, 6px: alinhar a
+   * hairline da etapa nesse limite a faz desaparecer sem engolir conteúdo. */
+  .shop-focus-ruler {
+    scroll-margin-top: calc(4rem + 6px);
+  }
+
   /* ── Superfície Faubourg: card rosé DENTRO de um card claro ────────────────
    * Primeiro consumidor: o login (envio manual do WhatsApp e o formulário do SMS).
    * O texto secundário não pode herdar o `--muted-foreground` do corpo: no tema
