@@ -23,7 +23,6 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null
 let revealFrame: number | null = null
 let visibleSince = 0
-let activeDestination = ''
 
 function copyForDestination (destination?: URL): WaitCopy {
   const path = destination?.pathname || ''
@@ -107,7 +106,6 @@ function begin (destination?: URL) {
 
 function finish () {
   active.value = false
-  activeDestination = ''
   clearRevealSchedule()
   clearWatchdog()
 
@@ -123,7 +121,6 @@ function finish () {
 
 function forceFinish () {
   active.value = false
-  activeDestination = ''
   clearRevealSchedule()
   clearHideSchedule()
   clearWatchdog()
@@ -163,15 +160,9 @@ function navigationIntent (event: MouseEvent) {
     && destination.search === current.search
   ) return
 
-  const destinationKey = `${destination.pathname}${destination.search}`
-  if (active.value && activeDestination === destinationKey) {
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    return
-  }
-
   // Começa no gesto, antes do middleware que espera a sacola ficar durável.
-  activeDestination = destinationKey
+  // É estritamente observacional: nunca cancela nem engole o clique. Se uma
+  // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
   begin(destination)
 }
 
@@ -179,6 +170,11 @@ const removePageStart = nuxtApp.hook('page:start', () => begin())
 const removePageFinish = nuxtApp.hook('page:finish', finish)
 const removeAppError = nuxtApp.hook('app:error', forceFinish)
 const removeRouterError = router.onError(forceFinish)
+const removeRouterAfterEach = router.afterEach((_to, _from, failure) => {
+  // Navegações canceladas/duplicadas não disparam necessariamente page:finish.
+  // Sem isto o feedback podia ficar ativo até o watchdog de 15 segundos.
+  if (failure) forceFinish()
+})
 
 onMounted(() => {
   document.addEventListener('click', navigationIntent, true)
@@ -192,6 +188,7 @@ onBeforeUnmount(() => {
   removePageFinish()
   removeAppError()
   removeRouterError()
+  removeRouterAfterEach()
   forceFinish()
 })
 </script>
@@ -205,7 +202,7 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="visible"
-      class="navigation-wait-scrim fixed inset-0 z-[100] grid touch-none place-items-center overscroll-none px-6"
+      class="navigation-wait-scrim pointer-events-none fixed inset-0 z-[100] grid touch-none place-items-center overscroll-none px-6"
       data-navigation-wait-overlay
       aria-hidden="true"
     >

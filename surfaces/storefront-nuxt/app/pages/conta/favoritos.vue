@@ -9,7 +9,7 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 
 const { data, pending, error, refresh } = await useFetch<FavoritesResponse>(
   apiPath('/api/v1/account/favorites/'),
-  { credentials: 'include', headers: requestHeaders }
+  { credentials: 'include', headers: requestHeaders, lazy: true }
 )
 
 const items = computed(() => data.value?.items || [])

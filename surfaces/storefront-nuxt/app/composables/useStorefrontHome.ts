@@ -29,6 +29,9 @@ export function useStorefrontHome () {
     }),
     {
       server: true,
+      // SSR continua completo; em navegação cliente a nova página monta com
+      // skeleton e não mantém a rota anterior presa à projeção pesada da home.
+      lazy: true,
       dedupe: 'defer',
       getCachedData: readCachedHome
     }

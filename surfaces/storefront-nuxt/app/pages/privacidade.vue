@@ -27,7 +27,8 @@ const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 
 const apiPath = useShopmanApiPath()
 const { data } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
-  key: 'legal'
+  key: 'legal',
+  lazy: true
 })
 const legal = computed(() => data.value?.legal)
 

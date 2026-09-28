@@ -377,8 +377,11 @@ describe('surface UX guardrails', () => {
     expect(checkout).not.toContain('<AddressLabelSheet')
     expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
-    // Default = primeira data disponível do backend (nunca dia fechado).
-    expect(checkout).toContain('checkout.value?.available_dates?.[0]')
+    // Default = primeira data disponível do backend (nunca um "hoje" local
+    // escolhido antes da projection lazy terminar).
+    expect(checkout).toContain('if (!checkout.value) return')
+    expect(checkout).toContain('checkout.value.available_dates?.[0]')
+    expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")
     expect(checkout).toContain('data-checkout-progress-stack')

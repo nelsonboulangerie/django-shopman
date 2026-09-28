@@ -292,7 +292,8 @@ const checkoutQuery = computed(() => state.delivery_date ? { delivery_date: stat
 const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPath('/api/v1/storefront/checkout/'), {
   credentials: 'include',
   headers: requestHeaders,
-  query: checkoutQuery
+  query: checkoutQuery,
+  lazy: true
 })
 
 // Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
@@ -644,12 +645,15 @@ let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
 }
-// SÍNCRONO no setup (client), ANTES do watch(checkout) e demais abaixo — assim eles
-// veem o rascunho restaurado e o respeitam (em onMounted já teriam rodado com o default
-// e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
-if (import.meta.client) {
+// No SSR/hydration o checkout já existe e isto continua síncrono. Em navegação
+// cliente a projeção é lazy: esperamos o draft_context verdadeiro antes de
+// validar o rascunho, sem manter a página anterior presa à requisição.
+function restoreCheckoutDraft () {
+  if (!import.meta.client || draftRestored) return
+  if (!checkout.value) return
+  const draftContext = cart.value?.draft_context || ''
   try {
-    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), cart.value?.draft_context || '')
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), draftContext)
     if (draft) {
       hasRestoredCheckoutDraft = true
       Object.assign(state, draft.state)
@@ -665,8 +669,9 @@ if (import.meta.client) {
       clearCheckoutDraft()
     }
   } catch { /* rascunho corrompido: ignora */ }
+  draftRestored = true
 }
-draftRestored = true
+watch(checkout, restoreCheckoutDraft, { immediate: true })
 function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {
@@ -755,20 +760,24 @@ watch(() => checkout.value, value => {
   reconcileDeliverySlot()
 }, { immediate: true })
 
-// Pré-seleciona "hoje" só APÓS a hidratação: fazê-lo no setup (client-only)
-// divergia do HTML do servidor (que não tem data) — o resumo mostrava "Hoje"
-// e a query do checkout mudava, re-disparando o fetch (skeleton) em plena
-// hidratação. Em onMounted a mudança é pós-paint e o re-render é limpo.
-onMounted(() => {
+// Pré-seleciona a primeira data REALMENTE disponível só depois que a projection
+// existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
+// ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
+// os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
+function initializeDeliveryDate () {
   if (chosenDate.value) return
-  // Default = primeira data REALMENTE disponível (não "hoje", que pode estar
-  // fechado: domingo, feriado, férias). Fallback p/ hoje só sem projection.
-  const value = checkout.value?.available_dates?.[0] || localDateValue(new Date())
+  if (!checkout.value) return
+  const restoredDate = state.delivery_date
+  const value = restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+    ? restoredDate
+    : checkout.value.available_dates?.[0] || localDateValue(new Date())
   const parsed = parseLocalDate(value)
   if (!parsed) return
   chosenDate.value = parsed
   state.delivery_date = value
-})
+}
+onMounted(initializeDeliveryDate)
+watch(checkout, initializeDeliveryDate, { flush: 'post' })
 
 // O AddressPicker é o dono do passo de endereço: a seleção dele (salvo ou
 // novo) é a única fonte do que vai no payload do checkout. Flush síncrono:
