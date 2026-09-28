@@ -15,7 +15,14 @@
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 const sections: OperatorSection[] = [
-  { key: "board", label: "Painel", icon: "lucide:megaphone", to: "/" },
+  {
+    key: "board",
+    label: "Painel",
+    icon: "lucide:megaphone",
+    to: "/",
+    // /v2 é outra entrada para o mesmo painel operacional durante a convivência.
+    match: ["/v2"],
+  },
   // "Campanhas", não "Regras": a entidade é `Campaign`, e a tela tinha um terceiro nome.
   // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,
   // não seção irmã — o gestor pensa "o que a padaria diz", não "modelos e regras".

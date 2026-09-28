@@ -68,6 +68,13 @@ O sistema atual já possui componentes que não devem ser descartados:
 - projeções para o Marketing Nuxt;
 - domínio de `Promotion` e `Coupon` no orquestrador.
 
+Preservar a infraestrutura não basta: a experiência atual inteira é o piso funcional
+da V2. Painel, revisão, CRUD e acionamento de campanhas, modelos, configuração e teste
+de plataformas, histórico, recuperação, permissões, cerimônia de confirmação e
+rascunhos recuperáveis só podem mudar de forma depois de existir caminho equivalente
+ou melhor. A matriz e os gates de cutover estão em
+[`MARKETING-V2-FUNCTIONAL-PARITY-2026-09-28.md`](MARKETING-V2-FUNCTIONAL-PARITY-2026-09-28.md).
+
 O problema principal não é a confiabilidade do disparo. É o modelo de capacidade e composição anterior ao disparo.
 
 ### 2.2 Limitações atuais
@@ -718,7 +725,12 @@ Entrega:
 - previews por destino;
 - revisão exata e acompanhamento do bundle.
 
-O rollout pode coexistir com o composer atual sob flag até a paridade de fluxos existentes.
+O composer atual pode continuar servindo a operação enquanto a V2 é construída, mas
+não é requisito de produto oferecer as duas interfaces ao operador em paralelo. O
+cutover pode ser direto quando toda a matriz de paridade estiver verde. Fidelidade
+visual à prévia não substitui nenhuma linha do baseline funcional, e uma jornada
+pendente bloqueia o corte em vez de ganhar um fallback permanente para a interface
+anterior.
 
 ### WP-10 — Ofertas
 

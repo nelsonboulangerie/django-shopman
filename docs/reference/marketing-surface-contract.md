@@ -97,6 +97,12 @@ confirmação, nunca automático.
 
 ## Rotas Nuxt
 
+`/v2` é uma entrada autenticada para o painel operacional compartilhado. Ela não
+redireciona para a prévia estática e não possui comandos próprios: lê as mesmas
+projeções e executa os mesmos Actions, confirmações e receipts da entrada `/`. A
+prévia em `/marketing-v2-preview/index.html` continua sendo somente referência de
+design, sem capacidade operacional.
+
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
