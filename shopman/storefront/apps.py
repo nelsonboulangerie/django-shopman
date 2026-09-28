@@ -36,6 +36,47 @@ class StorefrontConfig(AppConfig):
             weak=False,
         )
 
+        # Continuum 0.2: só marca a read model pública como suja. A reconstrução
+        # continua usando ``build_catalog`` e acontece no próximo shadow/snapshot;
+        # falha do cache nunca muda a resposta canônica do menu.
+        from django.db.models.signals import m2m_changed, post_delete
+        from shopman.offerman.models import (
+            Collection,
+            CollectionItem,
+            Listing,
+            ListingItem,
+            Product,
+        )
+
+        from shopman.shop.models import AttributeDefinition, OmotenashiCopy
+        from shopman.storefront.continuum import schedule_catalog_structure_dirty
+
+        for model in (
+            Product,
+            Listing,
+            ListingItem,
+            Collection,
+            CollectionItem,
+            AttributeDefinition,
+            OmotenashiCopy,
+        ):
+            for signal in (post_save, post_delete):
+                signal.connect(
+                    schedule_catalog_structure_dirty,
+                    sender=model,
+                    dispatch_uid=(
+                        f"storefront.continuum.catalog_structure."
+                        f"{model._meta.label_lower}.{signal is post_save}"
+                    ),
+                    weak=False,
+                )
+        m2m_changed.connect(
+            schedule_catalog_structure_dirty,
+            sender=Product.keywords.through,
+            dispatch_uid="storefront.continuum.catalog_structure.product_keywords",
+            weak=False,
+        )
+
         # "Me avise quando sair do forno": o gatilho é a fornada, não a reposição.
         from shopman.craftsman.signals import production_changed
 

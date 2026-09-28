@@ -13,6 +13,7 @@ Decisões do dono (25/09/2026), com a matriz do PDV adaptada ao autoatendimento:
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import Mock
 
 import pytest
@@ -182,12 +183,26 @@ def test_guardar_cpf_de_outra_conta_e_indistinguivel_de_guardar_cpf_livre(client
     assert pickup.metadata["note_tax_id"] == OUTRO_CPF
 
 
-def test_conflito_fica_no_log_do_servidor_sem_dado_pessoal(client, pickup, caplog):
+def test_conflito_fica_no_log_do_servidor_sem_dado_pessoal(client, pickup):
     Customer.objects.create(ref="JOAO", first_name="João", phone="+5543999990002", document=OUTRO_CPF)
-    with caplog.at_level("INFO", logger="shopman.storefront.api.views"):
+    logger = logging.getLogger("shopman.storefront.api.views")
+
+    records: list[logging.LogRecord] = []
+
+    class RecordHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    # Captura direto na fronteira testada: conforme a configuração do runner,
+    # ``caplog`` no root pode não ver o logger ou receber o mesmo record duas vezes.
+    handler = RecordHandler()
+    logger.addHandler(handler)
+    try:
         resp = _post(client, fiscal_tax_id=OUTRO_CPF, save_fiscal_tax_id=True)
+    finally:
+        logger.removeHandler(handler)
     assert resp.status_code == 201, resp.content
-    conflict = [r for r in caplog.records if "owned_by_other" in r.getMessage()]
+    conflict = [record for record in records if "owned_by_other" in record.getMessage()]
     assert len(conflict) == 1 and conflict[0].levelname == "WARNING"
     message = conflict[0].getMessage()
     for pii in (OUTRO_CPF, "111.444.777-35", "JOAO", "João", "+5543999990002"):

@@ -11,11 +11,13 @@ que é adapter legítimo.
 mensageria (INTENT-PILOT-PLAN): moram ao lado do concierge, que também é daqui.
 """
 
+from .continuum import CatalogStructureHead
 from .favorites import CustomerFavorite
 from .intents import IntentCategory, IntentPilotReport, MessageIntentSample, SampleStatus
 from .stock_alerts import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
 
 __all__ = [
+    "CatalogStructureHead",
     "StockAlertSubscription",
     "StockAlertOccurrence",
     "StockAlertDelivery",

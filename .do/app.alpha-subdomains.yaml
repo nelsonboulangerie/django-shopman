@@ -360,6 +360,24 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
+# Continuum entra primeiro inerte. O shadow é ligado em mudança separada, depois
+# que este deploy estiver ACTIVE; o endpoint público continua fechado até o gate.
+- key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_KILL_SWITCH
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
+  scope: RUN_TIME
+  value: '30000'
+  type: GENERAL
 - key: SHOPMAN_EXPOSE_DEBUG_OTP
   scope: RUN_TIME
   value: 'true'

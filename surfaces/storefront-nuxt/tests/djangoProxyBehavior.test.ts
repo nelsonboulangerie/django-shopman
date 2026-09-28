@@ -139,6 +139,18 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(setCookies.every(c => !/;\s*domain=/i.test(c))).toBe(true)
   })
 
+  it('preserva Server-Timing do Django e acrescenta o estágio BFF', async () => {
+    ;($fetch.raw as any).mockResolvedValueOnce(upstream(200, { ok: true }, {
+      'server-timing': 'projection;dur=12.30, db;dur=4.20'
+    }))
+    const { event, res } = makeEvent({ method: 'GET', path: '/api/v1/storefront/menu/' })
+
+    await proxyDjangoPath(event, '/api/v1/storefront/menu')
+
+    expect(String(res.getHeader('server-timing'))).toContain('projection;dur=12.30')
+    expect(String(res.getHeader('server-timing'))).toMatch(/bff;dur=\d+\.\d{2}/)
+  })
+
   it('faz o handshake de CSRF quando falta token em método unsafe', async () => {
     // 1ª chamada raw = seed do cart (GET) devolvendo csrftoken; 2ª = a mutação real.
     ;($fetch.raw as any)

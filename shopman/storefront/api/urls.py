@@ -49,6 +49,7 @@ from .availability import (
     StockAlertSubscribeView,
 )
 from .catalog import CollectionListView, ProductDetailView, ProductListView
+from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
 from .geocode import ReverseGeocodeView
@@ -86,6 +87,11 @@ from .whatsapp_verify import (
 )
 
 urlpatterns = [
+    path(
+        "storefront/continuum/v0.2/catalog-structure/",
+        CatalogStructureSnapshotView.as_view(),
+        name="api-storefront-continuum-catalog-structure",
+    ),
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),

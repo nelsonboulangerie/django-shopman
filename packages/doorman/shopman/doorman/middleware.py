@@ -16,7 +16,11 @@ from django.utils.deprecation import MiddlewareMixin
 logger = logging.getLogger("shopman.doorman.middleware")
 
 _CACHE_ATTR = "_shopman_customer_info"
-_CUSTOMER_FREE_PATH_PREFIXES = ("/admin/", "/api/v1/backstage/")
+_CUSTOMER_FREE_PATH_PREFIXES = (
+    "/admin/",
+    "/api/v1/backstage/",
+    "/api/v1/storefront/continuum/",
+)
 
 
 class AuthCustomerMiddleware(MiddlewareMixin):

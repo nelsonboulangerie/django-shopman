@@ -33,6 +33,7 @@ from shopman.shop.projections.types import (
     HappyHourProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
+from shopman.storefront.observability import catalog_stage
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.icons import collection_icon
 from shopman.storefront.presentation.status import availability_label
@@ -237,7 +238,8 @@ def build_catalog(
 
     config = ChannelConfig.for_channel(channel_ref)
     low_stock_threshold = Decimal(str(config.stock.low_stock_threshold))
-    favorite_category_ref: str | None = OmotenashiContext.from_request(request).favorite_category
+    with catalog_stage("personalization"):
+        favorite_category_ref: str | None = OmotenashiContext.from_request(request).favorite_category
 
     categories = _build_categories()
 
@@ -251,9 +253,14 @@ def build_catalog(
     )
 
     popular = popular_skus(limit=5)
-    ft_hint, sub_hint = session_pricing_hints(request)
-    tier_hint, segment_hint = customer_pricing_hints(request)
-    qty_in_cart_by_sku = _cart_qty_by_sku(request)
+    with catalog_stage("personalization"):
+        ft_hint, sub_hint = session_pricing_hints(request)
+        tier_hint, segment_hint = customer_pricing_hints(request)
+        qty_in_cart_by_sku = _cart_qty_by_sku(request)
+        favorite_skus = _favorite_skus(request)
+        subscribed_skus = notify_subscribed_skus(request)
+        session_key = _session_key(request)
+        active_food_prefs = _active_food_prefs(request)
 
     # Flatten once for batching; remember grouping for sections.
     all_products: list[Any] = []
@@ -286,10 +293,10 @@ def build_catalog(
         customer_segment=segment_hint,
         low_stock_threshold=low_stock_threshold,
         qty_in_cart_by_sku=qty_in_cart_by_sku,
-        favorite_skus=_favorite_skus(request),
-        subscribed_skus=notify_subscribed_skus(request),
-        session_key=_session_key(request),
-        active_food_prefs=_active_food_prefs(request),
+        favorite_skus=favorite_skus,
+        subscribed_skus=subscribed_skus,
+        session_key=session_key,
+        active_food_prefs=active_food_prefs,
     )
 
     static_sections = _build_sections(items_flat, group_index, categories)
@@ -447,12 +454,13 @@ def _build_items(
 
     # Batch: disponibilidade + pausa comercial + "esgotado honesto", pela mesma
     # régua que `notifiable_skus` usa ao favoritar.
-    states = _availability_states(
-        products,
-        channel_ref=channel_ref,
-        own_holds=own_holds,
-        low_stock_threshold=low_stock_threshold,
-    )
+    with catalog_stage("availability"):
+        states = _availability_states(
+            products,
+            channel_ref=channel_ref,
+            own_holds=own_holds,
+            low_stock_threshold=low_stock_threshold,
+        )
 
     # Batch: active automatic promotions once, evaluated per SKU in memory by the
     # pricing backend (via the ``active_promotions`` context key) instead of one
