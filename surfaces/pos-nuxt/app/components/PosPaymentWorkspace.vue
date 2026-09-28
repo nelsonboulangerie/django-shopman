@@ -574,7 +574,12 @@ const kitchenSurplus = computed(() => props.items.reduce((total, item) => total 
 // A frase é presentation PURA (`kitchenHandoffNote`): ela conta unidades, como o
 // botão de enviar, e não linhas — "1 item já está na cozinha" com três chás numa
 // linha só era o número errado no lugar onde o operador confere o que já saiu.
-const kitchenNote = computed(() => kitchenHandoffNote(props.items));
+// Encomenda para OUTRO dia: a cozinha só a recebe na data combinada. As duas
+// datas são ISO (AAAA-MM-DD) e o "hoje" é o da loja, vindo do servidor.
+const kitchenDeferred = computed(() =>
+  Boolean(props.scheduleToday) && (props.deliveryDateEffective || "") > props.scheduleToday,
+);
+const kitchenNote = computed(() => kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value }));
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -1969,6 +1974,7 @@ defineExpose({
     :delivery-fee-override-input="deliveryFeeOverrideInput"
     :delivery-fee-q="deliveryFeeQ"
     :delivery-fee-source="deliveryFeeSource"
+    :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
