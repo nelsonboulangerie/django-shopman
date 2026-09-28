@@ -760,20 +760,24 @@ watch(() => checkout.value, value => {
   reconcileDeliverySlot()
 }, { immediate: true })
 
-// Pré-seleciona "hoje" só APÓS a hidratação: fazê-lo no setup (client-only)
-// divergia do HTML do servidor (que não tem data) — o resumo mostrava "Hoje"
-// e a query do checkout mudava, re-disparando o fetch (skeleton) em plena
-// hidratação. Em onMounted a mudança é pós-paint e o re-render é limpo.
-onMounted(() => {
+// Pré-seleciona a primeira data REALMENTE disponível só depois que a projection
+// existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
+// ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
+// os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
+function initializeDeliveryDate () {
   if (chosenDate.value) return
-  // Default = primeira data REALMENTE disponível (não "hoje", que pode estar
-  // fechado: domingo, feriado, férias). Fallback p/ hoje só sem projection.
-  const value = checkout.value?.available_dates?.[0] || localDateValue(new Date())
+  if (!checkout.value) return
+  const restoredDate = state.delivery_date
+  const value = restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+    ? restoredDate
+    : checkout.value.available_dates?.[0] || localDateValue(new Date())
   const parsed = parseLocalDate(value)
   if (!parsed) return
   chosenDate.value = parsed
   state.delivery_date = value
-})
+}
+onMounted(initializeDeliveryDate)
+watch(checkout, initializeDeliveryDate, { flush: 'post' })
 
 // O AddressPicker é o dono do passo de endereço: a seleção dele (salvo ou
 // novo) é a única fonte do que vai no payload do checkout. Flush síncrono:
