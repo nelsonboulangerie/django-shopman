@@ -93,6 +93,34 @@ def test_conditional_get_repeats_complete_tuple_without_regenerating_body(client
         assert second[name] == first[name]
 
 
+def test_conditional_get_and_head_use_weak_comparison_with_strong_response_etag(client):
+    _seed_surface()
+    with override_settings(SHOPMAN_CONTINUUM=_config()):
+        first = client.get(SNAPSHOT_URL)
+        weak_validator = f"W/{first['ETag']}"
+        conditional_get = client.get(SNAPSHOT_URL, HTTP_IF_NONE_MATCH=weak_validator)
+        conditional_head = client.head(SNAPSHOT_URL, HTTP_IF_NONE_MATCH=weak_validator)
+
+    assert not first["ETag"].startswith("W/")
+    for response in (conditional_get, conditional_head):
+        assert response.status_code == 304
+        assert response.content == b""
+        for name in (
+            "ETag",
+            "Continuum-Stream",
+            "Continuum-Epoch",
+            "Continuum-Sequence",
+            "Continuum-State-Token",
+            "Continuum-State-Digest",
+            "Continuum-Fresh-For-Ms",
+            "Continuum-Stale-If-Error-Ms",
+            "Continuum-Age-Ms",
+            "Cache-Control",
+            "Vary",
+        ):
+            assert response[name] == first[name]
+
+
 def test_public_snapshot_rejects_every_audience_dimension_before_lookup(client, django_assert_num_queries):
     with override_settings(SHOPMAN_CONTINUUM=_config()):
         with django_assert_num_queries(0):

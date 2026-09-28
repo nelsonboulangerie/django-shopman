@@ -95,14 +95,14 @@ Com `DATABASE_URL=''`, `DJANGO_SETTINGS_MODULE=config.settings_test` e o `PYTHON
 
 ```text
 python -m pytest shopman/storefront/tests/api/test_continuum_catalog.py -q
-9 passed
+10 passed
 ```
 
-Essa suíte valida schema, ausência de campos contextuais, `200`/`304`, byte stability entre hosts,
-rejeição de audiência com zero queries, avanço de sequence/ETag, shadow sem mudança do contrato
-visível, kill switch, falha fechada por limite, métricas estruturadas e orçamento quente. No seed
-de teste, o snapshot quente usa no máximo 2 queries e estritamente menos queries que o menu
-canônico.
+Essa suíte valida schema, ausência de campos contextuais, `200`/`304`, comparação fraca de
+`If-None-Match` em GET/HEAD mantendo ETag forte, byte stability entre hosts, rejeição de audiência
+com zero queries, avanço de sequence/ETag, shadow sem mudança do contrato visível, kill switch,
+falha fechada por limite, métricas estruturadas e orçamento quente. No seed de teste, o snapshot
+quente usa no máximo 2 queries e estritamente menos queries que o menu canônico.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts

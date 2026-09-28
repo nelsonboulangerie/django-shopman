@@ -50,6 +50,15 @@ def _has_credentials(request) -> bool:
     return any(request.headers.get(name) for name in credential_headers) or bool(request.GET)
 
 
+def _if_none_match_matches(header: str, current_etag: str) -> bool:
+    """Aplica a comparação fraca exigida por If-None-Match em GET/HEAD."""
+    current_opaque = current_etag.removeprefix("W/")
+    return any(
+        candidate == "*" or candidate.removeprefix("W/") == current_opaque
+        for candidate in parse_etags(header)
+    )
+
+
 def _snapshot_headers(head) -> dict[str, str]:
     config = continuum_settings()
     fresh_ms = int(config.get("fresh_for_ms", 30_000))
@@ -102,7 +111,7 @@ class CatalogStructureSnapshotView(View):
                     return response
 
             headers = _snapshot_headers(head)
-            if head.etag in parse_etags(if_none_match) or if_none_match.strip() == "*":
+            if _if_none_match_matches(if_none_match, head.etag):
                 response = HttpResponseNotModified()
                 for name, value in headers.items():
                     response[name] = value
