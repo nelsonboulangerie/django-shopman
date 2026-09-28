@@ -96,6 +96,14 @@ promoção escolhida na campanha sela título, validade e link. Atualização e 
 oferecem somente os CTAs aceitos pelo contrato e desabilitam os que precisam de link
 quando o texto não usa `{{link}}`.
 
+A intenção editorial continua simples: um texto comum serve todos os destinos. O
+operador abre uma composição somente quando precisa adaptar o texto ou formato daquela
+plataforma. A tela lista exclusivamente `delivery_capabilities`, sela o formato
+escolhido em `platform_variants` e mantém a adaptação visível como “Adaptada”. Para
+WhatsApp, template, variáveis e botões aprovados continuam pertencendo à conexão; o
+editor não inventa controles genéricos para eles. Se a allow-list não carregar, o
+formulário falha fechado e não salva opções presumidas pelo navegador.
+
 Depois do aceite, a passada de entrega (`process_marketing_delivery --with-reconciliation`,
 no `maintenance-worker`) consulta `localPosts.get` dos posts do Google aceitos nas últimas
 48 h: `LIVE`/`RECURRING`/`SCHEDULED` → `confirmed`, `REJECTED` → `failed_final`
