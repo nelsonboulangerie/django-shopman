@@ -133,7 +133,14 @@ export function redoTabLabel(orderRef: string): string {
  * falta fazer. A data que não valia mais vem dita por extenso (o servidor diz
  * a razão e com que data a comanda veio).
  */
-export function redoNotice(redo: Pick<PreorderRedoContext, "order_ref" | "schedule_dropped">): string {
-  const base = `A venda nova abriu na comanda "${redoTabLabel(redo.order_ref)}", com os itens da encomenda cancelada: ajuste e feche a venda.`;
+export function redoNotice(
+  redo: Pick<PreorderRedoContext, "order_ref" | "schedule_dropped">,
+  options: { needsOpenShift?: boolean } = {},
+): string {
+  // Sem caixa aberto a venda NÃO abre: a tela vai para a antesala abrir o caixa,
+  // e a comanda espera no quadro. Dizer "a venda abriu" ali era falso.
+  const base = options.needsOpenShift
+    ? `Comanda "${redoTabLabel(redo.order_ref)}" pronta no quadro, com os itens da encomenda cancelada. Abra o caixa para continuar a venda.`
+    : `A venda nova abriu na comanda "${redoTabLabel(redo.order_ref)}", com os itens da encomenda cancelada: ajuste e feche a venda.`;
   return redo.schedule_dropped ? `${base} ${redo.schedule_dropped}` : base;
 }

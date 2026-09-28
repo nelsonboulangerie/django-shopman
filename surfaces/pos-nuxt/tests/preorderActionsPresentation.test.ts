@@ -13,6 +13,7 @@ import {
   initialMethod,
   paidOnlineNotice,
   receiveConfirmLabel,
+  redoNotice,
   rescheduleChanged,
   rescheduleConfirmLabel,
   rescheduleDoneMessage,
@@ -115,5 +116,21 @@ describe("reagendar — as frases", () => {
     expect(rescheduleDoneMessage(true, false)).toBe("Data trocada.");
     expect(rescheduleDoneMessage(true, true)).toContain("já entrou no preparo de hoje");
     expect(rescheduleDoneMessage(false, false)).toContain("Nada mudou");
+  });
+});
+
+describe("redoNotice — o aviso diz o que aconteceu", () => {
+  it("com caixa aberto, a venda abriu na comanda", () => {
+    expect(redoNotice({ order_ref: "A17", schedule_dropped: "" })).toBe(
+      'A venda nova abriu na comanda "Refazer A17", com os itens da encomenda cancelada: ajuste e feche a venda.',
+    );
+  });
+
+  it("sem caixa aberto, a comanda espera no quadro e a tela manda abrir o caixa", () => {
+    const notice = redoNotice({ order_ref: "A17", schedule_dropped: "" }, { needsOpenShift: true });
+    expect(notice).toBe(
+      'Comanda "Refazer A17" pronta no quadro, com os itens da encomenda cancelada. Abra o caixa para continuar a venda.',
+    );
+    expect(notice).not.toContain("abriu");
   });
 });
