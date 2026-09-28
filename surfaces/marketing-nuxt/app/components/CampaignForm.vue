@@ -9,6 +9,7 @@ import type {
   Campaign,
   Choice,
   AnnouncementTemplate,
+  MarketingPlatformCapability,
 } from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import {
@@ -41,6 +42,9 @@ const props = defineProps<{
   /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
    *  prometer o que o envio não faz. */
   platformLabels: Record<string, string>;
+  /** Allow-list executável projetada pelo servidor. O composer usa apenas esta
+   *  lista; o catálogo teórico de providers nunca vira opção de disparo. */
+  deliveryCapabilities?: MarketingPlatformCapability[];
   /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
    *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
   platformReadiness?: PlatformReadiness[];
@@ -66,6 +70,15 @@ const promotionRef = ref("");
 const isActive = ref(true);
 const baseAudienceRules = ref<Record<string, unknown>>({});
 const baseSchedule = ref<Record<string, unknown>>({});
+const currentStep = ref(0);
+
+const COMPOSER_STEPS = [
+  { label: "Objetivo", hint: "Dê nome e escolha o que inicia a campanha." },
+  { label: "Destinos", hint: "Escolha onde cada consequência acontecerá." },
+  { label: "Conteúdo", hint: "Confira o modelo, a oferta e as composições." },
+  { label: "Público e momento", hint: "Defina público, horário e revisão." },
+  { label: "Revisar", hint: "Confira o que será salvo antes de criar." },
+] as const;
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
 // Agendamento que DISPARA — só existe com o gatilho "agendado", porque nos outros a
@@ -237,6 +250,7 @@ watch(
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
     promotionRef.value = rule?.promotion_ref ?? "";
     isActive.value = rule?.is_active ?? true;
+    currentStep.value = 0;
 
     const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
     baseSchedule.value = cloneRecord(schedule);
@@ -302,6 +316,29 @@ const canSubmit = computed(
     platforms.value.length > 0 &&
     (!schedules.value || scheduleReady.value),
 );
+
+const stepReady = computed(() => [
+  name.value.trim().length > 0 && trigger.value !== "",
+  platforms.value.length > 0,
+  templateId.value !== null,
+  !schedules.value || scheduleReady.value,
+  canSubmit.value,
+]);
+
+function stepEnabled(index: number): boolean {
+  return index === 0 || stepReady.value.slice(0, index).every(Boolean);
+}
+
+function goToStep(index: number) {
+  if (index < 0 || index >= COMPOSER_STEPS.length || !stepEnabled(index))
+    return;
+  currentStep.value = index;
+}
+
+function nextStep() {
+  if (!stepReady.value[currentStep.value]) return;
+  goToStep(Math.min(currentStep.value + 1, COMPOSER_STEPS.length - 1));
+}
 
 const scheduleReady = computed(() =>
   scheduleKind.value === "once"
@@ -623,6 +660,63 @@ const chosenUsesAi = computed(
     false,
 );
 
+const selectedTemplate = computed(
+  () =>
+    props.templates.find((template) => template.pk === templateId.value) ??
+    null,
+);
+
+const deliveryCapabilityMap = computed(() =>
+  Object.fromEntries(
+    (props.deliveryCapabilities ?? []).map((capability) => [
+      capability.platform,
+      capability,
+    ]),
+  ),
+);
+
+/** O formato efetivo do modelo, limitado ao que o domínio realmente despacha. */
+const compositionRows = computed(() =>
+  platforms.value.map((platform) => {
+    const capability = deliveryCapabilityMap.value[platform];
+    const requested = String(
+      chosenPlatformVariants.value[platform]?.publication_format ||
+        capability?.default_format ||
+        "",
+    );
+    const format = capability?.formats.find((item) => item.ref === requested);
+    return {
+      platform,
+      platformLabel:
+        props.platformLabels[platform] ?? capability?.label ?? platform,
+      deliveryLabel:
+        capability?.delivery_kind === "direct_message"
+          ? "Mensagem direta"
+          : "Publicação pública",
+      formatLabel: format?.label ?? "Formato definido pela plataforma",
+    };
+  }),
+);
+
+const selectedTriggerLabel = computed(
+  () =>
+    props.triggers.find((item) => item.value === trigger.value)?.label ??
+    trigger.value,
+);
+const selectedOfferLabel = computed(
+  () =>
+    props.offers.find((item) => item.value === promotionRef.value)?.label ??
+    "Sem oferta",
+);
+const reviewAudience = computed(() =>
+  platforms.value.includes("whatsapp")
+    ? audienceRulesSummary(
+        buildAudienceRules() as AudienceRules,
+        audienceLabels.value,
+      )
+    : "Público das contas selecionadas",
+);
+
 function togglePlatform(value: string) {
   const index = platforms.value.indexOf(value);
   if (index >= 0) platforms.value.splice(index, 1);
@@ -650,7 +744,51 @@ function submit() {
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
     />
-    <div>
+
+    <nav aria-label="Etapas da campanha">
+      <ol
+        class="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted/30 p-1"
+      >
+        <li v-for="(step, index) in COMPOSER_STEPS" :key="step.label">
+          <button
+            type="button"
+            class="flex min-h-11 w-full items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition sm:justify-start"
+            :class="
+              currentStep === index
+                ? 'bg-background text-foreground shadow-sm'
+                : index < currentStep
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+            "
+            :disabled="!stepEnabled(index)"
+            :aria-current="currentStep === index ? 'step' : undefined"
+            :aria-label="`${index + 1}. ${step.label}`"
+            @click="goToStep(index)"
+          >
+            <span
+              class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px]"
+              :class="
+                currentStep === index
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : index < currentStep
+                    ? 'border-primary text-primary'
+                    : 'border-border'
+              "
+              >{{ index < currentStep ? "✓" : index + 1 }}</span
+            >
+            <span class="hidden text-left sm:inline">{{ step.label }}</span>
+          </button>
+        </li>
+      </ol>
+      <p class="mt-2 text-xs text-muted-foreground" role="status">
+        <strong class="text-foreground">
+          {{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.
+        </strong>
+        {{ COMPOSER_STEPS[currentStep]?.hint }}
+      </p>
+    </nav>
+
+    <div v-show="currentStep === 0">
       <label
         for="rule-name"
         class="mb-1 block text-xs font-medium text-muted-foreground"
@@ -664,8 +802,11 @@ function submit() {
       />
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div>
+    <div
+      v-show="currentStep === 0 || currentStep === 2"
+      class="grid gap-4 sm:grid-cols-2"
+    >
+      <div v-show="currentStep === 0">
         <label
           for="rule-trigger"
           class="mb-1 block text-xs font-medium text-muted-foreground"
@@ -682,7 +823,7 @@ function submit() {
         </UiNativeSelect>
       </div>
 
-      <div>
+      <div v-show="currentStep === 2">
         <label
           for="rule-template"
           class="mb-1 block text-xs font-medium text-muted-foreground"
@@ -714,6 +855,7 @@ function submit() {
          aqui que ele precisa ver a frase resolvida. -->
     <AnnouncementPreview
       v-if="templateId"
+      v-show="currentStep === 2"
       :body="chosenBody"
       :platforms="platforms"
       :platform-labels="platformLabels"
@@ -726,7 +868,7 @@ function submit() {
     <!-- A oferta que o anúncio leva. Quando escolhida, o {{link}} da mensagem aponta
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no
          envio, que é quando o preço envelheceria. -->
-    <div v-if="offers.length">
+    <div v-if="offers.length" v-show="currentStep === 2">
       <label
         for="rule-offer"
         class="mb-1 block text-xs font-medium text-muted-foreground"
@@ -747,6 +889,7 @@ function submit() {
          a campanha nunca disparava. -->
     <fieldset
       v-if="schedules"
+      v-show="currentStep === 3"
       class="rounded-lg border border-border bg-card p-4"
     >
       <legend class="px-1 text-xs font-medium text-muted-foreground">
@@ -936,6 +1079,7 @@ function submit() {
 
     <p
       v-if="!schedules && preservedTriggerFilterKeys.length"
+      v-show="currentStep === 3"
       class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
       Os filtros do evento já salvos ({{
@@ -943,7 +1087,7 @@ function submit() {
       }}) continuam valendo.
     </p>
 
-    <fieldset>
+    <fieldset v-show="currentStep === 1">
       <legend class="mb-1 text-xs font-medium text-muted-foreground">
         Disparado via
       </legend>
@@ -968,7 +1112,9 @@ function submit() {
           @update:model-value="togglePlatform(option.value)"
         >
           {{ option.label }}
-          <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
+          <span v-if="readinessNote(option).badge" class="text-xs"
+            >· {{ readinessNote(option).badge }}</span
+          >
         </UiToggleChip>
       </div>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
@@ -999,6 +1145,7 @@ function submit() {
 
     <fieldset
       v-if="platforms.includes('whatsapp')"
+      v-show="currentStep === 3"
       class="rounded-lg border border-border p-3"
     >
       <legend class="px-1 text-xs font-medium text-muted-foreground">
@@ -1012,7 +1159,7 @@ function submit() {
              o gestor não tem como (nem por que) separar os dois aqui. -->
         <UiCheckbox
           v-model="alerts"
-          label="Quem pediu &quot;me avise&quot; deste produto"
+          label='Quem pediu "me avise" deste produto'
           description="A fila do sino da loja: fornada para pão, reposição para o resto."
         />
         <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
@@ -1124,7 +1271,9 @@ function submit() {
               v-for="segment in rfmSegments"
               :key="segment.value"
               :model-value="selectedRfmSegments.includes(segment.value)"
-              @update:model-value="toggleChoice(selectedRfmSegments, segment.value)"
+              @update:model-value="
+                toggleChoice(selectedRfmSegments, segment.value)
+              "
             >
               {{ segment.label }}
             </UiToggleChip>
@@ -1191,14 +1340,18 @@ function submit() {
 
     <p
       v-else
+      v-show="currentStep === 3"
       class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
       Estas publicações vão para o público geral das plataformas. A lista de
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
 
-    <div class="space-y-2.5">
-      <UiCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
+    <div v-show="currentStep === 3" class="space-y-2.5">
+      <UiCheckbox
+        v-model="requiresApproval"
+        label="Revisar antes de publicar"
+      />
       <!-- ⚠️ "sai sozinho" não dizia o ato, e o ato depende do destino: mensagem se
            envia, postagem se publica, e o genérico dos dois é disparar. Aqui a
            campanha pode ter os dois, então o genérico é o verbo honesto. -->
@@ -1228,16 +1381,107 @@ function submit() {
       <UiCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
 
-    <div class="flex items-center gap-2 pt-1">
-      <UiButton type="submit" :disabled="!canSubmit">
+    <section
+      v-show="currentStep === 4"
+      class="space-y-4 rounded-lg border border-border bg-card p-4"
+      aria-labelledby="campaign-review-title"
+    >
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-primary">
+          5 · Revisar
+        </p>
+        <h3 id="campaign-review-title" class="mt-1 text-base font-semibold">
+          {{ rule ? "Salvar esta campanha" : "Criar esta campanha" }}
+        </h3>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Cada destino é independente: uma falha em um não apaga nem duplica os
+          demais.
+        </p>
+      </div>
+
+      <dl class="grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
+          <dd class="font-medium">{{ name || "Sem nome" }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-muted-foreground">Quando começa</dt>
+          <dd class="font-medium">{{ selectedTriggerLabel }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-muted-foreground">Conteúdo</dt>
+          <dd class="font-medium">
+            {{ selectedTemplate?.name || "Sem modelo" }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-xs text-muted-foreground">Oferta</dt>
+          <dd class="font-medium">{{ selectedOfferLabel }}</dd>
+        </div>
+        <div class="sm:col-span-2">
+          <dt class="text-xs text-muted-foreground">Público</dt>
+          <dd class="font-medium">{{ reviewAudience }}</dd>
+        </div>
+      </dl>
+
+      <div>
+        <p class="mb-2 text-xs font-medium text-muted-foreground">
+          Composições que serão geradas
+        </p>
+        <ul class="space-y-2" data-testid="campaign-compositions">
+          <li
+            v-for="row in compositionRows"
+            :key="row.platform"
+            class="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+          >
+            <span>
+              <strong class="block text-sm">{{ row.platformLabel }}</strong>
+              <small class="text-muted-foreground">{{
+                row.deliveryLabel
+              }}</small>
+            </span>
+            <span class="text-right text-xs font-medium">{{
+              row.formatLabel
+            }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <p class="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+        Aqui aparecem somente formatos que o Shopman já consegue despachar.
+        Recursos apenas catalogados para o futuro não entram nesta campanha.
+      </p>
+    </section>
+
+    <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+      <UiButton type="button" variant="outline" @click="emit('cancel')">
+        Cancelar
+      </UiButton>
+      <UiButton
+        v-if="currentStep > 0"
+        type="button"
+        variant="outline"
+        @click="goToStep(currentStep - 1)"
+      >
+        Voltar
+      </UiButton>
+      <span class="min-w-0 flex-1 text-center text-xs text-muted-foreground">
+        Etapa {{ currentStep + 1 }} de {{ COMPOSER_STEPS.length }}
+      </span>
+      <UiButton
+        v-if="currentStep < COMPOSER_STEPS.length - 1"
+        type="button"
+        :disabled="!stepReady[currentStep]"
+        @click="nextStep"
+      >
+        Continuar
+      </UiButton>
+      <UiButton v-else type="submit" :disabled="!canSubmit">
         <Icon
           :name="busy ? 'line-md:loading-loop' : 'lucide:check'"
           class="size-4"
         />
         {{ rule ? "Salvar" : "Criar campanha" }}
-      </UiButton>
-      <UiButton type="button" variant="outline" @click="emit('cancel')">
-        Cancelar
       </UiButton>
     </div>
   </form>

@@ -35,6 +35,20 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   const editor = page.getByRole("dialog").last();
   await expect(editor).toBeVisible();
   await expect(editor.getByLabel("Nome da campanha")).toBeVisible();
+  await editor.getByLabel("Nome da campanha").fill("Campanha E2E");
+  await editor.getByRole("button", { name: "2. Destinos" }).click();
+  await editor.getByRole("checkbox", { name: /Instagram/ }).click();
+  await editor.getByRole("button", { name: "3. Conteúdo" }).click();
+  await expect(editor.getByLabel("Usar o modelo")).toBeVisible();
+  await editor.getByRole("button", { name: "4. Público e momento" }).click();
+  await expect(editor.getByText("Revisar antes de publicar")).toBeVisible();
+  await editor.getByRole("button", { name: "5. Revisar" }).click();
+  await expect(
+    editor.getByTestId("campaign-compositions").locator("li"),
+  ).toHaveCount(1);
+  await expect(
+    editor.getByRole("button", { name: "Criar campanha" }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
 

@@ -140,4 +140,43 @@ describe("AnnouncementTemplateForm draft recovery", () => {
       "Campanhas que incluírem Instagram ficarão bloqueadas",
     );
   });
+
+  it("configura Evento no Google com os campos que a API exige", async () => {
+    const wrapper = form(template());
+    await wrapper
+      .findAll('[role="radio"]')
+      .find((radio) => radio.text().includes("Evento"))!
+      .trigger("click");
+    await wrapper.find("#tpl-google-event-title").setValue("Semana do Pão");
+    await wrapper.find("#tpl-google-event-start").setValue("2026-10-01T08:00");
+    await wrapper.find("#tpl-google-event-end").setValue("2026-10-04T18:00");
+    await wrapper.find("form").trigger("submit");
+
+    const payload = wrapper.emitted("submit")?.[0]?.[0] as {
+      platform_variants: Record<string, Record<string, unknown>>;
+    };
+    expect(payload.platform_variants.google_business).toMatchObject({
+      publication_format: "event",
+      event_title: "Semana do Pão",
+      event_start: "2026-10-01T08:00",
+      event_end: "2026-10-04T18:00",
+    });
+  });
+
+  it("oferece os CTAs reais do Google e guarda a escolha", async () => {
+    const wrapper = form(template({ body: "Confira: {{link}}" }));
+    await wrapper
+      .findAll('[role="radio"]')
+      .find((radio) => radio.text().includes("Pedir on-line"))!
+      .trigger("click");
+    await wrapper.find("form").trigger("submit");
+
+    const payload = wrapper.emitted("submit")?.[0]?.[0] as {
+      platform_variants: Record<string, Record<string, unknown>>;
+    };
+    expect(payload.platform_variants.google_business).toMatchObject({
+      publication_format: "standard",
+      call_to_action: "order",
+    });
+  });
 });
