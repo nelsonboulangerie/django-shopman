@@ -47,10 +47,13 @@ function projection (overrides: Partial<CheckoutProjection> = {}): CheckoutProje
 }
 
 const store = new Map<string, string>()
+let scrollSpy: ReturnType<typeof vi.fn>
 beforeEach(() => {
   store.clear()
   document.body.innerHTML = ''
   document.documentElement.classList.remove('shop-form-keyboard-open')
+  scrollSpy = vi.fn()
+  Element.prototype.scrollIntoView = scrollSpy as unknown as Element['scrollIntoView']
 })
 
 beforeAll(() => {
@@ -85,6 +88,19 @@ async function chooseDelivery (page: Awaited<ReturnType<typeof mountSuspended>>)
 }
 
 describe('checkout — foco é a próxima tarefa real', () => {
+  it('cliente identificado chega com Como receber exatamente na régua de foco', async () => {
+    const page = await openCheckout(projection())
+    const fulfillment = page.find('[data-checkout-step="fulfillment"]').element
+
+    await vi.waitFor(() => {
+      const lastIndex = scrollSpy.mock.calls.length - 1
+      expect(scrollSpy.mock.contexts[lastIndex]).toBe(fulfillment)
+      expect(scrollSpy.mock.calls[lastIndex]?.[0]).toEqual({ block: 'start', behavior: 'smooth' })
+    })
+    expect(document.activeElement).toBe(fulfillment)
+    page.unmount()
+  })
+
   it('cliente identificado começa com contato feito e somente Como receber atual', async () => {
     const page = await openCheckout(projection())
     const current = page.findAll('[data-checkout-section-state="current"]')

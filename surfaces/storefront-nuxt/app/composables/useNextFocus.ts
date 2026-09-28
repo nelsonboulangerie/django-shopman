@@ -30,6 +30,14 @@ export function measureBottomObstruction (): number {
 
 export type RevealTarget = string | Element | (() => Element | null | undefined) | null | undefined
 
+export interface NextFocusOptions extends RevealOptions {
+  // A maioria das páginas preserva o topo na chegada quando a tarefa já está
+  // visível. Fluxos guiados podem exigir que a tarefa atual ocupe a régua desde
+  // a primeira pintura — por exemplo o checkout, onde o cabeçalho é contexto já
+  // lido e "Como receber" é o primeiro trabalho do cliente identificado.
+  initialReveal?: 'if-needed' | 'always'
+}
+
 // Quem já é focável por natureza não ganha `tabindex=-1`: em input/button isso
 // tiraria o controle da ordem do Tab.
 const NATIVELY_FOCUSABLE = 'input, select, textarea, button, a[href], [contenteditable], [tabindex]'
@@ -55,6 +63,8 @@ const NATIVELY_FOCUSABLE = 'input, select, textarea, button, a[href], [contented
 // - nunca roda no servidor;
 // - espera o DOM refletir o estado (nextTick) e tolera bloco que ainda vai
 //   montar (poucos quadros de espera — nunca fica rondando);
+// - na chegada, espera também um quadro: o shell zera a rolagem da rota depois
+//   do nextTick; a tarefa atual precisa ser a última autoridade sobre a posição;
 // - o pedido mais novo sempre vence: trocas rápidas não disputam, e o reveal
 //   automático (agendado na renderização) passa na frente de um `reveal`
 //   explícito pedido no mesmo handler — a página se organiza em torno do
@@ -63,8 +73,11 @@ const NATIVELY_FOCUSABLE = 'input, select, textarea, button, a[href], [contented
 // - respeita `prefers-reduced-motion`.
 //
 // Espelhado em `operator-kit/app/composables/useNextFocus.ts`.
-export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefined>, options: RevealOptions = {}) {
+export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefined>, options: NextFocusOptions = {}) {
   let ticket = 0
+  const { initialReveal = 'if-needed', ...revealDefaults } = options
+  const nuxtApp = useNuxtApp()
+  let stopPageFinish: (() => void) | null = null
 
   function resolveTarget (target: RevealTarget): HTMLElement | null {
     if (!target) return null
@@ -89,11 +102,11 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
   }
 
   function revealNow (block: HTMLElement, overrides: RevealOptions, initial: boolean) {
-    const plan = revealPlan({ ...options, ...overrides }, reducedMotion())
+    const plan = revealPlan({ ...revealDefaults, ...overrides }, reducedMotion())
     if (initial) {
       const obstacle = measureBottomObstruction()
       const rect = block.getBoundingClientRect()
-      if (!needsInitialReveal({
+      if (initialReveal !== 'always' && !needsInitialReveal({
         top: rect.top,
         bottom: rect.bottom,
         viewportHeight: window.innerHeight,
@@ -128,7 +141,15 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
       }
       if (framesLeft-- > 0) requestAnimationFrame(attempt)
     }
-    void nextTick(attempt)
+    void nextTick(() => {
+      // Em navegação SPA, `app.vue` conclui no mesmo tick o reset do viewport
+      // interno para o topo. Se o foco inicial rodar já aqui, o reset global o
+      // desfaz — exatamente o falso positivo "funciona no reload, falha ao
+      // clicar em Finalizar pedido". Um quadro depois, o canvas já assentou e
+      // o próximo foco pode ocupar a régua como estado final.
+      if (initial) requestAnimationFrame(attempt)
+      else attempt()
+    })
   }
 
   function reveal (target: RevealTarget, overrides: RevealOptions = {}) {
@@ -143,10 +164,27 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
 
     onMounted(() => {
       schedule(toValue(source), {}, true)
+
+      // A rolagem nativa do router termina DEPOIS que a página já montou. Em
+      // fluxo guiado, repetir uma única vez após `page:finish` faz a tarefa
+      // atual vencer também a restauração de scroll da navegação SPA. No reload
+      // direto o destino é o mesmo; na navegação Sacola → Checkout esta é a
+      // passagem que impede o router de devolver a tela ao cabeçalho.
+      if (initialReveal === 'always') {
+        stopPageFinish = nuxtApp.hook('page:finish', () => {
+          stopPageFinish?.()
+          stopPageFinish = null
+          schedule(toValue(source), {}, true)
+        })
+      }
     })
   }
 
-  onBeforeUnmount(() => { ticket++ })
+  onBeforeUnmount(() => {
+    ticket++
+    stopPageFinish?.()
+    stopPageFinish = null
+  })
 
   return { reveal }
 }

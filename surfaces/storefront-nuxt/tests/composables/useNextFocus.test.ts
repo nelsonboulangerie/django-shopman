@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { useNextFocus, type RevealTarget } from '~/composables/useNextFocus'
+import { useNextFocus, type NextFocusOptions, type RevealTarget } from '~/composables/useNextFocus'
 import type { RevealOptions } from '~/presentation/nextFocus'
 
 // O mecanismo de próximo foco, exercitado no DOM (happy-dom): a página declara
@@ -11,16 +11,20 @@ import type { RevealOptions } from '~/presentation/nextFocus'
 interface Harness {
   key: { value: string | null }
   reveal: (target: RevealTarget, options?: RevealOptions) => void
+  finishNavigation: () => Promise<void>
   unmount: () => void
   scrolled: ReturnType<typeof vi.fn>
 }
 
-async function mountFocusPage (initialKey: string | null, options: RevealOptions = {}): Promise<Harness> {
+async function mountFocusPage (initialKey: string | null, options: NextFocusOptions = {}): Promise<Harness> {
   const key = ref<string | null>(initialKey)
   let api!: ReturnType<typeof useNextFocus>
+  let finishNavigation!: () => Promise<void>
   const Page = defineComponent({
     setup () {
       api = useNextFocus(key, options)
+      const nuxtApp = useNuxtApp()
+      finishNavigation = () => nuxtApp.callHook('page:finish')
       return () => h('main', [
         h('section', { 'data-focus-target': 'contact', tabindex: '-1' }, [
           h('input', { id: 'name', 'data-focus-control': '' })
@@ -32,7 +36,7 @@ async function mountFocusPage (initialKey: string | null, options: RevealOptions
   })
   const wrapper = await mountSuspended(Page, { attachTo: document.body })
   await nextTick()
-  return { key, reveal: api.reveal, unmount: () => wrapper.unmount(), scrolled: scrolledSpy }
+  return { key, reveal: api.reveal, finishNavigation, unmount: () => wrapper.unmount(), scrolled: scrolledSpy }
 }
 
 // O reveal é agendado pelo watcher pós-render e corre no tick seguinte ao
@@ -106,12 +110,42 @@ describe('useNextFocus — a página segue o foco', () => {
     page.unmount()
   })
 
+  it('fluxo guiado pode levar a tarefa à régua já na primeira pintura', async () => {
+    // happy-dom mede tudo em 0×0 no topo: ainda assim, o checkout quer trocar
+    // contexto de "entrei na página" para "esta é a ação de agora".
+    const page = await mountFocusPage('when', { initialReveal: 'always' })
+    const when = document.querySelector('[data-focus-target="when"]')!
+
+    await vi.waitFor(() => {
+      expect(lastScroll()).toEqual({ element: when, options: { block: 'start', behavior: 'smooth' } })
+    })
+    expect(document.activeElement).toBe(when)
+    page.unmount()
+  })
+
+  it('fluxo guiado reassume a régua depois que a navegação termina', async () => {
+    const page = await mountFocusPage('when', { initialReveal: 'always' })
+    const when = document.querySelector('[data-focus-target="when"]')!
+    await vi.waitFor(() => expect(lastScroll()?.element).toBe(when))
+    scrolledSpy.mockClear()
+
+    // O shell/router pode ter zerado a rolagem enquanto a página terminava.
+    // `page:finish` é a fronteira em que a tarefa atual precisa vencer por fim.
+    await page.finishNavigation()
+    await vi.waitFor(() => {
+      expect(lastScroll()).toEqual({ element: when, options: { block: 'start', behavior: 'smooth' } })
+    })
+    page.unmount()
+  })
+
   it('na montagem rola se o foco está fora da área visível (rascunho restaurado lá embaixo)', async () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       top: 1400, bottom: 1700, left: 0, right: 0, width: 0, height: 300, x: 0, y: 1400, toJSON: () => ({})
     })
     const page = await mountFocusPage('when')
-    expect(lastScroll()?.element).toBe(document.querySelector('[data-focus-target="when"]'))
+    await vi.waitFor(() => {
+      expect(lastScroll()?.element).toBe(document.querySelector('[data-focus-target="when"]'))
+    })
     // A chegada usa a MESMA linha de foco das trocas: rolar já avisa que havia
     // algo acima, e o bloco de trabalho fica sempre no mesmo lugar.
     expect(lastScroll()?.options).toEqual({ block: 'start', behavior: 'smooth' })
