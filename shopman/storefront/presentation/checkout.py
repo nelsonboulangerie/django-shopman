@@ -216,7 +216,7 @@ def build_checkout(
                 channel_ref,
             )
         except Exception:
-            logger.debug("checkout_projection_customer_defaults_identity_failed", exc_info=True)
+            logger.warning("checkout_projection_customer_defaults_identity_failed", exc_info=True)
 
     interaction = InteractionContext.from_request(
         request,
