@@ -131,7 +131,7 @@ const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
-  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre com seu WhatsApp')
+  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre pelo WhatsApp')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
   return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
@@ -149,13 +149,13 @@ const stepDescription = computed(() => {
 // O porquê, os passos e a espera alimentam o WhatsappVerifyPanel (configuráveis no
 // Admin). Respondem às duas queixas de quem chega pelo site: "pra que eu tenho que
 // fazer isso?" e "o que eu tenho que fazer?".
-const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'É por lá que avisamos cada passo do seu pedido e tiramos suas dúvidas. Sem senha.'))
+const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'Sem senha e sem código. A mensagem pronta confirma que o número é seu.'))
 const waSteps = computed(() => copyMessage(
   authCopy.value?.wa_steps,
-  'Toque no botão abaixo\nEnvie a mensagem que já vai pronta\nVolte para cá: você já estará dentro'
+  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nVolte para esta tela. A entrada será automática'
 ).split('\n').map(step => step.trim()).filter(Boolean))
-const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Enviou a mensagem?'))
-const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Assim que ela chegar, você entra por aqui, sem fazer mais nada.'))
+const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Mensagem enviada?'))
+const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(

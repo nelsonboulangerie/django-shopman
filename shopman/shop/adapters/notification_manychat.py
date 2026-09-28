@@ -113,6 +113,39 @@ def _build_message(template: str, context: dict) -> str:
     return render_message(template, context, MESSAGE_TEMPLATES)
 
 
+def _message_buttons(template: str, context: dict) -> list[dict[str, str]]:
+    """Build native WhatsApp URL buttons for access messages.
+
+    Access URLs are credentials. Keeping them behind named actions makes the
+    next step legible and prevents the recovery link from dominating the copy.
+    Other notifications keep their existing plain text contract.
+    """
+    if template not in {"access_link", "access_link_site"}:
+        return []
+
+    access_url = str(context.get("access_url") or "").strip()
+    if not access_url:
+        return []
+
+    primary_caption = "Continuar pedido" if context.get("has_cart_context") else "Entrar na loja"
+    buttons = [{"type": "url", "caption": primary_caption, "url": access_url}]
+
+    revoke_url = str(context.get("revoke_url") or "").strip()
+    if template == "access_link_site" and revoke_url:
+        buttons.append({"type": "url", "caption": "Não fui eu", "url": revoke_url})
+    return buttons
+
+
+def _plain_text_button_fallback(message: str, buttons: list[dict[str, str]]) -> str:
+    """Restore the URLs only when the provider rejects native buttons."""
+    lines = [message.rstrip()]
+    for button in buttons:
+        url = button["url"]
+        if url not in message:
+            lines.append(f'{button["caption"]}: {url}')
+    return "\n".join(lines)
+
+
 def _load_db_flow_ns(event: str) -> str | None:
     """Return the ManyChat flow namespace configured in the Admin (NotificationTemplate), or None."""
     try:
@@ -266,6 +299,10 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         result = _api_call("/sending/sendFlow", payload, mc_config)
     else:
         message = _build_message(template, ctx)
+        buttons = _message_buttons(template, ctx)
+        message_content: dict = {"type": "text", "text": message}
+        if buttons:
+            message_content["buttons"] = buttons
         payload = {
             "subscriber_id": subscriber_id,
             "data": {
@@ -280,11 +317,28 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
                     # que é conceito do Messenger — o WhatsApp tem template e
                     # janela, não tag.
                     "type": "whatsapp",
-                    "messages": [{"type": "text", "text": message}],
+                    "messages": [message_content],
                 },
             },
         }
         result = _api_call("/sending/sendContent", payload, mc_config)
+        if buttons and result.get("error") == "provider_rejected":
+            # A rejeição explícita significa que nada foi aceito. Tentar uma vez
+            # como texto mantém o acesso recuperável sem risco de mensagem dupla.
+            fallback_payload = {
+                "subscriber_id": subscriber_id,
+                "data": {
+                    "version": "v2",
+                    "content": {
+                        "type": "whatsapp",
+                        "messages": [{
+                            "type": "text",
+                            "text": _plain_text_button_fallback(message, buttons),
+                        }],
+                    },
+                },
+            }
+            result = _api_call("/sending/sendContent", fallback_payload, mc_config)
 
     if result.get("outcome_unknown"):
         raise RuntimeError("acceptance_unconfirmed")

@@ -32,9 +32,10 @@ TEXT_MIGRATIONS = [
     import_module("shopman.shop.migrations.0077_mensagem_chama_pedido_pelo_final"),
     import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes"),
     import_module("shopman.shop.migrations.0079_confirmado_com_todo_carinho"),
+    import_module("shopman.shop.migrations.0082_access_link_button_copy"),
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
-REVISED = TEXT_MIGRATIONS[-2]
+REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")
 
 
 def _order(status: str):

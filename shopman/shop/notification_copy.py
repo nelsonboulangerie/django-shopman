@@ -228,7 +228,10 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     # de 24h, sem template da Meta. `{cart_note}` termina em espaço (divide a linha).
     "access_link": {
         "subject": "Seu acesso à loja",
-        "body": "Oi{customer_name_greeting}! Use o link para entrar na loja: {access_url}\n{cart_note}Válido por 5 min.",
+        "body": (
+            "Pronto{customer_name_greeting}! Toque abaixo para entrar.\n"
+            "{cart_note}O acesso vale por 5 minutos."
+        ),
     },
     # Login que começou no SITE: a mensagem da pessoa já fez a aba de lá entrar. O link
     # é reserva (se ela não achar o caminho de volta), e o "Não foi você?" é a defesa
@@ -236,9 +239,8 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "access_link_site": {
         "subject": "Você entrou na loja",
         "body": (
-            "Pronto{customer_name_greeting}! Pode voltar ao site: você já entrou{origin_note}. 💛\n"
-            "Se o site não abrir sozinho, toque aqui: {access_url}\n"
-            "Não foi você? Encerre este acesso: {revoke_url}"
+            "Pronto{customer_name_greeting}! Seu acesso foi liberado.\n"
+            "{cart_note}Volte à loja para continuar."
         ),
     },
     # Dois usos: o "Me avise" (sem reserva, CTA "Garanta o seu:") e a reserva que a
