@@ -52,6 +52,14 @@ O banco operacional continua sendo a autoridade. `CatalogStructureHead` é apena
 reconstruível: signals marcam a cabeça como suja depois do commit e o próximo shadow/snapshot a
 reconstrói com o `build_catalog` canônico. Sequence só avança quando o digest estrutural muda.
 
+Essa marcação é **best-effort**, não uma garantia durável. Um crash depois do commit e antes do
+callback `on_commit`, um `bulk_update`/`QuerySet.update` ou um produtor fora dos signals pode deixar
+`head.dirty=false`; se somente o endpoint candidato for consultado, ele pode renovar `200`/`304`
+de uma tuple antiga indefinidamente. O shadow do menu volta a calcular o estado canônico e detecta
+divergência, mas não substitui convergência permanente. Portanto a promoção fica bloqueada até
+existir reconciliação canônica periódica com source watermark, outbox/CDC ou mecanismo equivalente,
+com fault injection entre commit, materialização e publicação.
+
 Configuração inicial:
 
 | Variável | Default | Função |
@@ -135,8 +143,13 @@ Antes de promoção, ainda são obrigatórios:
    divergência silenciosa;
 2. manifest runtime com os state domains efetivos de DB/cache e execução target-scoped dos vetores
    aplicáveis, inclusive N/N+1 por limite;
-3. ensaios de restore/failover/epoch e de boundary entre host, canal e qualquer futura coorte;
-4. thresholds quantitativos, owner e janela de observação do canário;
-5. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
+3. prova de convergência após perda do callback `dirty`, bulk update e produtor fora dos signals,
+   matando o processo em cada ponto entre commit, materialização e publicação;
+4. ensaios de restore/failover/epoch e de boundary entre host, canal e qualquer futura coorte;
+5. rollback N/N-1 simultâneo com cliente N-1 restaurado de bfcache, service worker N-1, bytes
+   candidate já no cache e operação N em voo; nenhum byte ou callback tardio pode reinstalar o
+   candidate depois do kill switch;
+6. thresholds quantitativos, owner e janela de observação do canário;
+7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
 Até esses itens existirem, o estado correto do PR é draft e as flags permanecem desligadas.
