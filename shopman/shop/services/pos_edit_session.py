@@ -358,6 +358,17 @@ def _piece_value_q(order, line: dict) -> int:
     return int(monetary_mult(Decimal(str(line.get("qty") or 0)), int(line.get("unit_price_q") or 0)))
 
 
+def _schedule_refusal(payload: dict) -> str:
+    """A frase com que a régua da venda (``pos._validate_schedule``) recusa a data — ou ""."""
+    from shopman.shop.services import pos as pos_service
+
+    try:
+        pos_service._validate_schedule(payload)
+    except ValueError as exc:
+        return str(exc)
+    return ""
+
+
 def _fit_schedule(payload: dict) -> str:
     """Traz para a comanda uma data que ainda vale; devolve o aviso (ou "").
 
@@ -368,29 +379,20 @@ def _fit_schedule(payload: dict) -> str:
     """
     from datetime import timedelta
 
-    from shopman.shop.services import pos as pos_service
     from shopman.shop.services import preorder_dates
     from shopman.shop.services.pos_intent import PosIntentError
 
-    try:
-        pos_service._validate_schedule(payload)
+    reason = _schedule_refusal(payload)
+    if not reason:
         return ""
-    except ValueError as exc:
-        reason = str(exc)
     if payload.get("delivery_time_slot") and payload.get("delivery_date"):
-        try:
-            pos_service._validate_schedule({**payload, "delivery_time_slot": ""})
-        except ValueError:
-            pass
-        else:
+        if not _schedule_refusal({**payload, "delivery_time_slot": ""}):
             payload["delivery_time_slot"] = ""
             return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F8)."
     today = timezone.localdate()
     for offset in range(preorder_dates.max_preorder_days() + 1):
         day = today + timedelta(days=offset)
-        try:
-            pos_service._validate_schedule({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""})
-        except ValueError:
+        if _schedule_refusal({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""}):
             continue
         payload["delivery_date"] = day.isoformat()
         payload["delivery_time_slot"] = ""
