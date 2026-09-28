@@ -304,6 +304,16 @@ def close_sale(
     operator_username: str,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
+    from shopman.shop.services import pos_edit_session
+
+    # A comanda virtual da edição de encomenda não vira venda nova: o gesto
+    # dela é "Salvar alterações" (``order_edit``).
+    if isinstance(payload, dict) and pos_edit_session.is_edit_session(
+        _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    ):
+        raise PosIntentError(
+            code="edit_session_no_sale", message=pos_edit_session.REFUSAL_MESSAGE, field="tab_session_key", focus="cart",
+        )
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
@@ -1289,6 +1299,11 @@ def save_pos_tab(
     if payload.get("sales_mode") == "order" and payload.get("items"):
         _validate_schedule(payload)
     before_items = session.items
+    from shopman.shop.services import pos_edit_session
+
+    if pos_edit_session.is_edit_session(session):
+        return _save_edit_session(session, payload, channel=channel, config=config, actor=actor,
+            operator_username=operator_username)
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -1323,6 +1338,34 @@ def save_pos_tab(
         _audit_line_diff(session, before=before_items, after=payload.get("items", []), actor=operator_username)
     logger.info("pos_save_tab tab=%s session=%s operator=%s", tab_ref, session.session_key, operator_username)
     return PosTabResult(tab_ref=tab_ref, tab_display=tab_display, session_key=session.session_key)
+
+
+def _save_edit_session(session, payload, *, channel, config, actor: str, operator_username: str) -> PosTabResult:
+    """Autosave da comanda virtual da edição (``pos_edit_session``).
+
+    Mesmas operações da comanda, sem o que faz dela uma comanda do quadro:
+    nada de ``tab_ref`` nem ``POSTab``. A marca ``pos_edit`` é regravada porque
+    a troca de operações da comanda não a conhece.
+    """
+    from shopman.shop.services import pos_edit_session
+
+    ops = _replace_session_ops(session, payload, operator_username)
+    ops.extend([
+        {"op": "set_data", "path": "origin_channel", "value": "pos"},
+        {"op": "set_data", "path": "fulfillment_type", "value": _payload_fulfillment_type(payload)},
+        {"op": "set_data", "path": "pos_operator", "value": operator_username},
+        {"op": "set_data", "path": "last_touched_at", "value": timezone.now().isoformat()},
+        {"op": "set_data", "path": pos_edit_session.DATA_KEY, "value": pos_edit_session.edit_info(session)},
+    ])
+    session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=ops,
+        ctx={"actor": actor},
+        channel_config=config.to_dict(),
+    )
+    ref = str(session.handle_ref or "")
+    return PosTabResult(tab_ref=ref, tab_display=f"Encomenda {ref}", session_key=session.session_key)
 
 
 def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str) -> bool:
@@ -1644,8 +1687,13 @@ def fire_pos_tab(
             focus="cart",
         )
 
+    from shopman.shop.services import pos_edit_session
     from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
 
+    if pos_edit_session.is_edit_session(session):
+        raise PosIntentError(
+            code="edit_session_no_fire", message=pos_edit_session.REFUSAL_MESSAGE, field="session_key", focus="cart",
+        )
     validate_sales_mode(session_sales_payload(session), require_ready=True)
 
     # Uma comanda de encomenda pode ser montada (e até paga) antes do dia

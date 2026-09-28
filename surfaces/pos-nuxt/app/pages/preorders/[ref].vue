@@ -2,12 +2,15 @@
 // ENCOMENDAS · DETALHE — uma encomenda, com o que o balcão precisa para entregar:
 // quem, como recebe, quando, o que leva, quanto é e quanto falta.
 //
-// Os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4): **Receber e entregar** (ou só
-// **Entregar**, quando já está paga), **Reagendar** e **Cancelar**, cada um só
-// quando o servidor diz que pode (`hand_over`, `reschedule`, `cancel`). Quando não
-// pode entregar, a tela diz por quê em vez de mostrar botão apagado. Editar ainda
-// não existe no PDV (depende do contador) — e não há botão para ele: botão que não
-// faz nada ensina o balcão a desconfiar dos que fazem.
+// Os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4/E6): **Receber e entregar** (ou só
+// **Entregar**, quando já está paga), **Editar**, **Reagendar** e **Cancelar**,
+// cada um só quando o servidor diz que pode (`hand_over`, `edit`, `reschedule`,
+// `cancel`). Quando não pode entregar, a tela diz por quê em vez de mostrar botão
+// apagado. **Editar** abre a própria tela de venda em modo edição (`/?edit=<ref>`);
+// com a NFC-e já autorizada o servidor fecha a edição e o gesto vira **Cancelar e
+// refazer** (decisão do dono, 28/09).
+import { toast } from "vue-sonner";
+
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { HandOverBody } from "~/presentation/preorderActions";
 import { handOverCta } from "~/presentation/preorderActions";
@@ -42,6 +45,19 @@ async function confirmReschedule(choice: { date: string; slot: string; reason: s
   if (await actions.reschedule(choice)) rescheduleOpen.value = false;
 }
 const cancelReason = ref("");
+// "Cancelar e refazer": o cancelamento é o de sempre; depois dele a tela manda
+// registrar de novo, na venda (a nota autorizada não se edita).
+const redoAfterCancel = ref(false);
+
+function editOrder() {
+  if (!card.value) return;
+  void navigateTo({ path: "/", query: { edit: card.value.ref } });
+}
+
+function cancelAndRedo() {
+  redoAfterCancel.value = true;
+  cancelOpen.value = true;
+}
 
 async function confirmHandOver(body: HandOverBody) {
   const done = await actions.handOver(body);
@@ -51,7 +67,13 @@ async function confirmHandOver(body: HandOverBody) {
 
 async function confirmCancel(reason: string, managerApproval: ManagerApproval | null = null) {
   cancelReason.value = reason;
-  if (await actions.cancel(reason, managerApproval)) cancelOpen.value = false;
+  if (!(await actions.cancel(reason, managerApproval))) return;
+  cancelOpen.value = false;
+  if (redoAfterCancel.value) {
+    redoAfterCancel.value = false;
+    toast.info("Encomenda cancelada. Registre de novo em Encomendas, na venda, com os itens certos.");
+    await navigateTo("/");
+  }
 }
 
 // O PIN do gerente sobe por cima do diálogo de cancelar; assinado, o mesmo
@@ -156,6 +178,30 @@ function goBack() {
           <span>{{ detail.hand_over.block_reason }}</span>
         </p>
         <UiButton
+          v-if="detail.edit.allowed"
+          variant="outline"
+          class="w-full"
+          :disabled="actions.busy.value"
+          data-preorder-edit
+          @click="editOrder"
+        >
+          <Icon name="lucide:pencil" class="size-4" />
+          Editar encomenda
+        </UiButton>
+        <template v-else-if="detail.edit.cancel_and_redo && detail.cancel.allowed">
+          <p class="text-sm text-muted-foreground" data-preorder-edit-blocked>{{ detail.edit.block_reason }}</p>
+          <UiButton
+            variant="outline"
+            class="w-full"
+            :disabled="actions.busy.value"
+            data-preorder-cancel-and-redo
+            @click="cancelAndRedo"
+          >
+            <Icon name="lucide:rotate-ccw" class="size-4" />
+            Cancelar e refazer
+          </UiButton>
+        </template>
+        <UiButton
           v-if="detail.reschedule.allowed"
           variant="outline"
           class="w-full"
@@ -172,7 +218,7 @@ function goBack() {
           class="w-full text-destructive"
           :disabled="actions.busy.value"
           data-preorder-cancel
-          @click="cancelOpen = true"
+          @click="redoAfterCancel = false; cancelOpen = true"
         >
           <Icon name="lucide:x" class="size-4" />
           Cancelar encomenda

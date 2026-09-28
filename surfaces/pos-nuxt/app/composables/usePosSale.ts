@@ -1521,6 +1521,21 @@ export function usePosSale(deps: PosSaleDeps) {
     void nextTick(() => { tabLoading.value = false; });
   }
 
+  /**
+   * A comanda virtual da EDIÇÃO de uma encomenda (`usePosOrderEdit`): o servidor
+   * a monta com os itens (preço vendido), o cliente, o recebimento, a data e a
+   * observação do pedido. Carrega como qualquer comanda e vai direto à venda.
+   */
+  async function loadEditTab(payload: POSTabPayload) {
+    await setFromTabPayload(payload);
+    showTabs.value = false;
+  }
+
+  /** A intenção da comanda aberta — o que "Salvar alterações" da edição lê. */
+  function editIntent(): Record<string, unknown> {
+    return buildCurrentIntent();
+  }
+
   async function reloadConflictingTab() {
     if (!tabConflict.value || !cart.tabRef || busy.value) return;
     busy.value = true;
@@ -3402,6 +3417,8 @@ export function usePosSale(deps: PosSaleDeps) {
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
+    loadEditTab,
+    editIntent,
     openMoveDialog,
     submitMove,
     fireTab,

@@ -12,8 +12,9 @@ import type { PreorderCard, PreorderDetailResponse, PreorderListResponse } from 
 import { makeProjection } from "../composables/_posSaleHarness";
 
 // As telas da seção Encomendas: a grade semanal (sete colunas com a conta do
-// dia, lista por dia na tela estreita) e o detalhe read-only — que imprime a
-// Via Pedido e NÃO tem botão para o que ainda não existe (E3–E6).
+// dia, lista por dia na tela estreita) e o detalhe — que imprime a Via Pedido e
+// oferece cada gesto (entregar, editar, reagendar, cancelar) só quando o
+// servidor diz que pode.
 
 const printOne = vi.fn().mockResolvedValue(true);
 const call = vi.fn();
@@ -33,6 +34,8 @@ mockNuxtImport("usePosOrderTickets", () => () => ({
   hasPrinter: ref(true),
   printerUnavailableReason: ref(""),
 }));
+const navigate = vi.fn().mockResolvedValue(undefined);
+mockNuxtImport("navigateTo", () => (...args: unknown[]) => navigate(...args));
 let routeQuery: Record<string, string> = {};
 mockNuxtImport("useRoute", () => () => ({ params: { ref: "NB-7" }, query: routeQuery, path: "/preorders/NB-7" }));
 
@@ -105,6 +108,7 @@ beforeEach(() => {
   call.mockReset();
   call.mockResolvedValue({ ok: true, received_q: 3600, status: "completed" });
   kick.mockClear();
+  navigate.mockClear();
   routeQuery = {};
 });
 afterEach(() => {
@@ -158,12 +162,11 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     expect(printOne).toHaveBeenCalledWith("NB-7");
   });
 
-  it("⚠️ nenhum botão morto: editar ainda não existe no PDV", async () => {
+  it("⚠️ nenhum botão morto: Editar só existe quando o servidor diz que pode", async () => {
+    detail.edit = { ...detail.edit, allowed: false, block_reason: "Esta encomenda já está pronta: não dá mais para editar." };
     const wrapper = await mount(DetailPage);
     const buttons = wrapper.findAll("button").map((b) => b.text());
-    for (const word of ["Editar"]) {
-      expect(buttons.some((label) => label.includes(word))).toBe(false);
-    }
+    expect(buttons.some((label) => label.includes("Editar"))).toBe(false);
   });
 });
 
@@ -452,5 +455,41 @@ describe("Detalhe — reagendar", () => {
     detail.reschedule = { ...detail.reschedule, allowed: false, block_reason: "Este pedido já está pronto: a data não muda mais." };
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-reschedule]").exists()).toBe(false);
+  });
+});
+
+describe("Detalhe — editar (WP-E6)", () => {
+  it("Editar abre a PRÓPRIA tela de venda em modo edição", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-edit]").trigger("click");
+
+    expect(navigate).toHaveBeenCalledWith({ path: "/", query: { edit: "NB-7" } });
+  });
+
+  it("com a nota autorizada, o gesto vira Cancelar e refazer — e depois manda registrar de novo", async () => {
+    detail.edit = {
+      allowed: false, cancel_and_redo: true, revision: "rev-edit",
+      block_reason: "A NFC-e desta encomenda já foi autorizada: para mudar, cancele e refaça a encomenda.",
+    };
+    call.mockResolvedValue({ ok: true });
+    const wrapper = await mount(DetailPage);
+
+    expect(wrapper.find("[data-preorder-edit]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorder-edit-blocked]").text()).toContain("cancele e refaça");
+    await wrapper.find("[data-preorder-cancel-and-redo]").trigger("click");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    await settle();
+
+    expect(call.mock.calls[0]![0]).toBe("/api/v1/backstage/orders/NB-7/cancel/");
+    expect(navigate).toHaveBeenCalledWith("/");
+  });
+
+  it("encomenda que não se edita e não tem nota não mostra o gesto", async () => {
+    detail.edit = { allowed: false, cancel_and_redo: false, revision: "rev-edit", block_reason: "Esta encomenda já está pronta: não dá mais para editar." };
+    const wrapper = await mount(DetailPage);
+
+    expect(wrapper.find("[data-preorder-edit]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorder-cancel-and-redo]").exists()).toBe(false);
   });
 });

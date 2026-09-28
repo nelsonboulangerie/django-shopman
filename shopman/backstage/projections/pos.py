@@ -2717,6 +2717,11 @@ def build_open_tab(session: Session) -> dict:
     discount = data.get("manual_discount") or {}
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
+    # A comanda virtual da edição de encomenda (``pos_edit_session``): a tela
+    # entra em modo edição por esta chave, e o nome dela é o do pedido.
+    edit_of = str(((data.get("pos_edit") or {}).get("order_ref")) or "")
+    if edit_of:
+        tab_display = f"Encomenda {edit_of}"
     fired_lines = set(data.get("fired_lines") or [])
     fired_qty = {str(k): weighed_sale.qty_number(v) for k, v in (data.get("fired_qty") or {}).items()}
     kitchen_by_line = _kitchen_status_by_line(session.session_key)
@@ -2759,6 +2764,7 @@ def build_open_tab(session: Session) -> dict:
         "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
+        "edit_of": edit_of,
         "items": items,
         "customer_phone": customer.get("phone", ""),
         "customer_name": customer.get("name", ""),

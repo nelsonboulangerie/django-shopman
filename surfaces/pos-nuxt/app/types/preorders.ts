@@ -3,7 +3,7 @@
 // `GET /api/v1/backstage/pos/preorders/<ref>/` e
 // `POST /api/v1/backstage/pos/preorders/<ref>/hand-over/`.
 
-import type { POSManagerProjection } from "./pos";
+import type { POSManagerProjection, POSTabPayload } from "./pos";
 
 export type PreorderSituation =
   | "to_pay"
@@ -171,4 +171,87 @@ export interface PreorderHandOverResponse {
   ref: string;
   received_q: number;
   status: string;
+}
+
+// ── Editar a encomenda na tela de venda (WP-E6) ─────────────────────────────
+
+/** A encomenda como estava ao abrir a edição — para mandar só o que mudou. */
+export interface OrderEditOriginal {
+  items: { line_id: string; sku: string; qty: number | string }[];
+  fulfillment_type: "pickup" | "delivery";
+  delivery_address: string;
+  delivery_address_structured: Record<string, unknown>;
+  delivery_date: string;
+  delivery_time_slot: string;
+  order_notes: string;
+  fiscal_tax_id: string;
+  delivery_fee_override_q?: number | null;
+}
+
+/** O contexto da comanda virtual da edição (`POST pos/preorders/<ref>/edit-session/`). */
+export interface OrderEditContext {
+  order_ref: string;
+  /** A revisão `edit` que a gravação confere. */
+  base_revision: string;
+  actor_id: number | null;
+  original: OrderEditOriginal;
+}
+
+export interface OrderEditSessionResponse {
+  ok: boolean;
+  tab: POSTabPayload;
+  edit: OrderEditContext;
+}
+
+export type OrderEditSettlementKind = "none" | "collect" | "refund_gateway" | "refund_cash" | "refund_card_machine";
+
+export interface OrderEditPreviewItem {
+  line_id: string;
+  sku: string;
+  name: string;
+  qty: number | string;
+  unit_price_q: number;
+  line_total_q: number;
+  is_new: boolean;
+  is_delivery_fee: boolean;
+}
+
+/** A prévia da edição — a régua do servidor (`order_edit.plan`). */
+export interface OrderEditPreview {
+  changed: boolean;
+  items_changed: boolean;
+  items: OrderEditPreviewItem[];
+  previous_total_q: number;
+  total_q: number;
+  difference_q: number;
+  notes: { before: string; after: string; changed: boolean };
+  fulfillment: {
+    before: "pickup" | "delivery";
+    after: "pickup" | "delivery";
+    changed: boolean;
+    delivery_address: string;
+    delivery_fee_before_q: number;
+    delivery_fee_after_q: number;
+  };
+  schedule: { changed: boolean; date: string; slot: string };
+  settlement: { kind: OrderEditSettlementKind; amount_q: number; method: string };
+  balance_before_q: number;
+  balance_after_q: number;
+  requires_manager_approval: boolean;
+  /** A frase que o cliente recebe no aviso "pedido atualizado". */
+  customer_note: string;
+}
+
+export interface OrderEditPreviewResponse {
+  ok: boolean;
+  ref: string;
+  base_revision: string;
+  preview: OrderEditPreview;
+}
+
+export interface OrderEditResponse {
+  ok: boolean;
+  changed: boolean;
+  revision: number | null;
+  preview: OrderEditPreview;
 }
