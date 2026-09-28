@@ -105,7 +105,10 @@ async function signIn(page: Page) {
   await page.getByLabel("Senha").fill(password!);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Painel" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: "Uma campanha, consequências honestas em cada destino",
+    }),
   ).toBeVisible();
 }
 
@@ -177,17 +180,21 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(alerts).toBeHidden();
   await expect(bell).toBeFocused();
 
-  await page.getByRole("link", { name: "Campanhas", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Campanhas", exact: true })
+    .first()
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Campanhas" }),
+    page.getByRole("heading", {
+      level: 2,
+      name: "Planeje uma vez, adapte por destino",
+    }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "campanhas 320×568");
   await expectNoHorizontalOverflow(page, "campanhas 320×568");
   await expectTouchTargets(page, "campanhas 320×568");
 
-  const create = page
-    .getByRole("button", { name: /Nova campanha|Criar a primeira/ })
-    .first();
+  const create = page.getByRole("link", { name: "Nova campanha" }).first();
   await create.click();
   const campaignDialog = page.getByRole("dialog").last();
   await expect(campaignDialog).toBeVisible();
@@ -197,9 +204,15 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(create).toBeFocused();
 
   await page.setViewportSize({ width: 640, height: 800 });
-  await page.getByRole("link", { name: "Plataformas", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Plataformas", exact: true })
+    .first()
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Plataformas" }),
+    page.getByRole("heading", {
+      level: 2,
+      name: "Plataformas possíveis e situação real",
+    }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "plataformas em equivalente a zoom 200%");
   await expectNoHorizontalOverflow(
@@ -219,7 +232,7 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  await page.getByRole("link", { name: "Painel", exact: true }).focus();
+  await page.getByRole("link", { name: "Hoje", exact: true }).focus();
   await page.keyboard.press("Tab");
   const forcedColorsFocus = page.getByRole("link", {
     name: "Campanhas",

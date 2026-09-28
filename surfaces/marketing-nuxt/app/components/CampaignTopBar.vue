@@ -15,12 +15,8 @@
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 const route = useRoute();
-const inV2 = computed(
-  () => route.path === "/v2" || route.query.experience === "v2",
-);
 const v2SectionRefs = new Set(["today", "campaigns", "offers", "platforms"]);
 const activeV2Section = computed(() => {
-  if (!inV2.value) return undefined;
   if (route.path === "/campaigns" || route.path === "/templates")
     return "campaigns";
   if (route.path === "/platforms") return "platforms";
@@ -58,36 +54,7 @@ const v2Sections: OperatorSection[] = [
   },
 ];
 
-const legacySections: OperatorSection[] = [
-  {
-    key: "board",
-    label: "Painel",
-    icon: "lucide:megaphone",
-    to: "/",
-  },
-  // "Campanhas", não "Regras": a entidade é `Campaign`, e a tela tinha um terceiro nome.
-  // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,
-  // não seção irmã — o gestor pensa "o que a padaria diz", não "modelos e regras".
-  {
-    key: "campaigns",
-    label: "Campanhas",
-    icon: "lucide:sliders-horizontal",
-    to: "/campaigns",
-    match: ["/templates"],
-  },
-  // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
-  // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
-  {
-    key: "platforms",
-    label: "Plataformas",
-    icon: "lucide:share-2",
-    to: "/platforms",
-  },
-];
-
-const sections = computed<OperatorSection[]>(() =>
-  inV2.value ? v2Sections : legacySections,
-);
+const sections = v2Sections;
 </script>
 
 <template>

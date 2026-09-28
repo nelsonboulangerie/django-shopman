@@ -17,8 +17,11 @@ describe("entrada funcional do Marketing V2", () => {
   const board = read("../app/components/MarketingBoard.vue");
   const shell = read("../app/app.vue");
 
-  it("monta um workspace V2 operacional em vez de redirecionar para a prévia", () => {
-    expect(currentEntry).toContain("<MarketingBoard />");
+  it("torna o workspace V2 operacional a entrada canônica", () => {
+    expect(currentEntry).toContain("navigateTo(");
+    expect(currentEntry).toContain('path: "/v2"');
+    expect(currentEntry).toContain('area: "today"');
+    expect(currentEntry).not.toContain("<MarketingBoard />");
     expect(v2Entry).toContain("<MarketingV2Workspace />");
     expect(workspace).toContain('data-marketing-experience="v2"');
     expect(workspace).toContain("useCampaignBoard()");
@@ -38,6 +41,7 @@ describe("entrada funcional do Marketing V2", () => {
       expect(topBar).toContain(area);
     }
     expect(topBar).toContain("activeV2Section");
+    expect(topBar).not.toContain("legacySections");
     expect(workspace).not.toContain('aria-label="Áreas do Marketing V2"');
     expect(workspace).toContain("marketingV2Destinations");
     expect(workspace).toContain("Action versionada e auditável");

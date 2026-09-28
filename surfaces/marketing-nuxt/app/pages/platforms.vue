@@ -13,15 +13,34 @@ import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const route = useRoute();
+if (typeof route.query.platform !== "string") {
+  await navigateTo(
+    { path: "/v2", query: { area: "platforms" } },
+    { redirectCode: 301, replace: true },
+  );
+}
 // Produtos publicáveis, para o teste de envio escolher por NOME em vez de digitar SKU.
 const { products } = useCampaigns();
 const waTemplate = useWhatsAppTemplate();
 
-// ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
-// todo a lista já ficava estranha; com as quatro plataformas expandindo, a tela viraria um
-// depósito. A lista responde "como está cada uma?" num relance; o painel responde "e o que
-// eu faço?".
+// O detalhe abre num workspace modal. A lista responde "como está cada uma?" num
+// relance; o modal amplo responde "e o que eu faço?" sem comprimir a configuração.
 const opened = ref<Platform | null>(null);
+
+async function closePlatformWorkspace() {
+  const platformRef = opened.value?.platform || "";
+  opened.value = null;
+  await navigateTo(
+    { path: "/v2", query: { area: "platforms" } },
+    { replace: true },
+  );
+  await nextTick();
+  if (platformRef) {
+    document
+      .querySelector<HTMLElement>(`[data-marketing-platform="${platformRef}"]`)
+      ?.focus();
+  }
+}
 
 watch(
   [platforms, () => route.query.platform],
@@ -418,334 +437,323 @@ useHead({ title: "Plataformas" });
       </li>
     </ul>
 
-    <UiSheet
+    <MarketingWorkspaceDialog
       :open="opened !== null"
+      :title="opened?.label || 'Configurar plataforma'"
+      :description="
+        opened
+          ? kindLabel(opened.kind)
+          : 'Conexão, prontidão e opções disponíveis para este destino.'
+      "
       @update:open="
         (v) => {
-          if (!v) opened = null;
+          if (!v) closePlatformWorkspace();
         }
       "
     >
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border pr-14">
-          <UiSheetTitle>{{ opened?.label }}</UiSheetTitle>
-          <UiSheetDescription>{{
-            opened ? kindLabel(opened.kind) : ""
-          }}</UiSheetDescription>
-        </UiSheetHeader>
-
-        <div v-if="opened" class="flex-1 overflow-y-auto p-4">
-          <div
-            class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
-            :class="tone(opened).chip"
-          >
-            <Icon :name="tone(opened).icon" class="mt-0.5 size-4 shrink-0" />
-            <div class="min-w-0">
-              <p class="font-semibold">
-                {{ tone(opened).label }}
-              </p>
-              <p class="mt-0.5">
-                {{
-                  opened.reason || opened.limitation || "Nada impede o disparo."
-                }}
-              </p>
-            </div>
+      <div v-if="opened" class="mx-auto w-full max-w-5xl">
+        <div
+          class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
+          :class="tone(opened).chip"
+        >
+          <Icon :name="tone(opened).icon" class="mt-0.5 size-4 shrink-0" />
+          <div class="min-w-0">
+            <p class="font-semibold">
+              {{ tone(opened).label }}
+            </p>
+            <p class="mt-0.5">
+              {{
+                opened.reason || opened.limitation || "Nada impede o disparo."
+              }}
+            </p>
           </div>
+        </div>
 
-          <p v-if="opened.action" class="mt-3 text-sm">
-            <span class="font-medium">O que fazer:</span> {{ opened.action }}
-          </p>
-          <p class="mt-2 text-xs text-muted-foreground">
-            Verificado em {{ checkedAt(opened.checked_at) }}.
-          </p>
+        <p v-if="opened.action" class="mt-3 text-sm">
+          <span class="font-medium">O que fazer:</span> {{ opened.action }}
+        </p>
+        <p class="mt-2 text-xs text-muted-foreground">
+          Verificado em {{ checkedAt(opened.checked_at) }}.
+        </p>
 
-          <!-- Só o WhatsApp se resolve DAQUI. As outras dependem de credencial de
+        <!-- Só o WhatsApp se resolve DAQUI. As outras dependem de credencial de
                plataforma, que não se digita numa tela de operação. -->
-          <template v-if="opened.platform === 'whatsapp'">
-            <section class="mt-5 border-t border-border pt-4">
-              <h2 class="text-sm font-semibold">Modelo aprovado</h2>
-              <p class="mt-0.5 text-xs text-muted-foreground">
-                Com um modelo aprovado, o anúncio alcança quem não conversou nas
-                últimas 24 horas. Sem ele, só a janela.
+        <template v-if="opened.platform === 'whatsapp'">
+          <section class="mt-5 border-t border-border pt-4">
+            <h2 class="text-sm font-semibold">Modelo aprovado</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              Com um modelo aprovado, o anúncio alcança quem não conversou nas
+              últimas 24 horas. Sem ele, só a janela.
+            </p>
+
+            <div
+              v-if="waTemplate.loading.value"
+              class="mt-3 space-y-2"
+              aria-busy="true"
+            >
+              <div
+                v-for="n in 2"
+                :key="n"
+                class="h-10 animate-pulse rounded-md bg-muted"
+              ></div>
+            </div>
+
+            <!-- Não conseguir perguntar à plataforma NÃO é "não há modelo". -->
+            <div
+              v-else-if="!waTemplate.canList.value"
+              class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+            >
+              <p class="font-semibold">
+                Não foi possível consultar os modelos agora
               </p>
-
-              <div
-                v-if="waTemplate.loading.value"
-                class="mt-3 space-y-2"
-                aria-busy="true"
+              <p class="mt-1 text-muted-foreground">
+                A última lista conhecida não autoriza mudança. Nada foi
+                alterado; atualize a verificação antes de escolher.
+              </p>
+              <p
+                v-if="waTemplate.catalogAsOf.value"
+                class="mt-1 text-xs text-muted-foreground"
               >
-                <div
-                  v-for="n in 2"
-                  :key="n"
-                  class="h-10 animate-pulse rounded-md bg-muted"
-                ></div>
-              </div>
-
-              <!-- Não conseguir perguntar à plataforma NÃO é "não há modelo". -->
-              <div
-                v-else-if="!waTemplate.canList.value"
-                class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+                Última resposta válida:
+                {{ checkedAt(waTemplate.catalogAsOf.value) }}.
+              </p>
+              <UiButton
+                type="button"
+                variant="outline"
+                class="mt-3"
+                @click="onVerifyCatalog"
               >
-                <p class="font-semibold">
-                  Não foi possível consultar os modelos agora
-                </p>
-                <p class="mt-1 text-muted-foreground">
-                  A última lista conhecida não autoriza mudança. Nada foi
-                  alterado; atualize a verificação antes de escolher.
-                </p>
-                <p
-                  v-if="waTemplate.catalogAsOf.value"
-                  class="mt-1 text-xs text-muted-foreground"
-                >
-                  Última resposta válida:
-                  {{ checkedAt(waTemplate.catalogAsOf.value) }}.
-                </p>
-                <UiButton
-                  type="button"
-                  variant="outline"
-                  class="mt-3"
-                  @click="onVerifyCatalog"
-                >
-                  <Icon name="lucide:refresh-cw" class="size-4" />
-                  Atualizar
-                </UiButton>
-              </div>
+                <Icon name="lucide:refresh-cw" class="size-4" />
+                Atualizar
+              </UiButton>
+            </div>
 
-              <div v-else class="mt-3 space-y-1.5">
-                <!-- ⚠️ Era um cartão POR modelo. A conta do ManyChat não tem teto:
+            <div v-else class="mt-3 space-y-1.5">
+              <!-- ⚠️ Era um cartão POR modelo. A conta do ManyChat não tem teto:
                      com algumas dezenas de fluxos aprovados, escolher virava rolar
                      a página inteira. Agora é UMA linha que diz o que está valendo,
                      e a lista só abre quando alguém vai trocar — com busca, porque
                      acima de doze opções ninguém varre com o olho. -->
-                <UiSelect
-                  :model-value="waTemplate.current.value"
-                  :options="templateOptions"
-                  label="Modelo aprovado"
-                  placeholder="Sem modelo"
-                  search-placeholder="Buscar modelo aprovado"
-                  empty-text="Nenhum modelo com esse nome"
-                  :disabled="
-                    savingTemplate || !waTemplate.commandAvailable.value
-                  "
-                  @update:model-value="onChooseTemplate(String($event))"
-                />
-                <p
-                  v-if="waTemplate.available.value.length === 0"
-                  class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-                >
-                  A consulta respondeu, mas não há fluxo ativo disponível. “Sem
-                  fluxo” continua sendo a configuração segura.
-                </p>
-              </div>
+              <UiSelect
+                :model-value="waTemplate.current.value"
+                :options="templateOptions"
+                label="Modelo aprovado"
+                placeholder="Sem modelo"
+                search-placeholder="Buscar modelo aprovado"
+                empty-text="Nenhum modelo com esse nome"
+                :disabled="savingTemplate || !waTemplate.commandAvailable.value"
+                @update:model-value="onChooseTemplate(String($event))"
+              />
+              <p
+                v-if="waTemplate.available.value.length === 0"
+                class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+              >
+                A consulta respondeu, mas não há fluxo ativo disponível. “Sem
+                fluxo” continua sendo a configuração segura.
+              </p>
+            </div>
 
-              <!-- ⚠️ O que mais confunde, dito onde a decisão acontece: com modelo
+            <!-- ⚠️ O que mais confunde, dito onde a decisão acontece: com modelo
                    escolhido, o texto que o cliente lê é o DA META, não o do Modelo. -->
-              <p
-                v-if="waTemplate.current.value"
-                class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-              >
-                Com o modelo escolhido, o texto enviado no WhatsApp é o aprovado
-                na Meta — o modelo entra só com as variáveis. O texto do modelo
-                continua valendo para Instagram, Facebook e para a sua revisão.
-              </p>
-            </section>
+            <p
+              v-if="waTemplate.current.value"
+              class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+            >
+              Com o modelo escolhido, o texto enviado no WhatsApp é o aprovado
+              na Meta — o modelo entra só com as variáveis. O texto do modelo
+              continua valendo para Instagram, Facebook e para a sua revisão.
+            </p>
+          </section>
 
-            <section class="mt-5 border-t border-border pt-4">
-              <h2 class="text-sm font-semibold">Avisos automáticos</h2>
-              <p class="mt-0.5 text-xs text-muted-foreground">
-                Ligue cada aviso ao modelo aprovado correspondente. A escolha é
-                versionada, exige confirmação e não envia mensagem agora.
-              </p>
+          <section class="mt-5 border-t border-border pt-4">
+            <h2 class="text-sm font-semibold">Avisos automáticos</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              Ligue cada aviso ao modelo aprovado correspondente. A escolha é
+              versionada, exige confirmação e não envia mensagem agora.
+            </p>
 
-              <div class="mt-3 space-y-3">
-                <UiSelect
-                  v-model="selectedNotificationEvent"
-                  :options="notificationEventOptions"
-                  label="Mensagem"
-                  placeholder="Escolha o aviso"
-                  search-placeholder="Buscar aviso"
-                  empty-text="Nenhum aviso encontrado"
-                />
-
-                <div
-                  v-if="selectedNotification && !selectedNotification.available"
-                  class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm"
-                  role="alert"
-                >
-                  <p class="font-semibold">Aviso ausente neste ambiente</p>
-                  <p class="mt-1 text-muted-foreground">
-                    Aplique as migrações antes de configurar este modelo. Nada
-                    será criado com texto genérico.
-                  </p>
-                </div>
-
-                <UiSelect
-                  v-else-if="selectedNotification"
-                  :model-value="selectedNotification.current"
-                  :options="templateOptions"
-                  label="Modelo aprovado para este aviso"
-                  placeholder="Sem modelo"
-                  search-placeholder="Buscar modelo aprovado"
-                  empty-text="Nenhum modelo com esse nome"
-                  :disabled="
-                    savingTemplate || !waTemplate.commandAvailable.value
-                  "
-                  @update:model-value="
-                    onChooseNotificationTemplate(String($event))
-                  "
-                />
-              </div>
-
-              <p
-                class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-              >
-                Faça um teste controlado de cada modelo no ManyChat antes de
-                ativá-lo. A lista confirma que o modelo existe; não consegue
-                provar que os campos e o botão correspondem a este aviso.
-              </p>
-            </section>
-
-            <!-- A ref verificada evita redigitar/errar número e não leva PII ao browser. -->
-            <section class="mt-5 border-t border-border pt-4">
-              <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
-              <p class="mt-0.5 text-xs text-muted-foreground">
-                Envia uma mensagem a um número verificado. Nunca usa público de
-                campanha.
-              </p>
+            <div class="mt-3 space-y-3">
+              <UiSelect
+                v-model="selectedNotificationEvent"
+                :options="notificationEventOptions"
+                label="Mensagem"
+                placeholder="Escolha o aviso"
+                search-placeholder="Buscar aviso"
+                empty-text="Nenhum aviso encontrado"
+              />
 
               <div
-                v-if="!waTemplate.canSendTest.value"
-                class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+                v-if="selectedNotification && !selectedNotification.available"
+                class="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm"
+                role="alert"
               >
-                <!-- ⚠️ "Este papel" e "Editor habilitado" são o modelo de permissão
+                <p class="font-semibold">Aviso ausente neste ambiente</p>
+                <p class="mt-1 text-muted-foreground">
+                  Aplique as migrações antes de configurar este modelo. Nada
+                  será criado com texto genérico.
+                </p>
+              </div>
+
+              <UiSelect
+                v-else-if="selectedNotification"
+                :model-value="selectedNotification.current"
+                :options="templateOptions"
+                label="Modelo aprovado para este aviso"
+                placeholder="Sem modelo"
+                search-placeholder="Buscar modelo aprovado"
+                empty-text="Nenhum modelo com esse nome"
+                :disabled="savingTemplate || !waTemplate.commandAvailable.value"
+                @update:model-value="
+                  onChooseNotificationTemplate(String($event))
+                "
+              />
+            </div>
+
+            <p
+              class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+            >
+              Faça um teste controlado de cada modelo no ManyChat antes de
+              ativá-lo. A lista confirma que o modelo existe; não consegue
+              provar que os campos e o botão correspondem a este aviso.
+            </p>
+          </section>
+
+          <!-- A ref verificada evita redigitar/errar número e não leva PII ao browser. -->
+          <section class="mt-5 border-t border-border pt-4">
+            <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              Envia uma mensagem a um número verificado. Nunca usa público de
+              campanha.
+            </p>
+
+            <div
+              v-if="!waTemplate.canSendTest.value"
+              class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+            >
+              <!-- ⚠️ "Este papel" e "Editor habilitado" são o modelo de permissão
                      falando; quem lê quer saber se PODE e, se não, a quem pedir. -->
-                <p class="font-semibold">Sua conta não pode fazer o teste.</p>
-                <p class="mt-1 text-muted-foreground">
-                  Peça a quem cuida das plataformas.
-                </p>
-              </div>
-
-              <div
-                v-else-if="!waTemplate.testTargets.value.length"
-                class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-              >
-                <p class="font-semibold">
-                  Teste externo bloqueado com segurança
-                </p>
-                <p class="mt-1 text-muted-foreground">
-                  Nenhum dispositivo de teste verificado foi configurado. Peça
-                  ao responsável pelas plataformas; não é necessário copiar ou
-                  informar um telefone aqui.
-                </p>
-              </div>
-
-              <div v-else class="mt-3 space-y-2">
-                <UiSelect
-                  v-model="testEvent"
-                  :options="testEventOptions"
-                  label="Mensagem a testar"
-                  placeholder="Escolha a mensagem"
-                  search-placeholder="Buscar mensagem"
-                  empty-text="Nenhuma mensagem encontrada"
-                />
-                <p
-                  v-if="!testEventReady"
-                  class="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground"
-                  role="alert"
-                >
-                  Este aviso precisa estar ativo e ligado a um modelo aprovado
-                  antes do teste.
-                </p>
-                <div>
-                  <label
-                    for="test-target"
-                    class="mb-1 block text-xs font-medium text-muted-foreground"
-                  >
-                    Número verificado
-                  </label>
-                  <UiNativeSelect id="test-target" v-model="testTargetRef">
-                    <option value="" disabled>Escolha o número</option>
-                    <option
-                      v-for="target in waTemplate.testTargets.value"
-                      :key="target.ref"
-                      :value="target.ref"
-                    >
-                      {{ target.label }}
-                    </option>
-                  </UiNativeSelect>
-                </div>
-                <!-- ⚠️ Era "SKU (opcional)" em texto livre: o gestor não decora código
-                     de produto. A lista é a mesma do disparo manual (options.products). -->
-                <div>
-                  <label
-                    for="test-product"
-                    class="mb-1 block text-xs font-medium text-muted-foreground"
-                    >Produto (opcional)</label
-                  >
-                  <UiNativeSelect id="test-product" v-model="testSku">
-                    <option value="">Sem produto — só o texto do modelo</option>
-                    <option
-                      v-for="product in products"
-                      :key="product.value"
-                      :value="product.value"
-                    >
-                      {{ product.label }}
-                    </option>
-                  </UiNativeSelect>
-                </div>
-                <UiButton
-                  type="button"
-                  :disabled="
-                    !testTargetRef ||
-                    !testEventReady ||
-                    waTemplate.testing.value
-                  "
-                  class="w-full"
-                  @click="onSendTest"
-                >
-                  <Icon
-                    :name="
-                      waTemplate.testing.value
-                        ? 'lucide:loader-circle'
-                        : 'lucide:send'
-                    "
-                    class="size-4"
-                    :class="waTemplate.testing.value ? 'animate-spin' : ''"
-                  />
-                  {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
-                </UiButton>
-              </div>
-
-              <p
-                v-if="waTemplate.testReceipt.value"
-                class="mt-3 break-all rounded-lg bg-muted/40 p-3 font-mono text-xs"
-              >
-                Comprovante {{ waTemplate.testReceipt.value.receipt_ref }} ·
-                {{ receiptStateLabel(waTemplate.testReceipt.value.state) }}
+              <p class="font-semibold">Sua conta não pode fazer o teste.</p>
+              <p class="mt-1 text-muted-foreground">
+                Peça a quem cuida das plataformas.
               </p>
+            </div>
 
-              <dl
-                v-if="Object.keys(waTemplate.testFields.value).length"
-                class="mt-3 space-y-1 rounded-lg bg-muted/40 p-3 text-xs"
+            <div
+              v-else-if="!waTemplate.testTargets.value.length"
+              class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+            >
+              <p class="font-semibold">Teste externo bloqueado com segurança</p>
+              <p class="mt-1 text-muted-foreground">
+                Nenhum dispositivo de teste verificado foi configurado. Peça ao
+                responsável pelas plataformas; não é necessário copiar ou
+                informar um telefone aqui.
+              </p>
+            </div>
+
+            <div v-else class="mt-3 space-y-2">
+              <UiSelect
+                v-model="testEvent"
+                :options="testEventOptions"
+                label="Mensagem a testar"
+                placeholder="Escolha a mensagem"
+                search-placeholder="Buscar mensagem"
+                empty-text="Nenhuma mensagem encontrada"
+              />
+              <p
+                v-if="!testEventReady"
+                class="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground"
+                role="alert"
               >
-                <div
-                  v-for="(value, key) in waTemplate.testFields.value"
-                  :key="key"
-                  class="flex gap-2"
+                Este aviso precisa estar ativo e ligado a um modelo aprovado
+                antes do teste.
+              </p>
+              <div>
+                <label
+                  for="test-target"
+                  class="mb-1 block text-xs font-medium text-muted-foreground"
                 >
-                  <dt class="shrink-0 font-mono text-muted-foreground">
-                    {{ key }}
-                  </dt>
-                  <dd class="min-w-0 flex-1 truncate">
-                    {{ value || "— vazio, o modelo renderiza sem" }}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-          </template>
-        </div>
-      </UiSheetContent>
-    </UiSheet>
+                  Número verificado
+                </label>
+                <UiNativeSelect id="test-target" v-model="testTargetRef">
+                  <option value="" disabled>Escolha o número</option>
+                  <option
+                    v-for="target in waTemplate.testTargets.value"
+                    :key="target.ref"
+                    :value="target.ref"
+                  >
+                    {{ target.label }}
+                  </option>
+                </UiNativeSelect>
+              </div>
+              <!-- ⚠️ Era "SKU (opcional)" em texto livre: o gestor não decora código
+                     de produto. A lista é a mesma do disparo manual (options.products). -->
+              <div>
+                <label
+                  for="test-product"
+                  class="mb-1 block text-xs font-medium text-muted-foreground"
+                  >Produto (opcional)</label
+                >
+                <UiNativeSelect id="test-product" v-model="testSku">
+                  <option value="">Sem produto — só o texto do modelo</option>
+                  <option
+                    v-for="product in products"
+                    :key="product.value"
+                    :value="product.value"
+                  >
+                    {{ product.label }}
+                  </option>
+                </UiNativeSelect>
+              </div>
+              <UiButton
+                type="button"
+                :disabled="
+                  !testTargetRef || !testEventReady || waTemplate.testing.value
+                "
+                class="w-full"
+                @click="onSendTest"
+              >
+                <Icon
+                  :name="
+                    waTemplate.testing.value
+                      ? 'lucide:loader-circle'
+                      : 'lucide:send'
+                  "
+                  class="size-4"
+                  :class="waTemplate.testing.value ? 'animate-spin' : ''"
+                />
+                {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
+              </UiButton>
+            </div>
+
+            <p
+              v-if="waTemplate.testReceipt.value"
+              class="mt-3 break-all rounded-lg bg-muted/40 p-3 font-mono text-xs"
+            >
+              Comprovante {{ waTemplate.testReceipt.value.receipt_ref }} ·
+              {{ receiptStateLabel(waTemplate.testReceipt.value.state) }}
+            </p>
+
+            <dl
+              v-if="Object.keys(waTemplate.testFields.value).length"
+              class="mt-3 space-y-1 rounded-lg bg-muted/40 p-3 text-xs"
+            >
+              <div
+                v-for="(value, key) in waTemplate.testFields.value"
+                :key="key"
+                class="flex gap-2"
+              >
+                <dt class="shrink-0 font-mono text-muted-foreground">
+                  {{ key }}
+                </dt>
+                <dd class="min-w-0 flex-1 truncate">
+                  {{ value || "— vazio, o modelo renderiza sem" }}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </template>
+      </div>
+    </MarketingWorkspaceDialog>
 
     <UiDialog
       :open="pendingFlow !== null"

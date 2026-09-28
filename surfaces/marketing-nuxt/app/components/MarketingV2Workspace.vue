@@ -309,6 +309,7 @@ useHead({ title: "Marketing V2" });
             path: '/campaigns',
             query: { experience: 'v2', new: '1' },
           }"
+          data-marketing-new-campaign
           class="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           <Icon name="lucide:plus" class="size-4" />
@@ -536,8 +537,13 @@ useHead({ title: "Marketing V2" });
           <NuxtLink
             :to="{
               path: '/platforms',
-              query: { experience: 'v2', platform: destination.ref },
+              query: {
+                experience: 'v2',
+                area: 'platforms',
+                platform: destination.ref,
+              },
             }"
+            :data-marketing-platform="destination.ref"
             class="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
           >
             Ver conexão e configuração
