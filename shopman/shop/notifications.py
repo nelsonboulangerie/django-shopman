@@ -73,9 +73,21 @@ def notify(
         else:
             logger.warning("Notification not accepted: event=%s backend=%s unknown=%s", event, backend, result.outcome_unknown)
         return result
-    except Exception:
-        logger.warning("Notification acceptance unknown: event=%s backend=%s", event, backend)
-        return NotificationResult(success=False, error="notification_adapter_error", outcome_unknown=True)
+    except Exception as exc:
+        # Tipo + fronteira dão diagnóstico sem serializar a exceção: mensagens
+        # de SDKs podem conter recipient, contexto, token ou payload.
+        logger.warning(
+            "Notification acceptance unknown: event=%s backend=%s exception_type=%s",
+            event,
+            backend,
+            type(exc).__name__,
+        )
+        error = (
+            "acceptance_unconfirmed"
+            if str(exc) == "acceptance_unconfirmed"
+            else "notification_adapter_error"
+        )
+        return NotificationResult(success=False, error=error, outcome_unknown=True)
 
 
 

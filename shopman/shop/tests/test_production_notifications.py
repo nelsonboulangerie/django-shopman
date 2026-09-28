@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
+from django.contrib.auth.models import Permission, User
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
@@ -25,8 +26,9 @@ from shopman.shop.handlers.production_alerts import (
     create_stock_short_alert,
     create_stock_shortfall_alert,
     maybe_create_low_yield_alert,
+    on_production_changed,
 )
-from shopman.shop.models import Shop
+from shopman.shop.models import NotificationLifecycle, Shop, UserNotification
 
 pytestmark = pytest.mark.django_db
 
@@ -166,6 +168,77 @@ class TestNotificationGating:
             alert.refresh_from_db()
             assert alert.resolved_at is not None
             assert alert.resolved_by == "system:production-lifecycle"
+
+
+class TestQualityReviewManagerNotification:
+    def test_finished_batch_notifies_manager_once_and_review_resolves_it(self, recipe):
+        manager = User.objects.create_user("quality-manager", password="pw", is_staff=True)
+        manager.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="correct_production_qc",
+            )
+        )
+        floor = User.objects.create_user("quality-floor", password="pw", is_staff=True)
+        floor.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="operate_production",
+            )
+        )
+        work_order = craft.plan(recipe, 10, date=date.today())
+        craft.start(work_order, quantity=10)
+        craft.finish(order=work_order, finished=10)
+        work_order.refresh_from_db()
+
+        notification = UserNotification.objects.get(user=manager)
+        assert notification.category == "production"
+        assert notification.lifecycle == NotificationLifecycle.UNSEEN
+        assert notification.source_condition == "production_quality_review"
+        assert notification.source_ref == f"work_order:{work_order.pk}"
+        assert notification.action_url == "/expedite#quality"
+        assert notification.action_data == {"work_order_id": work_order.pk, "tab": "quality"}
+        assert notification.is_actionable is True
+        assert not UserNotification.objects.filter(user=floor).exists()
+
+        # Signal replay cannot create a second personal alert.
+        on_production_changed(
+            sender=None,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="finished",
+            work_order=work_order,
+        )
+        assert UserNotification.objects.filter(user=manager).count() == 1
+
+        on_production_changed(
+            sender=None,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="quality_reviewed",
+            work_order=work_order,
+        )
+        notification.refresh_from_db()
+        assert notification.lifecycle == NotificationLifecycle.RESOLVED
+        assert notification.is_actionable is False
+
+    def test_reconciliation_keeps_finished_unreviewed_batch_open(self, recipe):
+        from shopman.shop.services.user_notifications import reconcile_user_notifications
+
+        manager = User.objects.create_user("quality-manager-reconcile", password="pw", is_staff=True)
+        manager.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="correct_production_qc",
+            )
+        )
+        work_order = craft.plan(recipe, 4, date=date.today())
+        craft.start(work_order, quantity=4)
+        craft.finish(order=work_order, finished=4)
+
+        assert reconcile_user_notifications(user=manager) == 0
+        notification = UserNotification.objects.get(user=manager)
+        assert notification.lifecycle == NotificationLifecycle.UNSEEN
 
 
 class TestStockShortfallAlert:

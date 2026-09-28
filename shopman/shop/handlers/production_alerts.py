@@ -69,6 +69,73 @@ def on_production_changed(sender, product_ref, date, action, work_order, **kwarg
     _resolve_obsolete_alerts(action, work_order)
     if action == "finished":
         maybe_create_low_yield_alert(work_order)
+        notify_quality_reviewers(work_order)
+    elif action == "quality_reviewed":
+        resolve_quality_review_notifications(work_order)
+
+
+def notify_quality_reviewers(work_order) -> int:
+    """Notify every QC-capable manager as soon as a batch is finished.
+
+    This is a personal, persistent notification (SSE + Web Push when the user
+    enabled it), not only an operational log row.  The immutable work-order id
+    deduplicates signal retries and links the alert to the QC tab.
+    """
+    from django.contrib.auth import get_user_model
+
+    from shopman.shop.models import NotificationCategory, NotificationSeverity
+    from shopman.shop.services.user_notifications import (
+        OWNER_PRODUCTION,
+        PRODUCTION_QUALITY_REVIEW,
+        create_condition_alert,
+    )
+
+    managers = get_user_model().objects.with_perm(
+        "backstage.correct_production_qc",
+        is_active=True,
+        backend="django.contrib.auth.backends.ModelBackend",
+    )
+    source_ref = f"work_order:{work_order.pk}"
+    name = str(getattr(getattr(work_order, "recipe", None), "name", "") or "").strip()
+    label = name or str(getattr(work_order, "output_sku", "") or work_order.ref)
+    created = 0
+    for manager in managers.iterator():
+        result = create_condition_alert(
+            user=manager,
+            category=NotificationCategory.PRODUCTION,
+            title="Lote aguardando revisão de qualidade",
+            message=(
+                f"{label} foi finalizado e entrou na fila de Qualidade (QC). "
+                "Confirme a revisão para liberar os avisos autorizados pelos clientes."
+            ),
+            source_condition=PRODUCTION_QUALITY_REVIEW,
+            source_ref=source_ref,
+            source_version=1,
+            action_data={"work_order_id": work_order.pk, "tab": "quality"},
+            severity=NotificationSeverity.ACTION_REQUIRED,
+            owner_role=OWNER_PRODUCTION,
+            escalation_role="ops",
+        )
+        created += int(result.created)
+    if not created and not managers.exists():
+        logger.warning("production.quality_review_no_manager work_order=%s", work_order.ref)
+    return created
+
+
+def resolve_quality_review_notifications(work_order) -> int:
+    """Close every manager's personal alert after canonical QC confirmation."""
+    from shopman.shop.models import NotificationLifecycle
+    from shopman.shop.services.user_notifications import (
+        PRODUCTION_QUALITY_REVIEW,
+        reconcile_condition,
+    )
+
+    return reconcile_condition(
+        source_condition=PRODUCTION_QUALITY_REVIEW,
+        source_ref=f"work_order:{work_order.pk}",
+        state=NotificationLifecycle.RESOLVED,
+        outcome_code="production_quality_reviewed",
+    )
 
 
 def _resolve_obsolete_alerts(action: str, work_order) -> int:
