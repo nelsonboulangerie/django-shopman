@@ -364,6 +364,24 @@ envs:
     value: production
     scope: RUN_TIME
     type: GENERAL
+  # Inerte no template Live. Promoção exige shadow aprovado e mudança explícita
+  # destes switches; o kill switch continua independente do deploy do cliente.
+  - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_KILL_SWITCH
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
+    value: "30000"
+    scope: RUN_TIME
+    type: GENERAL
   # Concierge v3 nasce contida no template de produção. Ativação exige conta,
   # coorte, chave dedicada e autorização explícita no ambiente real.
   - key: AI_ASSIST_API_KEY

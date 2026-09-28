@@ -40,6 +40,7 @@ class Migration(migrations.Migration):
                 ("message", models.JSONField(default=dict)),
                 ("dirty", models.BooleanField(default=True)),
                 ("built_at", models.DateTimeField(blank=True, null=True)),
+                ("verified_at", models.DateTimeField(blank=True, null=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={

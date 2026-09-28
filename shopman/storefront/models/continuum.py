@@ -28,6 +28,7 @@ class CatalogStructureHead(models.Model):
     message = models.JSONField(default=dict)
     dirty = models.BooleanField(default=True)
     built_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

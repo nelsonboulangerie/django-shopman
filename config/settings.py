@@ -169,6 +169,10 @@ SHOPMAN_CONTINUUM = {
     "catalog_snapshot_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED", False),
     "kill_switch": _env_bool("SHOPMAN_CONTINUUM_KILL_SWITCH", False),
     "fresh_for_ms": int(os.environ.get("SHOPMAN_CONTINUUM_FRESH_FOR_MS", "30000")),
+    # Mesmo que um callback on_commit/signal se perca, o primeiro request depois
+    # desta janela volta à fonte canônica. O default acompanha fresh_for_ms para
+    # que um snapshot nunca seja renovado como fresco sem revalidação do banco.
+    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "30000")),
     "stale_if_error_ms": int(os.environ.get("SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS", "120000")),
     "snapshot_cache_seconds": int(os.environ.get("SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS", "300")),
     "limits": {

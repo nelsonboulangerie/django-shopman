@@ -13,6 +13,26 @@
 
 ---
 
+## Storefront — Continuum 0.2
+
+**Arquivo:** `config/settings.py`
+**Dict:** `SHOPMAN_CONTINUUM`
+
+| Variável de ambiente | Tipo | Default | Descrição |
+|---|---:|---:|---|
+| `SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED` | bool | `false` | Compara a projeção estrutural com o menu canônico sem mudar a resposta visível. |
+| `SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED` | bool | `false` | Expõe o endpoint público versionado do snapshot. Só é promovido depois do shadow. |
+| `SHOPMAN_CONTINUUM_KILL_SWITCH` | bool | `false` | Domina os dois switches e interrompe shadow/snapshot. |
+| `SHOPMAN_CONTINUUM_FRESH_FOR_MS` | int | `30000` | Horizonte declarado de frescor do snapshot. |
+| `SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS` | int | `30000` | Idade máxima antes de revalidar a read model contra o construtor canônico, mesmo sem signal. O runtime limita o valor efetivo a `FRESH_FOR_MS`. |
+| `SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS` | int | `120000` | Janela HTTP de `stale-if-error`. |
+| `SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS` | int | `300` | TTL dos bytes imutáveis de cada tuple versionada no cache. |
+
+As specs de alpha e produção declaram explicitamente shadow e snapshot desligados. A promoção é
+uma mudança separada e o kill switch não depende de publicar outro cliente.
+
+---
+
 ## Offerman (Catálogo)
 
 **Arquivo:** `packages/offerman/shopman/offerman/conf.py`

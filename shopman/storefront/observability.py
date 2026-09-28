@@ -24,7 +24,7 @@ class CatalogTiming:
         self.durations_ms[name] += max(0.0, duration_ms)
 
     def server_timing(self, *, include_bff: bool = False) -> str:
-        names = ["projection", "availability", "personalization", "db"]
+        names = ["projection", "availability", "personalization", "shadow", "db"]
         if include_bff:
             names.insert(0, "bff")
         return ", ".join(
@@ -78,10 +78,14 @@ def log_catalog_observation(**fields) -> None:
             "status",
             "query_count",
             "response_bytes",
+            "snapshot_bytes",
             "cache_status",
             "snapshot_sequence",
             "snapshot_age_ms",
             "shadow_equal",
+            "shadow_error",
+            "shadow_ms",
+            "shadow_query_count",
             "projection_ms",
             "availability_ms",
             "personalization_ms",

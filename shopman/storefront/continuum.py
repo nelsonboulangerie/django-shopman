@@ -32,6 +32,7 @@ CACHE_PREFIX = "storefront:continuum:v0.2:catalog-structure"
 class ShadowComparison:
     equal: bool
     cache_status: str
+    snapshot_bytes: int
     head: CatalogStructureHead
 
 
@@ -166,12 +167,30 @@ def _cache_key(head: CatalogStructureHead) -> str:
 
 
 def head_age_ms(head: CatalogStructureHead) -> int:
-    if head.built_at is None:
+    watermark = head.verified_at or head.built_at
+    if watermark is None:
         return 0
     return max(
         0,
-        int((timezone.now().astimezone(UTC) - head.built_at.astimezone(UTC)).total_seconds() * 1000),
+        int((timezone.now().astimezone(UTC) - watermark.astimezone(UTC)).total_seconds() * 1000),
     )
+
+
+def reconciliation_due(head: CatalogStructureHead) -> bool:
+    """Return whether the disposable head must be checked against canonical state.
+
+    Signals remain the fast path, but cannot be the durability boundary: a process
+    can die after the source commit and before ``on_commit`` runs, and bulk writers
+    can bypass model signals altogether. A bounded canonical revalidation makes
+    either failure self-healing without putting the full catalog builder on every
+    snapshot request.
+    """
+    config = continuum_settings()
+    configured = min(
+        int(config.get("reconcile_after_ms", 30_000)),
+        int(config.get("fresh_for_ms", 30_000)),
+    )
+    return head.verified_at is None or configured <= 0 or head_age_ms(head) >= configured
 
 
 def rendered_message(head: CatalogStructureHead) -> tuple[bytes, str]:
@@ -187,15 +206,16 @@ def rendered_message(head: CatalogStructureHead) -> tuple[bytes, str]:
 def materialize_catalog_structure(catalog, *, channel_ref: str) -> CatalogStructureHead:
     state = catalog_structure_state(catalog)
     digest = sha256_digest(state)
+    verified_at = timezone.now()
     with transaction.atomic():
         head, _ = CatalogStructureHead.objects.select_for_update().get_or_create(
             channel_ref=channel_ref,
             defaults={"stream_id": STREAM_ID},
         )
         if head.state_digest == digest and head.message:
-            if head.dirty:
-                head.dirty = False
-                head.save(update_fields=["dirty", "updated_at"])
+            head.dirty = False
+            head.verified_at = verified_at
+            head.save(update_fields=["dirty", "verified_at", "updated_at"])
             return head
 
         head.stream_id = STREAM_ID
@@ -203,6 +223,7 @@ def materialize_catalog_structure(catalog, *, channel_ref: str) -> CatalogStruct
         head.state_token = f"t_{secrets.token_urlsafe(24)}"
         head.state_digest = digest
         head.built_at = timezone.now()
+        head.verified_at = verified_at
         head.dirty = False
         head.message = _build_message(head=head, state=state)
         body = canonical_json(head.message)
@@ -215,13 +236,14 @@ def materialize_catalog_structure(catalog, *, channel_ref: str) -> CatalogStruct
 
 def current_or_build_head(*, channel_ref: str) -> tuple[CatalogStructureHead, str]:
     head = CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
-    if head is not None and not head.dirty and head.message:
+    if head is not None and not head.dirty and head.message and not reconciliation_due(head):
         return head, "head"
 
     from shopman.storefront.presentation import build_catalog
 
     catalog = build_catalog(channel_ref=channel_ref, request=None)
-    return materialize_catalog_structure(catalog, channel_ref=channel_ref), "rebuild"
+    status = "reconcile" if head is not None and not head.dirty and head.message else "rebuild"
+    return materialize_catalog_structure(catalog, channel_ref=channel_ref), status
 
 
 def compare_shadow(catalog, *, channel_ref: str) -> ShadowComparison:
@@ -230,11 +252,23 @@ def compare_shadow(catalog, *, channel_ref: str) -> ShadowComparison:
     head = CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
     if head is None or head.dirty or not head.message:
         head = materialize_catalog_structure(catalog, channel_ref=channel_ref)
-        return ShadowComparison(equal=True, cache_status="rebuild", head=head)
+        body, body_cache_status = rendered_message(head)
+        return ShadowComparison(
+            equal=True,
+            cache_status=f"rebuild:{body_cache_status}",
+            snapshot_bytes=len(body),
+            head=head,
+        )
     equal = secrets.compare_digest(head.state_digest, digest)
     if not equal:
         head = materialize_catalog_structure(catalog, channel_ref=channel_ref)
-    return ShadowComparison(equal=equal, cache_status="hit" if equal else "diverged_rebuild", head=head)
+    body, body_cache_status = rendered_message(head)
+    return ShadowComparison(
+        equal=equal,
+        cache_status=f"{'hit' if equal else 'diverged_rebuild'}:{body_cache_status}",
+        snapshot_bytes=len(body),
+        head=head,
+    )
 
 
 def mark_catalog_structure_dirty() -> None:

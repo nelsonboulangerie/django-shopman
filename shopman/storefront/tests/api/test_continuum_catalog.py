@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,11 +11,14 @@ from django.core.cache import cache
 from django.db import connection
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from jsonschema import Draft202012Validator, FormatChecker
 
 from shopman.shop.logging import JsonLogFormatter
+from shopman.storefront.continuum import current_or_build_head, rendered_message
 from shopman.storefront.models import CatalogStructureHead
 from shopman.storefront.observability import log_catalog_observation
+from shopman.storefront.presentation import build_catalog
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -86,11 +90,11 @@ def test_conditional_get_repeats_complete_tuple_without_regenerating_body(client
         "Continuum-State-Digest",
         "Continuum-Fresh-For-Ms",
         "Continuum-Stale-If-Error-Ms",
-        "Continuum-Age-Ms",
         "Cache-Control",
         "Vary",
     ):
         assert second[name] == first[name]
+    assert int(second["Continuum-Age-Ms"]) >= int(first["Continuum-Age-Ms"])
 
 
 def test_conditional_get_and_head_use_weak_comparison_with_strong_response_etag(client):
@@ -114,11 +118,11 @@ def test_conditional_get_and_head_use_weak_comparison_with_strong_response_etag(
             "Continuum-State-Digest",
             "Continuum-Fresh-For-Ms",
             "Continuum-Stale-If-Error-Ms",
-            "Continuum-Age-Ms",
             "Cache-Control",
             "Vary",
         ):
             assert response[name] == first[name]
+        assert int(response["Continuum-Age-Ms"]) >= int(first["Continuum-Age-Ms"])
 
 
 def test_public_snapshot_rejects_every_audience_dimension_before_lookup(client, django_assert_num_queries):
@@ -162,6 +166,90 @@ def test_structural_change_advances_sequence_and_etag(client, django_capture_on_
     assert int(second["Continuum-Sequence"]) == int(first["Continuum-Sequence"]) + 1
     assert second["ETag"] != first["ETag"]
     assert second.json()["data"]["state"]["items"][product.sku]["name"] == product.name
+
+
+def test_periodic_reconciliation_recovers_when_signal_or_callback_is_lost(client):
+    product = _seed_surface()
+    config = _config(reconcile_after_ms=30_000)
+    with override_settings(SHOPMAN_CONTINUUM=config):
+        first = client.get(SNAPSHOT_URL)
+
+        # QuerySet.update represents both a bulk producer outside model signals
+        # and a source commit whose on_commit callback was lost with the process.
+        type(product).objects.filter(pk=product.pk).update(name="Pão reconciliado")
+        head = CatalogStructureHead.objects.get(channel_ref="web")
+        CatalogStructureHead.objects.filter(pk=head.pk).update(
+            dirty=False,
+            verified_at=timezone.now() - timedelta(milliseconds=30_001),
+        )
+
+        reconciled = client.get(SNAPSHOT_URL)
+
+    assert int(reconciled["Continuum-Sequence"]) == int(first["Continuum-Sequence"]) + 1
+    assert reconciled["ETag"] != first["ETag"]
+    assert reconciled.json()["data"]["state"]["items"][product.sku]["name"] == "Pão reconciliado"
+
+
+def test_reconciliation_recovers_after_crash_before_head_commit(monkeypatch):
+    product = _seed_surface()
+    config = _config(reconcile_after_ms=0)
+    with override_settings(SHOPMAN_CONTINUUM=config):
+        first, _ = current_or_build_head(channel_ref="web")
+        type(product).objects.filter(pk=product.pk).update(name="Pão pós-crash")
+
+        original_save = CatalogStructureHead.save
+
+        def crash_before_commit(instance, *args, **kwargs):
+            if instance.pk == first.pk and instance.sequence > first.sequence:
+                raise RuntimeError("simulated_process_death_before_head_commit")
+            return original_save(instance, *args, **kwargs)
+
+        monkeypatch.setattr(CatalogStructureHead, "save", crash_before_commit)
+        with pytest.raises(RuntimeError, match="simulated_process_death"):
+            current_or_build_head(channel_ref="web")
+
+        persisted = CatalogStructureHead.objects.get(pk=first.pk)
+        assert persisted.sequence == first.sequence
+
+        monkeypatch.setattr(CatalogStructureHead, "save", original_save)
+        recovered, status = current_or_build_head(channel_ref="web")
+
+    assert status == "reconcile"
+    assert recovered.sequence == first.sequence + 1
+    assert recovered.message["data"]["state"]["items"][product.sku]["name"] == "Pão pós-crash"
+
+
+def test_committed_head_is_publishable_after_cache_loss():
+    product = _seed_surface()
+    config = _config(reconcile_after_ms=0)
+    with override_settings(SHOPMAN_CONTINUUM=config):
+        first, _ = current_or_build_head(channel_ref="web")
+        type(product).objects.filter(pk=product.pk).update(name="Pão sem cache")
+        catalog = build_catalog(channel_ref="web", request=None)
+        committed = current_or_build_head(channel_ref="web")[0]
+
+        # A morte depois do commit e antes da resposta perde somente cache
+        # descartável. A linha versionada continua suficiente para publicar.
+        cache.clear()
+        body, cache_status = rendered_message(committed)
+
+    assert catalog is not None
+    assert committed.sequence == first.sequence + 1
+    assert cache_status == "miss"
+    assert json.loads(body)["data"]["state"]["items"][product.sku]["name"] == "Pão sem cache"
+
+
+def test_restore_without_disposable_head_rotates_epoch_and_rebuilds(client):
+    _seed_surface()
+    with override_settings(SHOPMAN_CONTINUUM=_config()):
+        first = client.get(SNAPSHOT_URL)
+        CatalogStructureHead.objects.all().delete()
+        restored = client.get(SNAPSHOT_URL)
+
+    assert restored.status_code == 200
+    assert restored["Continuum-Epoch"] != first["Continuum-Epoch"]
+    assert int(restored["Continuum-Sequence"]) == 1
+    assert restored["ETag"] != first["ETag"]
 
 
 def test_shadow_is_side_effect_free_for_visible_contract_and_kill_switch_rolls_back(client):

@@ -72,7 +72,7 @@ def _snapshot_headers(head) -> dict[str, str]:
         "Continuum-State-Digest": head.state_digest,
         "Continuum-Fresh-For-Ms": str(fresh_ms),
         "Continuum-Stale-If-Error-Ms": str(stale_ms),
-        "Continuum-Age-Ms": "0",
+        "Continuum-Age-Ms": str(head_age_ms(head)),
         "Cache-Control": (
             f"public, max-age={fresh_ms // 1000}, s-maxage={fresh_ms // 1000}, "
             f"stale-if-error={stale_ms // 1000}, stale-while-revalidate={stale_ms // 1000}"

@@ -6,7 +6,7 @@ Branch: `codex/continuum-0.2-adversarial-20260927`
 
 Escopo: WP-CS-0 parcial + WP-CS-1 em shadow/snapshot desligado
 
-Estado de promoção: **não promovido; todas as flags nascem desligadas**
+Estado de promoção: **pronto para deploy inerte; shadow e snapshot continuam desligados**
 
 ## Resultado
 
@@ -52,13 +52,18 @@ O banco operacional continua sendo a autoridade. `CatalogStructureHead` é apena
 reconstruível: signals marcam a cabeça como suja depois do commit e o próximo shadow/snapshot a
 reconstrói com o `build_catalog` canônico. Sequence só avança quando o digest estrutural muda.
 
-Essa marcação é **best-effort**, não uma garantia durável. Um crash depois do commit e antes do
-callback `on_commit`, um `bulk_update`/`QuerySet.update` ou um produtor fora dos signals pode deixar
-`head.dirty=false`; se somente o endpoint candidato for consultado, ele pode renovar `200`/`304`
-de uma tuple antiga indefinidamente. O shadow do menu volta a calcular o estado canônico e detecta
-divergência, mas não substitui convergência permanente. Portanto a promoção fica bloqueada até
-existir reconciliação canônica periódica com source watermark, outbox/CDC ou mecanismo equivalente,
-com fault injection entre commit, materialização e publicação.
+Signals são o caminho rápido, não a fronteira de durabilidade. `verified_at` é o watermark da
+última leitura canônica completa; ao atingir `SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS`, o primeiro
+request volta a executar `build_catalog` mesmo com `dirty=false`. Assim, crash depois do commit e
+antes do callback `on_commit`, `bulk_update`/`QuerySet.update` e produtor fora dos signals têm
+staleness limitada em vez de poder renovar uma tuple antiga indefinidamente. O default de
+reconciliação é igual ao horizonte de frescor (30 s), de modo que bytes não são renovados como
+frescos sem nova verificação da autoridade.
+
+A persistência da cabeça é transacional e o cache é descartável, versionado por epoch/sequence/
+token. Fault injection cobre queda antes do commit da cabeça e perda total do cache depois dele;
+o request seguinte reconcilia ou publica a cabeça já confirmada. Remover a read model simula
+restore/failover e gera novo epoch antes de voltar a servir.
 
 Configuração inicial:
 
@@ -67,6 +72,7 @@ Configuração inicial:
 | `SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED` | `false` | materializa e compara sem mudar resposta/DOM |
 | `SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED` | `false` | expõe o endpoint candidato |
 | `SHOPMAN_CONTINUUM_KILL_SWITCH` | `false` | domina as duas flags e desliga o piloto |
+| `SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS` | `30000` | revalida periodicamente contra a fonte canônica |
 
 Rollback operacional: definir `SHOPMAN_CONTINUUM_KILL_SWITCH=true` ou desligar as duas flags. O
 endpoint volta a `404`, o shadow deixa de materializar e `/storefront/menu/` continua no caminho
@@ -102,15 +108,40 @@ profundidade — falham fechados; o menu canônico permanece disponível.
 Com `DATABASE_URL=''`, `DJANGO_SETTINGS_MODULE=config.settings_test` e o `PYTHONPATH` do Makefile:
 
 ```text
-python -m pytest shopman/storefront/tests/api/test_continuum_catalog.py -q
-10 passed
+python -m pytest shopman/storefront/tests/api/test_continuum_catalog.py \
+  shopman/storefront/tests/test_continuum_shadow_evaluator.py -q
+17 passed
 ```
 
 Essa suíte valida schema, ausência de campos contextuais, `200`/`304`, comparação fraca de
 `If-None-Match` em GET/HEAD mantendo ETag forte, byte stability entre hosts, rejeição de audiência
 com zero queries, avanço de sequence/ETag, shadow sem mudança do contrato visível, kill switch,
-falha fechada por limite, métricas estruturadas e orçamento quente. No seed de teste, o snapshot
-quente usa no máximo 2 queries e estritamente menos queries que o menu canônico.
+falha fechada por limite, métricas estruturadas, orçamento quente, convergência sem callback,
+bulk update, queda antes do commit, perda do cache e rotação de epoch em restore. No seed de teste,
+o snapshot quente usa no máximo 2 queries e estritamente menos queries que o menu canônico.
+
+## Gate operacional do shadow
+
+Owner: **Storefront / Pablo Valentini**.
+
+Janela mínima: **24 horas e 500 observações válidas**, valendo o requisito que terminar por último.
+O avaliador falha fechado com qualquer linha correspondente malformada e exige:
+
+- zero divergência semântica e zero erro do shadow;
+- p95 do trabalho adicional do shadow de no máximo 25 ms;
+- p95 de no máximo 2 queries adicionais;
+- snapshot de no máximo 1.048.576 bytes;
+- relatório de p50/p75/p95, volume e distribuição de hit/miss/rebuild.
+
+Comando reproduzível no deployment:
+
+```text
+doctl apps logs APP_ID web --type run --no-prefix --tail 20000 \
+  | python scripts/evaluate_continuum_shadow.py
+```
+
+Falha mantém snapshot desligado e aciona o kill switch se o próprio shadow afetar o caminho
+canônico. Aprovação desse gate autoriza apenas o canário HTTP; não abre CS-2 automaticamente.
 
 ```text
 npm test -- --project unit tests/djangoProxyBehavior.test.ts
@@ -143,13 +174,14 @@ Antes de promoção, ainda são obrigatórios:
    divergência silenciosa;
 2. manifest runtime com os state domains efetivos de DB/cache e execução target-scoped dos vetores
    aplicáveis, inclusive N/N+1 por limite;
-3. prova de convergência após perda do callback `dirty`, bulk update e produtor fora dos signals,
-   matando o processo em cada ponto entre commit, materialização e publicação;
-4. ensaios de restore/failover/epoch e de boundary entre host, canal e qualquer futura coorte;
+3. executar no deployment os ensaios já automatizados de convergência sem callback, queda,
+   cache perdido e rotação de epoch;
+4. completar no ambiente real os ensaios de failover e de boundary entre host, canal e qualquer
+   futura coorte;
 5. rollback N/N-1 simultâneo com cliente N-1 restaurado de bfcache, service worker N-1, bytes
    candidate já no cache e operação N em voo; nenhum byte ou callback tardio pode reinstalar o
    candidate depois do kill switch;
-6. thresholds quantitativos, owner e janela de observação do canário;
+6. cumprir os thresholds quantitativos e a janela definidos acima;
 7. comparação de percepção e custo que demonstre benefício suficiente para abrir CS-2.
 
 Até esses itens existirem, o estado correto do PR é draft e as flags permanecem desligadas.

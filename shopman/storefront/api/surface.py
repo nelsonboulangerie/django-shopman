@@ -444,11 +444,17 @@ class StorefrontMenuView(APIView):
                     }
 
             shadow = None
+            shadow_error = False
+            shadow_query_count = 0
             if collection is None and shadow_enabled():
                 try:
-                    shadow = compare_shadow(catalog, channel_ref=STOREFRONT_CHANNEL_REF)
+                    queries_before_shadow = timing.query_count
+                    with catalog_stage("shadow"):
+                        shadow = compare_shadow(catalog, channel_ref=STOREFRONT_CHANNEL_REF)
+                    shadow_query_count = timing.query_count - queries_before_shadow
                 except Exception:
                     # Shadow nunca muda disponibilidade do caminho canônico.
+                    shadow_error = True
                     logger.exception("continuum_catalog_shadow_failed")
 
             response = Response(payload)
@@ -461,10 +467,14 @@ class StorefrontMenuView(APIView):
             status=200,
             query_count=timing.query_count,
             response_bytes=response_bytes,
+            snapshot_bytes=shadow.snapshot_bytes if shadow else 0,
             cache_status=shadow.cache_status if shadow else "off",
             snapshot_sequence=shadow.head.sequence if shadow else 0,
             snapshot_age_ms=head_age_ms(shadow.head) if shadow else 0,
             shadow_equal=shadow.equal if shadow else None,
+            shadow_error=shadow_error,
+            shadow_ms=timing.durations_ms.get("shadow", 0.0),
+            shadow_query_count=shadow_query_count,
             projection_ms=timing.durations_ms.get("projection", 0.0),
             availability_ms=timing.durations_ms.get("availability", 0.0),
             personalization_ms=timing.durations_ms.get("personalization", 0.0),
