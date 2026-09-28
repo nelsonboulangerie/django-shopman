@@ -1099,7 +1099,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Até logo.")},
     },
     "LOGIN_PHONE_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Entre com seu WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Entre pelo WhatsApp")},
     },
     "LOGIN_PHONE_SUBTITLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sem senha, rápido e seguro.")},
@@ -1108,12 +1108,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_WA_CART_KEPT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola está guardada.")},
     },
-    # O PORQUÊ, antes do pedido. A queixa dos testadores era "pra que eu tenho que
-    # fazer isso?": o WhatsApp parecia burocracia de login. É por lá que a casa avisa
-    # do pedido e tira dúvidas — e é a mensagem da pessoa que abre essa conversa.
+    # O PORQUÊ, antes do pedido. A mensagem explica a segurança sem transformar o
+    # login numa justificativa de marketing ou suporte.
     "LOGIN_WA_WHY": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="É por lá que avisamos cada passo do seu pedido e tiramos suas dúvidas. Sem senha.",
+            message="Sem senha e sem código. A mensagem pronta confirma que o número é seu.",
         )},
     },
     # O QUE FAZER, em três passos (um por linha). A outra queixa: "o que eu tenho que
@@ -1121,17 +1120,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_WA_STEPS": {
         WILDCARD: {WILDCARD: CopyEntry(
             message=(
-                "Toque no botão abaixo\n"
-                "Envie a mensagem que já vai pronta\n"
-                "Volte para cá: você já estará dentro"
+                "Toque em “Abrir o WhatsApp”\n"
+                "Envie a mensagem que já está pronta\n"
+                "Volte para esta tela. A entrada será automática"
             ),
         )},
     },
     # Depois do toque: a tela espera a mensagem chegar e entra sem mais nada.
     "LOGIN_WA_WAITING": {
         WILDCARD: {WILDCARD: CopyEntry(
-            title="Enviou a mensagem?",
-            message="Assim que ela chegar, você entra por aqui, sem fazer mais nada.",
+            title="Mensagem enviada?",
+            message="Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.",
         )},
     },
     # Envio manual (plano B da espera): título + instrução. ``{phone}`` vira o número

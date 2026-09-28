@@ -45,8 +45,8 @@ const props = withDefaults(defineProps<{
   why: '',
   steps: () => [],
   ctaLabel: 'Abrir o WhatsApp',
-  waitingTitle: 'Enviou a mensagem?',
-  waitingMessage: 'Assim que ela chegar, você entra por aqui, sem fazer mais nada.',
+  waitingTitle: 'Mensagem enviada?',
+  waitingMessage: 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.',
   manualTitle: 'O WhatsApp não abriu?',
   manualIntro: 'Mande a mensagem abaixo para {phone} no WhatsApp.'
 })
