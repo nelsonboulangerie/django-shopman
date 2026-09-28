@@ -18,8 +18,12 @@ def get_authenticated_customer(request):
     full Customer model via the auth service.
     """
     cache_attr = "_shopman_authenticated_customer"
-    if hasattr(request, cache_attr):
-        return getattr(request, cache_attr)
+    # Read the per-request cache from the instance dictionary. Besides making
+    # ownership explicit, this avoids treating dynamic proxy attributes (for
+    # example MagicMock in callers/tests) as a populated cache entry.
+    request_state = vars(request)
+    if cache_attr in request_state:
+        return request_state[cache_attr]
 
     customer_info = getattr(request, "customer", None)
     if customer_info is None:
