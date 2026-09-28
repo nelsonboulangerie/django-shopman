@@ -301,11 +301,16 @@ class DeliveryZoneRule(BaseRule):
             )
             total_q = sum(item.get("line_total_q", 0) for item in items) + coupon_discount_q
             if total_q < minimum_q:
-                minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
                 raise OrderValidationError(
                     code="below_delivery_minimum",
-                    message=f"Pedido mínimo para entrega: {minimum_display}.",
+                    message=delivery_minimum_message(minimum_q),
                 )
+
+
+def delivery_minimum_message(minimum_q: int) -> str:
+    """A frase do mínimo de entrega — uma só, para o commit e para o PDV avisar antes."""
+    minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
+    return f"Pedido mínimo para entrega: {minimum_display}."
 
 
 def _normalize_city(value) -> str:

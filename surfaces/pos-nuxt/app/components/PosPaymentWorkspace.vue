@@ -310,8 +310,10 @@ const reviewWarnings = computed(() => {
       // podendo ficar defasado ao lado de um cabeçalho já com o nome do cliente.
       // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
       && w.code !== "customer_required_for_scheduled"
-      // Endereço incompleto para a nota: quem fala é o bloqueio do Validar.
-      && w.code !== "delivery_address_incomplete",
+      // Endereço incompleto para a nota e mínimo de entrega: quem fala é o
+      // bloqueio do Validar.
+      && w.code !== "delivery_address_incomplete"
+      && w.code !== "below_delivery_minimum",
   );
   return fromServer;
 });
@@ -856,6 +858,20 @@ const ctaBlock = computed<{
       message: addressGap.message,
       hint: "A nota fiscal da entrega sai com o endereço completo.",
       action: { label: "Completar endereço", run: () => { fulfillmentSheetOpen.value = true; } },
+    };
+  }
+  // `below_delivery_minimum`: a gêmea do `DeliveryZoneRule`. A frase é a do
+  // commit, vinda na review; antes dela a recusa só chegava ao Validar — como
+  // 500, que o PDV lia como "cobrança não confirmada".
+  const belowMinimum = props.review?.warnings?.find((w) => w.code === "below_delivery_minimum");
+  if (props.fulfillmentType === "delivery" && belowMinimum) {
+    return {
+      message: belowMinimum.message,
+      hint: "Acrescente itens até o mínimo, ou troque a entrega por retirada.",
+      actions: [
+        { label: "Acrescentar itens", run: returnToCart },
+        { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+      ],
     };
   }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
