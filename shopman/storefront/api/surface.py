@@ -7,6 +7,7 @@ rules.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from django.utils.decorators import method_decorator
@@ -23,6 +24,12 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
+from shopman.storefront.observability import (
+    capture_catalog_timing,
+    catalog_stage,
+    log_catalog_observation,
+)
 from shopman.storefront.presentation import (
     build_cart,
     build_catalog,
@@ -421,17 +428,49 @@ class StorefrontMenuView(APIView):
     authentication_classes = []
 
     def get(self, request, collection: str | None = None):
-        if collection is not None:
-            catalog_service.ensure_active_collection(collection)
-        catalog = build_catalog(
-            channel_ref=STOREFRONT_CHANNEL_REF,
-            collection_ref=collection,
-            request=request,
+        with capture_catalog_timing() as timing:
+            with catalog_stage("projection"):
+                if collection is not None:
+                    catalog_service.ensure_active_collection(collection)
+                catalog = build_catalog(
+                    channel_ref=STOREFRONT_CHANNEL_REF,
+                    collection_ref=collection,
+                    request=request,
+                )
+                with catalog_stage("personalization"):
+                    payload = {
+                        "catalog": projection_data(catalog),
+                        "cart": _cart_payload(request),
+                    }
+
+            shadow = None
+            if collection is None and shadow_enabled():
+                try:
+                    shadow = compare_shadow(catalog, channel_ref=STOREFRONT_CHANNEL_REF)
+                except Exception:
+                    # Shadow nunca muda disponibilidade do caminho canônico.
+                    logger.exception("continuum_catalog_shadow_failed")
+
+            response = Response(payload)
+            response["Server-Timing"] = timing.server_timing()
+
+        response_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
+        log_catalog_observation(
+            path="storefront_menu",
+            mode="shadow" if shadow_enabled() else "baseline",
+            status=200,
+            query_count=timing.query_count,
+            response_bytes=response_bytes,
+            cache_status=shadow.cache_status if shadow else "off",
+            snapshot_sequence=shadow.head.sequence if shadow else 0,
+            snapshot_age_ms=head_age_ms(shadow.head) if shadow else 0,
+            shadow_equal=shadow.equal if shadow else None,
+            projection_ms=timing.durations_ms.get("projection", 0.0),
+            availability_ms=timing.durations_ms.get("availability", 0.0),
+            personalization_ms=timing.durations_ms.get("personalization", 0.0),
+            db_ms=timing.durations_ms.get("db", 0.0),
         )
-        return Response({
-            "catalog": projection_data(catalog),
-            "cart": _cart_payload(request),
-        })
+        return response
 
 
 @extend_schema_view(

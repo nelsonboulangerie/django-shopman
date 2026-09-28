@@ -7,7 +7,6 @@ import base64
 import copy
 import hashlib
 import json
-import math
 import re
 import unicodedata
 from collections import Counter
@@ -17,7 +16,6 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
-
 
 ROOT = Path(__file__).resolve().parent
 KIND_FRAGMENT = {
@@ -1276,7 +1274,7 @@ def main() -> None:
         if vector["layer"] in excluded_layers:
             raise AssertionError(f"{vector['id']}: vector layer is also excluded")
         actions = vector["actions"]
-        for action_index, action in enumerate(actions):
+        for action in actions:
             body = action.get("body")
             if isinstance(body, dict):
                 for identifier_name in ("lease_operation_id", "issuance_nonce"):
@@ -1397,7 +1395,7 @@ def main() -> None:
             "result_document": f"urn:continuum-result:matrix.{unit_id}",
             "trace_evidence": f"urn:continuum-trace:matrix.{unit_id}",
         }
-        limits = {limit: 1000 for limit in required_limits_for_unit(unit)}
+        limits = dict.fromkeys(required_limits_for_unit(unit), 1000)
         for limit, value in {
             "max_decompression_ratio_milli": 2000,
             "max_resident_bytes": 1_000_000,
@@ -2290,7 +2288,11 @@ def main() -> None:
                 if "epoch_mismatch" not in violations and any(
                     patch_tuple(previous["data"]["target"])
                     != patch_tuple(current["data"]["base"])
-                    for previous, current in zip(batch_messages, batch_messages[1:])
+                    for previous, current in zip(
+                        batch_messages,
+                        batch_messages[1:],
+                        strict=False,
+                    )
                 ):
                     violations.add("noncontiguous_chain")
                 final_data = batch_messages[-1]["data"]

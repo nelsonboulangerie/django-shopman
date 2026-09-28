@@ -118,6 +118,7 @@ export async function proxyDjangoApi (event: H3Event, path: string) {
 }
 
 export async function proxyDjangoPath (event: H3Event, fullPath: string) {
+  const bffStarted = performance.now()
   if (hasPathTraversal(fullPath)) {
     throw createError({ statusCode: 400, statusMessage: 'Bad Request' })
   }
@@ -209,6 +210,14 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   // divergente vira warning estruturado no Nitro (server/utils/apiVersion.ts,
   // auto-importado) — nunca bloqueia a resposta.
   warnOnApiVersionMismatch(response.headers.get('x-api-version'), { path: normalizedPath })
+
+  const upstreamServerTiming = response.headers.get('server-timing')
+  const bffTiming = `bff;dur=${Math.max(0, performance.now() - bffStarted).toFixed(2)}`
+  setResponseHeader(
+    event,
+    'server-timing',
+    upstreamServerTiming ? `${upstreamServerTiming}, ${bffTiming}` : bffTiming
+  )
 
   const setCookie = response.headers.get('set-cookie')
   if (setCookie) {

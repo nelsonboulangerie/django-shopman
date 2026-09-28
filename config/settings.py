@@ -160,6 +160,33 @@ SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
 )
+
+# Continuum 0.2 — piloto conservador do cardápio. Tudo nasce desligado: o menu
+# canônico continua sendo o único caminho visível até a evidência do shadow.
+# O kill switch domina as duas flags e devolve o runtime ao fetch monolítico.
+SHOPMAN_CONTINUUM = {
+    "catalog_shadow_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED", False),
+    "catalog_snapshot_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED", False),
+    "kill_switch": _env_bool("SHOPMAN_CONTINUUM_KILL_SWITCH", False),
+    "fresh_for_ms": int(os.environ.get("SHOPMAN_CONTINUUM_FRESH_FOR_MS", "30000")),
+    "stale_if_error_ms": int(os.environ.get("SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS", "120000")),
+    "snapshot_cache_seconds": int(os.environ.get("SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS", "300")),
+    "limits": {
+        "max_compressed_response_bytes": 262_144,
+        "max_decoded_response_bytes": 1_048_576,
+        "max_response_head_bytes": 65_536,
+        "max_request_head_bytes": 65_536,
+        "max_request_identifier_bytes": 16_384,
+        "max_json_nodes": 100_000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1_048_576,
+        "max_resident_bytes": 4_194_304,
+        "max_decompression_ratio_milli": 20_000,
+        "max_decompression_ms": 1_000,
+        "max_repair_attempts": 3,
+        "max_retry_ms": 30_000,
+    },
+}
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
