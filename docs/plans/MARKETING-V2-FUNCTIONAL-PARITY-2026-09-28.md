@@ -96,7 +96,7 @@ desenvolvimento da V2; bloqueia torná-la padrão ou remover a V1.
 | Jornada | Prova mínima | Estado inicial |
 | --- | --- | --- |
 | Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Compartilhada por `/` e `/v2` |
-| Criar e editar campanha | component/e2e contra contrato real | Composer de cinco etapas integrado; edição inline de composição por destino ainda pendente |
+| Criar e editar campanha | component/e2e contra contrato real | Composer de cinco etapas integrado; modelos já aceitam composição explícita por destino executável; múltiplas composições da mesma plataforma ainda pendentes |
 | Ligar/desligar campanha | teste de Action e CAS | Pendente na V2 |
 | Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Pendente na V2 |
 | Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Painel compartilhado; matriz completa pendente |
@@ -123,15 +123,15 @@ Todo PR da V2 deve declarar:
 
 É proibido aprovar um PR cuja única evidência seja a fidelidade à prévia estática.
 
-## Área assumida na fatia do composer
+## Área assumida na fatia de composição por destino
 
-- `surfaces/marketing-nuxt/app/components/CampaignForm.vue`;
 - `surfaces/marketing-nuxt/app/components/AnnouncementTemplateForm.vue`;
-- `surfaces/marketing-nuxt/app/pages/campaigns.vue`;
+- `surfaces/marketing-nuxt/app/components/PlatformCompositionEditor.vue`;
 - testes de componente correspondentes;
 - este baseline e o contrato da superfície.
 
 Não há mudança de API, projection Django, migration, adapter, configuração,
-`package.json` ou lockfile. O payload de campanha permanece idêntico; a mudança
-organiza o fluxo existente em cinco etapas e mostra, na revisão, somente formatos da
-allow-list executável. O catálogo teórico permanece fora das escolhas operacionais.
+`package.json` ou lockfile. O payload existente de `platform_variants` passa a ser
+editado de forma explícita por destino: texto comum como padrão, exceção opcional e
+somente formatos/campos da allow-list executável. O catálogo teórico permanece fora
+das escolhas operacionais.

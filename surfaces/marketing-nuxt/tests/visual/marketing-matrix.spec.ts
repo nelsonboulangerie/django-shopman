@@ -591,6 +591,14 @@ test.describe("listas operacionais", () => {
   test("variantes reais aparecem no formulário", async ({ page }) => {
     await openScenario(page, "templates-list", "/templates", V768);
     await page.locator("main ul li").first().locator("button").first().click();
+    const google = page.getByTestId("composition-google_business");
+    await google.locator("summary").click();
+    await google.evaluate((element) =>
+      element.scrollIntoView({ block: "start" }),
+    );
+    await expect(
+      google.getByText("Tipo de postagem", { exact: true }),
+    ).toBeInViewport();
     await expectStableScreenshot(page, "templates__platform-variant", V768, "light", { fullPage: false });
   });
 
