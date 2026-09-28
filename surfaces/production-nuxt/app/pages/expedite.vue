@@ -21,6 +21,10 @@ import {
 
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
+type QueueTab = "expedition" | "quality";
+const activeQueue = ref<QueueTab>(
+  route.hash === "#quality" ? "quality" : "expedition",
+);
 const {
   kiosk,
   selectedDate,
@@ -80,7 +84,21 @@ const openOrders = computed(() =>
   (kiosk.value?.orders ?? []).filter((o) => !o.closed && matches(o)),
 );
 const closedOrders = computed(() =>
-  (kiosk.value?.orders ?? []).filter((o) => o.closed && matches(o)),
+  (kiosk.value?.orders ?? [])
+    .filter((o) => o.closed && matches(o))
+    .sort((left, right) =>
+      left.quality_reviewed === right.quality_reviewed
+        ? 0
+        : left.quality_reviewed
+          ? 1
+          : -1,
+    ),
+);
+const qualityPendingCount = computed(
+  () =>
+    (kiosk.value?.orders ?? []).filter(
+      (order) => order.closed && !order.quality_reviewed,
+    ).length,
 );
 // A próxima a vencer ganha moldura: a primeira aberta (started primeiro).
 const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
@@ -231,7 +249,7 @@ async function onConfirm(
     // localStorage e alarma depois, num card que nem existe mais.
     if (closingOrder && !correcting) oven.clear(ovenKey(closingOrder));
     useSonner.success(
-      correcting ? "Qualidade corrigida." : "Quantidade concluída.",
+      correcting ? "Qualidade corrigida." : "Lote enviado para Qualidade (QC).",
     );
     backToBoard();
     return;
@@ -435,11 +453,17 @@ function onTimerKeydown(event: KeyboardEvent) {
   <main class="flex min-h-screen flex-col">
     <ProductionHeader
       v-model:query="query"
-      title="Expedição"
-      :count="kiosk?.closed_count"
-      :count-label="`de ${kiosk?.total_count ?? 0} concluídas`"
+      :title="activeQueue === 'quality' ? 'Qualidade (QC)' : 'Expedição'"
+      :count="
+        activeQueue === 'quality' ? qualityPendingCount : openOrders.length
+      "
+      :count-label="
+        activeQueue === 'quality'
+          ? 'aguardando revisão'
+          : 'lotes para finalizar'
+      "
       :progress="
-        kiosk && kiosk.total_count > 0
+        activeQueue === 'expedition' && kiosk && kiosk.total_count > 0
           ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
           : null
       "
@@ -494,7 +518,9 @@ function onTimerKeydown(event: KeyboardEvent) {
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
           >
-            <span aria-hidden="true">{{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}</span>
+            <span aria-hidden="true">{{
+              isCustomDate ? kiosk?.selected_date_display : "Outra data"
+            }}</span>
             <input
               v-model="selectedDate"
               type="date"
@@ -538,6 +564,50 @@ function onTimerKeydown(event: KeyboardEvent) {
       </div>
 
       <div
+        class="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1"
+        role="tablist"
+        aria-label="Etapas de expedição e qualidade"
+      >
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeQueue === 'expedition'"
+          aria-controls="expedition-panel"
+          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
+          :class="
+            activeQueue === 'expedition'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="activeQueue = 'expedition'"
+        >
+          Expedição
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeQueue === 'quality'"
+          aria-controls="quality-panel"
+          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
+          :class="
+            activeQueue === 'quality'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="activeQueue = 'quality'"
+        >
+          Qualidade (QC)
+          <span
+            v-if="qualityPendingCount > 0"
+            class="inline-flex min-w-5 items-center justify-center rounded-full bg-warning px-1.5 py-0.5 text-xs font-bold leading-none text-warning-foreground"
+            aria-label="Lotes aguardando revisão de qualidade"
+          >
+            {{ qualityPendingCount }}
+          </span>
+        </button>
+      </div>
+
+      <div
         v-if="stale"
         role="status"
         aria-live="polite"
@@ -551,7 +621,9 @@ function onTimerKeydown(event: KeyboardEvent) {
            vai direto ao dia pendente mais recente. -->
       <!-- Aviso inteiro é acionável para levar ao dia pendente; não é um CTA isolado. -->
       <button
-        v-if="kiosk && kiosk.previous_open_count > 0"
+        v-if="
+          activeQueue === 'expedition' && kiosk && kiosk.previous_open_count > 0
+        "
         type="button"
         class="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition hover:bg-warning/20"
         @click="selectedDate = kiosk.previous_open_date"
@@ -560,9 +632,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         <span>
           <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
           {{
-            kiosk.previous_open_count === 1
-              ? "lote aberto"
-              : "lotes abertos"
+            kiosk.previous_open_count === 1 ? "lote aberto" : "lotes abertos"
           }}
           de dias anteriores. Toque para ver.
         </span>
@@ -580,8 +650,25 @@ function onTimerKeydown(event: KeyboardEvent) {
       >
         Nenhum lote planejado para hoje.
       </p>
+      <p
+        v-else-if="kiosk && activeQueue === 'expedition' && !openOrders.length"
+        class="py-10 text-center text-muted-foreground"
+      >
+        Nenhum lote aguardando expedição.
+      </p>
+      <p
+        v-else-if="kiosk && activeQueue === 'quality' && !closedOrders.length"
+        class="py-10 text-center text-muted-foreground"
+      >
+        Nenhum lote na Qualidade (QC).
+      </p>
 
-      <div class="grid gap-2">
+      <div
+        v-if="activeQueue === 'expedition'"
+        id="expedition-panel"
+        role="tabpanel"
+        class="grid gap-2"
+      >
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
              fornada é o botão quadrado do previsto, à direita. Alarmando, o
              card inteiro oscila em danger — visível do outro lado do fournil. -->
@@ -679,8 +766,10 @@ function onTimerKeydown(event: KeyboardEvent) {
             >
           </button>
         </div>
+      </div>
 
-        <!-- Fechadas: visíveis e esmaecidas, com a partição declarada. -->
+      <div v-else id="quality-panel" role="tabpanel" class="grid gap-2">
+        <!-- Lotes concluídos vivem em QC; pendências aparecem antes do histórico revisado. -->
         <div
           v-for="order in closedOrders"
           :key="order.pk"

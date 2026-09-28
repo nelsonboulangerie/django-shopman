@@ -100,11 +100,25 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
                 "provider_code": _provider_error_code(provider_payload),
                 "provider_http_status": exc.code,
             }
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=http status=%s",
+            endpoint,
+            exc.code,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
-    except URLError:
+    except URLError as exc:
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=urlerror reason_type=%s",
+            endpoint,
+            type(exc.reason).__name__,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
-    except Exception:
-        logger.warning("manychat acceptance unconfirmed; response unavailable")
+    except Exception as exc:
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=unexpected exception_type=%s",
+            endpoint,
+            type(exc).__name__,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
 
 
