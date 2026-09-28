@@ -190,6 +190,23 @@ def test_periodic_reconciliation_recovers_when_signal_or_callback_is_lost(client
     assert reconciled.json()["data"]["state"]["items"][product.sku]["name"] == "Pão reconciliado"
 
 
+def test_http_freshness_does_not_force_expensive_origin_reconciliation(client):
+    _seed_surface()
+    config = _config(fresh_for_ms=30_000, reconcile_after_ms=300_000)
+    with override_settings(SHOPMAN_CONTINUUM=config):
+        client.get(SNAPSHOT_URL)
+        head = CatalogStructureHead.objects.get(channel_ref="web")
+        CatalogStructureHead.objects.filter(pk=head.pk).update(
+            dirty=False,
+            verified_at=timezone.now() - timedelta(milliseconds=30_001),
+        )
+
+        response = client.get(SNAPSHOT_URL)
+
+    assert response.status_code == 200
+    assert response["Continuum-Sequence"] == f"{head.sequence:020d}"
+
+
 def test_reconciliation_recovers_after_crash_before_head_commit(monkeypatch):
     product = _seed_surface()
     config = _config(reconcile_after_ms=0)

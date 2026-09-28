@@ -190,10 +190,12 @@ def reconciliation_due(head: CatalogStructureHead) -> bool:
     snapshot request.
     """
     config = continuum_settings()
-    configured = min(
-        int(config.get("reconcile_after_ms", 30_000)),
-        int(config.get("fresh_for_ms", 30_000)),
-    )
+    # HTTP freshness and origin reconciliation are different clocks. The edge
+    # may revalidate every 30s so clients learn about a dirty head quickly,
+    # while the expensive canonical safety scan runs at a calmer cadence. The
+    # previous ``min(..., fresh_for_ms)`` forced a 96-query catalog rebuild on
+    # every cache revalidation even when signals had kept the head current.
+    configured = int(config.get("reconcile_after_ms", 300_000))
     return head.verified_at is None or configured <= 0 or head_age_ms(head) >= configured
 
 

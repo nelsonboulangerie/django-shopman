@@ -606,6 +606,24 @@ export interface HomeProjection {
   public_config: PublicConfigProjection
 }
 
+export interface StorefrontShellProjection {
+  omotenashi: OmotenashiProjection
+  auth_copy: AuthCopyProjection
+  pwa_copy: PwaCopyProjection
+  shop: ShopProjection
+  shop_status: ShopStatusProjection
+  notices: HomeNoticeProjection[]
+  opening_hours: OpeningHoursEntry[]
+  faq: FAQItemProjection[]
+  origin_channel: string | null
+  public_config: PublicConfigProjection
+}
+
+export interface ShellResponse {
+  shell: StorefrontShellProjection
+  cart: CartProjection
+}
+
 export interface HomeResponse {
   home: HomeProjection
   cart: CartProjection
@@ -627,6 +645,10 @@ export interface AuthSessionResponse {
 export interface MenuResponse {
   catalog: CatalogProjection
   cart: CartProjection
+}
+
+export interface CatalogResponse {
+  catalog: CatalogProjection
 }
 
 export interface ProductResponse {

@@ -379,7 +379,7 @@ envs:
     scope: RUN_TIME
     type: GENERAL
   - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
-    value: "30000"
+    value: "300000"
     scope: RUN_TIME
     type: GENERAL
   # Concierge v3 nasce contida no template de produção. Ativação exige conta,

@@ -607,10 +607,10 @@ describe('surface UX guardrails', () => {
     const authPresentation = read('app/presentation/auth.ts')
 
     // A home canônica já foi aguardada pelo shell; /entrar não duplica a busca.
-    expect(login).toContain("useNuxtData<HomeResponse>('shopman-shell-home')")
+    expect(login).toContain("useNuxtData<ShellResponse>('shopman-shell')")
     expect(login).not.toContain("key: 'storefront-login-home'")
-    expect(login).toContain('home.auth_copy')
-    expect(login).toContain('home.public_config.whatsapp_url')
+    expect(login).toContain('shell.auth_copy')
+    expect(login).toContain('shell.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
     expect(login).toContain('const cartHasItems')
     // A copy da sacola pergunta pela SACOLA, não pela rota de origem: quem entra
@@ -827,15 +827,15 @@ describe('surface UX guardrails', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
     const session = read('app/composables/useShopSession.ts')
-    const home = read('app/composables/useStorefrontHome.ts')
+    const shell = read('app/composables/useStorefrontShell.ts')
 
     expect(app).toContain('const AUTH_SHELL_ROUTES')
     expect(app).toContain('const authShellRoute')
     expect(app).toContain("new Set(['/entrar', '/a'])")
     expect(app).toContain('AUTH_SHELL_ROUTES.has(route.path)')
-    expect(app).toContain('await useStorefrontHome()')
-    expect(home).toContain('server: true')
-    expect(home).toContain("dedupe: 'defer'")
+    expect(app).toContain('await useStorefrontShell()')
+    expect(shell).toContain('server: true')
+    expect(shell).toContain("dedupe: 'defer'")
     expect(app).toContain('preserveAuthenticated: authRoute')
     expect(app).toContain('if (!authRoute) setFromServer(value?.cart)')
     expect(session).toContain('preserveAuthenticated')

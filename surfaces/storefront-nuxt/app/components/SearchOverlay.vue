@@ -7,7 +7,7 @@ import {
   type SearchListOption,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 
 // Overlay de busca na MESMA tela (sem navegar) — assim o foco/teclado funciona no iOS
 // (foco dentro do gesto). A página /busca segue existindo como fallback (link direto).
@@ -17,7 +17,7 @@ const route = useRoute()
 
 // Carrega o cardápio sob demanda (na 1ª abertura) via $fetch — controle total de
 // data/pending/error (useFetch com immediate:false+execute não atualizava aqui).
-const data = ref<MenuResponse | null>(null)
+const data = ref<CatalogResponse | null>(null)
 const pending = ref(false)
 const error = ref(false)
 async function loadMenu () {
@@ -25,7 +25,7 @@ async function loadMenu () {
   pending.value = true
   error.value = false
   try {
-    data.value = await $fetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), { credentials: 'include' })
+    data.value = await $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include' })
   } catch {
     error.value = true
   } finally {

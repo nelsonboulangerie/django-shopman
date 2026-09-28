@@ -8,7 +8,7 @@ import {
   listingDescription,
   truncateClean
 } from '~/presentation/seo'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 
 // Página de coleção indexável (rota própria, self-canonical) — diferente das
 // variantes de filtro do /menu (que canonicalizam para /menu). Alimentada pelo
@@ -17,7 +17,6 @@ const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
 const session = useShopSession()
-const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 
 const collectionRef = computed(() => String(route.params.ref || ''))
@@ -27,8 +26,8 @@ if (dynamicRedirectTarget.value) {
   await navigateTo(dynamicRedirectTarget.value, { redirectCode: 301, replace: true })
 }
 
-const { data, pending, error, refresh } = await useFetch<MenuResponse>(
-  () => apiPath(`/api/v1/storefront/menu/${encodeURIComponent(collectionRef.value)}/`),
+const { data, pending, error, refresh } = await useFetch<CatalogResponse>(
+  () => apiPath(`/api/v1/storefront/catalog/${encodeURIComponent(collectionRef.value)}/`),
   { credentials: 'include', immediate: !dynamicRedirectTarget.value }
 )
 
@@ -39,10 +38,6 @@ if (!dynamicRedirectTarget.value && error.value?.statusCode === 404) {
 }
 
 if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?.catalog, 'Coleção')
-
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
 
 const catalog = computed(() => data.value?.catalog || null)
 const section = computed(() => {

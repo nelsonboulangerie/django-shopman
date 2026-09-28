@@ -225,6 +225,26 @@ def _environment_notice() -> str:
 
 
 @dataclass(frozen=True)
+class StorefrontShellProjection:
+    """Projeção global leve, sem catálogo nem histórico de pedidos.
+
+    O shell é carregado em toda rota. Qualquer leitura exclusiva da home aqui
+    transforma uma página interna em uma reconstrução disfarçada da home.
+    """
+
+    omotenashi: OmotenashiProjection
+    auth_copy: AuthCopyProjection
+    pwa_copy: PwaCopyProjection
+    shop: ShopProjection
+    shop_status: ShopStatusProjection
+    notices: tuple[HomeNoticeProjection, ...]
+    opening_hours: tuple[OpeningHoursEntry, ...]
+    faq: tuple[FAQItemProjection, ...]
+    origin_channel: str | None
+    public_config: PublicConfigProjection
+
+
+@dataclass(frozen=True)
 class HomeProjection:
     omotenashi: OmotenashiProjection
     hero_copy: HomeHeroCopyProjection
@@ -244,7 +264,17 @@ class HomeProjection:
     public_config: PublicConfigProjection
 
 
-def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+def build_shell(
+    request: HttpRequest,
+    *,
+    cart_has_items: bool | None = None,
+) -> StorefrontShellProjection:
+    """Build only the state shared by every storefront route.
+
+    Deliberately excludes ``build_catalog`` and ``_reorder_context``. Those are
+    home-page concerns and are orders of magnitude more expensive than the
+    identity, brand, operational status and copy needed by the global shell.
+    """
     from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
@@ -277,11 +307,6 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         OpeningHoursEntry(label=entry["label"], hours=entry["hours"])
         for entry in _format_opening_hours()
     )
-
-    last_ref, last_items = _reorder_context(request)
-
-    catalog = build_catalog(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
-    featured = tuple((catalog.featured or catalog.items)[:3])
 
     origin_channel = None
     try:
@@ -319,10 +344,8 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         ordering_off=not accepting_orders(STOREFRONT_CHANNEL_REF),
     )
 
-    return HomeProjection(
+    return StorefrontShellProjection(
         omotenashi=omotenashi,
-        hero_copy=_home_hero_copy(omotenashi),
-        sections_copy=_home_sections_copy(omotenashi, default_city=shop_proj.default_city),
         auth_copy=_auth_copy(omotenashi),
         pwa_copy=_pwa_copy(omotenashi),
         shop=shop_proj,
@@ -335,12 +358,37 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
             status=status_dict,
             opening_hours=hours,
         ),
+        origin_channel=origin_channel,
+        public_config=public_config,
+    )
+
+
+def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+    shell = build_shell(request, cart_has_items=cart_has_items)
+    last_ref, last_items = _reorder_context(request)
+    catalog = build_catalog(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
+    featured = tuple((catalog.featured or catalog.items)[:3])
+
+    return HomeProjection(
+        omotenashi=shell.omotenashi,
+        hero_copy=_home_hero_copy(shell.omotenashi),
+        sections_copy=_home_sections_copy(
+            shell.omotenashi,
+            default_city=shell.shop.default_city,
+        ),
+        auth_copy=shell.auth_copy,
+        pwa_copy=shell.pwa_copy,
+        shop=shell.shop,
+        shop_status=shell.shop_status,
+        notices=shell.notices,
+        opening_hours=shell.opening_hours,
+        faq=shell.faq,
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
         featured_items=featured,
-        origin_channel=origin_channel,
-        public_config=public_config,
+        origin_channel=shell.origin_channel,
+        public_config=shell.public_config,
     )
 
 
