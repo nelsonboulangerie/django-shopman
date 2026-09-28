@@ -44,7 +44,7 @@ def test_copy_migration_updates_known_defaults_and_preserves_operator_edits():
 
     from shopman.shop.models import NotificationTemplate, OmotenashiCopy
 
-    migration = import_module("shopman.shop.migrations.0081_access_link_button_copy")
+    migration = import_module("shopman.shop.migrations.0082_access_link_button_copy")
     NotificationTemplate.objects.update_or_create(
         event=migration.ACCESS_EVENT,
         defaults={

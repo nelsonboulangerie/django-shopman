@@ -122,6 +122,6 @@ def backwards(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0080_order_rescheduled_notification_template")]
+    dependencies = [("shop", "0081_order_updated_notification_template")]
 
     operations = [migrations.RunPython(forwards, backwards)]
