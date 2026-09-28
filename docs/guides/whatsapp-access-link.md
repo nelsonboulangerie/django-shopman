@@ -193,9 +193,13 @@ O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
    `NotificationTemplate` e os botões ficam no adapter do Shopman:
    - com sacola: `Continuar pedido`;
    - sem sacola: `Entrar na loja`;
-   - quando o login começou no site: acrescenta `Não fui eu`;
+   - quando o login começou no site: envia primeiro um balão curto com
+     `Encerrar acesso` e depois o balão principal;
+   - cada balão contém somente um botão de URL, conforme o contrato real do
+     WhatsApp na conta ManyChat;
    - se o ManyChat rejeitar explicitamente os botões, o Shopman tenta uma única vez
-     em texto simples, com os links nomeados.
+     em texto simples, com os links nomeados, e registra a degradação sem dados do
+     cliente.
 
    O External Request ainda recebe `access_url`, `has_context`, `handoff_expired` e
    `access_flow` para diagnóstico. Não grave o token em campo persistente do contato

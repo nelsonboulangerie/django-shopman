@@ -162,6 +162,30 @@ com a prévia do servidor e o PIN; "Editar encomenda" e "Cancelar e refazer" no
 detalhe; cards "Estorno na maquininha" e a devolução "encomenda ficou mais barata" no
 *Precisa de você*.
 
+**PR 3 — as pendências das duas primeiras** (`claude/encomenda-editar-pendencias`):
+- **Gesto que o serviço não grava sai da tela**: no modo edição o carrinho fica sem
+  desconto e sem observação de item (teclado só com "Qtd", seleção múltipla sem
+  desconto em lote), com a frase do porquê; o chip do cliente (e o F6) não troca o
+  cliente — diz por quê. Desconto de pedido, gorjeta e cupom moram no pagamento, que o
+  modo edição não abre.
+- **Cancelar e refazer com a venda pré-montada**: depois do cancelamento de sempre
+  (política/PIN), `POST pos/preorders/<ref>/redo-tab/` (`pos_edit_session.open_redo_tab`)
+  abre a comanda comum `Refazer <ref>` com itens (preço de hoje), cliente, recebimento,
+  data e observação; pagamento e "CPF na nota" ficam para o fechamento. Data que não
+  vale mais vem para a primeira data aceita, sem horário, com o aviso por extenso.
+  Retomada enquanto aberta; recusada depois que uma venda fechou nela.
+- **Peso na edição**: a peça nova entra pela etiqueta (ou pelo peso, se a loja lança
+  pelo peso), uma linha por peça, com a mesma conversão da venda
+  (`weighed_sale.resolve`) e o preço de catálogo do canal; a peça que já estava não
+  muda de peso, e a comanda virtual a mostra com o peso e o preço vendidos (antes o
+  parser a zerava para 1 kg).
+- **CPF da entrega na edição**: a recusa `delivery_tax_id_*` abre o campo do documento
+  na própria caixa de "Salvar alterações", com a conferência da venda
+  (`presentation/taxId`); o cadastro só empresta o valor inicial.
+- **Últimas vendas pela saída** (PR própria, `claude/ultimas-vendas-pela-saida`): entram também os pedidos do PDV com retirada concluída
+  ou entrega despachada na janela da emissão tardia (a venda fiscal é a da saída,
+  #1173); a linha diz "Retirada hoje às …" e o total é o efetivo.
+
 ## Fora de escopo, registrado
 
 - Capacidade por janela de retirada (`pickup_slots` não tem) — só se o negócio pedir.

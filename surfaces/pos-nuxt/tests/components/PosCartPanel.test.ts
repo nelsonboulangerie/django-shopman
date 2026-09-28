@@ -793,3 +793,50 @@ describe("PosCartPanel — conclusão da ação em lote", () => {
     });
   }
 });
+
+/**
+ * Edição de encomenda (WP-E6): o serviço de edição não grava desconto nem
+ * observação de item. O gesto some da tela — com a frase do porquê — em vez de
+ * deixar o operador lançar algo que desaparece ao salvar.
+ */
+describe("PosCartPanel — sem desconto nem observação de item quando não gravam", () => {
+  const REASON = "Na edição da encomenda não há desconto nem observação por item.";
+
+  it("o teclado fica só com a quantidade, e a frase diz por quê", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ lineAdjustmentsBlockedReason: REASON }),
+    });
+    const modos = wrapper.findAll("button").map((b) => b.text().trim());
+    expect(modos).toContain("Qtd");
+    expect(modos).not.toContain("Desc %");
+    expect(modos).not.toContain("Desc R$");
+    expect(modos).not.toContain("Obs.");
+    expect(wrapper.find("[data-line-adjustments-blocked]").text()).toContain(REASON);
+  });
+
+  it("a linha aberta não oferece Observação", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ lineAdjustmentsBlockedReason: REASON }),
+    });
+    await wrapper.find('[aria-label="Editar Café"]').trigger("click");
+    expect(wrapper.findAll("button").map((b) => b.text().trim())).not.toContain("Observação");
+  });
+
+  it("marcar itens não vira desconto em lote", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ lineAdjustmentsBlockedReason: REASON }),
+    });
+    await wrapper.find('[data-item-select="L-PAO"]').trigger("keydown", { key: " " });
+    await wrapper.find('[data-item-select="L-CAFE"]').trigger("keydown", { key: " " });
+    await wrapper.find('[aria-label="Dígito 2"]').trigger("click");
+    expect(wrapper.emitted("setDiscount")).toBeUndefined();
+    expect(wrapper.find('[aria-label="Dígito 2"]').attributes("disabled")).toBeDefined();
+  });
+
+  it("sem o motivo, a venda segue com os modos de sempre", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    const modos = wrapper.findAll("button").map((b) => b.text().trim());
+    expect(modos).toEqual(expect.arrayContaining(["Qtd", "Desc %", "Desc R$", "Obs."]));
+    expect(wrapper.find("[data-line-adjustments-blocked]").exists()).toBe(false);
+  });
+});

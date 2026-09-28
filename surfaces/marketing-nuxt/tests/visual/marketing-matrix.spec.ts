@@ -283,6 +283,35 @@ test.describe("painel", () => {
   });
 });
 
+test.describe("workspace Marketing V2", () => {
+  test("campanhas mostram Google e formatos no mobile", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=campaigns", V390);
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Planeje uma vez, adapte por destino",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Google", { exact: true })).toBeVisible();
+    await expect(page.getByText("Atualização · Evento · Oferta")).toBeVisible();
+    await expectStableScreenshot(page, "v2__campaigns", V390);
+  });
+
+  test("plataformas distinguem prontidão e catálogo no desktop", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-normal", "/v2?area=platforms", V1280);
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Plataformas possíveis e situação real",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("TikTok via Relay")).toBeVisible();
+    await expectStableScreenshot(page, "v2__platforms", V1280);
+  });
+});
+
 test.describe("cartão de anúncio", () => {
   test("edição longa não perde ações no menor mobile", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V320);

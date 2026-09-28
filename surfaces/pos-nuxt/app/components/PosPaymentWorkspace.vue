@@ -57,7 +57,7 @@ import {
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { deliveryTaxIdMissing, isValidTaxId } from "~/presentation/taxId";
+import { deliveryTaxIdMissing, maskTaxId, taxIdEcho as taxIdEchoFor } from "~/presentation/taxId";
 import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
@@ -310,8 +310,10 @@ const reviewWarnings = computed(() => {
       // podendo ficar defasado ao lado de um cabeçalho já com o nome do cliente.
       // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
       && w.code !== "customer_required_for_scheduled"
-      // Endereço incompleto para a nota: quem fala é o bloqueio do Validar.
-      && w.code !== "delivery_address_incomplete",
+      // Endereço incompleto para a nota e mínimo de entrega: quem fala é o
+      // bloqueio do Validar.
+      && w.code !== "delivery_address_incomplete"
+      && w.code !== "below_delivery_minimum",
   );
   return fromServer;
 });
@@ -389,39 +391,13 @@ const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.sele
 // abaixo dizia "Documento incompleto" sobre um número que parecia perfeito.
 // Guardamos só dígitos (é o que o intent envia de qualquer jeito) e cortamos na
 // origem.
-const invoiceTaxIdMasked = computed(() => {
-  const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 11) {
-    return d
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-  return d
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
-});
+const invoiceTaxIdMasked = computed(() => maskTaxId(props.invoiceTaxId));
 
 // "Sai na nota" é uma PROMESSA, e promessa se confere. Onze dígitos quaisquer
 // viravam um check verde: o operador lia de volta com confiança, o cliente
 // confirmava, e a rejeição da NFC-e chegava com ele já na rua. Contar dígito não
 // é conferir documento — quem confere é o dígito verificador.
-const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
-  const digits = props.invoiceTaxId.replace(/\D/g, "");
-  if (!digits) return { ok: false, text: "Digite o documento. Sem ele, a nota sai sem CPF." };
-  if (digits.length !== 11 && digits.length !== 14) {
-    return { ok: false, text: "Documento incompleto: a nota sai sem CPF." };
-  }
-  if (!isValidTaxId(digits)) {
-    return { ok: false, text: "Documento inválido. Confira com o cliente." };
-  }
-  if (digits.length === 11) {
-    return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
-  }
-  return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
-});
+const taxIdEcho = computed(() => taxIdEchoFor(props.invoiceTaxId));
 
 // "Do cadastro" só se o valor ainda É o do cadastro: assim que o operador troca,
 // o aviso some, porque aí não é mais o documento do cliente que está ali.
@@ -574,7 +550,12 @@ const kitchenSurplus = computed(() => props.items.reduce((total, item) => total 
 // A frase é presentation PURA (`kitchenHandoffNote`): ela conta unidades, como o
 // botão de enviar, e não linhas — "1 item já está na cozinha" com três chás numa
 // linha só era o número errado no lugar onde o operador confere o que já saiu.
-const kitchenNote = computed(() => kitchenHandoffNote(props.items));
+// Encomenda para OUTRO dia: a cozinha só a recebe na data combinada. As duas
+// datas são ISO (AAAA-MM-DD) e o "hoje" é o da loja, vindo do servidor.
+const kitchenDeferred = computed(() =>
+  Boolean(props.scheduleToday) && (props.deliveryDateEffective || "") > props.scheduleToday,
+);
+const kitchenNote = computed(() => kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value }));
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -882,6 +863,20 @@ const ctaBlock = computed<{
       message: addressGap.message,
       hint: "A nota fiscal da entrega sai com o endereço completo.",
       action: { label: "Completar endereço", run: () => { fulfillmentSheetOpen.value = true; } },
+    };
+  }
+  // `below_delivery_minimum`: a gêmea do `DeliveryZoneRule`. A frase é a do
+  // commit, vinda na review; antes dela a recusa só chegava ao Validar — como
+  // 500, que o PDV lia como "cobrança não confirmada".
+  const belowMinimum = props.review?.warnings?.find((w) => w.code === "below_delivery_minimum");
+  if (props.fulfillmentType === "delivery" && belowMinimum) {
+    return {
+      message: belowMinimum.message,
+      hint: "Acrescente itens até o mínimo, ou troque a entrega por retirada.",
+      actions: [
+        { label: "Acrescentar itens", run: returnToCart },
+        { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+      ],
     };
   }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
@@ -1984,6 +1979,7 @@ defineExpose({
     :delivery-fee-override-input="deliveryFeeOverrideInput"
     :delivery-fee-q="deliveryFeeQ"
     :delivery-fee-source="deliveryFeeSource"
+    :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"

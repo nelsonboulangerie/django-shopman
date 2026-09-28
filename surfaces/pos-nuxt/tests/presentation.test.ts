@@ -1529,6 +1529,13 @@ describe("a frase da cozinha no checkout conta unidades", () => {
       .toBe("Ao finalizar, o item vai para a cozinha.");
   });
 
+  it("encomenda para outro dia: vai para a cozinha no DIA, não ao finalizar", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })], { deferred: true }))
+      .toBe("O item vai para a cozinha no dia da encomenda.");
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })], { deferred: true }))
+      .toBe("Os 3 itens vão para a cozinha no dia da encomenda.");
+  });
+
   it("parte na cozinha: os dois números, ambos em unidades", () => {
     const note = kitchenHandoffNote([
       linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),

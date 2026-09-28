@@ -8,6 +8,7 @@
 // gerente, que sobe por cima deste diálogo (na página).
 import type { DeliveryPaymentMethod } from "~/presentation/orderEdit";
 import { DELIVERY_PAYMENT_METHODS, orderEditSettlementLine, orderEditTotalLine } from "~/presentation/orderEdit";
+import { isValidTaxId, maskTaxId, taxIdEcho } from "~/presentation/taxId";
 import type { OrderEditPreview } from "~/types/preorders";
 
 const props = defineProps<{
@@ -18,14 +19,28 @@ const props = defineProps<{
   error?: string;
   needsPaymentMethod?: boolean;
   deliveryPaymentMethod?: DeliveryPaymentMethod | "";
+  /** A entrega com nota pediu o CPF/CNPJ (regra de 24/09): o campo mora aqui. */
+  needsTaxId?: boolean;
+  deliveryTaxId?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [boolean];
   "update:deliveryPaymentMethod": [DeliveryPaymentMethod];
+  "update:deliveryTaxId": [string];
   confirm: [];
   retry: [];
 }>();
+
+// A mesma conferência do "CPF na nota" da venda: máscara, dígito verificador e
+// o eco do que vai sair na nota.
+const taxIdMasked = computed(() => maskTaxId(props.deliveryTaxId || ""));
+const taxIdFeedback = computed(() => taxIdEcho(props.deliveryTaxId || ""));
+const taxIdReady = computed(() => isValidTaxId(props.deliveryTaxId || ""));
+
+function typeTaxId(value: string | number) {
+  emit("update:deliveryTaxId", String(value || "").replace(/\D/g, "").slice(0, 14));
+}
 
 const totalLine = computed(() => (props.preview ? orderEditTotalLine(props.preview) : ""));
 const settlementLine = computed(() => (props.preview ? orderEditSettlementLine(props.preview) : ""));
@@ -77,6 +92,31 @@ function pickMethod(method: DeliveryPaymentMethod) {
           </UiButton>
         </div>
       </div>
+
+      <!-- Entrega com nota sem documento: o CPF/CNPJ é pedido AQUI, no gesto de
+           salvar — não em outra tela que o operador teria de achar. -->
+      <form v-if="needsTaxId" class="grid gap-2" data-order-edit-tax-id @submit.prevent="taxIdReady && emit('retry')">
+        <label class="grid gap-1 text-sm font-medium">
+          CPF ou CNPJ que sai na nota da entrega
+          <UiInput
+            :model-value="taxIdMasked"
+            inputmode="numeric"
+            class="h-11 tabular-nums"
+            placeholder="000.000.000-00"
+            aria-label="CPF ou CNPJ que sai na nota da entrega"
+            :maxlength="18"
+            :disabled="busy"
+            @update:model-value="typeTaxId"
+          />
+        </label>
+        <p class="flex items-center gap-1.5 text-xs" :class="taxIdFeedback.ok ? 'text-muted-foreground' : 'text-warning'">
+          <Icon :name="taxIdFeedback.ok ? 'lucide:check' : 'lucide:triangle-alert'" class="size-3.5 shrink-0" />
+          {{ taxIdFeedback.text }}
+        </p>
+        <UiButton type="submit" variant="outline" :disabled="busy || !taxIdReady" data-order-edit-tax-id-apply>
+          Calcular de novo com este documento
+        </UiButton>
+      </form>
 
       <template v-if="preview">
         <p v-if="nothingChanged" class="text-sm text-muted-foreground" data-order-edit-nothing>

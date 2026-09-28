@@ -1,7 +1,7 @@
 import type { NuxtApp } from '#app'
 import type { HomeResponse } from '~/types/shopman'
 
-export const STOREFRONT_HOME_KEY = 'shopman-shell-home'
+export const STOREFRONT_HOME_KEY = 'shopman-page-home'
 
 function readCachedHome (
   key: string,
@@ -13,11 +13,9 @@ function readCachedHome (
 }
 
 /**
- * Projeção canônica da casa, sessão e sacola usada pelo shell e pela home.
- *
- * Compartilhar a chave é importante: o shell já precisa desses dados antes de
- * renderizar qualquer página. A rota `/` não deve pedir a mesma projeção pesada
- * outra vez, e consumidores tardios (como o login) podem reaproveitar o payload.
+ * Projeção completa exclusiva da home, incluindo catálogo e histórico.
+ * O shell global usa `useStorefrontShell`; compartilhar esta projeção pesada
+ * com todas as rotas faria cada página reconstruir o catálogo antes do SSR.
  */
 export function useStorefrontHome () {
   const apiPath = useShopmanApiPath()

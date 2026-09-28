@@ -1,7 +1,7 @@
 # Marketing V2 — baseline de paridade funcional
 
 **Estado:** gate obrigatório para implementação e cutover  
-**Base verificada:** `origin/main` em `cbf082f71`
+**Base verificada:** `origin/main` em `40c6d56b1`
 **Superfície:** `surfaces/marketing-nuxt` e contratos canônicos de Marketing
 
 ## Decisão
@@ -95,18 +95,18 @@ desenvolvimento da V2; bloqueia torná-la padrão ou remover a V1.
 
 | Jornada | Prova mínima | Estado inicial |
 | --- | --- | --- |
-| Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | Compartilhada por `/` e `/v2` |
+| Abrir o app e respeitar acesso | testes de sessão/capability + smoke autenticado | `/v2` usa o mesmo casco e as mesmas projeções canônicas, com workspace próprio para Hoje, Campanhas, Ofertas e Plataformas |
 | Criar e editar campanha | component/e2e contra contrato real | Composer de cinco etapas integrado; modelos já aceitam composição explícita por destino executável; múltiplas composições da mesma plataforma ainda pendentes |
-| Ligar/desligar campanha | teste de Action e CAS | Pendente na V2 |
-| Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Pendente na V2 |
+| Ligar/desligar campanha | teste de Action e CAS | Integrado: `edit_campaign` exata/versionada habilita o controle; `base_updated_at` é obrigatório, conflito recarrega e mutação concorrente não duplica PATCH |
+| Acionar campanha para revisão | receipt único e nenhum efeito no `fire` | Integrado: entrada V2 usa `fire_campaign`, chave idempotente e challenge do servidor; receipt segue direto para a revisão, antes de qualquer entrega |
 | Revisar, editar, aprovar, agendar e rejeitar | matriz por modo e cerimônia | Painel compartilhado; matriz completa pendente |
-| Configurar e testar plataforma | capability + teste seguro por conector | Pendente na V2 |
+| Configurar e testar plataforma | capability + teste seguro por conector | Entrada V2 mostra todas as plataformas conhecidas, prontidão e formatos e abre a configuração canônica no destino exato; novos conectores e wizard de credenciais seguem pendentes por adapter |
 | Criar/editar/excluir modelo | CRUD e dependência protegida | CRUD preservado; Google Atualização/Evento/Oferta e CTAs configuráveis no modelo |
 | Consultar histórico e detalhe | cursor, legado e resultado por destino | Pendente na V2 |
 | Recuperar falha/`unknown` | retry seguro e reconcile sem reenvio | Pendente na V2 |
 | Retomar rascunho/sessão | conflito, expiração e owner boundary | Pendente na V2 |
 | Operar cada formato novo | golden contract + sandbox proof + canário | Pendente por formato |
-| Promoção/cupom | concorrência, reserva, aplicação, estorno e auditoria | Pendente |
+| Promoção/cupom | concorrência, reserva, aplicação, estorno e auditoria | Ofertas projetadas são listadas na V2 e podem iniciar campanha com seleção preservada; CRUD e lifecycle permanecem bloqueados até existir Action versionada e auditável |
 
 ## Gate de PR para cada fatia V2
 
@@ -123,15 +123,33 @@ Todo PR da V2 deve declarar:
 
 É proibido aprovar um PR cuja única evidência seja a fidelidade à prévia estática.
 
-## Área assumida na fatia de composição por destino
+## Área assumida na fatia de operação de campanhas
 
-- `surfaces/marketing-nuxt/app/components/AnnouncementTemplateForm.vue`;
-- `surfaces/marketing-nuxt/app/components/PlatformCompositionEditor.vue`;
-- testes de componente correspondentes;
+- `surfaces/marketing-nuxt/app/pages/campaigns.vue`;
+- `surfaces/marketing-nuxt/app/composables/useCampaigns.ts`;
+- `surfaces/marketing-nuxt/app/presentation/campaignActions.ts`;
+- testes unitários/E2E e fixture hermética correspondentes;
 - este baseline e o contrato da superfície.
 
 Não há mudança de API, projection Django, migration, adapter, configuração,
-`package.json` ou lockfile. O payload existente de `platform_variants` passa a ser
-editado de forma explícita por destino: texto comum como padrão, exceção opcional e
-somente formatos/campos da allow-list executável. O catálogo teórico permanece fora
-das escolhas operacionais.
+`package.json` ou lockfile. A tela passa a obedecer à Action `edit_campaign` já
+projetada pelo servidor; o PATCH existente continua sendo o dono da escrita e exige
+`base_updated_at`. O disparo reutiliza sem alteração a Action `fire_campaign`, o
+challenge, a idempotência e o receipt atuais.
+
+## Área assumida na fatia do workspace V2
+
+- entrada `/v2` e componentes exclusivos do workspace;
+- navegação superior canônica de Hoje, Campanhas, Ofertas e Plataformas, sem uma
+  segunda barra interna concorrente;
+- apresentação que combina allow-list executável, catálogo de capacidades e
+  prontidão viva sem confundir essas três verdades;
+- deep links para o composer e a configuração canônicos, incluindo oferta e
+  plataforma pré-selecionadas;
+- fixture hermética, testes unitários, E2E e acessibilidade correspondentes.
+
+Esta fatia não altera adapter, credencial, API externa, projection Django, migration,
+`package.json` ou lockfile. Google fica sempre visível na experiência V2; quando o
+servidor o inclui na allow-list, o operador pode selecioná-lo e configurar
+Atualização, Evento ou Oferta no composer já existente. Uma conexão bloqueada ou não
+configurada permanece visível com seu estado real, em vez de desaparecer.

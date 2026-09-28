@@ -7,6 +7,47 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 
+def test_shell_projection_never_builds_catalog_or_order_history(rf, monkeypatch):
+    from shopman.shop.models import Shop
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation import home
+
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+
+    def heavy_path_called(*_args, **_kwargs):
+        raise AssertionError("the global shell entered a home-only heavy path")
+
+    monkeypatch.setattr(home, "build_catalog", heavy_path_called)
+    monkeypatch.setattr(home, "_reorder_context", heavy_path_called)
+
+    payload = projection_data(home.build_shell(rf.get("/api/v1/storefront/shell/")))
+
+    assert payload["shop"]["brand_name"]
+    assert payload["pwa_copy"]["install_cta"]["title"] == "Instalar"
+    assert "featured_items" not in payload
+    assert "last_order_items" not in payload
+
+
+def test_shell_endpoint_returns_global_state_without_home_catalog(client, monkeypatch):
+    from shopman.shop.models import Shop
+    from shopman.storefront.presentation import home
+
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+
+    def heavy_path_called(*_args, **_kwargs):
+        raise AssertionError("shell endpoint rebuilt the catalog")
+
+    monkeypatch.setattr(home, "build_catalog", heavy_path_called)
+
+    response = client.get("/api/v1/storefront/shell/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"shell", "cart"}
+    assert payload["shell"]["shop"]["brand_name"]
+    assert "featured_items" not in payload["shell"]
+
+
 def test_home_projection_exposes_browser_key_but_never_server_key(rf, settings):
     from shopman.shop.models import Shop
     from shopman.storefront.api.projections import projection_data

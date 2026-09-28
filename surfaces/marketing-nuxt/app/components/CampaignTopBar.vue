@@ -14,14 +14,56 @@
 // e vale para os outros apps, que tinham o mesmo defeito sem ter notado.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
-const sections: OperatorSection[] = [
+const route = useRoute();
+const inV2 = computed(
+  () => route.path === "/v2" || route.query.experience === "v2",
+);
+const v2SectionRefs = new Set(["today", "campaigns", "offers", "platforms"]);
+const activeV2Section = computed(() => {
+  if (!inV2.value) return undefined;
+  if (route.path === "/campaigns" || route.path === "/templates")
+    return "campaigns";
+  if (route.path === "/platforms") return "platforms";
+  if (route.path !== "/v2") return "today";
+  const requested = String(route.query.area || "today");
+  return v2SectionRefs.has(requested) ? requested : "today";
+});
+
+const v2Sections: OperatorSection[] = [
+  {
+    key: "today",
+    label: "Hoje",
+    icon: "lucide:sparkles",
+    to: "/v2?area=today",
+  },
+  {
+    key: "campaigns",
+    label: "Campanhas",
+    icon: "lucide:send",
+    to: "/v2?area=campaigns",
+    match: ["/campaigns", "/templates"],
+  },
+  {
+    key: "offers",
+    label: "Ofertas e cupons",
+    icon: "lucide:badge-percent",
+    to: "/v2?area=offers",
+  },
+  {
+    key: "platforms",
+    label: "Plataformas",
+    icon: "lucide:share-2",
+    to: "/v2?area=platforms",
+    match: ["/platforms"],
+  },
+];
+
+const legacySections: OperatorSection[] = [
   {
     key: "board",
     label: "Painel",
     icon: "lucide:megaphone",
     to: "/",
-    // /v2 é outra entrada para o mesmo painel operacional durante a convivência.
-    match: ["/v2"],
   },
   // "Campanhas", não "Regras": a entidade é `Campaign`, e a tela tinha um terceiro nome.
   // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,
@@ -35,12 +77,25 @@ const sections: OperatorSection[] = [
   },
   // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
   // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
-  { key: "platforms", label: "Plataformas", icon: "lucide:share-2", to: "/platforms" },
+  {
+    key: "platforms",
+    label: "Plataformas",
+    icon: "lucide:share-2",
+    to: "/platforms",
+  },
 ];
+
+const sections = computed<OperatorSection[]>(() =>
+  inV2.value ? v2Sections : legacySections,
+);
 </script>
 
 <template>
-  <OperatorAppBar :sections="sections" label="Seções do Marketing">
+  <OperatorAppBar
+    :sections="sections"
+    :current="activeV2Section"
+    label="Seções do Marketing"
+  >
     <template #end>
       <MarketingNotificationsBell />
     </template>

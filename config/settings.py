@@ -161,9 +161,9 @@ SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
 )
 
-# Continuum 0.2 — piloto conservador do cardápio. Tudo nasce desligado: o menu
-# canônico continua sendo o único caminho visível até a evidência do shadow.
-# O kill switch domina as duas flags e devolve o runtime ao fetch monolítico.
+# Continuum 0.2 — piloto conservador do cardápio. Tudo nasce desligado. O
+# consumidor Nuxt tem flag própria e, sem snapshot, volta ao fetch monolítico.
+# O kill switch domina as duas flags Django e fecha o endpoint imediatamente.
 SHOPMAN_CONTINUUM = {
     "catalog_shadow_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED", False),
     "catalog_snapshot_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED", False),
@@ -172,7 +172,7 @@ SHOPMAN_CONTINUUM = {
     # Mesmo que um callback on_commit/signal se perca, o primeiro request depois
     # desta janela volta à fonte canônica. O default acompanha fresh_for_ms para
     # que um snapshot nunca seja renovado como fresco sem revalidação do banco.
-    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "30000")),
+    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "300000")),
     "stale_if_error_ms": int(os.environ.get("SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS", "120000")),
     "snapshot_cache_seconds": int(os.environ.get("SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS", "300")),
     "limits": {

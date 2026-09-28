@@ -772,6 +772,13 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
   const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
+  // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
+  // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
+  const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
+    if (review.value) return "resolved";
+    if (!checkoutMode.value) return "at_payment";
+    return reviewFailed.value ? "failed" : "calculating";
+  });
   const deliveryDistanceKm = computed(() => review.value?.delivery_distance_km ?? null);
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo — a review só
@@ -1526,7 +1533,11 @@ export function usePosSale(deps: PosSaleDeps) {
    * a monta com os itens (preço vendido), o cliente, o recebimento, a data e a
    * observação do pedido. Carrega como qualquer comanda e vai direto à venda.
    */
-  async function loadEditTab(payload: POSTabPayload) {
+  /**
+   * Carrega na venda uma comanda que o SERVIDOR montou: a comanda virtual da
+   * edição de encomenda e a comanda do "Cancelar e refazer".
+   */
+  async function loadPreparedTab(payload: POSTabPayload) {
     await setFromTabPayload(payload);
     showTabs.value = false;
   }
@@ -3333,6 +3344,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // entrega — o que o servidor respondeu, para a tela PERGUNTAR em vez de pedir
     deliveryFeeQ,
     deliveryFeeSource,
+    deliveryFeeStatus,
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
@@ -3417,7 +3429,7 @@ export function usePosSale(deps: PosSaleDeps) {
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
-    loadEditTab,
+    loadPreparedTab,
     editIntent,
     openMoveDialog,
     submitMove,

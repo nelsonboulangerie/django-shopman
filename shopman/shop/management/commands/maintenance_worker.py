@@ -18,6 +18,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
   check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
@@ -164,6 +165,9 @@ MAINTENANCE_COMMANDS = (
     # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
     "run_intent_pilot",
     "check_directive_health",
+    # Resultado incerto no provedor não pode depender do callback original: o
+    # comando recupera incidentes antigos/órfãos e nunca reenvia ao cliente.
+    "check_stock_alert_delivery_sla",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que
     # alguém desmarcou a categoria, é o produto que já está invisível hoje. O

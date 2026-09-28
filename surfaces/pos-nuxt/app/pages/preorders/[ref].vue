@@ -13,7 +13,8 @@ import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { HandOverBody } from "~/presentation/preorderActions";
-import { handOverCta } from "~/presentation/preorderActions";
+import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { fulfillmentIcon } from "~/presentation/orderTickets";
 import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
 
@@ -45,8 +46,9 @@ async function confirmReschedule(choice: { date: string; slot: string; reason: s
   if (await actions.reschedule(choice)) rescheduleOpen.value = false;
 }
 const cancelReason = ref("");
-// "Cancelar e refazer": o cancelamento é o de sempre; depois dele a tela manda
-// registrar de novo, na venda (a nota autorizada não se edita).
+// "Cancelar e refazer": o cancelamento é o de sempre (política e PIN); depois
+// dele a venda abre numa comanda comum pré-montada com a encomenda cancelada,
+// para o operador ajustar e fechar a venda nova (a nota autorizada não se edita).
 const redoAfterCancel = ref(false);
 
 function editOrder() {
@@ -71,8 +73,17 @@ async function confirmCancel(reason: string, managerApproval: ManagerApproval | 
   cancelOpen.value = false;
   if (redoAfterCancel.value) {
     redoAfterCancel.value = false;
-    toast.info("Encomenda cancelada. Registre de novo em Encomendas, na venda, com os itens certos.");
-    await navigateTo("/");
+    const redo = await actions.redo(ref_.value);
+    if (!redo) {
+      await navigateTo("/");
+      return;
+    }
+    // A mesma régua da tela de venda (`index.vue`): sem turno, ela manda à
+    // antesala antes de abrir a comanda.
+    const needsOpenShift = requiresOpenShiftForSale(pos.value?.checkout?.capabilities?.cash_management)
+      && !pos.value?.has_open_cash_session;
+    toast.info(redoNotice(redo.redo, { needsOpenShift }));
+    await navigateTo({ path: "/", query: { redo: ref_.value } });
   }
 }
 

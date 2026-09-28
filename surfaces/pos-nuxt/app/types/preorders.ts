@@ -203,6 +203,21 @@ export interface OrderEditSessionResponse {
   edit: OrderEditContext;
 }
 
+/** "Cancelar e refazer": a comanda de venda comum pré-montada com a encomenda cancelada. */
+export interface PreorderRedoContext {
+  order_ref: string;
+  /** A comanda já estava aberta com itens: nada foi remontado. */
+  resumed: boolean;
+  /** A data antiga não valia mais: a razão e a data com que a comanda veio. */
+  schedule_dropped: string;
+}
+
+export interface PreorderRedoResponse {
+  ok: boolean;
+  tab: POSTabPayload;
+  redo: PreorderRedoContext;
+}
+
 export type OrderEditSettlementKind = "none" | "collect" | "refund_gateway" | "refund_cash" | "refund_card_machine";
 
 export interface OrderEditPreviewItem {

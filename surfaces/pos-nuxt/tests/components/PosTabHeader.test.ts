@@ -28,3 +28,23 @@ it("balcão esconde entrega e data; modo encomenda emite intenção sem apagar i
   expect(modeButton("Balcão").classes()).not.toContain("bg-primary");
   w.unmount();
 });
+
+it("cliente travado (edição de encomenda): o chip diz por quê e não abre o modal", async () => {
+  const reason = "O cliente da encomenda não muda na edição.";
+  const w = await mountSuspended(PosTabHeader, { props: {
+    salesMode: "order", tabDisplay: "", hasOpenTab: true, canRename: false,
+    customerName: "Ana", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "pickup",
+    fulfillmentLabel: "Retirada", scheduleLabel: "sáb, 04/10", scheduled: true, loading: false,
+    customerLockedReason: reason,
+  }, global: { stubs: { PosCustomerModal: true } } });
+  const chip = w.find('[data-context-entry="customer"]');
+  expect(chip.attributes("title")).toBe(reason);
+  await chip.trigger("click");
+  expect(w.emitted("customerLocked")).toEqual([[reason]]);
+  // F6 chega pelo `openCustomer` exposto: a mesma trava.
+  (w.vm as unknown as { openCustomer: () => void }).openCustomer();
+  expect(w.emitted("customerLocked")).toHaveLength(2);
+  expect(w.findComponent({ name: "PosCustomerModal" }).attributes("open")).not.toBe("true");
+  w.unmount();
+});

@@ -39,6 +39,7 @@ from shopman.storefront.presentation import (
     build_legal,
     build_product_detail,
     build_reorder_conflict,
+    build_shell,
     build_site,
     notify_subscribed_skus,
 )
@@ -293,6 +294,32 @@ class StorefrontHomeView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
+        summary="Storefront global shell projection",
+        responses={200: OpenApiResponse(description="Global shell state plus cart projection.")},
+    ),
+)
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class StorefrontShellView(APIView):
+    """GET /api/v1/storefront/shell/ — estado global sem reconstruir catálogo."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        shell = build_shell(
+            request=request,
+            cart_has_items=cart.items_count > 0 and not cart.is_empty,
+        )
+        return Response({
+            "shell": projection_data(shell),
+            "cart": projection_data(cart),
+        })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
         summary="Storefront public site projection",
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
@@ -426,6 +453,7 @@ class StorefrontMenuView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    include_cart = True
 
     def get(self, request, collection: str | None = None):
         with capture_catalog_timing() as timing:
@@ -439,10 +467,9 @@ class StorefrontMenuView(APIView):
                 )
                 with catalog_stage("personalization"):
                     catalog_projection = projection_data(catalog)
-                    payload = {
-                        "catalog": catalog_projection,
-                        "cart": _cart_payload(request),
-                    }
+                    payload = {"catalog": catalog_projection}
+                    if self.include_cart:
+                        payload["cart"] = _cart_payload(request)
 
             shadow = None
             shadow_error = False
@@ -466,7 +493,7 @@ class StorefrontMenuView(APIView):
 
         response_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
         log_catalog_observation(
-            path="storefront_menu",
+            path="storefront_menu" if self.include_cart else "storefront_catalog",
             mode="shadow" if shadow_enabled() else "baseline",
             status=200,
             query_count=timing.query_count,
@@ -485,6 +512,19 @@ class StorefrontMenuView(APIView):
             db_ms=timing.durations_ms.get("db", 0.0),
         )
         return response
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Storefront canonical catalog projection",
+        responses={200: OpenApiResponse(description="Catalog projection without cart projection.")},
+    ),
+)
+class StorefrontCatalogView(StorefrontMenuView):
+    """Catálogo canônico sem reconstruir a sacola já entregue pelo shell."""
+
+    include_cart = False
 
 
 @extend_schema_view(

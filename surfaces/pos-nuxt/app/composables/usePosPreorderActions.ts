@@ -3,7 +3,12 @@ import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
-import type { PreorderDetailResponse, PreorderHandOverResponse, PreorderRescheduleResponse } from "~/types/preorders";
+import type {
+  PreorderDetailResponse,
+  PreorderHandOverResponse,
+  PreorderRedoResponse,
+  PreorderRescheduleResponse,
+} from "~/types/preorders";
 import type { POSProjection } from "~/types/pos";
 
 export interface ManagerChallenge {
@@ -121,6 +126,24 @@ export function usePosPreorderActions(options: {
   }
 
   /**
+   * Refazer, DEPOIS do cancelar (nota autorizada não se edita): a comanda
+   * `Refazer <ref>` nasce no quadro, pré-montada com a encomenda cancelada —
+   * itens, cliente, recebimento, data e observação — para o operador ajustar e
+   * fechar a venda nova. Idempotente no servidor (a mesma comanda é retomada).
+   */
+  async function redo(ref: string): Promise<PreorderRedoResponse | null> {
+    try {
+      return await action.call<PreorderRedoResponse>(
+        `/api/v1/backstage/pos/preorders/${encodeURIComponent(ref)}/redo-tab/`,
+        { body: {} },
+      );
+    } catch (error) {
+      toast.error(`${httpErrorMessage(error, "Não deu para montar a venda nova.")} A encomenda já está cancelada: refaça a encomenda na tela de venda.`);
+      return null;
+    }
+  }
+
+  /**
    * Reagendar: a MESMA rota do Gestor (`/orders/<ref>/reschedule/`, PR #1168). O
    * orquestrador valida a data e move despertador, lembrete, estoque e produção
    * juntos — ou recusa com o motivo, e nada muda.
@@ -153,5 +176,5 @@ export function usePosPreorderActions(options: {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, paidOnline, handOver, cancel, reschedule, dismissManagerChallenge };
+  return { busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, dismissManagerChallenge };
 }

@@ -2918,6 +2918,33 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
     }
 
 
+def _recent_moment_display(moment) -> str:
+    """``14:10`` hoje; ``27/09 14:10`` em outro dia (a lista alcança dias atrás)."""
+    local = timezone.localtime(moment)
+    if local.date() == timezone.localdate():
+        return local.strftime("%H:%M")
+    return local.strftime("%d/%m %H:%M")
+
+
+def _recent_handoff_display(order) -> str:
+    """A saída da encomenda registrada em outro dia: "Retirada hoje às 14:10".
+
+    Só quando a saída caiu em dia diferente do registro — na venda de balcão (ou
+    na encomenda do mesmo dia) o horário do registro já diz tudo.
+    """
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    left_at = order.dispatched_at or order.completed_at
+    if not left_at:
+        return ""
+    local = timezone.localtime(left_at)
+    if local.date() == timezone.localtime(order.created_at).date():
+        return ""
+    day = "hoje" if local.date() == timezone.localdate() else local.strftime("%d/%m")
+    verb = "Saiu para entrega" if get_fulfillment_type(order) == "delivery" else "Retirada"
+    return f"{verb} {day} às {local.strftime('%H:%M')}"
+
+
 def _preorder_days() -> tuple[int, list]:
     from shopman.shop.projections import checkout_context
 
@@ -2933,12 +2960,23 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     reprocessamento de falha, para qualquer venda recente, a qualquer hora.
     Reusa a MESMA projeção fiscal do gestor (``order_queue._fiscal_status``) —
     um estado, duas superfícies, zero divergência.
+
+    "Recente" é a venda FISCAL, não só o registro: a encomenda paga há dias e
+    retirada hoje é venda de hoje para a nota (``fiscal.fiscal_sale_day``, a
+    régua da ``emission_waits_for_handoff``/``late_emission_days``, #1173). Por
+    isso entra também o pedido cuja mercadoria SAIU dentro da janela (retirada
+    concluída ou entrega despachada), e a lista se ordena pelo último desses
+    momentos — senão a emissão avulsa da encomenda retirada hoje não teria onde
+    ser pedida.
     """
+    from django.db.models import Q
+    from django.db.models.functions import Coalesce, Greatest
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.order_queue import _fiscal_status
     from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
     from shopman.shop.services import fiscal as fiscal_service
+    from shopman.shop.services import order_composition
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
@@ -2949,9 +2987,15 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
         first_day = timezone.localdate() - timezone.timedelta(days=late_days)
         since = min(since, timezone.make_aware(timezone.datetime.combine(first_day, timezone.datetime.min.time())))
     orders = (
-        Order.objects.filter(channel_ref=POS_CHANNEL_REF, created_at__gte=since)
+        Order.objects.filter(channel_ref=POS_CHANNEL_REF)
+        .filter(Q(created_at__gte=since) | Q(dispatched_at__gte=since) | Q(completed_at__gte=since))
+        .annotate(last_moment=Greatest(
+            "created_at",
+            Coalesce("dispatched_at", "created_at"),
+            Coalesce("completed_at", "created_at"),
+        ))
         .prefetch_related("items")
-        .order_by("-created_at")[: max(1, min(int(limit), 50))]
+        .order_by("-last_moment", "-created_at")[: max(1, min(int(limit), 50))]
     )
 
     sales = []
@@ -2968,8 +3012,12 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
         sales.append({
             "order_ref": order.ref,
             "status": str(order.status),
-            "created_at_display": timezone.localtime(order.created_at).strftime("%H:%M"),
-            "total_display": format_money(int(order.total_q or 0)),
+            "created_at_display": _recent_moment_display(order.created_at),
+            # A saída da mercadoria da encomenda, quando é ela que traz o pedido
+            # para a lista ("Retirada hoje às 14:10"); vazio na venda de balcão.
+            "handoff_display": _recent_handoff_display(order),
+            # O total que VALE (a encomenda editada tem ajuste), o mesmo da nota.
+            "total_display": format_money(order_composition.effective_total_q(order)),
             "payment_label": " + ".join(payment_method_label(m) for m in methods if m),
             "customer_name": str((data.get("customer") or {}).get("name") or ""),
             "fiscal_status": fiscal_status,

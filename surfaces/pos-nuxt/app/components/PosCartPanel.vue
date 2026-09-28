@@ -54,7 +54,14 @@ const props = defineProps<{
    * encomenda. (Negativo de propósito: prop booleana ausente vira `false`.)
    */
   hideMove?: boolean;
+  /**
+   * Quando presente, desconto e observação de ITEM ficam fora da tela, e esta é
+   * a frase que diz por quê. Na edição de encomenda o serviço não os grava:
+   * mostrar o gesto seria deixar o operador fazer algo que some ao salvar.
+   */
+  lineAdjustmentsBlockedReason?: string;
 }>();
+const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
 const primaryText = computed(() => props.primaryLabel || "Pagamento");
 const primaryIconName = computed(() => props.primaryIcon || "lucide:credit-card");
 const canMove = computed(() => !props.hideMove);
@@ -334,6 +341,7 @@ const noteDialog = ref<{ lineId: string; name: string; text: string } | null>(
   null,
 );
 function openNoteDialog() {
+  if (lineAdjustmentsBlocked.value) return;
   const item = activeItem.value;
   if (!item) return;
   noteDialog.value = {
@@ -446,7 +454,7 @@ function moneyEntryToReais(entry: string): number {
 }
 
 function commitDiscount() {
-  if (props.loading || props.saving) return;
+  if (props.loading || props.saving || lineAdjustmentsBlocked.value) return;
   const targets = discountTargets.value;
   if (!targets.length) return;
   const value =
@@ -470,6 +478,8 @@ function commitDiscount() {
 // E o desconto em R$ é POR UNIDADE — na peça pesada seria "por quilo", que
 // ninguém no balcão quer dizer; nela, desconto é em %.
 const numpadCanType = computed(() => {
+  // Sem desconto de item, a seleção múltipla não tem o que digitar.
+  if (lineAdjustmentsBlocked.value && (selectMode.value || inDiscountMode.value)) return false;
   const weighedActive = !!activeItem.value && isWeighedLine(activeItem.value);
   if (!inDiscountMode.value) return !!activeLineId.value && !weighedActive;
   if (numpadMode.value === "disc_brl" && !selectMode.value && weighedActive) return false;
@@ -534,7 +544,7 @@ function onBackspace() {
 // Entering multi-select switches the numpad to its discount (batch) mode, since
 // batch quantity has no meaning; leaving it restores quantity entry.
 watch(selectMode, (on) => {
-  numpadMode.value = on ? "disc" : "qty";
+  numpadMode.value = on && !lineAdjustmentsBlocked.value ? "disc" : "qty";
   numpadBuffer.value = "";
   numpadFresh.value = true;
 });
@@ -614,8 +624,12 @@ const modes = [
   { ref: "disc_brl", label: "Desc R$" },
   { ref: "note", label: "Obs." },
 ] as const;
+// Os modos que o teclado oferece: só "Qtd" quando desconto e observação de item
+// estão fora da tela (a frase do porquê fica logo abaixo do teclado).
+const visibleModes = computed(() => (lineAdjustmentsBlocked.value ? modes.filter((mode) => mode.ref === "qty") : modes));
 function chooseMode(mode: (typeof modes)[number]["ref"]) {
   if (mutationBusy.value) return;
+  if (lineAdjustmentsBlocked.value && mode !== "qty") return;
   if (mode === "note") openNoteDialog();
   else setMode(mode);
 }
@@ -1012,7 +1026,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               @click.stop="$emit('unfire', item.line_id)"
               >{{ unfireAction.label }}</UiButton
             >
-            <div v-if="!batchMode" class="mt-1 flex justify-between">
+            <div v-if="!batchMode && !lineAdjustmentsBlocked" class="mt-1 flex justify-between">
               <button
                 class="min-h-9 font-medium text-primary"
                 @click="
@@ -1115,7 +1129,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </div>
         <div class="grid grid-rows-4 gap-1">
           <button
-            v-for="mode in modes"
+            v-for="mode in visibleModes"
             :key="mode.ref"
             class="h-11 rounded-md border text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35 disabled:saturate-0"
             :class="
@@ -1134,6 +1148,14 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </button>
         </div>
       </div>
+      <p
+        v-if="lineAdjustmentsBlockedReason"
+        class="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground"
+        data-line-adjustments-blocked
+      >
+        <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ lineAdjustmentsBlockedReason }}</span>
+      </p>
       <div v-if="inDiscountMode" class="mt-2">
         <p class="mb-1 text-xs text-muted-foreground">
           {{

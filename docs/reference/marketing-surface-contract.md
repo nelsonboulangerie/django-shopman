@@ -114,11 +114,35 @@ confirmação, nunca automático.
 
 ## Rotas Nuxt
 
-`/v2` é uma entrada autenticada para o painel operacional compartilhado. Ela não
-redireciona para a prévia estática e não possui comandos próprios: lê as mesmas
-projeções e executa os mesmos Actions, confirmações e receipts da entrada `/`. A
-prévia em `/marketing-v2-preview/index.html` continua sendo somente referência de
-design, sem capacidade operacional.
+`/v2` é a entrada autenticada do workspace Marketing V2. Ela organiza Hoje,
+Campanhas, Ofertas e Plataformas em uma experiência própria, mas não cria um segundo
+backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
+confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
+podem abrir uma campanha com oferta pré-selecionada e podem abrir a conexão de uma
+plataforma específica. Hoje, Campanhas, Ofertas e cupons e Plataformas ocupam a barra
+superior canônica do app na V2; não existe uma segunda barra de abas dentro do
+workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
+somente referência de design, sem capacidade operacional.
+
+O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
+opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma
+plataforma desconectada ou bloqueada permanece visível com o motivo real; somente a
+allow-list do servidor decide se ela entra no composer. Na fixture hermética, Google
+faz parte da matriz normal e expõe Atualização, Evento e Oferta.
+
+Na lista de campanhas, editar e ligar/desligar exigem a Action `edit_campaign` exata
+para o recurso e a versão visíveis. A Action decide se o controle existe e está
+habilitado; o navegador não deduz permissão. O PATCH continua same-origin no recurso
+canônico e sempre leva `base_updated_at`. Action ausente/desatualizada ou relógio de
+leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeção e não
+aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
+bloqueado para não duplicar a intenção.
+
+“Preparar disparo” obedece separadamente à Action `fire_campaign`: recurso, versão,
+href, método, idempotência e exigência de token precisam coincidir. O primeiro POST
+apenas sela a intenção; o challenge `none` é consumido automaticamente porque a
+consequência é criar um anúncio para revisão. O receipt viaja para a tela desse anúncio
+e nenhuma plataforma recebe conteúdo no `fire`.
 
 <!-- marketing-ui-routes:start -->
 - `/`

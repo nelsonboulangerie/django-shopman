@@ -506,6 +506,13 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
+  /* Régua exata do checkout. Em `scroll-margin-top`, aumentar o valor traz o
+   * alvo para BAIXO. A navbar ocupa 4rem e o fio Brass externo, 6px: alinhar a
+   * hairline da etapa nesse limite a faz desaparecer sem engolir conteúdo. */
+  .shop-focus-ruler {
+    scroll-margin-top: calc(4rem + 6px);
+  }
+
   /* ── Superfície Faubourg: card rosé DENTRO de um card claro ────────────────
    * Primeiro consumidor: o login (envio manual do WhatsApp e o formulário do SMS).
    * O texto secundário não pode herdar o `--muted-foreground` do corpo: no tema
@@ -546,6 +553,14 @@
    * decide sozinha (a coluna do desktop leva a ação no fluxo).
    */
   @media (max-width: 767px) {
+    /* Ao digitar, a prioridade é enxergar o campo e o que ele explica. Dock,
+     * navegação e dica de rolagem disputariam a pequena visual viewport com o
+     * teclado. Eles voltam no blur — nenhuma ação ou estado é perdido. */
+    html.shop-form-keyboard-open .shop-bottomnav-bar,
+    html.shop-form-keyboard-open [data-more-below] {
+      display: none;
+    }
+
     .shop-action-dock {
       position: fixed;
       left: 1rem;

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 from importlib import import_module
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 import pytest
 from django.test import override_settings
@@ -77,7 +80,7 @@ def test_copy_migration_updates_known_defaults_and_preserves_operator_edits():
 
 @pytest.mark.django_db
 @override_settings(SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=True)
-def test_site_login_hides_both_urls_behind_named_buttons():
+def test_site_login_uses_two_bubbles_with_one_url_button_each():
     access_url = "https://loja.test/a?t=secret"
     revoke_url = "https://loja.test/encerrar-acesso#ref"
 
@@ -94,13 +97,25 @@ def test_site_login_hides_both_urls_behind_named_buttons():
 
     assert sent is True
     _endpoint, payload, _config = api.call_args.args
-    message = payload["data"]["content"]["messages"][0]
-    assert access_url not in message["text"]
-    assert revoke_url not in message["text"]
-    assert message["buttons"] == [
-        {"type": "url", "caption": "Continuar pedido", "url": access_url},
-        {"type": "url", "caption": "Não fui eu", "url": revoke_url},
+    messages = payload["data"]["content"]["messages"]
+    assert messages == [
+        {
+            "type": "text",
+            "text": "Não reconhece este acesso?",
+            "buttons": [
+                {"type": "url", "caption": "Encerrar acesso", "url": revoke_url},
+            ],
+        },
+        {
+            "type": "text",
+            "text": "Pronto, Joyce! Seu acesso foi liberado.\nSua sacola está guardada. Volte à loja para continuar.",
+            "buttons": [
+                {"type": "url", "caption": "Continuar pedido", "url": access_url},
+            ],
+        },
     ]
+    assert all(len(message["buttons"]) == 1 for message in messages)
+    assert all(button["url"] not in message["text"] for message in messages for button in message["buttons"])
 
 
 @pytest.mark.django_db
@@ -122,24 +137,74 @@ def test_organic_login_uses_one_primary_button():
 @pytest.mark.django_db
 @override_settings(SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=True)
 def test_explicit_button_rejection_retries_once_as_plain_text():
+    from shopman.shop.adapters import notification_manychat as adapter
+
     access_url = "https://loja.test/a?t=secret"
     revoke_url = "https://loja.test/encerrar-acesso#ref"
 
-    sent, api = _send(
-        "access_link_site",
-        {"access_url": access_url, "revoke_url": revoke_url, "cart_note": ""},
-        provider_results=[
-            {"success": False, "error": "provider_rejected"},
-            {"success": True},
-        ],
-    )
+    with patch.object(adapter.logger, "warning") as warning:
+        sent, api = _send(
+            "access_link_site",
+            {"access_url": access_url, "revoke_url": revoke_url, "cart_note": ""},
+            provider_results=[
+                {
+                    "success": False,
+                    "error": "provider_rejected",
+                    "provider_code": "invalid_button_contract",
+                    "provider_http_status": 400,
+                },
+                {"success": True},
+            ],
+        )
 
     assert sent is True
     assert api.call_count == 2
     fallback = api.call_args_list[1].args[1]["data"]["content"]["messages"][0]
     assert "buttons" not in fallback
     assert f"Entrar na loja: {access_url}" in fallback["text"]
-    assert f"Não fui eu: {revoke_url}" in fallback["text"]
+    assert f"Encerrar acesso: {revoke_url}" in fallback["text"]
+    warning.assert_called_once_with(
+        "manychat.buttons_rejected template=%s provider_code=%s http_status=%s fallback=plain_text",
+        "access_link_site",
+        "invalid_button_contract",
+        400,
+    )
+
+
+@pytest.mark.django_db
+def test_http_rejection_keeps_only_sanitized_provider_metadata():
+    from shopman.shop.adapters import notification_manychat as adapter
+
+    error = HTTPError(
+        "https://api.manychat.test/sendContent",
+        400,
+        "bad request",
+        {},
+        io.BytesIO(
+            json.dumps(
+                {
+                    "status": "error",
+                    "details": {
+                        "code": "button_limit",
+                        "customer_phone": "+5511999999999",
+                    },
+                }
+            ).encode()
+        ),
+    )
+    with patch.object(adapter, "urlopen", side_effect=error):
+        result = adapter._api_call(
+            "/sending/sendContent",
+            {"subscriber_id": 123, "data": {}},
+            CONFIG,
+        )
+
+    assert result == {
+        "success": False,
+        "error": "provider_rejected",
+        "provider_code": "button_limit",
+        "provider_http_status": 400,
+    }
 
 
 @pytest.mark.django_db

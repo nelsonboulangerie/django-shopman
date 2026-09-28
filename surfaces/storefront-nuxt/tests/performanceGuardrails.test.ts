@@ -4,15 +4,21 @@ import { describe, expect, it } from 'vitest'
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
 describe('storefront performance guardrails', () => {
-  it('shell and home share one canonical home request', () => {
+  it('keeps the global shell independent from the catalog-heavy home', () => {
     const shell = source('app/app.vue')
     const home = source('app/pages/index.vue')
-    const composable = source('app/composables/useStorefrontHome.ts')
+    const shellComposable = source('app/composables/useStorefrontShell.ts')
+    const homeComposable = source('app/composables/useStorefrontHome.ts')
 
-    expect(shell).toContain('await useStorefrontHome()')
+    expect(shell).toContain('await useStorefrontShell()')
+    expect(shell).not.toContain('useStorefrontHome()')
     expect(home).toContain('await useStorefrontHome()')
-    expect(composable).toContain("STOREFRONT_HOME_KEY = 'shopman-shell-home'")
+    expect(shellComposable).toContain("STOREFRONT_SHELL_KEY = 'shopman-shell'")
+    expect(shellComposable).toContain("apiPath('/api/v1/storefront/shell/')")
+    expect(homeComposable).toContain("STOREFRONT_HOME_KEY = 'shopman-page-home'")
     expect(`${shell}\n${home}`).not.toContain("apiPath('/api/v1/storefront/home/')")
+    expect(source('app/pages/menu.vue')).toContain("apiPath('/api/v1/storefront/catalog/')")
+    expect(source('app/pages/menu.vue')).not.toContain("apiPath('/api/v1/storefront/menu/')")
   })
 
   it('does not precache every iOS splash screen', () => {

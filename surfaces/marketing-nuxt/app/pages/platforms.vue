@@ -12,6 +12,7 @@ import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
+const route = useRoute();
 // Produtos publicáveis, para o teste de envio escolher por NOME em vez de digitar SKU.
 const { products } = useCampaigns();
 const waTemplate = useWhatsAppTemplate();
@@ -21,6 +22,16 @@ const waTemplate = useWhatsAppTemplate();
 // depósito. A lista responde "como está cada uma?" num relance; o painel responde "e o que
 // eu faço?".
 const opened = ref<Platform | null>(null);
+
+watch(
+  [platforms, () => route.query.platform],
+  ([available, requested]) => {
+    if (typeof requested !== "string" || opened.value) return;
+    opened.value =
+      available.find((item) => item.platform === requested) ?? null;
+  },
+  { immediate: true },
+);
 const savingTemplate = ref(false);
 const pendingFlow = ref<string | null>(null);
 const pendingEvent = ref("");
@@ -164,7 +175,10 @@ function tone(
       icon: "lucide:circle-help",
       label: "Não verificada",
     };
-  if (platform.state === "degraded" && typeof platform.canary_recipients === "number")
+  if (
+    platform.state === "degraded" &&
+    typeof platform.canary_recipients === "number"
+  )
     return {
       chip: "bg-warning/10 text-warning",
       icon: "lucide:flask-conical",
@@ -233,8 +247,8 @@ const testEventReady = computed(
     testEvent.value === "announcement_published" ||
     Boolean(
       selectedTestBinding.value?.available &&
-        selectedTestBinding.value.current_active &&
-        selectedTestBinding.value.configured,
+      selectedTestBinding.value.current_active &&
+      selectedTestBinding.value.configured,
     ),
 );
 
@@ -510,7 +524,9 @@ useHead({ title: "Plataformas" });
                   placeholder="Sem modelo"
                   search-placeholder="Buscar modelo aprovado"
                   empty-text="Nenhum modelo com esse nome"
-                  :disabled="savingTemplate || !waTemplate.commandAvailable.value"
+                  :disabled="
+                    savingTemplate || !waTemplate.commandAvailable.value
+                  "
                   @update:model-value="onChooseTemplate(String($event))"
                 />
                 <p
@@ -580,7 +596,9 @@ useHead({ title: "Plataformas" });
                 />
               </div>
 
-              <p class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <p
+                class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+              >
                 Faça um teste controlado de cada modelo no ManyChat antes de
                 ativá-lo. A lista confirma que o modelo existe; não consegue
                 provar que os campos e o botão correspondem a este aviso.
@@ -591,8 +609,8 @@ useHead({ title: "Plataformas" });
             <section class="mt-5 border-t border-border pt-4">
               <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Envia uma mensagem a um número verificado. Nunca usa público
-                de campanha.
+                Envia uma mensagem a um número verificado. Nunca usa público de
+                campanha.
               </p>
 
               <div
@@ -615,8 +633,8 @@ useHead({ title: "Plataformas" });
                   Teste externo bloqueado com segurança
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Nenhum dispositivo de teste verificado foi configurado. Peça ao
-                  responsável pelas plataformas; não é necessário copiar ou
+                  Nenhum dispositivo de teste verificado foi configurado. Peça
+                  ao responsável pelas plataformas; não é necessário copiar ou
                   informar um telefone aqui.
                 </p>
               </div>
@@ -814,7 +832,7 @@ useHead({ title: "Plataformas" });
             variant="outline"
             class="w-full"
             :disabled="savingTemplate"
-            @click="(pendingFlow = null), (pendingEvent = '')"
+            @click="((pendingFlow = null), (pendingEvent = ''))"
           >
             Voltar sem alterar
           </UiButton>
