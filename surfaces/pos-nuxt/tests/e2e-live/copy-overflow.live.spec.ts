@@ -102,10 +102,22 @@ async function openFreshTab(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
   // Clique antes da hidratação não abre a comanda: repete até a venda aparecer.
+  // O PDV reabre a última comanda ativa; volta ao quadro antes de pedir outra.
   await expect(async () => {
-    await page.getByRole("button", { name: /Próxima livre/ }).click();
+    const back = page.getByRole("button", { name: "Voltar para comandas" });
+    if (await back.isVisible().catch(() => false)) await back.click();
+    await page.getByRole("button", { name: /Próxima livre/ }).click({ timeout: 3000 });
     await page.getByPlaceholder(/Buscar produto/).waitFor({ timeout: 3000 });
   }).toPass({ timeout: 30_000 });
+  // A comanda livre pode vir com o rascunho da anterior: libera e começa limpa.
+  const release = page.getByRole("button", { name: "Liberar comanda" });
+  if (!(await page.getByText("Escolha um produto para começar.").isVisible().catch(() => false))
+    && await release.first().isVisible().catch(() => false)) {
+    await release.first().click();
+    await page.getByRole("dialog").getByRole("button", { name: "Liberar comanda" }).click();
+    await page.getByRole("dialog").waitFor({ state: "hidden" }).catch(() => {});
+    await openFreshTab(page);
+  }
 }
 
 function exact(text: string) {
