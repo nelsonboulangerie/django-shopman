@@ -172,7 +172,7 @@ SHOPMAN_CONTINUUM = {
     # Mesmo que um callback on_commit/signal se perca, o primeiro request depois
     # desta janela volta à fonte canônica. O default acompanha fresh_for_ms para
     # que um snapshot nunca seja renovado como fresco sem revalidação do banco.
-    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "30000")),
+    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "300000")),
     "stale_if_error_ms": int(os.environ.get("SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS", "120000")),
     "snapshot_cache_seconds": int(os.environ.get("SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS", "300")),
     "limits": {

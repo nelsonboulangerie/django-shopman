@@ -46,6 +46,22 @@ def test_api_storefront_menu_sets_csrf_cookie(client):
     assert "csrftoken" in resp.cookies
 
 
+def test_api_storefront_catalog_does_not_rebuild_cart(client, monkeypatch):
+    product = _seed_surface()
+
+    def cart_path_called(_request):
+        raise AssertionError("catalog-only endpoint rebuilt the cart")
+
+    monkeypatch.setattr("shopman.storefront.api.surface._cart_payload", cart_path_called)
+
+    resp = client.get("/api/v1/storefront/catalog/")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data) == {"catalog"}
+    assert data["catalog"]["items"][0]["sku"] == product.sku
+
+
 def test_api_storefront_checkout_returns_projection_contract(client):
     _seed_surface()
 

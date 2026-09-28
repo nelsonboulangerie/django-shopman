@@ -378,7 +378,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
   scope: RUN_TIME
-  value: '30000'
+  value: '300000'
   type: GENERAL
 - key: SHOPMAN_EXPOSE_DEBUG_OTP
   scope: RUN_TIME

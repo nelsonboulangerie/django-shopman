@@ -17,10 +17,21 @@ def get_authenticated_customer(request):
     Reads ``request.customer`` (set by AuthCustomerMiddleware) and resolves the
     full Customer model via the auth service.
     """
+    cache_attr = "_shopman_authenticated_customer"
+    # Read the per-request cache from the instance dictionary. Besides making
+    # ownership explicit, this avoids treating dynamic proxy attributes (for
+    # example MagicMock in callers/tests) as a populated cache entry.
+    request_state = vars(request)
+    if cache_attr in request_state:
+        return request_state[cache_attr]
+
     customer_info = getattr(request, "customer", None)
     if customer_info is None:
+        setattr(request, cache_attr, None)
         return None
-    return auth_service.customer_by_uuid(customer_info.uuid)
+    customer = auth_service.customer_by_uuid(customer_info.uuid)
+    setattr(request, cache_attr, customer)
+    return customer
 
 
 def customer_pricing_hints(request) -> tuple[str, str]:

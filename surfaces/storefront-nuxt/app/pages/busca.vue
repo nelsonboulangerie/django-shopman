@@ -8,19 +8,14 @@ import {
   type SearchListOption,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const route = useRoute()
 const router = useRouter()
-const { setFromServer } = useCartState()
-const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
+const { data, pending, error, refresh } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include'
 })
-
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
 
 function parseFilters (raw: unknown): string[] {
   return String(raw || '').split(',').map(part => part.trim()).filter(Boolean)

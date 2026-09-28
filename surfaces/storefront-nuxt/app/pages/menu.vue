@@ -16,10 +16,9 @@ import {
 } from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
 import type { CatalogStructureState } from '~/types/continuum'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
-const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 const router = useRouter()
 const session = useShopSession()
@@ -45,7 +44,7 @@ const {
   pending: canonicalPending,
   error: canonicalError,
   refresh: refreshCanonical
-} = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
+} = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
   server: canonicalOnServer,
   lazy: !canonicalOnServer
@@ -66,10 +65,6 @@ async function refresh () {
 }
 
 requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
-
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
 
 const route = useRoute()
 const activeSection = ref('all')
