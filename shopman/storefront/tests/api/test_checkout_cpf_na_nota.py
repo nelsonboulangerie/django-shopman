@@ -13,6 +13,7 @@ Decisões do dono (25/09/2026), com a matriz do PDV adaptada ao autoatendimento:
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import Mock
 
 import pytest
@@ -184,8 +185,15 @@ def test_guardar_cpf_de_outra_conta_e_indistinguivel_de_guardar_cpf_livre(client
 
 def test_conflito_fica_no_log_do_servidor_sem_dado_pessoal(client, pickup, caplog):
     Customer.objects.create(ref="JOAO", first_name="João", phone="+5543999990002", document=OUTRO_CPF)
-    with caplog.at_level("INFO", logger="shopman.storefront.api.views"):
-        resp = _post(client, fiscal_tax_id=OUTRO_CPF, save_fiscal_tax_id=True)
+    logger = logging.getLogger("shopman.storefront.api.views")
+    # ``shopman`` não propaga por desenho (evita linha duplicada no console),
+    # então o handler que o pytest instala só no root não enxerga este record.
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level("INFO", logger=logger.name):
+            resp = _post(client, fiscal_tax_id=OUTRO_CPF, save_fiscal_tax_id=True)
+    finally:
+        logger.removeHandler(caplog.handler)
     assert resp.status_code == 201, resp.content
     conflict = [r for r in caplog.records if "owned_by_other" in r.getMessage()]
     assert len(conflict) == 1 and conflict[0].levelname == "WARNING"
