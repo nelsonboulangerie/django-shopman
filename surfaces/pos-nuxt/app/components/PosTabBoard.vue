@@ -191,7 +191,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
-          <span class="truncate font-semibold tabular-nums">#{{ view.displayRef }}</span>
+          <span class="truncate font-semibold tabular-nums" :title="`#${view.displayRef}`">#{{ view.displayRef }}</span>
           <span
             v-if="view.isUnpaid"
             class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
@@ -210,10 +210,11 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
           </span>
           <span v-else class="shrink-0 text-xs text-muted-foreground">{{ view.statusLabel }}</span>
         </div>
-        <span class="truncate text-xs font-medium">{{ view.identity }}</span>
+        <span class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
         <span
           class="mt-auto truncate text-xs tabular-nums"
           :class="view.isFree ? 'text-muted-foreground' : 'font-semibold'"
+          :title="view.summary"
         >
           {{ view.summary }}
         </span>

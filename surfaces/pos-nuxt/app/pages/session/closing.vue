@@ -153,8 +153,8 @@ async function confirmSubmit() {
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
-      <h1 class="min-w-0 truncate text-lg font-semibold">Fechamento do dia</h1>
-      <span v-if="closing" class="ml-auto truncate text-sm text-muted-foreground">
+      <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Fechamento do dia</h1>
+      <span v-if="closing" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
         {{ closing.today_display }} · contagem cega do que a casa produz
       </span>
     </header>
@@ -390,7 +390,7 @@ async function confirmSubmit() {
               class="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium">{{ item.name }}</p>
+                <p class="truncate text-sm font-medium" :title="item.name">{{ item.name }}</p>
                 <p class="text-xs text-muted-foreground">{{ item.sku }}</p>
               </div>
               <span

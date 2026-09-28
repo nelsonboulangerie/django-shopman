@@ -125,7 +125,7 @@ function buttonClass(priority: string): string {
              repetir aqui daria dois números para o operador conferir. -->
         <span
           v-if="card.channel_display_id"
-          class="block truncate text-xs font-medium tabular-nums text-muted-foreground"
+          class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
           data-channel-display-id
         >iFood #{{ card.channel_display_id }}</span>
       </NuxtLink>

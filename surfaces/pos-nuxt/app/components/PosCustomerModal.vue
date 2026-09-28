@@ -504,7 +504,7 @@ const newCustomerNote = computed(() => {
                     class="size-4 shrink-0"
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
-                  <span class="min-w-0 truncate">Sim, liberar</span>
+                  <span class="min-w-0">Sim, liberar</span>
                 </UiButton>
                 <UiButton
                   type="button"
@@ -513,7 +513,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Não liberar</span>
+                  <span class="min-w-0">Não liberar</span>
                 </UiButton>
               </div>
             </div>
@@ -532,7 +532,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Sim, tenho certeza</span>
+                  <span class="min-w-0">Sim, tenho certeza</span>
                 </UiButton>
                 <UiButton
                   type="button"
@@ -541,7 +541,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Voltar</span>
+                  <span class="min-w-0">Voltar</span>
                 </UiButton>
               </div>
             </div>

@@ -725,7 +725,7 @@ function printQueue() {
             <Icon name="lucide:calendar-clock" class="size-4 text-muted-foreground" />
             <h2 class="text-sm font-bold uppercase tracking-wide">Agendados</h2>
             <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ preordersCount }}</span>
-            <span class="ml-auto hidden truncate text-xs text-muted-foreground sm:block">Confirmados para os próximos dias</span>
+            <span class="ml-auto hidden text-right text-xs text-muted-foreground sm:block">Confirmados para os próximos dias</span>
           </div>
           <div class="mt-3 grid gap-4 lg:grid-cols-3">
             <div v-for="group in triagedPreorders" :key="group.date" class="flex min-w-0 flex-col gap-3">
