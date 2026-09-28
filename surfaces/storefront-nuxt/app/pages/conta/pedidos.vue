@@ -25,7 +25,8 @@ const orderFilter = ref<OrderFilter>('todos')
 const { data: history, pending } = await useFetch<OrderHistoryResponse>(apiPath('/api/v1/account/orders/'), {
   credentials: 'include',
   headers: requestHeaders,
-  query: computed(() => ({ filter: orderFilter.value }))
+  query: computed(() => ({ filter: orderFilter.value })),
+  lazy: true
 })
 
 const orders = computed(() => history.value?.orders ?? [])

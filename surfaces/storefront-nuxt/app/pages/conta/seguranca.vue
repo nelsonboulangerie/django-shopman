@@ -46,7 +46,8 @@ const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
   credentials: 'include',
-  headers: requestHeaders
+  headers: requestHeaders,
+  lazy: true
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])

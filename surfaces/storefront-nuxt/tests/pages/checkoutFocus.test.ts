@@ -72,7 +72,9 @@ registerEndpoint('/api/v1/account/passkeys/', () => ({ passkeys: [] }))
 async function openCheckout (checkout: CheckoutProjection) {
   served = checkout
   clearNuxtData()
-  return mountSuspended(CheckoutPage, { attachTo: document.body })
+  const page = await mountSuspended(CheckoutPage, { attachTo: document.body })
+  await vi.waitFor(() => expect(page.find('[data-checkout-step="fulfillment"]').exists()).toBe(true))
+  return page
 }
 
 async function chooseDelivery (page: Awaited<ReturnType<typeof mountSuspended>>) {

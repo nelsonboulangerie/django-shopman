@@ -21,26 +21,37 @@ const { setFromServer, qtyForSku } = useCartState()
 
 const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
-  { credentials: 'include' }
+  { credentials: 'include', lazy: true }
 )
 
-// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
-// não uma página-fantasma 200 indexável. Falhas de rede seguem no retry inline.
-//
-// Antes do 404, uma pergunta: este código já foi um produto nosso? Se foi, a
-// resposta honesta é 410 ("não existe mais") com a prateleira de onde ele saiu
-// — ver `useRetiredProduct`.
-if (error.value?.statusCode === 404) {
-  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), sku.value)
+async function missingProductError (missingSku: string) {
+  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), missingSku)
   if (retired) {
-    throw createError({
+    return createError({
       statusCode: 410,
       statusMessage: 'Este item saiu do cardápio',
       fatal: true,
       data: retired
     })
   }
-  throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
+  return createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
+}
+
+// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
+// não uma página-fantasma 200 indexável. No cliente a busca é lazy para montar
+// a rota imediatamente; o watcher preserva a mesma semântica quando ela termina.
+// Antes do 404, verificamos se este código já foi um produto nosso (410).
+if (import.meta.server && error.value?.statusCode === 404) {
+  throw await missingProductError(sku.value)
+}
+
+if (import.meta.client) {
+  watch(error, async (failure) => {
+    if (failure?.statusCode !== 404) return
+    const missingSku = sku.value
+    const pageError = await missingProductError(missingSku)
+    if (sku.value === missingSku) showError(pageError)
+  })
 }
 // Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
 requireContentOnSsr(error.value, !!data.value?.product, 'Produto')

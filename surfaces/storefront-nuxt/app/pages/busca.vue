@@ -14,7 +14,8 @@ const apiPath = useShopmanApiPath()
 const route = useRoute()
 const router = useRouter()
 const { data, pending, error, refresh } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
-  credentials: 'include'
+  credentials: 'include',
+  lazy: true
 })
 
 function parseFilters (raw: unknown): string[] {

@@ -1,25 +1,16 @@
 <script setup lang="ts">
 import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState } from '~/presentation/cart'
-import type { CartItemProjection, CartResponse, ProductMutationMeta } from '~/types/shopman'
+import type { CartItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
 
 const { outcome: reorderOutcome } = useReorder()
-const apiPath = useShopmanApiPath()
 const {
   cart,
   rateLimitRecovery,
   hasPendingMutations,
-  setFromServer,
   setSkuQty,
   refreshCart
 } = useCartState()
-const { data, pending, error, refresh } = await useFetch<CartResponse>(apiPath('/api/v1/storefront/cart/'), {
-  credentials: 'include'
-})
-
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
 
 const checkoutAction = computed(() => cart.value.actions.find(action => action.ref === 'checkout') || null)
 const continueAction = computed(() => cart.value.actions.find(action => action.ref === 'continue_shopping') || null)
@@ -39,6 +30,10 @@ const bannerCountdown = computed(() => holdBanner.value?.kind === 'ready'
   : null)
 
 onMounted(() => {
+  // O shell global já trouxe a sacola e a página pode abrir imediatamente.
+  // A reconciliação é passiva: atualiza a verdade sem manter a rota anterior
+  // visível por vários segundos enquanto /cart/ responde.
+  void refreshCart().catch(() => null)
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   holdPollTimer = setInterval(() => {
@@ -127,28 +122,7 @@ useSeoMeta({
         </p>
       </div>
 
-      <div v-if="pending" class="space-y-2">
-        <div v-for="n in 3" :key="n" class="flex gap-3 border-b py-3">
-          <UiSkeleton class="size-20 shrink-0 rounded-lg" />
-          <div class="min-w-0 flex-1 space-y-2 self-center">
-            <UiSkeleton class="h-4 w-2/3" />
-            <UiSkeleton class="h-3 w-1/3" />
-            <UiSkeleton class="h-8 w-1/2" />
-          </div>
-        </div>
-      </div>
-
-      <UiAlert v-else-if="error" variant="destructive">
-        <UiAlertTitle>Sua sacola não quis carregar agora</UiAlertTitle>
-        <UiAlertDescription>
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span>Seus itens estão guardados. Tente de novo em instantes.</span>
-            <UiButton size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
-          </div>
-        </UiAlertDescription>
-      </UiAlert>
-
-      <template v-else>
+      <template v-if="cart">
         <!-- Banner de estoque alterado: aviso no topo quando ≥1 item ficou
              indisponível, acima do tratamento por-item (substitutos no 409 +
              aviso em cada linha). Copy do registro (CART_UNAVAILABLE_BANNER). -->

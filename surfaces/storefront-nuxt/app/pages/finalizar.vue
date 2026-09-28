@@ -292,7 +292,8 @@ const checkoutQuery = computed(() => state.delivery_date ? { delivery_date: stat
 const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPath('/api/v1/storefront/checkout/'), {
   credentials: 'include',
   headers: requestHeaders,
-  query: checkoutQuery
+  query: checkoutQuery,
+  lazy: true
 })
 
 // Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
@@ -644,12 +645,15 @@ let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
 }
-// SÍNCRONO no setup (client), ANTES do watch(checkout) e demais abaixo — assim eles
-// veem o rascunho restaurado e o respeitam (em onMounted já teriam rodado com o default
-// e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
-if (import.meta.client) {
+// No SSR/hydration o checkout já existe e isto continua síncrono. Em navegação
+// cliente a projeção é lazy: esperamos o draft_context verdadeiro antes de
+// validar o rascunho, sem manter a página anterior presa à requisição.
+function restoreCheckoutDraft () {
+  if (!import.meta.client || draftRestored) return
+  if (!checkout.value) return
+  const draftContext = cart.value?.draft_context || ''
   try {
-    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), cart.value?.draft_context || '')
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), draftContext)
     if (draft) {
       hasRestoredCheckoutDraft = true
       Object.assign(state, draft.state)
@@ -665,8 +669,9 @@ if (import.meta.client) {
       clearCheckoutDraft()
     }
   } catch { /* rascunho corrompido: ignora */ }
+  draftRestored = true
 }
-draftRestored = true
+watch(checkout, restoreCheckoutDraft, { immediate: true })
 function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {

@@ -28,13 +28,21 @@ if (dynamicRedirectTarget.value) {
 
 const { data, pending, error, refresh } = await useFetch<CatalogResponse>(
   () => apiPath(`/api/v1/storefront/catalog/${encodeURIComponent(collectionRef.value)}/`),
-  { credentials: 'include', immediate: !dynamicRedirectTarget.value }
+  { credentials: 'include', immediate: !dynamicRedirectTarget.value, lazy: true }
 )
 
 // Coleção inexistente: 404 de verdade — o endpoint levanta Http404 via
 // ensure_active_collection(); a SSR responde 404 + noindex (error.vue).
-if (!dynamicRedirectTarget.value && error.value?.statusCode === 404) {
+if (import.meta.server && !dynamicRedirectTarget.value && error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true })
+}
+
+if (import.meta.client) {
+  watch(error, (failure) => {
+    if (!dynamicRedirectTarget.value && failure?.statusCode === 404) {
+      showError(createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true }))
+    }
+  })
 }
 
 if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?.catalog, 'Coleção')

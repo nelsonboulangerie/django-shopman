@@ -36,12 +36,41 @@ describe('storefront performance guardrails', () => {
     expect(feedback).toContain('const WAIT_THRESHOLD_MS = 200')
     expect(feedback).toContain('data-navigation-wait-overlay')
     expect(feedback).toContain('data-navigation-wait-card')
+    expect(feedback).toContain('pointer-events-none')
+    expect(feedback).not.toContain('event.stopImmediatePropagation()')
+    expect(feedback).not.toContain('event.preventDefault()')
     expect(feedback).toContain('Abrindo sua sacola…')
     expect(feedback).toContain('blur(4px)')
     expect(feedback).toContain('blur(24px)')
     expect(feedback).not.toContain('data-navigation-origin-feedback')
     expect(feedback).not.toContain('data-navigation-delayed-feedback')
     expect(feedback).not.toContain('fixed inset-x-0 top-0')
+  })
+
+  it('mounts route content before slow page projections finish', () => {
+    const cart = source('app/pages/sacola.vue')
+    const home = source('app/composables/useStorefrontHome.ts')
+    const lazyPages = [
+      'app/pages/busca.vue',
+      'app/pages/colecao/[ref].vue',
+      'app/pages/produto/[sku].vue',
+      'app/pages/finalizar.vue',
+      'app/pages/pedido/[ref]/index.vue',
+      'app/pages/privacidade.vue',
+      'app/pages/termos.vue',
+      'app/pages/conta/index.vue',
+      'app/pages/conta/perfil.vue',
+      'app/pages/conta/favoritos.vue',
+      'app/pages/conta/pedidos.vue',
+      'app/pages/conta/preferencias.vue',
+      'app/pages/conta/enderecos.vue',
+      'app/pages/conta/seguranca.vue'
+    ]
+
+    expect(cart).not.toContain("await useFetch<CartResponse>(apiPath('/api/v1/storefront/cart/')")
+    expect(cart).toContain('void refreshCart().catch(() => null)')
+    expect(home).toContain('lazy: true')
+    for (const path of lazyPages) expect(source(path)).toContain('lazy: true')
   })
 
   it('guards checkout against a second in-flight submit', () => {

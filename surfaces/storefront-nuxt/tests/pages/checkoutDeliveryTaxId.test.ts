@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 
 import CheckoutPage from '~/pages/finalizar.vue'
@@ -91,7 +91,9 @@ registerEndpoint('/api/v1/account/passkeys/', () => ({ passkeys: [] }))
 async function abrirCheckout (checkout: CheckoutProjection) {
   servido = checkout
   clearNuxtData()
-  return mountSuspended(CheckoutPage)
+  const page = await mountSuspended(CheckoutPage)
+  await vi.waitFor(() => expect(page.find('[data-checkout-step="fulfillment"]').exists()).toBe(true))
+  return page
 }
 
 describe('checkout: a entrega com nota pede o CPF no passo do endereço', () => {
