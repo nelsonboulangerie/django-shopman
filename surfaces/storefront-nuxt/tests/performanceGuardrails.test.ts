@@ -19,7 +19,7 @@ describe('storefront performance guardrails', () => {
     expect(source('nuxt.config.ts')).toContain("'pwa/apple-splash-*.png'")
   })
 
-  it('starts navigation feedback at the click, before route middleware settles the cart', () => {
+  it('starts navigation tracking at the click but keeps wait UI silent for 200ms', () => {
     const shell = source('app/app.vue')
     const feedback = source('app/components/NavigationFeedback.vue')
 
@@ -27,9 +27,14 @@ describe('storefront performance guardrails', () => {
     expect(feedback).toContain("document.addEventListener('click', navigationIntent, true)")
     expect(feedback).toContain("nuxtApp.hook('page:finish', finish)")
     expect(feedback).toContain("aria-live=\"polite\"")
-    expect(feedback).toContain('data-navigation-origin-feedback')
-    expect(feedback).toContain('data-navigation-delayed-feedback')
-    expect(feedback).toContain('Ainda abrindo sua sacola…')
+    expect(feedback).toContain('const WAIT_THRESHOLD_MS = 200')
+    expect(feedback).toContain('data-navigation-wait-overlay')
+    expect(feedback).toContain('data-navigation-wait-card')
+    expect(feedback).toContain('Abrindo sua sacola…')
+    expect(feedback).toContain('blur(4px)')
+    expect(feedback).toContain('blur(24px)')
+    expect(feedback).not.toContain('data-navigation-origin-feedback')
+    expect(feedback).not.toContain('data-navigation-delayed-feedback')
     expect(feedback).not.toContain('fixed inset-x-0 top-0')
   })
 

@@ -1,91 +1,133 @@
 <script setup lang="ts">
+const WAIT_THRESHOLD_MS = 200
+const MINIMUM_VISIBLE_MS = 320
+const WATCHDOG_MS = 15_000
+
+interface WaitCopy {
+  title: string
+  detail: string
+}
+
 const nuxtApp = useNuxtApp()
 const router = useRouter()
 const active = ref(false)
-const delayed = ref(false)
+const visible = ref(false)
 const announcement = ref('')
+const waitCopy = ref<WaitCopy>({
+  title: 'Atualizando a tela…',
+  detail: 'Só um instante.'
+})
 
-interface OriginFeedback {
-  top: number
-  left: number
-  width: number
-  height: number
-  radius: string
-  showLabel: boolean
-}
-
-const originFeedback = ref<OriginFeedback | null>(null)
-const delayedMessage = ref('Só mais um instante…')
-
-let delayedTimer: ReturnType<typeof setTimeout> | null = null
+let revealTimer: ReturnType<typeof setTimeout> | null = null
+let hideTimer: ReturnType<typeof setTimeout> | null = null
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null
+let revealFrame: number | null = null
+let visibleSince = 0
+let activeDestination = ''
 
-function messageForDestination (destination?: URL) {
+function copyForDestination (destination?: URL): WaitCopy {
   const path = destination?.pathname || ''
-  if (path.startsWith('/sacola')) return 'Ainda abrindo sua sacola…'
-  if (path.startsWith('/menu') || path.startsWith('/colecao')) return 'Ainda abrindo o cardápio…'
-  if (path.startsWith('/produto')) return 'Ainda abrindo o produto…'
-  if (path.startsWith('/finalizar')) return 'Ainda abrindo a finalização…'
-  if (path.startsWith('/pedido')) return 'Ainda abrindo seu pedido…'
-  if (path.startsWith('/conta') || path.startsWith('/entrar') || path.startsWith('/a')) return 'Ainda abrindo sua conta…'
-  if (path === '/') return 'Ainda abrindo o início…'
-  return 'Só mais um instante…'
-}
-
-function feedbackForOrigin (link: HTMLAnchorElement): OriginFeedback | null {
-  const rect = link.getBoundingClientRect()
-  if (rect.width < 1 || rect.height < 1) return null
-
-  const showLabel = rect.width >= 76 && rect.height >= 36
-  const width = rect.width > 180 ? 116 : Math.max(40, rect.width)
-  const height = rect.height > 72 ? 40 : Math.max(40, rect.height)
-  const unclampedLeft = rect.left + (rect.width - width) / 2
-  const unclampedTop = rect.top + (rect.height - height) / 2
-
-  return {
-    top: Math.max(6, Math.min(window.innerHeight - height - 6, unclampedTop)),
-    left: Math.max(6, Math.min(window.innerWidth - width - 6, unclampedLeft)),
-    width,
-    height,
-    radius: showLabel ? '9999px' : `${Math.min(width, height) / 2}px`,
-    showLabel
+  if (path.startsWith('/sacola')) return { title: 'Abrindo sua sacola…', detail: 'Só um instante.' }
+  if (path.startsWith('/menu') || path.startsWith('/colecao')) {
+    return { title: 'Abrindo o cardápio…', detail: 'Confirmando o que está disponível agora.' }
   }
+  if (path.startsWith('/produto')) return { title: 'Abrindo o produto…', detail: 'Só um instante.' }
+  if (path.startsWith('/finalizar')) return { title: 'Preparando a finalização…', detail: 'Só um instante.' }
+  if (path.startsWith('/pedido')) return { title: 'Abrindo seu pedido…', detail: 'Só um instante.' }
+  if (path.startsWith('/conta') || path.startsWith('/entrar') || path.startsWith('/a')) {
+    return { title: 'Abrindo sua conta…', detail: 'Só um instante.' }
+  }
+  if (path === '/') return { title: 'Abrindo o início…', detail: 'Só um instante.' }
+  return { title: 'Atualizando a tela…', detail: 'Só um instante.' }
 }
 
-function clearTimers () {
-  if (delayedTimer) clearTimeout(delayedTimer)
+function clearRevealSchedule () {
+  if (revealTimer) clearTimeout(revealTimer)
+  if (revealFrame !== null) cancelAnimationFrame(revealFrame)
+  revealTimer = null
+  revealFrame = null
+}
+
+function clearHideSchedule () {
+  if (hideTimer) clearTimeout(hideTimer)
+  hideTimer = null
+}
+
+function clearWatchdog () {
   if (watchdogTimer) clearTimeout(watchdogTimer)
-  delayedTimer = null
   watchdogTimer = null
 }
 
-function begin (destination?: URL, origin?: HTMLAnchorElement) {
-  if (destination) delayedMessage.value = messageForDestination(destination)
-  else if (!active.value) delayedMessage.value = 'Só mais um instante…'
-  if (origin) originFeedback.value = feedbackForOrigin(origin)
-  if (active.value) return
+function hide () {
+  visible.value = false
+  announcement.value = ''
+  visibleSince = 0
+  clearHideSchedule()
+}
+
+function reveal () {
+  if (!active.value) return
+  visible.value = true
+  visibleSince = performance.now()
+  announcement.value = `${waitCopy.value.title} ${waitCopy.value.detail}`
+}
+
+function begin (destination?: URL) {
+  if (destination) waitCopy.value = copyForDestination(destination)
+  else if (!active.value && !visible.value) waitCopy.value = copyForDestination()
+
+  if (active.value) {
+    if (visible.value) announcement.value = `${waitCopy.value.title} ${waitCopy.value.detail}`
+    return
+  }
 
   active.value = true
-  delayed.value = false
-  announcement.value = ''
-  clearTimers()
+  clearRevealSchedule()
+  clearHideSchedule()
+  clearWatchdog()
 
-  delayedTimer = setTimeout(() => {
-    if (!active.value) return
-    delayed.value = true
-    announcement.value = delayedMessage.value
-  }, 300)
+  if (visible.value) {
+    announcement.value = `${waitCopy.value.title} ${waitCopy.value.detail}`
+  } else {
+    announcement.value = ''
+    revealTimer = setTimeout(() => {
+      revealTimer = null
+      // Se a resposta chegar entre o limiar e o próximo paint, finish() cancela
+      // este frame e a pessoa não vê um clarão de loading para uma navegação rápida.
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = null
+        reveal()
+      })
+    }, WAIT_THRESHOLD_MS)
+  }
 
-  // Defesa contra uma navegação cancelada sem erro observável.
-  watchdogTimer = setTimeout(finish, 15_000)
+  // Defesa contra navegação cancelada sem page:finish ou erro observável.
+  watchdogTimer = setTimeout(forceFinish, WATCHDOG_MS)
 }
 
 function finish () {
   active.value = false
-  delayed.value = false
-  announcement.value = ''
-  originFeedback.value = null
-  clearTimers()
+  activeDestination = ''
+  clearRevealSchedule()
+  clearWatchdog()
+
+  if (!visible.value) {
+    hide()
+    return
+  }
+
+  const remaining = MINIMUM_VISIBLE_MS - (performance.now() - visibleSince)
+  if (remaining <= 0) hide()
+  else hideTimer = setTimeout(hide, remaining)
+}
+
+function forceFinish () {
+  active.value = false
+  activeDestination = ''
+  clearRevealSchedule()
+  clearHideSchedule()
+  clearWatchdog()
+  hide()
 }
 
 function navigationIntent (event: MouseEvent) {
@@ -121,67 +163,64 @@ function navigationIntent (event: MouseEvent) {
     && destination.search === current.search
   ) return
 
-  // Confirma o gesto antes do middleware que espera a sacola ficar durável.
-  begin(destination, link)
+  const destinationKey = `${destination.pathname}${destination.search}`
+  if (active.value && activeDestination === destinationKey) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    return
+  }
+
+  // Começa no gesto, antes do middleware que espera a sacola ficar durável.
+  activeDestination = destinationKey
+  begin(destination)
 }
 
 const removePageStart = nuxtApp.hook('page:start', () => begin())
 const removePageFinish = nuxtApp.hook('page:finish', finish)
-const removeAppError = nuxtApp.hook('app:error', finish)
-const removeRouterError = router.onError(finish)
+const removeAppError = nuxtApp.hook('app:error', forceFinish)
+const removeRouterError = router.onError(forceFinish)
 
 onMounted(() => {
   document.addEventListener('click', navigationIntent, true)
-  window.addEventListener('pageshow', finish)
+  window.addEventListener('pageshow', forceFinish)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', navigationIntent, true)
-  window.removeEventListener('pageshow', finish)
+  window.removeEventListener('pageshow', forceFinish)
   removePageStart()
   removePageFinish()
   removeAppError()
   removeRouterError()
-  finish()
+  forceFinish()
 })
 </script>
 
 <template>
-  <!-- Confirmação instantânea exatamente onde a pessoa tocou. É fixed e não
-       participa do layout: não desloca header, pillbar ou conteúdo. -->
-  <div
-    v-if="active && originFeedback"
-    class="pointer-events-none fixed z-[100] flex items-center justify-center gap-2 bg-cta px-2 text-xs font-semibold text-cta-foreground shadow-lg ring-2 ring-background"
-    :style="{
-      top: `${originFeedback.top}px`,
-      left: `${originFeedback.left}px`,
-      width: `${originFeedback.width}px`,
-      height: `${originFeedback.height}px`,
-      borderRadius: originFeedback.radius
-    }"
-    data-navigation-origin-feedback
-    aria-hidden="true"
-  >
-    <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
-    <span v-if="originFeedback.showLabel">Abrindo…</span>
-  </div>
-
-  <!-- Reforço explícito apenas quando a espera deixa de ser instantânea. No
-       mobile fica acima da bottom-nav; no desktop, no canto inferior direito. -->
   <Transition
-    enter-active-class="transition duration-150 ease-out"
-    enter-from-class="translate-y-2 opacity-0"
-    leave-active-class="transition duration-100 ease-in"
-    leave-to-class="translate-y-2 opacity-0"
+    enter-active-class="transition-opacity duration-150 ease-out"
+    enter-from-class="opacity-0"
+    leave-active-class="transition-opacity duration-100 ease-in"
+    leave-to-class="opacity-0"
   >
     <div
-      v-if="active && delayed"
-      class="pointer-events-none fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[100] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-ink-foreground/20 bg-ink px-4 py-3 text-sm font-semibold whitespace-nowrap text-ink-foreground shadow-xl md:bottom-6 md:left-auto md:right-6 md:translate-x-0"
-      data-navigation-delayed-feedback
+      v-if="visible"
+      class="navigation-wait-scrim fixed inset-0 z-[100] grid touch-none place-items-center overscroll-none px-6"
+      data-navigation-wait-overlay
       aria-hidden="true"
     >
-      <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
-      <span>{{ delayedMessage }}</span>
+      <div
+        class="w-full max-w-[19rem] rounded-3xl border border-border bg-card px-6 py-8 text-center text-card-foreground shadow-2xl"
+        data-navigation-wait-card
+      >
+        <div class="navigation-wait-spinner mx-auto mb-4 size-10" />
+        <p class="shop-title">
+          {{ waitCopy.title }}
+        </p>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {{ waitCopy.detail }}
+        </p>
+      </div>
     </div>
   </Transition>
 
@@ -189,3 +228,49 @@ onBeforeUnmount(() => {
     {{ announcement }}
   </p>
 </template>
+
+<style scoped>
+.navigation-wait-scrim {
+  background-color: color-mix(in oklab, var(--background) 26%, transparent);
+  -webkit-backdrop-filter: blur(4px) saturate(.78) brightness(.96);
+  backdrop-filter: blur(4px) saturate(.78) brightness(.96);
+  animation: navigation-wait-breathe 1.8s ease-in-out infinite;
+  will-change: backdrop-filter, background-color;
+}
+
+.navigation-wait-spinner {
+  border: 3px solid color-mix(in oklab, var(--card-foreground) 18%, transparent);
+  border-top-color: var(--card-foreground);
+  border-radius: 9999px;
+  animation: navigation-wait-spin .82s linear infinite;
+}
+
+@keyframes navigation-wait-breathe {
+  0%, 100% {
+    background-color: color-mix(in oklab, var(--background) 22%, transparent);
+    -webkit-backdrop-filter: blur(4px) saturate(.78) brightness(.96);
+    backdrop-filter: blur(4px) saturate(.78) brightness(.96);
+  }
+  50% {
+    background-color: color-mix(in oklab, var(--background) 36%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(.74) brightness(.92);
+    backdrop-filter: blur(24px) saturate(.74) brightness(.92);
+  }
+}
+
+@keyframes navigation-wait-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-wait-scrim {
+    animation: none;
+    -webkit-backdrop-filter: blur(14px) saturate(.76) brightness(.94);
+    backdrop-filter: blur(14px) saturate(.76) brightness(.94);
+  }
+
+  .navigation-wait-spinner {
+    animation: none;
+  }
+}
+</style>
