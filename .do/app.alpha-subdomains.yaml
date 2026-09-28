@@ -360,11 +360,11 @@ envs:
   scope: RUN_TIME
   value: 'staging'
   type: GENERAL
-# Continuum entra primeiro inerte. O shadow é ligado em mudança separada, depois
-# que este deploy estiver ACTIVE; o endpoint público continua fechado até o gate.
+# Fase 2 do rollout: somente o shadow do alpha fica ligado. Snapshot e cliente
+# continuam fechados até a janela de 24 h/500 observações passar pelo gate.
 - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
   scope: RUN_TIME
