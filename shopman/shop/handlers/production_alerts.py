@@ -563,7 +563,7 @@ def _notify_operator(event: str, *, severity: str, context: dict) -> bool:
     try:
         config = ProductionConfig.load().notifications
     except Exception:
-        logger.debug("production_alerts.notifications_config_failed", exc_info=True)
+        logger.warning("production_alerts.notifications_config_failed", exc_info=True)
         return False
     if not (config.enabled and severity in config.severities):
         return False
@@ -587,7 +587,7 @@ def _target_minutes(work_order) -> int:
             if value > 0:
                 return value
     except Exception:
-        logger.debug("production_alerts.invalid_target_minutes work_order=%s", work_order.pk, exc_info=True)
+        logger.warning("production_alerts.invalid_target_minutes work_order=%s", work_order.pk, exc_info=True)
     return _alerts_config().default_max_started_minutes
 
 
@@ -595,7 +595,7 @@ def _alerts_config() -> ProductionConfig.Alerts:
     try:
         return ProductionConfig.load().alerts
     except Exception:
-        logger.debug("production_alerts.config_load_failed", exc_info=True)
+        logger.warning("production_alerts.config_load_failed", exc_info=True)
         return ProductionConfig.Alerts()
 
 
