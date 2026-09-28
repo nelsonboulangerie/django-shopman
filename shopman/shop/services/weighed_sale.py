@@ -205,13 +205,19 @@ def price_per_kg_q(sku: str, channel) -> int:
     return int(OffermanPricingBackend().get_price(sku, channel, qty=Decimal(1)) or 0)
 
 
-def apply_to_payload(payload: dict, *, channel) -> None:
+def apply_to_payload(payload: dict, *, channel, skip_line_ids: frozenset[str] | set[str] = frozenset()) -> None:
     """Resolve, no payload do PDV já parseado, toda linha de produto vendido por peso.
 
     Escreve na linha ``qty`` (kg, 3 casas), ``unit_price_q`` (o preço do quilo) e
     ``weighed`` (o registro completo). Recusa com ``PosIntentError``: produto por
     peso sem valor da etiqueta, peso digitado com a entrada por peso desligada, e
     peso informado para produto por unidade.
+
+    ``skip_line_ids``: linhas que já chegam resolvidas e não se resolvem de novo —
+    a peça pesada que JÁ ESTAVA na encomenda em edição (``pos_edit_session``). O
+    peso dela é o que foi vendido; reconvertê-la pelo preço do quilo de hoje
+    mudaria a peça, e com a entrada por peso desligada a peça registrada pelo
+    peso nem passaria.
     """
     from shopman.offerman.models import Product
 
@@ -225,6 +231,8 @@ def apply_to_payload(payload: dict, *, channel) -> None:
     )
     by_weight_allowed: bool | None = None
     for idx, item in enumerate(items):
+        if skip_line_ids and str(item.get("line_id") or "") in skip_line_ids:
+            continue
         sku = str(item.get("sku") or "")
         name = str(item.get("name") or sku)
         declared = item.get("weighed")

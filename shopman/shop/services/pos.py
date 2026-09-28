@@ -1291,16 +1291,19 @@ def save_pos_tab(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
-    weighed_sale.apply_to_payload(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    from shopman.shop.services import pos_edit_session
+
+    # Na comanda da edição, a peça pesada que já estava no pedido fica com o peso
+    # e o preço vendidos (não se reconverte pela etiqueta de hoje).
+    pinned = pos_edit_session.pin_session_lines(session, payload) if pos_edit_session.is_edit_session(session) else set()
+    weighed_sale.apply_to_payload(payload, channel=channel, skip_line_ids=pinned)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
     if payload.get("sales_mode") == "order" and payload.get("items"):
         _validate_schedule(payload)
     before_items = session.items
-    from shopman.shop.services import pos_edit_session
-
     if pos_edit_session.is_edit_session(session):
         return _save_edit_session(session, payload, channel=channel, config=config, actor=actor,
             operator_username=operator_username)

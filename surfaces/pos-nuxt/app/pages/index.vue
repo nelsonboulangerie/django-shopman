@@ -4,7 +4,9 @@ import { toast } from "vue-sonner";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
-import { orderEditTitle } from "~/presentation/orderEdit";
+import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
+import { redoTabLabel } from "~/presentation/preorderActions";
+import type { PreorderRedoResponse } from "~/types/preorders";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
@@ -39,6 +41,12 @@ const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
 // encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
 // pagamento. Editar não mexe na gaveta: não pede turno aberto.
 const editRef = String(useRoute().query.edit || "").trim();
+// CANCELAR E REFAZER (WP-E6): `/?redo=<ref>` abre a venda na comanda comum
+// "Refazer <ref>", que o detalhe da encomenda já montou no servidor depois do
+// cancelamento. Sem caixa aberto a antesala manda abrir o caixa antes, como em
+// qualquer venda — a comanda espera no quadro.
+const redoRef = String(useRoute().query.redo || "").trim();
+const router = useRouter();
 
 // ANTESALA (benchmark Odoo): sem turno aberto não há venda — o operador cai no
 // lobby de sessão para abrir o caixa. O gate lê o contrato da Projection.
@@ -203,7 +211,7 @@ const {
   sendPaymentNotice,
   onExternalSaleCancelled,
   clearCurrentTab,
-  loadEditTab,
+  loadPreparedTab,
   editIntent,
   openMoveDialog,
   submitMove,
@@ -228,6 +236,8 @@ const {
   error: editError,
   needsPaymentMethod: editNeedsMethod,
   deliveryPaymentMethod: editPaymentMethod,
+  needsTaxId: editNeedsTaxId,
+  deliveryTaxId: editTaxId,
   managerChallenge: editChallenge,
 } = orderEdit;
 const editManagerOpen = ref(false);
@@ -239,7 +249,25 @@ async function startOrderEdit(ref: string) {
     await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
     return;
   }
-  await loadEditTab(tab);
+  await loadPreparedTab(tab);
+}
+
+/** Abre a comanda do refazer (idempotente: o servidor retoma a mesma) e limpa a URL. */
+async function openRedoTab(ref: string) {
+  try {
+    const response = await action.call<PreorderRedoResponse>(
+      `/api/v1/backstage/pos/preorders/${encodeURIComponent(ref)}/redo-tab/`,
+      { body: {} },
+    );
+    // Abrir a venda nova é INICIAR uma venda: a trava da gaveta vale aqui.
+    await drawerLock.guard(() => loadPreparedTab(response.tab));
+    await refresh();
+  } catch (err) {
+    toast.error(`${httpErrorMessage(err, "Não deu para abrir a venda nova.")} Busque a comanda "${redoTabLabel(ref)}" no quadro.`);
+  } finally {
+    // Recarregar a página não pode montar a venda de novo.
+    void router.replace({ path: "/", query: {} });
+  }
 }
 
 /** F4 / "Salvar alterações": a prévia do servidor, antes de gravar. */
@@ -918,6 +946,7 @@ function restoreUncertainCloseFromStorage() {
 }
 onMounted(() => {
   if (editRef) void startOrderEdit(editRef);
+  else if (redoRef) void openRedoTab(redoRef);
   void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
@@ -1022,11 +1051,13 @@ onBeforeUnmount(() => {
           :scheduled="scheduleChipActive"
           :has-fired-items="cart.items.some((item) => item.fired)"
           :customer-required="customerRequiredForSchedule"
+          :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
           @sales-mode-change="requestSalesMode"
           @customer-closed="focusOrderEntry"
+          @customer-locked="(reason: string) => toast.info(reason)"
           @rename="(ref: string) => { if (!editing) void renameTab(ref); }"
           @clear="clearOrDiscard"
           @clear-customer="clearCustomer"
@@ -1333,6 +1364,7 @@ onBeforeUnmount(() => {
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
+            :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
             :primary-label="editing ? 'Salvar alterações' : undefined"
             :primary-icon="editing ? 'lucide:save' : undefined"
             :hide-move="editing"
@@ -1524,12 +1556,14 @@ onBeforeUnmount(() => {
     <PosOrderEditReview
       v-if="editing"
       v-model:delivery-payment-method="editPaymentMethod"
+      v-model:delivery-tax-id="editTaxId"
       :open="editReviewOpen"
       :order-ref="editOrderRef"
       :preview="editPreview"
       :busy="editBusy"
       :error="editError"
       :needs-payment-method="editNeedsMethod"
+      :needs-tax-id="editNeedsTaxId"
       @update:open="(isOpen: boolean) => { if (!isOpen) orderEdit.closeReview(); }"
       @retry="saveOrderEdit"
       @confirm="confirmOrderEdit()"

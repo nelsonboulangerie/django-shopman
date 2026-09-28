@@ -466,12 +466,14 @@ describe("Detalhe — editar (WP-E6)", () => {
     expect(navigate).toHaveBeenCalledWith({ path: "/", query: { edit: "NB-7" } });
   });
 
-  it("com a nota autorizada, o gesto vira Cancelar e refazer — e depois manda registrar de novo", async () => {
+  it("com a nota autorizada, o gesto vira Cancelar e refazer — e a venda abre com a encomenda pré-montada", async () => {
     detail.edit = {
       allowed: false, cancel_and_redo: true, revision: "rev-edit",
       block_reason: "A NFC-e desta encomenda já foi autorizada: para mudar, cancele e refaça a encomenda.",
     };
-    call.mockResolvedValue({ ok: true });
+    call.mockImplementation(async (path: string) => (path.includes("/redo-tab/")
+      ? { ok: true, tab: {}, redo: { order_ref: "NB-7", resumed: false, schedule_dropped: "" } }
+      : { ok: true }));
     const wrapper = await mount(DetailPage);
 
     expect(wrapper.find("[data-preorder-edit]").exists()).toBe(false);
@@ -481,8 +483,31 @@ describe("Detalhe — editar (WP-E6)", () => {
     body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
     await settle();
 
-    expect(call.mock.calls[0]![0]).toBe("/api/v1/backstage/orders/NB-7/cancel/");
+    // Primeiro o cancelamento de sempre; depois a comanda "Refazer NB-7".
+    expect(call.mock.calls.map((c) => c[0])).toEqual([
+      "/api/v1/backstage/orders/NB-7/cancel/",
+      "/api/v1/backstage/pos/preorders/NB-7/redo-tab/",
+    ]);
+    expect(navigate).toHaveBeenCalledWith({ path: "/", query: { redo: "NB-7" } });
+    call.mockReset();
+  });
+
+  it("o refazer que não monta leva à venda com o aviso, e a encomenda segue cancelada", async () => {
+    detail.edit = { allowed: false, cancel_and_redo: true, revision: "rev-edit", block_reason: "Nota autorizada." };
+    call.mockImplementation(async (path: string) => {
+      if (path.includes("/redo-tab/")) {
+        return Promise.reject({ status: 409, data: { detail: "Esta encomenda já foi refeita: é o pedido PDV-9." } });
+      }
+      return { ok: true };
+    });
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel-and-redo]").trigger("click");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    await settle();
+
     expect(navigate).toHaveBeenCalledWith("/");
+    call.mockReset();
   });
 
   it("encomenda que não se edita e não tem nota não mostra o gesto", async () => {

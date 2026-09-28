@@ -57,7 +57,7 @@ import {
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { deliveryTaxIdMissing, isValidTaxId } from "~/presentation/taxId";
+import { deliveryTaxIdMissing, maskTaxId, taxIdEcho as taxIdEchoFor } from "~/presentation/taxId";
 import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
@@ -389,39 +389,13 @@ const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.sele
 // abaixo dizia "Documento incompleto" sobre um número que parecia perfeito.
 // Guardamos só dígitos (é o que o intent envia de qualquer jeito) e cortamos na
 // origem.
-const invoiceTaxIdMasked = computed(() => {
-  const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 11) {
-    return d
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-  return d
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
-});
+const invoiceTaxIdMasked = computed(() => maskTaxId(props.invoiceTaxId));
 
 // "Sai na nota" é uma PROMESSA, e promessa se confere. Onze dígitos quaisquer
 // viravam um check verde: o operador lia de volta com confiança, o cliente
 // confirmava, e a rejeição da NFC-e chegava com ele já na rua. Contar dígito não
 // é conferir documento — quem confere é o dígito verificador.
-const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
-  const digits = props.invoiceTaxId.replace(/\D/g, "");
-  if (!digits) return { ok: false, text: "Digite o documento. Sem ele, a nota sai sem CPF." };
-  if (digits.length !== 11 && digits.length !== 14) {
-    return { ok: false, text: "Documento incompleto: a nota sai sem CPF." };
-  }
-  if (!isValidTaxId(digits)) {
-    return { ok: false, text: "Documento inválido. Confira com o cliente." };
-  }
-  if (digits.length === 11) {
-    return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
-  }
-  return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
-});
+const taxIdEcho = computed(() => taxIdEchoFor(props.invoiceTaxId));
 
 // "Do cadastro" só se o valor ainda É o do cadastro: assim que o operador troca,
 // o aviso some, porque aí não é mais o documento do cliente que está ali.
