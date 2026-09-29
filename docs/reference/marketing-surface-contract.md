@@ -190,6 +190,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/audience/count/`
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
+- `/api/v1/backstage/marketing/offers/`
 - `/api/v1/backstage/marketing/platforms/`
 - `/api/v1/backstage/marketing/preview/`
 - `/api/v1/backstage/marketing/rules/`
@@ -208,6 +209,32 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/whatsapp-template/`
 - `/api/v1/backstage/marketing/whatsapp-template/test/`
 <!-- marketing-api-routes:end -->
+
+### Ofertas e cupons
+
+`GET /marketing/offers/` exige `shop.view_marketing` e devolve a lista junto das
+opções server-owned de produtos, coleções, canais, fulfillment, segmentos e fuso da
+loja. `POST /marketing/offers/` exige `shop.edit_marketing_campaigns`, aceita somente
+os campos documentados pela própria tela e cria a regra inteira em uma transação.
+Erro de validação não deixa `Promotion` nem `Coupon` parcial.
+
+Cupom sempre recebe uma `Promotion` própria. Essa separação preserva o motor canônico:
+uma promoção que possui cupom é excluída das promoções automáticas e só é resolvida
+quando a sessão carrega o código. A API não muda precedência nem empilhamento.
+
+| Regra preservada | Comportamento |
+|---|---|
+| percentual | 1 a 100; compete por item e o maior desconto vence |
+| valor fixo | inteiro positivo em centavos; aplica uma vez no pedido |
+| entrega grátis | `0` cobre todo o frete; valor positivo limita a renúncia |
+| pedido mínimo | inteiro não negativo em centavos |
+| produtos e coleções | listas vazias abrangem o catálogo; referências precisam existir |
+| canais e fulfillment | listas vazias abrangem todos; valores são validados no servidor |
+| cupom | código normalizado em maiúsculas, único e necessário para ativar sua promoção |
+| limite de usos | `0` é ilimitado; contagem continua no mecanismo atômico existente |
+
+O cockpit permite somente criar e listar. Editar, desativar ou excluir uma regra já
+criada permanece fora desta superfície.
 
 ## Projeção e comandos
 

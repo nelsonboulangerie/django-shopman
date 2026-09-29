@@ -117,7 +117,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "version": 1,
         "name": f"Fornada artesanal {pk:02d}{suffix}",
         "trigger": "production_finished",
-        "trigger_label": "Lote concluído",
+        "trigger_label": "Produção concluída",
         "trigger_filter": {"collections": ["paes-artesanais"]},
         "template_id": 1,
         "template_name": "Novidades da padaria",
@@ -195,7 +195,7 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "audience_total": 12,
         "platform_results": [],
         "trigger": "production_finished",
-        "trigger_label": "Lote concluído",
+        "trigger_label": "Produção concluída",
         "rule_name": "Fornada artesanal",
         "template_name": "Novidades da padaria",
         "sku": "PAO-VISUAL-001",
@@ -625,7 +625,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"options": {
                 "triggers": [
                     {"value": "manual", "label": "Disparo manual"},
-                    {"value": "production_finished", "label": "Lote concluído"},
+                    {"value": "production_finished", "label": "Produção concluída"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
                 # A fixture de produto não pode esconder uma capacidade executável para
@@ -703,6 +703,52 @@ class Handler(BaseHTTPRequestHandler):
                 ],
                 "shop_timezone": "America/Sao_Paulo",
             }})
+            return
+        if path == "/api/v1/backstage/marketing/offers/":
+            self._send(200, {
+                "offers": [
+                    {
+                        "ref": "hibisco-primavera",
+                        "name": "Hibisco Primavera",
+                        "type": "percent",
+                        "type_label": "Percentual",
+                        "value": 15,
+                        "valid_from": "2026-09-01T08:00:00-03:00",
+                        "valid_until": "2026-10-31T20:00:00-03:00",
+                        "skus": ["PAO-001"],
+                        "collections": [],
+                        "min_order_q": 0,
+                        "fulfillment_types": [],
+                        "customer_segments": [],
+                        "birthday_only": False,
+                        "channels": [],
+                        "is_active": True,
+                        "status": "live",
+                        "available_for_campaign": True,
+                        "coupons": [],
+                    }
+                ],
+                "options": {
+                    "types": [
+                        {"value": "percent", "label": "Percentual"},
+                        {"value": "fixed", "label": "Valor fixo"},
+                        {"value": "free_delivery", "label": "Entrega grátis"},
+                    ],
+                    "products": [
+                        {"value": "PAO-001", "label": "Pão artesanal (PAO-001)"}
+                    ],
+                    "collections": [],
+                    "channels": [{"value": "web", "label": "Loja on-line"}],
+                    "customer_segments": [
+                        {"value": "champion", "label": "Campeões"}
+                    ],
+                    "fulfillment_types": [
+                        {"value": "delivery", "label": "Entrega"},
+                        {"value": "pickup", "label": "Retirada"},
+                    ],
+                    "shop_timezone": "America/Sao_Paulo",
+                },
+            })
             return
         if path == "/api/v1/backstage/marketing/templates/":
             if scenario == "templates-outage":

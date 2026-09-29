@@ -20,10 +20,20 @@ const {
   platforms: platformChoices,
   deliveryCapabilities,
   platformLabels,
-  offers,
   loading: campaignsLoading,
   refresh: refreshCampaigns,
 } = useCampaigns();
+const {
+  offers,
+  options: offerOptions,
+  loading: offersLoading,
+  error: offersError,
+  saving: savingOffer,
+  problem: offerProblem,
+  refresh: refreshOffers,
+  create: createOffer,
+  clearProblem: clearOfferProblem,
+} = useMarketingOffers();
 const {
   platforms: readiness,
   loading: platformsLoading,
@@ -67,8 +77,18 @@ const operationalDestinations = computed(
     ).length,
 );
 const busy = computed(
-  () => boardLoading.value || campaignsLoading.value || platformsLoading.value,
+  () =>
+    boardLoading.value ||
+    campaignsLoading.value ||
+    platformsLoading.value ||
+    offersLoading.value,
 );
+const offerDialog = ref<"offer" | "coupon" | null>(null);
+const createdOfferRef = ref("");
+
+watch(offerDialog, (current, previous) => {
+  if (current && current !== previous) clearOfferProblem();
+});
 
 const stateClasses: Record<MarketingV2DestinationState, string> = {
   executable: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -79,7 +99,52 @@ const stateClasses: Record<MarketingV2DestinationState, string> = {
 };
 
 async function refreshWorkspace() {
-  await Promise.all([refreshBoard(), refreshCampaigns(), refreshPlatforms()]);
+  await Promise.all([
+    refreshBoard(),
+    refreshCampaigns(),
+    refreshPlatforms(),
+    refreshOffers(),
+  ]);
+}
+
+async function onCreateOffer(payload: Record<string, unknown>) {
+  const created = await createOffer(payload);
+  if (!created) return;
+  createdOfferRef.value = created.ref;
+  offerDialog.value = null;
+  await refreshCampaigns();
+  await nextTick();
+  document
+    .querySelector<HTMLElement>(`[data-marketing-offer="${created.ref}"]`)
+    ?.focus();
+}
+
+function offerValue(offer: (typeof offers.value)[number]): string {
+  if (offer.type === "percent") return `${offer.value}%`;
+  if (offer.type === "free_delivery") {
+    return offer.value === 0
+      ? "Frete grátis"
+      : `Frete grátis até ${money(offer.value)}`;
+  }
+  return money(offer.value);
+}
+
+function money(cents: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
+}
+
+function offerStatus(status: string): string {
+  return (
+    {
+      live: "Em vigor",
+      scheduled: "Agendada",
+      expired: "Encerrada",
+      inactive: "Inativa",
+    }[status] ?? status
+  );
 }
 
 useHead({ title: "Marketing V2" });
@@ -405,34 +470,53 @@ useHead({ title: "Marketing V2" });
     </section>
 
     <section v-else-if="activeSection === 'offers'" class="mt-6 space-y-5">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-          Comercial
-        </p>
-        <h2 class="mt-1 text-xl font-semibold">Ofertas e cupons disponíveis</h2>
-        <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-          A oferta existe uma vez e alimenta as composições que a suportam. No
-          Google, o formato Oferta recebe período, termos e resgate próprios.
-        </p>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-primary">
+            Comercial
+          </p>
+          <h2 class="mt-1 text-xl font-semibold">Ofertas e cupons</h2>
+          <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Oferta dá o benefício automaticamente. Cupom exige o código no
+            carrinho e nasce com uma regra própria, sem alterar ofertas que já
+            estão no ar.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <UiButton
+            type="button"
+            variant="outline"
+            @click="offerDialog = 'coupon'"
+          >
+            <Icon name="lucide:ticket-percent" class="size-4" />
+            Criar cupom
+          </UiButton>
+          <UiButton type="button" @click="offerDialog = 'offer'">
+            <Icon name="lucide:plus" class="size-4" />
+            Criar oferta
+          </UiButton>
+        </div>
       </div>
 
       <div
-        class="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm"
-        role="status"
+        v-if="offersError"
+        class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+        role="alert"
       >
-        <strong>Gestão sem botão cenográfico.</strong>
+        <strong>Não foi possível carregar as ofertas e cupons.</strong>
         <span class="text-muted-foreground">
-          Criar ou alterar uma promoção só será liberado aqui quando existir uma
-          Action versionada e auditável. As ofertas já projetadas podem ser
-          usadas agora nas campanhas.
-        </span>
+          Atualize antes de criar uma campanha com desconto.</span
+        >
       </div>
 
       <ul v-if="offers.length" class="grid gap-3 md:grid-cols-2">
         <li
           v-for="offer in offers"
-          :key="offer.value"
+          :key="offer.ref"
+          :data-marketing-offer="offer.ref"
+          :tabindex="offer.ref === createdOfferRef ? -1 : undefined"
           class="rounded-xl border border-border bg-card p-5"
+          :class="offer.ref === createdOfferRef ? 'ring-2 ring-primary/30' : ''"
         >
           <div class="flex items-start gap-3">
             <span
@@ -441,16 +525,42 @@ useHead({ title: "Marketing V2" });
               <Icon name="lucide:badge-percent" class="size-5" />
             </span>
             <div class="min-w-0 flex-1">
-              <strong class="block">{{ offer.label }}</strong>
+              <div class="flex flex-wrap items-center gap-2">
+                <strong>{{ offer.name }}</strong>
+                <span
+                  class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold"
+                >
+                  {{ offerStatus(offer.status) }}
+                </span>
+              </div>
+              <span class="mt-1 block text-sm">{{ offerValue(offer) }}</span>
               <span class="mt-1 block text-xs text-muted-foreground">
-                Disponível para campanhas e composições compatíveis.
+                <template v-if="offer.coupons.length">
+                  Cupom
+                  {{ offer.coupons.map((coupon) => coupon.code).join(", ") }} ·
+                  {{
+                    offer.coupons.reduce(
+                      (total, coupon) => total + coupon.uses_count,
+                      0,
+                    )
+                  }}
+                  usos
+                </template>
+                <template v-else-if="offer.available_for_campaign">
+                  Disponível para campanhas e composições compatíveis.
+                </template>
+                <template v-else>
+                  Regra comercial cadastrada; não está disponível para uma nova
+                  campanha agora.
+                </template>
               </span>
             </div>
           </div>
           <NuxtLink
+            v-if="offer.available_for_campaign"
             :to="{
               path: '/campaigns',
-              query: { experience: 'v2', new: '1', offer: offer.value },
+              query: { experience: 'v2', new: '1', offer: offer.ref },
             }"
             class="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
           >
@@ -468,9 +578,35 @@ useHead({ title: "Marketing V2" });
         />
         <p class="mt-2 font-semibold">Nenhuma oferta projetada</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          Campanhas de novidade e mensagem continuam disponíveis sem desconto.
+          Crie uma oferta automática ou um cupom para começar.
         </p>
       </div>
+
+      <MarketingWorkspaceDialog
+        :open="offerDialog !== null"
+        :title="offerDialog === 'coupon' ? 'Novo cupom' : 'Nova oferta'"
+        :description="
+          offerDialog === 'coupon'
+            ? 'Crie o código e sua regra de desconto em um único passo, sem transformar uma oferta automática existente.'
+            : 'Defina o benefício, a vigência e onde ele vale. A campanha poderá usar ofertas ligadas a produtos ou coleções.'
+        "
+        @update:open="
+          (value) => {
+            if (!value) offerDialog = null;
+          }
+        "
+      >
+        <MarketingOfferForm
+          v-if="offerDialog"
+          :kind="offerDialog"
+          :options="offerOptions"
+          :busy="savingOffer"
+          :global-error="offerProblem?.detail"
+          :field-errors="offerProblem?.fieldErrors"
+          @submit="onCreateOffer"
+          @cancel="offerDialog = null"
+        />
+      </MarketingWorkspaceDialog>
     </section>
 
     <section v-else class="mt-6 space-y-5">
@@ -548,7 +684,11 @@ useHead({ title: "Marketing V2" });
             :data-marketing-platform="destination.ref"
             class="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
           >
-            Ver conexão e configuração
+            {{
+              destination.ref === "whatsapp"
+                ? "Configurar WhatsApp"
+                : "Ver conexão e configuração"
+            }}
           </NuxtLink>
         </li>
       </ul>

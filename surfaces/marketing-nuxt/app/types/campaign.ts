@@ -207,6 +207,50 @@ export interface Choice {
   label: string;
 }
 
+export interface MarketingCoupon {
+  code: string;
+  max_uses: number;
+  uses_count: number;
+  is_active: boolean;
+  available: boolean;
+}
+
+export interface MarketingOffer {
+  ref: string;
+  name: string;
+  type: "percent" | "fixed" | "free_delivery";
+  type_label: string;
+  value: number;
+  valid_from: string;
+  valid_until: string;
+  skus: string[];
+  collections: string[];
+  min_order_q: number;
+  fulfillment_types: string[];
+  customer_segments: string[];
+  birthday_only: boolean;
+  channels: string[];
+  is_active: boolean;
+  status: "live" | "scheduled" | "expired" | "inactive";
+  available_for_campaign: boolean;
+  coupons: MarketingCoupon[];
+}
+
+export interface MarketingOfferOptions {
+  types: Choice[];
+  products: Choice[];
+  collections: Choice[];
+  channels: Choice[];
+  customer_segments: Choice[];
+  fulfillment_types: Choice[];
+  shop_timezone: string;
+}
+
+export interface MarketingOffersResponse {
+  offers: MarketingOffer[];
+  options: MarketingOfferOptions;
+}
+
 export interface MarketingFormatCapability {
   ref: string;
   label: string;

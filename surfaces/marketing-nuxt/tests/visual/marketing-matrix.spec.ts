@@ -64,7 +64,11 @@ async function expectStableScreenshot(
   name: string,
   viewport: Viewport,
   theme: Theme = "light",
-  options: { fullPage?: boolean; maxDiffPixels?: number } = {},
+  options: {
+    fullPage?: boolean;
+    maxDiffPixels?: number;
+    maxDiffPixelRatio?: number;
+  } = {},
 ) {
   await expect(page).toHaveScreenshot(
     [`${name}__${viewport.label}__${theme}.png`],
@@ -73,6 +77,9 @@ async function expectStableScreenshot(
       ...(options.maxDiffPixels === undefined
         ? {}
         : { maxDiffPixels: options.maxDiffPixels }),
+      ...(options.maxDiffPixelRatio === undefined
+        ? {}
+        : { maxDiffPixelRatio: options.maxDiffPixelRatio }),
     },
   );
   const width = await page.evaluate(() => ({
@@ -790,7 +797,7 @@ test.describe("listas operacionais", () => {
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: "Ver conexão e configuração" })
+      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
       .click();
     await page.getByRole("button", { name: "Enviar teste" }).click();
     await expect(
@@ -812,7 +819,7 @@ test.describe("listas operacionais", () => {
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: "Ver conexão e configuração" })
+      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
       .click();
     // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
     // em vez de um cartão por modelo.
@@ -1147,6 +1154,10 @@ test.describe("modos transversais", () => {
     await openScenario(page, "platforms-blocked", "/v2?area=platforms", zoom);
     await expectStableScreenshot(page, "platforms__blocked", zoom, "light", {
       fullPage: false,
+      // Chromium rasteriza texto ampliado com uma pequena variação entre
+      // processos; limite o ruído à tipografia sem ocultar mudança de layout.
+      maxDiffPixels: 1_500,
+      maxDiffPixelRatio: 0.004,
     });
   });
 
