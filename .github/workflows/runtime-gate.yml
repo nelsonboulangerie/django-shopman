@@ -318,7 +318,7 @@ jobs:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
         run: |
           if [ "${{ matrix.suite }}" = "test-shop" ] || [ "${{ matrix.suite }}" = "test-storefront" ]; then
-            export PYTEST_ADDOPTS="--cov=shopman --cov-report= --cov-append"
+            export PYTEST_ADDOPTS="--cov=shopman --cov-report= --cov-append --cov-fail-under=0"
           fi
           make ${{ matrix.suite }}
 
@@ -370,7 +370,7 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.backstage-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
         run: make test-backstage-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
