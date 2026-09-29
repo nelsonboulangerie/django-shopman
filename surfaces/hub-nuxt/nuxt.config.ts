@@ -12,6 +12,14 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+    operatorSecurityHeaders: true,
+    // Exceção da CSP do kit (SEC-SURF-001, decisão do dono em 29/09/2026): cada tile
+    // mostra o ícone real do app buscado na origem DELE (tileIconUrl:
+    // https://pdv.<zona>/pwa/pwa-192x192.png, https://kds.<zona>/...), e o Shopman
+    // Apps mora em central.<zona>. Mesma regra do Pedidos: imagem de qualquer https.
+    operatorCspAllow: {
+      "img-src": ["https:"],
+    },
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome
