@@ -44,6 +44,7 @@
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
+| [`profile_data_artifact`](#profile_data_artifact) | backstage | Dados | Gera um manifest sanitizado e somente leitura de CSV/XLSX/XML/JSON/SQLite |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
@@ -1219,6 +1220,36 @@ make omotenashi-browser-ci port=8010
 
 Esse alvo é destrutivo para o banco configurado no ambiente porque executa o
 seed com flush. Use-o em ambiente local descartável ou CI.
+
+---
+
+### profile_data_artifact
+
+**Propósito:** inventaria um artefato privado em modo somente leitura e produz um manifest
+sanitizado. Suporta CSV, XLSX, XML, JSON e SQLite. O relatório contém hash, tamanho, schema e
+contagens agregadas; nunca contém valores de células, texto XML, caminho pessoal ou linhas do
+artefato.
+
+**Uso:**
+
+```bash
+python manage.py profile_data_artifact \
+  --file /landing/catalogo.xlsx \
+  --source catalogo_nelson_consolidado \
+  --purpose catalog_candidate \
+  --key 'Produtos:sku' \
+  --date 'Produtos:as_of' \
+  --output /evidence/catalogo-manifest.json
+```
+
+- `--key` e `--date` são repetíveis. Em XLSX, `ABA:CAMPO` limita o seletor a uma aba;
+  `CAMPO` aplica-o a todas.
+- XML é lido por parser seguro e só expõe contagem de elementos. SQLite abre em
+  `mode=ro&immutable=1` e só expõe schema/contagem de tabelas.
+- `--output` recusa arquivo existente e nunca pode apontar para a origem. Sem ele, o JSON vai
+  para stdout.
+- O comando não abre conexão com o banco, não cria `ImportBatch` e não importa nada. O manifest
+  é a evidência de descoberta/profiling que antecede `dry-run` e aprovação.
 
 ---
 
