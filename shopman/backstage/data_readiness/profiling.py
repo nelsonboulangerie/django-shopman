@@ -11,6 +11,7 @@ import csv
 import hashlib
 import json
 import mimetypes
+import re
 import sqlite3
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -22,6 +23,7 @@ from defusedxml import ElementTree as SafeElementTree
 
 PROFILE_SCHEMA_VERSION = "shopman.data-artifact-profile/v1"
 SUPPORTED_SUFFIXES = frozenset({".csv", ".json", ".sqlite", ".sqlite3", ".db", ".xlsx", ".xml"})
+SAFE_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 
 
 class ArtifactProfileError(ValueError):
@@ -164,7 +166,8 @@ def _csv_profile(
     sample = ""
     for candidate in ("utf-8-sig", "utf-8", "latin-1"):
         try:
-            sample = path.read_text(encoding=candidate)[:65536]
+            with path.open("r", encoding=candidate, newline="") as handle:
+                sample = handle.read(65536)
         except UnicodeDecodeError:
             continue
         encoding = candidate
@@ -302,10 +305,13 @@ def profile_artifact(
     suffix = artifact.suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise ArtifactProfileError(f"Formato não suportado: {suffix or 'sem extensão'}.")
-    source = source.strip()
-    purpose = purpose.strip()
-    if not source or not purpose:
-        raise ArtifactProfileError("source e purpose são obrigatórios.")
+    source = source.strip().lower()
+    purpose = purpose.strip().lower()
+    if not SAFE_TOKEN.fullmatch(source) or not SAFE_TOKEN.fullmatch(purpose):
+        raise ArtifactProfileError("source e purpose devem ser tokens seguros em minúsculas.")
+    safe_logical_name = (logical_name or artifact.name).strip()
+    if not safe_logical_name or Path(safe_logical_name).name != safe_logical_name:
+        raise ArtifactProfileError("logical_name deve ser um nome lógico, nunca um caminho.")
 
     keys = _selector_map(tuple(key_fields))
     dates = _selector_map(tuple(date_fields))
@@ -331,7 +337,7 @@ def profile_artifact(
         "schema_version": PROFILE_SCHEMA_VERSION,
         "source": source,
         "purpose": purpose,
-        "logical_name": (logical_name or artifact.name).strip(),
+        "logical_name": safe_logical_name,
         "sha256": _sha256(artifact),
         "bytes": stat.st_size,
         "format": suffix.removeprefix("."),

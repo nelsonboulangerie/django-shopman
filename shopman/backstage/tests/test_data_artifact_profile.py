@@ -124,3 +124,12 @@ def test_command_refuses_to_overwrite_report(tmp_path):
             "--output",
             output,
         )
+
+
+def test_identity_fields_cannot_smuggle_paths_or_free_text(tmp_path):
+    source = tmp_path / "catalog.csv"
+    source.write_text("sku\nA\n")
+    with pytest.raises(ArtifactProfileError, match="tokens seguros"):
+        profile_artifact(source, source="nome de pessoa", purpose="candidate")
+    with pytest.raises(ArtifactProfileError, match="nunca um caminho"):
+        profile_artifact(source, source="catalog", purpose="candidate", logical_name="/Users/alguem/catalog.csv")
