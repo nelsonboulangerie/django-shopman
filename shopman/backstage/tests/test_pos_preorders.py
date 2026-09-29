@@ -43,11 +43,17 @@ def _pay(order: Order, amount_q: int, *, method: str = "cash") -> str:
     return intent.ref
 
 
-def _list(date_from=None, date_to=None, query=""):
+def _list(date_from=None, date_to=None):
     today = timezone.localdate()
-    return preorders.build_preorder_list(
-        date_from=date_from or today, date_to=date_to or today + timedelta(days=6), query=query,
-    )
+    return preorders.build_preorder_list(date_from=date_from or today, date_to=date_to or today + timedelta(days=6))
+
+
+def _search(query, *, include_completed=False):
+    return preorders.build_preorder_search(query, include_completed=include_completed)
+
+
+def _found(projection) -> list[str]:
+    return [card.ref for card in projection.open]
 
 
 def _refs(projection) -> list[str]:
@@ -118,6 +124,20 @@ def test_dentro_do_dia_a_ordem_e_a_da_janela():
     assert [c.ref for c in projection.days[0].orders] == ["CEDO", "TARDE"]
     assert projection.days[0].orders[0].window_start == "09:00"
     assert projection.days[0].orders[0].window_label
+
+
+def test_a_semana_ISO_vai_de_SEGUNDA_a_domingo():
+    """Decisão do dono (28/09/2026): a semana do modo Semana começa na segunda."""
+    date_from, date_to = preorders.parse_range(None, None, week="2026-W40")
+
+    assert (date_from.isoformat(), date_to.isoformat()) == ("2026-09-28", "2026-10-04")
+    assert date_from.weekday() == 0
+
+
+def test_semana_ilegivel_cai_nas_datas():
+    date_from, date_to = preorders.parse_range("2026-09-01", "2026-09-02", week="W99")
+
+    assert (date_from.isoformat(), date_to.isoformat()) == ("2026-09-01", "2026-09-02")
 
 
 def test_o_intervalo_tem_teto():
@@ -266,26 +286,122 @@ def test_busca_por_nome_telefone_ou_numero(query):
     _order("BUSCA-1", delivery_date=today)
     _order("OUTRO", delivery_date=today, customer={"name": "Carlos", "phone": "+5543911112222"})
 
-    assert _refs(_list(query=query)) == ["BUSCA-1"]
+    assert _found(_search(query)) == ["BUSCA-1"]
 
 
 def test_busca_ignora_acento():
     _order("JOSE", delivery_date=timezone.localdate().isoformat(), customer={"name": "José Álvares"})
 
-    assert _refs(_list(query="jose alvares")) == ["JOSE"]
+    assert _found(_search("jose alvares")) == ["JOSE"]
 
 
 def test_busca_pelo_numero_do_ifood():
     _order("IFOOD-260926-1", channel_ref="ifood", delivery_date=timezone.localdate().isoformat(),
            ifood={"display_id": "4994"})
 
-    assert _refs(_list(query="4994")) == ["IFOOD-260926-1"]
+    assert _found(_search("4994")) == ["IFOOD-260926-1"]
 
 
 def test_poucos_digitos_nao_buscam_telefone():
     _order("CURTO", delivery_date=timezone.localdate().isoformat())
 
-    assert _refs(_list(query="99")) == []
+    assert _found(_search("99")) == []
+
+
+@pytest.mark.parametrize("query", ["123.456", "12345678901", "456.789-01"])
+def test_busca_pelo_CPF_pedido_na_nota(query):
+    _order("CPF-1", delivery_date=timezone.localdate().isoformat(), fiscal={"tax_id": "12345678901"})
+    _order("SEM-CPF", delivery_date=timezone.localdate().isoformat(), customer={"name": "Bia", "phone": ""})
+
+    assert _found(_search(query)) == ["CPF-1"]
+
+
+def test_busca_pelo_endereco_de_entrega_sem_acento():
+    _order("END-1", delivery_date=timezone.localdate().isoformat(), fulfillment_type="delivery",
+           delivery_address="Rua Paraná, 1200 - Centro - Londrina")
+    _order("END-2", delivery_date=timezone.localdate().isoformat(), fulfillment_type="delivery",
+           delivery_address="Av. Higienópolis, 50")
+
+    assert _found(_search("rua parana")) == ["END-1"]
+
+
+def test_busca_acha_em_aberto_de_QUALQUER_data():
+    """A encomenda de ontem que ninguém buscou e a do mês que vem."""
+    today = timezone.localdate()
+    _order("ONTEM", delivery_date=(today - timedelta(days=1)).isoformat())
+    _order("LONGE", delivery_date=(today + timedelta(days=45)).isoformat())
+
+    assert _found(_search("ana")) == ["ONTEM", "LONGE"]
+
+
+def test_busca_padrao_deixa_concluidas_de_fora_e_as_oferece_em_secao_propria():
+    today = timezone.localdate().isoformat()
+    _order("ABERTA", delivery_date=today)
+    _order("ENTREGUE", status="completed", delivery_date=today)
+    _order("NA-PORTA", status="delivered", delivery_date=today)
+    _order("CANCELADA", status="cancelled", delivery_date=today)
+
+    padrao = _search("ana")
+    assert (_found(padrao), padrao.completed, padrao.completed_count) == (["ABERTA"], (), 0)
+
+    com = _search("ana", include_completed=True)
+    assert _found(com) == ["ABERTA"]
+    assert sorted(card.ref for card in com.completed) == ["ENTREGUE", "NA-PORTA"]
+    assert com.completed_count == 2 and com.include_completed
+
+
+def test_concluidas_so_dos_ultimos_30_dias_e_a_mais_recente_primeiro():
+    today = timezone.localdate()
+    _order("VELHA", status="completed", delivery_date=(today - timedelta(days=40)).isoformat())
+    _order("SEMANA-PASSADA", status="completed", delivery_date=(today - timedelta(days=7)).isoformat())
+    _order("ONTEM", status="completed", delivery_date=(today - timedelta(days=1)).isoformat())
+
+    assert [card.ref for card in _search("ana", include_completed=True).completed] == ["ONTEM", "SEMANA-PASSADA"]
+
+
+def test_busca_nunca_devolve_venda_de_balcao():
+    _order("BALCAO-ABERTO", channel_ref="pdv", origin_channel="pos", pos={"sales_mode": "counter"})
+    _order("BALCAO-FEITO", status="completed", channel_ref="pdv", origin_channel="pos",
+           pos={"sales_mode": "counter"})
+    # Registro antigo, sem o modo gravado: a leitura em Python ainda o reconhece.
+    _order("BALCAO-ANTIGO", status="completed", channel_ref="pdv", origin_channel="pos")
+
+    result = _search("ana", include_completed=True)
+
+    assert (result.open, result.completed) == ((), ())
+
+
+def test_busca_tem_teto_e_diz_quantas_achou(monkeypatch):
+    monkeypatch.setattr(preorders, "SEARCH_LIMIT", 2)
+    today = timezone.localdate().isoformat()
+    for n in range(3):
+        _order(f"MUITAS-{n}", delivery_date=today)
+
+    result = _search("ana")
+
+    assert len(result.open) == 2 and result.open_count == 3
+
+
+def test_busca_vazia_nao_le_nada():
+    _order("QUALQUER", delivery_date=timezone.localdate().isoformat())
+
+    result = _search("   ", include_completed=True)
+
+    assert (result.open, result.completed, result.open_count) == ((), (), 0)
+
+
+# ── A Via Pedido no card ──────────────────────────────────────────────────
+
+
+def test_o_card_diz_se_a_via_pedido_ja_saiu():
+    today = timezone.localdate().isoformat()
+    _order("IMPRESSA", delivery_date=today, ticket_printed_at=timezone.now().isoformat())
+    _order("FALTA", delivery_date=today)
+
+    projection = _list()
+
+    assert _card(projection, "IMPRESSA").ticket_printed is True
+    assert _card(projection, "FALTA").ticket_printed is False
 
 
 # ── As rotas ──────────────────────────────────────────────────────────────
@@ -309,7 +425,7 @@ def test_a_rota_lista_com_os_params_canonicos(caixa):
     _order("ROTA-1", delivery_date=today.isoformat())
 
     response = caixa.get("/api/v1/backstage/pos/preorders/", {
-        "date_from": today.isoformat(), "date_to": today.isoformat(), "q": "ana",
+        "date_from": today.isoformat(), "date_to": today.isoformat(),
     })
 
     assert response.status_code == 200
@@ -320,6 +436,35 @@ def test_a_rota_lista_com_os_params_canonicos(caixa):
     assert body["days"][0]["orders"][0]["situation_label"] == "A pagar"
     assert body["days"][0]["orders"][0]["payment_state"] == "to_receive"
     assert body["to_receive_display"] == "R$ 36,00"
+
+
+def test_a_rota_aceita_a_semana_ISO(caixa):
+    response = caixa.get("/api/v1/backstage/pos/preorders/", {"week": "2026-W40"})
+
+    body = response.json()
+    assert (body["date_from"], body["date_to"]) == ("2026-09-28", "2026-10-04")
+    assert len(body["days"]) == 7
+
+
+def test_a_rota_da_busca_separa_em_aberto_e_concluidas(caixa):
+    today = timezone.localdate().isoformat()
+    _order("BUSCA-ABERTA", delivery_date=today)
+    _order("BUSCA-FEITA", status="completed", delivery_date=today)
+
+    padrao = caixa.get("/api/v1/backstage/pos/preorders/search/", {"q": "ana"}).json()
+    com = caixa.get("/api/v1/backstage/pos/preorders/search/", {"q": "ana", "include_completed": "1"}).json()
+
+    assert [c["ref"] for c in padrao["open"]] == ["BUSCA-ABERTA"] and padrao["completed"] == []
+    assert [c["ref"] for c in com["completed"]] == ["BUSCA-FEITA"]
+    assert com["completed_days"] == preorders.COMPLETED_SEARCH_DAYS
+
+
+def test_a_busca_nao_e_confundida_com_um_ref(caixa):
+    """⚠️ ``pos/preorders/search/`` casaria com ``pos/preorders/<str:ref>/`` se viesse depois."""
+    response = caixa.get("/api/v1/backstage/pos/preorders/search/", {"q": "x"})
+
+    assert response.status_code == 200
+    assert "open" in response.json()
 
 
 def test_sem_manage_orders_a_rota_recusa(client):

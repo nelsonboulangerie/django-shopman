@@ -29,7 +29,7 @@ const { detail, pending, error, refresh } = usePosPreorderDetail(ref_);
 const card = computed(() => detail.value?.card ?? null);
 const notFound = computed(() => !!error.value && httpError(error.value).status === 404);
 
-const tickets = usePosOrderTickets(pos, { loadBatch: false });
+const tickets = usePosOrderTickets(pos);
 
 async function printTicket() {
   if (await tickets.printOne(ref_.value)) await refresh();
@@ -105,7 +105,7 @@ const TONE_CLASS: Record<string, string> = {
 
 function goBack() {
   if (import.meta.client && window.history.length > 1) window.history.back();
-  else void navigateTo("/preorders/today");
+  else void navigateTo("/preorders");
 }
 </script>
 

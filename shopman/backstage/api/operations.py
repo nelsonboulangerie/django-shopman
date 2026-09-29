@@ -2510,12 +2510,14 @@ class POSRecentSalesView(APIView):
     ),
 )
 class POSPreorderListView(APIView):
-    """A seção Encomendas do PDV: busca, o dia e a grade semanal numa rota só.
+    """A seção Encomendas do PDV por período: o modo Dia e o modo Semana.
 
-    ``GET ?date_from=&date_to=&q=`` — a janela na régua canônica da casa
+    ``GET ?week=2026-W40`` — a semana ISO, de segunda a domingo. Ou
+    ``?date_from=&date_to=`` na régua canônica da casa
     (``order_ticket.parse_period``: padrão hoje + 6, ilegível cai no padrão,
     invertido é trocado) com o teto de ``preorders.MAX_SPAN_DAYS``. O corte e o
-    saldo moram em ``projections.preorders``.
+    saldo moram em ``projections.preorders``; a busca tem rota própria
+    (``pos/preorders/search/``), porque não tem período.
 
     Duas permissões: a do balcão (é tela do PDV) e a do pedido (o documento é
     do pedido, como na Via Pedido — o grupo Caixa tem as duas).
@@ -2529,9 +2531,39 @@ class POSPreorderListView(APIView):
 
         from shopman.backstage.projections import preorders
 
-        date_from, date_to = preorders.parse_range(request.GET.get("date_from"), request.GET.get("date_to"))
-        projection = preorders.build_preorder_list(
-            date_from=date_from, date_to=date_to, query=str(request.GET.get("q") or ""),
+        date_from, date_to = preorders.parse_range(
+            request.GET.get("date_from"), request.GET.get("date_to"), week=request.GET.get("week"),
+        )
+        projection = preorders.build_preorder_list(date_from=date_from, date_to=date_to)
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder search: open preorders of any date, completed ones on request",
+        responses={200: OpenApiResponse(description="Open and (optionally) completed preorders matching the query.")},
+    ),
+)
+class POSPreorderSearchView(APIView):
+    """"Cliente veio buscar": ``GET ?q=&include_completed=1``.
+
+    Sem período: em aberto de qualquer data; com ``include_completed``, também
+    as concluídas dos últimos ``preorders.COMPLETED_SEARCH_DAYS`` dias, numa
+    seção à parte. Mesmas permissões da lista.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        projection = preorders.build_preorder_search(
+            str(request.GET.get("q") or ""),
+            include_completed=str(request.GET.get("include_completed") or "").lower() in {"1", "true"},
         )
         return Response({"ok": True, **asdict(projection)})
 
@@ -3017,41 +3049,6 @@ class CourierTicketEscposView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="Orders committed within a period (order-ticket batch preview)",
-        responses={200: OpenApiResponse(description="Orders in the period, panel-ordered.")},
-    ),
-)
-class OrderTicketBatchView(APIView):
-    """O que SAIRIA no lote — a conferência do intervalo antes de a bobina andar.
-
-    Olhar não é imprimir: esta rota não carimba nada. Ela existe porque um
-    intervalo digitado errado só se descobre quando o papel já está no chão, e
-    a tela precisa poder dizer "vão sair 34 filipetas" antes do gesto.
-    """
-
-    permission_classes = [HasBackstagePermission]
-    required_permission = "shop.manage_orders"
-
-    def get(self, request):
-        from shopman.backstage.services import order_ticket as tickets
-
-        date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
-        orders = tickets.orders_for_period(date_from, date_to)
-        return Response(
-            {
-                "ok": True,
-                "date_from": date_from.isoformat(),
-                "date_to": date_to.isoformat(),
-                "count": len(orders),
-                "max_batch": tickets.MAX_BATCH,
-                "orders": tickets.preview_rows(orders),
-            }
-        )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=["backstage"],
         summary="Order-ticket batch bytes (ESC/POS, base64) for a committed period",
         responses={200: OpenApiResponse(description="Consecutive order tickets on one roll.")},
     ),
@@ -3066,7 +3063,12 @@ class OrderTicketBatchEscposView(APIView):
 
     Carimba cada pedido individualmente: compor é ter soltado o papel no mundo,
     e a filipeta seguinte daquele pedido sai marcada como 2ª via — a mesma
-    regra do recibo, aplicada pedido a pedido dentro do lote.
+    regra do recibo, aplicada pedido a pedido dentro do lote. O carimbo é o que
+    a tela das Encomendas lê para "Falta imprimir".
+
+    ``?refs=A,B,C`` recorta o lote ao que a tela MOSTRA (período + filtros):
+    "Imprimir 3 vias" imprime as três que o operador vê, nunca o período
+    inteiro. O recorte só estreita (``order_ticket.select_refs``).
     """
 
     permission_classes = [HasBackstagePermission]
@@ -3078,7 +3080,9 @@ class OrderTicketBatchEscposView(APIView):
         from shopman.backstage.services import order_ticket as tickets
 
         date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
-        orders = tickets.orders_for_period(date_from, date_to)
+        orders = tickets.select_refs(
+            tickets.orders_for_period(date_from, date_to), tickets.parse_refs(request.GET.get("refs")),
+        )
         if len(orders) > tickets.MAX_BATCH:
             return Response(
                 {"detail": str(tickets.BatchTooLarge(len(orders))), "count": len(orders)},

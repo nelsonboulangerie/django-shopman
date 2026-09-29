@@ -1,9 +1,11 @@
 """Encomendas do PDV — a leitura que o balcão faz do que a casa prometeu.
 
-A seção "Encomendas" do PDV (``docs/plans/ENCOMENDAS-PDV-PLAN.md``) responde
-três perguntas do balcão: *vim buscar a encomenda da Ana*, *o que sai hoje?* e
-*quanto temos para sábado?*. As três são a mesma leitura com recortes
-diferentes, e ela mora aqui.
+A seção "Encomendas" do PDV (``docs/plans/ENCOMENDAS-PDV-PLAN.md``) é uma tela
+só e responde três perguntas do balcão: *vim buscar a encomenda da Ana* (a
+busca, :func:`build_preorder_search`), *o que sai hoje?* (o modo Dia) e *quanto
+temos para sábado?* (o modo Semana, de segunda a domingo). Dia e Semana são a
+mesma leitura por período (:func:`build_preorder_list`); a busca é outra,
+porque não tem período — e as duas moram aqui.
 
 **O corte (decisão do dono, 26/09/2026):** encomenda é todo pedido com
 recebimento — retirada ou entrega — de QUALQUER canal (PDV, loja online, iFood),
@@ -38,8 +40,20 @@ logger = logging.getLogger(__name__)
 #: uma leitura que arrasta o ano inteiro para o balcão.
 MAX_SPAN_DAYS = 62
 
-#: Busca por telefone só a partir de quatro dígitos: com menos, "12" casa com
-#: metade da agenda e a lista vira ruído.
+#: A busca olha as concluídas destes últimos dias, e só quando pedido
+#: ("Incluir concluídas"). Em aberto, ela olha qualquer data.
+COMPLETED_SEARCH_DAYS = 30
+
+#: Teto de cada seção do resultado da busca. Passar disto é busca vaga
+#: ("an"), e a resposta diz quantas ficaram de fora para o balcão refinar.
+SEARCH_LIMIT = 50
+
+#: Concluída = a mercadoria já está com o cliente. Com cancelado e devolvido
+#: (``order_ticket.EXCLUDED_STATUSES``), é o que a busca padrão deixa de fora.
+CONCLUDED_STATUSES = ("delivered", "completed")
+
+#: Busca por telefone (e por CPF/CNPJ) só a partir de quatro dígitos: com
+#: menos, "12" casa com metade da agenda e a lista vira ruído.
 MIN_PHONE_DIGITS = 4
 
 #: O rótulo do canal quando o cadastro do canal não tem nome. O mesmo
@@ -121,6 +135,9 @@ class PreorderCardProjection:
     balance_display: str
     items_summary: str
     items_count: int
+    # A Via Pedido já saiu (``ticket_printed_at``): o filtro "Falta imprimir" e
+    # o sinal da impressora no card leem isto.
+    ticket_printed: bool
 
 
 @dataclass(frozen=True)
@@ -147,7 +164,6 @@ class PreorderListProjection:
     date_from: str
     date_to: str
     today: str
-    query: str
     count: int
     total_q: int
     total_display: str
@@ -156,6 +172,30 @@ class PreorderListProjection:
     # TODOS os dias do intervalo, inclusive os vazios: a grade semanal tem sete
     # colunas mesmo quando terça não tem nada, e a coluna vazia é informação.
     days: tuple[PreorderDayProjection, ...]
+    # O teto do lote da Via Pedido (``order_ticket.MAX_BATCH``): a tela avisa
+    # ANTES de "Imprimir N vias" passar dele, com o número do servidor.
+    max_batch: int
+
+
+@dataclass(frozen=True)
+class PreorderSearchProjection:
+    """"Cliente veio buscar": a busca sem período, em duas seções que não se misturam.
+
+    ``open`` são as encomendas em aberto de QUALQUER data (a de ontem que
+    ninguém buscou é justamente a que o balcão mais precisa achar);
+    ``completed`` só vem com ``include_completed`` — as concluídas dos últimos
+    :data:`COMPLETED_SEARCH_DAYS` dias, da mais recente para a mais antiga.
+    ``*_count`` é o total achado; os cards param em :data:`SEARCH_LIMIT`.
+    """
+
+    query: str
+    today: str
+    include_completed: bool
+    completed_days: int
+    open_count: int
+    open: tuple[PreorderCardProjection, ...]
+    completed_count: int
+    completed: tuple[PreorderCardProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -252,31 +292,48 @@ class PreorderDetailProjection:
 # ── Leitura ───────────────────────────────────────────────────────────────
 
 
-def parse_range(raw_from, raw_to, *, today: date | None = None) -> tuple[date, date]:
-    """``date_from``/``date_to`` na régua da casa, com o teto de :data:`MAX_SPAN_DAYS`.
+def parse_week(raw) -> tuple[date, date] | None:
+    """A semana ISO (``2026-W40``) → de SEGUNDA a domingo. ``None`` se ilegível.
 
-    A régua é a do lote da Via Pedido (``order_ticket.parse_period``): data
-    ilegível cai no padrão, intervalo invertido é trocado. O teto corta o FIM
-    do intervalo, nunca o começo — quem pediu "a partir de hoje" continua
+    A semana do modo Semana começa na segunda-feira (decisão do dono,
+    28/09/2026): é a semana do calendário da parede, não "os próximos 7 dias".
+    """
+    text = str(raw or "").strip().upper()
+    year, sep, week = text.partition("-W")
+    if not sep:
+        return None
+    try:
+        monday = date.fromisocalendar(int(year), int(week), 1)
+    except ValueError:
+        return None
+    return monday, monday + timedelta(days=6)
+
+
+def parse_range(raw_from, raw_to, *, week=None, today: date | None = None) -> tuple[date, date]:
+    """O período da leitura: a semana ISO, ou ``date_from``/``date_to``.
+
+    ``week`` legível vence as datas. Sem ela, a régua é a do lote da Via Pedido
+    (``order_ticket.parse_period``): data ilegível cai no padrão, intervalo
+    invertido é trocado, com o teto de :data:`MAX_SPAN_DAYS`. O teto corta o
+    FIM do intervalo, nunca o começo — quem pediu "a partir de hoje" continua
     vendo hoje.
     """
     from shopman.backstage.services import order_ticket
 
+    by_week = parse_week(week) if week else None
+    if by_week:
+        return by_week
     date_from, date_to = order_ticket.parse_period(raw_from, raw_to, today=today)
     if (date_to - date_from).days + 1 > MAX_SPAN_DAYS:
         date_to = date_from + timedelta(days=MAX_SPAN_DAYS - 1)
     return date_from, date_to
 
 
-def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> PreorderListProjection:
-    """As encomendas do intervalo, agrupadas por dia, filtradas pela busca."""
+def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjection:
+    """As encomendas do período (o dia, ou a semana), agrupadas por dia."""
     from shopman.backstage.services import order_ticket
 
     orders = order_ticket.orders_for_period(date_from, date_to)
-    needle = str(query or "").strip()
-    if needle:
-        orders = [order for order in orders if _matches(order, needle)]
-
     cards = _cards_for(orders)
     by_day: dict[date, list[PreorderCardProjection]] = {}
     for card in cards:
@@ -312,13 +369,70 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
         date_from=date_from.isoformat(),
         date_to=date_to.isoformat(),
         today=today.isoformat(),
-        query=needle,
         count=len(cards),
         total_q=total,
         total_display=_money(total),
         to_receive_q=to_receive,
         to_receive_display=_money(to_receive),
         days=tuple(days),
+        max_batch=order_ticket.MAX_BATCH,
+    )
+
+
+def build_preorder_search(query: str, *, include_completed: bool = False) -> PreorderSearchProjection:
+    """"Cliente veio buscar" — em aberto de qualquer data; concluídas só se pedido.
+
+    O corte é o mesmo da seção (sem Balcão, sem cancelado/devolvido); o que muda
+    é o eixo: em vez do período, o ESTADO. A leitura grossa é SQL (estado,
+    janela das concluídas, e a venda de Balcão explícita fora por subconsulta —
+    ela é o grosso dos pedidos concluídos e nunca é encomenda); quem decide é
+    :func:`_matches`, em Python, porque nome sem acento e dígitos de telefone
+    não são coluna. Os itens só são lidos para o que aparece.
+    """
+    from django.db.models import Q, prefetch_related_objects
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.services import order_ticket
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    needle = str(query or "").strip()
+    today = timezone.localdate()
+    open_orders: list = []
+    completed_orders: list = []
+    if needle:
+        counter_sales = Order.objects.filter(data__origin_channel="pos", data__pos__sales_mode="counter").values("pk")
+        base = Order.objects.exclude(pk__in=counter_sales)
+
+        open_orders = [
+            order for order in base.exclude(status__in=(*CONCLUDED_STATUSES, *order_ticket.EXCLUDED_STATUSES))
+            if not is_pos_counter_order(order) and _matches(order, needle)
+        ]
+        open_orders.sort(key=order_ticket.window_sort_key)
+
+        if include_completed:
+            since = today - timedelta(days=COMPLETED_SEARCH_DAYS)
+            candidates = base.filter(status__in=CONCLUDED_STATUSES).filter(
+                Q(created_at__date__gte=since) | Q(data__delivery_date__gte=since.isoformat())
+            )
+            completed_orders = [
+                order for order in candidates
+                if since <= order_ticket.commitment_of(order) <= today
+                and not is_pos_counter_order(order) and _matches(order, needle)
+            ]
+            completed_orders.sort(key=order_ticket.window_sort_key, reverse=True)
+
+    open_shown = open_orders[:SEARCH_LIMIT]
+    completed_shown = completed_orders[:SEARCH_LIMIT]
+    prefetch_related_objects([*open_shown, *completed_shown], "items")
+    return PreorderSearchProjection(
+        query=needle,
+        today=today.isoformat(),
+        include_completed=include_completed,
+        completed_days=COMPLETED_SEARCH_DAYS,
+        open_count=len(open_orders),
+        open=tuple(_cards_for(open_shown)),
+        completed_count=len(completed_orders),
+        completed=tuple(_cards_for(completed_shown)),
     )
 
 
@@ -501,6 +615,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         balance_display=_money(balance_q) if balance_q is not None else "",
         items_summary=order_queue.items_summary(items),
         items_count=len(items),
+        ticket_printed=bool(data.get("ticket_printed_at")),
     )
 
 
@@ -555,33 +670,39 @@ def _to_receive_q(cards) -> int:
 
 
 def _matches(order, needle: str) -> bool:
-    """Busca por número do pedido, nome, telefone ou número do iFood.
+    """Número do pedido, nome, endereço, telefone, CPF/CNPJ ou número do iFood.
 
-    Nome sem acento e sem caixa ("jose" acha "José"). Telefone por dígitos, a
-    partir de :data:`MIN_PHONE_DIGITS` — e nunca contra o relé do iFood (o 0800
-    da central não é o telefone de ninguém, e casar com ele devolveria todo
-    pedido do iFood do dia).
+    Texto sem acento e sem caixa ("jose" acha "José"; "rua das flores" acha o
+    endereço de entrega). Telefone e documento por dígitos, a partir de
+    :data:`MIN_PHONE_DIGITS` — e o telefone nunca contra o relé do iFood (o
+    0800 da central não é o telefone de ninguém, e casar com ele devolveria
+    todo pedido do iFood do dia). O documento é o pedido NESTA venda
+    (``fiscal.tax_id``) e o do cadastro que veio no pedido.
     """
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     folded = _fold(needle)
-    if folded in _fold(order.ref):
-        return True
     display_id = str(((data.get("ifood") or {}).get("display_id")) or "").strip()
-    if display_id and folded in _fold(display_id):
-        return True
-    if folded in _fold(str(customer.get("name") or "")):
+    address, _instructions = order_queue._delivery_address(order)
+    texts = (order.ref, display_id, str(customer.get("name") or ""), address)
+    if any(text and folded in _fold(text) for text in texts):
         return True
 
-    digits = "".join(ch for ch in needle if ch.isdigit())
-    if len(digits) >= MIN_PHONE_DIGITS:
-        from shopman.shop.services.notification import customer_phone_is_platform_relay
+    digits = _digits(needle)
+    if len(digits) < MIN_PHONE_DIGITS:
+        return False
+    fiscal = data.get("fiscal") if isinstance(data.get("fiscal"), dict) else {}
+    documents = (fiscal.get("tax_id"), customer.get("tax_id"), customer.get("document"))
+    if any(digits in _digits(document) for document in documents if document):
+        return True
+    from shopman.shop.services.notification import customer_phone_is_platform_relay
 
-        phone = str(customer.get("phone") or data.get("customer_phone") or "")
-        phone_digits = "".join(ch for ch in phone if ch.isdigit())
-        if phone_digits and digits in phone_digits and not customer_phone_is_platform_relay(order):
-            return True
-    return False
+    phone_digits = _digits(customer.get("phone") or data.get("customer_phone") or "")
+    return bool(phone_digits) and digits in phone_digits and not customer_phone_is_platform_relay(order)
+
+
+def _digits(value) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
 def _fold(value: str) -> str:

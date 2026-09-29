@@ -2,23 +2,16 @@ import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
 import type { POSProjection } from "~/types/pos";
-import {
-  canPrintBatch,
-  isoDate,
-  resolveRange,
-  ticketCountLabel,
-  type TicketPreset,
-  type TicketRange,
-  type TicketRow,
-} from "~/presentation/orderTickets";
+import { ticketCountLabel } from "~/presentation/orderTickets";
+import type { PrintPlan } from "~/presentation/preorders";
 
 /**
- * A Via Pedido do painel: escolher o intervalo, conferir o lote, mandar à bobina.
+ * A Via Pedido: uma, ou o lote do que a tela das Encomendas mostra, na bobina.
  *
  * O desenho é o mesmo do recibo e da DANFE (`pages/index.vue`): o SERVIDOR
- * compõe os bytes ESC/POS, esta camada só relaia ao agente do balcão. A
- * diferença é que o lote sai num trabalho só — os bytes já vêm concatenados,
- * com o corte parcial entre uma via e a seguinte.
+ * compõe os bytes ESC/POS, esta camada só relaia ao agente do balcão. O lote
+ * sai num trabalho só — os bytes já vêm concatenados, com o corte parcial entre
+ * uma via e a seguinte.
  *
  * ⚠️ **Não há queda para `window.print()` aqui, e é deliberado.** No recibo a
  * queda existe porque há um recibo DESENHADO na tela para o diálogo do
@@ -28,15 +21,6 @@ import {
  * imprimiriam diferente"). Então a falha é ALTA e explicada, nunca silenciosa:
  * o operador fica sabendo que esta estação não tem impressora e o que fazer.
  */
-export interface TicketBatchResponse {
-  ok: boolean;
-  date_from: string;
-  date_to: string;
-  count: number;
-  max_batch: number;
-  orders: TicketRow[];
-}
-
 interface TicketPrintResponse {
   payload_b64: string;
   title: string;
@@ -44,37 +28,12 @@ interface TicketPrintResponse {
   reprint_count?: number;
 }
 
-export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, options: { loadBatch?: boolean } = {}) {
+export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
   const apiPath = useApiPath();
   const agent = useCounterAgent(pos);
 
-  const today = isoDate(new Date());
-  // A semana que vem é o padrão porque foi o exemplo do dono ("todos os pedidos
-  // da semana"). O servidor tem o MESMO padrão — a tela não é a única a saber.
-  const range = ref<TicketRange>(resolveRange("week", today));
-
-  const query = computed(() => ({ date_from: range.value.date_from, date_to: range.value.date_to }));
-
-  const { data, pending, error, refresh } = useFetch<TicketBatchResponse>(
-    () => apiPath("/api/v1/backstage/orders/tickets/"),
-    { query, credentials: "include", key: options.loadBatch === false ? "pos-order-ticket-single" : "pos-order-tickets", immediate: options.loadBatch !== false, watch: options.loadBatch === false ? false : undefined },
-  );
-
-  const rows = computed<TicketRow[]>(() => data.value?.orders ?? []);
-  const count = computed(() => data.value?.count ?? 0);
-  const maxBatch = computed(() => data.value?.max_batch ?? 0);
-  const canPrint = computed(() => canPrintBatch(count.value, maxBatch.value));
-
   const printing = ref(false);
   const printingRef = ref("");
-
-  function setPreset(preset: TicketPreset) {
-    range.value = resolveRange(preset, today);
-  }
-
-  function setRange(next: Partial<TicketRange>) {
-    range.value = { ...range.value, ...next };
-  }
 
   /** A queda avisada: sem agente, dizer o que falta em vez de falhar mudo. */
   function warnNoAgent() {
@@ -91,16 +50,23 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
     });
   }
 
-  /** O lote inteiro, em vias consecutivas. */
-  async function printBatch(): Promise<boolean> {
-    if (!import.meta.client || printing.value || !canPrint.value) return false;
+  /**
+   * O lote do que está VISÍVEL: o período da tela, recortado pelos refs que os
+   * filtros deixaram. Cada pedido é carimbado no servidor (a próxima sai 2ª via).
+   */
+  async function printBatch(plan: PrintPlan): Promise<boolean> {
+    if (!import.meta.client || printing.value || !plan.refs.length) return false;
     if (!agent.canPrint.value) {
       warnNoAgent();
       return false;
     }
     printing.value = true;
     try {
-      const job = await fetchPrintable("/api/v1/backstage/orders/tickets/escpos/", query.value);
+      const job = await fetchPrintable("/api/v1/backstage/orders/tickets/escpos/", {
+        date_from: plan.date_from,
+        date_to: plan.date_to,
+        refs: plan.refs.join(","),
+      });
       const outcome = await agent.print(job.payload_b64, job.title);
       if (outcome.status !== "printed") {
         toast.error(`As vias não saíram: ${outcome.detail || "o agente do balcão não respondeu"}.`);
@@ -108,10 +74,9 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
       }
       const reimpressas = job.reprint_count || 0;
       toast.success(
-        `${ticketCountLabel(job.count ?? count.value)} na bobina.`
+        `${ticketCountLabel(job.count ?? plan.refs.length)} na bobina.`
         + (reimpressas ? ` ${reimpressas} saíram marcadas como 2ª via.` : ""),
       );
-      if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
       toast.error(`${httpErrorMessage(error, "O servidor não montou as vias.")} Nada saiu na bobina. Tente de novo.`);
@@ -139,7 +104,6 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
         return false;
       }
       toast.success(`Via Pedido de ${ref} na bobina.`);
-      if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
       toast.error(`${httpErrorMessage(error, "O servidor não montou a Via Pedido.")} Nada saiu na bobina. Tente de novo.`);
@@ -150,21 +114,10 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, optio
   }
 
   return {
-    today,
-    range,
-    rows,
-    count,
-    maxBatch,
-    canPrint,
-    pending,
-    error,
-    refresh,
     printing,
     printingRef,
     hasPrinter: agent.canPrint,
     printerUnavailableReason: agent.printUnavailableReason,
-    setPreset,
-    setRange,
     printBatch,
     printOne,
   };

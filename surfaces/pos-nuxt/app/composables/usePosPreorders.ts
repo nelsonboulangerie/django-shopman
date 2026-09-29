@@ -1,74 +1,75 @@
 import type { Ref } from "vue";
 
-import type { TicketRange } from "~/presentation/orderTickets";
 import { railAriaLabel, railBadge } from "~/presentation/preorders";
-import type { PreorderDetailResponse, PreorderListResponse } from "~/types/preorders";
+import type { PreorderDetailResponse, PreorderListResponse, PreorderSearchResponse } from "~/types/preorders";
 
-/** A leitura da semana que começa hoje — a resposta padrão da rota. Uma chave só,
- *  dividida pela barra lateral (o selo) e pela casa das Encomendas (os totais). */
+/** A leitura padrão da rota (hoje + 6): o selo da barra lateral. */
 const AHEAD_KEY = "pos-preorders-ahead";
+/** O período da tela das Encomendas (o dia ou a semana escolhidos). */
+const PERIOD_KEY = "pos-preorders-period";
+/** O resultado da busca "Cliente veio buscar". */
+const SEARCH_KEY = "pos-preorders-search";
 
 /**
- * As leituras que o evento de pedido refaz: a semana à frente, Hoje e Semana. A
- * busca fica de fora — ela só pergunta com o que procurar, e um refresh cego a
- * faria pedir o intervalo inteiro sem filtro.
+ * As leituras que o evento de pedido refaz: o selo, o período e a busca que
+ * estão na tela. A busca entra: quem acabou de pagar online ou de ser entregue
+ * muda de seção (em aberto → concluída) sem o operador redigitar.
  */
-export const PREORDERS_LIVE_KEYS = [AHEAD_KEY, "pos-preorders-today", "pos-preorders-week"];
+export const PREORDERS_LIVE_KEYS = [AHEAD_KEY, PERIOD_KEY, SEARCH_KEY];
 
 /**
- * A leitura das Encomendas: um intervalo (e uma busca) → a lista por dia.
+ * O período da tela: `?week=` (modo Semana) ou `?date_from=&date_to=` (modo
+ * Dia) → a lista por dia.
  *
  * O corte, o saldo e a situação são do servidor
- * (`backstage/projections/preorders.py`); esta camada só pede o intervalo que a
- * tela escolheu e expõe a resposta. Leitura client-side (`server: false`): a
- * permissão é do operador identificado na estação, e o SSR não tem quem seja.
- *
- * `enabled` segura a requisição — a busca não pergunta nada ao servidor antes
- * de haver o que procurar. Com `enabled` falso a lista volta vazia, nunca a
- * resposta da busca anterior.
+ * (`backstage/projections/preorders.py`). Leitura client-side (`server: false`):
+ * a permissão é do operador identificado na estação, e o SSR não tem quem seja.
  */
-export function usePosPreorders(options: {
-  key: string;
-  range: Ref<TicketRange>;
-  query?: Ref<string>;
-  enabled?: Ref<boolean>;
-}) {
+export function usePosPreorders(params: Ref<Record<string, string>>) {
   const apiPath = useApiPath();
-  const params = computed(() => ({
-    date_from: options.range.value.date_from,
-    date_to: options.range.value.date_to,
-    ...(options.query?.value.trim() ? { q: options.query.value.trim() } : {}),
-  }));
-  const enabled = computed(() => options.enabled?.value ?? true);
-
   const { data, pending, error, refresh } = useFetch<PreorderListResponse>(
     () => apiPath("/api/v1/backstage/pos/preorders/"),
+    { key: PERIOD_KEY, query: params, credentials: "include", server: false, lazy: true },
+  );
+  return { list: data, pending, error, refresh };
+}
+
+/**
+ * "Cliente veio buscar": sem período, em aberto de qualquer data e, com
+ * `includeCompleted`, as concluídas numa seção à parte.
+ *
+ * `enabled` segura a requisição — a busca não pergunta nada ao servidor antes
+ * de haver o que procurar. Com `enabled` falso o resultado volta vazio, nunca a
+ * resposta da busca anterior.
+ */
+export function usePosPreorderSearch(options: { query: Ref<string>; includeCompleted: Ref<boolean>; enabled: Ref<boolean> }) {
+  const apiPath = useApiPath();
+  const params = computed(() => ({
+    q: options.query.value.trim(),
+    ...(options.includeCompleted.value ? { include_completed: "1" } : {}),
+  }));
+
+  const { data, pending, error, refresh } = useFetch<PreorderSearchResponse>(
+    () => apiPath("/api/v1/backstage/pos/preorders/search/"),
     {
-      key: options.key,
+      key: SEARCH_KEY,
       query: params,
       credentials: "include",
       server: false,
       lazy: true,
-      immediate: enabled.value,
+      immediate: options.enabled.value,
       watch: false,
     },
   );
 
   // Um watcher só, que respeita o `enabled`: o `watch` embutido do useFetch
   // perguntaria ao servidor a cada letra, inclusive antes do mínimo da busca.
-  watch([params, enabled], () => {
-    if (enabled.value) void refresh();
+  watch([params, options.enabled], () => {
+    if (options.enabled.value) void refresh();
   }, { deep: true });
 
-  const list = computed(() => (enabled.value ? data.value : null));
-  const days = computed(() => list.value?.days ?? []);
-
   return {
-    list,
-    days,
-    count: computed(() => list.value?.count ?? 0),
-    totalDisplay: computed(() => list.value?.total_display ?? ""),
-    today: computed(() => list.value?.today ?? ""),
+    result: computed(() => (options.enabled.value ? data.value : null)),
     pending,
     error,
     refresh,
@@ -85,23 +86,14 @@ export function usePosPreorderDetail(ref: Ref<string>) {
   return { detail: data, pending, error, refresh };
 }
 
-/** A semana que começa hoje (hoje + 6), sem busca: o selo da barra e a casa. */
-export function usePosPreordersAhead() {
-  const apiPath = useApiPath();
-  const { data, pending, error, refresh } = useFetch<PreorderListResponse>(
-    () => apiPath("/api/v1/backstage/pos/preorders/"),
-    { key: AHEAD_KEY, credentials: "include", server: false, lazy: true },
-  );
-  return { list: data, pending, error, refresh };
-}
-
 function isDenied(error: unknown): boolean {
   const status = (error as { statusCode?: number } | null)?.statusCode;
   return status === 401 || status === 403;
 }
 
 /**
- * O item "Encomendas" da barra lateral: se aparece, e o selo.
+ * O item "Encomendas" da barra lateral: se aparece, e o selo (as de hoje por
+ * entregar, lidas da semana que começa hoje — a resposta padrão da rota).
  *
  * - **Permissão por sondagem**: a rota exige `shop.manage_orders`; 401/403 = o item
  *   some (a tela não oferece porta que vai bater na cara). A resposta boa fica
@@ -112,7 +104,11 @@ function isDenied(error: unknown): boolean {
  *   Sem stream de pé, o fallback é calmo: a cada 2 minutos, e ao voltar à aba.
  */
 export function usePosPreordersRail() {
-  const { list, error, refresh } = usePosPreordersAhead();
+  const apiPath = useApiPath();
+  const { data: list, error, refresh } = useFetch<PreorderListResponse>(
+    () => apiPath("/api/v1/backstage/pos/preorders/"),
+    { key: AHEAD_KEY, credentials: "include", server: false, lazy: true },
+  );
   const allowed = useState<boolean>("pos-preorders-allowed", () => false);
 
   watch(list, (value) => { if (value) allowed.value = true; }, { immediate: true });

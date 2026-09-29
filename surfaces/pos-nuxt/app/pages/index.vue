@@ -415,7 +415,7 @@ const recentSalesOpen = ref(false);
 const agent = useCounterAgent(pos);
 const printingReceipt = ref(false);
 const printingDanfe = ref(false);
-const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrderTickets(pos, { loadBatch: false });
+const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrderTickets(pos);
 
 async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "danfe-escpos") {
   return await $fetch<{ payload_b64: string; title: string }>(
