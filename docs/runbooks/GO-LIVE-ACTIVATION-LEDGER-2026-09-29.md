@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T15:39:07Z`
+Atualizado em: `2026-09-29T16:42:33Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -134,6 +134,110 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Evidencia | [PR #1250](https://github.com/nelsonboulangerie/django-shopman/pull/1250) |
 | Ultima atualizacao | `2026-09-29T14:09:57Z` |
 | Estado/DONE | `IN_PROGRESS`; nao DONE ate merge, deploy e smoke Live; carga de receitas permanece fora do escopo sem gate humano |
+
+## Operacao, seguranca e marketing
+
+### Lock de estacao sem encerrar a sessao compartilhada / PR #1249
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `b9ee08f4365e1f0d6e32fd2c97bcfc1a208523cf` em `2026-09-29T15:03:33Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `9b995ee3` ficou `ACTIVE` em `2026-09-29T15:15:19Z`; Deploy Images run `36587278842`, do SHA sucessor `63c426f0f` que contem o merge |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
+| Valor desejado | Bloquear somente a estacao PDV e preservar a sessao compartilhada do Gestor; desbloqueio exige operador com `cashman.operate_pos` |
+| Dependencia/gate | `HUMAN_SMOKE`; CI cobriu lock, unlock e preservacao da sessao, mas o smoke autenticado exige sessao Gestor autorizada e nao usa credenciais ou 2FA automatizados |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36588740546` verde apos o deployment; PDV publico respondeu 200 e o endpoint de sessao de operador falhou fechado com 403 sem autenticacao |
+| Rollback | Reimplantar o release Live anterior ao merge; nao ha schema, config ou flag a reverter |
+| Evidencia | [PR #1249](https://github.com/nelsonboulangerie/django-shopman/pull/1249); [Deploy Images run 36587278842](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36587278842); [Pre-go-live Smoke run 36588740546](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36588740546) |
+| Ultima atualizacao | `2026-09-29T16:39:08Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate validar lock/desbloqueio e continuidade da sessao compartilhada no Live com perfil autorizado |
+
+### Alertas de login e gestao de acessos conectados / PR #1251
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `db6c617af00f7152a6656d6c584384386879e3ca` em `2026-09-29T15:12:51Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `3eed3cec` ficou `ACTIVE` em `2026-09-29T15:21:28Z`; Deploy Images run `36588469237` |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
+| Valor desejado | Novo login gera alerta seguro e a pessoa autenticada consegue listar e encerrar acessos conectados sem expor token ou dado sensivel |
+| Dependencia/gate | `HUMAN_SMOKE`; comportamento e autorizacao estao cobertos pela CI, mas confirmar a tela e o encerramento de uma sessao real exige login autorizado do owner |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36589196530` verde apos o deployment; storefront respondeu 200 e superficies protegidas permaneceram fail-closed sem autenticacao |
+| Rollback | Reimplantar o release Live anterior ao merge; nao ha schema, config ou flag a reverter |
+| Evidencia | [PR #1251](https://github.com/nelsonboulangerie/django-shopman/pull/1251); [Deploy Images run 36588469237](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36588469237); [Pre-go-live Smoke run 36589196530](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36589196530) |
+| Ultima atualizacao | `2026-09-29T16:39:08Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate validar alerta, listagem e encerramento de acesso em sessao autorizada no Live |
+
+### Reconciliacao do roadmap POS / PR #1252
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `fad34627d5a8eafdb9e783f6ae63822ef9a9b14f` em `2026-09-29T14:42:14Z` |
+| Deploy | `N/A`; PR documental, sem artefato de runtime |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
+| Valor desejado | Planos POS reconciliados com a implementacao atual, lacunas reais preservadas e trabalho superseded explicitamente encerrado |
+| Dependencia/gate | `SATISFIED`; alteracao limitada a documentacao e sem efeito operacional |
+| Smoke Live | `N/A`; nenhum runtime foi alterado |
+| Rollback | Reverter o merge documental se o plano for formalmente substituido |
+| Evidencia | [PR #1252](https://github.com/nelsonboulangerie/django-shopman/pull/1252) |
+| Ultima atualizacao | `2026-09-29T16:39:08Z` |
+| Estado/DONE | `DONE`; merge comprovado e todas as etapas de runtime sao corretamente N/A |
+
+### Reorganizacao operacional da aba Encomendas do PDV / PR #1263
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `c61fabfce6894b20c9555e36823df002804847f0` em `2026-09-29T16:30:58Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `9fc75aa2` ficou `ACTIVE` em `2026-09-29T16:39:44Z`; Deploy Images run `36598280975` |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
+| Valor desejado | Encomendas usa uma unica arvore responsiva, hierarquia operacional clara, busca prioritaria, estados loading/empty/error acionaveis e alvos touch acessiveis, sem alterar contratos ou dados |
+| Dependencia/gate | `HUMAN_SMOKE`; testes funcionais, visuais, responsivos, typecheck e build passaram; a confirmacao visual no Live exige sessao PDV autorizada e nao usa credenciais automatizadas |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36599313790` verde apos o deployment; `/ready/` respondeu 200, e `https://pdv.boulangerie.com.br/`, `/preorders` e `/session` responderam 200 com o shell Nuxt renderizado |
+| Rollback | Reimplantar o release Live anterior ao merge; nao ha schema, config ou flag a reverter |
+| Evidencia | [PR #1263](https://github.com/nelsonboulangerie/django-shopman/pull/1263); [Deploy Images run 36598280975](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36598280975); [Pre-go-live Smoke run 36599313790](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36599313790); [relatorio visual](https://github.com/nelsonboulangerie/django-shopman/tree/c61fabfce6894b20c9555e36823df002804847f0/docs/reports/execution/pos-encomendas-ux-20260929) |
+| Ultima atualizacao | `2026-09-29T16:42:33Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate validar hierarquia, busca, periodo, filtros, estados e foco/teclado dentro da sessao PDV autorizada |
+
+### Capacidades de providers no Marketing V2 / PR #1254
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `c1c177b0829788546416393622f16ba06f35b27b` em `2026-09-29T15:09:09Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `3eed3cec` ficou `ACTIVE` em `2026-09-29T15:21:28Z`; Deploy Images run `36588469237`, do SHA sucessor `db6c617af` que contem o merge |
+| Migration | `N/A` |
+| Env/config/flag | `N/A`; nenhuma integracao externa foi ativada |
+| Valor desejado | Composer renderiza capacidades declaradas pelos providers e mantem acoes indisponiveis bloqueadas, sem disparar efeito externo |
+| Dependencia/gate | `HUMAN_SMOKE`; CI cobriu o catalogo de capacidades e a UI, mas a confirmacao visual Live exige sessao Marketing autorizada; credencial externa e canario permanecem fora do escopo |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36589196530` verde apos o deployment; host Marketing respondeu 200 e a API permaneceu protegida com 401 sem autenticacao |
+| Rollback | Reimplantar o release Live anterior ao merge; nenhuma configuracao de provider externo precisa ser revertida |
+| Evidencia | [PR #1254](https://github.com/nelsonboulangerie/django-shopman/pull/1254); [Deploy Images run 36588469237](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36588469237); [Pre-go-live Smoke run 36589196530](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36589196530) |
+| Ultima atualizacao | `2026-09-29T16:39:08Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate validar o catalogo visual em sessao autorizada, sem ativar provider externo |
+
+### Reconciliacao do roadmap de sync externo de catalogo / PR #1255
+
+| Campo | Estado |
+|---|---|
+| Owner | `debt_dormancy_audit` |
+| Merge | `MERGED`; `5d76c1eab9e004cbf204df92454ebb727ec99e0e` em `2026-09-29T15:03:33Z` |
+| Deploy | `N/A`; PR documental, sem artefato de runtime |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
+| Valor desejado | Roadmap externo reconciliado com o estado real; itens concluidos e superseded separados das dependencias ainda abertas |
+| Dependencia/gate | `SATISFIED`; nenhum adapter, config, dado ou operacao de catalogo foi alterado |
+| Smoke Live | `N/A`; nenhum runtime foi alterado |
+| Rollback | Reverter o merge documental se o roadmap for formalmente substituido |
+| Evidencia | [PR #1255](https://github.com/nelsonboulangerie/django-shopman/pull/1255) |
+| Ultima atualizacao | `2026-09-29T16:39:08Z` |
+| Estado/DONE | `DONE`; merge comprovado e todas as etapas de runtime sao corretamente N/A |
 
 ## Storefront e operacao
 
