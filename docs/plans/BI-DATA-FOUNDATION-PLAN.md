@@ -18,6 +18,8 @@
 
 ### Reconciliação factual (2026-09-29)
 
+Base auditada: `origin/main @ ed49a8624` (inclui o merge da PR #1267).
+
 | Passo | Estado | Evidência / limite |
 |---|---|---|
 | P0, ingestão com lote | **DONE** | `ImportBatch`, validação, transação, proveniência e Admin somente leitura seguem no `main`. |
@@ -25,7 +27,7 @@
 | P2, leitura canônica | **DONE** | compositor e adaptadores por fonte continuam como dono único da fusão, sem copiar `Order` nem `HistoricalSale*`. |
 | P3, série diária | **DONE** | `DailySalesFact`, refresh e fallback vivo continuam cobertos por equivalência. |
 | P4, caixa canônico | **DONE** | leitura de `cashman.Entry` e gate `cashman.audit_shift` seguem ativos. |
-| P5, NFC-e | **PENDING EXTERNO** | Continua condicionado a emissão fiscal real. Não implementar, simular carga viva ou antecipar uma tabela fiscal nesta frente. |
+| P5, NFC-e | **PENDING EXTERNO** | Gate: existir ao menos uma emissão fiscal real no ambiente autorizado e um WP fiscal próprio aprovar fonte, contrato e reconciliação. Antes disso, não implementar, simular carga viva ou antecipar tabela fiscal. |
 
 Não há passo **SUPERSEDED** nesta fundação: P0–P4 permanecem a arquitetura
 vigente. O único item aberto, P5, depende do evento externo declarado no próprio

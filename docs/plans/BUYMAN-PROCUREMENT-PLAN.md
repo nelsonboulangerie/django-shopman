@@ -14,6 +14,8 @@ histórico que originou a implementação.
 
 ## Reconciliação factual (2026-09-29)
 
+Base auditada: `origin/main @ ed49a8624` (inclui o merge da PR #1267).
+
 | Entrega do plano | Estado | Evidência atual / decisão |
 |---|---|---|
 | WP-B0 e Fase 1 (B1–B5b) | **DONE** | `Move.kind`; pacote `buyman`; Material, Supplier, custo e conversões; Admin; adapters compostos; seed; shelf-life e disponibilidade estão no `main` e cobertos pelas suítes do Buyman/Stockman. |
