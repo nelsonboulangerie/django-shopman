@@ -476,7 +476,9 @@ def _rodar_guarda(repo: Path, listagens: list[list[dict]], monkeypatch) -> int:
     monkeypatch.setattr(
         guarda,
         "fetch_distribution",
-        lambda _r, _p, tags, _t: guarda.Distribuicao({}, dict.fromkeys(tags, "fora")),
+        lambda _r, _p, tags, _t, *_immutable: guarda.Distribuicao(
+            {}, dict.fromkeys(tags, "fora")
+        ),
     )
     monkeypatch.setenv("DO_TOKEN", "fingido")
     return guarda.main(
@@ -663,6 +665,43 @@ def test_listagem_parada_e_distribuicao_certa_fica_verde(repo: Path, monkeypatch
     heads = [r for r in pedidos if r.get_method() == "HEAD"]
     assert any(r.full_url.endswith("/manifests/hub") for r in heads)
     saida = capsys.readouterr()
+    assert TOKEN_DA_DO not in saida.out + saida.err
+    assert BEARER not in saida.out + saida.err
+
+
+def test_listagem_omite_imutavel_que_head_direto_confirma(
+    repo: Path, monkeypatch, capsys
+):
+    """Regressão literal do push do #1238 para ``purchase``.
+
+    O buildx publicou ``purchase`` e ``purchase-<sha>`` com o mesmo digest. A
+    API paginada `/tags` enumerou a móvel, mas omitiu a imutável em cinco
+    leituras; HEAD direto nas DUAS tags respondia 200 e o mesmo digest. O gate
+    deve confiar na distribuição e não mandar republicar bytes já presentes.
+    """
+    atual = commit(repo, ["surfaces/purchase-nuxt/package-lock.json"], "compras")
+    componentes = build_matrix(list(component_paths(GROUPS)), GROUPS)
+    todas = tags_do_registry({c["tag"]: atual for c in componentes})
+    listagem = [t for t in todas if t["tag"] != f"purchase-{atual}"]
+    distribuicao = {
+        t["tag"]: t["manifest_digest"]
+        for t in todas
+        if t["tag"] in {c["tag"] for c in componentes}
+    }
+    purchase_digest = next(
+        t["manifest_digest"] for t in todas if t["tag"] == "purchase"
+    )
+    distribuicao[f"purchase-{atual}"] = purchase_digest
+    urlopen, pedidos = _registry_falso(listagem, distribuicao)
+
+    assert _rodar_contra_registry(repo, monkeypatch, urlopen) == 0
+    assert any(
+        r.full_url.endswith(f"/manifests/purchase-{atual}")
+        for r in pedidos
+        if r.get_method() == "HEAD"
+    )
+    saida = capsys.readouterr()
+    assert "COMPONENTE PARA TRÁS" not in saida.out
     assert TOKEN_DA_DO not in saida.out + saida.err
     assert BEARER not in saida.out + saida.err
 
