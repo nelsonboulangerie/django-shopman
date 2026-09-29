@@ -11,7 +11,9 @@ Duas coisas moram aqui, e só duas:
 
 1. **Que pedidos entram no lote** (:func:`orders_for_period`) — e a resposta é
    pela DATA COMBINADA, nunca pela data da venda. A encomenda feita hoje para
-   sábado é filipeta de sábado.
+   sábado é filipeta de sábado. O lote pode ser um recorte dele
+   (:func:`select_refs`): a tela das Encomendas imprime o que está VISÍVEL —
+   o período e os filtros —, nunca o que o operador não vê.
 2. **A janela do lote** (:func:`parse_period`), na forma canônica de
    ``date_from``/``date_to`` desta casa.
 
@@ -98,7 +100,7 @@ def commitment_of(order) -> date:
     return get_commitment_date(order) or timezone.localtime(order.created_at).date()
 
 
-def _window_sort_key(order):
+def window_sort_key(order):
     """Ordem do painel: dia, hora combinada, e a hora do pedido para desempatar.
 
     O pedido sem janela combinada vai para o FIM do dia dele (``time.max``), não
@@ -153,7 +155,27 @@ def orders_for_period(date_from: date, date_to: date) -> list:
         o for o in candidatos
         if date_from <= commitment_of(o) <= date_to and not is_pos_counter_order(o)
     ]
-    return sorted(dentro, key=_window_sort_key)
+    return sorted(dentro, key=window_sort_key)
+
+
+def parse_refs(raw) -> list[str] | None:
+    """``refs=A,B,C`` → a lista; ``None`` quando não veio (o lote é o período inteiro)."""
+    if raw is None:
+        return None
+    return [ref for ref in (part.strip() for part in str(raw).split(",")) if ref]
+
+
+def select_refs(orders: list, refs: list[str] | None) -> list:
+    """O recorte do lote: só os pedidos pedidos, DENTRO do período e na ordem do painel.
+
+    O recorte nunca alarga o lote — um ref de fora do período (ou fora do
+    corte: Balcão, cancelado) simplesmente não sai. Quem escolhe o que é
+    visível é a tela; quem garante que é encomenda do período é o servidor.
+    """
+    if refs is None:
+        return orders
+    wanted = set(refs)
+    return [order for order in orders if order.ref in wanted]
 
 
 def shop_display_name() -> str:
@@ -207,28 +229,29 @@ def courier_ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -
 
 
 def preview_rows(orders: list) -> list[dict]:
-    """A lista que a tela mostra ANTES de mandar imprimir.
+    """Return the legacy, side-effect-free ticket-batch preview rows.
 
-    Ninguém quer descobrir que pediu 200 filipetas depois de a bobina começar a
-    andar. Estas linhas existem para a conferência do intervalo — quem, quando,
-    entrega ou retirada — e por isso NÃO carimbam nada: olhar não é imprimir.
+    Reviewing a batch must never mark its orders as printed; only the print
+    endpoint owns that mutation.
     """
     from shopman.shop.services.fulfillment_window import window_label
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
-    linhas = []
+    rows = []
     for order in orders:
         data = order.data or {}
         customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
         is_delivery = get_fulfillment_type(order) == "delivery"
-        linhas.append({
-            "ref": order.ref,
-            "customer_name": str(customer.get("name") or "").strip(),
-            "commitment_date": commitment_of(order).isoformat(),
-            "window_label": window_label(data.get("delivery_time_slot")),
-            "fulfillment_type": "delivery" if is_delivery else "pickup",
-            "fulfillment_label": "Entrega" if is_delivery else "Retirada",
-            "status": order.status,
-            "already_printed": bool(data.get("ticket_printed_at")),
-        })
-    return linhas
+        rows.append(
+            {
+                "ref": order.ref,
+                "customer_name": str(customer.get("name") or "").strip(),
+                "commitment_date": commitment_of(order).isoformat(),
+                "window_label": window_label(data.get("delivery_time_slot")),
+                "fulfillment_type": "delivery" if is_delivery else "pickup",
+                "fulfillment_label": "Entrega" if is_delivery else "Retirada",
+                "status": order.status,
+                "already_printed": bool(data.get("ticket_printed_at")),
+            }
+        )
+    return rows
