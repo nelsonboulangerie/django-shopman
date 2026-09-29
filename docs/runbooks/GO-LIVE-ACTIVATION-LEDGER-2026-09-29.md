@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T14:31:09Z`
+Atualizado em: `2026-09-29T14:45:43Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -90,7 +90,7 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `WAITING_PREDECESSOR`; head `e9e0068654adc11195b5d769e83845008fafe568`; auto-merge suspenso ate #1244 integrar |
+| Merge | `WAITING_PREDECESSOR`; head `8be4766e6`; auto-merge suspenso ate #1244 integrar; falha de import boundary corrigida pela API publica do Offerman e CI reexecutando |
 | Deploy | `PENDING_MERGE`; sem deploy ID |
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
@@ -107,7 +107,7 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `STACKED`; head `b6e395b7fba6e19ab2371135d02c9e807b2b4d0f`, base #1248 |
+| Merge | `STACKED`; head `9c692a3a0`, rebaseado sobre o head atual de #1248; CI reexecutando |
 | Deploy | `PENDING_PREDECESSOR`; sem deploy ID |
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
