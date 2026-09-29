@@ -214,7 +214,7 @@ class TestShopAdminDefaults:
         pages = {
             "shop_shopmenu_change": b'name="defaults_dynamic_collections"',
             "shop_shopordering_change": b'name="defaults_pickup_slot_1_ref"',
-            "shop_shopoperation_change": b'name="defaults_closed_date_1_date"',
+            "shop_shopoperation_change": "Próximos feriados para confirmar".encode(),
         }
         for url_name, field in pages.items():
             resp = client.get(reverse(f"admin:{url_name}", args=[shop.pk]))
@@ -224,6 +224,123 @@ class TestShopAdminDefaults:
         # A página base (Loja & contato) não carrega os defaults.
         base = client.get(reverse("admin:shop_shop_change", args=[shop.pk]))
         assert b'name="defaults_pickup_slot_1_ref"' not in base.content
+
+
+class TestShopAdminCalendar:
+    def test_operation_page_uses_canonical_dialog_actions(self, db, admin_user, shop):
+        from shopman.shop.models import ShopOperation
+
+        client = Client()
+        client.force_login(admin_user)
+        response = client.get(reverse("admin:shop_shopoperation_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        assert b"calendar-decision" in response.content
+        assert b"calendar-remove" in response.content
+        assert "Próximos feriados para confirmar".encode() in response.content
+        model_admin = admin.site._registry[ShopOperation]
+        assert model_admin.actions_detail == (
+            "record_calendar_decision",
+            "remove_calendar_decision",
+        )
+
+    def test_decision_form_accepts_range_only_for_closure(self, rf):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+
+        request = rf.post("/")
+        valid = CalendarDecisionForm(
+            request,
+            data={
+                "_form_submitted": "1",
+                "starts_on": "2026-12-26",
+                "ends_on": "2027-01-05",
+                "label": "Férias coletivas",
+                "decision": "closed",
+                "opens_at": "",
+                "closes_at": "",
+            },
+        )
+        assert valid.is_valid(), valid.errors
+
+        invalid = CalendarDecisionForm(
+            request,
+            data={
+                "_form_submitted": "1",
+                "starts_on": "2026-12-26",
+                "ends_on": "2027-01-05",
+                "label": "Férias coletivas",
+                "decision": "special",
+                "opens_at": "09:00",
+                "closes_at": "13:00",
+            },
+        )
+        assert not invalid.is_valid()
+        assert "ends_on" in invalid.errors
+
+    def test_open_decision_requires_a_weekly_window(self, rf, shop):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+
+        shop.opening_hours = {"monday": {"open": "09:00", "close": "18:00"}}
+        shop.save(update_fields=["opening_hours"])
+        request = rf.post("/")
+        form = CalendarDecisionForm(
+            request,
+            shop.pk,
+            data={
+                "_form_submitted": "1",
+                "starts_on": "2026-10-04",  # domingo
+                "ends_on": "",
+                "label": "Abertura excepcional",
+                "decision": "open",
+                "opens_at": "",
+                "closes_at": "",
+            },
+        )
+
+        assert not form.is_valid()
+        assert "decision" in form.errors
+
+    def test_record_action_upserts_special_hours(self, rf, admin_user, shop, monkeypatch):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+        from shopman.shop.models import ShopOperation
+
+        shop.defaults = {
+            "closed_dates": [{"date": "2026-12-25", "label": "Natal", "closed": True}],
+            "keep": {"yes": True},
+        }
+        shop.save(update_fields=["defaults"])
+        request = rf.post(
+            "/",
+            data={
+                "_form_submitted": "1",
+                "starts_on": "2026-12-25",
+                "ends_on": "",
+                "label": "Natal",
+                "decision": "special",
+                "opens_at": "09:00",
+                "closes_at": "13:00",
+            },
+        )
+        request.user = admin_user
+        form = CalendarDecisionForm(request, shop.pk, data=request.POST)
+        assert form.is_valid(), form.errors
+        model_admin = admin.site._registry[ShopOperation]
+        monkeypatch.setattr(model_admin, "message_user", lambda *args, **kwargs: None)
+
+        response = model_admin.record_calendar_decision(request, object_id=str(shop.pk))
+
+        assert response.status_code == 302
+        shop.refresh_from_db()
+        assert shop.defaults["keep"] == {"yes": True}
+        assert shop.defaults["closed_dates"] == [
+            {
+                "date": "2026-12-25",
+                "label": "Natal",
+                "closed": False,
+                "open": "09:00",
+                "close": "13:00",
+            }
+        ]
 
     def test_form_saves_defaults_from_structured_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm

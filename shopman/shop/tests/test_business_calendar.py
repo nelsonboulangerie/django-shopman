@@ -101,6 +101,56 @@ def test_closure_range_skips_collective_vacation():
     assert format_next_opening(state.next_open_at, now=state.resolved_at) == "quinta às 9h"
 
 
+def test_date_specific_special_hours_override_weekly_window():
+    tz = ZoneInfo("America/Sao_Paulo")
+    shop = Shop.objects.create(
+        name="Natal especial",
+        timezone="America/Sao_Paulo",
+        opening_hours=OPEN_MONDAY_TO_SATURDAY,
+        defaults={
+            "closed_dates": [
+                {
+                    "date": "2026-12-25",
+                    "label": "Natal",
+                    "closed": False,
+                    "open": "10:00",
+                    "close": "13:00",
+                }
+            ]
+        },
+    )
+
+    before = current_business_state(now=datetime(2026, 12, 25, 9, 30, tzinfo=tz), shop=shop)
+    during = current_business_state(now=datetime(2026, 12, 25, 11, 0, tzinfo=tz), shop=shop)
+    after = current_business_state(now=datetime(2026, 12, 25, 14, 0, tzinfo=tz), shop=shop)
+
+    assert before.is_closed is True
+    assert before.opens_at == "10:00"
+    assert during.is_open is True
+    assert during.closes_at == "13:00"
+    assert after.is_closed is True
+
+
+def test_open_decision_without_special_hours_uses_weekly_window():
+    tz = ZoneInfo("America/Sao_Paulo")
+    shop = Shop.objects.create(
+        name="Feriado aberto",
+        timezone="America/Sao_Paulo",
+        opening_hours=OPEN_MONDAY_TO_SATURDAY,
+        defaults={
+            "closed_dates": [
+                {"date": "2026-09-07", "label": "Independência", "closed": False}
+            ]
+        },
+    )
+
+    state = current_business_state(now=datetime(2026, 9, 7, 10, 0, tzinfo=tz), shop=shop)
+
+    assert state.is_open is True
+    assert state.opens_at == "09:00"
+    assert state.closes_at == "18:00"
+
+
 def test_operational_deadline_starts_at_next_opening_when_closed():
     tz = ZoneInfo("America/Sao_Paulo")
     Shop.objects.create(

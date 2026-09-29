@@ -171,10 +171,14 @@ def is_open_on(day: date, *, shop=None) -> bool:
     bloqueia deployments sem horário).
     """
     shop = _load_shop(shop)
-    if not shop or not _has_regular_hours(shop):
+    if not shop:
         return True
     if closed_date_for(day, _closed_dates(shop))[0]:
         return False
+    if special_hours_for(day, _closed_dates(shop)) is not None:
+        return True
+    if not _has_regular_hours(shop):
+        return True
     return _day_window(shop, day) is not None
 
 
@@ -362,6 +366,26 @@ def closed_date_for(day: date, closed_dates: list | tuple | None) -> tuple[bool,
     return False, "", ""
 
 
+def special_hours_for(day: date, closed_dates: list | tuple | None) -> tuple[time, time] | None:
+    """Return an explicit opening window for ``day``, when one was decided.
+
+    Special hours share the existing exception list so storefront, checkout and
+    Admin keep one source of truth.  ``closed=False`` without hours means
+    "open with the regular weekly schedule" and therefore returns ``None``.
+    """
+
+    for entry in closed_dates or []:
+        if not isinstance(entry, dict) or entry.get("closed") is not False:
+            continue
+        if str(entry.get("date") or "") != day.isoformat():
+            continue
+        opens_at = _calendar_time(entry.get("open"))
+        closes_at = _calendar_time(entry.get("close"))
+        if opens_at is not None and closes_at is not None and opens_at < closes_at:
+            return opens_at, closes_at
+    return None
+
+
 def format_next_opening(value: datetime | None, *, now: datetime | None = None) -> str:
     """Format a next-opening datetime for compact customer copy."""
     if not value:
@@ -470,7 +494,17 @@ def _has_regular_hours(shop) -> bool:
 
 
 def _day_window(shop, day: date) -> tuple[time, time] | None:
+    special = special_hours_for(day, _closed_dates(shop))
+    if special is not None:
+        return special
     return _weekday_window(shop, DAY_ORDER[day.weekday()])
+
+
+def _calendar_time(value) -> time | None:
+    try:
+        return time.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _weekday_window(shop, weekday: str) -> tuple[time, time] | None:
