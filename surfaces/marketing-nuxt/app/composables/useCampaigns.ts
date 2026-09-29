@@ -15,22 +15,22 @@ import {
 } from "~/presentation/campaignActions";
 
 export function useCampaigns() {
-  const { data, refresh, pending, error } = useFetch<RulesResponse>(
-    "/api/v1/backstage/marketing/rules/",
-    {
-      key: "marketing-list",
-      server: true,
-      onResponseError: marketingSessionOnError,
-    },
-  );
-  const { data: optionsData } = useFetch<OptionsResponse>(
-    "/api/v1/backstage/marketing/options/",
-    {
+  const {
+    data,
+    refresh: refreshRules,
+    pending,
+    error,
+  } = useFetch<RulesResponse>("/api/v1/backstage/marketing/rules/", {
+    key: "marketing-list",
+    server: true,
+    onResponseError: marketingSessionOnError,
+  });
+  const { data: optionsData, refresh: refreshOptions } =
+    useFetch<OptionsResponse>("/api/v1/backstage/marketing/options/", {
       key: "marketing-options",
       server: true,
       onResponseError: marketingSessionOnError,
-    },
-  );
+    });
 
   const rules = computed<Campaign[]>(() => data.value?.rules ?? []);
   const actions = computed(() => data.value?.actions ?? []);
@@ -50,6 +50,10 @@ export function useCampaigns() {
   const offers = computed(() => options.value?.offers ?? []);
   const shopTimezone = computed(() => options.value?.shop_timezone ?? "UTC");
   const mutatingCampaignPk = ref<number | null>(null);
+
+  async function refresh() {
+    await Promise.all([refreshRules(), refreshOptions()]);
+  }
 
   /** Rótulo por ref de plataforma — o que `platformsSummary` espera. */
   const platformLabels = computed<Record<string, string>>(() =>
@@ -116,19 +120,22 @@ export function useCampaigns() {
 
   async function create(body: Record<string, unknown>) {
     try {
-      await $fetch("/api/v1/backstage/marketing/rules/", {
-        method: "POST",
-        body,
-      });
+      const response = await $fetch<{ ok: boolean; rule: Campaign }>(
+        "/api/v1/backstage/marketing/rules/",
+        {
+          method: "POST",
+          body,
+        },
+      );
       useSonner.success("Campanha criada.");
       await refresh();
-      return true;
+      return response.rule;
     } catch (err) {
       flagMarketingSessionError(err);
       useSonner.error(
         httpErrorMessage(err, "Não foi possível criar a campanha."),
       );
-      return false;
+      return null;
     }
   }
 

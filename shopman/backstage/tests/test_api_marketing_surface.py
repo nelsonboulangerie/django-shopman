@@ -27,10 +27,12 @@ from shopman.shop.models import (
     AnnouncementTemplate,
     AudienceSnapshot,
     Campaign,
+    Coupon,
     MarketingAuditEvent,
     MarketingCommandReceipt,
     MarketingContentArtifact,
     MarketingOutbox,
+    Promotion,
 )
 
 pytestmark = pytest.mark.django_db
@@ -41,6 +43,7 @@ BOARD_URL = "/api/v1/backstage/marketing/"
 RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
+OFFERS_URL = "/api/v1/backstage/marketing/offers/"
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
 PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
@@ -134,6 +137,10 @@ def _confirmed_post(client, url: str, payload: dict, *, key: str):
 class TestGate:
     def test_anonymous_is_rejected(self, client):
         assert client.get(BOARD_URL).status_code == 401
+
+    def test_anonymous_cannot_manage_offers(self, client):
+        assert client.get(OFFERS_URL).status_code == 401
+        assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 401
 
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)
@@ -1052,6 +1059,94 @@ class TestTemplates:
         assert response.json()["current"]["body"] == "Texto de outra sessão"
         template.refresh_from_db()
         assert template.body == "Texto de outra sessão"
+
+
+# ── Ofertas e cupons ─────────────────────────────────────────────────
+
+
+class TestMarketingOffers:
+    def payload(self, **overrides):
+        now = timezone.now()
+        return {
+            "kind": "offer",
+            "name": "Semana do pão",
+            "type": "percent",
+            "value": 15,
+            "valid_from": now.isoformat(),
+            "valid_until": (now + timedelta(days=7)).isoformat(),
+            "skus": [],
+            "collections": [],
+            "channels": [],
+            "fulfillment_types": [],
+            "customer_segments": [],
+            "min_order_q": 0,
+            "birthday_only": False,
+            "is_active": True,
+            **overrides,
+        }
+
+    def test_creates_and_lists_an_automatic_offer(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        created = response.json()["offer"]
+        assert created["name"] == "Semana do pão"
+        assert created["ref"] == "semana-do-pao"
+        assert created["coupons"] == []
+        promotion = Promotion.objects.get(ref="semana-do-pao")
+        assert promotion.value == 15
+        assert client.get(OFFERS_URL).json()["offers"][0]["ref"] == promotion.ref
+
+    def test_coupon_gets_a_dedicated_promotion_and_usage_limit(self, client, gestor):
+        automatic = Promotion.objects.create(
+            ref="automatic",
+            name="Oferta automática",
+            type=Promotion.PERCENT,
+            value=5,
+            valid_from=timezone.now(),
+            valid_until=timezone.now() + timedelta(days=3),
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(
+                kind="coupon",
+                name="Primeira compra",
+                coupon_code="primeira-10",
+                max_uses=30,
+            ),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        coupon = Coupon.objects.select_related("promotion").get(code="PRIMEIRA-10")
+        assert coupon.max_uses == 30
+        assert coupon.promotion_id != automatic.pk
+        assert response.json()["offer"]["coupons"][0]["code"] == "PRIMEIRA-10"
+
+    def test_rejects_invalid_period_without_writing(self, client, gestor):
+        now = timezone.now()
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(
+                valid_from=(now + timedelta(days=1)).isoformat(),
+                valid_until=now.isoformat(),
+            ),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field_errors"]["valid_until"]
+        assert not Promotion.objects.exists()
 
 
 # ── Opções do formulário ─────────────────────────────────────────────

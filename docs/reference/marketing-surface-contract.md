@@ -190,6 +190,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/audience/count/`
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
+- `/api/v1/backstage/marketing/offers/`
 - `/api/v1/backstage/marketing/platforms/`
 - `/api/v1/backstage/marketing/preview/`
 - `/api/v1/backstage/marketing/rules/`

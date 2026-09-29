@@ -117,7 +117,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "version": 1,
         "name": f"Fornada artesanal {pk:02d}{suffix}",
         "trigger": "production_finished",
-        "trigger_label": "Lote concluído",
+        "trigger_label": "Produção concluída",
         "trigger_filter": {"collections": ["paes-artesanais"]},
         "template_id": 1,
         "template_name": "Novidades da padaria",
@@ -195,7 +195,7 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "audience_total": 12,
         "platform_results": [],
         "trigger": "production_finished",
-        "trigger_label": "Lote concluído",
+        "trigger_label": "Produção concluída",
         "rule_name": "Fornada artesanal",
         "template_name": "Novidades da padaria",
         "sku": "PAO-VISUAL-001",
@@ -625,7 +625,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"options": {
                 "triggers": [
                     {"value": "manual", "label": "Disparo manual"},
-                    {"value": "production_finished", "label": "Lote concluído"},
+                    {"value": "production_finished", "label": "Produção concluída"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
                 # A fixture de produto não pode esconder uma capacidade executável para
