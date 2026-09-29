@@ -1550,7 +1550,7 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
     paymentTenders: [{ method: "cash", amount_q: 1000, collection: "on_delivery" }],
   });
   expect(w.text()).toContain("Na retirada");
-  expect(w.text()).toContain("Registre o recebimento no Gestor antes de concluir a retirada");
+  expect(w.text()).toContain("Quando o cliente vier buscar, receba em Encomendas");
   expect(w.text()).not.toContain("Na entrega");
 });
 
