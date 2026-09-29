@@ -123,17 +123,72 @@ emite outra. Pedido **imediato também entra** (não só os com data).
 A resposta precisa ficar em lugar durável, com evidência, porque a operação real é
 **uma gaveta física** e **vários dispositivos**.
 
-**Status:** apuração em curso. Evidência será anexada em
+**APURADO em 2026-09-29.** Evidência:
 `docs/reports/go-live-acceleration-20260929/14-sessao-pdv-multidispositivo.md` e
-`15-gaveta-custodia-multidispositivo.md`.
+`15-gaveta-custodia-multidispositivo.md` (ambos com prova em runtime).
 
-**O que a resposta precisa cobrir, no mínimo:**
-1. A mesma sessão abre mesmo em vários dispositivos? O sistema **impede** ou apenas **não detecta**?
-2. O turno de caixa é por **terminal**, por **operador** ou por **sessão**?
-3. Com sessão compartilhada, dois dispositivos operam a **mesma** gaveta? Dois fechamentos? Duas sangrias?
-4. Cada movimento registra **qual operador** e **qual dispositivo** — ou só a sessão? (decisivo para responsabilizar)
-5. O livro-caixa é append-only? O que impede editar um movimento?
-6. Quais brechas concretas de má operação ou fraude existem hoje.
+### Resposta
+
+**1. Sim, a mesma sessão abre em vários dispositivos — nas duas leituras.**
+Mesma **pessoa**: não existe "uma sessão por pessoa"; cada dispositivo que se identifica por
+PIN/crachá abre a própria sessão Django, e as duas ficam vivas (provado: `unlock` 200 e
+`GET /pos/` 200 nos dois, chaves distintas, nenhum derruba o outro). Mesmo **cookie**: a sessão é
+cookie portador, **sem vínculo** com dispositivo, user-agent, IP ou estação — copiar o cookie para
+outro cliente devolve 200. Em produção o cookie sai para `.boulangerie.com.br`, então vale em
+`pdv.`/`gestor.`/`kds.`/`prod.` no mesmo navegador.
+
+**2. O sistema não impede — detecta passivamente.** Sem limite de sessões, sem expulsão, sem alerta
+em tempo real. Cada login vira `SignInEvent` (pessoa, método, estação, IP, UA) mais aviso in-app.
+
+**3. A gaveta é do TERMINAL — nunca da sessão nem do operador.** A custódia é `cashman.Shift` com FK
+para `Terminal` e `UniqueConstraint` de turno aberto por terminal
+(`packages/cashman/.../models/shift.py:48-53`, `:83-87`). **`open_shift_for(operator)` não
+existe.** Dois dispositivos provisionados como o **mesmo** balcão dividem **um** turno e **um**
+livro: o segundo "abrir caixa" devolve **200 com o mesmo `shift_id`** e lança no turno do
+primeiro, **sem aviso**. E isso é deliberado — `station_trust.provision` preserva os demais
+vínculos do mesmo terminal (`shopman/backstage/station_trust.py:308-310`).
+
+### O que protege (confiável hoje)
+
+Turno único por terminal (constraint de banco) · `select_for_update` no livro e no fechamento ·
+segundo fechamento recusado, lançamento pós-fechamento recusado, `update`/`delete` recusados ·
+**sangria sempre com PIN/crachá gerencial e autoaprovação recusada** · fechamento só pela gerência ·
+contagem cega por construção · o **corpo da requisição não escolhe a gaveta** (409 se divergir) ·
+ambiguidade de terminal falha fechado · fechamento do dia é por **loja**, com alerta de turno
+deixado aberto · limiar `bi_cash_variance` de R$ 50 em 7 dias **por gaveta**.
+
+### Brechas (a preocupação de fraude tem fundamento)
+
+- **G2 — o livro não registra o dispositivo.** O rastro responsabiliza **pessoa + terminal**, nunca
+  dispositivo (`SignInEvent.station_ref` é o `Terminal.ref`, não o `TrustedDevice`). Dois tablets
+  como `pdv-main` são **indistinguíveis** na trilha.
+- **G8 — a falta de dinheiro não tem dono por desenho.** Uma gaveta, N mãos: o próprio código
+  documenta isso, e o BI só nomeia operador quando o livro prova operador único.
+- **G3/G4 — a trava da gaveta é verificada pelo navegador**, não pelo servidor; e o ociosidade que
+  dispara a trava é medida no cliente. A trava por capability mora na **sessão**: cookie copiado
+  herda a trava.
+- **Hardware:** quem chuta a gaveta é o agente local na loopback de cada máquina
+  (`pos_hardware.py:28`), com **o mesmo token** para os dois dispositivos. Dois dispositivos no
+  mesmo terminal podem abrir **duas gavetas físicas diferentes** sob **um** registro de custódia.
+- **B4 —** o X/Z aceita `terminal_ref` do query param sem validar contra a estação.
+- **G7 —** a tela do PDV mostra "Lançado por / Editado por" a partir do campo `pos_authorship`, que
+  **nenhum código escreve**. Promete responsabilização que não existe.
+- **G8b —** `SHOPMAN_REQUIRE_ACTIVE_OPERATOR=true` está no spec e **nenhum código lê** (flag fantasma).
+
+### Decisão pendente do dono
+
+Se há **uma** gaveta física, as duas posturas coerentes são: **(a)** um dispositivo por terminal
+(mais simples, casa com a gaveta única), ou **(b)** vários dispositivos no mesmo terminal **com
+visibilidade** — aviso no provisionamento, "há N dispositivos neste balcão" na tela do caixa, e
+dispositivo gravado no rastro. (b) é o caso real da loja.
+
+**P0 recomendado (barato, pré-go-live):** gravar o id do `TrustedDevice` nos eventos de auditoria
+(**zero migração** — o campo `data` JSON já existe e o `TrustedDevice` já está em mãos: é o que
+torna auditoria de fraude verificável) · avisar no provisionamento quando o terminal já tem vínculo
+ativo · mostrar "há N dispositivos neste balcão / caixa já aberto" na projeção do caixa · e remover
+a flag fantasma do spec. Os dados para detectar **já existem** (`TrustedDevice.last_used_at` é
+gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo balcão são detectáveis
+**hoje**.
 
 ---
 
@@ -144,7 +199,7 @@ A resposta precisa ficar em lugar durável, com evidência, porque a operação 
 | D-001 | Forma de pagamento padrão na loja online | `DECIDIDA` | 2026-10-31 |
 | D-002 | Alterar pedido da loja online pelo operador | `DECIDIDA` | 2026-10-31 |
 | D-003 | Superfície de atendimento do cliente | `DECIDIDA` | 2026-12-31 |
-| D-004 | Sessão de PDV multi-dispositivo e custódia da gaveta | `EM_EXECUCAO` | 2026-10-15 |
+| D-004 | Sessão de PDV multi-dispositivo e custódia da gaveta | `DECIDIDA` (resposta) + pendência do dono | 2026-10-15 |
 | D-005 | Marketing/WhatsApp permanece ligado como está | `DECIDIDA` | 2026-10-31 |
 | D-006 | Pix simulado permanece no alpha por ora | `ADIADA` | 2026-10-15 |
 
