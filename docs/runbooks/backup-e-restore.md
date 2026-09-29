@@ -104,6 +104,13 @@ para ler a connection string do cluster novo.
 > conta. Antes do ensaio, gere um token com os escopos acima (é a primeira
 > tarefa da seção 3) — ou faça tudo pelo painel, onde a permissão é a do login.
 
+> **Atualização em 29/09/2026:** o contexto `shopman-alpha-deploy` continua
+> sem `database:read`, mas o contexto já existente `shopman-spec-update` possui
+> leitura. A [auditoria somente leitura](../reports/2026-09-29-backup-pitr-verification.md)
+> confirmou o cluster de staging online e oito backups diários consecutivos.
+> Não gere outro token apenas para listar backups. Isso não prova que o contexto
+> tenha os escopos de criação/conexão necessários para o ensaio.
+
 ---
 
 ## 2. Antes de um deploy com migração de risco
@@ -328,9 +335,9 @@ prorata horária antes de confirmar (fork-clusters).
 Duas ressalvas honestas:
 
 - Se o fork nascer **no mesmo plano do cluster de origem** em vez do menor, o
-  custo é o daquele plano. O plano do `shopman-staging-postgres` não está
-  medido aqui (o token desta máquina não lê database) — confira na tela antes
-  de confirmar e escolha o menor plano explicitamente.
+  custo é o daquele plano. Em 29/09/2026 o
+  `shopman-staging-postgres` estava em `db-s-1vcpu-1gb`; confira novamente na
+  tela antes de confirmar e escolha o menor plano explicitamente.
 - A conversão hora↔mês acima é aritmética sobre os dois números da página de
   pricing (0,02254 × 672 h = 15,15), não uma frase da DO.
 
