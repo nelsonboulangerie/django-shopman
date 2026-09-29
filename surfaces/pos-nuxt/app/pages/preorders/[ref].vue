@@ -37,7 +37,7 @@ const counter = computed(() => detail.value?.counter ?? null);
 const card = computed(() => counter.value?.card ?? null);
 const notFound = computed(() => !!error.value && httpError(error.value).status === 404);
 
-const tickets = usePosOrderTickets(pos, { loadBatch: false });
+const tickets = usePosOrderTickets(pos);
 
 async function printTicket() {
   if (await tickets.printOne(ref_.value)) await refresh();

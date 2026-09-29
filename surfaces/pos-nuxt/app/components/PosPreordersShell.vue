@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// A moldura das telas de Encomendas: o rail do PDV, a barra de seções do kit
-// (`OperatorAppBar`) com as quatro portas da seção, e a área de conteúdo que
-// rola. As quatro telas e o detalhe dividem esta peça em vez de repetir rail e
+// A moldura das Encomendas: o rail do PDV, a barra do kit (`OperatorAppBar`)
+// com os dois modos da tela — Dia | Semana —, e a área de conteúdo que rola. A
+// tela da seção e o detalhe dividem esta peça em vez de repetir rail e
 // cabeçalho — o guardrail do cabeçalho (`guardrails.appBar.test.ts`) não deixa
 // cabeçalho novo nascer à mão.
 //
@@ -9,17 +9,26 @@
 // lateral (decisão do dono, 26/09), e o nome no começo da barra leva à casa.
 import { toast } from "vue-sonner";
 
-import { PREORDER_SECTIONS } from "~/presentation/preorders";
+import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
+import { isoDate } from "~/presentation/orderTickets";
+import { modeSections } from "~/presentation/preorders";
 import type { POSProjection } from "~/types/pos";
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   pos: POSProjection | null;
   pending: boolean;
-  /** Seção ativa. Omitida, sai da rota; `""` apaga todas (o detalhe). */
+  /** Modo ativo (`day`/`week`); `""` apaga as abas (o detalhe). */
   current?: string;
+  /**
+   * As abas Dia | Semana com o estado da tela (data e filtros) dentro do link.
+   * Omitidas (o detalhe), levam ao dia e à semana de hoje.
+   */
+  sections?: OperatorSection[];
   /** Largura do conteúdo: a grade semanal precisa da tela inteira. */
   wide?: boolean;
-}>(), { current: undefined, wide: false });
+}>(), { current: "", sections: undefined, wide: false });
+
+const tabs = computed(() => props.sections ?? modeSections(null, isoDate(new Date())));
 
 const emit = defineEmits<{ refresh: [] }>();
 
@@ -50,7 +59,7 @@ function openCustomerDisplay() {
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <OperatorAppBar :sections="PREORDER_SECTIONS" :current="current" label="Seções de Encomendas">
+      <OperatorAppBar :sections="tabs" :current="current" label="Modo das Encomendas">
         <template #start>
           <NuxtLink
             to="/preorders"
