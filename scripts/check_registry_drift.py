@@ -102,6 +102,16 @@ mudam de valor. Cada linha declara a FONTE do digest; se a distribuição falhar
 (rede, auth), a guarda cai para a listagem e diz isso na própria linha, com o
 erro — nunca em silêncio, porque aí o vermelho volta a poder ser do índice.
 
+Em 29/09/2026 o índice mostrou que isso também não era suficiente: depois do
+push do #1238, a listagem enumerava `purchase` no digest novo, mas omitia
+`purchase-<sha>` em cinco leituras. Republicar produziu exatamente o mesmo
+resultado. Um HEAD direto nas duas tags respondia 200 e o MESMO digest: a
+imutável existia, só não estava no índice. Por isso a guarda consulta também,
+na distribuição, as candidatas honestas que consegue nomear sem adivinhação:
+`<tag>-<último commit que tocou>` e `<tag>-<topo>`. A listagem continua útil
+para encontrar publicações intermediárias; ela apenas deixou de ter poder de
+negar uma tag que a fonte resolve diretamente.
+
 Uso:
 
     DO_TOKEN=... python scripts/check_registry_drift.py
@@ -121,6 +131,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -260,30 +271,42 @@ def _manifest_digest(registry: str, repository: str, tag: str, bearer: str) -> s
 
 
 class Distribuicao(NamedTuple):
-    """O digest de cada tag móvel segundo a distribuição — e o que falhou.
+    """Digests lidos na distribuição — a fonte que o App Platform usa.
 
     `falhas[tag]` é o motivo de a tag ter caído para a listagem. Ele viaja até
     a linha de erro: um vermelho medido no índice não pode se passar por um
     medido na fonte.
+
+    `imutaveis` contém apenas tags ``<componente>-<sha>`` que resolveram. A API
+    ``/tags`` da DO já omitiu ``purchase-<sha>`` em todas as páginas enquanto
+    um HEAD direto no manifest respondia 200 com o digest correto (push do
+    #1238). A tag existia; era o índice que não a enumerava.
     """
 
     digests: dict[str, str]
     falhas: dict[str, str]
+    imutaveis: dict[str, str] | None = None
 
 
 def fetch_distribution(
-    registry: str, repository: str, moving_tags: list[str], token: str
+    registry: str,
+    repository: str,
+    moving_tags: list[str],
+    token: str,
+    immutable_tags: list[str] | None = None,
 ) -> Distribuicao:
-    """HEAD no manifest de cada tag móvel, com UM bearer para todas.
+    """HEAD nas tags móveis e nas imutáveis candidatas, com UM bearer.
 
     Não levanta: falha de auth vira falha de todas as tags, falha de uma tag
     vira falha só dela. Quem decide o que fazer com isso é `audit`, que cai
-    para a listagem e declara.
+    para a listagem e declara. Imutável ausente é normal (nem todo topo
+    republica todo componente), por isso só as que resolveram entram no mapa.
     """
+    immutable_tags = immutable_tags or []
     try:
         bearer = _pull_token(registry, repository, token)
     except NaoDeuParaPerguntar as exc:
-        return Distribuicao({}, dict.fromkeys(moving_tags, str(exc)))
+        return Distribuicao({}, dict.fromkeys(moving_tags, str(exc)), {})
     digests: dict[str, str] = {}
     falhas: dict[str, str] = {}
     for tag in moving_tags:
@@ -291,7 +314,13 @@ def fetch_distribution(
             digests[tag] = _manifest_digest(registry, repository, tag, bearer)
         except NaoDeuParaPerguntar as exc:
             falhas[tag] = str(exc)
-    return Distribuicao(digests, falhas)
+    imutaveis: dict[str, str] = {}
+    for tag in dict.fromkeys(immutable_tags):
+        try:
+            imutaveis[tag] = _manifest_digest(registry, repository, tag, bearer)
+        except NaoDeuParaPerguntar:
+            pass
+    return Distribuicao(digests, falhas, imutaveis)
 
 
 class Leitura(NamedTuple):
@@ -319,6 +348,9 @@ class Leitura(NamedTuple):
     #: O que a LISTAGEM dizia da tag móvel quando a fonte foi a distribuição.
     #: Divergir dela é o sintoma de 22/09/2026, e fica à vista.
     na_listagem: tuple[str, ...] = ()
+    #: SHAs cuja tag imutável foi lida diretamente na distribuição, mesmo se a
+    #: API `/tags` não a enumerou.
+    imutaveis_diretas: tuple[str, ...] = ()
 
     def medida(self) -> str:
         """De onde a conclusão saiu. É isto que faz o próximo vermelho se explicar."""
@@ -340,6 +372,9 @@ class Leitura(NamedTuple):
         if self.fonte != FONTE_DISTRIBUICAO:
             partes.insert(0, f"fonte: {self.fonte}")
         imutaveis = ", ".join(s[:9] for s in self.shas) or "nenhuma"
+        if self.imutaveis_diretas:
+            diretas = ", ".join(s[:9] for s in self.imutaveis_diretas)
+            partes.append(f"imutável(is) confirmada(s) por HEAD direto: {diretas}")
         partes.append(
             f"{len(self.shas)} tag(s) imutável(is) dividem esse(s) digest(s): "
             f"{imutaveis}"
@@ -353,7 +388,11 @@ def _curto(digest: str) -> str:
 
 
 def read_published(
-    tags: list[dict], moving_tag: str, digest: str = "", fonte: str = FONTE_LISTAGEM
+    tags: list[dict],
+    moving_tag: str,
+    digest: str = "",
+    fonte: str = FONTE_LISTAGEM,
+    direct_immutable: dict[str, str] | None = None,
 ) -> Leitura:
     """Quais commits podem estar por trás da tag móvel — com a medida junto.
 
@@ -393,12 +432,24 @@ def read_published(
         )
 
     shas: list[str] = []
+    diretas: list[str] = []
     for t in tags:
         if t.get("manifest_digest") not in digests:
             continue
         match = IMMUTABLE.match(t.get("tag") or "")
         if match and match["tag"] == moving_tag and match["sha"] not in shas:
             shas.append(match["sha"])
+    for tag, immutable_digest in (direct_immutable or {}).items():
+        if immutable_digest not in digests:
+            continue
+        match = IMMUTABLE.match(tag)
+        if not match or match["tag"] != moving_tag:
+            continue
+        sha = match["sha"]
+        if sha not in shas:
+            shas.append(sha)
+        if sha not in diretas:
+            diretas.append(sha)
     if not shas:
         return Leitura(
             (),
@@ -409,7 +460,14 @@ def read_published(
             "provar qual commit está no ar",
             **extra,
         )
-    return Leitura(tuple(shas), digests, len(carregados), "", **extra)
+    return Leitura(
+        tuple(shas),
+        digests,
+        len(carregados),
+        "",
+        **extra,
+        imutaveis_diretas=tuple(diretas),
+    )
 
 
 def _divergencia(esperado: str, publicado: str, ref: str, repo: Path) -> str:
@@ -463,7 +521,12 @@ def audit(
             continue  # nada no histórico tocou esse componente; nada a cobrar
         tag = tag_de[name]
         if distribuicao is not None and tag in distribuicao.digests:
-            leitura = read_published(tags, tag, digest=distribuicao.digests[tag])
+            leitura = read_published(
+                tags,
+                tag,
+                digest=distribuicao.digests[tag],
+                direct_immutable=distribuicao.imutaveis or {},
+            )
         elif distribuicao is not None:
             falha = distribuicao.falhas.get(tag, "tag não consultada")
             leitura = read_published(
@@ -537,7 +600,23 @@ def main(argv: list[str] | None = None) -> int:
     groups = load_groups(Path(args.groups_json))
     offline = bool(args.registry_json)
 
-    moving_tags = [c["tag"] for c in build_matrix(list(component_paths(groups)), groups)]
+    paths = component_paths(groups)
+    matrix = build_matrix(list(paths), groups)
+    moving_tags = [c["tag"] for c in matrix]
+    tag_de = {c["name"]: c["tag"] for c in matrix}
+    resolved_ref = subprocess.run(
+        ["git", "rev-parse", args.ref],
+        cwd=args.repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    immutable_tags: list[str] = []
+    for name, patterns in paths.items():
+        esperado = last_commit_touching(patterns, args.ref, Path(args.repo))
+        if esperado:
+            immutable_tags.append(f"{tag_de[name]}-{esperado}")
+        immutable_tags.append(f"{tag_de[name]}-{resolved_ref}")
 
     def perguntar() -> tuple[list[dict], Distribuicao | None]:
         if offline:
@@ -548,7 +627,11 @@ def main(argv: list[str] | None = None) -> int:
             raise NaoDeuParaPerguntar("DO_TOKEN ausente")
         tags = fetch_tags(args.registry, args.repository, token)
         distribuicao = fetch_distribution(
-            args.registry, args.repository, moving_tags, token
+            args.registry,
+            args.repository,
+            moving_tags,
+            token,
+            immutable_tags,
         )
         for falha in dict.fromkeys(distribuicao.falhas.values()):
             print(
