@@ -674,6 +674,7 @@ _STRUCTURED_ADDRESS_FIELDS = (
     "latitude",
     "longitude",
     "place_id",
+    "coordinates_source",
     "complement",
     "delivery_instructions",
 )
@@ -703,6 +704,8 @@ def _clean_structured_address(value: dict | None) -> dict:
     for field in _STRUCTURED_ADDRESS_FIELDS:
         raw = value.get(field)
         if raw is None or raw == "":
+            continue
+        if field == "coordinates_source" and raw not in {"pin", "geocoded", "saved"}:
             continue
         cleaned[field] = float(raw) if isinstance(raw, Decimal) else raw
     return cleaned
@@ -734,6 +737,7 @@ def _saved_address_payload(request, address_id: int | None) -> tuple[dict | None
         "latitude": getattr(address, "latitude", None),
         "longitude": getattr(address, "longitude", None),
         "place_id": getattr(address, "place_id", "") or "",
+        "coordinates_source": "saved",
         "complement": getattr(address, "complement", "") or "",
         "delivery_instructions": getattr(address, "delivery_instructions", "") or "",
     })

@@ -579,6 +579,7 @@ export interface LastOrderItemProjection {
 
 export interface PublicConfigProjection {
   google_maps_api_key: string
+  address_map_confirmation_enabled: boolean
   whatsapp_url: string
   shop_latitude: number | null
   shop_longitude: number | null
@@ -795,6 +796,7 @@ export interface StructuredAddressProjection {
   latitude?: number | null
   longitude?: number | null
   place_id?: string | null
+  coordinates_source?: 'pin' | 'geocoded' | 'saved'
 }
 
 export interface Action {

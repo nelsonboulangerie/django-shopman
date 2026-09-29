@@ -35,6 +35,29 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # Sequências longas de dígitos (telefones, com separadores) → redige.
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
 
+_ADDRESS_EVENT_SCHEMA: dict[str, dict[str, set[str]]] = {
+    "address.location.requested": {"origin": {"checkout"}},
+    "address.location.resolved": {
+        "accuracy_bucket": {"good", "medium", "low", "unknown"},
+        "latency_bucket": {"fast", "normal", "slow"},
+    },
+    "address.location.denied": {"reason": {"denied", "timeout", "unavailable", "unsupported"}},
+    "address.map.ready": {
+        "origin": {"gps", "place", "adjust"},
+        "latency_bucket": {"fast", "normal", "slow"},
+    },
+    "address.map.fallback": {
+        "origin": {"gps", "place", "adjust"},
+        "reason": {"disabled", "provider", "reverse", "unsupported"},
+    },
+    "address.map.confirmed": {
+        "origin": {"gps", "place", "adjust"},
+        "accuracy_bucket": {"good", "medium", "low", "unknown"},
+        "moved": {"true", "false"},
+    },
+    "address.zone.resolved": {"result": {"covered", "outside", "deferred"}},
+}
+
 
 def _redact(text: str) -> str:
     text = _EMAIL_RE.sub("[email]", text)
@@ -94,4 +117,42 @@ class ClientErrorView(APIView):
                 message,
                 extra={"client_report": report},
             )
+        return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
+
+
+def sanitize_address_event(payload: Any) -> dict[str, Any]:
+    """Accept only aggregate enums; address-like values have nowhere to land."""
+    if not isinstance(payload, dict):
+        return {}
+    event = payload.get("event")
+    schema = _ADDRESS_EVENT_SCHEMA.get(event)
+    properties = payload.get("properties")
+    if schema is None or not isinstance(properties, dict):
+        return {}
+    clean: dict[str, str] = {}
+    for field, allowed in schema.items():
+        raw = properties.get(field)
+        value = str(raw).lower() if isinstance(raw, bool) else raw
+        if isinstance(value, str) and value in allowed:
+            clean[field] = value
+    if set(clean) != set(schema):
+        return {}
+    return {"event": event, "properties": clean}
+
+
+@method_decorator(
+    ratelimit(key="ip", rate="60/m", method="POST", block=False), name="dispatch"
+)
+class AddressEventView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(tags=["telemetry"], summary="Report an aggregate address-flow event")
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
+        event = sanitize_address_event(request.data if hasattr(request, "data") else {})
+        if not event:
+            return Response({"detail": "Evento inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        logger.info("storefront_address_event", extra={"address_event": event})
         return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)

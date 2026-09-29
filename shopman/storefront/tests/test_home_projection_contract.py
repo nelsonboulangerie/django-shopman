@@ -64,6 +64,28 @@ def test_home_projection_exposes_browser_key_but_never_server_key(rf, settings):
     assert "server-secret-key" not in repr(payload)
 
 
+def test_address_map_confirmation_kill_switch_is_off_by_default_and_tenant_scoped(rf):
+    from django.core.cache import cache
+
+    from shopman.shop.models import Shop
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.home import build_shell
+
+    shop = Shop.load() or Shop.objects.create(name="Test Padaria")
+    shop.defaults = {}
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+    assert payload["public_config"]["address_map_confirmation_enabled"] is False
+
+    shop.defaults = {"storefront": {"address_map_confirmation_enabled": True}}
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+    assert payload["public_config"]["address_map_confirmation_enabled"] is True
+
+
 def test_home_projection_keeps_operational_status_single_sourced(rf):
     from shopman.shop.models import FAQEntry, Shop
     from shopman.storefront.api.projections import projection_data

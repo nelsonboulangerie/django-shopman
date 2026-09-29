@@ -46,7 +46,9 @@ secundários — a tela não força escolha de modalidade.
   - Preenche rua, bairro, cidade, UF, CEP, lat/lng.
   - Se a sugestão inclui número → foco pula para **complemento**.
   - Se não inclui número → foco pula para **número**.
-- Mapa **não aparece** automaticamente. Abre como modal sob demanda (ver §2).
+- Com `public_config.address_map_confirmation_enabled = true`, sugestão que traz
+  lat/lng abre a confirmação visual do ponto antes dos detalhes. Sem coordenadas,
+  ou com o kill switch desligado, segue direto aos campos como antes.
 
 ### 2. "Ajustar no mapa" (modal 85% da tela, swappable)
 
@@ -57,8 +59,9 @@ acessado por um botão discreto ao lado da sugestão aceita:
 > 📍 R. das Flores, 123 · Jardim · Londrina/PR
 >     [✎ ajustar no mapa]
 
-No modal: pin arrastável, sem input, só "Confirmar" e "Cancelar".
-Confirmar atualiza lat/lng e reconfirma endereço via geocoding reverso.
+No modal: pin visual fixo no centro e o mapa se move por baixo; teclado move com
+setas. Confirmar atualiza lat/lng e, quando houve movimento, descreve o ponto por
+geocoding reverso sem substituir a coordenada confirmada pelo centroide retornado.
 
 ### 3. "Usar minha localização" (botão opt-in explícito)
 
@@ -68,8 +71,9 @@ de localização** ao lado do campo de busca:
 > [🔍 Buscar endereço ou CEP]   [📍 Usar minha localização]
 
 Clicar no botão é **opt-in de 1 clique** — pede permissão do browser,
-geocoding reverso → mostra endereço candidato em banner de confirmação
-(não preenche formulário silenciosamente).
+Com o kill switch de confirmação ligado, a posição abre o mesmo mapa confirmável
+da busca, com aviso de precisão; desligado, mantém o banner textual candidato.
+Em ambos os casos não preenche nem salva silenciosamente.
 
 Benefício: cliente sente **controle** ("eu pedi isso") em vez de suspeita
 ("como ele sabe onde estou?"). Omotenashi = respeito pelo gesto, não

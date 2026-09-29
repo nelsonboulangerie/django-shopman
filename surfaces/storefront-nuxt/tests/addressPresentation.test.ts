@@ -241,13 +241,15 @@ describe('selection', () => {
     expect(selection.complement).toBe('Apto 4B')
     expect(selection.deliveryInstructions).toBe('Tocar interfone')
     expect(selection.structured.latitude).toBe(-23.31)
+    expect(selection.structured.coordinates_source).toBe('saved')
   })
 
   it('builds a selection from a new draft', () => {
-    const selection = selectionFromDraft(filledDraft({ complement: ' Fundos ' }))
+    const selection = selectionFromDraft(filledDraft({ complement: ' Fundos ', coordinates_source: 'pin' }))
     expect(selection.savedAddressId).toBeNull()
     expect(selection.complement).toBe('Fundos')
     expect(selection.structured.route).toBe('R. das Flores')
+    expect(selection.structured.coordinates_source).toBe('pin')
   })
 
   it('keeps the created id when the new address was saved to the profile', () => {

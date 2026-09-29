@@ -55,6 +55,16 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `legal` | `dict` | CheckoutView do storefront (`presentation.legal.order_legal_snapshot`, via `set_data`) | ninguém edita; chega selado em `Order.snapshot["data"]["legal"]` (NÃO é copiado para `Order.data`) | Quais Termos e Privacidade valiam quando o pedido foi feito: `{version: "AAAA-MM-DD", archived: bool, privacy_url, terms_url, privacy_sha256?, terms_sha256?}`. URL = cópia permanente em `/documentos-legais/<privacidade\|termos>/<versão>.html` (append-only, `scripts/check_legal_archive.py`). Os `*_sha256` só existem com `archived: true` — a versão é arquivada depois do deploy, porque a lista de operadores depende do ambiente. Sem PII |
 | `customer_rating` | `dict` | `OrderRateView` (storefront tracking) | `OrderAdmin` (coluna + detalhe), dashboard do Admin (média móvel + comentários), alerta `low_rating` (nota ≤2) | Avaliação do pedido pelo cliente: `{rating, comment, submitted_at, source}`. Só presente após o cliente avaliar. Loop fechado (RATING-LOOP-PLAN): a loja lê a nota no Admin e é avisada em nota baixa. Ver [[project_customer_rating_intent]] |
 
+#### Origem da coordenada do endereço
+
+`delivery_address_structured.coordinates_source` usa vocabulário fechado:
+`"pin"` (ponto confirmado no mapa/localização), `"geocoded"` (geometria da
+sugestão aceita sem movimento) ou `"saved"` (endereço já salvo escolhido). No
+checkout web o ponto confirmado é persistido exatamente; o reverse geocode só
+descreve esse ponto e nunca o troca pelo centroide do provedor. `accuracy`,
+histórico de movimentos, consulta, CEP e permissão não são persistidos nem entram
+na telemetria do fluxo.
+
 ### Chaves de sistema (geridas pelo Core)
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
