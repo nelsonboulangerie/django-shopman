@@ -31,6 +31,7 @@ import {
   parseInvoiceAccessKey,
   parseMoneyInput,
   parseQtyInput,
+  purchaseSuggestionLabel,
   quotePreview,
   receiptLinePreview,
   receiptLineSuggestion,
@@ -1122,6 +1123,23 @@ describe("reorderRows", () => {
     const rows = reorderRows([material], [], [], []);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.suggestedQty).toBe(12);
+  });
+
+  it("explica o rendimento ponderado sem aplicar o FC outra vez", () => {
+    const material: Material = {
+      ...semConsumo,
+      weightedUsableFactor: 0.84,
+      correctionFactor: 1.19,
+      suggestedQty: 12,
+      suggestedNetQty: 10.08,
+    };
+
+    expect(purchaseSuggestionLabel(material, 12)).toBe("≈ 12 kg a comprar (10,08 kg limpos ÷ 84%)");
+    expect(reorderRows([material], [], [], [])[0]!.suggestedQty).toBe(12);
+  });
+
+  it("não inventa FC sem perda medida", () => {
+    expect(purchaseSuggestionLabel(semConsumo, 12)).toBe("12 kg");
   });
 
   it("estima o custo pelo preferencial, e deixa nulo quando não há", () => {

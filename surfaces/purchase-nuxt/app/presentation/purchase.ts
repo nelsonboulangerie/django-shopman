@@ -75,6 +75,21 @@ export function formatQty(value: number, unit: string): string {
   return `${quantityFormatter.format(value)} ${unit}`;
 }
 
+/** Explica o FC sem reaplicá-lo: suggestedQty/dailyUse já são brutos no ledger. */
+export function purchaseSuggestionLabel(
+  material: Pick<Material, "unit" | "weightedUsableFactor" | "suggestedNetQty">,
+  suggestedQty: number,
+): string {
+  const factor = material.weightedUsableFactor;
+  if (factor === null || factor === undefined || !Number.isFinite(factor) || factor <= 0 || factor >= 1) {
+    return formatQty(suggestedQty, material.unit);
+  }
+  const net = material.suggestedNetQty;
+  const netQty = net !== null && net !== undefined && Number.isFinite(net) ? net : suggestedQty * factor;
+  const percent = quantityFormatter.format(factor * 100);
+  return `≈ ${formatQty(suggestedQty, material.unit)} a comprar (${formatQty(netQty, material.unit)} limpos ÷ ${percent}%)`;
+}
+
 /**
  * O saldo do insumo, com o "≈" quando ele atravessou uma ponte aproximada.
  *

@@ -80,6 +80,15 @@ class MaterialProjection:
     leadTimeDays: float
     replenishAtDays: float
     suggestedQty: float
+    #: Rendimento efetivo dos consumos de produção na mesma janela de
+    #: ``dailyUse``. É ponderado pela quantidade bruta de cada ficha e inclui
+    #: demais baixas do ledger como rendimento 1. ``None`` = sem perda medida.
+    weightedUsableFactor: float | None
+    #: Inverso do rendimento ponderado, só para a tela falar a língua do chef.
+    #: Nunca é reaplicado sobre ``suggestedQty``: o ledger já contém a bruta.
+    correctionFactor: float | None
+    #: Parcela líquida equivalente de ``suggestedQty`` para explicar a conta.
+    suggestedNetQty: float | None
     stockIsApproximate: bool
     roles: SkuRolesProjection
     #: Preço de venda do cadastro de venda do mesmo SKU; ``None`` quando não se vende.
@@ -275,6 +284,11 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     policy = _purchase_policy()
     stock_on_hand = _stock_on_hand_map(skus)
     daily_use = _daily_use_map(skus, days=policy["consumption_window_days"])
+    usable_factors = _weighted_usable_factor_map(
+        skus,
+        gross_daily_use=daily_use,
+        days=policy["consumption_window_days"],
+    )
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
@@ -293,6 +307,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             material,
             stock_on_hand=stock_on_hand.get(material.sku, Decimal("0")),
             daily_use=daily_use.get(material.sku, Decimal("0")),
+            weighted_usable_factor=usable_factors.get(material.sku),
             recipes=recipes.get(material.sku, ()),
             lead_time_days=lead_times.get(material.sku, Decimal(policy["min_lead_time_days"])),
             stock_is_approximate=material.sku in approximate_stock,
@@ -396,6 +411,7 @@ def _material_projection(
     *,
     stock_on_hand: Decimal,
     daily_use: Decimal,
+    weighted_usable_factor: Decimal | None,
     recipes: tuple[str, ...],
     lead_time_days: Decimal,
     stock_is_approximate: bool,
@@ -423,6 +439,16 @@ def _material_projection(
         replenish_at=replenish_at,
         shelf_life_days=material.shelf_life_days,
     )
+    correction_factor = (
+        Decimal("1") / weighted_usable_factor
+        if weighted_usable_factor is not None and weighted_usable_factor > 0
+        else None
+    )
+    suggested_net = (
+        suggested * weighted_usable_factor
+        if weighted_usable_factor is not None and suggested > 0
+        else None
+    )
     category = _meta_str(meta, "category") or ("Revenda" if roles.sellable else "Insumos")
     return MaterialProjection(
         sku=material.sku,
@@ -439,6 +465,11 @@ def _material_projection(
         leadTimeDays=_number(lead_time_days),
         replenishAtDays=_number(replenish_at),
         suggestedQty=_number(suggested),
+        weightedUsableFactor=(
+            _number(weighted_usable_factor) if weighted_usable_factor is not None else None
+        ),
+        correctionFactor=_number(correction_factor) if correction_factor is not None else None,
+        suggestedNetQty=_number(suggested_net) if suggested_net is not None else None,
         stockIsApproximate=stock_is_approximate,
         roles=SkuRolesProjection(
             purchasable=roles.purchasable,
@@ -813,6 +844,89 @@ def _daily_use_map(skus: list[str], *, days: int = 14) -> dict[str, Decimal]:
     except Exception:
         logger.debug("purchase.daily_use_failed", exc_info=True)
         return {}
+
+
+def _weighted_usable_factor_map(
+    skus: list[str],
+    *,
+    gross_daily_use: dict[str, Decimal],
+    days: int = 14,
+) -> dict[str, Decimal]:
+    """Rendimento ponderado da parcela que a produção consumiu.
+
+    ``dailyUse`` já vem das baixas brutas do ledger. Multiplicá-lo pelo fator de
+    correção faria a perda entrar duas vezes. A função lê, na mesma janela, o
+    carimbo congelado de cada ``WorkOrderItem.CONSUMPTION`` e reconstrói a
+    parcela líquida apenas para explicar a sugestão na tela::
+
+        rendimento = soma(líquida) / soma(bruta)
+        FC = 1 / rendimento
+
+    Somar antes de dividir pondera fichas diferentes pelo consumo real. Baixas
+    não cobertas por uma ficha são conservadoramente tratadas com rendimento 1;
+    elas continuam na sugestão bruta, mas não ganham uma perda inventada.
+    """
+    if not skus or days <= 0:
+        return {}
+    try:
+        WorkOrderItem = apps.get_model("craftsman", "WorkOrderItem")
+        since = timezone.now() - timedelta(days=days)
+        consumed: dict[str, list[Decimal]] = {}
+        rows = WorkOrderItem.objects.filter(
+            item_ref__in=skus,
+            kind="consumption",
+            work_order__status="finished",
+            recorded_at__gte=since,
+        ).values_list("item_ref", "quantity", "meta")
+        for sku, quantity, meta in rows:
+            gross = _positive_finite_decimal(quantity)
+            if gross is None:
+                continue
+            factor = _usable_factor_from_consumption(gross, meta)
+            totals = consumed.setdefault(sku, [Decimal("0"), Decimal("0")])
+            totals[0] += gross
+            totals[1] += gross * factor
+
+        result: dict[str, Decimal] = {}
+        window_days = Decimal(days)
+        for sku, (production_gross, production_net) in consumed.items():
+            ledger_gross = gross_daily_use.get(sku, Decimal("0")) * window_days
+            if ledger_gross <= 0 or production_gross <= 0:
+                continue
+            production_factor = production_net / production_gross
+            if production_factor >= 1:
+                continue
+            matched_gross = min(production_gross, ledger_gross)
+            other_gross = ledger_gross - matched_gross
+            effective_factor = (
+                matched_gross * production_factor + other_gross
+            ) / ledger_gross
+            if Decimal("0") < effective_factor < Decimal("1"):
+                result[sku] = effective_factor
+        return result
+    except Exception:
+        logger.debug("purchase.weighted_usable_factor_failed", exc_info=True)
+        return {}
+
+
+def _usable_factor_from_consumption(gross: Decimal, meta: Any) -> Decimal:
+    """Lê o snapshot da linha sem transformar dado inválido em perda."""
+    metadata = meta if isinstance(meta, dict) else {}
+    net = _positive_finite_decimal(metadata.get("net_quantity"))
+    if net is not None and net <= gross:
+        return net / gross
+    factor = _positive_finite_decimal(metadata.get("usable_factor"))
+    if factor is not None and factor <= 1:
+        return factor
+    return Decimal("1")
+
+
+def _positive_finite_decimal(raw: Any) -> Decimal | None:
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return value if value.is_finite() and value > 0 else None
 
 
 def _recipes_map(skus: list[str]) -> dict[str, tuple[str, ...]]:
