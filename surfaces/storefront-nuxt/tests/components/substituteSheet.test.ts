@@ -10,7 +10,7 @@ mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
   fn.error = () => {}
-  return () => fn
+  return fn
 })
 
 async function setIssue (issue: unknown) {
