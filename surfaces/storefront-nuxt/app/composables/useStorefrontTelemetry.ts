@@ -1,4 +1,4 @@
-type AddressEventName =
+export type AddressEventName =
   | 'address.location.requested'
   | 'address.location.resolved'
   | 'address.location.denied'
