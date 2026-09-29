@@ -6,6 +6,11 @@ type AddressEventName =
   | 'address.map.fallback'
   | 'address.map.confirmed'
   | 'address.zone.resolved'
+  | 'address.location_check.requested'
+  | 'address.location_check.resolved'
+  | 'address.location_check.failed'
+  | 'address.location_mismatch.shown'
+  | 'address.location_mismatch.action'
 
 /**
  * Fire-and-forget aggregate telemetry. Callers pass only closed enums: the
@@ -25,4 +30,3 @@ export function useStorefrontTelemetry () {
 
   return { addressEvent }
 }
-

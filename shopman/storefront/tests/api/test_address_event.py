@@ -57,3 +57,33 @@ def test_address_event_endpoint_is_write_only_and_drops_pii(client, caplog):
     )
     assert response.status_code == 202
     assert "Rua pessoal" not in caplog.text
+
+
+def test_location_mismatch_event_keeps_only_policy_enums():
+    event = sanitize_address_event(
+        {
+            "event": "address.location_check.resolved",
+            "properties": {
+                "target": "saved",
+                "status": "diverged",
+                "accuracy_bucket": "good",
+                "policy_version": "v1",
+                "distance_m": 930,
+                "saved_address_id": 42,
+                "latitude": -23.31,
+            },
+        }
+    )
+
+    assert event == {
+        "event": "address.location_check.resolved",
+        "properties": {
+            "target": "saved",
+            "status": "diverged",
+            "accuracy_bucket": "good",
+            "policy_version": "v1",
+        },
+    }
+    assert "930" not in repr(event)
+    assert "42" not in repr(event)
+    assert "-23.31" not in repr(event)
