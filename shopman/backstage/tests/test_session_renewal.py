@@ -187,20 +187,18 @@ class OperatorSessionRenewalTests(TestCase):
 
     # ── lock/unlock ─────────────────────────────────────────────────────────
 
-    def test_lock_then_unlock_still_work_and_the_new_session_is_marked(self):
+    def test_lock_then_unlock_keep_the_marked_shared_session(self):
         self._unlock()
         first_key = self._session_key()
 
-        lock = self.client.post(LOCK, HTTP_HOST=API_HOST)
+        lock = self.client.post(LOCK, {"perm": POS_PERM}, HTTP_HOST=API_HOST)
         self.assertEqual(lock.status_code, 200)
-        deleted = lock.cookies[settings.SESSION_COOKIE_NAME]
-        self.assertEqual(deleted.value, "")
-        self.assertEqual(deleted["max-age"], 0)
-        self.assertEqual(self.client.get(ORDERS, HTTP_HOST=API_HOST).status_code, 403)
+        self.assertEqual(self.client.cookies[settings.SESSION_COOKIE_NAME].value, first_key)
+        self.assertEqual(self.client.get(ORDERS, HTTP_HOST=API_HOST).status_code, 200)
 
         resp = self._unlock()
         self._assert_seven_day_cookie(resp)
-        self.assertNotEqual(self._session_key(), first_key)
+        self.assertEqual(self._session_key(), first_key)
         self.assertTrue(_session_store(self._session_key()).get(operator_session.SESSION_MARKER))
         self.assertEqual(self.client.get(ORDERS, HTTP_HOST=API_HOST).status_code, 200)
 

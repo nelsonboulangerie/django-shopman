@@ -110,6 +110,20 @@ def _recusa_sem_permissao():
     raise PermissionDenied(_MSG_SEM_PERMISSAO)
 
 
+def _recusa_se_capability_travada(request, capabilities) -> None:
+    """A sessão pode estar viva e só ESTA superfície estar trancada."""
+    from shopman.backstage.services import operator_session
+
+    if any(operator_session.is_capability_locked(request, code) for code in capabilities):
+        _recusa_travada()
+
+
+def _capabilities_travadas(request) -> frozenset[str]:
+    from shopman.backstage.services import operator_session
+
+    return operator_session.locked_capabilities(request)
+
+
 def _operador(request):
     """Quem está operando nesta requisição. Uma pergunta, um dono.
 
@@ -186,6 +200,7 @@ class HasBackstagePermission(BasePermission):
                 _recusa_travada()
             return False
         perms = _required_codes(getattr(view, "required_permission", None))
+        _recusa_se_capability_travada(request, perms)
         if not all(operador.has_perm(code) for code in perms):
             _recusa_sem_permissao()
         return True
@@ -210,8 +225,13 @@ class HasAnyBackstagePermission(BasePermission):
                 _recusa_travada()
             return False
         perms = _required_codes(getattr(view, "any_permission", None))
-        if perms and not any(operador.has_perm(code) for code in perms):
+        if not perms:
+            return True
+        permitted = tuple(code for code in perms if operador.has_perm(code))
+        if not permitted:
             _recusa_sem_permissao()
+        if all(code in _capabilities_travadas(request) for code in permitted):
+            _recusa_travada()
         return True
 
 
@@ -231,6 +251,8 @@ class HasProductionCapability(BasePermission):
             if is_trusted_station(request):
                 _recusa_travada()
             return False
+
+        _recusa_se_capability_travada(request, ("backstage.operate_production",))
 
         from shopman.backstage.projections.production import resolve_production_access
         from shopman.backstage.station_trust import station_ref
@@ -278,6 +300,7 @@ class HasMarketingCapability(BasePermission):
             view, "required_permission", None
         )
         required = _required_codes(declared)
+        _recusa_se_capability_travada(request, ("shop.view_marketing",))
         missing = tuple(code for code in required if not operador.has_perm(code))
         if not missing:
             return True

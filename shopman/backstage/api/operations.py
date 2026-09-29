@@ -42,7 +42,7 @@ from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 
-from django.contrib.auth import login, logout
+from django.contrib.auth import login
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError
 from django.http import FileResponse
@@ -722,20 +722,30 @@ class OperatorSessionView(APIView):
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
             return Response({"detail": "Permissão desconhecida."}, status=400)
+        from shopman.backstage.services import operator_session
+
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
+        locked = bool(
+            operador is None
+            or (
+                required_perm
+                and operator_session.is_capability_locked(request, required_perm)
+            )
+        )
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
             # há mais conta de máquina.
             "station": station_ref(request),
             "operator": operator_card(operador) if operador else None,
-            "locked": operador is None,
+            "locked": locked,
             "pin_must_change": pin_must_change(operador),
             # A antessala responde sobre a capability pedida pela superfície sem
             # concedê-la nem listar permissões. Assim o shell barra o mount antes
             # de qualquer fetch protegido e diferencia login de acesso negado.
             "authorized": bool(
                 operador
+                and not locked
                 and (required_perm is None or operador.has_perm(required_perm))
             ),
         })
@@ -911,22 +921,22 @@ class OperatorUnlockView(APIView):
         sign_in_audit.mark_method(request, metodo)
         login(request, operator, backend=MODEL_BACKEND)
         operator_session.start(request)
+        operator_session.unlock_capability(request, perm)
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 
 class OperatorLockView(APIView):
-    """Trava a estação: a pessoa sai, o dispositivo fica.
-
-    Com uma identidade só, travar é ``logout``. A sessão inteira vai embora —
-    incluindo o que o turno anterior tenha deixado nela — e o dispositivo continua
-    reconhecido pelo cookie de estação, que é o que faz a tela de identificação
-    aparecer em vez de uma tela de login.
-    """
+    """Trava só a superfície pedida; a sessão compartilhada continua viva."""
 
     permission_classes = [IsBackstageOperator]
 
     def post(self, request):
-        logout(request)
+        from shopman.backstage.services import operator_session
+
+        perm, valid = _validated_unlock_perm((request.data or {}).get("perm"))
+        if not valid or perm is None:
+            return Response({"detail": "Permissão de operador inválida."}, status=400)
+        operator_session.lock_capability(request, perm)
         return Response({"ok": True})
 
 

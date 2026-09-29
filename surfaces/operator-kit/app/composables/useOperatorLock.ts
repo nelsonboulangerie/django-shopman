@@ -3,9 +3,8 @@
 // passa pelo proxy do Django (CSRF resolvido lá). A permissão da superfície vai
 // junto para o seletor e o destrave ficarem restritos a quem pode usar este app.
 //
-// Destravar é `login()` de verdade no servidor, e travar é `logout()`: a pessoa
-// identificada VIRA a sessão. A estação sobrevive aos dois porque não mora na
-// sessão — mora no cookie de confiança de dispositivo.
+// Destravar prova a pessoa no servidor. Travar fecha só a capability desta
+// superfície: a sessão compartilhada continua viva para o Gestor na aba ao lado.
 import type {
   OperatorCard,
   OperatorEligibleResponse,
@@ -138,7 +137,7 @@ export function useOperatorLock(perm: string) {
       await $fetch("/api/v1/backstage/operator/lock/", {
         method: "POST",
         credentials: "same-origin",
-        body: {},
+        body: { perm },
       });
       await refresh();
     } catch {
