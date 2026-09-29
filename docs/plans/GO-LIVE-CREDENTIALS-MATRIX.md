@@ -4,12 +4,13 @@
 > de prontidão e bloqueios é a
 > [matriz canônica](GO-LIVE-READINESS-PLAN.md).
 
-- `verificado_em`: `2026-09-29T03:06:10Z`
+- `verificado_em`: `2026-09-29T04:45:00Z`
 - `ambiente_inspecionado`: spec vivo do app DigitalOcean `shopman-nelson`
 - `fonte`: leitura de nomes/tipos de variáveis, código e gates; valores não foram
   lidos nem exibidos
 - `owner_da_matriz`: Plataforma
-- `próximo_evento`: atualizar após mudança de spec ou decisão de escopo v1
+- `próximo_evento`: resolver o drift e o perfil comercial descritos no
+  [pré-flight R8](../reports/2026-09-29-r8-cutover-preflight.md), após autorização
 
 ## Cinco estados diferentes
 

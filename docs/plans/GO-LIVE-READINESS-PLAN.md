@@ -5,12 +5,12 @@
 > status.
 
 - `auditoria_id`: `GLR-2026-09-29`
-- `verificado_em`: `2026-09-29T03:06:10Z`
-- `baseline_git`: `1f497db90f150b0a497cd7001d11df19fc7491b0`
+- `verificado_em`: `2026-09-29T04:45:00Z`
+- `baseline_git`: `ab148fbd85d50865bf107e95298b712decd9d7f4`
 - `ambiente_observado`: app DigitalOcean `shopman-nelson`, ambiente técnico vivo
   de pré-go-live
-- `estado_comercial`: `DESCONHECIDO`
-- `auditor`: execução R6 do programa de recuperação
+- `estado_comercial`: `BLOQUEADO`
+- `auditor`: execução R8 C0–C2 do programa de recuperação
 
 ## Como ler
 
@@ -33,22 +33,24 @@ evidência informa outro instante.
 <!-- canonical-readiness:start -->
 | Critério | Estado | Ambiente | Fonte / evidência sanitizada | Owner | Próximo evento |
 |---|---|---|---|---|---|
-| Baseline candidata | VERIFICADO | GitHub `main` | `origin/main` = `1f497db90`; merge #1226 em 2026-09-29T02:26:37Z | Engenharia | Reauditar quando `main` mudar |
+| Baseline candidata | VERIFICADO | GitHub `main` | `origin/main` = `ab148fbd85d5`; merges #1233 e #1232 integrados | Engenharia | Reauditar quando `main` mudar |
 | Gates do commit | VERIFICADO | GitHub Actions | Check-runs do SHA: Runtime, Surfaces, Omotenashi, Security, Production Contract, Operator Groups e Coverage concluíram com sucesso | Engenharia | Reexecutar no PR/merge group que alterar a baseline |
-| Publicação de imagens | VERIFICADO | GitHub Actions / DOCR | [Deploy Images run 36515098853](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36515098853), sucesso, SHA `1f497db90`, 2026-09-29T02:59:03Z–03:01:52Z | Plataforma | Novo merge em `main` gera novo manifesto |
-| Deployment técnico | VERIFICADO | DigitalOcean `shopman-nelson` | deployment `57e43069-0a75-47ec-badb-7fbecd8f635f`, criado 2026-09-29T03:00:54Z, `ACTIVE` às 03:05:16Z; imagens com `deploy_on_push=true` | Plataforma | Relacionar o próximo manifesto ao próximo deployment |
-| Smoke pós-deploy | VERIFICADO | ambiente técnico vivo | [Pre-go-live Smoke run 36515319701](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36515319701), sucesso no mesmo SHA; `/ready/`, menu, checkout não mutante e SSR verificados | Plataforma | Repetir depois de cada Deploy Images com componentes publicados |
-| Banco/cache/migrations do processo vivo | VERIFICADO | ambiente técnico vivo | `/ready/` retornou 200 no run 36515319701; o endpoint falha fechado para DB, cache, migrations pendentes e workers/filas | Plataforma | Preservar saída do smoke do próximo candidato |
+| Publicação de imagens | VERIFICADO | GitHub Actions / DOCR | [Deploy Images run 36521413976](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36521413976), sucesso no SHA `ab148fbd85d5`; manifesto contém os três componentes alterados | Plataforma | Novo merge em `main` gera novo manifesto |
+| Deployment técnico | VERIFICADO | DigitalOcean `shopman-nelson` | deployment `02527053-d135-4bd3-9d32-d09dd367be19`, criado 2026-09-29T04:25:44Z, `ACTIVE` às 04:31:54Z; digest `web` confere com o manifesto | Plataforma | Relacionar o próximo manifesto ao próximo deployment |
+| Smoke pós-deploy | VERIFICADO | ambiente técnico vivo | [Pre-go-live Smoke run 36521633479](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36521633479), sucesso no mesmo SHA; `/ready/`, menu, checkout não mutante e SSR verificados | Plataforma | Repetir depois de cada Deploy Images com componentes publicados |
+| Banco/cache/migrations do processo vivo | VERIFICADO | ambiente técnico vivo | `/ready/` retornou 200 com DB, cache, migrations e queue `ok`; o token de auditoria recebeu 403 na API de databases | Plataforma | Preservar o smoke e obter evidência de cluster/backup com escopo mínimo |
 | Tag `go-live-v1` / ADR-015 | VERIFICADO | Git/GitHub | tag remota ausente; ADR-015 **inativa**. O repositório tem 268 migration files na baseline; isso não autoriza novo squash/reset | Engenharia | No corte autorizado: backup/restore, decisão de migration e só então tag |
 | Versão Django | VERIFICADO | repositório | `pyproject.toml`: `Django>=6.1,<6.2`; `docs/status.md` e runtime apontam para o mesmo contrato | Engenharia | Gate `make canonical-docs` acompanha qualquer bump |
 | Domínio `www.nelsonboulangerie.com.br` | DESCONHECIDO | ambiente técnico vivo | spec vivo comprova domínio PRIMARY apontando para `shopman-nelson`; não há evidência de aprovação como produção comercial | Pablo / owner comercial | Registrar decisão explícita: domínio técnico, comercial ou ambos |
 | Nomenclatura de fases | DESCONHECIDO | produto/operação | documentos históricos usam `staging`, `alpha`, `beta`, `soft` e `oficial`; não há confirmação atual de que sejam fases oficiais | Pablo / owner de produto | Aprovar nomes, critérios de entrada/saída e responsáveis |
 | Escopo v1 de iFood, ManyChat/Concierge, Machine, fiscal e Marketing | DESCONHECIDO | produto/operação | capacidade de código não prova inclusão comercial | Pablo / owner de produto | Assinar inclusão/exclusão por frente antes do pré-flight final |
-| Credenciais e integrações externas | PENDENTE | ambiente técnico vivo | [matriz de credenciais](GO-LIVE-CREDENTIALS-MATRIX.md) separa nome declarado, adapter, boot gate e exercício; nenhuma presença de variável prova operação | Owners por integração | Produzir probes sanitizados no ambiente e nível aprovados |
-| `production-readiness` com ambiente alvo | PENDENTE | ambiente comercial a definir | não há artefato datado anexado para a configuração comercial final | Plataforma + Pablo | Rodar o perfil após domínio, escopo e credenciais aprovados |
+| Perfil comercial do runtime | BLOQUEADO | ambiente técnico vivo | [pré-flight R8](../reports/2026-09-29-r8-cutover-preflight.md): vivo ainda é staging, Pix mock, Efí sandbox, mock/debug expostos e release job sem `migration_safety` | Plataforma + Pablo | Compor o spec a partir do vivo somente após autorização; nunca aplicar o arquivo versionado sobre `EV[...]` |
+| Drift do spec vivo | BLOQUEADO | DigitalOcean `shopman-nelson` | `check_do_spec_drift.py` saiu 1; envs/segredos somente no vivo seriam apagados por `apps update --spec` | Plataforma | Resolver semanticamente o drift preservando todos os valores secretos no console seguro |
+| Credenciais e integrações externas | BLOQUEADO | ambiente técnico vivo | [matriz de credenciais](GO-LIVE-CREDENTIALS-MATRIX.md) e [pré-flight R8](../reports/2026-09-29-r8-cutover-preflight.md): nomes existem, mas adapter/ambiente comercial e exercício externo não fecham | Owners por integração | Aprovar escopo e produzir probes sanitizados no ambiente correto |
+| `production-readiness` com ambiente alvo | BLOQUEADO | ambiente comercial a definir | o comando atual escreve fixtures em transação rollback e não possui `--read-only`; não foi executado no banco vivo | Engenharia + Plataforma | Entregar/provar modo estritamente read-only ou executar no clone descartável restaurado |
 | QA física Omotenashi | PENDENTE | dispositivos reais | não há evidência datada de cliente, operador, cozinha e gerente na baseline | Operação | Executar roteiro em aparelho/equipamento real e anexar evidência sem PII |
 | Impressão, gaveta e som | PENDENTE | loja física | código e agente existem; funcionamento físico atual não foi comprovado nesta auditoria | Operação | Validar equipamento, origem autorizada e procedimento de fallback |
-| Backup/PITR | DESCONHECIDO | banco do ambiente alvo | leitura de bancos via API DigitalOcean retornou 403; alegações antigas não foram tratadas como prova | Plataforma | Anexar política real, janela, referência e owner sem expor credenciais |
+| Backup/PITR | DESCONHECIDO | banco do ambiente alvo | em 2026-09-29T04:39Z a API DigitalOcean de databases retornou 403; alegações antigas não foram tratadas como prova | Plataforma | Anexar política real, janela, referência e owner sem expor credenciais |
 | Ensaio de restore | DESCONHECIDO | banco isolado de recuperação | nenhuma evidência datada e recuperável foi localizada | Plataforma | Restaurar em cluster isolado, validar dados e registrar RTO/RPO |
 | Aprovação comercial / GO-NO-GO | BLOQUEADO | lançamento comercial | não existe assinatura contextual do owner/incident commander para esta baseline | Pablo + incident commander | Decisão humana no momento do corte, depois dos demais gates |
 <!-- canonical-readiness:end -->
