@@ -292,14 +292,14 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-### `pedido_nova_data` — evento `order_rescheduled` · ✅ texto aprovado pelo dono (28/09/2026)
+### `pedido_nova_data` — evento `order_rescheduled` · ✅ APROVADO na Meta (29/09/2026) · flow `content20260929125821_042737`
 A data combinada mudou (`services/reschedule`). Voz conferida contra os templates já aprovados na Meta (doc "Copies dos templates: revisado × no ar"): "Oi, {{nome}}!", "seu pedido", fecho "Qualquer dúvida, estamos à disposição.", sem emoji de festa (evita reclassificação como Marketing).
 - Corpo: `Oi, {{1}}! Seu pedido {{2}} foi reagendado para {{3}}. Qualquer dúvida, estamos à disposição.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`sábado, 04/10, a partir das 9h` (`status_note`, nunca vazio, sem ponto final)
 - Botão URL: `Acompanhar pedido`
 - 12 palavras literais para 3 variáveis (a Meta recusa template com variável demais para o texto).
 
-### `pedido_atualizado` — evento `order_updated` · ✅ texto aprovado pelo dono (28/09/2026)
+### `pedido_atualizado` — evento `order_updated` · ✅ APROVADO na Meta (29/09/2026) · flow `content20260929130117_994990`
 A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, data ou observação. A informação que muda vem INTEIRA na variável, com os próprios pontos finais — o mesmo padrão do `{{Motivo: item indisponível.}}` do cancelado. Montada por regra a partir da diferença da edição; acima de 3 mudanças de itens vira resumo ("Ajustamos 5 itens.").
 - Corpo: `Oi, {{1}}! Atualizamos seu pedido {{2}} conforme combinado. {{3}} Qualquer dúvida, estamos à disposição.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. O novo total é R$ 42,00. Devolvemos R$ 6,00 no seu cartão.` (`status_note`, nunca vazio, termina com ponto)

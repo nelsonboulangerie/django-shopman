@@ -681,11 +681,14 @@ MANYCHAT_API_TOKEN = os.environ.get("MANYCHAT_API_TOKEN", "")
 MANYCHAT_WEBHOOK_SECRET = os.environ.get("MANYCHAT_WEBHOOK_SECRET", "")
 MANYCHAT_WHATSAPP_ID_FIELD_ID = os.environ.get("MANYCHAT_WHATSAPP_ID_FIELD_ID", "")
 MANYCHAT_FLOW_MAP = {
-    # Mapeia eventos de notificação → ManyChat flow namespace.
-    # Se vazio, ManychatBackend envia mensagem texto direta (sem flow).
-    # Para usar flows, configure no ManyChat e mapeie aqui:
-    # "order_accepted": "content20250401120000_123456",
-    # "payment_confirmed": "content20250401120000_234567",
+    # Mapeia eventos de notificação → ManyChat flow namespace (o `ns` do flow que envia
+    # o template aprovado na Meta). Evento sem flow cai no texto direto (`sendContent`),
+    # que a Meta só entrega dentro da janela de 24h. Conferir com
+    # `manage.py manychat_flows --check`. Runbook: docs/runbooks/ativar-whatsapp-transacional.md.
+    #
+    # Encomendas (templates aprovados em 29/09/2026; flows "Aviso: …" na conta):
+    "order_rescheduled": "content20260929125821_042737",  # pedido_nova_data
+    "order_updated": "content20260929130117_994990",  # pedido_atualizado
 }
 try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
