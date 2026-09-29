@@ -13,6 +13,7 @@ from datetime import timedelta
 
 from django.contrib.sessions.models import Session
 from django.core import signing
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ def on_user_logged_in(sender, request=None, user=None, **kwargs) -> None:
         return
     try:
         customer_link = user.doorman_customer_user
-    except Exception:
+    except ObjectDoesNotExist:
         return
     if customer_link is None:  # pragma: no cover - OneToOne nunca devolve None
         return
