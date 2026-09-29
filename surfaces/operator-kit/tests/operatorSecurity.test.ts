@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeVaryHeader,
   OPERATOR_CONTENT_SECURITY_POLICY,
+  operatorBaselineContentSecurityPolicy,
   operatorResponseHeaders,
 } from "../server/utils/operatorSecurity";
 
@@ -14,7 +15,7 @@ const middlewareSource = readFileSync(
 
 describe("operator-kit — borda HTTP segura", () => {
   it("instala o middleware no layer compartilhado", () => {
-    expect(middlewareSource).toContain("applyOperatorBaselineSecurityHeaders(event)");
+    expect(middlewareSource).toMatch(/applyOperatorBaselineSecurityHeaders\(event[,)]/);
   });
 
   it("fecha frame/object e envia os headers defensivos em documentos privados", () => {
@@ -46,5 +47,55 @@ describe("operator-kit — borda HTTP segura", () => {
       "Accept-Encoding, Cookie, Accept-Language",
     );
     expect(mergeVaryHeader("Accept-Encoding", "*")).toBe("*");
+  });
+});
+
+describe("operator-kit — exceção de CSP por app e por diretiva", () => {
+  it("sem exceção declarada, a política é exatamente a de base", () => {
+    expect(operatorBaselineContentSecurityPolicy()).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
+    expect(operatorBaselineContentSecurityPolicy({})).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
+  });
+
+  it("acrescenta a origem só na diretiva declarada e mantém o resto fechado", () => {
+    const csp = operatorBaselineContentSecurityPolicy({
+      "img-src": ["https:"],
+      "connect-src": ["http://127.0.0.1:*", "http://localhost:*"],
+    });
+
+    expect(csp).toContain("img-src 'self' data: blob: https:");
+    expect(csp).toContain("connect-src 'self' http://127.0.0.1:* http://localhost:*");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("default-src 'self';");
+  });
+
+  it("recusa diretiva que não aceita exceção", () => {
+    expect(() =>
+      operatorBaselineContentSecurityPolicy({ "script-src": ["https://cdn.example.com"] } as never),
+    ).toThrow(/script-src/);
+    expect(() =>
+      operatorBaselineContentSecurityPolicy({ "frame-ancestors": ["https:"] } as never),
+    ).toThrow(/frame-ancestors/);
+  });
+
+  it("recusa origem que desliga a política", () => {
+    for (const source of ["*", "'unsafe-eval'", "http:", "data:", "http://192.168.0.10:47811", "https://*"]) {
+      expect(() => operatorBaselineContentSecurityPolicy({ "img-src": [source] })).toThrow();
+    }
+  });
+
+  it("o header do documento usa a política com a exceção do app", () => {
+    const headers = operatorResponseHeaders({
+      pathname: "/catalog",
+      secure: true,
+      cspAllow: { "img-src": ["https://img.nelsonboulangerie.com.br"] },
+    });
+    expect(headers["Content-Security-Policy"]).toContain(
+      "img-src 'self' data: blob: https://img.nelsonboulangerie.com.br",
+    );
+  });
+
+  it("o middleware repassa a exceção declarada no runtimeConfig", () => {
+    expect(middlewareSource).toContain("config.operatorCspAllow");
   });
 });

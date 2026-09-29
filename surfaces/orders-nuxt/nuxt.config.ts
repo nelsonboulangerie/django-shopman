@@ -11,6 +11,18 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+    operatorSecurityHeaders: true,
+    // Exceções da CSP do kit, uma por função real (SEC-SURF-001, decisão do dono
+    // em 29/09/2026):
+    // - img-src https: a foto do produto no Catálogo vem de host externo, e o
+    //   gestor pode colar a URL de qualquer site;
+    // - connect-src loopback: a DANFE sai pelo agente do dispositivo, que vive no
+    //   próprio balcão (DEFAULT_AGENT_URL http://127.0.0.1:47811). Quem chama é o
+    //   navegador; nada fica aberto para fora da máquina.
+    operatorCspAllow: {
+      "img-src": ["https:"],
+      "connect-src": ["http://127.0.0.1:*", "http://localhost:*"],
+    },
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome
