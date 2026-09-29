@@ -79,8 +79,8 @@ function resumo (): string {
  * conta destino de link, então o resumo mudou (`23d85fed71300bf0` → `051f28aae9f18c86`);
  * a versão não, porque o cliente não lê palavra nova.
  */
-const RESUMO_PUBLICADO = 'f624989ab0441c8c'
-const VERSAO_PUBLICADA = '2026-09-25'
+const RESUMO_PUBLICADO = 'a429ea5c02f8ff3a'
+const VERSAO_PUBLICADA = '2026-09-29'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {

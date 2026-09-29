@@ -903,6 +903,7 @@ _DRAFT_ADDRESS_FIELDS = (
     "latitude",
     "longitude",
     "place_id",
+    "coordinates_source",
     "complement",
     "delivery_instructions",
 )
@@ -947,6 +948,8 @@ class CheckoutDraftView(APIView):
                 if value not in (None, ""):
                     import math
                     valid = (type(value) in (int, float) and math.isfinite(value)) if field in {"latitude", "longitude"} else isinstance(value, str)
+                    if field == "coordinates_source":
+                        valid = value in {"pin", "geocoded", "saved"}
                     if not valid:
                         return Response({"detail": "Endereço inválido.", "field": "delivery_address_structured"}, status=400)
                     structured[field] = value

@@ -182,6 +182,7 @@ def test_checkout_draft_only_persists_whitelisted_fields(cart_session):
             "fulfillment_type": "pickup",
             "delivery_address_structured": {
                 "formatted_address": "Rua X 1",
+                "coordinates_source": "pin",
                 "evil_key": "DROP TABLE",       # not whitelisted
                 "unit_price_q": 1,              # not whitelisted
             },
@@ -201,6 +202,38 @@ def test_checkout_draft_only_persists_whitelisted_fields(cart_session):
     # fulfillment_type, if stored, is the coerced safe value.
     ft = (session.data or {}).get("fulfillment_type")
     assert ft in (None, "pickup")
+
+
+def test_checkout_draft_accepts_only_the_coordinates_source_vocabulary(cart_session):
+    client = cart_session
+    valid = client.patch(
+        "/api/v1/checkout/draft/",
+        data=json.dumps({
+            "fulfillment_type": "delivery",
+            "delivery_address_structured": {
+                "route": "Rua X",
+                "latitude": -23.31,
+                "longitude": -51.16,
+                "coordinates_source": "pin",
+            },
+        }),
+        content_type="application/json",
+    )
+    assert valid.status_code == 200
+
+    invalid = client.patch(
+        "/api/v1/checkout/draft/",
+        data=json.dumps({
+            "fulfillment_type": "delivery",
+            "delivery_address_structured": {
+                "route": "Rua X",
+                "coordinates_source": "browser-history",
+            },
+        }),
+        content_type="application/json",
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["field"] == "delivery_address_structured"
 
 
 def test_anonymous_cannot_inject_loyalty_redemption(cart_session):

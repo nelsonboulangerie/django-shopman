@@ -4,6 +4,8 @@
 
 import type { SavedAddressProjection, StructuredAddressProjection } from '~/types/shopman'
 
+export type AddressCoordinatesSource = 'pin' | 'geocoded' | 'saved'
+
 export interface AddressDraft {
   formatted_address: string
   route: string
@@ -16,6 +18,7 @@ export interface AddressDraft {
   latitude: number | null
   longitude: number | null
   place_id: string
+  coordinates_source: AddressCoordinatesSource | null
   delivery_instructions: string
 }
 
@@ -32,6 +35,7 @@ export function emptyAddressDraft (): AddressDraft {
     latitude: null,
     longitude: null,
     place_id: '',
+    coordinates_source: null,
     delivery_instructions: ''
   }
 }
@@ -132,7 +136,8 @@ export function draftFromGooglePlace (place: GooglePlaceFields): Partial<Address
     postal_code: maskCepInput(componentText(components, ['postal_code'])),
     latitude: place.latitude ?? null,
     longitude: place.longitude ?? null,
-    place_id: place.id || ''
+    place_id: place.id || '',
+    coordinates_source: place.latitude != null && place.longitude != null ? 'geocoded' : null
   }
 }
 
@@ -203,6 +208,7 @@ export function structuredFromDraft (draft: AddressDraft): StructuredAddressProj
     structured.longitude = draft.longitude
   }
   if (draft.place_id) structured.place_id = draft.place_id
+  if (draft.coordinates_source) structured.coordinates_source = draft.coordinates_source
   return structured
 }
 
@@ -219,6 +225,7 @@ export function draftFromSavedAddress (address: SavedAddressProjection): Address
     latitude: address.latitude ?? null,
     longitude: address.longitude ?? null,
     place_id: address.place_id || '',
+    coordinates_source: 'saved',
     delivery_instructions: address.delivery_instructions || ''
   }
 }
@@ -271,6 +278,7 @@ export function draftFromSelection (selection: AddressSelection): AddressDraft {
     latitude: structured.latitude ?? null,
     longitude: structured.longitude ?? null,
     place_id: structured.place_id || '',
+    coordinates_source: structured.coordinates_source || null,
     delivery_instructions: selection.deliveryInstructions || ''
   }
 }

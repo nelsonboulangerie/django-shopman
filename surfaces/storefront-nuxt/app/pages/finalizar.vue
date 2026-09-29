@@ -58,6 +58,7 @@ const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 const { setFromServer, clearCart, applyCoupon, removeCoupon } = useCartState()
 const session = useShopSession()
+const telemetry = useStorefrontTelemetry()
 const checkoutRoot = ref<HTMLElement | null>(null)
 const {
   keyboardActive,
@@ -845,6 +846,9 @@ function applyDeliveryDraft (): Promise<void> {
       await refresh()
       if (isDelivery) {
         const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
+        if (structured.coordinates_source) {
+          telemetry.addressEvent('address.zone.resolved', { result: covered ? 'covered' : 'outside' })
+        }
         pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
         deliveryUncovered.value = !covered && !pickupSwapOffer.value
         if (covered) serverError.value = ''
@@ -852,6 +856,9 @@ function applyDeliveryDraft (): Promise<void> {
     } catch {
       // Falha no rascunho não bloqueia — o commit ainda valida a zona.
       if (isDelivery) {
+        if (structured.coordinates_source) {
+          telemetry.addressEvent('address.zone.resolved', { result: 'deferred' })
+        }
         pickupSwapOffer.value = false
         deliveryUncovered.value = false
       }

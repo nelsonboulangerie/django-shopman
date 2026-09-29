@@ -67,6 +67,13 @@ useSeoMeta({
         <li><strong>Nome.</strong> Para chamar você pelo nome no balcão e nas mensagens do pedido.</li>
         <li><strong>E-mail</strong>, se você informar. Para a segunda via e para avisar quando o WhatsApp não chega.</li>
         <li><strong>Endereço.</strong> O da entrega, quando você pede entrega, e os que você salva na conta.</li>
+        <li>
+          <strong>Localização para a entrega.</strong> Só depois que você toca em “Usar minha
+          localização”, o navegador pede permissão e mostra o ponto num mapa para você confirmar
+          ou corrigir. A loja guarda no pedido apenas o ponto confirmado; não guarda a precisão do
+          aparelho, a permissão nem o caminho movido no mapa. Google Maps e Google Places recebem
+          as consultas necessárias ao mapa ou à busca e veem o endereço de IP da conexão.
+        </li>
         <li><strong>CPF</strong>, só se você pedir CPF na nota. Ele fica na nota fiscal.</li>
         <li><strong>Compras.</strong> Itens, valores, datas, forma de pagamento e as observações que você escreve.</li>
         <li><strong>Avaliações e favoritos</strong>, quando você usa.</li>

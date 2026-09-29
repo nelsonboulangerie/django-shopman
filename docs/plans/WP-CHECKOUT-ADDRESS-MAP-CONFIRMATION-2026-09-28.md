@@ -1,6 +1,6 @@
 # WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION — confirmação visual do ponto de entrega
 
-> **Status:** READY — base canônica; divergência endereço × localização é extensão separada
+> **Status:** IMPLEMENTED — 2026-09-29; kill switch default off, sem ativação Live
 >
 > **Data da especificação e do benchmark:** 2026-09-28
 >
@@ -13,6 +13,12 @@
 > **Rollout:** protegido por kill switch; sem migração e com fallback para o fluxo atual
 >
 > **Dependências já disponíveis:** Places, reverse geocode, `AddressPicker`, mapa/pin, cálculo canônico de zona
+
+> **Entrega:** GPS e Places convergem no mesmo mapa confirmável; ponto exato e
+> `coordinates_source` atravessam checkout/draft; accuracy é transitória;
+> telemetria aceita somente buckets/enums sem PII; política legal versionada em
+> 2026-09-29. Ativação, smoke com chave real e observação operacional continuam
+> gates de rollout, não foram executados por este WP.
 
 > **Extensão dependente:** `WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE-2026-09-28.md`
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Componente único de endereço (ADDRESS-UX-PLAN) — usado pelo checkout e pela
 // conta. Busca unificada (Places + fallback silencioso ViaCEP), "usar minha
-// localização" com banner de candidato, ajuste fino no mapa em bottom-sheet
+// localização" com confirmação visual protegida por flag, ajuste fino no mapa
 // e etiqueta perguntada DEPOIS de salvar. Lógica pura em presentation/address.
 import {
   ADDRESS_LABEL_OPTIONS,
@@ -28,6 +28,13 @@ import {
   type AddressSelection,
   type ViaCepPayload
 } from '~/presentation/address'
+import {
+  accuracyBucket,
+  accuracyMessage,
+  mergeConfirmedPoint,
+  pointMoved,
+  type AddressPoint
+} from '~/presentation/addressMap'
 import type { SavedAddressProjection, StructuredAddressProjection } from '~/types/shopman'
 
 interface PickerSuggestion {
@@ -76,6 +83,8 @@ const emit = defineEmits<{
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 const maps = useGoogleMaps()
+const session = useShopSession()
+const telemetry = useStorefrontTelemetry()
 
 type PickerMode = 'saved' | 'search' | 'form'
 
@@ -119,7 +128,15 @@ const mapLoading = ref(false)
 const mapIssue = ref('')
 const mapEl = ref<HTMLElement | null>(null)
 let mapInstance: google.maps.Map | null = null
-let mapMarker: google.maps.Marker | null = null
+let mapAccuracyCircle: google.maps.Circle | null = null
+let mapSession = 0
+let mapPendingReverse: Promise<StructuredAddressProjection | null> | null = null
+type MapOrigin = 'place' | 'gps' | 'adjust'
+const mapOrigin = ref<MapOrigin>('adjust')
+const mapReturnMode = ref<PickerMode>('form')
+const mapInitialPoint = ref<AddressPoint | null>(null)
+const mapAccuracyM = ref<number | null>(null)
+const mapMoved = ref(false)
 
 const routeInput = ref<FocusableInput>(null)
 const numberInput = ref<FocusableInput>(null)
@@ -141,7 +158,14 @@ const hasSaved = computed(() => props.context === 'checkout' && props.savedAddre
 // pra não virar card-dentro-de-card. Os campos são brancos (bg-white do UiInput) + borda.
 const surfaceChrome = computed(() => (props.context === 'checkout' ? 'rounded-lg border bg-card p-4' : ''))
 const canAdjustOnMap = computed(() => maps.enabled.value && draft.latitude != null && draft.longitude != null)
+const mapConfirmationEnabled = computed(() => (
+  props.context === 'checkout'
+  && !!maps.enabled.value
+  && !!session.publicConfig.value?.address_map_confirmation_enabled
+))
 const draftLine = computed(() => draftSummaryLine(draft as AddressDraft))
+const mapAccuracyText = computed(() => accuracyMessage(mapAccuracyM.value))
+const mapAccuracyKind = computed(() => accuracyBucket(mapAccuracyM.value))
 
 // Seleção reidratada de endereço NOVO (sem id salvo): o form reabre preenchido.
 function rehydratedNewSelection (): AddressSelection | null {
@@ -364,13 +388,19 @@ async function acceptSuggestion (suggestion: PickerSuggestion) {
     const location = place.location
     const latitude = location ? location.lat() : null
     const longitude = location ? location.lng() : null
-    applyPartial(draftFromGooglePlace({
+    const partial = draftFromGooglePlace({
       id: place.id,
       formattedAddress: place.formattedAddress,
       addressComponents: place.addressComponents,
       latitude,
       longitude
-    }))
+    })
+    if (mapConfirmationEnabled.value && latitude != null && longitude != null) {
+      replaceDraft(partial)
+      await openMapAdjust('place', null, 'search')
+    } else {
+      applyPartial(partial)
+    }
   } catch {
     // `applyPartial` não chegou a rodar, então `mode` continua 'search' — e o
     // `saveIssue` só aparece no modo `form`. A recusa vai para o card da busca.
@@ -381,14 +411,18 @@ async function acceptSuggestion (suggestion: PickerSuggestion) {
 }
 
 function applyPartial (partial: Partial<AddressDraft>) {
+  replaceDraft(partial)
+  mode.value = 'form'
+  void focusGuided()
+}
+
+function replaceDraft (partial: Partial<AddressDraft>) {
   const preserved = { complement: draft.complement, delivery_instructions: draft.delivery_instructions }
   Object.assign(draft, emptyAddressDraft(), preserved, partial)
   draft.postal_code = maskCepInput(draft.postal_code)
   acceptedLine.value = draftLine.value
   fieldErrors.value = {}
   geoCandidate.value = null
-  mode.value = 'form'
-  void focusGuided()
 }
 
 async function focusGuided () {
@@ -412,12 +446,15 @@ function backToSearch () {
 // ── "Usar minha localização" — banner de candidato, nunca silencioso ───
 
 async function locateMe () {
+  telemetry.addressEvent('address.location.requested', { origin: 'checkout' })
   if (!import.meta.client || !navigator.geolocation) {
     // Quem não informa a posição é o navegador (ou o contexto inseguro), não o
     // aparelho: acusar o telefone manda o cliente procurar defeito onde não há.
     geoIssue.value = 'Este navegador não informa sua localização. Busque pela rua ou pelo CEP aqui em cima.'
+    telemetry.addressEvent('address.location.denied', { reason: 'unsupported' })
     return
   }
+  const startedAt = performance.now()
   locating.value = true
   geoIssue.value = ''
   searchIssue.value = ''
@@ -434,17 +471,49 @@ async function locateMe () {
         timeout: 10000
       })
     })
-    const result = await $fetch<StructuredAddressProjection>(apiPath('/api/v1/geocode/reverse/'), {
+    const point = { lat: coords.latitude, lng: coords.longitude }
+    telemetry.addressEvent('address.location.resolved', {
+      accuracy_bucket: accuracyBucket(coords.accuracy),
+      latency_bucket: latencyBucket(performance.now() - startedAt)
+    })
+    const reverse = $fetch<StructuredAddressProjection>(apiPath('/api/v1/geocode/reverse/'), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
       body: { lat: coords.latitude, lng: coords.longitude }
     })
-    geoCandidate.value = mergeReverseGeocode(emptyAddressDraft(), result)
+    if (mapConfirmationEnabled.value) {
+      const sessionId = mapSession + 1
+      mapPendingReverse = reverse.catch(() => null)
+      replaceDraft({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        coordinates_source: 'pin'
+      })
+      await openMapAdjust('gps', coords.accuracy, 'search')
+      try {
+        const result = await mapPendingReverse
+        if (result && mapOpen.value && mapSession === sessionId) {
+          Object.assign(draft, mergeConfirmedPoint(draft as AddressDraft, result, point, 'pin'))
+          acceptedLine.value = draftLine.value
+        } else if (!result) {
+          telemetry.addressEvent('address.map.fallback', { origin: 'gps', reason: 'reverse' })
+        }
+      } catch { /* o wrapper acima degrada para null; defesa para mocks não conformes */ }
+    } else {
+      const result = await reverse
+      geoCandidate.value = {
+        ...mergeReverseGeocode(emptyAddressDraft(), result),
+        coordinates_source: 'pin'
+      }
+    }
   } catch (e) {
     // Três causas, três gestos diferentes: uma frase só mandaria o cliente tentar
     // o que não resolve o caso dele.
     const code = (e as GeolocationPositionError | undefined)?.code
+    telemetry.addressEvent('address.location.denied', {
+      reason: code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable'
+    })
     geoIssue.value = code === 1
       ? 'Você não liberou a localização para a loja. Dá para liberar nas configurações do navegador — ou buscar pela rua ou pelo CEP aqui em cima.'
       : code === 3
@@ -460,10 +529,22 @@ function useGeoCandidate () {
   applyPartial({ ...geoCandidate.value })
 }
 
-// ── Ajustar no mapa (bottom-sheet ~85%, pin arrastável) ────────────────
+// ── Ajustar/confirmar no mapa (bottom-sheet ~85%, pin central) ─────────
 
-async function openMapAdjust () {
+async function openMapAdjust (
+  origin: MapOrigin = 'adjust',
+  accuracyM: number | null = null,
+  returnMode: PickerMode = 'form'
+) {
   if (!canAdjustOnMap.value) return
+  const sessionId = ++mapSession
+  if (origin !== 'gps') mapPendingReverse = null
+  const startedAt = performance.now()
+  mapOrigin.value = origin
+  mapReturnMode.value = returnMode
+  mapAccuracyM.value = typeof accuracyM === 'number' && Number.isFinite(accuracyM) ? accuracyM : null
+  mapMoved.value = false
+  mapInitialPoint.value = { lat: draft.latitude as number, lng: draft.longitude as number }
   mapOpen.value = true
   mapLoading.value = true
   mapIssue.value = ''
@@ -472,6 +553,7 @@ async function openMapAdjust () {
     const mapsLib = await maps.importLibrary<google.maps.MapsLibrary>('maps')
     if (!mapsLib?.Map || !mapEl.value) {
       mapIssue.value = 'O mapa não está disponível agora.'
+      telemetry.addressEvent('address.map.fallback', { origin, reason: 'unsupported' })
       return
     }
     const center = { lat: draft.latitude as number, lng: draft.longitude as number }
@@ -481,37 +563,77 @@ async function openMapAdjust () {
       disableDefaultUI: true,
       zoomControl: true,
       gestureHandling: 'greedy',
-      clickableIcons: false
+      clickableIcons: false,
+      styles: [
+        { elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 8 }] },
+        { elementType: 'labels.icon', stylers: [{ saturation: -100 }] },
+        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+        { featureType: 'transit', stylers: [{ visibility: 'off' }] }
+      ]
     })
-    mapMarker = new window.google!.maps.Marker({
-      map: mapInstance,
-      position: center,
-      draggable: true
+    if (mapAccuracyM.value != null && mapAccuracyM.value > 0) {
+      mapAccuracyCircle = new mapsLib.Circle({
+        map: mapInstance,
+        center,
+        radius: mapAccuracyM.value,
+        clickable: false,
+        fillColor: '#7c3aed',
+        fillOpacity: 0.08,
+        strokeColor: '#7c3aed',
+        strokeOpacity: 0.35,
+        strokeWeight: 1
+      })
+    }
+    mapInstance.addListener('center_changed', () => {
+      if (sessionId !== mapSession || !mapInitialPoint.value) return
+      const current = mapCenter()
+      if (!current) return
+      mapMoved.value = pointMoved(mapInitialPoint.value, current)
+      mapAccuracyCircle?.setCenter(current)
+    })
+    telemetry.addressEvent('address.map.ready', {
+      origin,
+      latency_bucket: latencyBucket(performance.now() - startedAt)
     })
   } catch {
     mapIssue.value = 'O mapa não está disponível agora.'
+    telemetry.addressEvent('address.map.fallback', { origin, reason: 'provider' })
   } finally {
     mapLoading.value = false
   }
 }
 
 async function confirmMapAdjust () {
-  const position = mapMarker?.getPosition?.()
-  if (!position) {
+  const point = mapCenter()
+  if (!point) {
     mapOpen.value = false
     return
   }
+  const moved = !!mapInitialPoint.value && pointMoved(mapInitialPoint.value, point)
   mapLoading.value = true
   try {
-    const result = await $fetch<StructuredAddressProjection>(apiPath('/api/v1/geocode/reverse/'), {
-      method: 'POST',
-      headers: await csrfHeaders(),
-      credentials: 'include',
-      body: { lat: position.lat(), lng: position.lng() }
+    let result: StructuredAddressProjection | null = null
+    if (!moved && mapOrigin.value === 'gps' && mapPendingReverse) {
+      result = await mapPendingReverse
+    } else if (moved) {
+      result = await $fetch<StructuredAddressProjection>(apiPath('/api/v1/geocode/reverse/'), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: point
+      })
+    }
+    const source = mapOrigin.value === 'place' && !moved ? 'geocoded' : 'pin'
+    Object.assign(draft, mergeConfirmedPoint({ ...(draft as AddressDraft) }, result, point, source))
+    telemetry.addressEvent('address.map.confirmed', {
+      origin: mapOrigin.value,
+      accuracy_bucket: mapAccuracyKind.value,
+      moved
     })
-    Object.assign(draft, mergeReverseGeocode({ ...(draft as AddressDraft) }, result))
     acceptedLine.value = draftLine.value
     mapOpen.value = false
+    mode.value = 'form'
+    await focusGuided()
   } catch (e) {
     mapIssue.value = errorDetail(e, 'Não foi possível confirmar o ponto. Tente de novo.')
   } finally {
@@ -521,11 +643,49 @@ async function confirmMapAdjust () {
 
 watch(mapOpen, open => {
   if (!open) {
+    if (mapInstance && window.google?.maps?.event) window.google.maps.event.clearInstanceListeners(mapInstance)
     mapInstance = null
-    mapMarker = null
+    mapAccuracyCircle?.setMap(null)
+    mapAccuracyCircle = null
+    mapPendingReverse = null
     mapIssue.value = ''
   }
 })
+
+function mapCenter (): AddressPoint | null {
+  const center = mapInstance?.getCenter?.()
+  return center ? { lat: center.lat(), lng: center.lng() } : null
+}
+
+function cancelMap () {
+  mode.value = mapReturnMode.value
+  mapOpen.value = false
+}
+
+function moveMapWithKeyboard (event: KeyboardEvent) {
+  const delta = 32
+  const movement: Record<string, [number, number]> = {
+    ArrowLeft: [-delta, 0],
+    ArrowRight: [delta, 0],
+    ArrowUp: [0, -delta],
+    ArrowDown: [0, delta]
+  }
+  const offset = movement[event.key]
+  if (!offset || !mapInstance) return
+  event.preventDefault()
+  mapInstance.panBy(offset[0], offset[1])
+}
+
+function retryLocationFromMap () {
+  mapOpen.value = false
+  void locateMe()
+}
+
+function latencyBucket (milliseconds: number): 'fast' | 'normal' | 'slow' {
+  if (milliseconds <= 1000) return 'fast'
+  if (milliseconds <= 4000) return 'normal'
+  return 'slow'
+}
 
 // ── Salvar + etiqueta DEPOIS ───────────────────────────────────────────
 
@@ -992,16 +1152,28 @@ function onLabelResolved () {
       </div>
     </template>
 
-    <!-- ── Ajustar no mapa: bottom-sheet ~85%, pin arrastável ─────────── -->
+    <!-- ── Confirmar no mapa: bottom-sheet ~85%, pin central ──────────── -->
     <BottomSheet
       v-model:open="mapOpen"
       content-class="h-[85dvh]"
-      title="Ajustar no mapa"
-      description="Arraste o pin até o ponto exato da entrega."
+      :title="mapConfirmationEnabled && mapOrigin !== 'adjust' ? 'É aqui que vamos entregar?' : 'Ajustar no mapa'"
+      description="Mova o mapa até o pin ficar no ponto certo."
       data-address-map-sheet
     >
       <div class="relative h-full">
-        <div ref="mapEl" class="absolute inset-0" />
+        <div
+          ref="mapEl"
+          class="absolute inset-0"
+          tabindex="0"
+          role="application"
+          aria-label="Mapa do ponto de entrega. Use as setas para mover o mapa sob o pin."
+          @keydown="moveMapWithKeyboard"
+        />
+        <div class="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
+          <div class="-translate-y-4 rounded-full bg-primary p-2 text-primary-foreground shadow-lg ring-4 ring-background/80">
+            <Icon name="lucide:map-pin" class="size-6" />
+          </div>
+        </div>
         <div v-if="mapLoading" class="absolute inset-0 grid place-items-center bg-background/60">
           <Icon name="lucide:loader-circle" class="size-6 animate-spin text-muted-foreground" />
         </div>
@@ -1010,9 +1182,27 @@ function onLabelResolved () {
         </p>
       </div>
       <template #footer>
-        <div class="grid grid-cols-2 gap-2">
-          <UiButton variant="outline" class="w-full" @click="mapOpen = false">Cancelar</UiButton>
-          <UiButton class="w-full" :loading="mapLoading" @click="confirmMapAdjust">Confirmar</UiButton>
+        <div class="shop-stack-tight w-full">
+          <div aria-live="polite" class="space-y-1 text-left">
+            <p v-if="draftLine" class="text-sm font-semibold">{{ draftLine }}</p>
+            <p class="text-xs text-muted-foreground">{{ mapAccuracyText }}</p>
+            <p v-if="mapMoved" class="text-xs font-semibold text-primary">Ponto ajustado.</p>
+          </div>
+          <UiButton
+            v-if="mapOrigin === 'gps' && mapAccuracyKind === 'low'"
+            variant="ghost"
+            class="w-full"
+            icon="lucide:locate-fixed"
+            @click="retryLocationFromMap"
+          >
+            Tentar localizar novamente
+          </UiButton>
+          <div class="grid grid-cols-2 gap-2">
+            <UiButton variant="outline" class="w-full" @click="cancelMap">Voltar</UiButton>
+            <UiButton class="w-full" :loading="mapLoading" @click="confirmMapAdjust">
+              {{ mapConfirmationEnabled && mapOrigin !== 'adjust' ? 'É aqui' : 'Confirmar' }}
+            </UiButton>
+          </div>
         </div>
       </template>
     </BottomSheet>

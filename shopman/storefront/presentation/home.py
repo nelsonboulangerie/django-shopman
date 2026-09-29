@@ -181,6 +181,9 @@ class LastOrderItemProjection:
 @dataclass(frozen=True)
 class PublicConfigProjection:
     google_maps_api_key: str
+    # Kill switch da confirmação visual de ponto. A ausência é ``False`` e
+    # deploy nenhum liga a experiência comercial por acidente.
+    address_map_confirmation_enabled: bool
     whatsapp_url: str
     # Proximity bias do Places Autocomplete client-side (a key acima é a
     # pública domain-restricted; o geocoding reverso continua server-side).
@@ -321,6 +324,13 @@ def build_shell(
     shop_longitude = float(shop.longitude) if shop and shop.longitude else None
     public_config = PublicConfigProjection(
         google_maps_api_key=browser_api_key(),
+        address_map_confirmation_enabled=bool(
+            ((shop.defaults or {}).get("storefront") or {}).get(
+                "address_map_confirmation_enabled", False
+            )
+        )
+        if shop
+        else False,
         whatsapp_url=shop_proj.whatsapp_url or "",
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,
