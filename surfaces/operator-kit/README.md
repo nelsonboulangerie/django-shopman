@@ -111,6 +111,15 @@ no host publicado. Marketing usa ainda uma política CSP local mais estrita, com
 branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
 porque ainda não tem dois consumidores comprovados.
 
+A CSP de base do kit só abre por app e por diretiva, em `runtimeConfig.operatorCspAllow`
+(SEC-SURF-001, item 5). Aceitam exceção apenas `img-src`, `connect-src`, `font-src` e
+`media-src`; `script-src`, `frame-ancestors` e as demais nunca abrem. A origem precisa
+ser `https:`, um host `https://` explícito ou a loopback do próprio dispositivo
+(`http://127.0.0.1:*`, `http://localhost:*`). `*` e `'unsafe-*'` levantam erro. Sem a
+chave, a política é a de base. Cada exceção leva no `nuxt.config` o comentário com a
+função que a exige. Hoje só o Pedidos declara exceções: foto de produto de host externo
+e o agente de impressão do balcão.
+
 ## Identidade do app (`app-identity.json`)
 
 Rótulo, descrição, símbolo, cor e frase de instalação de cada app de operador vivem em
