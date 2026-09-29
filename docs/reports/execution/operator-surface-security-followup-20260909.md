@@ -1,12 +1,43 @@
 # SEC-SURF-001 — Convergência do envelope de segurança das surfaces Nuxt
 
-**Status:** registrado; implementação transversal deliberadamente adiada
+**Status:** em execução por consumer; ver "Estado por consumer"
 **Prioridade:** P1 de hardening antes de piloto público ou tráfego real
 **Origem:** MKT-040, [ADR-026](../../decisions/adr-026-operator-surface-security-envelope.md)
 e correção local `0d39cac5f` (2026-09-09)
 **Owners requeridos:** Segurança + owners das surfaces + QA
 **Autorização atual:** somente documentação e implementação local do Marketing; nenhum
 deploy, staging, produção ou rollout para outras surfaces está autorizado.
+
+## Estado por consumer (29/09/2026)
+
+| Surface | Envelope do kit (`operatorSecurityHeaders`) | Exceções de CSP (`operatorCspAllow`) | Situação |
+| --- | --- | --- | --- |
+| `marketing-nuxt` | envelope próprio, mais estrito (nonce) | não usa o do kit | piloto |
+| `production-nuxt` | ligado | nenhuma | onda A concluída |
+| `orders-nuxt` | ligado | `img-src https:` (foto do produto) e `connect-src` loopback (agente do dispositivo), por decisão do dono em 29/09/2026 | onda A com exceções declaradas |
+| `kds-nuxt` | ligado | nenhuma | onda A concluída |
+| `bi-nuxt` | ligado | nenhuma | onda A concluída |
+| `hub-nuxt` | desligado | precisaria de `img-src` para as origens dos outros apps | parado, esperando decisão do dono |
+| `pos-nuxt`, `purchase-nuxt` | desligado | a inventariar (Maps, ViaCEP) | onda B pendente |
+| `storefront-nuxt` | fora do kit | fora do kit | item separado |
+
+**Cozinha e B.I.** O inventário de `app/`, `server/` e `nuxt.config.ts` não achou
+recurso fora da própria origem: o SSE, o BFF, o manifesto e as fontes são servidos pelo
+próprio app, e o bipe da Cozinha é Web Audio gerado no navegador, sem arquivo. No
+Chromium headless, com o build de produção, as rotas `/`, `/<ref>` e `/pickup` (Cozinha)
+e as oito rotas do B.I. carregaram sem nenhuma violação; `fetch("https://example.com/")`
+foi recusado por `connect-src` nas duas, como controle negativo.
+
+**Shopman Apps.** Cada tile mostra o ícone do app buscado na origem DELE
+(`tileIconUrl`: `https://pdv.<zona>/pwa/pwa-192x192.png`, `https://kds.<zona>/…`),
+e o Shopman Apps mora em `central.<zona>`. Com o envelope ligado num build de teste, a
+política de base recusou esses ícones (`img-src 'self' data: blob:`) e o tile caiu no
+Lucide de reserva. Não quebra a tela, mas tira o ícone real, que é função escrita no
+código. Liberar isso é exceção nova, fora das duas já aprovadas (foto de produto e
+agente do dispositivo), então o app segue desligado até o dono escolher entre: listar os
+hosts dos apps em `img-src` (o deploy teria de fornecer a lista, porque o host não mora
+no código), abrir `img-src https:` como no Pedidos, ou servir os ícones pela própria
+origem do Shopman Apps.
 
 ## Achado confirmado no código
 

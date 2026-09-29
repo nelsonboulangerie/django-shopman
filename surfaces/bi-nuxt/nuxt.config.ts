@@ -10,6 +10,9 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+    // Envelope de headers do kit no HTML SSR (SEC-SURF-001, onda A). Sem
+    // `operatorCspAllow`: o inventário não achou recurso fora da própria origem.
+    operatorSecurityHeaders: true,
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome
