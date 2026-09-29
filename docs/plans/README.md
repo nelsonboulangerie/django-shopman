@@ -41,10 +41,10 @@ fica em [`_quarantine/`](_quarantine/).
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
 | [`OMOTENASHI-FIRST-FULLNESS-PLAN.md`](OMOTENASHI-FIRST-FULLNESS-PLAN.md) | Algumas rodadas entregues; maioria dos WP-OF-* não executados. |
 | [`EXCELLENCE-AUDIT-2026-07.md`](EXCELLENCE-AUDIT-2026-07.md) | Auditoria-mãe (16 lentes); Onda 0 executada; Ondas 1–3 abertas. |
-| [`POS-FIRST-CLASS-PLAN.md`](POS-FIRST-CLASS-PLAN.md) | WP-0..8 entregues; WP-9+ (offline-first, analytics) roadmap; campos fiscais por produto pendentes. |
+| [`POS-FIRST-CLASS-PLAN.md`](POS-FIRST-CLASS-PLAN.md) | WP-0..8 e WP-10 entregues; WP-11 parcialmente entregue. WP-9 offline-first depende de política fiscal/conflitos; resta no analytics a lente de incidentes fiscais e reconciliação final com `DayClosing`. |
 | [`WP-PWA-CONFORMIDADE.md`](WP-PWA-CONFORMIDADE.md) | Proposta registrada em 2026-09-14. F0 do **Storefront** entregue e online (PR #668; ajustes #691, #693 e #694); resta QA físico no iPhone para barra, pull-to-refresh e teclado. F1–F3 (kit+PDV, backstage e Web Push) permanecem futuras. |
 | [`WP-PWA-EXECUCAO.md`](WP-PWA-EXECUCAO.md) | Brief executável (F0 Storefront → F1 kit+PDV → F2 backstage → F3 Web Push). F0 publicada, incluindo instalação guiada e casco offline; a validação física pendente não bloqueia nem desfaz a publicação. F1–F3 não foram iniciadas. |
-| [`POS-FASE-C-REVISION.md`](POS-FASE-C-REVISION.md) | Auditoria do POS; achados abertos cruzam gate fiscal/go-live (DANFE NFC-e no PDV). |
+| [`POS-FASE-C-REVISION.md`](POS-FASE-C-REVISION.md) | Reconciliação concluída em 2026-09-29: suspeitas técnicas derrubadas ou já resolvidas; somente WP-9 offline-first permanece como gate de produto. |
 | [`POS-REDESIGN-PLAN.md`](POS-REDESIGN-PLAN.md) | Padronização A/B entregue; seção C (captura de crachá no POS) parcial. |
 | [`GESTOR-CATALOG-STOCK-AWARE.md`](GESTOR-CATALOG-STOCK-AWARE.md) | Matriz produto×canal com estado de estoque (Esgotado); aprovado, execução aberta. |
 | [`GESTOR-UX-STANDARDIZATION.md`](GESTOR-UX-STANDARDIZATION.md) | Padrão único de UI/UX para os boards do Gestor (Pedidos + Cardápio); handoff aberto. |
