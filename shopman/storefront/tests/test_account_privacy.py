@@ -934,7 +934,12 @@ def test_phone_fallback_does_not_revoke_subscription_owned_by_another_customer()
     assert subscription.revoked_at is None
 
 
-@pytest.mark.parametrize("bad_key", ["", "not-a-uuid", str(uuid.UUID(int=0)), str(uuid.uuid1())])
+# UUID v1 fixo (o namespace DNS da RFC 4122): `uuid.uuid1()` mudava o id do caso a
+# cada coleta e os workers do `-n auto` coletavam testes diferentes.
+@pytest.mark.parametrize(
+    "bad_key",
+    ["", "not-a-uuid", str(uuid.UUID(int=0)), "6ba7b810-9dad-11d1-80b4-00c04fd430c8"],
+)
 def test_deletion_requires_uuid4_idempotency_key(bad_key: str) -> None:
     customer = _customer(suffix="D")
 
