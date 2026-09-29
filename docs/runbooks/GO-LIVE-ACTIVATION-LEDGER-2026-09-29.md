@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T15:16:23Z`
+Atualizado em: `2026-09-29T15:29:53Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -190,17 +190,17 @@ operacional alem deste registro de prevencao.
 | Campo | Estado |
 |---|---|
 | Owner | `nondata_operational_backlog` |
-| Merge | `IN_QUEUE`; head `e3498c6e6e2628b5c7262a2ef0caf81c4a39d8e1`, auto-merge ligado |
-| Deploy | `PENDING_MERGE`; sem deploy ID |
-| Migration | `N/A`, salvo confirmacao diferente no merge final |
+| Merge | `MERGED`; `3471adf6487bce877ee26d59ed575c4a0373c306` em `2026-09-29T15:22:58Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `038abbca-193f-4458-865b-c28ddb3b391b` ficou `ACTIVE` em `2026-09-29T15:28:53Z`; digest `sha256:e6a34986958f83d2382a6a49567c7f7c43bcbba1b0e7265d5bb0621eed1a5837` |
+| Migration | `N/A` |
 | Env/config/flag | `address_map_confirmation_enabled` |
-| Valor desejado | `true` apos deploy, canario e smoke; default de codigo permanece `false` |
-| Dependencia/gate | Merge, deploy Live, disponibilidade do provedor de mapa ja configurado e canario sem regressao do checkout |
-| Smoke Live | `PENDING`; GPS e busca convergem ao mapa, confirmacao persiste coordenadas, fallback sem mapa conclui endereco, telemetria sem PII |
+| Valor desejado | `true` apos #1261 deployado, sessao Admin autenticada, canario e smoke; valor publico comprovado agora e `false` |
+| Dependencia/gate | PR #1261 adiciona o switch Unfold canonico e esta na fila; depois exige sessao Admin autenticada no host canonico para canario e rollback seguro |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36590337864` verde (`/ready/` 200, menu 40/37, checkout anonimo 403 canonico, SSR 200); home config publico confirma flag `false`. Fluxo com mapa ativo ainda nao foi testado por estar corretamente desligado |
 | Rollback | Alterar flag para `false` e, se necessario, reimplantar release anterior |
-| Evidencia | [PR #1256](https://github.com/nelsonboulangerie/django-shopman/pull/1256) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `IN_PROGRESS`; nao DONE ate flag ativa em canario, smoke Live e rollback comprovado |
+| Evidencia | [PR #1256](https://github.com/nelsonboulangerie/django-shopman/pull/1256); [PR #1261](https://github.com/nelsonboulangerie/django-shopman/pull/1261); [Deploy Images run 36589761997](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36589761997); [Pre-go-live Smoke run 36590337864](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36590337864) |
+| Ultima atualizacao | `2026-09-29T15:29:53Z` |
+| Estado/DONE | `DEPLOYED_FLAG_OFF`; nao DONE ate #1261 deployado, flag ativa em canario, smoke pre-go-live e rollback comprovado |
 
 ### Divergencia entre localizacao atual e endereco de entrega
 
