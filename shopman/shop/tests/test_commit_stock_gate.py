@@ -206,6 +206,73 @@ class CommitStockGateTests(TestCase):
         hold.refresh_from_db()
         self.assertEqual((hold.status, hold.metadata), (original_status, original_metadata))
 
+    def test_channel_listing_pause_prevents_commit_without_consuming_hold(self):
+        """Pausa POR CANAL (``ListingItem.is_sellable=False``, o que a barra de
+        pausa do app de pedidos grava) também barra o commit — o produto segue
+        vendável no catálogo global, e é justamente por isso que o gate do
+        Stockman (``is_paused``) não a enxerga. Página aberta antes da pausa ou
+        POST forjado não pode virar pedido de item pausado no canal."""
+        from shopman.offerman.models import Listing, ListingItem, Product
+        from shopman.orderman.exceptions import ValidationError
+        from shopman.orderman.models import Order, Session
+        from shopman.stockman.models import Hold
+
+        from shopman.shop.adapters import get_adapter
+
+        listing = Listing.objects.create(ref=self.channel.ref, name="Loja")
+        product = Product.objects.get(sku=self.SKU)
+        listing_item = ListingItem.objects.create(listing=listing, product=product, price_q=1000)
+
+        _open_session(self.channel.ref, "GATE-CH-PAUSED", self.SKU, qty=3)
+        reserved = get_adapter("stock").create_hold(
+            sku=self.SKU, qty=Decimal("3"), reference="GATE-CH-PAUSED", channel_ref=self.channel.ref,
+        )
+        self.assertTrue(reserved["success"])
+        hold = Hold.objects.get(metadata__reference="GATE-CH-PAUSED")
+        original_status, original_metadata = hold.status, hold.metadata.copy()
+
+        ListingItem.objects.filter(pk=listing_item.pk).update(is_sellable=False)
+        with self.assertRaises(ValidationError) as caught:
+            _commit("GATE-CH-PAUSED", self.channel.ref, "GATE-CH-PAUSED-KEY")
+
+        self.assertEqual(caught.exception.code, "insufficient_stock")
+        self.assertEqual(caught.exception.context["error_code"], "SKU_PAUSED")
+        self.assertFalse(Order.objects.filter(session_key="GATE-CH-PAUSED").exists())
+        self.assertEqual(Session.objects.get(session_key="GATE-CH-PAUSED").state, "open")
+        hold.refresh_from_db()
+        self.assertEqual((hold.status, hold.metadata), (original_status, original_metadata))
+
+    def test_channel_listing_sellable_item_commits(self):
+        """Contraprova: com o listing do canal vendável, o mesmo commit passa."""
+        from shopman.offerman.models import Listing, ListingItem, Product
+        from shopman.orderman.models import Order
+
+        listing = Listing.objects.create(ref=self.channel.ref, name="Loja")
+        ListingItem.objects.create(
+            listing=listing, product=Product.objects.get(sku=self.SKU), price_q=1000,
+        )
+        _open_session(self.channel.ref, "GATE-CH-OK", self.SKU, qty=2)
+
+        result = _commit("GATE-CH-OK", self.channel.ref, "GATE-CH-OK-KEY")
+
+        self.assertTrue(Order.objects.filter(ref=result.order_ref).exists())
+
+    def test_other_channel_listing_pause_does_not_block_this_channel(self):
+        """A pausa é do canal: listing pausado de OUTRO canal não barra este."""
+        from shopman.offerman.models import Listing, ListingItem, Product
+        from shopman.orderman.models import Order
+
+        other = Listing.objects.create(ref="gate-other-channel", name="Outro")
+        ListingItem.objects.create(
+            listing=other, product=Product.objects.get(sku=self.SKU), price_q=1000,
+            is_sellable=False,
+        )
+        _open_session(self.channel.ref, "GATE-CH-OTHER", self.SKU, qty=2)
+
+        result = _commit("GATE-CH-OTHER", self.channel.ref, "GATE-CH-OTHER-KEY")
+
+        self.assertTrue(Order.objects.filter(ref=result.order_ref).exists())
+
     def test_untracked_sku_commits_without_hold(self) -> None:
         """SKU fora do Stockman (sem Quants) não exige reserva — commit passa."""
         from shopman.orderman.models import Order
@@ -243,10 +310,11 @@ class CommitStockGateExternalChannelTests(TestCase):
             result = _commit("GATE-EXT-001", self.channel.ref, "GATE-EXT-KEY-001")
 
         order = Order.objects.get(ref=result.order_ref)
-        # Reserva best-effort falhou (sem estoque), mas o pedido existe e o
-        # operador foi alertado do gap — comportamento otimista preservado.
+        # O pedido existe (comportamento otimista preservado): a unidade que
+        # havia ficou reservada — o fulfill a baixa — e o operador foi
+        # alertado só do gap que sobrou.
         held = [h for h in (order.data or {}).get("hold_ids", []) if h.get("hold_id")]
-        self.assertEqual(held, [])
+        self.assertEqual([h["qty"] for h in held], [1.0])
 
         from shopman.backstage.models import OperatorAlert
 

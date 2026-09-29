@@ -16,12 +16,28 @@ from django.utils.deprecation import MiddlewareMixin
 logger = logging.getLogger("shopman.doorman.middleware")
 
 _CACHE_ATTR = "_shopman_customer_info"
+_CUSTOMER_FREE_PATH_PREFIXES = (
+    "/admin/",
+    "/api/v1/backstage/",
+    "/api/v1/storefront/continuum/",
+)
 
 
 class AuthCustomerMiddleware(MiddlewareMixin):
     """Resolve customer from authenticated user, set request.customer."""
 
     def process_request(self, request):
+        # Admin e APIs operacionais autenticam a pessoa da equipe, não um
+        # cliente do storefront. Resolver CustomerUser aqui acrescentava pelo
+        # menos uma consulta a toda navegação backstage, sem consumidor.
+        path = request.path_info
+        if any(
+            path == prefix.rstrip("/") or path.startswith(prefix)
+            for prefix in _CUSTOMER_FREE_PATH_PREFIXES
+        ):
+            request.customer = None
+            return
+
         request.customer = self._resolve_customer(request)
 
     def _resolve_customer(self, request):
@@ -37,7 +53,13 @@ class AuthCustomerMiddleware(MiddlewareMixin):
         try:
             from .models import CustomerUser
 
-            link = CustomerUser.objects.filter(user=user).select_related().first()
+            # Sem `select_related`, e de propósito: o único campo lido aqui é
+            # `customer_id`, que é `UUIDField` (o vínculo com o Guestman é por
+            # UUID, não por FK). A única FK do modelo é `user` — que já está em
+            # mãos, porque é o filtro da consulta. Não há relação para trazer
+            # junto: o JOIN seria pago para recarregar o objeto que o chamador
+            # acabou de passar.
+            link = CustomerUser.objects.filter(user=user).first()
             if link is None:
                 setattr(user, _CACHE_ATTR, None)
                 return None

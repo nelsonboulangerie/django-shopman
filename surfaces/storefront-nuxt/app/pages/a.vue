@@ -129,7 +129,7 @@ useSeoMeta({
           <!-- O access link também é porta de entrada: a mesma declaração de
                maioridade + Termos das outras portas. A troca do link carimba. -->
           <p class="shop-meta" data-login-adult-declaration>
-            {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/terms" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
+            {{ LOGIN_ADULT_DECLARATION_LEAD }} <NuxtLink to="/termos" class="underline underline-offset-2 hover:text-foreground">{{ LOGIN_TERMS_LINK_LABEL }}</NuxtLink>.
           </p>
         </div>
       </template>

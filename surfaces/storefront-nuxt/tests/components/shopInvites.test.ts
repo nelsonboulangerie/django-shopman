@@ -25,14 +25,17 @@ const mocks = vi.hoisted(() => ({
 mockNuxtImport('useRoute', () => () => mocks.route)
 mockNuxtImport('$fetch', () => (...args: unknown[]) => mocks.fetch(...args))
 mockNuxtImport('usePwaInstall', () => () => ({
-  canInstall: mocks.canInstall,
+  // `canInstall` virou o plano: quem decide se o convite pode subir é `plan.invite`.
+  plan: computed(() => (mocks.canInstall.value
+    ? { kind: 'prompt', invite: true, steps: [], os: 'android', browser: 'chrome' }
+    : { kind: 'none', invite: false, steps: [], os: 'unknown', browser: 'unknown' })),
   install: vi.fn(),
   isStandalone: ref(false),
-  isIos: ref(false),
   isDismissed: mocks.isDismissed,
   markShown: vi.fn(),
   // Fechar o convite de instalar adia por dias, como o composable real.
-  dismiss: () => { mocks.isDismissed.value = true }
+  dismiss: () => { mocks.isDismissed.value = true },
+  dismissAsDone: () => { mocks.isDismissed.value = true }
 }))
 
 vi.mock('vue-sonner', async (importOriginal) => {
@@ -52,11 +55,8 @@ const copy: PwaCopyProjection = {
   install_message: entry('', 'Instale para abrir a loja direto da Tela de Início.'),
   install_cta: entry('Instalar'),
   install_dismiss_cta: entry('Agora não'),
-  ios_title: entry(),
-  ios_message: entry(),
-  ios_share_step: entry(),
-  ios_add_step: entry(),
-  ios_done_cta: entry(),
+  manual_title: entry(),
+  manual_done_cta: entry(),
   update_title: entry(),
   update_cta: entry()
 }

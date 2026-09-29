@@ -5,6 +5,8 @@
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
 import type {
   KDSBoardProjection,
+  KDSExitPreparingCardProjection,
+  KDSExitStationChipProjection,
   KDSExpeditionCardProjection,
   KDSTicketProjection,
   KDSTimerClass,
@@ -165,6 +167,43 @@ export function ticketAction(
   };
 }
 
+// ── A moldura comum dos cards ───────────────────────────────────────────────
+// Estação e Saída são o MESMO card com funções diferentes: a mesma margem
+// em volta, o mesmo ritmo entre os blocos, o mesmo código herói e o mesmo botão
+// na base. Uma escala só, para as duas telas não derivarem de novo.
+
+export type KDSDensity = "compact" | "cozy" | "roomy";
+
+export interface KDSCardScale {
+  /** Tamanho do código herói (papéis do canon: title → display). */
+  code: string;
+  /** Margem lateral, do topo e da base da moldura. */
+  inset: string;
+  padT: string;
+  padB: string;
+  /** Ritmo vertical entre os blocos do card. */
+  gap: string;
+  /** Altura + corpo do botão da base. Escada do canon do kit (operator-base.css,
+   *  "ALTURAS DE CONTROLE"): nunca abaixo de h-11, porque é o alvo de toque. */
+  action: string;
+}
+
+const CARD_SCALE: Record<KDSDensity, KDSCardScale> = {
+  compact: { code: "text-xl", inset: "px-3", padT: "pt-3", padB: "pb-3", gap: "gap-2.5", action: "h-11 text-sm" },
+  cozy: { code: "text-3xl", inset: "px-4", padT: "pt-4", padB: "pb-4", gap: "gap-3", action: "h-11 text-base" },
+  roomy: { code: "text-4xl", inset: "px-5", padT: "pt-5", padB: "pb-5", gap: "gap-3.5", action: "h-14 text-lg" },
+};
+
+export function cardScale(density: KDSDensity): KDSCardScale {
+  return CARD_SCALE[density];
+}
+
+/** "Entrega" ou "Retirada" — a mesma palavra que a Saída recebe pronta da
+ *  projection (`fulfillment_label`), derivada aqui do ícone que o ticket traz. */
+export function fulfillmentLabel(fulfillmentIcon: string): string {
+  return fulfillmentIcon === "local_shipping" ? "Entrega" : "Retirada";
+}
+
 /** Dia/mês de uma data ISO ("2026-09-19" → "19/09"). O card agendado precisa
  *  DIZER a data: "libera na data" obriga o operador a lembrar do seletor que
  *  está no topo do cabeçalho, longe do card e de um minuto atrás. Fatiar a
@@ -207,8 +246,11 @@ export interface KDSBoardView {
   instanceRef: string;
   instanceName: string;
   isExpedition: boolean;
-  /** Active cards, auto-sorted by urgency (prep) / projection order (expedition). */
+  /** Active cards, auto-sorted by urgency (prep) / projection order (expedition).
+   *  Na Saída, é a coluna "Prontos para sair" — e só ela toca o som. */
   cards: (KDSTicketProjection | KDSExpeditionCardProjection)[];
+  /** Só na Saída: a coluna "Em preparo" (pedidos que esperam alguma estação). */
+  preparing: KDSExitPreparingCardProjection[];
   cancelled: KDSTicketProjection[];
   /** Concluídos recentes (≤30min) — para recall (desfazer finalização). */
   recentDone: KDSTicketProjection[];
@@ -231,7 +273,7 @@ export interface KDSBoardView {
 }
 
 /** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é
- *  trabalho de verdade. Agendado é prévia e não se pega; expedição não tem
+ *  trabalho de verdade. Agendado é prévia e não se pega; a Saída não tem
  *  "próximo" (a ordem ali é a da projection). */
 export function nextTicketPk(
   cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
@@ -270,6 +312,7 @@ export function boardView(
     instanceName: board.instance_name,
     isExpedition: board.is_expedition,
     cards,
+    preparing: [...(board.preparing ?? [])],
     cancelled: [...board.cancelled_tickets],
     recentDone,
     allDay: allDayCounts(working),
@@ -284,6 +327,79 @@ export function boardView(
     today: board.today,
     availableDates: [...(board.available_dates ?? [])],
   };
+}
+
+// ── A Saída: um chip por estação no card "Em preparo" ───────────────────────
+// A estação de tela dá baixa sozinha: o chip só mostra em que pé ela está. A
+// estação SEM tela recebeu o pedido em papel, e quem dá a baixa dela é a Saída —
+// o chip diz quando o papel saiu e oferece "Pronto" (decisão do dono, 26/09).
+
+export type KDSExitChipTone = "done" | "working" | "waiting" | "alert";
+
+export interface KDSExitChipView {
+  /** O nome da estação ("Lanches"). */
+  station: string;
+  /** O que está acontecendo nela: "pronto", "em preparo", "impresso às 10:42"… */
+  detail: string;
+  tone: KDSExitChipTone;
+  icon: string;
+  /** Mostra o botão "Pronto" desta estação. */
+  canMarkReady: boolean;
+  /** Itens retirados depois do disparo, ditos por extenso ("1 item cancelado"). */
+  cancelledNote: string;
+}
+
+/** O que o chip da estação diz, e com que peso.
+ *
+ *  - pronto: verde e um ✓ — é a notícia que a Saída espera;
+ *  - estação sem tela, com papel que não saiu: vermelho, porque ninguém na
+ *    bancada sabe do pedido — alguém precisa ir até lá;
+ *  - estação sem tela, papel na bancada: o horário do papel (é o que a Saída
+ *    confere antes de dar o pronto por ela);
+ *  - estação de tela: o estado, neutro. */
+export function exitChipView(chip: KDSExitStationChipProjection): KDSExitChipView {
+  const cancelledNote = chip.cancelled_items
+    ? `${chip.cancelled_items} ${chip.cancelled_items === 1 ? "item cancelado" : "itens cancelados"}`
+    : "";
+  if (chip.state === "done") {
+    return { station: chip.station_name, detail: "pronto", tone: "done", icon: "lucide:check", canMarkReady: false, cancelledNote };
+  }
+  if (chip.prints && chip.paper_failed) {
+    return {
+      station: chip.station_name,
+      detail: `${chip.paper_label} — avise a estação`,
+      tone: "alert",
+      icon: "lucide:printer",
+      canMarkReady: chip.can_mark_ready,
+      cancelledNote,
+    };
+  }
+  if (chip.prints) {
+    return {
+      station: chip.station_name,
+      detail: chip.paper_label || chip.state_label,
+      tone: "waiting",
+      icon: "lucide:printer",
+      canMarkReady: chip.can_mark_ready,
+      cancelledNote,
+    };
+  }
+  return {
+    station: chip.station_name,
+    detail: chip.state_label,
+    tone: chip.state === "in_progress" ? "working" : "waiting",
+    icon: chip.state === "in_progress" ? "lucide:flame" : "lucide:clock",
+    canMarkReady: false,
+    cancelledNote,
+  };
+}
+
+/** Classes do chip por tom — verde só no pronto, vermelho só no papel perdido. */
+export function exitChipTone(tone: KDSExitChipTone): string {
+  if (tone === "done") return "border-success/40 bg-success/10 text-success";
+  if (tone === "alert") return "border-destructive/50 bg-destructive/10 text-destructive dark:text-red-300";
+  if (tone === "working") return "border-foreground/20 bg-foreground/5 text-foreground";
+  return "border-border bg-card text-muted-foreground";
 }
 
 /** Map the projection's Material-Symbol icon names (channel + fulfillment) onto

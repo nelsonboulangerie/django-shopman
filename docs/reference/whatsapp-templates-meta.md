@@ -1,8 +1,23 @@
-# WhatsApp — Pacote de templates Meta (pronto para submissão)
+# WhatsApp — Pacote de templates Meta
+
+> ## ⛔ SUBMISSÃO PAUSADA em 25/09/2026 — não submeta nada a partir deste doc
+>
+> Decisão do dono: **todas as frases vão ser revistas de uma vez** antes de qualquer
+> submissão. A revisão é da sessão da voz das notificações, e depois dela o texto desce em
+> cascata — `seed`, migração de dados e este doc. **Só então os templates vão à Meta.**
+>
+> Por que a pausa existe, e por que ela é barata: a redação do ciclo do pedido mudou **duas
+> vezes em 24 horas** (o pacote de voz de 24/09 e a exceção da confirmação em 25/09). Um
+> template aprovado com o texto errado **não se edita** — reaprova, e a fila da Meta leva
+> 24-48h por rodada. Esperar a revisão custa horas; submeter no meio dela custa dias, vezes
+> o número de templates.
+>
+> Quando a revisão fechar, remova este bloco junto com a cascata.
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
-> Pesquisa de regras: Meta + BSPs, jun/2026. Medição contra o código: 02/09/2026.
+> Pesquisa de regras: Meta + BSPs, jun/2026. Medição contra o código: 02/09/2026;
+> voz e domínio remedidos em 25/09/2026.
 
 **Submissão é pelo ManyChat.** O número da padaria é controlado por ele e continua sendo.
 Meta Cloud API direta, WhatsApp Flows e segundo número estão **descartados**: a burocracia
@@ -16,15 +31,25 @@ o caminho direto não compra nada e custa uma migração.
 Três templates têm botão de URL e os três apontavam para lugar nenhum. O que se descobriu
 ao medir contra o código, e o que ficou decidido:
 
-> **17/09/2026:** o site passou para `https://www.nelsonboulangerie.com.br`. Os templates já
-> aprovados com botão em `menu.` continuam funcionando: no cardápio antigo, `/pedido/...`
-> redireciona para o `www.` com o mesmo caminho. Template novo nasce com `www.`.
+**1. A base da loja é `https://www.nelsonboulangerie.com.br`.** Conferido no spec **vivo**
+do `shopman-nelson` em 24/09/2026: `SHOPMAN_STOREFRONT_BASE_URL` e `SHOPMAN_DOMAIN` dizem
+os dois `https://www.nelsonboulangerie.com.br`, e `.do/app.alpha-subdomains.yaml` no repo
+acompanha. **Todo template novo nasce com `www.`.**
 
-**1. A base da loja é `https://menu.nelsonboulangerie.com.br`.** É o valor de
-`SHOPMAN_STOREFRONT_BASE_URL` no spec **vivo** do `shopman-nelson`. O doc escrevia o apex.
-
-> `.do/app.alpha-subdomains.yaml` acompanha o domínio definitivo
-> `https://menu.nelsonboulangerie.com.br`; `alpha.*` continua aposentado.
+> ⚠️ O doc escreveu `menu.` até 24/09, e por duas vezes: o apex antes do corte de 01/09, o
+> `menu.` depois dele. O site passou para `www.` em 17/09 e o parágrafo não acompanhou —
+> ficou uma nota de rodapé dizendo `www.` por cima de um item dizendo `menu.`. Como o
+> prefixo é **fixo dentro do template aprovado**, errá-lo não é edição de uma linha: é um
+> ciclo de re-submissão à Meta, vezes os **oito** templates cujo botão usa o prefixo fixo
+> (o nono, o `link_pagamento_enviado`, leva a URL da cobrança e não depende disto). Antes
+> de submeter o primeiro botão, confira o spec vivo — não este parágrafo:
+>
+> ```
+> doctl apps spec get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f | grep -A2 STOREFRONT_BASE_URL
+> ```
+>
+> `alpha.*` continua aposentado. Nenhum template foi aprovado com `menu.` — quando este
+> doc foi escrito não havia nenhum aprovado, e não há até hoje.
 
 **2. `/pedido/{ref}/pagar` não existe.** O único caminho é `/pedido/{ref}`
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o
@@ -49,7 +74,7 @@ qualquer pessoa com acesso à conta e utilizável enquanto o cliente não clicas
 Todos os botões de URL usam **um só prefixo fixo**, com a ref no fim:
 
 ```
-https://menu.nelsonboulangerie.com.br/pedido/{{1}}
+https://www.nelsonboulangerie.com.br/pedido/{{1}}
 ```
 
 A variável `{{1}}` do botão mapeia para o campo personalizado **`order_ref`** — não para
@@ -80,18 +105,50 @@ Eles não gravam nada em lugar nenhum.
 6. **Corpo majoritariamente literal.** Template que é quase só variável reprova: a Meta precisa
    ver o que a mensagem diz. Vale para o `anuncio_novidade`, o mais arriscado do pacote.
 7. Sem pedir dado sensível no corpo (cartão, CPF) — reprovação automática.
+8. **Um corpo por evento, sem variantes.** `NotificationTemplate.event` é `unique=True` e o
+   adapter busca um flow por evento (`_load_db_flow_ns`). Não existe "a versão com nome e a
+   versão sem" da mesma mensagem: a frase escolhida tem de funcionar em **todos** os casos
+   daquele evento.
+9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
+   que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
+   `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`. Eles continuam saindo inteiros
+   por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
+   ou fica de fora.
+
+> ### 📝 Para quem for reescrever as frases
+>
+> As sete primeiras regras são sobre o formato que a Meta exige. As duas últimas são as que
+> pegam quem escreve copy boa e descobre tarde que ela não vira template — vale lê-las
+> **antes** de redigir, não depois.
+>
+> Duas armadilhas a mais, que não são regra da Meta e sim do nosso caminho:
+>
+> - **Variável que pode chegar vazia quebra a frase em volta.** `customer_name` é o caso
+>   vivo: o checkout da loja o exige, mas pedido anotado no PDV e ingestão do iFood não. Uma
+>   frase com vírgula fixa (`Oi, {{1}}!`) não tem como se recompor sem o nome. Ou o dado é
+>   garantido, ou a frase se vira sem ele.
+> - **Link não vira texto, vira botão** (regra 5), e o botão tem numeração própria. Uma frase
+>   que termina com "acesse o link abaixo" está pedindo um botão, não uma variável.
 
 ### Sample values do pacote
 
 | Variável | Sample |
 |---|---|
 | Nome do cliente | `Ana` |
-| Ref do pedido | `NB-260902-A17` |
+| Pedido, no corpo (final do ref) | `A17` |
+| Ref do pedido, no botão | `NB-260902-A17` |
 | Total | `R$ 38,00` |
 
 > ⚠️ A ref **não** é `NB-1042`. O formato real é `{PREFIXO}-{AAMMDD}-{L##}`
 > (`orderman/ids.py::generate_order_ref`), com o prefixo `NB` vindo de `order_ref_prefix`
 > na config do canal. Sample com formato irreal atrapalha a revisão do botão.
+>
+> ⚠️ **No CORPO o pedido é chamado só pelo final** ("seu pedido A17"), decisão do dono de
+> 25/09/2026: é o que o balcão fala e o que o card mostra em destaque, e é único no dia
+> entre todos os canais (`generate_order_ref` sorteia de novo quando o final já foi dado).
+> A variável do corpo liga ao campo `order_ref_short`; a do **botão** continua em
+> `order_ref`, porque a URL precisa do ref completo.
 
 ---
 
@@ -106,63 +163,159 @@ pergunta aberta. Não há template de OTP a submeter.
 ## Utility — cliente
 
 Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **Utility**.
-Onde há botão, ele é sempre `https://menu.nelsonboulangerie.com.br/pedido/{{1}}`,
+Onde há botão, ele é sempre `https://www.nelsonboulangerie.com.br/pedido/{{1}}`,
 com `{{1}}` mapeado ao campo personalizado `order_ref` e sample `NB-260902-A17`.
 
+> ### ⛔ Os corpos daqui seguem a VOZ APROVADA de 24-25/09/2026
+>
+> O dono aprovou em bloco um padrão de voz e cinco textos do ciclo do pedido (Mesa de
+> pendências, item 11), que entraram pela PR #1122 — `seed.py` + a migração de dados
+> `shop.0075_voz_dos_avisos_do_pedido`. Sete eventos mudaram de texto ali; em 25/09 ele
+> fechou o sexto template afetado, o `pedido_saiu_entrega`, que a #1122 tinha deixado de
+> fora. **Seis templates Meta** carregam a voz nova: `pedido_recebido`,
+> `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`,
+> `pedido_pronto_entrega` e `pedido_saiu_entrega`. Os corpos abaixo já são os novos.
+>
+> O que a voz nova fez, e que muda o jeito de montar o template:
+>
+> - **O cumprimento saiu de cinco deles** — todos menos o `pedido_recebido`, que é a
+>   primeira mensagem do pedido e continua se apresentando. Onde saiu, o corpo **não usa
+>   `customer_name`** e a numeração andou: `{{1}}` passa a ser a **ref**. Conferir variável
+>   por variável, porque ligar `{{1}}` ao nome num corpo que começa com "Seu pedido "
+>   produz "Seu pedido Ana".
+> - **"Obrigado pela preferência" é exclusivo do `pedido_entregue`.** Saiu do
+>   `pedido_confirmado` e não volta em nenhum outro.
+> - **`order_rejected` já nasceu certo** neste doc ("Não conseguimos confirmar"): a PR só
+>   trocou o "O estabelecimento não conseguiu" que vivia no `seed`. Nada a fazer aqui.
+> - **`payment_confirmed` mudou só o ASSUNTO**, que é coisa de e-mail. O corpo do
+>   `pagamento_confirmado` fica como está — template Meta não tem assunto.
+>
+> ⚠️ **No WhatsApp o texto do Admin não alcança o cliente** — quem fala é o template
+> aprovado na Meta. SMS e e-mail ganham a voz nova no deploy da #1122; o WhatsApp só ganha
+> quando **estes** templates forem aprovados. É por isso que submeter na voz velha custa
+> um ciclo de reaprovação, não uma edição.
+
 ### `pedido_recebido` — evento `order_received`
-- Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Vamos conferir a disponibilidade e avisamos a próxima etapa por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Olá, {{1}}! Recebemos o seu pedido {{2}}. Estamos conferindo a disponibilidade e avisamos em seguida.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`)
 - Botão URL: `Acompanhar pedido`
 
 ### `pedido_confirmado` — evento `order_accepted`
-- Corpo: `Olá, {{1}}! Confirmamos o seu pedido {{2}}. O total é {{3}}. Obrigado por comprar conosco.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00`
+- Corpo: `Seu pedido {{1}} está confirmado. Total: {{2}}. Já vamos preparar.`
+- Vars: `{{1}}`=`A17` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido`
+
+> ⚠️ **Sem cumprimento e sem agradecimento, e os dois são decisão do dono.** O
+> cumprimento saiu (o aviso não precisa se apresentar a cada passo) e o "Obrigado pela
+> preferência" ficou **só** no `pedido_entregue`. Consequência para quem monta o template:
+> este corpo **não usa `customer_name`**, e a numeração andou — `{{1}}` aqui é a **ref**,
+> não o nome.
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Olá, {{1}}! Não conseguimos confirmar o seu pedido {{2}} desta vez. Nada foi cobrado. Se quiser entender o motivo, é só falar com a gente por aqui.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Ver pedido`
 
 ### `pedido_em_preparo` — evento `order_preparing`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} já está em preparo. Avisaremos assim que estiver pronto.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Estamos preparando o seu pedido {{1}}. Avisamos assim que estiver pronto.`
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido`
+
+> ⚠️ **O `{eta_note}` não viaja neste template**, e é o mesmo motivo do `produto_chegou`:
+> ele é sufixo **auto-suprimível** (`"\nDeve ficar pronto às 18h20."`, de
+> `services/notification._eta_note`) e a Meta não aceita variável vazia. Um corpo aprovado
+> com a hora dentro fica quebrado em todo pedido sem ETA calculável. A hora continua
+> saindo inteira por SMS e e-mail, que interpolam na hora.
+>
+> O fecho "Avisamos assim que estiver pronto." não é invenção: é a mesma construção que a
+> voz aprovada usa no `pedido_pronto_entrega` ("Avisamos assim que sair."). Sem ele o corpo
+> terminaria logo depois da variável — quase-só-variável reprova (regra de ouro 6).
 
 ### `pedido_pronto_retirada` — evento `order_ready_pickup`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} está pronto para retirada. Estamos te esperando.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Seu pedido {{1}} está pronto e esperando por você no balcão. 🥐`
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
+- Botão URL: `Endereço e detalhes`
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} está pronto e sairá para entrega em breve.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair. 📦`
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido`
 
 ### `pedido_saiu_entrega` — evento `order_dispatched`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} saiu para entrega e chega logo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Corpo: `Seu pedido {{1}} saiu para entrega.`
+- Vars: `{{1}}`=`A17` (`order_ref_short`)
+- Botão URL: `Acompanhar pedido`
+
+> ✅ **Destravado em 25/09/2026 por decisão do dono:** sem cumprimento, como os outros
+> quatro. Era o único evento do ciclo que o pacote de voz de 24/09 não cobria — ele seguia
+> abrindo com "Olá{customer_name_greeting}!" no `seed` e nos fallbacks, e a PR #1122
+> registrou o caso como fora de escopo. Ficou travado aqui até a palavra dele justamente
+> porque escolher entre as duas versões custaria um ciclo de reaprovação, não uma edição.
+>
+> Como nos outros quatro, o corpo **não usa `customer_name`** e a numeração andou: `{{1}}`
+> é a **ref**. O `seed`, os fallbacks e a migração de dados
+> `shop.0076_saiu_para_entrega_sem_cumprimento` dizem o mesmo texto. O
+> `{courier_tracking_suffix}` (rastreio do entregador) é auto-suprimível e não viaja no
+> template, pelo mesmo motivo do `{eta_note}`.
 
 ### `pedido_entregue` — evento `order_delivered`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi entregue. Obrigado pela preferência.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+
+### `nota_fiscal_disponivel` — evento `fiscal_note_ready` (NOVO, 25/09/2026 — ainda não submetido)
+A nota da loja online chega DIGITAL (decisão do dono, 25/09/2026): sem papel e sem pedir
+e-mail. A API do ManyChat não manda arquivo no WhatsApp, então vai o link. Dentro da janela
+de 24h o código já manda o texto livre com o link da DANFE (`danfe_url`); fora dela só sai
+com este template aprovado e o flow gravado em `NotificationTemplate.whatsapp_flow_ns`.
+
+> **É a REDE, não o caminho normal** (decisão do dono, 25/09/2026: menos mensagens). O link
+> da nota vai DENTRO da mensagem de status que sai quando a nota já existe ("saiu para
+> entrega", "entregue", "pronto"), como uma linha a mais no fim do texto livre
+> (`Nota fiscal do pedido: <link>`). Este aviso avulso só sai quando a nota autoriza DEPOIS
+> da última mensagem que a levaria — na retirada é o caso de sempre, porque a nota nasce
+> na conclusão. Os templates aprovados de status (`pedido_pronto_retirada`,
+> `pedido_saiu_entrega`, `pedido_entregue`) **não mudam**: o texto de um flow é fixo e não
+> leva o link; quando o status sai por flow, o código não conta com ele e manda este
+> avulso. Nenhum template novo além deste.
+- Corpo: `A nota fiscal do seu pedido {{1}} está disponível. Toque no botão abaixo para abrir.`
+- Vars: `{{1}}`=`A17` (`order_ref_short`); o botão leva `order_ref` (`NB-260902-A17`)
+- Botão URL: `Ver nota fiscal` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (a página do
+  pedido mostra a nota com o link da DANFE e a chave de acesso). O prefixo fixo é o NOSSO, não
+  o do provedor fiscal: trocar de provedor não custa reaprovação.
 
 ### `pedido_cancelado` — evento `order_cancelled`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado. Se tiver qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pedido_agendado_lembrete` — evento `preorder_reminder`
 - Corpo: `Olá, {{1}}! Lembrando que o seu pedido {{2}} está agendado para amanhã. Já estamos preparando tudo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
+
+### `pedido_nova_data` — evento `order_rescheduled` · ✅ texto aprovado pelo dono (28/09/2026)
+A data combinada mudou (`services/reschedule`). Voz conferida contra os templates já aprovados na Meta (doc "Copies dos templates: revisado × no ar"): "Oi, {{nome}}!", "seu pedido", fecho "Qualquer dúvida, estamos à disposição.", sem emoji de festa (evita reclassificação como Marketing).
+- Corpo: `Oi, {{1}}! Seu pedido {{2}} foi reagendado para {{3}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`sábado, 04/10, a partir das 9h` (`status_note`, nunca vazio, sem ponto final)
+- Botão URL: `Acompanhar pedido`
+- 12 palavras literais para 3 variáveis (a Meta recusa template com variável demais para o texto).
+
+### `pedido_atualizado` — evento `order_updated` · ✅ texto aprovado pelo dono (28/09/2026)
+A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, data ou observação. A informação que muda vem INTEIRA na variável, com os próprios pontos finais — o mesmo padrão do `{{Motivo: item indisponível.}}` do cancelado. Montada por regra a partir da diferença da edição; acima de 3 mudanças de itens vira resumo ("Ajustamos 5 itens.").
+- Corpo: `Oi, {{1}}! Atualizamos seu pedido {{2}} conforme combinado. {{3}} Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. O novo total é R$ 42,00. Devolvemos R$ 6,00 no seu cartão.` (`status_note`, nunca vazio, termina com ponto)
+- Botão URL: `Acompanhar pedido`
+- 11 palavras literais para 3 variáveis.
 
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Olá, {{1}}! Conferimos a disponibilidade do seu pedido {{2}} e ele está reservado. Agora falta o pagamento. Toque no botão abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Pagar pedido`
 
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
 - Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
-- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref_short`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
 
 > ⚠️ É `customer_name` (`Ana`), **não** `customer_name_greeting`. As duas chaves existem no
 > contexto e as duas viram campo personalizado, mas `customer_name_greeting` já vem com a
@@ -174,32 +327,32 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
 - Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Avisamos a cada passo daqui em diante.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pagamento_lembrete` — evento `payment_reminder`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} ainda aguarda o pagamento via PIX. Toque abaixo para concluir.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Concluir pagamento`
 
 ### `pagamento_expirado` — evento `payment_expired`
 - Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado porque o pagamento via PIX não foi confirmado a tempo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 
 ### `pagamento_falhou` — evento `payment_failed`
 - Corpo: `Olá, {{1}}! Não conseguimos preparar o pagamento do seu pedido {{2}}. Abra o pedido pelo botão abaixo para tentar de novo.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Abrir pedido`
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
 - Corpo: `Olá, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} pelo botão abaixo para garantir o seu.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Confirmar pedido`
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
 ### `fila_vaga_liberada` — evento `waitlist_released`
 - Corpo: `Olá, {{1}}! O prazo de confirmação do pedido {{2}} passou e liberamos a sua vaga. Nada foi cobrado, e é só entrar na fila da próxima fornada.`
-- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`A17`
 - Botão URL: `Ver pedido`
 
 ### `produto_chegou` — evento `stock_arrived`
@@ -297,7 +450,10 @@ Categoria e custo diferentes. **Não misture com Utility** — nem "para passar"
 | `order_dispatched` | `pedido_saiu_entrega` | Utility |
 | `order_delivered` | `pedido_entregue` | Utility |
 | `order_cancelled` | `pedido_cancelado` | Utility |
+| `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
 | `preorder_reminder` | `pedido_agendado_lembrete` | Utility |
+| `order_rescheduled` | `pedido_nova_data` | Utility |
+| `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
@@ -341,8 +497,9 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | todos os de cliente |
-| Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
+| Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
+| Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
 | Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
@@ -358,13 +515,12 @@ nome**, senão a variável sai em branco e nada falha.
 
 ⚠️ **Crie todos como tipo Texto**, inclusive `total`. O adapter grava por
 `setCustomFieldByName` com o valor já formatado (`R$ 38,00`, `5 sc`) — campo criado como
-Número recusa a gravação, e a recusa só aparece no log.
+Número recusa a gravação, bloqueia o disparo do flow e aparece no log.
 
-⚠️ **Valor vazio não é gravado.** `_shareable_context` descarta chave vazia, então o campo
-guarda o que sobrou do envio ANTERIOR àquele assinante em vez de limpar. Na prática só
-morde onde o dado é opcional: `customer_name` (o checkout da loja o exige, mas pedido
-anotado no PDV e ingestão do iFood não) e `payment_deadline`. Onde o dado é obrigatório
-(`order_ref`, `total`) não há caso.
+⚠️ **Valor vazio limpa o campo declarado.** O contrato é explícito por evento e o adapter
+grava todas as chaves daquele flow, inclusive `""`, antes de dispará-lo. Assim um dado
+opcional do envio anterior nunca reaparece. Se qualquer gravação ou limpeza falhar, o
+`sendFlow` não acontece; corrija/crie o campo no ManyChat e repita o teste controlado.
 
 ### Critério de aceite
 

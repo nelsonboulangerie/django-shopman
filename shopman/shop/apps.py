@@ -173,11 +173,11 @@ class ShopmanConfig(AppConfig):
         logger.info("ShopmanConfig: stock alert resolvers registered.")
 
     def _connect_sku_namespace_guard(self):
-        """Refuse the same SKU on both sides of the catalog, at every door.
+        """Mesmo SKU nos dois cadastros → mesma unidade, em toda porta.
 
-        Product (vendável) e Material (insumo) são únicos cada um na sua tabela e
-        dividem um namespace só — o do estoque, o da ficha técnica, o dos
-        adapters compostos. Cores não se importam, então o porteiro é do
+        Product (cadastro de venda) e Material (cadastro de compra) podem
+        dividir um SKU — é a coisa comprada que também se vende — e aí contam o
+        mesmo estoque. Cores não se importam, então o porteiro da coerência é do
         orquestrador (ver ``shopman/shop/services/sku_namespace.py``).
         """
         from django.db.models.signals import pre_save
@@ -185,23 +185,23 @@ class ShopmanConfig(AppConfig):
         from shopman.offerman.models import Product
 
         from shopman.shop.services.sku_namespace import (
-            refuse_material_sku_taken_by_product,
-            refuse_product_sku_taken_by_material,
+            refuse_material_unit_incoherent_with_product,
+            refuse_product_unit_incoherent_with_material,
         )
 
         pre_save.connect(
-            refuse_material_sku_taken_by_product,
+            refuse_material_unit_incoherent_with_product,
             sender=Material,
             dispatch_uid="shopman.shop.sku_namespace.material",
             weak=False,
         )
         pre_save.connect(
-            refuse_product_sku_taken_by_material,
+            refuse_product_unit_incoherent_with_material,
             sender=Product,
             dispatch_uid="shopman.shop.sku_namespace.product",
             weak=False,
         )
-        logger.info("ShopmanConfig: SKU namespace guard connected.")
+        logger.info("ShopmanConfig: SKU coherence guard connected.")
 
     def _register_backup_resources(self):
         from shopman.shop.backup.resources import register_shop_resources

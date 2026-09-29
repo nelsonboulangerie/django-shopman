@@ -128,8 +128,11 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     expect(proxySource).toContain("headers.origin = djangoOrigin");
     expect(proxySource).toContain("headers.referer = `${djangoOrigin}/`");
     expect(proxySource).toContain('getRequestHeader(event, "idempotency-key")');
-    expect(proxySource).not.toContain('getRequestHeader(event, "origin")');
+    // O Origin do navegador é LIDO só pela trava de origem (isForeignMutationOrigin),
+    // nunca repassado ao Django; o Referer nem é lido.
+    expect(proxySource).not.toMatch(/headers\.(origin|referer)\s*=\s*getRequestHeader/);
     expect(proxySource).not.toContain('getRequestHeader(event, "referer")');
+    expect(proxySource).toContain("if (isForeignMutationOrigin(event))");
   });
 
   it("preserva por allowlist a revalidação e os metadados operacionais", () => {

@@ -128,8 +128,9 @@ class AuthCopyProjection:
     phone_heading: CopyEntryProjection
     phone_subtitle: CopyEntryProjection
     wa_cart_kept: CopyEntryProjection
-    wa_glimpse: CopyEntryProjection
-    wa_glimpse_with_cart: CopyEntryProjection
+    wa_why: CopyEntryProjection
+    wa_steps: CopyEntryProjection
+    wa_waiting: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -138,7 +139,6 @@ class AuthCopyProjection:
     trusted_device_message: CopyEntryProjection
     trusted_device_cta: CopyEntryProjection
     trusted_other_phone: CopyEntryProjection
-    no_password_note: CopyEntryProjection
     terms_note: CopyEntryProjection
     code_heading: CopyEntryProjection
     code_help: CopyEntryProjection
@@ -162,11 +162,11 @@ class PwaCopyProjection:
     install_message: CopyEntryProjection
     install_cta: CopyEntryProjection
     install_dismiss_cta: CopyEntryProjection
-    ios_title: CopyEntryProjection
-    ios_message: CopyEntryProjection
-    ios_share_step: CopyEntryProjection
-    ios_add_step: CopyEntryProjection
-    ios_done_cta: CopyEntryProjection
+    # O caminho manual (iOS, Firefox do Android, Safari do macOS) tem título e botão
+    # próprios; os PASSOS não vêm daqui — são fato de plataforma, escritos no cliente
+    # por `installPlan()`, que conhece o navegador de quem está lendo.
+    manual_title: CopyEntryProjection
+    manual_done_cta: CopyEntryProjection
     update_title: CopyEntryProjection
     update_cta: CopyEntryProjection
 
@@ -225,6 +225,26 @@ def _environment_notice() -> str:
 
 
 @dataclass(frozen=True)
+class StorefrontShellProjection:
+    """Projeção global leve, sem catálogo nem histórico de pedidos.
+
+    O shell é carregado em toda rota. Qualquer leitura exclusiva da home aqui
+    transforma uma página interna em uma reconstrução disfarçada da home.
+    """
+
+    omotenashi: OmotenashiProjection
+    auth_copy: AuthCopyProjection
+    pwa_copy: PwaCopyProjection
+    shop: ShopProjection
+    shop_status: ShopStatusProjection
+    notices: tuple[HomeNoticeProjection, ...]
+    opening_hours: tuple[OpeningHoursEntry, ...]
+    faq: tuple[FAQItemProjection, ...]
+    origin_channel: str | None
+    public_config: PublicConfigProjection
+
+
+@dataclass(frozen=True)
 class HomeProjection:
     omotenashi: OmotenashiProjection
     hero_copy: HomeHeroCopyProjection
@@ -244,7 +264,17 @@ class HomeProjection:
     public_config: PublicConfigProjection
 
 
-def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+def build_shell(
+    request: HttpRequest,
+    *,
+    cart_has_items: bool | None = None,
+) -> StorefrontShellProjection:
+    """Build only the state shared by every storefront route.
+
+    Deliberately excludes ``build_catalog`` and ``_reorder_context``. Those are
+    home-page concerns and are orders of magnitude more expensive than the
+    identity, brand, operational status and copy needed by the global shell.
+    """
     from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
@@ -278,11 +308,6 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         for entry in _format_opening_hours()
     )
 
-    last_ref, last_items = _reorder_context(request)
-
-    catalog = build_catalog(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
-    featured = tuple((catalog.featured or catalog.items)[:3])
-
     origin_channel = None
     try:
         session = getattr(request, "session", None)
@@ -308,18 +333,19 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         if cart_has_items is not None
         else origin_channel == "whatsapp" and _request_cart_has_items(request)
     )
+    from shopman.shop.projections.channel_state import accepting_orders
+
     notices = _home_notices(
         shop_status=shop_status,
         omotenashi=omotenashi,
         origin_channel=origin_channel,
         cart_has_items=notice_cart_has_items,
         whatsapp_url=public_config.whatsapp_url,
+        ordering_off=not accepting_orders(STOREFRONT_CHANNEL_REF),
     )
 
-    return HomeProjection(
+    return StorefrontShellProjection(
         omotenashi=omotenashi,
-        hero_copy=_home_hero_copy(omotenashi),
-        sections_copy=_home_sections_copy(omotenashi, default_city=shop_proj.default_city),
         auth_copy=_auth_copy(omotenashi),
         pwa_copy=_pwa_copy(omotenashi),
         shop=shop_proj,
@@ -332,12 +358,37 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
             status=status_dict,
             opening_hours=hours,
         ),
+        origin_channel=origin_channel,
+        public_config=public_config,
+    )
+
+
+def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+    shell = build_shell(request, cart_has_items=cart_has_items)
+    last_ref, last_items = _reorder_context(request)
+    catalog = build_catalog(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
+    featured = tuple((catalog.featured or catalog.items)[:3])
+
+    return HomeProjection(
+        omotenashi=shell.omotenashi,
+        hero_copy=_home_hero_copy(shell.omotenashi),
+        sections_copy=_home_sections_copy(
+            shell.omotenashi,
+            default_city=shell.shop.default_city,
+        ),
+        auth_copy=shell.auth_copy,
+        pwa_copy=shell.pwa_copy,
+        shop=shell.shop,
+        shop_status=shell.shop_status,
+        notices=shell.notices,
+        opening_hours=shell.opening_hours,
+        faq=shell.faq,
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
         featured_items=featured,
-        origin_channel=origin_channel,
-        public_config=public_config,
+        origin_channel=shell.origin_channel,
+        public_config=shell.public_config,
     )
 
 
@@ -348,8 +399,30 @@ def _home_notices(
     origin_channel: str | None,
     cart_has_items: bool,
     whatsapp_url: str,
+    ordering_off: bool = False,
 ) -> tuple[HomeNoticeProjection, ...]:
     notices: list[HomeNoticeProjection] = []
+
+    if ordering_off:
+        # Loja online desligada no Gestor. O cardápio segue aberto para consulta;
+        # quem ia pedir precisa saber ANTES de montar a sacola, não no último botão.
+        notices.append(HomeNoticeProjection(
+            ref="ordering_off",
+            tone="warning",
+            title="A loja online não está recebendo pedidos agora",
+            message="O cardápio continua aqui para você consultar.",
+            priority="contextual",
+            actions=(
+                (Action(
+                    ref="contact_whatsapp",
+                    kind="external",
+                    label="Falar no WhatsApp",
+                    href=whatsapp_url,
+                    priority="quiet",
+                    idempotency="none",
+                ),) if whatsapp_url else ()
+            ),
+        ))
 
     status_message = (shop_status.message or "").strip()
     if status_message:
@@ -484,11 +557,8 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
         install_message=_copy_entry("PWA_INSTALL_MESSAGE", omotenashi=omotenashi),
         install_cta=_copy_entry("PWA_INSTALL_CTA", omotenashi=omotenashi),
         install_dismiss_cta=_copy_entry("PWA_INSTALL_DISMISS_CTA", omotenashi=omotenashi),
-        ios_title=_copy_entry("PWA_IOS_TITLE", omotenashi=omotenashi),
-        ios_message=_copy_entry("PWA_IOS_MESSAGE", omotenashi=omotenashi),
-        ios_share_step=_copy_entry("PWA_IOS_SHARE_STEP", omotenashi=omotenashi),
-        ios_add_step=_copy_entry("PWA_IOS_ADD_STEP", omotenashi=omotenashi),
-        ios_done_cta=_copy_entry("PWA_IOS_DONE_CTA", omotenashi=omotenashi),
+        manual_title=_copy_entry("PWA_MANUAL_TITLE", omotenashi=omotenashi),
+        manual_done_cta=_copy_entry("PWA_MANUAL_DONE_CTA", omotenashi=omotenashi),
         update_title=_copy_entry("PWA_UPDATE_TITLE", omotenashi=omotenashi),
         update_cta=_copy_entry("PWA_UPDATE_CTA", omotenashi=omotenashi),
     )
@@ -561,8 +631,9 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         phone_heading=_copy_entry("LOGIN_PHONE_HEADING", omotenashi=omotenashi),
         phone_subtitle=_copy_entry("LOGIN_PHONE_SUBTITLE", omotenashi=omotenashi),
         wa_cart_kept=_copy_entry("LOGIN_WA_CART_KEPT", omotenashi=omotenashi),
-        wa_glimpse=_copy_entry("LOGIN_WA_GLIMPSE", omotenashi=omotenashi),
-        wa_glimpse_with_cart=_copy_entry("LOGIN_WA_GLIMPSE_WITH_CART", omotenashi=omotenashi),
+        wa_why=_copy_entry("LOGIN_WA_WHY", omotenashi=omotenashi),
+        wa_steps=_copy_entry("LOGIN_WA_STEPS", omotenashi=omotenashi),
+        wa_waiting=_copy_entry("LOGIN_WA_WAITING", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),
@@ -571,7 +642,6 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         trusted_device_message=_copy_entry("LOGIN_TRUSTED_DEVICE_MESSAGE", omotenashi=omotenashi),
         trusted_device_cta=_copy_entry("LOGIN_TRUSTED_DEVICE_CTA", omotenashi=omotenashi),
         trusted_other_phone=_copy_entry("LOGIN_TRUSTED_OTHER_PHONE", omotenashi=omotenashi),
-        no_password_note=_copy_entry("LOGIN_NO_PASSWORD_NOTE", omotenashi=omotenashi),
         terms_note=_copy_entry("LOGIN_TERMS_NOTE", omotenashi=omotenashi),
         code_heading=_copy_entry("LOGIN_CODE_HEADING", omotenashi=omotenashi),
         code_help=_copy_entry("LOGIN_CODE_HELP", omotenashi=omotenashi),

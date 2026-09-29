@@ -76,7 +76,7 @@ describe("FormulaLens", () => {
     expect(text).toContain("Padrão da casa");
     expect(w.findAll("tbody tr")).toHaveLength(3);
     expect(text).toContain("70%");
-    expect(text).toContain("Sem insumo casado");
+    expect(text).toContain("Sem insumo vinculado no estoque");
     expect(text).toContain("1 ingrediente ainda sem insumo");
   });
 

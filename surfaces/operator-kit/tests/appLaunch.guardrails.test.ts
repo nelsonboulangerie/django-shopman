@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // VARREDURA: todo link de um app de operador para OUTRO app tem que passar pela regra
 // do kit (`crossAppLinkAttrs`). Um `<a :href="hubUrl">` sem `:target` navega a própria
@@ -10,19 +11,21 @@ import { describe, expect, it } from "vitest";
 // a tela de "sem acesso" do Marketing); é o tipo de coisa que volta pela porta dos
 // fundos num app novo, então quem lembra é o CI.
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = [
-  "pos-nuxt",
-  "kds-nuxt",
-  "orders-nuxt",
-  "production-nuxt",
-  "hub-nuxt",
-  "marketing-nuxt",
-  "purchase-nuxt",
-  "bi-nuxt",
-] as const;
 
-/** Href que sai da própria origem: a URL de outro app de operador. */
-const CROSS_APP_HREF = /:href="(hubUrl|tile\.url)"/;
+/**
+ * Href que sai da própria origem: a URL de outro app de operador.
+ *
+ * A lista cresce quando um app ganha uma travessia nova. Em 22/09/2026 entraram
+ * as do PDV — fechamento do dia → Produção (na ORDEM, não na raiz), trava de
+ * cobrança → fila do Gestor, aviso de recebimento pendente → fila do Gestor.
+ */
+const CROSS_APP_HREF =
+  /:href="(hubUrl|tile\.url|productionGrid|workOrderHref\(row\)|closeGuardNotice\.link\.href|note\.link\.href)"/;
+
+/** O link declara o alvo pela regra do kit — por `:target` ou pelo `v-bind` inteiro. */
+function declaresTarget(tag: string): boolean {
+  return tag.includes(":target=") || /v-bind="[a-zA-Z]*[aA]ttrs(For)?\(/.test(tag);
+}
 
 function vueFiles(dir: string): string[] {
   const out: string[] = [];
@@ -58,15 +61,17 @@ describe("link para outro app de operador", () => {
         for (const match of source.matchAll(new RegExp(CROSS_APP_HREF, "g"))) {
           scanned += 1;
           const tag = enclosingTag(source, match.index ?? 0);
-          if (!tag.includes(":target=")) offenders.push(`${app}: ${file.slice(surfacesDir.length + 1)}`);
+          if (!declaresTarget(tag)) offenders.push(`${app}: ${file.slice(surfacesDir.length + 1)}`);
         }
       }
     }
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles do Shopman Apps e o "Voltar ao Shopman Apps" da tela sem acesso do Marketing.
-    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(2);
+    // Hoje são os tiles do Shopman Apps, o "Voltar ao Shopman Apps" da tela sem
+    // acesso do Marketing e as quatro travessias do PDV (duas para a Produção no
+    // fechamento, a da trava de cobrança e a do aviso de recebimento pendente).
+    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(7);
   });
 
   it("o próprio rail do kit — a origem do padrão — está em dia", () => {

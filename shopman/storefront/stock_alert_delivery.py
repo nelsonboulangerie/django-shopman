@@ -261,16 +261,83 @@ def _mark_indeterminate(delivery, reason: str) -> None:
 def _alert_indeterminate(delivery_id: int) -> None:
     from shopman.shop.services.observability import create_operator_alert
     from shopman.storefront.models import StockAlertDelivery
+    from shopman.storefront.services import stock_alerts
 
-    delivery = StockAlertDelivery.objects.filter(pk=delivery_id).only("ref").first()
+    delivery = (
+        StockAlertDelivery.objects.select_related("subscription")
+        .filter(pk=delivery_id)
+        .only("ref", "subscription__sku")
+        .first()
+    )
     if delivery is None:
         return
-    create_operator_alert(
+    alert = create_operator_alert(
         type="stock_alert_dispatch_unknown",
-        severity="warning",
+        severity="critical",
         message=(
-            "Resultado do aviso incerto. Consulte o provedor antes de repetir; "
+            "Aviso ao cliente com resultado incerto no ManyChat. "
+            "Consulte o provedor antes de repetir; "
             f"delivery_ref={delivery.ref}; runbook=docs/runbooks/stock-alert-delivery.md"
         ),
-        dedupe_key=f"stock-alert:{delivery.ref}",
+        # Chave nova separa o incidente crítico dos warnings legados já
+        # gravados antes deste tratamento. Uma entrega incerta gera uma página,
+        # não uma a cada ciclo do reconciliador.
+        dedupe_key=f"stock-alert-critical:{delivery.ref}",
+        debounce_minutes=365 * 24 * 60,
     )
+    if alert is None:
+        return
+    _notify_stock_alert_managers(
+        delivery=delivery,
+        product_name=stock_alerts.product_name(delivery.subscription.sku),
+    )
+
+
+def _notify_stock_alert_managers(*, delivery, product_name: str) -> None:
+    """Page Gestor owners immediately, without copying customer PII.
+
+    The condition stays open while the provider outcome is indeterminate. A
+    repeated worker pass dedupes both the shared OperatorAlert and each personal
+    alert, while SSE/Web Push makes the first occurrence proactive.
+    """
+    try:
+        from django.contrib.auth import get_user_model
+
+        from shopman.shop.models import NotificationCategory, NotificationSeverity
+        from shopman.shop.services.user_notifications import (
+            ESCALATION_OPS,
+            OWNER_ORDERS,
+            STOCK_ALERT_DELIVERY_INCIDENT,
+            create_condition_alert,
+        )
+
+        managers = get_user_model().objects.with_perm(
+            "shop.manage_orders",
+            is_active=True,
+            backend="django.contrib.auth.backends.ModelBackend",
+        )
+        source_ref = f"stock_alert_delivery:{delivery.pk}"
+        sku = delivery.subscription.sku
+        for manager in managers:
+            create_condition_alert(
+                user=manager,
+                category=NotificationCategory.SYSTEM,
+                title="Aviso ao cliente precisa de conferência",
+                message=(
+                    f"O ManyChat não confirmou o aviso de {product_name} ({sku}). "
+                    "Confira o provedor antes de qualquer reenvio para evitar mensagem duplicada. "
+                    f"Referência da entrega: {delivery.ref}."
+                ),
+                source_condition=STOCK_ALERT_DELIVERY_INCIDENT,
+                source_ref=source_ref,
+                source_version=1,
+                action_data={"delivery_ref": str(delivery.ref), "sku": sku},
+                severity=NotificationSeverity.CRITICAL,
+                owner_role=OWNER_ORDERS,
+                escalation_role=ESCALATION_OPS,
+            )
+    except Exception:
+        logger.exception(
+            "stock_alert.indeterminate_manager_notification_failed delivery_id=%s",
+            delivery.pk,
+        )

@@ -471,6 +471,19 @@ def _nutrition_payload(product) -> dict:
     return asdict(facts) if facts is not None else asdict(NutritionFacts())
 
 
+def _fiscal_origin_choices() -> list[dict]:
+    """Origens da mercadoria — a tabela do fiscalman é a fonte, não o Nuxt."""
+    from shopman.fiscalman.classification import ORIGINS
+
+    return [{"key": key, "name": name} for key, name in ORIGINS.items()]
+
+
+def _fiscal_warnings(product) -> list[str]:
+    from shopman.fiscalman.classification import from_metadata
+
+    return from_metadata(product.metadata).warnings()
+
+
 def _fiscal_payload(product) -> dict:
     from dataclasses import asdict
 
@@ -495,6 +508,24 @@ def _social_attrs_payload(product) -> dict:
     from shopman.offerman import get_social_attributes
 
     return asdict(get_social_attributes(product))
+
+
+def _gtin_rejected_payload(metadata: dict) -> dict | None:
+    from shopman.shop.services.fiscal import GTIN_NF_REJECTED_KEY
+
+    mark = metadata.get(GTIN_NF_REJECTED_KEY)
+    if not isinstance(mark, dict):
+        return None
+    return {
+        "gtin": str(mark.get("gtin") or ""),
+        "code": str(mark.get("code") or ""),
+        "reason": str(mark.get("reason") or ""),
+        "at": str(mark.get("at") or ""),
+        "order_ref": str(mark.get("order_ref") or ""),
+        "confirmed": bool(mark.get("confirmed_at")),
+        "confirmed_by": str(mark.get("confirmed_by") or ""),
+        "confirmed_at": str(mark.get("confirmed_at") or ""),
+    }
 
 
 def _detail_payload(product) -> dict:
@@ -534,6 +565,10 @@ def _detail_payload(product) -> dict:
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
+        # A SEFAZ recusou o GTIN deste produto numa NFC-e; ``None`` quando não.
+        # Só ``confirmed`` é editável (o gesto "Manter sem GTIN na nota"); o
+        # resto é o registro da recusa. Corrigir ``social.gtin`` apaga a marca.
+        "gtin_rejected": _gtin_rejected_payload(metadata),
         "primary_collection": primary.collection.ref if primary else "",
         "primary_collection_name": primary.collection.name if primary else "",
         # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
@@ -546,7 +581,52 @@ def _detail_payload(product) -> dict:
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
+        "fiscal_origins": _fiscal_origin_choices(),
+        # Avisos (não bloqueiam): o CEST conferido contra o NCM pela tabela do
+        # Anexo do Conv. ICMS 142/2018 (``fiscalman.cest_table``).
+        "fiscal_warnings": _fiscal_warnings(product),
+        # Selos derivados do SKU (Comprável · Vendável · Produzido · Usado em
+        # receita) — somente leitura; o gesto de compra é ``set_purchasable``.
+        "roles": _roles_payload(product.sku),
     }
+
+
+def _roles_payload(sku: str) -> dict[str, bool]:
+    from shopman.shop.services.sku_records import sku_roles
+
+    roles = sku_roles(sku)
+    return {
+        "purchasable": roles.purchasable,
+        "sellable": roles.sellable,
+        "produced": roles.produced,
+        "used_in_recipe": roles.used_in_recipe,
+    }
+
+
+@transaction.atomic
+def set_purchasable(sku: str, enabled: bool) -> dict:
+    """"Permitir compra": liga/desliga o cadastro de compra do mesmo SKU.
+
+    Ligar cria (ou reativa) o ``Material`` do SKU, na mesma unidade — e recusa
+    o que tem ficha ativa, porque o que é produzido aqui entra pela Produção.
+    Desligar inativa o cadastro de compra, sem apagar custo nem histórico.
+    """
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.sku_records import ensure_purchase_record, stop_buying
+
+    product = Product.objects.filter(sku=sku).first()
+    if product is None:
+        raise CatalogError(f"Produto '{sku}' não encontrado.")
+    if not enabled:
+        stop_buying(sku)
+    else:
+        try:
+            ensure_purchase_record(product)
+        except ValidationError as exc:
+            raise CatalogError(exc.messages[0]) from exc
+    return _detail_payload(product)
 
 
 
@@ -554,11 +634,13 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
         if path in {"nutrition_facts.auto_filled", "social.has_data"}:
+            continue
+        if path.startswith("gtin_rejected.") and path != "gtin_rejected.confirmed":
             continue
         state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
         root = path.split(".", 1)[0]
@@ -797,6 +879,7 @@ def _apply_fiscal(product, raw) -> None:
         ncm=str(merged.get("ncm") or "").strip(),
         cest=str(merged.get("cest") or "").strip(),
         unit=str(merged.get("unit") or "UN").strip() or "UN",
+        origin=str(merged.get("origin") or "0").strip() or "0",
     )
 
     metadata = dict(product.metadata or {})
@@ -863,26 +946,121 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
         _apply_labelling(product, data)
     except attributes.AttributeError_ as exc:
         raise CatalogError(str(exc)) from exc
+    gtin_settled = False
     if "social" in data:
         _apply_social(product, data.get("social"))
+        gtin_settled = _settle_rejected_gtin(product, actor=actor)
+    if "gtin_rejected" in data:
+        gtin_settled = _confirm_rejected_gtin(product, data.get("gtin_rejected"), actor=actor) or gtin_settled
     if "fiscal" in data:
         _apply_fiscal(product, data.get("fiscal"))
 
     # Availability and social-only edits already had their own strict validators
     # plus save's fiscal gate. Do not require review of untouched legacy labels.
-    if not (set(data).issubset({"is_published", "is_sellable"}) or set(data) == {"social"}):
+    if not (set(data).issubset({"is_published", "is_sellable"}) or set(data) <= {"social", "gtin_rejected"}):
         try:
             product.full_clean()
         except ValidationError as exc:
             raise CatalogError(_first_validation_message(exc)) from exc
 
-    product.save()
+    try:
+        product.save()
+    except ValidationError as exc:
+        # O porteiro de coerência do SKU (unidade de venda × de compra) fala
+        # em ``pre_save``: a mensagem dele vai inteira para a tela.
+        raise CatalogError(" ".join(exc.messages)) from exc
+
+    if "unit" in data:
+        # Vendido por peso é só no balcão: o preço final nasce na balança, e o
+        # cliente de longe não vê a peça (``sku_records.sells_remotely``).
+        from shopman.shop.services.sku_records import withdraw_from_remote_channels
+        from shopman.shop.services.weighed_sale import is_sold_by_weight
+
+        if is_sold_by_weight(product.unit):
+            withdraw_from_remote_channels(product)
 
     if keywords is not None:
         product.keywords.set(keywords)
 
+    if gtin_settled:
+        _close_gtin_rejected_alerts(product.sku, actor=actor)
+
     product.refresh_from_db()
     return _detail_payload(product)
+
+
+# ── GTIN recusado pela SEFAZ ──────────────────────────────────────────────────
+# A nota que tomou a recusa já saiu de novo "SEM GTIN" (``shop.handlers.fiscal``)
+# e o produto ficou marcado; a venda nunca esperou. O que sobra é gente com a
+# embalagem na mão, e são dois desfechos:
+#   - o código da embalagem é OUTRO: corrige o GTIN e salva. A marca sai, e a
+#     próxima nota leva o código novo (a fonte passa a ser a embalagem);
+#   - é o mesmo, ou o produto não tem código de barras: "Manter sem GTIN na
+#     nota". A marca fica, com quem conferiu e quando, e o aviso se acalma.
+# Nos dois casos o alerta daquele produto fecha.
+
+
+def _settle_rejected_gtin(product, *, actor: str) -> bool:
+    """GTIN corrigido depois da recusa: apaga a marca; ``True`` quando apagou.
+
+    Salvar o MESMO código que a SEFAZ recusou não apaga nada: a nota seguinte
+    seria recusada de novo. Um GTIN novo digitado aqui foi lido na embalagem
+    (é o que o aviso pede), e por isso vira a fonte que decide a nota.
+    """
+    from django.utils import timezone
+    from shopman.offerman import get_social_attributes
+
+    from shopman.shop.services.fiscal import GTIN_NF_REJECTED_KEY
+
+    metadata = dict(product.metadata or {})
+    mark = metadata.get(GTIN_NF_REJECTED_KEY)
+    if not isinstance(mark, dict):
+        return False
+    gtin = get_social_attributes(metadata).gtin.strip()
+    if gtin == str(mark.get("gtin") or "").strip():
+        return False
+    metadata.pop(GTIN_NF_REJECTED_KEY)
+    if gtin:
+        metadata["gtin_source"] = f"embalagem, {actor or 'gestor'}, {timezone.localdate().isoformat()}"
+    product.metadata = metadata
+    return True
+
+
+def _confirm_rejected_gtin(product, raw, *, actor: str) -> bool:
+    """O gesto "Manter sem GTIN na nota": registra quem conferiu; a marca fica."""
+    from django.utils import timezone
+
+    from shopman.shop.services.fiscal import GTIN_NF_REJECTED_KEY
+
+    if not isinstance(raw, dict) or set(raw) != {"confirmed"}:
+        raise CatalogError("gtin_rejected aceita apenas a confirmação.")
+    if not _as_flag(raw.get("confirmed"), "Manter sem GTIN na nota"):
+        raise CatalogError("A confirmação do GTIN recusado não se desfaz: corrija o GTIN para voltar a mandá-lo.")
+    metadata = dict(product.metadata or {})
+    mark = metadata.get(GTIN_NF_REJECTED_KEY)
+    if not isinstance(mark, dict):
+        # Outra tela já corrigiu o GTIN: nada a confirmar, e não é erro.
+        return False
+    if mark.get("confirmed_at"):
+        return False
+    metadata[GTIN_NF_REJECTED_KEY] = {
+        **mark,
+        "confirmed_at": timezone.now().isoformat(),
+        "confirmed_by": str(actor or "")[:100],
+    }
+    product.metadata = metadata
+    return True
+
+
+def _close_gtin_rejected_alerts(sku: str, *, actor: str) -> int:
+    from shopman.backstage.services.alerts import resolve_alerts_ending_with
+    from shopman.shop.services.fiscal import GTIN_REJECTED_ALERT_TYPE, gtin_rejected_alert_suffix
+
+    return resolve_alerts_ending_with(
+        GTIN_REJECTED_ALERT_TYPE,
+        suffix=gtin_rejected_alert_suffix(sku),
+        actor=actor or "catalogo",
+    )
 
 
 def _first_validation_message(exc) -> str:

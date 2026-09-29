@@ -8,7 +8,7 @@ const TRIGGER_LABELS: Record<
   string
 > = {
   "": "Anúncio",
-  production_finished: "Fornada concluída",
+  production_finished: "Lote concluído",
   low_stock: "Estoque baixo",
   stock_back: "Produto de volta ao estoque",
   product_created: "Produto novo",
@@ -23,7 +23,7 @@ const RECOVERY_ACTIONS = new Set<MarketingActionProjectionV2["kind"]>([
 ]);
 
 /**
- * "Fornada concluída · Baguete tradicional". O nome vem de `options.products`
+ * "Lote concluído · Baguete tradicional". O nome vem de `options.products`
  * (rótulo por SKU); sem rótulo, o SKU é o que há — e aí a frase diz "Produto",
  * para o gestor saber que está lendo um código.
  */

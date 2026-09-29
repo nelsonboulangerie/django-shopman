@@ -932,6 +932,13 @@ def finish_work_order(
     from shopman.craftsman.services.execution import CraftExecution
 
     work_order = WorkOrder.objects.get(pk=work_order_id)
+    if work_order.status != WorkOrder.Status.FINISHED:
+        # A ficha fala o insumo aberto (gramas); a embalagem fechada (unidade)
+        # só vira aberto aqui, no fechamento, e só o que a fornada consome.
+        # Fornada já fechada é replay: abrir de novo abriria à toa.
+        from shopman.shop.services.package_opening import open_for_work_order
+
+        open_for_work_order(work_order)
     if finished_items is not None:
         if not finished_items and not wasted_items:
             raise ValueError("Conclusão sem saída vendável exige a perda real da fornada.")

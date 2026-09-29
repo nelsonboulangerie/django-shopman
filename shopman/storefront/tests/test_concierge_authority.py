@@ -30,6 +30,17 @@ requires_postgres = pytest.mark.skipif(
 pytestmark = pytest.mark.django_db
 
 
+def _located(route, number, postal_code):
+    """O Google separou o endereço escrito em partes, com coordenada."""
+    from shopman.shop.services.geocoding import ReverseGeocodeResult
+
+    return ReverseGeocodeResult(
+        formatted_address="", route=route, street_number=number, neighborhood="Centro", city="Londrina",
+        state="Paraná", state_code="PR", postal_code=postal_code, country="Brasil", country_code="BR",
+        latitude=-23.31, longitude=-51.16, place_id="",
+    )
+
+
 def accept_review(ctx, review, text="confirmo"):
     Message.objects.create(conversation=ctx.conversation, binding=_binding(ctx.conversation), role="assistant", kind="reply",
         text=tools.render_result("review_order", review), transport_state="accepted",
@@ -270,8 +281,13 @@ def test_h11_delivery_defaults_and_address_are_saved_from_session(ctx, monkeypat
 
     from shopman.shop.services.checkout_defaults import CheckoutDefaultsService
     tools.set_item(ctx, SKU, 2)
-    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode", lambda address: (-23.31, -51.16))
-    assert tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro")["ok"]
+    monkeypatch.setattr(
+        "shopman.shop.services.geocoding.forward_geocode_structured",
+        lambda address: _located("Rua das Flores", "10", "86010-000"),
+    )
+    assert tools.set_fulfillment(
+        ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro", complement="sem complemento",
+    )["ok"]
     quote = tools.review_order(ctx, "pix")
     assert quote["ready"], quote
     accept_review(ctx, quote)
@@ -280,7 +296,7 @@ def test_h11_delivery_defaults_and_address_are_saved_from_session(ctx, monkeypat
     order = Order.objects.get(ref=placed["order_ref"])
     assert order.data["fulfillment_type"] == "delivery"
     address = CustomerAddress.objects.get(customer__ref=ctx.conversation.customer_ref)
-    assert address.formatted_address == "Rua das Flores, 10, Centro"
+    assert address.formatted_address == "Rua das Flores, 10 - Centro, Londrina - PR, CEP 86010-000"
     defaults = CheckoutDefaultsService.get_defaults(customer_ref=ctx.conversation.customer_ref, channel_ref="whatsapp")
     assert defaults["fulfillment_type"] == "delivery"
 
@@ -307,7 +323,10 @@ def test_review_renderer_names_missing_choices_and_selected_payment(ctx):
 def test_h03_delivery_fee_is_in_review_order_and_payment_once(ctx, monkeypatch, django_capture_on_commit_callbacks):
     from shopman.shop.models import DeliveryZone, Shop
     DeliveryZone.objects.create(shop=Shop.objects.get(), name="fixture delivery", zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX, match_value="860", fee_q=600)
-    monkeypatch.setattr(tools, "_structured_address", lambda address: {"formatted_address": address, "postal_code": "86050-270", "latitude": -23.31, "longitude": -51.16})
+    monkeypatch.setattr(
+        "shopman.shop.services.geocoding.forward_geocode_structured",
+        lambda address: _located("Rua Teste", "1", "86050-270"),
+    )
     assert tools.set_item(ctx, SKU, 2)["ok"]
     assert tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua teste 1")["ok"]
     quote = tools.review_order(ctx, "pix")

@@ -1,4 +1,6 @@
 import type {
+  SaleSuggestion,
+  SkuRoles,
   CountItem,
   CountRow,
   CountSummary,
@@ -10,6 +12,7 @@ import type {
   ReceiptBlocker,
   ReceiptConversionSuggestion,
   ReceiptFieldAnchor,
+  ReceiptFiscalDivergence,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptLineRow,
@@ -200,6 +203,7 @@ export function receiptLineSuggestion(line: ReceiptLine, materials: Material[]):
     sku,
     name: material?.name ?? sku,
     scorePercent: Math.round(line.suggestionScore ?? 0),
+    byBarcode: line.suggestionSource === "gtin",
   };
 }
 
@@ -300,6 +304,7 @@ const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = 
   "invalid-qty": "qty",
   "missing-expiry": "expiry",
   "diverging-conversion": null,
+  "fiscal-divergence": null,
   "missing-cost": null,
   "approximate-conversion": null,
   "manual-source": null,
@@ -334,6 +339,7 @@ export function receiptLineLabel(preview: ReceiptLinePreview): string {
  */
 const ATTENTION_WARNINGS = new Set<ReceiptWarning["key"]>([
   "diverging-conversion",
+  "fiscal-divergence",
   "approximate-conversion",
   "missing-cost",
 ]);
@@ -521,6 +527,18 @@ export function receiptInvoiceAxes(line: ReceiptLine): string {
   return `${quantityFormatter.format(qty)} ${line.invoiceUnit} = ${quantityFormatter.format(taxQty)} ${line.invoiceTaxUnit}`;
 }
 
+/**
+ * As divergências fiscais que valem para o item que a linha aponta AGORA.
+ *
+ * O servidor confere a nota contra o produto resolvido (ou sugerido) no scan;
+ * trocar o item da linha torna a conferência de outro produto, e ela se cala.
+ */
+export function receiptFiscalDivergences(line: ReceiptLine): ReceiptFiscalDivergence[] {
+  const sku = line.materialSku;
+  if (!sku) return [];
+  return (line.fiscalDivergences ?? []).filter((divergence) => divergence.sku === sku);
+}
+
 export function receiptLineWarnings(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -530,8 +548,8 @@ export function receiptLineWarnings(
   const warnings: ReceiptWarning[] = [];
   if (!material) {
     return line.suggestedMaterialSku ?
-        [{ key: "confirm-suggestion", label: "Confirme o insumo sugerido", tone: "block" }]
-      : [{ key: "missing-material", label: "Escolha o insumo desta linha", tone: "block" }];
+        [{ key: "confirm-suggestion", label: "Confirme o item sugerido", tone: "block" }]
+      : [{ key: "missing-material", label: "Escolha o item desta linha", tone: "block" }];
   }
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {
     warnings.push({ key: "invalid-qty", label: "Informe a quantidade recebida", tone: "block" });
@@ -547,6 +565,11 @@ export function receiptLineWarnings(
   }
   if (receiptConversionDiverges(line, conversion)) {
     warnings.push({ key: "diverging-conversion", label: "NF diverge da conversão", tone: "watch" });
+  }
+  if (receiptFiscalDivergences(line).length) {
+    // Não bloqueia: a mercadoria entra. O cadastro fiscal é conferido depois,
+    // no Admin, e o recebimento deixa a sugestão e o aviso para isso.
+    warnings.push({ key: "fiscal-divergence", label: "NF diverge do cadastro fiscal", tone: "watch" });
   }
   if (parseMoneyInput(line.costInput) <= 0) {
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
@@ -626,6 +649,7 @@ export function receiptLinePreview(
     conversionSuggestion: receiptConversionSuggestion(line),
     invoiceAxes: receiptInvoiceAxes(line),
     conversionDiverges: receiptConversionDiverges(line, conversion),
+    fiscalDivergences: receiptFiscalDivergences(line),
     warnings,
   };
 }
@@ -913,15 +937,15 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
   const blockers: ReorderBlocker[] = [];
 
   // O consumo não é digitado: sai das baixas de estoque que a produção lança ao
-  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto a fornada não for
-  // fechada no sistema, o insumo tem consumo zero e o Compras não sugere nada.
+  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto o lote não for
+  // fechado no sistema, o insumo tem consumo zero e o Compras não sugere nada.
   const semConsumo = active.filter((material) => material.dailyUse <= 0);
   if (semConsumo.length) {
     blockers.push({
       key: "no-consumption",
       headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
       detail:
-        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando uma fornada é finalizada na Produção. Sem fornada fechada, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
       count: semConsumo.length,
       action: { label: "Abrir Insumos", baseView: "materials" },
     });
@@ -951,4 +975,77 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
   }
 
   return blockers;
+}
+
+/**
+ * Os selos do SKU, na ordem em que o operador pensa: de onde vem, para onde vai.
+ *
+ * Só aparece o que é verdade — selo ausente é "não é", e a tela não escreve
+ * "Não vendável" em cada linha de farinha.
+ */
+export function skuRoleBadges(roles: SkuRoles | undefined): string[] {
+  if (!roles) return [];
+  const badges: string[] = [];
+  if (roles.purchasable) badges.push("Comprável");
+  if (roles.sellable) badges.push("Vendável");
+  if (roles.produced) badges.push("Produzido");
+  if (roles.usedInRecipe) badges.push("Usado em receita");
+  return badges;
+}
+
+/**
+ * A copy do "Permitir revenda" para um item — curta e sem ambiguidade.
+ *
+ * Vendido por peso (unidade kg) é só no balcão: o preço final nasce na balança,
+ * e quem compra de longe não vê a peça. O resto entra no PDV e, com foto, na
+ * loja online. Preço zero nunca vende: o gesto só fica pronto com preço > 0.
+ */
+export function resaleCopy(unit: string, priceInput: string) {
+  const byWeight = unit === "kg";
+  return {
+    priceLabel: byWeight ? "Preço por kg (R$)" : `Preço de venda (R$ por ${unit})`,
+    reach: byWeight ? "Vendido só no balcão, por peso." : "Entra no PDV. Na loja online, só com foto.",
+    ready: parseMoneyInput(priceInput) > 0,
+  };
+}
+
+/**
+ * A sugestão de preço da revenda, pronta para o campo e para a explicação ao lado.
+ *
+ * `input` é o texto que o campo recebe ("42,00"), editável; `basis` diz de onde
+ * o número saiu, para ninguém confirmar um preço sem saber por quê.
+ */
+export function resaleSuggestionView(suggestion: SaleSuggestion | null | undefined, unit: string) {
+  if (!suggestion || suggestion.priceQ <= 0) return null;
+  const category = suggestion.markupCategory ? `categoria ${suggestion.markupCategory}` : "padrão da loja";
+  return {
+    input: (suggestion.priceQ / 100).toFixed(2).replace(".", ","),
+    basis: `custo ${formatMoney(suggestion.costQ)}/${unit} · markup ${suggestion.markupPct}% (${category})`,
+  };
+}
+
+/** Unidades em que o aberto pode ser medido — o que se pesa ou se mede. */
+export const OPENED_UNITS = ["kg", "g", "l", "ml"] as const;
+
+/**
+ * "Quando aberto, vira": só embalagem contada por unidade se abre, e o aberto é
+ * um insumo pesado ou medido. Devolve as opções do seletor (sem a própria
+ * embalagem) e o resumo do que já está declarado.
+ */
+export function openingView(material: Material, materials: Material[]) {
+  const canOpen = material.unit === "un" && !material.roles?.produced;
+  const options = materials
+    .filter((item) => item.isActive && item.sku !== material.sku && (OPENED_UNITS as readonly string[]).includes(item.unit))
+    .map((item) => ({ value: item.sku, label: `${item.name} (${item.unit})` }));
+  const declared = material.opensInto;
+  const summary =
+    declared ?
+      `Vira ${formatDecimalPtBr(declared.quantity)} ${declared.unit} de ${declared.name}` +
+      (declared.shelfLifeDays !== null ? ` · depois de aberta, vale ${declared.shelfLifeDays} dias` : "")
+    : "";
+  return { canOpen, options, summary, suggestedQuantity: formatDecimalPtBr(material.netContentKg ?? "") };
+}
+
+function formatDecimalPtBr(value: string): string {
+  return value ? value.replace(".", ",") : "";
 }

@@ -22,9 +22,7 @@ def test_session_identity_is_stable_bounded_and_merchant_scoped():
     assert ifood_ingest.session_key_for_order(None, "simulation") == ifood_ingest.session_key_for_order("", "simulation")
 
 
-@pytest.mark.django_db
-@pytest.mark.parametrize("is_test", [False, True])
-def test_ingest_dispatches_real_kds_and_repeat_dispatch_is_idempotent(is_test):
+def _ingest_bread_order(*, is_test: bool) -> Order:
     Channel.objects.create(ref="ifood", name="iFood")
     KDSInstance.objects.create(ref="ifood-picking", name="Separação", type="picking")
     payload = {"order_code": "external-order", "merchant_id": "merchant", "is_test": is_test,
@@ -32,6 +30,12 @@ def test_ingest_dispatches_real_kds_and_repeat_dispatch_is_idempotent(is_test):
     with patch.object(ifood_ingest.order_changed, "send"):
         order = ifood_ingest.ingest(payload)
     order.refresh_from_db()
+    return order
+
+
+@pytest.mark.django_db
+def test_ingest_dispatches_real_kds_and_repeat_dispatch_is_idempotent():
+    order = _ingest_bread_order(is_test=False)
     assert order.session_key == ifood_ingest.session_key_for_order("merchant", "external-order")
     tickets = kds.dispatch(order)
     assert len(tickets) == 1
@@ -42,6 +46,20 @@ def test_ingest_dispatches_real_kds_and_repeat_dispatch_is_idempotent(is_test):
     order.data["diagnostic"] = "normal mutable save remains valid"
     order.save(update_fields=["data", "updated_at"])
     assert Order.objects.get(pk=order.pk).session_key == order.session_key
+
+
+@pytest.mark.django_db
+def test_test_order_keeps_sealed_identity_without_reaching_the_kitchen():
+    """A identidade selada continua valendo; o trabalho físico é que não nasce.
+
+    O pedido de teste da homologação precisa existir e ser operável no Gestor —
+    o que ele não pode é virar ticket com som e meta de tempo no painel onde a
+    padaria forna.
+    """
+    order = _ingest_bread_order(is_test=True)
+    assert order.session_key == ifood_ingest.session_key_for_order("merchant", "external-order")
+    assert kds.dispatch(order) == []
+    assert KDSTicket.objects.filter(session_key=order.session_key).count() == 0
 
 
 @pytest.mark.django_db
@@ -68,6 +86,10 @@ def test_real_combo_observations_options_and_customizations_reach_kds():
     combo = raw["items"][1]
     combo["observations"] = "Sem cebola; molho à parte."
     combo["options"][0]["quantity"] = 2
+    # A captura real é de um pedido de HOMOLOGAÇÃO (``isTest: true``), e pedido
+    # de teste não vai para a cozinha. Aqui o que está sob teste é o combo
+    # chegando inteiro ao ticket, então o pedido precisa ser de verdade.
+    raw["isTest"] = False
     original = json.loads(json.dumps(raw))
     payload = ifood_orders.map_order(raw)
     Channel.objects.create(ref="ifood", name="iFood")

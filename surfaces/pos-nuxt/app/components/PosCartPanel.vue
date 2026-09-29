@@ -28,6 +28,7 @@ import {
   unitChargedQ,
 } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
+import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -41,7 +42,29 @@ const props = defineProps<{
   unfireAction: ActionAffordance;
   firing: boolean;
   discountReasons?: Array<{ ref: string; label?: string } | string>;
+  /**
+   * O gesto principal do carrinho. Na venda é "Pagamento"; na edição de uma
+   * encomenda (a mesma tela, em modo edição) é "Salvar alterações" — o carrinho
+   * não cobra, grava a encomenda.
+   */
+  primaryLabel?: string;
+  primaryIcon?: string;
+  /**
+   * Esconde "Transferir" linhas entre comandas: não existe na edição de
+   * encomenda. (Negativo de propósito: prop booleana ausente vira `false`.)
+   */
+  hideMove?: boolean;
+  /**
+   * Quando presente, desconto e observação de ITEM ficam fora da tela, e esta é
+   * a frase que diz por quê. Na edição de encomenda o serviço não os grava:
+   * mostrar o gesto seria deixar o operador fazer algo que some ao salvar.
+   */
+  lineAdjustmentsBlockedReason?: string;
 }>();
+const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
+const primaryText = computed(() => props.primaryLabel || "Pagamento");
+const primaryIconName = computed(() => props.primaryIcon || "lucide:credit-card");
+const canMove = computed(() => !props.hideMove);
 
 // ⚠️ Cada evento de linha carrega o `line_id`, nunca o sku. Com duas linhas do
 // mesmo produto na comanda — que é o que este WP passou a permitir — o sku
@@ -205,6 +228,15 @@ function compactDiscount(item: POSCartItem) {
 const MAX_QTY = 999;
 const selectedLineId = ref("");
 const expandedLineId = ref("");
+
+// O card da cozinha da linha: estação, itens, disparo, estado — e o "Pronto" da
+// estação sem tela. Guarda o line_id (não a linha): o push da cozinha troca o
+// array de itens, e o diálogo aberto acompanha o estado novo.
+const kitchenLineId = ref("");
+const kitchenLine = computed(() => props.items.find((item) => item.line_id === kitchenLineId.value) ?? null);
+function hasKitchenCard(item: POSCartItem): boolean {
+  return Boolean(item.fired && item.kitchen_tickets?.length);
+}
 const detailsPrefix = useId();
 function detailsId(lineId: string) {
   return `${detailsPrefix}-${encodeURIComponent(lineId)}`;
@@ -309,6 +341,7 @@ const noteDialog = ref<{ lineId: string; name: string; text: string } | null>(
   null,
 );
 function openNoteDialog() {
+  if (lineAdjustmentsBlocked.value) return;
   const item = activeItem.value;
   if (!item) return;
   noteDialog.value = {
@@ -421,7 +454,7 @@ function moneyEntryToReais(entry: string): number {
 }
 
 function commitDiscount() {
-  if (props.loading || props.saving) return;
+  if (props.loading || props.saving || lineAdjustmentsBlocked.value) return;
   const targets = discountTargets.value;
   if (!targets.length) return;
   const value =
@@ -440,11 +473,18 @@ function commitDiscount() {
 }
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
-const numpadCanType = computed(() =>
-  inDiscountMode.value
-    ? discountTargets.value.length > 0
-    : !!activeLineId.value,
-);
+// A peça pesada não tem quantidade digitável: o peso veio da etiqueta, e "2"
+// no teclado viraria 2 kg. Trocar a peça é remover e lançar a outra etiqueta.
+// E o desconto em R$ é POR UNIDADE — na peça pesada seria "por quilo", que
+// ninguém no balcão quer dizer; nela, desconto é em %.
+const numpadCanType = computed(() => {
+  // Sem desconto de item, a seleção múltipla não tem o que digitar.
+  if (lineAdjustmentsBlocked.value && (selectMode.value || inDiscountMode.value)) return false;
+  const weighedActive = !!activeItem.value && isWeighedLine(activeItem.value);
+  if (!inDiscountMode.value) return !!activeLineId.value && !weighedActive;
+  if (numpadMode.value === "disc_brl" && !selectMode.value && weighedActive) return false;
+  return discountTargets.value.length > 0;
+});
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
 
 function onDigit(digit: string) {
@@ -504,13 +544,15 @@ function onBackspace() {
 // Entering multi-select switches the numpad to its discount (batch) mode, since
 // batch quantity has no meaning; leaving it restores quantity entry.
 watch(selectMode, (on) => {
-  numpadMode.value = on ? "disc" : "qty";
+  numpadMode.value = on && !lineAdjustmentsBlocked.value ? "disc" : "qty";
   numpadBuffer.value = "";
   numpadFresh.value = true;
 });
 
 function bump(lineId: string, emitName: "increment" | "decrement") {
   if (props.loading || props.saving) return;
+  const line = props.items.find((entry) => entry.line_id === lineId);
+  if (line && isWeighedLine(line)) return;
   selectedLineId.value = lineId;
   if (emitName === "decrement") {
     if (qtyOf(lineId) <= 1) {
@@ -582,8 +624,12 @@ const modes = [
   { ref: "disc_brl", label: "Desc R$" },
   { ref: "note", label: "Obs." },
 ] as const;
+// Os modos que o teclado oferece: só "Qtd" quando desconto e observação de item
+// estão fora da tela (a frase do porquê fica logo abaixo do teclado).
+const visibleModes = computed(() => (lineAdjustmentsBlocked.value ? modes.filter((mode) => mode.ref === "qty") : modes));
 function chooseMode(mode: (typeof modes)[number]["ref"]) {
   if (mutationBusy.value) return;
+  if (lineAdjustmentsBlocked.value && mode !== "qty") return;
   if (mode === "note") openNoteDialog();
   else setMode(mode);
 }
@@ -809,7 +855,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
             @focus="selectLine(item.line_id)"
             @click="selectLine(item.line_id)"
           >
-            <span class="py-0.5 text-sm font-semibold tabular-nums"
+            <span v-if="isWeighedLine(item)" class="py-0.5 text-sm font-semibold tabular-nums"
+              >{{ lineQtyLabel(item) }}</span
+            >
+            <span v-else class="py-0.5 text-sm font-semibold tabular-nums"
               >{{ item.qty }}
               <span class="font-normal text-muted-foreground">×</span></span
             >
@@ -822,7 +871,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             }}</strong>
             <span
               class="col-start-2 col-end-4 text-xs leading-4 text-muted-foreground"
-              >{{ formatBRL(unitChargedQ(item)) }} cada</span
+              >{{ formatBRL(unitChargedQ(item)) }}{{ isWeighedLine(item) ? "/kg" : " cada" }}</span
             >
             <span
               v-if="item.notes"
@@ -845,6 +894,17 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
           </button>
           <button
+            v-if="hasKitchenCard(item)"
+            type="button"
+            class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
+            :aria-label="`Ver ${item.name} na cozinha`"
+            title="Ver na cozinha"
+            data-testid="kitchen-card-open"
+            @click.stop="kitchenLineId = item.line_id"
+          >
+            <Icon name="lucide:chef-hat" class="size-4" />
+          </button>
+          <button
             class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground"
             :aria-label="`Detalhes de ${item.name}`"
             :aria-expanded="expandedLineId === item.line_id"
@@ -865,7 +925,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
             class="flex w-full items-center justify-between gap-2 px-3 pb-2"
             aria-label="Ajustes do item"
           >
+            <span
+              v-if="isWeighedLine(item)"
+              class="text-xs text-muted-foreground"
+            >Peça pesada: para trocar, remova e lance a outra etiqueta.</span>
             <div
+              v-else
               class="inline-flex items-center overflow-hidden rounded-md border border-primary/20 bg-card"
               role="group"
               :aria-label="`Quantidade de ${item.name}`"
@@ -961,7 +1026,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               @click.stop="$emit('unfire', item.line_id)"
               >{{ unfireAction.label }}</UiButton
             >
-            <div v-if="!batchMode" class="mt-1 flex justify-between">
+            <div v-if="!batchMode && !lineAdjustmentsBlocked" class="mt-1 flex justify-between">
               <button
                 class="min-h-9 font-medium text-primary"
                 @click="
@@ -1064,7 +1129,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </div>
         <div class="grid grid-rows-4 gap-1">
           <button
-            v-for="mode in modes"
+            v-for="mode in visibleModes"
             :key="mode.ref"
             class="h-11 rounded-md border text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35 disabled:saturate-0"
             :class="
@@ -1083,6 +1148,14 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </button>
         </div>
       </div>
+      <p
+        v-if="lineAdjustmentsBlockedReason"
+        class="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground"
+        data-line-adjustments-blocked
+      >
+        <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ lineAdjustmentsBlockedReason }}</span>
+      </p>
       <div v-if="inDiscountMode" class="mt-2">
         <p class="mb-1 text-xs text-muted-foreground">
           {{
@@ -1127,7 +1200,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <!-- Secondary actions stack on the left; Pagamento is the highlight column
            spanning their full height — saves a vertical row. -->
       <div
-        v-if="!batchMode && (fireBar.visible || (hasOpenTab && items.length))"
+        v-if="!batchMode && (fireBar.visible || (canMove && hasOpenTab && items.length))"
         class="grid grid-cols-2 gap-2"
       >
         <div class="flex flex-col gap-2">
@@ -1161,7 +1234,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
           </UiButton>
           <UiButton
-            v-if="hasOpenTab && items.length"
+            v-if="canMove && hasOpenTab && items.length"
             variant="outline"
             class="justify-center gap-1.5"
             :disabled="loading"
@@ -1178,8 +1251,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
           :loading="loading"
           @click="$emit('prepare')"
         >
-          <Icon name="lucide:credit-card" class="size-6" />
-          Pagamento
+          <Icon :name="primaryIconName" class="size-6" />
+          {{ primaryText }}
           <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
         </UiButton>
       </div>
@@ -1191,8 +1264,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
         :loading="loading"
         @click="$emit('prepare')"
       >
-        <Icon name="lucide:credit-card" class="size-5" />
-        Pagamento
+        <Icon :name="primaryIconName" class="size-5" />
+        {{ primaryText }}
         <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
       </UiButton>
     </div>
@@ -1266,4 +1339,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>
+
+  <PosKitchenTicketDialog
+    :open="kitchenLine != null"
+    :line-name="kitchenLine?.name ?? ''"
+    :tickets="kitchenLine?.kitchen_tickets ?? []"
+    @update:open="(value) => { if (!value) kitchenLineId = ''; }"
+  />
 </template>

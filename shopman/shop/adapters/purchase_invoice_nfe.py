@@ -12,7 +12,7 @@ import re
 import unicodedata
 import zlib
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -103,6 +103,18 @@ class NFeItem:
     cfop: str
     expiry_date: str
     lot: str
+    #: O OUTRO GTIN da nota, quando ``cEAN`` e ``cEANTrib`` divergem — em geral
+    #: o da caixa. ``ean`` fica com o da unidade (ver :func:`_unit_gtin`).
+    package_ean: str = ""
+    cest: str = ""
+    #: O grupo ICMS do item (``imposto/ICMS/ICMSxx``): o CST de quem está no
+    #: regime normal, ou o CSOSN de quem está no Simples — um dos dois. E o
+    #: valor de ST em centavos (``vICMSST`` cobrado agora, ou ``vICMSSTRet``
+    #: retido antes). É o que diz se o item chegou com substituição tributária
+    #: (ver ``shop/services/invoice_fiscal_check.py``).
+    icms_cst: str = ""
+    icms_csosn: str = ""
+    st_value_q: int = 0
 
 
 @dataclass(frozen=True)
@@ -267,7 +279,12 @@ def _extract_proc_nfe_xml(response: Any, *, access_key: str = "") -> str | None:
 
 def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) -> dict[str, Any]:
     material, mapping = _material_for_item(item, supplier=supplier)
-    suggestion = None if material else _material_suggestion(item.name)
+    # Sem cadastro casado, o código de barras vem antes do nome: o GTIN da nota
+    # é o mesmo impresso no pote que a casa já vende (``social.gtin`` do
+    # produto), e o cadastro de compra do MESMO SKU é o item certo. Continua
+    # sendo SUGESTÃO — o operador confirma, e o recebimento aprende o de-para.
+    gtin_match = None if material else _material_by_catalog_gtin(item.ean)
+    suggestion = None if material else ((gtin_match, 100) if gtin_match else _material_suggestion(item.name))
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
     quantity = _line_quantity(item, material=material, conversion=conversion)
     # A conversão é calculada contra o insumo SUGERIDO quando não há um
@@ -288,6 +305,7 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "materialSku": material.sku if material else "",
         "suggestedMaterialSku": suggestion[0].sku if suggestion else "",
         "suggestionScore": suggestion[1] if suggestion else 0,
+        "suggestionSource": ("gtin" if gtin_match else "name") if suggestion else "",
         "conversionId": str(conversion.pk) if conversion else None,
         "requiresConversion": requires_conversion,
         "conversionSuggestion": _conversion_suggestion_data(conversion_suggestion),
@@ -317,9 +335,50 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "invoiceTaxUnit": item.tax_unit if _tax_axis_adds_info(item) else "",
         "invoiceTotal": _money_text(total_value),
         "invoiceProductCode": item.product_code,
+        # GTIN da unidade; o da caixa, quando a nota traz os dois, vem ao lado.
+        # Com NCM e CEST, são a PRIMEIRA fonte da sugestão de catálogo que o
+        # recebimento de revenda grava no produto (product_enrichment).
         "invoiceEan": item.ean,
+        "invoicePackageEan": item.package_ean,
+        "invoiceNcm": item.ncm,
+        "invoiceCest": item.cest,
+        "invoiceIcmsCst": item.icms_cst,
+        "invoiceIcmsCsosn": item.icms_csosn,
+        "invoiceStValueQ": item.st_value_q,
+        # A nota confere o cadastro fiscal do produto que a linha abastece
+        # (resolvido ou sugerido — cada divergência leva o SKU, e a tela só a
+        # mostra enquanto a linha aponta para ele). Aviso, nunca correção.
+        "fiscalDivergences": _fiscal_divergences(
+            item, sku=material.sku if material else (suggestion[0].sku if suggestion else "")
+        ),
         "checked": False,
     }
+
+
+def _fiscal_divergences(item: NFeItem, *, sku: str) -> list[dict[str, str]]:
+    """O que a nota diz de NCM/CEST/ST contra o cadastro fiscal do produto vendável.
+
+    Só o produto de VENDA tem cadastro fiscal: insumo que não se revende não
+    tem o que conferir e devolve lista vazia.
+    """
+    if not sku:
+        return []
+    from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal
+
+    product = apps.get_model("offerman", "Product").objects.filter(sku=sku).only("metadata").first()
+    if product is None:
+        return []
+    return [
+        {"sku": sku, **divergence.as_dict()}
+        for divergence in check_invoice_fiscal(
+            metadata=product.metadata,
+            ncm=item.ncm,
+            cest=item.cest,
+            icms_cst=item.icms_cst,
+            icms_csosn=item.icms_csosn,
+            st_value_q=item.st_value_q,
+        )
+    ]
 
 
 def _line_quantity(item: NFeItem, *, material: Any | None, conversion: Any | None) -> Decimal:
@@ -553,10 +612,20 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
     if not unit or quantity <= 0:
         unit, quantity, unit_value = tax_unit, tax_quantity, tax_unit_value
 
+    unit_ean, package_ean = _unit_gtin(
+        commercial=_valid_gtin(_text(prod, "cEAN")) or _valid_gtin(_text(prod, "cBarra")),
+        taxable=_valid_gtin(_text(prod, "cEANTrib")),
+        unit=unit,
+        tax_unit=tax_unit,
+    )
+
+    icms_cst, icms_csosn, st_value_q = _icms_of_item(det)
+
     return NFeItem(
         number=str(det.attrib.get("nItem") or index),
         product_code=_text(prod, "cProd"),
-        ean=_valid_gtin(_text(prod, "cEAN") or _text(prod, "cEANTrib") or _text(prod, "cBarra")),
+        ean=unit_ean,
+        package_ean=package_ean,
         name=_text(prod, "xProd"),
         unit=unit,
         quantity=quantity,
@@ -566,10 +635,53 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
         tax_unit_value=tax_unit_value,
         total_value=_decimal(_text(prod, "vProd")),
         ncm=_text(prod, "NCM"),
+        cest=_digits(_text(prod, "CEST")),
         cfop=_text(prod, "CFOP"),
         expiry_date=expiry,
         lot=lot,
+        icms_cst=icms_cst,
+        icms_csosn=icms_csosn,
+        st_value_q=st_value_q,
     )
+
+
+def _icms_of_item(det: ET.Element) -> tuple[str, str, int]:
+    """CST (ou CSOSN) e valor de ST do grupo ICMS do item, em centavos.
+
+    O grupo vem com o nome da situação (``ICMS60``, ``ICMSSN500``, ``ICMSST``…)
+    e há um só por item. ``CST``/``CSOSN``/``vICMSST``/``vICMSSTRet`` são nomes
+    do leiaute da SEFAZ e param aqui: para dentro viram ``icms_cst``,
+    ``icms_csosn`` e ``st_value_q``. ``vBCSTRet`` é BASE, não imposto — não
+    entra no valor.
+    """
+    icms = _find_child(_find_child(det, "imposto"), "ICMS")
+    group = next(iter(icms), None) if icms is not None else None
+    if group is None:
+        return "", "", 0
+    cst = _digits(_text(group, "CST"))
+    csosn = _digits(_text(group, "CSOSN"))
+    st_value = max(_decimal(_text(group, "vICMSST")), _decimal(_text(group, "vICMSSTRet")))
+    st_value_q = int((st_value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if st_value > 0 else 0
+    return cst, csosn, st_value_q
+
+
+def _unit_gtin(*, commercial: str, taxable: str, unit: str, tax_unit: str) -> tuple[str, str]:
+    """``(GTIN da unidade, o outro GTIN)`` — qual dos dois vai para a prateleira.
+
+    ``cEAN`` é o GTIN da unidade COMERCIAL (como o fornecedor vendeu: muitas
+    vezes a caixa); ``cEANTrib`` o da unidade TRIBUTÁVEL. Quando divergem e a
+    tributável é contável (UN) e a comercial não é (CX, FD, PCT…), o tributável
+    é o da unidade que a casa revende — o pote, não a caixa de 12. Fora desse
+    caso não há como decidir pela nota: fica o comercial, como sempre foi, e o
+    outro segue ao lado para quem confere a embalagem decidir.
+    """
+    if not taxable or taxable == commercial:
+        return commercial, ""
+    if not commercial:
+        return taxable, ""
+    if _canonical_unit(tax_unit) == "un" and _canonical_unit(unit) != "un":
+        return taxable, commercial
+    return commercial, taxable
 
 
 def _shortest_lot(prod: ET.Element | None) -> tuple[str, str]:
@@ -746,6 +858,24 @@ def _mapping_material_sku(mapping: Any | None) -> str:
     if not isinstance(mapping, dict):
         return ""
     return str(_first_mapping_value(mapping, "materialSku", "material_sku", "sku", "material") or "").strip()
+
+
+def _material_by_catalog_gtin(gtin: str) -> Any | None:
+    """O cadastro de compra do SKU cujo GTIN é o da nota, se houver um só.
+
+    Procura no produto do catálogo (``metadata.social.gtin``) e no próprio
+    cadastro de compra (``metadata.gtin``). Dois SKUs com o mesmo GTIN é
+    cadastro ambíguo: não sugere nenhum, em vez de sugerir o errado.
+    """
+    code = str(gtin or "").strip()
+    if not code.isdigit():
+        return None
+    Product = apps.get_model("offerman", "Product")
+    Material = apps.get_model("buyman", "Material")
+    skus = set(Product.objects.filter(metadata__social__gtin=code).values_list("sku", flat=True))
+    skus |= set(Material.objects.filter(metadata__gtin=code).values_list("sku", flat=True))
+    matches = list(Material.objects.filter(sku__in=skus, is_active=True)[:2])
+    return matches[0] if len(matches) == 1 else None
 
 
 def _material_by_sku(sku: str) -> Any | None:
@@ -1089,8 +1219,16 @@ def _valid_access_key(key: str) -> bool:
 
 
 def _valid_gtin(value: str) -> str:
+    """O GTIN, se for um: 8/12/13/14 dígitos com dígito verificador GS1.
+
+    "SEM GTIN", zeros e código interno do fornecedor que caiu no campo errado
+    voltam vazios. O validador é o mesmo do cadastro (``social.schema``): um
+    GTIN que o Admin recusaria não pode entrar pela nota.
+    """
+    from shopman.offerman import gtin_is_valid
+
     digits = _digits(value)
-    return digits if digits and set(digits) != {"0"} else ""
+    return digits if digits and gtin_is_valid(digits) else ""
 
 
 def _digits(value: Any) -> str:
@@ -1148,7 +1286,7 @@ def _factor_tokens(conversion: Any, unit: str) -> set[str]:
 
 
 def _item_lookup_keys(item: NFeItem) -> list[str]:
-    return [value for value in (item.product_code, item.ean, item.name) if value]
+    return [value for value in (item.product_code, item.ean, item.package_ean, item.name) if value]
 
 
 def _metadata_scopes(obj: Any) -> list[dict[str, Any]]:

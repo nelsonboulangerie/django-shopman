@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   ConfigError,
@@ -16,9 +17,14 @@ const floor = resolveGroup(groups, "operator-floor");
 const office = resolveGroup(groups, "operator-office");
 const app = (group, id) => group.apps.find((a) => a.id === id);
 
+// Quem mora em cada grupo é o registro único das superfícies que diz.
+const registry = JSON.parse(readFileSync(new URL("../../registry.json", import.meta.url), "utf8"));
+const registered = (group) =>
+  Object.values(registry.surfaces).filter((s) => s.service === group).map((s) => s.dir).sort();
+
 test("os dois grupos da decisão de 17/09, sem app repetido nem de fora", () => {
-  assert.deepEqual(floor.apps.map((a) => a.surface), ["pos-nuxt", "kds-nuxt", "orders-nuxt", "production-nuxt", "hub-nuxt"]);
-  assert.deepEqual(office.apps.map((a) => a.surface), ["marketing-nuxt", "bi-nuxt", "purchase-nuxt"]);
+  assert.deepEqual(floor.apps.map((a) => a.surface).sort(), registered("operator-floor"));
+  assert.deepEqual(office.apps.map((a) => a.surface).sort(), registered("operator-office"));
   assert.equal(app(office, "marketing").readyPath, "/health/ready");
   assert.ok(!JSON.stringify(groups).includes("storefront"), "storefront não entra em grupo");
 });

@@ -197,9 +197,19 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          # MAXMIND_LICENSE_KEY: a base GeoLite2-City (cidade aproximada na tela
+          # "Segurança e dados" da loja) é baixada no build da imagem `web`, e o
+          # build é ESTE — o App Platform só puxa a imagem pronta do DOCR. Por
+          # isso a chave mora nos segredos do GitHub Actions, e não no painel da
+          # DO: env BUILD_TIME de lá nunca chega aqui. Vazio = a imagem sobe sem
+          # a base e a tela degrada para navegador e data (falha suave, ver
+          # scripts/fetch-geolite2.sh). As imagens Nuxt ignoram o arg.
+          # O valor do arg entra na chave de cache da camada: ligar ou trocar a
+          # chave invalida a camada da base sozinho, sem bump de snapshot.
           build-args: |
             SURFACE=${{ matrix.surface }}
             OPERATOR_GROUP=${{ matrix.group }}
+            MAXMIND_LICENSE_KEY=${{ secrets.MAXMIND_LICENSE_KEY }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}

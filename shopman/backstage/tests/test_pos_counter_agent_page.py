@@ -1104,3 +1104,72 @@ def test_os_comandos_saem_mesmo_com_o_terminal_mal_configurado():
     assert guia.blocker, "este terminal deveria estar bloqueado"
     assert guia.steps == (), "o roteiro de instalação não sai com blocker"
     assert guia.commands, "mas os comandos de diagnóstico saem"
+
+
+# ── A impressora de uma estação do KDS sem tela (Via Cozinha) ───────────────
+#
+# Ela não tem agente próprio: entra como `extra_printers` no agente do PC do
+# balcão (#1166). O `--install` desta página, rodado lá, trocaria o token e a
+# credencial do relay DO BALCÃO pelos da cozinha.
+
+
+def _kitchen_printer_terminal():
+    from shopman.backstage.models import KDSInstance
+
+    terminal = _relay_terminal(ref="lanches-printer")
+    KDSInstance.objects.create(ref="lanches", name="Lanches", type="prep", print_terminal=terminal)
+    return terminal
+
+
+def test_impressora_de_estacao_nao_oferece_o_instalador(settings):
+    settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
+    guide = build_agent_install(_kitchen_printer_terminal(), download_url="/baixar/")
+
+    assert guide.extra_printer is True
+    assert guide.extra_printer_stations == "Lanches"
+    commands = [step.command for step in guide.steps]
+    assert not any("--install" in command for command in commands)
+    assert any('"extra_printers": [' in command for command in commands)
+    assert any("lpadmin -p lanches-printer" in command for command in commands)
+    # Antes de emitir, o trecho não tem segredo nenhum.
+    assert "SEGREDO-GERADO-NESTA-PÁGINA" in guide.extra_printer_snippet
+    assert guide.relay_install_command == ""
+
+
+def test_emitir_a_credencial_da_impressora_de_estacao_entrega_o_trecho(settings):
+    import json
+
+    settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
+    guide = build_agent_install(
+        _kitchen_printer_terminal(),
+        download_url="/baixar/",
+        relay_bearer="credencial.um-segredo-longo",
+    )
+
+    snippet = guide.relay_install_command
+    assert "--install" not in snippet
+    item = json.loads("{" + snippet + "}")["extra_printers"][0]
+    assert item == {
+        "ref": "lanches-printer",
+        "queue": "lanches-printer",
+        "station_ref": "lanches-printer",
+        "relay_token": "credencial.um-segredo-longo",
+    }
+
+
+def test_a_pagina_da_impressora_de_estacao_mostra_o_trecho_e_o_aviso(client, manager, settings):
+    settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
+    terminal = _kitchen_printer_terminal()
+    url = reverse("admin_console_pos_counter_agent", args=[terminal.ref])
+
+    page = client.get(url).content.decode()
+    assert "é a impressora da estação Lanches do KDS" in page
+    assert "--install" not in page
+    assert "extra_printers" in page
+
+    issued = client.post(url, {"action": "issue_relay", "expected_credential_version": ""})
+    body = issued.content.decode()
+    bearer = _bearer_from_response(issued)
+    assert "Trecho pronto para o agent.json do balcão" in body
+    assert f"&quot;relay_token&quot;: &quot;{bearer}&quot;" in body
+    assert "--install" not in body

@@ -29,7 +29,7 @@ const stateLabel = computed(() => alertState.value?.state === 'paused'
 const stateDescription = computed(() => alertState.value?.state === 'paused'
   ? 'Aviso pausado. Você pode retomá-lo para ocorrências futuras.'
   : alertState.value?.state === 'cancelled'
-    ? 'Aviso cancelado. No cardápio, Me avise ficará disponível novamente.'
+    ? 'Aviso cancelado e o seu número apagado. No cardápio, Me avise ficará disponível novamente.'
     : 'Aviso anotado e ativo para as próximas ocorrências.'
 )
 const stateIcon = computed(() => alertState.value?.state === 'paused'
@@ -177,7 +177,8 @@ onMounted(() => {
                 <UiAlertDialogHeader>
                   <UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>
                   <UiAlertDialogDescription>
-                    O cancelamento é definitivo para este aviso. Mensagens já aceitas pelo provedor não podem ser retiradas.
+                    O cancelamento é definitivo para este aviso, e o seu número é apagado junto. Mensagens já
+                    aceitas pelo provedor não podem ser retiradas.
                   </UiAlertDialogDescription>
                 </UiAlertDialogHeader>
                 <UiAlertDialogFooter>

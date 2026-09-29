@@ -295,6 +295,16 @@ def contact_verify_error_message(result: ContactVerifyResult) -> str:
     return mensagem
 
 
+def code_resend_cooldown_seconds() -> int:
+    """Segundos entre dois envios de código para o mesmo número (gate G11 do doorman).
+
+    Fonte única para a tela: o botão "Reenviar" libera quando o servidor aceita.
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    return max(0, int(doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS))
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 
@@ -302,6 +312,18 @@ def request_code_error_message(auth_result) -> str:
         ErrorCode.RATE_LIMIT: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
         ErrorCode.COOLDOWN: "Aguarde antes de solicitar um novo código.",
         ErrorCode.IP_RATE_LIMIT: "Muitas tentativas deste local. Tente mais tarde.",
+        ErrorCode.TOO_MANY_FAILURES: (
+            "Muitos códigos incorretos para este número. Por segurança, "
+            "novos códigos ficam suspensos por até 24 horas."
+        ),
+        # A falha foi NOSSA (ou do provedor), não do número: mandar o cliente
+        # "verificar o número" era um rótulo que mente, e ele repetia o mesmo
+        # número até desistir. A saída real é tentar de novo ou entrar pelo
+        # WhatsApp, que não depende de SMS.
+        ErrorCode.SEND_FAILED: (
+            "Não conseguimos enviar o código agora. Tente de novo em instantes "
+            "ou entre pelo WhatsApp."
+        ),
     }
     return error_map.get(
         auth_result.error_code,
@@ -314,6 +336,7 @@ def request_code_partial_error_message(auth_result) -> str:
         "Too many attempts. Please wait a few minutes.": "Muitas tentativas. Aguarde alguns minutos.",
         "Please wait before requesting a new code.": "Aguarde antes de solicitar um novo código.",
         "Too many attempts from this location.": "Muitas tentativas deste local.",
+        "Too many incorrect codes for this target.": "Muitos códigos incorretos para este número.",
         "Failed to send code.": "Falha ao enviar código.",
         "Error sending code.": "Erro ao enviar código.",
     }

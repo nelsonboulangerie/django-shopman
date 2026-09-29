@@ -19,12 +19,19 @@ ManyChat que ensinou o preço disso.
 ```python
 {
   "pairings": [
-    {"when": {"attr": "natureza", "value": "comida"},
-     "suggest": {"attr": "natureza", "in": ["acompanhamento", "bebida"]},
-     "weight": 3},
-    {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "café"}, "weight": 2},
+    # when: a SACOLA tem cada condição (em qualquer item);
+    # when_absent: a sacola NÃO tem nenhuma destas;
+    # suggest: o CANDIDATO satisfaz todas. Cada lado é objeto ou lista.
+    {"when": {"attr": "sabor", "value": "salgado"},
+     "when_absent": [{"attr": "natureza", "value": "bebida"}],
+     "suggest": [{"attr": "natureza", "value": "bebida"},
+                 {"attr": "temperatura", "value": "gelado"}],
+     "weight": 2},
+    {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "cafe"}, "weight": 2},
   ],
-  "affinity_weight": 3,
+  "affinity_weight": 3,          # 0 desliga; o histórico só desempata
+  "distinct_from_cart": ["natureza", "sabor"],
+  "one_per_cart": [{"attr": "natureza", "value": "bebida"}],
   "price": "below_cart_average",
   "context": {"delivery": {"exclude": {"attr": "temperatura", "value": "gelado"}}},
   "per_surface": {"web": 1, "concierge": 1},
@@ -45,6 +52,13 @@ ManyChat que ensinou o preço disso.
 
 A validação recusa atributo ou opção que não existe no registro — é o que
 impede uma regra de citar ``sabour`` e falhar em silêncio para sempre.
+
+``distinct_from_cart`` é portão: o adicional não pode ter os mesmos valores
+que um item da sacola em TODOS esses atributos (croque não sugere croque). A
+coleção primária igual também exclui, e essa não é configurável — é a definição
+de complemento, não uma preferência da casa. ``one_per_cart`` também é portão:
+se a sacola já tem um item daquela classe, outro da mesma classe não é
+oferecido ("bebida com bebida acho que não", dono, 23/09).
 """
 
 from __future__ import annotations
@@ -67,33 +81,155 @@ PRICE_POLICIES = ("below_cart_average",)
 NON_ATTRIBUTE_SIGNALS = ("collection", "keywords", "name")
 
 
-#: Os defaults que o dono ditou em 04/09. Vivem aqui, e não só na migração,
-#: porque o `seed --flush` apaga TODA `RuleConfig` e precisa saber reconstruí-las
-#: — a migração cobre quem já está no ar, o seed cobre quem reconstrói do zero.
-#: A migração 0030 guarda uma cópia congelada, como toda migração deve; o teste
-#: `test_the_seeded_pairings_are_the_ones_the_owner_dictated` compara as duas.
+#: Os critérios do dono (04/09, refeitos em 23/09). Vivem aqui, e não só na
+#: migração, porque o `seed --flush` apaga TODA `RuleConfig` e precisa saber
+#: reconstruí-las — a migração cobre quem já está no ar, o seed cobre quem
+#: reconstrói do zero. As migrações guardam cópias congeladas; o teste
+#: `test_the_migration_and_the_seed_agree_on_the_defaults` compara as duas.
+#:
+#: Em palavras (dono, 23/09): "a primeira frente de sugestão de complemento
+#: deve ser bebida com comida e comida com bebida"; bebida quente + doce e
+#: bebida gelada + salgado "são preferenciais, mas não devem excluir
+#: cruzamentos diferentes"; "bebida com bebida acho que não"; "se já tem
+#: salgado e já tem bebida, oferece um doce, claro!".
+#:
+#: Pesos: a FRENTE vale 3 e a PREFERÊNCIA soma 1 ou 2 por cima — o cruzado
+#: (salgado + bebida quente) continua elegível, só perde. Histórico e preço
+#: desempatam abaixo de 1 (ver `AFFINITY_TIEBREAK` no motor) e não invertem
+#: nada disso.
+_NO_DRINK = [{"attr": "natureza", "value": "bebida"}]
+_NO_FOOD = [{"attr": "natureza", "value": "comida"}]
+_ACCOMPANIMENT = {"attr": "natureza", "value": "acompanhamento"}
+
+
+_BREAD = {"attr": "sabor", "value": "neutro"}
+
+
+def _goes_with(bread: dict, *tags: str, weight: int = 2, plain: bool = True) -> list[dict]:
+    """Pão → o pote de mercearia que vai nele (o pote é acompanhamento).
+
+    ``plain`` exige que o item da sacola seja PÃO (sabor neutro) além de
+    casar ``bread``: a focaccia mora em Rústicos e é salgado, e não é ela que
+    pede o queijo do pão de fermentação natural.
+    """
+    when = {"all": [_BREAD, bread]} if plain else bread
+    # Pote é complemento do pão PARA LEVAR. Em refeição (já há bebida), o que
+    # falta na mesa é o doce, e ele vem antes (dono, 24/09) — pares somados
+    # (rústico + campagne → camembert) passariam na frente de um peso fixo.
+    return [
+        {"when": when, "when_absent": _NO_DRINK,
+         "suggest": [_ACCOMPANIMENT, {"tag": tag}], "weight": weight}
+        for tag in tags
+    ]
+
+
+def _comes_with(tag: str, *breads: dict, weight: int = 2) -> list[dict]:
+    """Pote de mercearia na sacola → o pão em que ele vai."""
+    return [
+        {"when": {"all": [_ACCOMPANIMENT, {"tag": tag}]},
+         "suggest": [{"attr": "natureza", "value": "comida"}, bread], "weight": weight}
+        for bread in breads
+    ]
+
+
 DEFAULT_COMPLEMENT_PARAMS = {
     "pairings": [
-        # "comida → acompanhamento" genérico, em vez de manteiga/geleia por SKU.
-        {
-            "when": {"attr": "natureza", "value": "comida"},
-            "suggest": {"attr": "natureza", "in": ["acompanhamento", "bebida"]},
-            "weight": 3,
-        },
-        # Doce pede café. A palavra-chave é mais precisa que "bebida quente":
-        # chá quente não é o que se oferece com uma madeleine.
-        {
-            "when": {"attr": "sabor", "value": "doce"},
-            "suggest": {"tag": "café"},
-            "weight": 2,
-        },
-        {
-            "when": {"attr": "temperatura", "value": "quente"},
-            "suggest": {"attr": "temperatura", "value": "gelado"},
-            "weight": 2,
-        },
+        # 1ª frente, sacola só de comida → bebida.
+        {"when": {"attr": "natureza", "value": "comida"}, "when_absent": _NO_DRINK,
+         "suggest": {"attr": "natureza", "value": "bebida"}, "weight": 3},
+        {"when": {"attr": "sabor", "value": "salgado"}, "when_absent": _NO_DRINK,
+         "suggest": [{"attr": "natureza", "value": "bebida"},
+                     {"attr": "temperatura", "value": "gelado"}], "weight": 2},
+        {"when": {"attr": "sabor", "value": "doce"}, "when_absent": _NO_DRINK,
+         "suggest": [{"attr": "natureza", "value": "bebida"},
+                     {"attr": "temperatura", "value": "quente"}], "weight": 2},
+        # Pão, folhado e doce de vitrine (temperatura ambiente) pedem o café;
+        # é o que cobre o folhado, cujo sabor a coleção não responde.
+        {"when": {"attr": "temperatura", "value": "ambiente"}, "when_absent": _NO_DRINK,
+         "suggest": [{"attr": "natureza", "value": "bebida"},
+                     {"attr": "temperatura", "value": "quente"}], "weight": 1},
+        # 1ª frente, o espelho: sacola só de bebida → comida.
+        {"when": {"attr": "natureza", "value": "bebida"}, "when_absent": _NO_FOOD,
+         "suggest": {"attr": "natureza", "value": "comida"}, "weight": 3},
+        {"when": {"attr": "temperatura", "value": "quente"}, "when_absent": _NO_FOOD,
+         "suggest": {"attr": "sabor", "value": "doce"}, "weight": 2},
+        {"when": {"attr": "temperatura", "value": "gelado"}, "when_absent": _NO_FOOD,
+         "suggest": {"attr": "sabor", "value": "salgado"}, "weight": 2},
+        # 2ª frente, comida + bebida → o que falta na mesa.
+        {"when": [{"attr": "sabor", "value": "salgado"}, {"attr": "natureza", "value": "bebida"}],
+         "suggest": {"attr": "sabor", "value": "doce"}, "weight": 3},
+        # Em refeição (comida + bebida) o doce vem antes da mercearia (dono,
+        # 24/09): os pares de pote nem falam quando já há bebida.
+        {"when": [{"attr": "natureza", "value": "comida"}, {"attr": "natureza", "value": "bebida"}],
+         "suggest": {"attr": "sabor", "value": "doce"}, "weight": 3},
+        # Doce + bebida, sem salgado (dono, 24/09): 1º um SALGADO — é o que
+        # completa a mesa; o LEVE (temperatura ambiente: croissant de presunto
+        # e queijo, folhado de frango) ganha do prato quente. Com bebida
+        # gelada, o salgado ganha mais (gelada ↔ salgado vale nos dois
+        # sentidos). 2º, com peso menor, o pão para levar. Com salgado também
+        # na mesa, ela está completa e o motor se cala.
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": {"attr": "sabor", "value": "salgado"}, "weight": 3},
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": [{"attr": "sabor", "value": "salgado"},
+                     {"attr": "temperatura", "value": "ambiente"}], "weight": 1},
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "temperatura", "value": "gelado"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": {"attr": "sabor", "value": "salgado"}, "weight": 2},
+        # `tag: pao` porque "neutro" também é brioche recheado, que a coleção
+        # (macios) não distingue do pão de forma.
+        {"when": [{"attr": "sabor", "value": "doce"}, {"attr": "natureza", "value": "bebida"}],
+         "when_absent": [{"attr": "sabor", "value": "salgado"}],
+         "suggest": [{"attr": "sabor", "value": "neutro"}, {"tag": "pao"}], "weight": 1},
+        # PÃO PARA LEVAR (dono, 24/09): sacola só de pão, sem refeição → a
+        # mercearia é o complemento principal. O genérico pesa 3 e perde para
+        # a bebida (3 + 1); com um par de mercearia abaixo (+2), ganha.
+        {"when": {"attr": "sabor", "value": "neutro"},
+         "when_absent": [{"attr": "natureza", "value": "bebida"},
+                         {"attr": "sabor", "value": "doce"},
+                         {"attr": "sabor", "value": "salgado"}],
+         "suggest": _ACCOMPANIMENT, "weight": 3},
+        # Os pares de mercearia: bônus, nunca filtro, e nos dois sentidos
+        # quando faz sentido ("Pão <> Antepasto/Queijo/Manteiga, Croissant/
+        # Brioche <> Geleia", dono, 24/09). Palavra-chave e coleção são dado
+        # que o catálogo já tem; par sem produto (geleia, mel, azeite, doce de
+        # leite ainda não estão à venda) não sugere nada até o produto chegar.
+        *_goes_with({"collection": "rusticos"}, "queijo", "pate", "tapenade", "picles", "manteiga"),
+        # A focaccia é salgado (dono, 24/09), e o antepasto é dela sem pão
+        # nenhum: ela não passa pelo filtro de "é pão".
+        *_goes_with({"tag": "focaccia"}, "tapenade", "azeite", plain=False),
+        *_goes_with({"tag": "italiano"}, "tapenade", "azeite"),
+        *_goes_with({"tag": "campagne"}, "camembert"),
+        *_goes_with({"tag": "croissant"}, "geleia", "mel", "manteiga", plain=False),
+        *_goes_with({"tag": "brioche"}, "geleia", "doce-de-leite", "mel", plain=False),
+        *_goes_with({"tag": "rabanada"}, "mel", "doce-de-leite", plain=False),
+        *_goes_with({"tag": "shokupan"}, "manteiga", "geleia"),
+        # "Kuropan com manteiga e/ou geleia, combinação clássica" (dono, 24/09).
+        *_goes_with({"tag": "kuropan"}, "manteiga", "geleia"),
+        *_goes_with({"tag": "hotdog"}, "mostarda"),
+        *_goes_with({"tag": "hamburger"}, "mostarda", "picles", "queijo", "bacon"),
+        # O caminho de volta: quem leva o pote leva o pão em que ele vai.
+        *_comes_with("queijo", {"collection": "rusticos"}),
+        *_comes_with("pate", {"collection": "rusticos"}),
+        *_comes_with("tapenade", {"tag": "focaccia"}, {"tag": "italiano"}),
+        *_comes_with("geleia", {"tag": "croissant"}, {"tag": "brioche"}, {"tag": "shokupan"},
+                     {"tag": "kuropan"}),
+        *_comes_with("manteiga", {"tag": "shokupan"}, {"tag": "kuropan"},
+                     {"collection": "rusticos"}),
+        *_comes_with("mostarda", {"tag": "hotdog"}, {"tag": "hamburger"}),
+        *_comes_with("picles", {"tag": "hamburger"}),
+        # Catálogo sem bebida disponível: salgado ainda tem o doce.
+        {"when": {"attr": "sabor", "value": "salgado"},
+         "suggest": {"attr": "sabor", "value": "doce"}, "weight": 1},
     ],
     "affinity_weight": 3,
+    # Adicional é complemento, não substituto: nada com a mesma natureza E o
+    # mesmo sabor de um item da sacola (croque não sugere croque — 23/09).
+    "distinct_from_cart": ["natureza", "sabor"],
+    # "Bebida com bebida acho que não" (dono, 23/09).
+    "one_per_cart": [{"attr": "natureza", "value": "bebida"}],
     "price": "below_cart_average",
     "per_surface": {"web": 1, "concierge": 1},
 }
@@ -158,16 +294,42 @@ def _check_attribute(ref, values, *, where: str) -> None:
             )
 
 
+def _check_conditions(side, *, where: str, allow_tag: bool, required: bool = True) -> None:
+    """Um lado do pareamento: um objeto-condição ou uma lista não vazia deles."""
+    if isinstance(side, list):
+        if not side:
+            raise SuggestionRuleError(f"{where}: a lista de condições está vazia.")
+        for j, condition in enumerate(side, start=1):
+            _check_side(condition, where=f"{where}[{j}]", allow_tag=allow_tag)
+        return
+    if side is None and not required:
+        return
+    _check_side(side, where=where, allow_tag=allow_tag)
+
+
 def _check_side(side: dict, *, where: str, allow_tag: bool) -> None:
     if not isinstance(side, dict):
         raise SuggestionRuleError(f"{where}: esperava um objeto.")
 
-    if "tag" in side:
+    if "all" in side:
         if not allow_tag:
-            raise SuggestionRuleError(f"{where}: 'tag' só vale do lado sugerido.")
-        if not str(side["tag"]).strip():
-            raise SuggestionRuleError(f"{where}: 'tag' vazia.")
+            raise SuggestionRuleError(f"{where}: 'all' só vale nos pareamentos.")
+        inner = side["all"]
+        if not isinstance(inner, list) or not inner:
+            raise SuggestionRuleError(f"{where}: 'all' precisa ser uma lista não vazia.")
+        for j, condition in enumerate(inner, start=1):
+            _check_side(condition, where=f"{where}.all[{j}]", allow_tag=allow_tag)
         return
+
+    for key in ("tag", "collection"):
+        if key in side:
+            if not allow_tag:
+                raise SuggestionRuleError(
+                    f"{where}: '{key}' só vale nos pareamentos; aqui a condição é 'attr'."
+                )
+            if not str(side[key]).strip():
+                raise SuggestionRuleError(f"{where}: '{key}' vazia.")
+            return
 
     ref = side.get("attr")
     if not ref:
@@ -196,7 +358,10 @@ class ComplementRule(BaseRule):
     # registry do Orderman não deve registrá-la como nada.
     rule_type = "suggestion"
 
-    KNOWN = frozenset({"pairings", "affinity_weight", "price", "context", "per_surface"})
+    KNOWN = frozenset({
+        "pairings", "affinity_weight", "distinct_from_cart", "one_per_cart",
+        "price", "context", "per_surface",
+    })
 
     def __init__(self, **params):
         self.params = dict(params)
@@ -218,17 +383,32 @@ class ComplementRule(BaseRule):
             where = f"pareamento {i}"
             if not isinstance(pairing, dict):
                 raise SuggestionRuleError(f"{where}: esperava um objeto.")
-            extra = sorted(set(pairing) - {"when", "suggest", "weight"})
+            extra = sorted(set(pairing) - {"when", "when_absent", "suggest", "weight"})
             if extra:
                 raise SuggestionRuleError(f"{where}: chave(s) desconhecida(s): {', '.join(extra)}.")
             if "when" not in pairing or "suggest" not in pairing:
                 raise SuggestionRuleError(f"{where}: precisa de 'when' e 'suggest'.")
-            _check_side(pairing["when"], where=f"{where} (when)", allow_tag=False)
-            _check_side(pairing["suggest"], where=f"{where} (suggest)", allow_tag=True)
+            _check_conditions(pairing["when"], where=f"{where} (when)", allow_tag=True)
+            _check_conditions(
+                pairing.get("when_absent"), where=f"{where} (when_absent)",
+                allow_tag=True, required=False,
+            )
+            _check_conditions(pairing["suggest"], where=f"{where} (suggest)", allow_tag=True)
             _check_weight(pairing.get("weight", 1), where=where)
 
         if "affinity_weight" in params:
             _check_weight(params["affinity_weight"], where="affinity_weight")
+
+        distinct = params.get("distinct_from_cart") or []
+        if not isinstance(distinct, list):
+            raise SuggestionRuleError("'distinct_from_cart' precisa ser uma lista de atributos.")
+        for ref in distinct:
+            _check_attribute(ref, (), where=f"distinct_from_cart → '{ref}'")
+
+        _check_conditions(
+            params.get("one_per_cart") or None, where="one_per_cart",
+            allow_tag=False, required=False,
+        )
 
         price = params.get("price")
         if price is not None and price not in PRICE_POLICIES:

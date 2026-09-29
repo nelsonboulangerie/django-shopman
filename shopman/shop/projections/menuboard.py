@@ -56,10 +56,24 @@ class MenuboardProjection:
     # falha aberta mostrando o cardápio inteiro quando o JS não roda.
     pages: tuple[MenuboardPage, ...] = field(default_factory=tuple)
     rotate_seconds: int = 0
+    # Canal desligado no Gestor (toggle "Ativo" da aba Canais): a TV continua
+    # servida, mas sem produto nenhum — tela preta com ``off_message``. Um 404
+    # deixaria a última pintura parada na tela (o JS só troca o quadro quando a
+    # leitura dá certo), e o cardápio velho seguiria à vista de quem entra.
+    is_active: bool = True
+    off_message: str = ""
+    # Canal ativo + automático fora da janela: a TV segue ligada, mas descansa.
+    is_sleeping: bool = False
+    sleep_messages: tuple[str, ...] = field(default_factory=tuple)
+
+
+#: A frase da tela preta. Fala com quem está na loja olhando a TV: o que fazer
+#: agora, não por que a tela apagou.
+OFF_MESSAGE = "Consulte o cardápio no balcão."
 
 
 class MenuboardError(Exception):
-    """Raised when a ref is not a valid, active menuboard channel."""
+    """Raised when a ref is not a menuboard channel."""
 
 
 def resolve_menuboard(ref: str):
@@ -71,10 +85,10 @@ def resolve_menuboard(ref: str):
     from shopman.shop.models import Channel
 
     channel = Channel.objects.filter(
-        ref=ref, is_active=True, commerce_policy=Channel.CommercePolicy.DISPLAY
+        ref=ref, commerce_policy=Channel.CommercePolicy.DISPLAY
     ).first()
     if channel is None:
-        raise MenuboardError(f"Menuboard '{ref}' não encontrado ou inativo.")
+        raise MenuboardError(f"Menuboard '{ref}' não encontrado.")
     if ((channel.config or {}).get("display") or {}).get("format"):
         raise MenuboardError(f"Canal '{ref}' é um feed de plataforma, não um quadro.")
     return channel
@@ -127,13 +141,35 @@ def _paginate(groups: tuple[MenuboardGroup, ...], items_per_page: int) -> tuple[
     return tuple(pages)
 
 
-def build_menuboard(ref: str) -> MenuboardProjection:
+def build_menuboard(ref: str, *, now=None) -> MenuboardProjection:
     """Monta o quadro: uma seção por coleção do canal, na ordem das coleções."""
     from shopman.offerman.models import Collection
 
+    from shopman.shop.services.channel_switch import effective_active
     from shopman.shop.services.display_prices import resolve_prices
 
     channel = resolve_menuboard(ref)
+    if not effective_active(channel, now=now):
+        return MenuboardProjection(
+            ref=ref,
+            title="",
+            subtitle="",
+            pages=(MenuboardPage(),),
+            is_active=False,
+            off_message=OFF_MESSAGE,
+        )
+    from shopman.shop.services.menuboard_schedule import resolve_menuboard_automatic_state
+
+    automatic = resolve_menuboard_automatic_state(channel, now=now)
+    if automatic.is_sleeping:
+        return MenuboardProjection(
+            ref=ref,
+            title="",
+            subtitle="",
+            pages=(MenuboardPage(),),
+            is_sleeping=True,
+            sleep_messages=automatic.idle_messages,
+        )
     display = _display(channel)
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])

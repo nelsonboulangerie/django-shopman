@@ -32,9 +32,10 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
-from shopman.backstage.services.integration_readiness import build_provider_readiness
+from shopman.backstage.services.integration_readiness import build_monitored_readiness
 from shopman.shop.adapters import notification_email
 from shopman.shop.environment import environment_name, is_production
+from shopman.shop.mailers import default_mailer
 
 
 @dataclass(frozen=True)
@@ -64,15 +65,19 @@ class DiagnosticsProjection:
 
 
 def _email_projection() -> EmailChannelProjection:
-    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
-    host = str(getattr(settings, "EMAIL_HOST", "") or "")
+    mailer = default_mailer()
+    backend = mailer.backend
+    host = mailer.host
     sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "")
     entrega = notification_email.is_available()
 
     if entrega:
         motivo = "O canal entrega: a cadeia de notificação vai tentar por aqui."
-    elif not backend:
-        motivo = "Sem EMAIL_BACKEND: nenhum e-mail sai."
+    # ⚠️ Não existe mais o ramo "sem backend nenhum": em `MAILERS`, uma entrada
+    # sem `BACKEND` significa SMTP (o `DEFAULT_MAILER_BACKEND` do Django), não
+    # ausência. O estado que era "sem EMAIL_BACKEND" chega aqui como "SMTP sem
+    # host" — que é o ramo abaixo, e é a frase que manda o operador ao lugar
+    # certo. Um ramo para um estado impossível faria o leitor acreditar nele.
     elif "smtp" in backend.lower() and not host:
         motivo = "Backend SMTP sem EMAIL_HOST: a primeira conexão falharia."
     elif any(inerte in backend.lower() for inerte in ("console", "locmem", "dummy")):
@@ -100,12 +105,12 @@ def _email_projection() -> EmailChannelProjection:
         entrega=entrega,
         backend=backend,
         host=host,
-        port=int(getattr(settings, "EMAIL_PORT", 0) or 0),
-        use_tls=bool(getattr(settings, "EMAIL_USE_TLS", False)),
-        user=str(getattr(settings, "EMAIL_HOST_USER", "") or ""),
+        port=mailer.port,
+        use_tls=mailer.use_tls,
+        user=mailer.username,
         sender=sender,
-        has_password=bool(str(getattr(settings, "EMAIL_HOST_PASSWORD", "") or "").strip()),
-        timeout_seconds=int(getattr(settings, "EMAIL_TIMEOUT", 0) or 0),
+        has_password=mailer.has_password,
+        timeout_seconds=mailer.timeout_seconds,
         motivo=motivo,
     )
 
@@ -115,7 +120,7 @@ def build_diagnostics() -> DiagnosticsProjection:
     return DiagnosticsProjection(
         environment=environment_name(),
         is_production=is_production(),
-        providers=tuple(item.as_projection() for item in build_provider_readiness(mode="runtime")),
+        providers=tuple(item.as_projection() for item in build_monitored_readiness(mode="runtime")),
         email=_email_projection(),
     )
 

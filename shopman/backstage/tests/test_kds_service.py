@@ -107,7 +107,7 @@ def test_mark_ticket_done_requires_acknowledging_item_cancellation(ticket):
 @pytest.mark.django_db
 def test_mark_ticket_done_replay_is_noop_success(ticket, monkeypatch):
     # Segundo bump (outra estação) = sucesso no-op, mesma semântica do replay
-    # da expedição — nunca "Ticket não está aberto".
+    # da Saída — nunca "Ticket não está aberto".
     ticket.status = "done"
     ticket.completed_at = timezone.now()
     ticket.save(update_fields=["status", "completed_at"])

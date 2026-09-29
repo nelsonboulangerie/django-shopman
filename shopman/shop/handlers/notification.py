@@ -58,6 +58,12 @@ def _enrich_system_context(template: str, raw_context: object) -> dict:
     return context
 
 
+#: Pedido nestes estados não espera mais a data combinada: cancelado e devolvido
+#: morreram; despachado, entregue e concluído já saíram. O lembrete de véspera
+#: não tem mais nada a lembrar.
+PREORDER_REMINDER_DEAD_STATUSES = frozenset({"cancelled", "returned", "dispatched", "delivered", "completed"})
+
+
 class NotificationSendHandler:
     """Processa directives de notificação. Topic: notification.send"""
 
@@ -113,6 +119,13 @@ class NotificationSendHandler:
                         self._record_skip(fresh, "payment_not_pending")
                         return
 
+                # O lembrete de véspera espera dias na fila, e a encomenda pode
+                # ter morrido (ou já saído) nesse meio-tempo: "sua encomenda é
+                # amanhã" para quem cancelou é mentira dita na voz da casa.
+                if template == "preorder_reminder" and order.status in PREORDER_REMINDER_DEAD_STATUSES:
+                    self._record_skip(fresh, "preorder_not_awaiting")
+                    return
+
                 # O PIX pode ser confirmado enquanto esta Directive espera um
                 # worker. A guarda do enqueue não basta: a última leitura antes
                 # do I/O externo precisa observar Payman, cancelamento e
@@ -126,6 +139,7 @@ class NotificationSendHandler:
                         "payment_link_already_paid",
                         "payment_link_order_cancelled",
                         "payment_link_expired",
+                        notification_svc.PAYMENT_TAKEN_OVER_AT_COUNTER,
                     }:
                         self._record_skip(fresh, "payment_not_pending")
                         return
@@ -211,10 +225,15 @@ class NotificationSendHandler:
                 "notification_failed",
                 "error",
                 (
-                    (f"Aceite da notificação '{template}' não confirmado; confira o envio antes de reenviar. "
-                     if unknown else f"Notificação '{template}' falhou após 5 tentativas ")
-                    +
-                    f"para pedido {order_ref}. Último erro: {last_error or 'desconhecido'}"
+                    # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
+                    (
+                        f"Não dá para saber se o aviso '{template}' chegou ao cliente do pedido {order_ref}. "
+                        "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
+                        if unknown
+                        else f"O aviso '{template}' não chegou ao cliente do pedido {order_ref} depois de "
+                        "5 tentativas. Se for importante, fale com o cliente pelo WhatsApp do pedido."
+                    )
+                    + f" Último erro: {last_error or 'desconhecido'}"
                 ),
                 order_ref=order_ref or "",
             )
@@ -254,7 +273,7 @@ class NotificationSendHandler:
             template = context.get("template") or event
         context = _enrich_system_context(template, context)
 
-        fallback_recipient = getattr(settings, "SHOPMAN_OPERATOR_EMAIL", None) or getattr(
+        fallback_recipient = getattr(settings, "SHOPMAN_ALERT_EMAIL", None) or getattr(
             settings, "DEFAULT_FROM_EMAIL", "admin@shopman.local"
         )
         recipient = str(payload.get("recipient") or fallback_recipient)

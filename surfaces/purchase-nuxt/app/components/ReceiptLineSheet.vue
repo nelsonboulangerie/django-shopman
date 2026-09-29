@@ -167,7 +167,7 @@ function onCheck(checked: boolean) {
           class="scroll-mt-4 transition-shadow"
           :class="ring('material')"
           :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
-          :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
+          :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o item desta linha'"
           :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
         >
           <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem `for`
@@ -178,20 +178,23 @@ function onCheck(checked: boolean) {
                clique. O nome acessível vai por `labelledBy`. A armadilha
                continua valendo: ela mora no docstring do `UiSelect`. -->
           <div>
-            <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo</span>
+            <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Item</span>
             <UiSelect
               class="mt-1"
               :options="materialOptions"
               :model-value="preview.line.materialSku"
               :labelled-by="`receipt-material-${preview.line.id}`"
-              placeholder="Escolher insumo"
-              search-placeholder="Buscar insumo"
-              :empty-text="`Nenhum insumo com esse nome.`"
+              placeholder="Escolher item"
+              search-placeholder="Buscar item do Compras"
+              :empty-text="`Nenhum item do Compras com esse nome.`"
               @update:model-value="emit('selectMaterial', $event)"
             />
           </div>
           <template v-if="preview.suggestion">
-            <p class="mt-2 text-xs text-muted-foreground">
+            <p v-if="preview.suggestion.byBarcode" class="mt-2 text-xs text-muted-foreground">
+              O código de barras da nota é o de <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span>
+            </p>
+            <p v-else class="mt-2 text-xs text-muted-foreground">
               Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
             </p>
             <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="emit('acceptSuggestion')">
@@ -282,6 +285,20 @@ function onCheck(checked: boolean) {
           >
             {{ warning.label }}
           </span>
+        </div>
+
+        <!-- O selo diz QUE a nota discorda do cadastro fiscal; aqui ela diz
+             DO QUÊ. A entrada não trava: o cadastro se confere no Admin, onde
+             o recebimento deixa a sugestão e o aviso. -->
+        <div
+          v-if="preview.fiscalDivergences.length"
+          data-receipt-fiscal-divergences
+          class="space-y-1 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <p v-for="divergence in preview.fiscalDivergences" :key="`${preview.line.id}-${divergence.field}`">
+            {{ divergence.message }}
+          </p>
+          <p class="text-muted-foreground">Nada muda no cadastro ao confirmar: fica como sugestão e aviso para conferir no Admin.</p>
         </div>
       </div>
 

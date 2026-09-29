@@ -12,6 +12,7 @@ import {
   type KDSBoardView,
 } from "~/presentation/board";
 import type { Ref } from "vue";
+import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 /**
  * O aviso de ticket novo do KDS — a FANFARRA.
@@ -93,6 +94,12 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   });
 
   const board = computed<KDSBoardProjection | null>(() => data.value?.board ?? null);
+  // A estação sumiu do cadastro (reseed, renomeada, desativada no Admin): o Django
+  // responde 404. Não é "sem conexão" — tentar de novo não traz a estação de volta,
+  // e o board em cache seria de uma estação que não existe. A tela troca para
+  // "escolha outra estação". O poll continua (barato): se a estação voltar com o
+  // mesmo ref, o quadro volta sozinho.
+  const stationMissing = computed(() => httpError(error.value).status === 404);
   // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
   // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
   // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
@@ -117,7 +124,11 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     KDS_ALERT,
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
+  // A Saída vê o pedido de TODAS as estações ("Em preparo") e o pedido que
+  // fica pronto: o canal da própria estação não recebe nada disso (nenhum
+  // ticket é da Saída). Ela assina o canal geral dos tickets e o dos pedidos.
+  let exitSources: ResilientEventSource[] = [];
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
@@ -207,18 +218,45 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/kds/[ref].ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
-    const url = ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL);
-    try {
-      source = new EventSource(url, { withCredentials: true });
-      // django-eventstream pushes named events; any of them means "refetch".
-      const onPush = () => { refresh(); };
-      ["message", "backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"]
-        .forEach((name) => source!.addEventListener(name, onPush));
-      source.onerror = () => { /* EventSource auto-reconnects; poll covers gaps. */ };
-    } catch {
-      source = null; // SSE unavailable → polling carries it.
-    }
+    // django-eventstream pushes named events; any of them means "refetch".
+    // Depois do 502 de deploy o EventSource cru ficava CLOSED e a cozinha só
+    // via ticket novo no poll de 15 s até recarregar; o do kit se recria, e a
+    // reabertura refaz a leitura para cobrir o que passou no meio.
+    source = openResilientEventSource({
+      url: ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL),
+      events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
+      onEvent: () => { refresh(); },
+      onOpen: (reconnected) => { if (reconnected) refresh(); },
+    });
   }
+
+  function connectExitSse() {
+    if (exitSources.length) return;
+    const onEvent = () => { refresh(); };
+    const onOpen = (reconnected: boolean) => { if (reconnected) refresh(); };
+    exitSources = [
+      openResilientEventSource({
+        url: ssePath("/sse/kds/main", config.app.baseURL),
+        events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
+        onEvent,
+        onOpen,
+      }),
+      openResilientEventSource({
+        url: ssePath("/sse/orders", config.app.baseURL),
+        events: ["backstage-orders-update"],
+        onEvent,
+        onOpen,
+      }),
+    ];
+  }
+
+  // Só no cliente e depois de montado (EventSource é API do browser); o tipo da
+  // estação chega com o primeiro fetch, que no SSR já veio pronto.
+  const clientMounted = ref(false);
+  watch(
+    () => clientMounted.value && Boolean(board.value?.is_expedition),
+    (on) => { if (on) connectExitSse(); },
+  );
 
   let removeVisibilityListeners: (() => void) | null = null;
 
@@ -227,13 +265,17 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (view.value) alertForUnseenWork(view.value);
     pollTimer = setInterval(() => refresh(), 15_000);
     connectSse();
+    clientMounted.value = true;
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
     // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
     // (keepalive), em vez de sumir com a aba.
     const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
-      else flushFinishes();
+      if (document.visibilityState === "visible") {
+        refresh();
+        source?.reconnectNow();
+        for (const exitSource of exitSources) exitSource.reconnectNow();
+      } else flushFinishes();
     };
     const onPageHide = () => flushFinishes();
     document.addEventListener("visibilitychange", onVisible);
@@ -370,6 +412,40 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (readOnly.value) return;
     removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/expedition/${pk}/action/`, { action });
   };
+  // Saída: "Pronto" pela estação sem tela. Otimista — o chip vira "pronto" na
+  // hora e o botão some; se era a última estação, a reconciliação (e o SSE)
+  // move o card para "Prontos para sair". Em falha, volta e diz o porquê.
+  const busyStations = ref<Set<string>>(new Set());
+  const markStationReady = (orderPk: number, stationRef: string) => {
+    if (readOnly.value) return;
+    const key = `${orderPk}:${stationRef}`;
+    if (busyStations.value.has(key)) return;
+    const card = data.value?.board?.preparing?.find((c) => c.pk === orderPk);
+    const chip = card?.stations.find((c) => c.station_ref === stationRef);
+    if (!card || !chip || !chip.can_mark_ready) return;
+    const before = { state: chip.state, state_label: chip.state_label, can_mark_ready: chip.can_mark_ready };
+    chip.state = "done";
+    chip.state_label = "pronto";
+    chip.can_mark_ready = false;
+    busyStations.value = new Set(busyStations.value).add(key);
+    const release = () => {
+      const next = new Set(busyStations.value);
+      next.delete(key);
+      busyStations.value = next;
+    };
+    enqueue(`/api/v1/backstage/kds/expedition/${orderPk}/printed-stations/${encodeURIComponent(stationRef)}/done/`)
+      .then(async () => {
+        await refresh();
+        release();
+      })
+      .catch((err) => {
+        Object.assign(chip, before);
+        release();
+        useSonner.error(httpErrorMessage(err, "Falha ao marcar como pronto. Tente de novo."));
+        refresh();
+      });
+  };
+
   // Recall: o concluído sai da lista de recentes; a reconciliação o traz de volta ao board ativo.
   const recall = (pk: number) => {
     if (readOnly.value) return;
@@ -386,6 +462,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (pollTimer) clearInterval(pollTimer);
     if (reconcileTimer) clearTimeout(reconcileTimer);
     if (source) { source.close(); source = null; }
+    for (const exitSource of exitSources) exitSource.close();
+    exitSources = [];
     if (removeVisibilityListeners) removeVisibilityListeners();
   });
 
@@ -395,6 +473,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     readOnly,
     pending,
     error,
+    stationMissing,
     refresh,
     soundOn,
     soundBlocked,
@@ -406,6 +485,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     finalize,
     undoFinish,
     expedite,
+    markStationReady,
+    busyStations,
     recall,
     acknowledge,
   };

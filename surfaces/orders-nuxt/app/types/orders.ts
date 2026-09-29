@@ -1,3 +1,4 @@
+import type { ManagerOption } from "../../../operator-kit/app/types/manager";
 import type { ReadMetadata } from "./readMetadata";
 // Order contract types. The structural shapes come from the generated mirror
 // (app/generated/ordersContract.ts — source of truth:
@@ -65,9 +66,11 @@ export interface CustomerProfileProjection extends CustomerProfileContract {
   segment_tone: "success" | "warning" | "";
 }
 
-export interface OperatorOrderProjection extends OperatorOrderContract {
+export interface OperatorOrderProjection extends Omit<OperatorOrderContract, "managers"> {
   courier: CourierBlock | null;
   customer_profile: CustomerProfileProjection | null;
+  /** Quem pode dar a segunda assinatura — a mesma lista do PDV (nome + username). */
+  managers: ManagerOption[];
 }
 
 export interface TwoZoneQueueProjection extends TwoZoneQueueContract {
@@ -79,8 +82,18 @@ export interface TwoZoneQueueProjection extends TwoZoneQueueContract {
   preorders: OrderCardProjection[];
 }
 
+/** A impressora DESTA estação (``DeviceAgentConfig.surface_payload``, o mesmo
+ *  bloco do PDV). Sem estação ou sem agente: `can_print: false` e a frase. */
+export interface StationDeviceAgent {
+  can_print: boolean;
+  agent_url?: string;
+  token?: string;
+  reason: string;
+}
+
 export interface OrderQueueResponse extends ReadMetadata {
   queue: TwoZoneQueueProjection;
+  device_agent?: StationDeviceAgent;
 }
 
 export interface OrderDetailResponse extends ReadMetadata {
@@ -102,10 +115,16 @@ export interface AlertProjection {
     label: string;
     enabled: boolean;
     href: string;
+    expected_rev?: number | null;
+    proof?: string;
   }>;
 }
 
 export interface AlertsResponse {
   alerts: AlertProjection[];
   counts: { active: number; critical: number };
+  generated_at?: string;
+  source_revision?: string;
+  fresh_until?: string;
+  contract_version?: number;
 }

@@ -98,7 +98,10 @@ class BusinessHoursRule(BaseRule):
             if shop and shop.opening_hours:
                 return shop.opening_hours
         except Exception:
-            logger.debug("business_hours_rule: could not load shop opening hours", exc_info=True)
+            # Sem grade, a regra conclui "sempre aberto" e o pedido fora de hora
+            # passa sem a marca — degradar é certo (a venda não para), calar não.
+            logger.error("business_hours_rule: could not load shop opening_hours", exc_info=True)
+            _alert_calendar_unreadable("opening_hours", "o horário de funcionamento")
         return None
 
     @staticmethod
@@ -122,8 +125,116 @@ class BusinessHoursRule(BaseRule):
                     dates.extend(value)
             return dates
         except Exception:
-            logger.debug("business_hours_rule: could not load shop closed dates", exc_info=True)
+            # Sem as datas de fechamento, feriado vira dia aberto.
+            logger.error("business_hours_rule: could not load shop closed_dates", exc_info=True)
+            _alert_calendar_unreadable("closed_dates", "as datas de fechamento")
         return []
+
+
+def _alert_calendar_unreadable(part: str, label: str) -> None:
+    """A regra de horário ficou cega: grita no Sentry e no painel do gestor.
+
+    O ``logger.error`` com traceback (no ``except`` de quem chama) leva o erro ao
+    Sentry. Falhar em ler a grade afeta TODO pedido até alguém corrigir, então
+    um log sozinho não serve: o ``OperatorAlert`` chega a quem pode agir,
+    deduplicado por causa. A venda não trava — o pedido segue sem a conferência.
+    """
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="shop_calendar_unreadable",
+            severity="error",
+            message=(
+                f"Não foi possível ler {label} da loja. Os pedidos seguem, mas sem a "
+                "conferência de horário. Confira a configuração da loja no Admin."
+            ),
+            dedupe_key=f"shop_calendar_unreadable:{part}",
+            part=part,
+        )
+    except Exception:
+        logger.exception("business_hours_rule: falha ao registrar o alerta de horário ilegível")
+
+
+class PricedItemsRule(BaseRule):
+    """Nenhum canal vende item com preço zero ou ausente — decisão do dono, 24/09/2026.
+
+    Medido antes da regra: o Yooga vendeu 34 queijos a R$ 0,00 porque o produto
+    não tinha preço e o sistema aceitava. Aqui o preço que conta é o de LISTA da
+    linha (``meta._list_q``, carimbado pelo ``ItemPricingModifier`` antes de
+    qualquer desconto): um desconto de 100% zera o COBRADO e passa — é assim que
+    se dá um item, pela régua de desconto e da permissão —, mas um produto sem
+    preço no catálogo não passa em canal nenhum.
+
+    Registrado sempre (``handlers._register_validators``), fora do ``RuleConfig``:
+    não é política que o Admin desliga. A taxa de entrega é linha de serviço e
+    fica de fora.
+    """
+
+    code = "shop.priced_items"
+    label = "Item sem preço"
+    rule_type = "validator"
+    stage = "commit"
+    default_params = {}
+
+    def validate(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        from shopman.orderman.exceptions import ValidationError as OrderValidationError
+
+        for item in getattr(session, "items", None) or []:
+            meta = item.get("meta") or {}
+            if item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee":
+                continue
+            list_q = meta.get("_list_q")
+            if list_q is None:
+                list_q = item.get("unit_price_q")
+            try:
+                priced = int(list_q or 0) > 0
+            except (TypeError, ValueError):
+                priced = False
+            if not priced:
+                name = str(item.get("name") or item.get("sku") or "item")
+                raise OrderValidationError(
+                    code="price_missing",
+                    message=f"{name} está sem preço no cadastro e não pode ser vendido.",
+                )
+
+
+class DeliveryFiscalIdentityRule(BaseRule):
+    """Entrega com NFC-e não entra sem CPF/CNPJ válido e endereço completo.
+
+    Decisão do dono, 24/09/2026: a SEFAZ recusa a nota de entrega sem isso
+    (787/788), e a recusa aparecia na emissão, com o entregador na rua. Aqui
+    ela aparece na porta. A régua é a da emissão e a pergunta "vai ter nota?"
+    é a do resolver fiscal (``services/delivery_fiscal_identity``).
+
+    Registrado sempre (``handlers._register_validators``), fora do
+    ``RuleConfig``: é exigência da SEFAZ, não política que o Admin desliga.
+    Nunca toca o despacho: pedido que já entrou segue o caminho de sempre.
+    """
+
+    code = "shop.delivery_fiscal_identity"
+    label = "CPF e endereço da nota de entrega"
+    rule_type = "validator"
+    stage = "commit"
+    default_params = {}
+
+    def validate(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        from shopman.orderman.exceptions import ValidationError as OrderValidationError
+
+        from shopman.shop.services import delivery_fiscal_identity as identity
+
+        data = getattr(session, "data", None) or {}
+        if data.get("fulfillment_type") != "delivery":
+            return
+        total_q = sum(int(item.get("line_total_q") or 0) for item in (getattr(session, "items", None) or []))
+        order = identity.order_view(
+            data=data, channel_ref=getattr(channel, "ref", "") or "", total_q=total_q,
+        )
+        refused = identity.refusal(identity.delivery_fiscal_gaps(order))
+        if refused is None:
+            return
+        code, field, message = refused
+        raise OrderValidationError(code=code, message=message, context={"field": field})
 
 
 class DeliveryZoneRule(BaseRule):
@@ -190,11 +301,16 @@ class DeliveryZoneRule(BaseRule):
             )
             total_q = sum(item.get("line_total_q", 0) for item in items) + coupon_discount_q
             if total_q < minimum_q:
-                minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
                 raise OrderValidationError(
                     code="below_delivery_minimum",
-                    message=f"Pedido mínimo para entrega: {minimum_display}.",
+                    message=delivery_minimum_message(minimum_q),
                 )
+
+
+def delivery_minimum_message(minimum_q: int) -> str:
+    """A frase do mínimo de entrega — uma só, para o commit e para o PDV avisar antes."""
+    minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
+    return f"Pedido mínimo para entrega: {minimum_display}."
 
 
 def _normalize_city(value) -> str:

@@ -511,6 +511,12 @@ def ensure_payment_intent(order) -> bool:
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
+    if order.status in order.get_terminal_statuses():
+        # Pedido morto (cancelado, concluído, devolvido) não ganha cobrança. Todo
+        # GET do acompanhamento passa por aqui; sem esta porta, o Pix de um pedido
+        # recusado antes do aceite nascia na primeira recarga da tela — um QR
+        # pagável na Efí para um pedido que ninguém vai entregar.
+        return False
     if payment.get("intent_ref"):
         if method != "pix" or payment.get("copy_paste") or payment.get("qr_code"):
             return True

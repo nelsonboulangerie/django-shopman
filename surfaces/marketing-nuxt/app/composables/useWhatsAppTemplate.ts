@@ -28,12 +28,14 @@ export async function configureFlowCommand(
     baseVersion: number;
     totp: string;
     idempotencyKey: string;
+    event?: string;
   },
 ): Promise<CommandReceiptResponse> {
   const headers = { "Idempotency-Key": options.idempotencyKey };
   const body = {
     flow_ns: options.flowNs,
     base_version: options.baseVersion,
+    ...(options.event ? { event: options.event } : {}),
   };
   try {
     return await fetcher<CommandReceiptResponse>(
@@ -92,6 +94,9 @@ export function useWhatsAppTemplate() {
   const currentName = computed(() => data.value?.current_name ?? "");
   const version = computed(() => data.value?.version ?? 1);
   const available = computed(() => data.value?.available ?? []);
+  const notificationTemplates = computed(
+    () => data.value?.notification_templates ?? [],
+  );
   const testTargets = computed(() => data.value?.test_targets ?? []);
   const canSendTest = computed(() => data.value?.can_send_test ?? false);
   const canList = computed(() => data.value?.can_list ?? false);
@@ -124,12 +129,15 @@ export function useWhatsAppTemplate() {
     flowNs: string,
     totp: string,
     idempotencyKey: string,
+    event = "",
+    baseVersion = version.value,
   ): Promise<boolean> {
     lastCommandCode.value = "";
     try {
       await configureFlowCommand($fetch, {
         flowNs,
-        baseVersion: version.value,
+        baseVersion,
+        event,
         totp,
         idempotencyKey,
       });
@@ -160,7 +168,7 @@ export function useWhatsAppTemplate() {
 
   async function sendTest(
     targetRef: string,
-    options: { sku?: string; body?: string } = {},
+    options: { event?: string; sku?: string; body?: string } = {},
   ) {
     testing.value = true;
     try {
@@ -171,6 +179,7 @@ export function useWhatsAppTemplate() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: {
             target_ref: targetRef,
+            event: options.event || "announcement_published",
             sku: options.sku || "",
             body: options.body || "",
           },
@@ -204,6 +213,7 @@ export function useWhatsAppTemplate() {
     currentName,
     version,
     available,
+    notificationTemplates,
     testTargets,
     canSendTest,
     canList,

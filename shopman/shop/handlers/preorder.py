@@ -32,7 +32,7 @@ class PreorderActivateHandler:
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.orderman.models import Order
 
-        from shopman.shop.lifecycle import activate_preorder
+        from shopman.shop.lifecycle import _physical_work_deferred, activate_preorder, preorder_activation_at
         from shopman.shop.services import ifood_cancellation, ifood_schedule
 
         order_ref = message.payload.get("order_ref")
@@ -53,5 +53,25 @@ class PreorderActivateHandler:
             message.attempts = max(0, message.attempts - 1)
             message.save(update_fields=["status", "available_at", "attempts", "updated_at"])
             return
+
+        if _physical_work_deferred(order):
+            # Tocou antes da data (fuso, relógio, ou uma data trocada por fora do
+            # ``services.reschedule``). Terminar aqui deixaria a encomenda sem
+            # despertador: ela nunca iria para a cozinha. A própria directive
+            # volta para a fila na madrugada certa — sem criar outra.
+            available_at, target = preorder_activation_at(order)
+            if available_at is not None and available_at > timezone.now():
+                payload = dict(message.payload or {})
+                payload["delivery_date"] = target.isoformat()
+                message.payload = payload
+                message.status = "queued"
+                message.available_at = available_at
+                message.attempts = max(0, message.attempts - 1)
+                message.save(update_fields=["payload", "status", "available_at", "attempts", "updated_at"])
+                logger.info(
+                    "preorder.activate: cedo demais order=%s — re-enfileirado para %s",
+                    order_ref, available_at.isoformat(),
+                )
+                return
 
         activate_preorder(order)

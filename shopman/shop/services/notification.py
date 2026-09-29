@@ -22,6 +22,7 @@ from shopman.orderman.models import Directive
 from shopman.utils.monetary import format_money
 
 from shopman.shop.notifications import notify
+from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ _IDENTITY_ABSENT = "absent"
 _IDENTITY_UNAVAILABLE = "unavailable"
 
 
-def send(order, template: str, **extra) -> None:
+def send(order, template: str, *, occurrence: str = "", **extra) -> None:
     """
     Schedule a notification for the order.
 
@@ -84,10 +85,29 @@ def send(order, template: str, **extra) -> None:
     processes the Directive resolves the adapter, builds context, and
     executes the configured fallback chain (for example, manychat → sms → email).
 
+    ``occurrence`` distingue avisos legítimos repetidos do MESMO tipo no mesmo
+    pedido (a segunda troca de data, a terceira edição): entra na chave de
+    dedupe (``…:<template>:<occurrence>``). Sem ele, o aviso é um por pedido —
+    o retry de quem chamou continua não mandando dois.
+
     ASYNC — does not block the request.
     """
+    # Pedido de teste de marketplace: o payload de homologação traz um telefone
+    # que não é do cliente nenhum (o 0800 do iFood). Ele passa pelo guarda de
+    # pedido sem contato e a casa acaba mandando mensagem de verdade, pela API
+    # do ManyChat, para o número de um terceiro.
+    if is_test_order(order):
+        logger.info(
+            "notification.send: pedido de teste order=%s template=%s — aviso suprimido",
+            order.ref,
+            template,
+        )
+        return
+
     template = _canonical_template(template)
     dedupe_key = _dedupe_key(order, template)
+    if occurrence:
+        dedupe_key = f"{dedupe_key}:{occurrence}"
 
     payload = {
         "order_ref": order.ref,
@@ -255,6 +275,17 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     return created
 
 
+#: O balcão recebeu e cancelou a cobrança digital (``payment.counter_takeover``).
+PAYMENT_TAKEN_OVER_AT_COUNTER = "payment_taken_over_at_counter"
+
+
+def _taken_over_at_counter_refusal() -> NotificationResendRefused:
+    return NotificationResendRefused(
+        PAYMENT_TAKEN_OVER_AT_COUNTER,
+        "O cliente pagou no balcão: a cobrança online foi cancelada.",
+    )
+
+
 def payment_link_resend_refusal(order, *, check_delivery: bool = True) -> NotificationResendRefused | None:
     """Por que este pedido NÃO aceita reenvio do link — ou ``None`` se aceita.
 
@@ -270,6 +301,8 @@ def payment_link_resend_refusal(order, *, check_delivery: bool = True) -> Notifi
     venda.
     """
     payment = (order.data or {}).get("payment") or {}
+    if payment.get("counter_takeover"):
+        return _taken_over_at_counter_refusal()
     if str(payment.get("method") or "").strip().lower() != "link" or not payment.get("checkout_url"):
         return NotificationResendRefused("payment_link_unavailable", "Este pedido não tem link de pagamento.")
     if order.status == "cancelled":
@@ -345,6 +378,8 @@ def payment_notice_template(order) -> str:
 
 def payment_notice_refusal(order) -> NotificationResendRefused | None:
     """Guarda comum do gesto de enviar/re-enviar uma cobrança do PDV."""
+    if ((order.data or {}).get("payment") or {}).get("counter_takeover"):
+        return _taken_over_at_counter_refusal()
     template = payment_notice_template(order)
     if not template:
         return NotificationResendRefused("payment_notice_unavailable", "Este pedido não tem cobrança que possa ser enviada.")
@@ -364,7 +399,9 @@ def payment_notice_refusal(order) -> NotificationResendRefused | None:
     if expires_at is not None and expires_at <= timezone.now():
         return NotificationResendRefused("payment_notice_expired", "A cobrança venceu. Gere um novo pagamento.")
     customer = (order.data or {}).get("customer") or {}
-    if not isinstance(customer, dict) or not (customer.get("phone") or customer.get("email")):
+    if not isinstance(customer, dict):
+        customer = {}
+    if not (customer_contact_phone(order) or customer.get("email")):
         return NotificationResendRefused(
             "payment_notice_contact_required", "Identifique o cliente com WhatsApp ou e-mail para enviar a cobrança.",
         )
@@ -452,6 +489,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     context = _build_context(order, payload, template)
     template = _qualify_template(template, context)
     context["template"] = template
+    context.update(_fiscal_note_carriage(order, template, backend_chain, context))
 
     last_error: str | None = None
     any_attempted = False
@@ -675,10 +713,6 @@ def _build_context(order, payload: dict, template: str) -> dict:
         "total_q": order.total_q,
         "items": order.snapshot.get("items", []),
         "reason": reason,
-        # Pre-formatted, self-suppressing reason line — templates embed `{reason_note}`
-        # and it disappears cleanly when no customer-facing reason is present (same
-        # pattern as `pix_suffix`). Avoids "Motivo: None"/dangling labels in flat copy.
-        "reason_note": f"\n\nMotivo: {reason}" if reason else "",
         "fulfillment_type": fulfillment_type,
         "outside_business_hours": bool(order.data.get("outside_business_hours", False)),
     }
@@ -729,7 +763,11 @@ def _build_context(order, payload: dict, template: str) -> dict:
     if order.total_q:
         # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
         # que o cliente recebe. O formatador da casa é um só.
-        context["total"] = f"R$ {format_money(order.total_q)}"
+        # O total que VALE: a encomenda editada no balcão (ou alterada no iFood)
+        # não fala mais pelo ``total_q`` selado.
+        from shopman.shop.services import order_composition
+
+        context["order_total_display"] = f"R$ {format_money(order_composition.effective_total_q(order))}"
 
     from shopman.shop.services import storefront_links
 
@@ -782,6 +820,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
     context["reorder_url_public"] = storefront_links.storefront_url(
         storefront_links.path_order_history()
     )
+    # Mesmo critério do `tracking_url`: sem magic link, o link comum (o aviso de
+    # prazo vencido manda "pedir de novo" por ele).
+    context["reorder_url"] = context.get("reorder_url") or context["reorder_url_public"]
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
@@ -795,7 +836,274 @@ def _build_context(order, payload: dict, template: str) -> dict:
         f"\nAcompanhe o entregador: {courier_tracking}" if courier_tracking else ""
     )
 
+    # A informação do pedido que muda de um para outro (hora prevista, motivo), numa
+    # frase que NUNCA fica vazia: sem o dado, entra a frase-padrão. É o que a deixa
+    # caber no template aprovado do WhatsApp, que não aceita variável vazia
+    # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
+    context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
+
+    # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
+    # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
+    # carrega ``?t=``), e sai vazio enquanto não há nota.
+    order_data = order.data or {}
+    context["danfe_url"] = str(order_data.get("nfce_danfe_url") or order_data.get("nfce_qrcode_url") or "")
+    focus_environment = str((getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {}).get("environment", "homologacao"))
+    context["fiscal_test_note"] = (
+        "" if "prod" in focus_environment.lower() else "\n(Nota de teste, sem valor fiscal.)"
+    )
+
     return context
+
+
+# ── A nota fiscal na mensagem do pedido ──────────────────────────────────
+#
+# Decisão do dono (25/09/2026): menos mensagens. O link da NFC-e da loja online
+# vai DENTRO de uma mensagem que o cliente já recebe, quando a nota já existe no
+# momento de montá-la; o aviso avulso ``fiscal_note_ready`` é só a rede, para a
+# nota que autoriza DEPOIS da última mensagem que a levaria. Uma nota, no máximo
+# uma menção por pedido.
+#
+# Onde a nota nasce (``lifecycle``) decide qual caminho é o normal:
+# - retirada: na conclusão, depois do "pronto para retirada" → o avulso;
+# - entrega que cobra na porta: no despacho → normalmente vai no "entregue"
+#   (ou no "saiu para entrega", se a nota ganhar a corrida);
+# - entrega paga antes: na conclusão, logo depois do "entregue" → vai nele se a
+#   nota autorizar antes de a mensagem sair, senão o avulso.
+#
+# As duas pontas (montar a mensagem de status, autorizar a nota) decidem sob o
+# lock da linha do pedido, então a corrida entre elas não produz nem duas
+# menções nem nenhuma.
+
+FISCAL_NOTE_TEMPLATE = "fiscal_note_ready"
+
+#: Mensagens de status (nome já qualificado) que podem levar o link da nota.
+FISCAL_NOTE_CARRIERS = frozenset(
+    {"order_ready_pickup", "order_ready_delivery", "order_dispatched", "order_delivered"}
+)
+
+#: A ÚLTIMA mensagem do pedido que levaria a nota, por forma de receber:
+#: ``(nome qualificado, nome do envio)``. O envio é o que ``send`` deduplica.
+_LAST_CARRIER = {
+    "pickup": ("order_ready_pickup", "order_ready"),
+    "delivery": ("order_delivered", "order_delivered"),
+}
+
+#: Status em que a última mensagem que levaria a nota ainda VAI sair.
+_LAST_CARRIER_AHEAD = {
+    "pickup": frozenset({"new", "accepted", "preparing"}),
+    "delivery": frozenset({"new", "accepted", "preparing", "ready", "dispatched"}),
+}
+
+#: Chave em ``Order.data``. Ver docs/reference/data-schemas.md.
+FISCAL_NOTE_MESSAGE_KEY = "fiscal_note_message"
+
+
+def _is_storefront_order(order) -> bool:
+    storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    return (order.channel_ref or "") == storefront_channel
+
+
+def _fiscal_note_url(order_data: dict) -> str:
+    """O link da nota autorizada e viva, ou ``""``."""
+    if not order_data.get("nfce_access_key") or order_data.get("nfce_cancelled"):
+        return ""
+    return str(order_data.get("nfce_danfe_url") or order_data.get("nfce_qrcode_url") or "")
+
+
+def _last_carrier(order_data: dict) -> tuple[str, str]:
+    fulfillment_type = "delivery" if order_data.get("fulfillment_type") == "delivery" else "pickup"
+    return _LAST_CARRIER[fulfillment_type]
+
+
+def _write_fiscal_note_state(locked, state: dict) -> None:
+    data = dict(locked.data or {})
+    data[FISCAL_NOTE_MESSAGE_KEY] = state
+    locked.data = data
+    locked.save(update_fields=["data", "updated_at"])
+
+
+def _fiscal_note_carriage(order, template: str, backend_chain: list[str], context: dict) -> dict:
+    """O link da nota nesta mensagem de status, se ela for quem o leva.
+
+    Devolve ``fiscal_note_url``/``fiscal_note_suffix`` (vazios quando não leva).
+    Sob lock do pedido: reserva a menção (``sent_in``) quando leva, ou registra
+    que a ÚLTIMA mensagem saiu sem nota (``last_sent_without``), que é o que
+    libera o aviso avulso quando a nota autorizar depois. O retry da mesma
+    mensagem leva o link de novo (a reserva é dela).
+    """
+    empty = {"fiscal_note_url": "", "fiscal_note_suffix": ""}
+    if template not in FISCAL_NOTE_CARRIERS or not _is_storefront_order(order):
+        return empty
+    from shopman.orderman.models import Order
+
+    # O texto de um flow aprovado é fixo no ManyChat: o link não chegaria.
+    from shopman.shop.adapters import notification_manychat
+
+    can_carry = not ("manychat" in backend_chain and notification_manychat.sends_as_flow(template))
+    send_fallback = False
+    with transaction.atomic():
+        # Pelo ref (único): pedido que não está no banco não tem nota a levar.
+        locked = Order.objects.select_for_update().filter(ref=order.ref).first()
+        if locked is None:
+            return empty
+        data = locked.data or {}
+        state = dict(data.get(FISCAL_NOTE_MESSAGE_KEY) or {})
+        url = _fiscal_note_url(data)
+        sent_in = state.get("sent_in")
+        if sent_in:
+            carried = url if sent_in == template else ""
+        elif url and can_carry:
+            state["sent_in"] = template
+            _write_fiscal_note_state(locked, state)
+            carried = url
+        else:
+            carried = ""
+            if template == _last_carrier(data)[0] and state.get("last_sent_without") != template:
+                state["last_sent_without"] = template
+                if url:
+                    # A nota já existe, mas esta mensagem não pode levá-la (flow):
+                    # ela é a última, então o avulso sai agora.
+                    state["sent_in"] = FISCAL_NOTE_TEMPLATE
+                    send_fallback = True
+                _write_fiscal_note_state(locked, state)
+        if send_fallback:
+            send(locked, FISCAL_NOTE_TEMPLATE)
+    order.data = {**(order.data or {}), FISCAL_NOTE_MESSAGE_KEY: state}
+    if not carried:
+        return empty
+    return {
+        "fiscal_note_url": carried,
+        "fiscal_note_suffix": f"\n\nNota fiscal do pedido: {carried}{context.get('fiscal_test_note', '')}",
+    }
+
+
+def send_fiscal_note_unless_carried(order) -> bool:
+    """NFC-e da loja online autorizada: o aviso avulso, só se nenhuma mensagem a levar.
+
+    Chamado por ``handlers/fiscal.NFCeEmitHandler`` depois de gravar a nota.
+    Agenda ``fiscal_note_ready`` só quando a última mensagem do pedido que a
+    levaria já saiu sem ela, ou nunca vai sair (o pedido já passou do ponto
+    dela sem mensagem nenhuma). Se ela ainda vai sair, a nota vai nela.
+    Devolve se agendou. Idempotente: a menção reservada não se repete.
+    """
+    if not _is_storefront_order(order):
+        return False
+    from shopman.orderman.models import Order
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().filter(ref=order.ref).first()
+        if locked is None:
+            return False
+        data = locked.data or {}
+        state = dict(data.get(FISCAL_NOTE_MESSAGE_KEY) or {})
+        if state.get("sent_in") or not _fiscal_note_url(data):
+            return False
+        if not state.get("last_sent_without") and _last_carrier_still_ahead(locked):
+            logger.info(
+                "notification.fiscal_note: a nota vai na próxima mensagem do pedido order=%s", locked.ref
+            )
+            return False
+        state["sent_in"] = FISCAL_NOTE_TEMPLATE
+        _write_fiscal_note_state(locked, state)
+        send(locked, FISCAL_NOTE_TEMPLATE)
+    order.data = {**(order.data or {}), FISCAL_NOTE_MESSAGE_KEY: state}
+    return True
+
+
+def _last_carrier_still_ahead(order) -> bool:
+    """A última mensagem que levaria a nota ainda vai ser montada?
+
+    Na fila (ou rodando sem ter chegado ao lock): sim. Já montada, ela teria
+    gravado ``last_sent_without``. Sem Directive nenhuma, depende do status: o
+    pedido ainda não chegou ao ponto dela.
+    """
+    data = order.data or {}
+    _, send_template = _last_carrier(data)
+    status = (
+        Directive.objects.filter(topic=TOPIC, dedupe_key=_dedupe_key(order, send_template))
+        .order_by("-pk")
+        .values_list("status", flat=True)
+        .first()
+    )
+    if status is not None:
+        return status in ("queued", "running")
+    fulfillment_type = "delivery" if data.get("fulfillment_type") == "delivery" else "pickup"
+    return str(order.status) in _LAST_CARRIER_AHEAD[fulfillment_type]
+
+
+def _status_note(order, template: str, reason, *, note=None) -> str:
+    """A frase do pedido em ``{status_note}``, com a frase-padrão quando falta o dado.
+
+    Preparo: a hora prevista, SEM ponto final (o ponto é do texto: o template da
+    Meta não pode terminar em variável). Cancelado e não confirmado: o motivo.
+    Pedido atualizado: a frase que a edição montou no momento do gesto (o que
+    mudou, o total novo e a diferença — ``order_edit.customer_note``), que chega
+    pronta no payload porque o "antes" não está mais no pedido quando o aviso sai.
+    """
+    template = _canonical_template(template)
+    if template == "order_updated":
+        return str(note or "").strip() or "Os detalhes estão no acompanhamento."
+    if template == "order_preparing":
+        clock = _eta_clock(order)
+        if clock:
+            return f"Previsto para ficar pronto às {clock}. Mas avisamos assim que estiver"
+        return "Avisamos assim que estiver pronto"
+    if template in {"order_cancelled", "order_rejected"}:
+        return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
+    if template == "order_rescheduled":
+        return _commitment_phrase(order) or "a nova data que está no pedido"
+    return ""
+
+
+def _commitment_phrase(order) -> str:
+    """A data combinada por extenso, SEM ponto final: "sábado, 04/10, a partir das 9h".
+
+    "hoje"/"amanhã" quando cabe — é como se fala. A janela sai do mesmo
+    ``fulfillment_window.window_label`` que a tela e o papel usam, com a primeira
+    letra minúscula porque entra no meio da frase.
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
+    from django.utils import formats
+
+    from shopman.shop.services import fulfillment_window
+
+    data = order.data or {}
+    raw = str(data.get("delivery_date") or "").strip()
+    try:
+        day = _date.fromisoformat(raw)
+    except ValueError:
+        return ""
+    today = timezone.localdate()
+    if day == today:
+        phrase = "hoje"
+    elif day == today + _timedelta(days=1):
+        phrase = "amanhã"
+    else:
+        phrase = f"{formats.date_format(day, 'l')}, {formats.date_format(day, 'd/m')}"
+    window = fulfillment_window.window_label(data.get("delivery_time_slot"))
+    if window:
+        phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
+    return phrase
+
+
+def _eta_clock(order) -> str:
+    """A hora prevista do preparo ("18h20"), do MESMO ``_eta_at`` que a tela mostra.
+
+    Aviso e tela dizendo horas diferentes para o mesmo pedido é pior que não dizer
+    hora nenhuma. Só no preparo: no despacho o ``_eta_at`` é a hora de CHEGADA.
+    """
+    if order.status != "preparing":
+        return ""
+    from shopman.shop.projections.order_tracking import _eta_at
+
+    eta_iso = _eta_at(order)
+    eta = parse_datetime(eta_iso) if eta_iso else None
+    if eta is None:
+        return ""
+    local = timezone.localtime(eta)
+    return f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
 
 
 def _qualify_template(template: str, context: dict) -> str:
@@ -838,20 +1146,69 @@ def _resolve_recipient(order, backend_name: str = "") -> str | None:
         # ⚠️ O telefone vai em E.164 COM o "+". O contrato do adapter (e do
         # resolver do guestman) é: dígitos puros = `subscriber_id` do ManyChat;
         # "+55…" = telefone a resolver. O PDV grava o telefone sem o "+"
-        # ("5543984049009"), e o adapter o tomava por subscriber_id — o ManyChat
+        # ("5543981234567"), e o adapter o tomava por subscriber_id — o ManyChat
         # respondia "Subscriber does not exist", a cadeia caía para o e-mail, e
         # um cliente COM WhatsApp cadastrado nunca recebia o link por lá.
-        return _manychat_phone(customer_data.get("phone") or order.data.get("customer_phone"))
+        return _manychat_phone(customer_contact_phone(order))
 
     if backend_name == "email":
         email = customer_data.get("email")
         return email or None
 
     return (
-        customer_data.get("phone")
-        or order.data.get("customer_phone")
+        customer_contact_phone(order)
         or (order.handle_ref if order.handle_type in ("customer", "phone") else None)
     )
+
+
+def customer_phone_is_platform_relay(order) -> bool:
+    """O número deste pedido é relé da plataforma, e não o do cliente?
+
+    Marketplace não entrega o telefone do cliente. O iFood devolve um 0800 da
+    central dele mais um **localizador**: quem liga disca o 0800, digita o
+    localizador e só então cai na pessoa. Isso é canal de VOZ da plataforma,
+    para o operador usar à mão — não é contato do cliente, não serve para
+    WhatsApp nem SMS, e não é nosso para usar em aviso automático.
+
+    Dois sinais, ambos estruturais e nenhum deles uma lista de números (o iFood
+    tem mais de um 0800 e eles mudam):
+
+    - o ``phone_localizer`` gravado ao lado do número pelo mapeamento
+      (``services/ifood_orders``) — é o próprio iFood dizendo que aquilo é relé;
+    - a declaração do canal (``notifications.customer_phone = "relay"``), que
+      sustenta o pedido em que a plataforma omitir o localizador: o número
+      continua sendo dela.
+    """
+    customer_data = (order.data or {}).get("customer")
+    if not isinstance(customer_data, dict):
+        customer_data = {}
+    if str(customer_data.get("phone_localizer") or "").strip():
+        return True
+
+    from shopman.shop.config import ChannelConfig
+
+    config = ChannelConfig.for_channel(order.channel_ref)
+    return config.notifications.customer_phone == "relay"
+
+
+def customer_contact_phone(order) -> str:
+    """O telefone por onde PODEMOS falar com o cliente — ``""`` quando não há.
+
+    "Telefone preenchido" não é "temos como falar com o cliente": um relé de
+    voz da plataforma ocupa o mesmo campo e não é destino de aviso nenhum.
+    Todo ponto que resolve destinatário, identidade ou recusa de cobrança
+    pergunta aqui — um campo, uma resposta.
+    """
+    data = order.data or {}
+    customer_data = data.get("customer")
+    if not isinstance(customer_data, dict):
+        customer_data = {}
+    phone = str(customer_data.get("phone") or data.get("customer_phone") or "").strip()
+    if not phone:
+        return ""
+    if customer_phone_is_platform_relay(order):
+        return ""
+    return phone
 
 
 def _manychat_phone(raw) -> str | None:
@@ -924,7 +1281,10 @@ def _resolve_customer_identity(order) -> tuple[str, str]:
         )
         return _IDENTITY_UNAVAILABLE, ""
 
-    phone = customer_data.get("phone") or data.get("customer_phone")
+    # Relé da plataforma não identifica ninguém: procurar o cliente pelo 0800 da
+    # central do iFood acharia, na melhor hipótese, nada — e na pior a ficha de
+    # quem por acaso tiver aquele número.
+    phone = customer_contact_phone(order)
     if phone:
         try:
             from shopman.guestman.services import customer as customer_service
@@ -1015,13 +1375,16 @@ def _expected_order_without_contact(order, *, template: str) -> bool:
     deliberate exception: even at the counter, no destination means the customer
     was never charged, so that template must fail loudly. A remote first-party
     order without contact is likewise an operational failure.
+
+    "Sem destino" é o que ``customer_contact_phone`` responde, não "campo
+    vazio": o pedido do iFood chega com o 0800 da central preenchido e mesmo
+    assim não tem como alcançar o cliente.
     """
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     has_contact = bool(
-        customer.get("phone")
+        customer_contact_phone(order)
         or customer.get("email")
-        or data.get("customer_phone")
         or (
             getattr(order, "handle_ref", "")
             and getattr(order, "handle_type", "") in {"customer", "phone", "manychat"}

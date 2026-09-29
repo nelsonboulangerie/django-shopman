@@ -239,6 +239,69 @@ class TestPaymentMethods:
         assert pix is not None
         assert pix.label == "Pix"
 
+    def test_remembered_checkout_choices_are_reused_when_still_available(
+        self, cart_session, channel, customer, customer_address, monkeypatch
+    ):
+        """O toggle "lembrar" precisa ser leitura, não só escrita."""
+        from shopman.guestman.models import CustomerAddress
+
+        channel.config = channel.config or {}
+        channel.config["payment"] = {"method": ["cash", "pix"]}
+        channel.save(update_fields=["config"])
+        work = CustomerAddress.objects.create(
+            customer=customer,
+            label="work",
+            formatted_address="Avenida Paraná 500 - Centro - Londrina",
+            route="Avenida Paraná",
+            street_number="500",
+            neighborhood="Centro",
+            city="Londrina",
+            is_default=False,
+        )
+        monkeypatch.setattr(
+            "shopman.shop.projections.checkout.customer_checkout_defaults",
+            lambda customer_ref, channel_ref: {
+                "fulfillment_type": "delivery",
+                "delivery_address_id": str(work.id),
+                "payment_method": "pix",
+            },
+        )
+        request = _request_with_cart_session(cart_session)
+        request.customer = SimpleNamespace(
+            uuid=customer.uuid, phone=customer.phone, name=customer.name,
+        )
+
+        proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert "delivery" in proj.fulfillment_options
+        assert proj.default_fulfillment_type == "delivery"
+        assert proj.preselected_address_id == work.id
+        assert proj.default_payment_method == "pix"
+
+    def test_stale_checkout_choices_fall_back_to_current_capabilities(
+        self, cart_session, customer, customer_address, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "shopman.shop.projections.checkout.customer_checkout_defaults",
+            lambda customer_ref, channel_ref: {
+                "fulfillment_type": "drone",
+                "delivery_address_id": "999999",
+                "payment_method": "bitcoin",
+                "delivery_time_slot": "slot-that-no-longer-exists",
+            },
+        )
+        request = _request_with_cart_session(cart_session)
+        request.customer = SimpleNamespace(
+            uuid=customer.uuid, phone=customer.phone, name=customer.name,
+        )
+
+        proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.default_fulfillment_type == proj.fulfillment_options[0]
+        assert proj.preselected_address_id == customer_address.id
+        assert proj.default_payment_method == proj.payment_methods[0].ref
+        assert proj.earliest_slot_ref != "slot-that-no-longer-exists"
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Pickup slots

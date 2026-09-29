@@ -1,0 +1,218 @@
+{
+  "patch_protected_10_11": {
+    "specversion": "1.0",
+    "id": "evt_patch_protected_10_11",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "base": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000010"},
+        "state_token": "t_protected_10",
+        "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+      },
+      "target": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000011"},
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "freshness": {"fresh_for_ms": 30000, "stale_if_error_ms": 0, "age_ms": 0},
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {"op": "replace", "path": "/display_label", "value": "Updated protected account"}
+        ]
+      }
+    }
+  },
+  "patch_protected_10_11_replay": {
+    "specversion": "1.0",
+    "id": "evt_patch_protected_10_11_replay",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:02Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "continuumreplayed": true,
+    "continuumoriginalid": "evt_patch_protected_10_11",
+    "continuumage": 1000,
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "base": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000010"},
+        "state_token": "t_protected_10",
+        "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+      },
+      "target": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000011"},
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "freshness": {"fresh_for_ms": 30000, "stale_if_error_ms": 0, "age_ms": 0},
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {"op": "replace", "path": "/display_label", "value": "Updated protected account"}
+        ]
+      }
+    }
+  },
+  "merge_patch_protected_11_12": {
+    "specversion": "1.0",
+    "id": "evt_merge_patch_protected_11_12",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:03Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "base": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000011"},
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "target": {
+        "cursor": {"epoch": "e_protected", "sequence": "00000000000000000012"},
+        "state_token": "t_protected_12",
+        "state_digest": "sha256-x__ReQ90P4Uo8ZhpQu_PpD-m8MXJkufE_PRm4L1kvKM"
+      },
+      "freshness": {"fresh_for_ms": 30000, "stale_if_error_ms": 0, "age_ms": 75},
+      "patch": {
+        "media_type": "application/merge-patch+json",
+        "document": {"display_label": "Merged protected account"}
+      }
+    }
+  }
+,
+  "json_patch_protected_11_12": {
+    "specversion": "1.0",
+    "id": "evt_json_patch_protected_11_12",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:03Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_protected",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_protected",
+          "sequence": "00000000000000000012"
+        },
+        "state_token": "t_protected_12",
+        "state_digest": "sha256-x__ReQ90P4Uo8ZhpQu_PpD-m8MXJkufE_PRm4L1kvKM"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 0,
+        "age_ms": 75
+      },
+      "patch": {
+        "media_type": "application/json-patch+json",
+        "document": [
+          {
+            "op": "replace",
+            "path": "/display_label",
+            "value": "Merged protected account"
+          }
+        ]
+      }
+    }
+  },
+  "merge_patch_protected_10_11": {
+    "specversion": "1.0",
+    "id": "evt_merge_patch_protected_10_11",
+    "source": "urn:example:continuum:protected-producer",
+    "type": "continuum.projection.patch.v0.2",
+    "subject": "stream/s_example_protected_account",
+    "time": "2026-09-27T12:02:01Z",
+    "datacontenttype": "application/json",
+    "dataschema": "https://schemas.example.test/continuum/v0.2/message.schema.json#/$defs/patchData",
+    "data": {
+      "protocol_version": "0.2",
+      "kind": "patch",
+      "stream": {
+        "id": "s_example_protected_account",
+        "projection": "example.account-view",
+        "partition": "p_example_protected_owner",
+        "schema": "https://schemas.example.test/projections/account-view/v1",
+        "classification": "principal"
+      },
+      "base": {
+        "cursor": {
+          "epoch": "e_protected",
+          "sequence": "00000000000000000010"
+        },
+        "state_token": "t_protected_10",
+        "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+      },
+      "target": {
+        "cursor": {
+          "epoch": "e_protected",
+          "sequence": "00000000000000000011"
+        },
+        "state_token": "t_protected_11",
+        "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+      },
+      "freshness": {
+        "fresh_for_ms": 30000,
+        "stale_if_error_ms": 0,
+        "age_ms": 0
+      },
+      "patch": {
+        "media_type": "application/merge-patch+json",
+        "document": {
+          "display_label": "Updated protected account"
+        }
+      }
+    }
+  }
+}

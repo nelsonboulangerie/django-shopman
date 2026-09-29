@@ -238,7 +238,7 @@ export function conflictTypedSource(input: {
 
 /** "É a mesma pessoa" — a saída que resolve o cadastro duplicado de vez. */
 const MERGE_ACTION: CustomerDecisionAction = {
-  label: "É a mesma pessoa — unificar cadastros",
+  label: "É a mesma pessoa: unificar cadastros",
   icon: "lucide:combine",
 };
 
@@ -465,8 +465,8 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   return {
     title: `Trocar o ${label} de ${name}?`,
     body: from
-      ? `De ${from} para ${decision.typed}. O cadastro passa a usar o novo em tudo — mensagem, acompanhamento, próxima venda.`
-      : `${decision.typed} passa a ser o ${label} do cadastro — usado em mensagem, acompanhamento e próxima venda.`,
+      ? `De ${from} para ${decision.typed}. O cadastro passa a usar o novo em tudo: mensagem, acompanhamento e próxima venda.`
+      : `${decision.typed} passa a ser o ${label} do cadastro, usado em mensagem, acompanhamento e próxima venda.`,
     confirmLabel: `Trocar o ${label}`,
     confirmIcon: "lucide:pencil-line",
     cancelLabel: from ? `Manter ${from}` : "Descartar a mudança",
@@ -745,7 +745,7 @@ export function customerMergeDescription(input: {
 
   const prazo = mergeUndoDeadlineLabel(input.undoDeadline, input.now);
   if (prazo) {
-    parts.push(`Dá para desfazer até ${prazo} — com o gerente, em Clientes → Unificações de cadastro.`);
+    parts.push(`Dá para desfazer até ${prazo}, com o gerente, em Clientes → Unificações de cadastro.`);
   }
 
   return parts.join(" ");

@@ -41,7 +41,7 @@ class PrintJobAdmin(ModelAdmin):
         "created_at",
     )
     list_filter = ("kind", "status", "target_terminal", "created_at")
-    search_fields = ("=ref", "requested_by_ref", "requested_station_ref", "=document_sha256", "=payload_sha256")
+    search_fields = ("=ref", "=order_ref", "requested_by_ref", "requested_station_ref", "=document_sha256", "=payload_sha256")
     readonly_fields = (
         "ref",
         "kind",
@@ -51,6 +51,7 @@ class PrintJobAdmin(ModelAdmin):
         "requested_by",
         "requested_by_ref",
         "requested_station_ref",
+        "order_ref",
         "source_revision",
         "document_sha256",
         "renderer_version",

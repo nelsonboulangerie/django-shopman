@@ -6,6 +6,7 @@ import pytest
 from django.test import override_settings
 from shopman.orderman.models import Directive, Fulfillment, IdempotencyKey, Order
 
+from shopman.shop.handlers.ifood_status import on_order_status_changed
 from shopman.shop.services import ifood_cancellation, ifood_events, operator_orders, webhook_idempotency
 
 pytestmark = pytest.mark.django_db
@@ -77,30 +78,46 @@ def test_concludes_via_canonical_services_without_outbound_echo(status, fulfillm
     (Order.Status.READY, ""),
 ])
 def test_early_conclusion_does_not_manufacture_preparation_or_dispatch(status, fulfillment_type):
+    """CON adiantado: o fato é gravado e reconhecido, mas nada é inventado aqui.
+
+    Antes o evento ficava sem ACK e o iFood o reentregava a cada volta — a fila
+    de reentrega deles servindo de fila de espera nossa, que o Firefly Audit
+    pune (medido na homologação de 21/09/2026: 8/10). O ACK significa
+    "armazenei", e a regra de não pular preparo nem a custódia do entregador
+    continua a mesma.
+    """
     order = _order(status, fulfillment_type)
-    with patch.object(ifood_events, "acknowledge") as ack:
-        assert ifood_events.process_events([_event()])["failed"] == 1
-    ack.assert_not_called()
+    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+        assert ifood_events.process_events([_event()])["ingested"] == 1
+    ack.assert_called_once_with(["con-1"])
     order.refresh_from_db()
     assert order.status == status
-    assert _claim_status() == "failed"
+    assert _claim_status() == "done"
+    assert order.data["ifood"]["remote_concluded"]["event_id"] == "con-1"
     assert not order.events.exists()
     assert not Directive.objects.filter(topic="ifood.status_callback").exists()
 
 
 def test_con_before_placed_retries_after_order_arrives_and_becomes_ready():
+    """Sem pedido não há onde gravar: aí sim fica sem ACK. Com pedido, grava e
+    reconhece; quando a cozinha marca "Pronto", a reconciliação conclui."""
     with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
         assert ifood_events.process_events([_event()])["failed"] == 1
         assert _claim_status() == "failed"
         ack.assert_not_called()
         order = _order(Order.Status.PREPARING, "pickup")
-        assert ifood_events.process_events([_event()])["failed"] == 1
-        ack.assert_not_called()
-        order.transition_status(Order.Status.READY, actor="operator")
         assert ifood_events.process_events([_event()])["ingested"] == 1
         ack.assert_called_once_with(["con-1"])
-    order.refresh_from_db()
-    assert order.status == Order.Status.COMPLETED
+        order.refresh_from_db()
+        assert order.status == Order.Status.PREPARING
+        order.transition_status(Order.Status.READY, actor="operator")
+        # O receiver só é conectado com a integração direta configurada
+        # (client_id); a suíte não configura, então o chamamos como o signal faria.
+        on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="operator")
+        order.refresh_from_db()
+        assert order.status == Order.Status.COMPLETED
+        # A reentrega que eventualmente vier é só duplicata.
+        assert ifood_events.process_events([_event()])["deduped"] == 1
 
 
 @pytest.mark.parametrize("status", [Order.Status.CANCELLED, Order.Status.RETURNED, Order.Status.COMPLETED])

@@ -59,7 +59,7 @@ const requestedNotDraft = computed(() => {
 // não pode sobrescrever o que o padeiro está digitando).
 const formula = ref<Formula>(emptyFormula());
 const yieldQuantity = ref("");
-const yieldUnit = ref("kg");
+const yieldUnit = ref("g");
 const stepsText = ref("");
 const notes = ref("");
 const label = ref("");
@@ -75,7 +75,7 @@ watch(
     if (!version || seededNumber.value === version.number) return;
     formula.value = formulaFromServed(version.formula);
     yieldQuantity.value = version.yield_quantity;
-    yieldUnit.value = version.yield_unit || "kg";
+    yieldUnit.value = version.yield_unit || "g";
     stepsText.value = stepsToText(version.steps);
     notes.value = version.notes;
     label.value = version.label;

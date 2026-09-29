@@ -32,8 +32,10 @@ Ver os tipos e a tabela de rollback em
 
 1. Congelar novos deploys.
 2. Preservar horario do deploy, commit/deployment id e a primeira tela afetada.
-3. Se houver suspeita de corrupcao de dado, **tirar/registrar o snapshot do banco
-   agora** (antes de qualquer ajuste).
+3. Se houver suspeita de corrupcao de dado, **registrar o ponto de restauracao
+   agora** (antes de qualquer ajuste). O backup ja existe — a DO o tira
+   diariamente e mantem PITR de 7 dias; o que falta e anotar o instante e
+   conferir a janela: [backup-e-restore](backup-e-restore.md) §2.2.
 
 ## Recuperacao — rollback de codigo
 
@@ -65,7 +67,8 @@ expand-contract do ADR-015 mantem todo deploy reversivel, menos o contract).
 codigo anterior ja nao dependia do que foi removido (regra do ADR-015). Se mesmo
 assim quebrou:
 
-1. Restaurar o banco do snapshot pre-deploy.
+1. Restaurar o banco para o ponto anotado antes do deploy — cluster NOVO,
+   nunca por cima: [backup-e-restore](backup-e-restore.md) §2.4 e §3.
 2. Redeploy do codigo anterior.
 3. Reconciliar pagamento em dry-run antes de qualquer ajuste manual:
    ```bash

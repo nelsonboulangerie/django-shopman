@@ -112,13 +112,17 @@ local. Se um campo do relay estiver presente, `server_url`, `station_ref`,
 `agent_id` e `relay_token` precisam formar um conjunto completo. O servidor deve
 ser HTTPS. `host` aceita somente `127.0.0.1`, `::1` ou `localhost`.
 
+`extra_printers` também é opcional e só existe quando o balcão atende mais de
+uma impressora — ver [Uma segunda impressora](#uma-segunda-impressora-ex-cozinha).
+Sem ela, nada muda.
+
 ## API
 
 | rota | corpo | resposta |
 |---|---|---|
 | `POST /kick` | `{token, reason, pulse:{pin,on_ms,off_ms}}` | `{ok, queue, job_id}` |
 | `POST /print` | `{token, title, payload_b64}` | `{ok, queue, job_id}` |
-| `GET /health` | — | `{ok, accepting, queue, reason, version, build}` |
+| `GET /health` | — | `{ok, accepting, queue, reason, version, build, …, extra_printers}` |
 
 O `/print` recebe bytes **já compostos pelo servidor**. O agente é um cano: não
 sabe o que é sangria nem leiaute. Se cada balcão compusesse, dois imprimiriam
@@ -166,6 +170,164 @@ mesmo `job_ref` num retry, um lease novo só reabre o fluxo quando a ocorrência
 anterior terminou em `failed` **e seu ACK já foi aceito**. `spooled`,
 `uncertain` ou qualquer ACK ainda pendente permanecem fechados para não produzir
 uma segunda etiqueta. Retry de payload rejeitado segue a mesma regra.
+
+## Uma segunda impressora (ex. cozinha)
+
+O mesmo agente pode atender, além da impressora do balcão, outras impressoras da
+mesma rede — por exemplo a Epson TM-T20X que imprime a **Via Cozinha** do posto
+Lanches do KDS. Para o servidor, cada uma é um **Terminal** com a sua própria
+credencial de relay; o agente só pede trabalho em nome de cada uma e entrega na
+fila certa.
+
+**A impressora do balcão não é tocada.** `queue`, `token`, credencial do relay,
+gaveta, `/kick`, `/print` e o journal `print-relay.sqlite3` seguem exatamente
+como estão. A impressora extra não tem gaveta nem rota local: ela só recebe o
+que o servidor manda pelo relay.
+
+Cada impressora extra tem:
+
+- **thread própria**, com backoff próprio de 1 a 60 s: sem papel, desligada,
+  credencial revogada ou qualquer erro inesperado ficam nela — a do balcão
+  continua imprimindo;
+- **journal próprio**, ao lado do principal:
+  `print-relay-<ref>.sqlite3` (a mesma garantia de nunca imprimir duas vezes);
+- **linha própria no `/health`**, em `extra_printers`;
+- **validação própria**: item errado é ignorado e relatado, nunca derruba o balcão.
+
+### 1. Adicionar a impressora de rede no sistema
+
+A impressora entra como **fila do sistema**, igual à do balcão. O agente não
+abre conexão direta com a porta 9100.
+
+**Windows** (Configurações → Bluetooth e dispositivos → Impressoras e scanners):
+
+1. *Adicionar dispositivo* → *A impressora que eu quero não está na lista* →
+   *Adicionar uma impressora usando um endereço TCP/IP ou nome de host*.
+2. Tipo *Dispositivo TCP/IP*, endereço = o IP da TM-T20X (fixe esse IP no
+   roteador, senão a fila se perde quando ele mudar). Porta padrão (9100, *Raw*).
+3. Driver: *Generic* → *Generic / Text Only*, ou o driver Epson da TM-T20X. O
+   agente sempre manda os bytes em modo RAW, então os dois servem.
+4. Dê um nome curto e sem acento, ex. `Cozinha Lanches`. **Esse nome é a
+   `queue`.**
+
+**Linux / macOS** (CUPS):
+
+```bash
+sudo lpadmin -p Cozinha-Lanches -E -v socket://192.168.0.50:9100
+lpstat -a Cozinha-Lanches     # deve dizer "accepting requests"
+```
+
+Troque o IP pelo da TM-T20X. No macOS sem `sudo` configurado, adicione pelo
+painel *Impressoras e Scanners* → *IP* → protocolo *HP Jetdirect – Socket* e use
+o nome que aparecer em `lpstat -a`.
+
+### 2. Emitir a credencial do Terminal da impressora no Admin
+
+1. Admin → Terminais do PDV → o terminal dessa impressora (ex.
+   `cozinha-lanches`; crie se ainda não existir). Ative a impressora de
+   preparação pelo agente local e salve — a página do agente só libera a
+   credencial depois disso. Confira também que o posto do KDS manda a Via
+   Cozinha para este terminal.
+2. Abra *Baixar o agente e ver como instalar* (`/admin/pos/terminal/<ref>/agent/`)
+   → *Ativar impressão por tablets* → *Gerar o comando completo*.
+3. Copie **só o segredo** (*Copiar segredo*). Ele aparece uma vez.
+
+⚠️ **Não rode o comando `--install` que essa tela mostra no PC do balcão.** Ele é
+do terminal da cozinha e trocaria o token e a credencial do relay **do balcão**
+pelos da cozinha — o PDV passaria a levar 401 e a gaveta deixaria de abrir.
+
+### 3. Acrescentar o item em `extra_printers`
+
+Edite o `agent.json` do balcão (Linux/macOS: `~/.config/nelson-pos-counter/agent.json`;
+Windows: `%LOCALAPPDATA%\NelsonPosCounter\agent.json`) e **acrescente** a chave,
+sem mexer no resto:
+
+```json
+{
+  "queue": "TM-T20",
+  "token": "…",
+  "server_url": "https://gestor.example",
+  "station_ref": "pdv-balcao",
+  "agent_id": "UUID-estavel",
+  "relay_token": "…",
+
+  "extra_printers": [
+    {
+      "ref": "cozinha-lanches",
+      "queue": "Cozinha Lanches",
+      "station_ref": "cozinha-lanches",
+      "relay_token": "SEGREDO-COPIADO-DO-ADMIN"
+    }
+  ]
+}
+```
+
+Os campos são os mesmos do relay da config principal, dentro de cada item:
+
+| campo | obrigatório | o que é |
+|---|---|---|
+| `ref` | sim | nome desta impressora no agente (letras, números, `-`, `_`); vira o nome do journal e a linha no `/health`. Único. |
+| `queue` | sim | nome da fila no sistema (passo 1). |
+| `relay_token` | sim | o segredo do passo 2 (mínimo 16 caracteres). **Nunca** herdado do balcão. |
+| `station_ref` | não | ref do Terminal no Admin. Se faltar, vale o `ref`. Não pode repetir a do balcão nem de outra extra. |
+| `server_url` | não | se faltar, herda o do balcão. HTTPS obrigatório. |
+| `agent_id` | não | só diagnóstico; se faltar, vira `<agent_id do balcão>-<ref>`. |
+| `relay_poll_seconds` | não | se faltar, herda o do balcão (0,25 a 60). |
+
+**Um erro num item de `extra_printers` não derruba o balcão.** Cada item é
+conferido sozinho: o que estiver errado (campo faltando, credencial curta, `ref`
+ou estação repetidos — ou `extra_printers` que nem é lista) é **ignorado**, com
+uma linha de erro no log dizendo qual `ref`/índice e por quê; os itens certos
+sobem normalmente, e a impressora do balcão segue como sempre. Já um erro na
+config **principal** continua impedindo o agente de subir, como hoje — e um erro
+de **sintaxe** no JSON (vírgula ou aspas faltando) é do arquivo inteiro, então
+também impede. Mesmo
+assim, rode `--doctor` depois de editar e antes de reiniciar: ele aponta o item
+ignorado como erro, para a cozinha não ficar muda sem ninguém saber.
+
+Reinstalar o agente depois (`--install`) **preserva** `extra_printers`.
+
+### 4. Reiniciar o serviço
+
+```bash
+systemctl --user restart nelson-pos-counter                         # Linux
+launchctl kickstart -k gui/$(id -u)/com.nelson.pos-counter          # macOS
+```
+
+```bat
+schtasks /end /tn "NelsonPosCounter" & schtasks /run /tn "NelsonPosCounter"
+```
+
+### 5. Conferir em `/health`
+
+```bash
+curl -s http://127.0.0.1:47811/health
+```
+
+Os campos de sempre continuam falando da impressora do balcão. A lista nova:
+
+```json
+"extra_printers": [
+  {
+    "ref": "cozinha-lanches",
+    "queue": "Cozinha Lanches",
+    "station_ref": "cozinha-lanches",
+    "ok": true,
+    "relay": {"state": "ok", "detail": "", "queue_health": "ready", "seconds_since_ok": 1.2}
+  }
+]
+```
+
+Um item recusado na leitura aparece na mesma lista como
+`{"index": 0, "ref": "cozinha-lanches", "state": "invalid_config", "detail": "…", "ok": false}`
+(`ref` só quando o item tinha um; `index` nulo quando `extra_printers` nem é lista).
+
+`state` é `starting` logo após subir, `ok` quando o último ciclo com o servidor
+deu certo e `error` com o motivo em `detail` (ex. `servidor respondeu HTTP 401`
+= credencial errada ou revogada). `queue_health` é a sonda da fila, refeita a
+cada 30 s pela própria thread — o `/health` não sonda a impressora extra na
+hora, para uma impressora de rede lenta não atrasar a resposta do balcão.
+O `--doctor` também lista cada extra, com a fila e o resumo do journal.
 
 ## Segurança
 

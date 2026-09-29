@@ -159,6 +159,20 @@ class AuthService:
                     error_code=ErrorCode.RATE_LIMIT,
                 )
 
+            # G13: Wrong codes summed across codes — a resend can't reset it
+            try:
+                Gates.code_failure_limit(
+                    target_value=target_value,
+                    max_failures=doorman_settings.ACCESS_CODE_MAX_FAILURES_PER_TARGET,
+                    window_hours=doorman_settings.ACCESS_CODE_FAILURE_WINDOW_HOURS,
+                )
+            except GateError:
+                return CodeRequestResult(
+                    success=False,
+                    error="Too many incorrect codes for this target.",
+                    error_code=ErrorCode.TOO_MANY_FAILURES,
+                )
+
             # G11: Cooldown between code sends
             try:
                 Gates.code_cooldown(

@@ -200,7 +200,7 @@ function onNewSale() {
         {{ result.payment?.amountDisplay }} em
         {{ result.payment?.method === 'pix' ? 'Pix' : result.payment?.method === 'link' ? 'link de pagamento' : 'cartão' }}
         segue <strong class="text-foreground">em aberto</strong>. Receba de outra forma e acerte o
-        pedido no gestor — não trate esta venda como paga.
+        pedido no gestor. Não trate esta venda como paga.
       </p>
     </div>
 
@@ -256,7 +256,7 @@ function onNewSale() {
           {{ danfe.label }}
         </UiButton>
         <p
-          v-else-if="danfe?.kind === 'awaiting_payment'"
+          v-else-if="danfe?.kind === 'awaiting_payment' || danfe?.kind === 'awaiting_handoff'"
           class="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"
           data-danfe-awaiting
         >

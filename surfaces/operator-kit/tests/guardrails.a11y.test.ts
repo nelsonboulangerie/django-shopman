@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de NOME ACESSÍVEL: botão de ícone puro tem que dizer o que faz.
 //
@@ -20,17 +21,7 @@ import { describe, expect, it } from "vitest";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const SURFACES = [
-  "bi-nuxt",
-  "hub-nuxt",
-  "kds-nuxt",
-  "marketing-nuxt",
-  "operator-kit",
-  "orders-nuxt",
-  "pos-nuxt",
-  "production-nuxt",
-  "purchase-nuxt",
-] as const;
+const SURFACES = [...OPERATOR_SURFACES, "operator-kit"].sort();
 
 // A lista de exceções saiu junto com o `Ui/Switch.vue` do PDV (promovido ao kit
 // como `UiSwitch`): ela era a única entrada, e era INERTE — a varredura só cobra

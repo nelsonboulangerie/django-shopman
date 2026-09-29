@@ -23,7 +23,12 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
-  | "sale_approval";
+  | "order_edit_refund"
+  | "card_machine_refund"
+  | "sale_approval"
+  | "emit_fiscal"
+  | "channel_off"
+  | "channel_on";
 
 interface ManagerActionCopy {
   /** O ato, nomeado. Vira o título do diálogo. */
@@ -59,9 +64,31 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
     title: "Autorizar cancelamento",
     reason: "A venda já foi fechada.",
   },
+  order_edit_refund: {
+    title: "Autorizar a devolução",
+    reason: "A encomenda paga ficou mais barata.",
+  },
+  card_machine_refund: {
+    title: "Autorizar o estorno",
+    reason: "Volta dinheiro para o cartão do cliente.",
+  },
   sale_approval: {
     title: "Autorizar a venda",
     reason: "",  // o motivo vem do servidor, em `approval_reasons`
+  },
+  emit_fiscal: {
+    title: "Autorizar a emissão da NFC-e",
+    reason: "A venda não pediu nota.",
+  },
+  // O toggle "Ativo" dos cards da aba Canais (Gestor). O que muda em cada canal o
+  // modal já disse antes de chegar aqui; o gerente só precisa saber O QUE assina.
+  channel_off: {
+    title: "Autorizar desligar o canal",
+    reason: "O canal para até o fim do período.",
+  },
+  channel_on: {
+    title: "Autorizar ligar o canal",
+    reason: "O canal volta a funcionar.",
   },
 };
 

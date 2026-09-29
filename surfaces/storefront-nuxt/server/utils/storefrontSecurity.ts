@@ -49,7 +49,8 @@ export function storefrontResponseHeaders(secure: boolean, pathname = ''): Recor
   if (secure) {
     headers['Strict-Transport-Security'] = `max-age=${ONE_YEAR_SECONDS}; includeSubDomains; preload`
   }
-  if (pathname === '/gerenciar-aviso') {
+  // Páginas que carregam uma capacidade no fragmento (#…): nunca em cache, nunca em referrer.
+  if (pathname === '/gerenciar-aviso' || pathname === '/encerrar-acesso') {
     headers['Cache-Control'] = 'private, no-store, max-age=0'
     headers.Pragma = 'no-cache'
     headers['Referrer-Policy'] = 'no-referrer'

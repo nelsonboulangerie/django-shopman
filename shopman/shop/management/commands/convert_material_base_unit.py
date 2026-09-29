@@ -2,8 +2,8 @@
 
 Uso::
 
-    python manage.py convert_material_base_unit LEITE AZEITE --to kg
-    python manage.py convert_material_base_unit LEITE AZEITE --to kg --apply
+    python manage.py convert_material_base_unit LEITE-INTEGRAL-A AZEITE-EXTRAVIRGEM --to kg
+    python manage.py convert_material_base_unit LEITE-INTEGRAL-A AZEITE-EXTRAVIRGEM --to kg --apply
 
 **Por que este comando existe.** A ADR-024 (R1) diz que a unidade-base de um
 insumo é a do momento da verdade: se a casa pesa, ``kg``. Descobrir tarde que um
@@ -171,7 +171,7 @@ class Command(BaseCommand):
     help = "Troca a unidade-base de um insumo e converte todo o rastro dele."
 
     def add_arguments(self, parser):
-        parser.add_argument("skus", nargs="+", help="SKUs dos insumos (ex.: LEITE AZEITE)")
+        parser.add_argument("skus", nargs="+", help="SKUs dos insumos (ex.: LEITE-INTEGRAL-A AZEITE-EXTRAVIRGEM)")
         parser.add_argument(
             "--to", dest="alvo", required=True,
             help="Unidade-base alvo (ex.: kg).",

@@ -9,7 +9,7 @@ from shopman.buyman.models import Material, MaterialConversion, Supplier, Suppli
 
 @pytest.fixture
 def insumo(db):
-    return Material.objects.create(sku="FARINHA-T55", name="Farinha T55", unit="kg")
+    return Material.objects.create(sku="FARINHA-ANACONDA-PREMIUM", name="Farinha T55", unit="kg")
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def par(db):
         name="FRANCE PANIFICACAO LTDA",
         document="11.222.333/0001-81",
         phone="4333445566",
-        metadata={"purchase": {"invoice_product_map": {"FAR-25": "FARINHA-T55"}}},
+        metadata={"purchase": {"invoice_product_map": {"FAR-25": "FARINHA-ANACONDA-PREMIUM"}}},
     )
     return do_dono, da_nota
 
@@ -53,7 +53,7 @@ def test_o_destino_herda_cnpj_custo_e_de_para(par, insumo):
     assert do_dono.name == "France Panificação"  # o nome de boca fica
     assert do_dono.document == "11.222.333/0001-81"
     assert do_dono.phone == "4333445566"
-    assert do_dono.metadata["purchase"]["invoice_product_map"] == {"FAR-25": "FARINHA-T55"}
+    assert do_dono.metadata["purchase"]["invoice_product_map"] == {"FAR-25": "FARINHA-ANACONDA-PREMIUM"}
     assert SupplierMaterialCost.objects.get(material=insumo).supplier == do_dono
     assert MaterialConversion.objects.get(material=insumo).supplier == do_dono
 
@@ -102,13 +102,13 @@ def test_nunca_sobrescreve_cnpj_do_destino(par, insumo):
 @pytest.mark.django_db
 def test_o_de_para_do_destino_vence_em_conflito(par, insumo):
     do_dono, da_nota = par
-    do_dono.metadata = {"purchase": {"invoice_product_map": {"FAR-25": "FARINHA-T65"}}}
+    do_dono.metadata = {"purchase": {"invoice_product_map": {"FAR-25": "FARINHA-NOVARA-T55"}}}
     do_dono.save(update_fields=["metadata"])
 
     call_command("merge_suppliers", da_nota.ref, do_dono.ref, "--apply")
 
     do_dono.refresh_from_db()
-    assert do_dono.metadata["purchase"]["invoice_product_map"]["FAR-25"] == "FARINHA-T65"
+    assert do_dono.metadata["purchase"]["invoice_product_map"]["FAR-25"] == "FARINHA-NOVARA-T55"
 
 
 @pytest.mark.django_db

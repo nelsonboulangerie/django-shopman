@@ -26,7 +26,7 @@ _DEFAULT_CONDITION = "new"
 _GTIN_LENGTHS = {8, 12, 13, 14}
 
 
-def _gtin_is_valid(gtin: str) -> bool:
+def gtin_is_valid(gtin: str) -> bool:
     """GS1 mod-10 check-digit validation for GTIN-8/12/13/14."""
     if not gtin.isdigit() or len(gtin) not in _GTIN_LENGTHS:
         return False
@@ -121,7 +121,7 @@ class ProductSocialAttributes:
     def errors(self) -> list[str]:
         """Customer/operator-facing validation messages (empty = valid)."""
         problems: list[str] = []
-        if self.gtin and not _gtin_is_valid(self.gtin):
+        if self.gtin and not gtin_is_valid(self.gtin):
             problems.append(
                 "GTIN inválido: use 8, 12, 13 ou 14 dígitos com dígito verificador correto "
                 "(ou deixe vazio quando não informado)."

@@ -193,6 +193,11 @@ describe('surface UX guardrails', () => {
     expect(menu).not.toContain('const count = allItems.value.filter')
     expect(menu).toContain('scrollToSection')
     expect(menu).toContain('syncActiveSectionFromScroll')
+    expect(menu).toContain("document.querySelector('.shop-navbar-bar')")
+    expect(menu).toContain('programmaticScrollSettled')
+    const selectSection = menu.slice(menu.indexOf('function selectSection'), menu.indexOf('// O /menu não tem campo de texto'))
+    expect(selectSection.match(/scrollToSection\(ref\)/g)).toHaveLength(1)
+    expect(selectSection).not.toContain('setTimeout')
     expect(menu).toContain('data-menu-section-ref')
     expect(menu).not.toContain('sections.value.filter(section => section.ref === activeSection.value)')
   })
@@ -277,8 +282,16 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain("ref: 'order'")
     expect(hero).toContain("ref: 'reorder'")
     expect(hero).toContain("ref: 'handmade'")
-    expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+imageUrl/)
-    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+imageUrl/)
+    expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    // Foto da casa, e uma por formato: o herói é faixa larga no computador e
+    // tela cheia em pé no celular — uma foto só perde metade do assunto num
+    // dos dois. Banco de imagem aqui é padaria de outra gente na nossa vitrine.
+    expect(hero).not.toContain('images.unsplash.com')
+    expect(hero).toContain('<source media="(min-width: 640px)"')
+    for (const foto of ['facade6', 'facade2', 'selfservice', 'facade4', 'interior', 'baguette']) {
+      expect(hero).toContain(`/img/home/${foto}.webp`)
+    }
     expect(hero).toContain('copy.reorder_title_prefix')
     expect(hero).toContain('copy.handmade_title_prefix')
     expect(hero).toContain('data-home-hero-carousel')
@@ -359,11 +372,16 @@ describe('surface UX guardrails', () => {
     const labelSheet = read('app/components/AddressLabelSheet.vue')
     expect(labelSheet).toContain('data-address-label-sheet')
     expect(labelSheet).toContain('Agora não')
-    expect(checkout).toContain('<AddressLabelSheet')
-    expect(checkout).toContain('findNewlySavedAddress')
+    // Nomear o endereço é conveniência de cadastro: não interrompe mais a
+    // compra nem o acesso ao acompanhamento depois do pedido confirmado.
+    expect(checkout).not.toContain('<AddressLabelSheet')
+    expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
-    // Default = primeira data disponível do backend (nunca dia fechado).
-    expect(checkout).toContain('checkout.value?.available_dates?.[0]')
+    // Default = primeira data disponível do backend (nunca um "hoje" local
+    // escolhido antes da projection lazy terminar).
+    expect(checkout).toContain('if (!checkout.value) return')
+    expect(checkout).toContain('checkout.value.available_dates?.[0]')
+    expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")
     expect(checkout).toContain('data-checkout-progress-stack')
@@ -387,7 +405,10 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('<CheckoutProgressSection')
     expect(checkout).toContain('stepState')
     expect(read('app/components/CheckoutProgressSection.vue')).toContain(':data-checkout-section-state="state"')
-    expect(checkout).toContain('<UiRadioGroup v-model="state.fulfillment_type" class="grid gap-2 sm:grid-cols-2">')
+    expect(read('app/components/CheckoutProgressSection.vue')).toContain('class="shop-focus-ruler')
+    expect(read('app/assets/css/tailwind.css')).toContain('scroll-margin-top: calc(4rem + 6px)')
+    expect(checkout).toContain(':model-value="state.fulfillment_type"')
+    expect(checkout).toContain('@update:model-value="onFulfillmentSelected(String($event))"')
     expect(checkout).toContain('<UiRadioGroup v-model="state.payment_method" class="grid gap-2 sm:grid-cols-2">')
     expect(checkout).toContain('<UiFieldLabel v-if="availableFulfillment.includes(\'pickup\')" for="checkout-fulfillment-pickup" class="bg-card')
     expect(checkout).toContain('<UiFieldLabel v-for="method in paymentMethods"')
@@ -417,6 +438,8 @@ describe('surface UX guardrails', () => {
     // ALTURA, não por prioridade, e não larga a base no meio da rolagem.
     expect(checkout).toContain('shop-action-dock')
     expect(checkout).toContain('shop-dock-reserve')
+    expect(checkout).toContain('v-show="!keyboardActive"')
+    expect(checkout).toContain('useMobileFormViewport(checkoutRoot)')
     expect(checkout).not.toContain('class="sticky bottom-20')
     expect(checkout).toContain('data-checkout-action-card')
     // A ação segue o foco e existe UMA vez: nenhum rodapé de seção repete o CTA
@@ -586,11 +609,11 @@ describe('surface UX guardrails', () => {
     const authPhone = read('app/utils/authPhone.ts')
     const authPresentation = read('app/presentation/auth.ts')
 
-    expect(login).toContain("apiPath('/api/v1/storefront/home/')")
-    expect(login).toContain('lazy: true')
-    expect(login).toContain('server: false')
-    expect(login).toContain('home.auth_copy')
-    expect(login).toContain('home.public_config.whatsapp_url')
+    // A home canônica já foi aguardada pelo shell; /entrar não duplica a busca.
+    expect(login).toContain("useNuxtData<ShellResponse>('shopman-shell')")
+    expect(login).not.toContain("key: 'storefront-login-home'")
+    expect(login).toContain('shell.auth_copy')
+    expect(login).toContain('shell.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
     expect(login).toContain('const cartHasItems')
     // A copy da sacola pergunta pela SACOLA, não pela rota de origem: quem entra
@@ -600,12 +623,22 @@ describe('surface UX guardrails', () => {
     expect(login).not.toContain('isCheckoutReturnWithCart')
     expect(login).toContain('if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept')
     expect(login).toContain("hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
-    // O lampejo promete a sacola só quando o SERVIDOR confirma que ela viajou.
-    expect(login).toContain('waCartTravels')
-    expect(login).toContain('wa_glimpse_with_cart')
+    // As duas queixas de quem chega pelo site, respondidas na tela: o porquê
+    // ("pra que eu tenho que fazer isso?") e os passos ("o que eu tenho que fazer?").
+    expect(login).toContain('authCopy.value?.wa_why')
+    expect(login).toContain('authCopy.value?.wa_steps')
+    // A volta: a aba que apertou o botão entra sozinha quando a mensagem chega.
+    expect(login).toContain('useWhatsappReturn(onWhatsappReturn)')
+    expect(login).toContain(':waiting="waWaiting"')
+    expect(login).toContain(':return-state="waReturnState"')
+    expect(login).toContain('@check="waCheckNow"')
+    expect(login).toContain('@use-sms="revealSms"')
+    expect(login).toMatch(/function onWhatsappOpened \(\) \{\s*waArm\(\)\s*\}/)
+    expect(read('app/composables/useWhatsappVerify.ts')).toContain("START_STORAGE_KEY = 'shopman:wa-verify-start'")
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
-    expect(login).toContain('<UiInputGroup class="bg-background">')
+    // Campo claro sobre o cartão Faubourg do SMS (o canvas creme sumiria nele).
+    expect(login).toContain('<UiInputGroup class="bg-card">')
     expect(login).toContain('<UiInputGroupAddon align="inline-start">')
     expect(login).toContain('<UiInputGroupInput')
     expect(login).toContain('name="phone"')
@@ -615,7 +648,7 @@ describe('surface UX guardrails', () => {
     expect(authPhone).toContain('phone_region')
     expect(authPhone).toContain('phone_normalized')
     expect(authPhone).toContain('target')
-    // WhatsApp = login por access link (deep link pré-aquecido no pai, sem polling/SSE);
+    // WhatsApp = a mensagem libera esta aba (e traz um access link de reserva);
     // SMS = fallback OTP push. O CTA é o próprio deep link (<a href>) no painel
     // apresentacional; o pai pré-aquece via waStart no mount (uma tela só).
     expect(login).toContain('useWhatsappVerify()')
@@ -625,21 +658,27 @@ describe('surface UX guardrails', () => {
     expect(read('app/composables/useWhatsAppConfirm.ts')).toContain('settleCart')
     expect(login).toContain("requestCode('sms', $event)")
     expect(login).toContain('class="w-full justify-center"')
-    // A PORTA DO SMS NOMEIA O QUE ENTREGA. Dizia "Não consigo usar WhatsApp":
-    // pedia que a pessoa declarasse uma incapacidade para receber uma opção, e
-    // não dizia SMS em lugar nenhum — a palavra só aparecia depois do clique.
-    // E era o elemento mais fraco da tela (ghost, 32px, cinza) sendo a única
-    // alternativa real, enquanto o envio manual ostentava dois botões sólidos.
-    expect(login).toContain('Receber código por SMS')
+    // A PORTA DO SMS NOMEIA O QUE ENTREGA, e é a alternativa aceitável — não a
+    // porta da frente. Link discreto, depois do único botão da tela.
+    expect(login).toContain('Prefere receber um código por SMS?')
     expect(login).toContain('data-login-sms-door')
     // Sem `not.toContain` do rótulo antigo de propósito: ele aparece no
     // comentário que explica a troca, e uma asserção que obriga a escrever ao
     // redor dela não está medindo o código. Quem garante que a porta é uma só
     // são os testes de página, que clicam pelo rótulo.
-    // UM ÚNICO SÓLIDO NA TELA: o CTA do WhatsApp. A porta do SMS é contorno no
-    // mesmo tamanho (caminho de verdade, não sussurro) e o envio manual é
-    // rodapé do cartão do WhatsApp — ícone para copiar, link para abrir.
+    // O cartão do WhatsApp é CLARO; o envio manual é um cartão Faubourg dentro
+    // dele, só na espera — ícone para copiar, link para abrir. O cartão que a
+    // porta do SMS abre também é Faubourg. A ajuda é cartão transparente, e só
+    // aparece esperando algo (código ou mensagem).
     const waPanel = read('app/components/WhatsappVerifyPanel.vue')
+    expect(waPanel).toContain('class="rounded-lg border bg-card p-4 shop-stack-block"')
+    expect(waPanel).not.toContain('bg-bottomnav')
+    expect(waPanel).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-whatsapp-manual/)
+    expect(login).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-sms-form/)
+    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
+    // AA do texto secundário sobre o Faubourg não pode depender do tema: a
+    // superfície remapeia o muted a partir do próprio texto.
+    expect(read('app/assets/css/tailwind.css')).toContain('--muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));')
     expect(waPanel).not.toContain('bg-cta text-cta-foreground')
     expect(waPanel).not.toContain('data-login-whatsapp-or')
     expect(waPanel).toContain('size="icon-lg"')
@@ -748,7 +787,7 @@ describe('surface UX guardrails', () => {
     for (const source of [login, access]) {
       expect(source).toContain('data-login-adult-declaration')
       expect(source).toContain('LOGIN_ADULT_DECLARATION_LEAD')
-      expect(source).toContain('to="/terms"')
+      expect(source).toContain('to="/termos"')
       expect(templateOnly(source)).not.toMatch(/\b18\b|\banos\b|\badult[oa]s?\b/i)
     }
     // Device trust e ajuda continuam server-driven/editorial.
@@ -791,13 +830,15 @@ describe('surface UX guardrails', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
     const session = read('app/composables/useShopSession.ts')
+    const shell = read('app/composables/useStorefrontShell.ts')
 
     expect(app).toContain('const AUTH_SHELL_ROUTES')
     expect(app).toContain('const authShellRoute')
     expect(app).toContain("new Set(['/entrar', '/a'])")
     expect(app).toContain('AUTH_SHELL_ROUTES.has(route.path)')
-    expect(app).toContain('immediate: true')
-    expect(app).toContain('server: true')
+    expect(app).toContain('await useStorefrontShell()')
+    expect(shell).toContain('server: true')
+    expect(shell).toContain("dedupe: 'defer'")
     expect(app).toContain('preserveAuthenticated: authRoute')
     expect(app).toContain('if (!authRoute) setFromServer(value?.cart)')
     expect(session).toContain('preserveAuthenticated')
@@ -1438,6 +1479,13 @@ describe('surface UX guardrails', () => {
       .map(file => relative(root, join(root, file)))
     expect(gutterOffenders).toEqual([])
   })
+
+  // /privacy e /terms viraram /privacidade e /termos em 24/09/2026, sem 301
+  // (pré-go-live, o Google reindexa). Link para o endereço antigo é 404.
+  it('nenhum link da loja aponta para /privacy ou /terms', () => {
+    const offenders = surfaceVueFiles.filter(file => /["'`]\/(privacy|terms)(?=[#?"'`])/.test(read(file)))
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('environment ribbon', () => {
@@ -1675,6 +1723,35 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(offer).toContain('v-for="item in skipped"')
     expect(offer).toContain('<StockNotifyButton')
     expect(offer).not.toMatch(/const skipped\s*=\s*ref<string\[\]>/)
+  })
+
+  it('puts "Preparado na hora" on the product page and keeps it off the menu card', () => {
+    // ⚠️ Decisão do dono (24/09), e ela é sobre ATENÇÃO, não sobre espaço.
+    //
+    // O selo do card só acende quando algo foge do normal — a regra está escrita
+    // em `menu.ts`: "Badge só quando informa: disponível é o estado default e não
+    // ganha selo". "Últimas unidades", "Lista de espera" e "Pausado" moram nesse
+    // slot porque mudam e pedem decisão AGORA.
+    //
+    // "Preparado na hora" é o contrário: constante, nunca urgente, e verdadeira
+    // para ~1 em cada 4 produtos da casa. Posta ali, seria selo permanente num
+    // quarto dos cards — e o custo não é o selo novo, é o sinal que ele dilui:
+    // quem aprende que o slot é decorativo para de ler "Últimas unidades".
+    //
+    // Na ficha ela é o oposto de ruído: é onde se decide, junto dos outros
+    // atributos constantes (restrições, peso, medidas).
+    const pdp = read('app/pages/produto/[sku].vue')
+    expect(pdp).toContain('data-pdp-made-to-order')
+    expect(pdp).toContain('{{ product.made_to_order_label }}')
+    expect(read('app/types/shopman.ts')).toContain('is_made_to_order: boolean')
+
+    // A sacola mantém o selo: lá ele explica a ausência de aviso de estoque.
+    expect(read('app/pages/sacola.vue')).toContain('data-cart-line-made-to-order')
+
+    // E o card do cardápio segue sem ele — em qualquer das duas superfícies de
+    // listagem, porque acrescentar "só nesta" é como a regra se perde.
+    expect(read('app/components/ProductTile.vue')).not.toContain('made_to_order')
+    expect(read('app/components/ProductListItem.vue')).not.toContain('made_to_order')
   })
 
   it('keeps the progress timeline readable by assistive tech', () => {

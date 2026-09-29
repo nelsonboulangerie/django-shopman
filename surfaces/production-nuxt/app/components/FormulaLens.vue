@@ -107,7 +107,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
                 <p class="font-medium" :class="item.is_anchor ? 'text-primary' : ''">{{ item.name || item.sku }}</p>
                 <p class="text-xs text-muted-foreground">
                   <span v-if="item.sku" class="font-mono">{{ item.sku }}</span>
-                  <span v-else class="text-warning">Sem insumo casado</span>
+                  <span v-else class="text-warning">Sem insumo vinculado no estoque</span>
                 </p>
               </td>
               <td class="hidden px-3 py-2 text-muted-foreground sm:table-cell">{{ item.role_label }}</td>

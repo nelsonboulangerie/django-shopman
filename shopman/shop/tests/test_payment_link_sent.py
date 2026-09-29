@@ -36,6 +36,7 @@ from django.utils import timezone
 from shopman.cashman import services as cash
 from shopman.orderman.models import Directive, Order
 
+from config.management.commands.seed import NOTIFICATION_TEMPLATES
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
 from shopman.shop.adapters._notification_templates import derive_context, render_message, render_template
 from shopman.shop.config import ChannelConfig
@@ -79,7 +80,7 @@ def _order(*, phone: str | None = "+5543999990001", email: str | None = None, ex
     if expires_at:
         payment["expires_at"] = expires_at
     order = MagicMock()
-    order.ref = "PDV-1"
+    order.ref = "PDV-260925-A47"
     order.total_q = 3800
     order.status = "accepted"
     order.channel_ref = "pdv"
@@ -128,7 +129,7 @@ class TestDeriveContextPrazo:
 
         assert ctx["payment_deadline"], "o prazo cru é o campo personalizado do ManyChat"
         assert ctx["payment_deadline_note"] == (
-            f"\nPara garantir o pedido, é só pagar até {ctx['payment_deadline']}. Depois disso a reserva é liberada."
+            f"\nAté {ctx['payment_deadline']}. Depois disso liberamos a reserva."
         )
 
     def test_sem_prazo_as_duas_chaves_sao_vazias(self):
@@ -160,17 +161,17 @@ class TestDeriveContextPrazo:
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_build_context_exporta_checkout_url_distinto_do_payment_url():
-    context = _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+    context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     assert context["checkout_url"] == CHECKOUT_URL
-    assert context["payment_url"] == "https://loja.test/pedido/PDV-1", "o acompanhamento segue sendo outro link"
+    assert context["payment_url"] == "https://loja.test/pedido/PDV-260925-A47", "o acompanhamento segue sendo outro link"
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_build_context_sem_pagamento_exporta_checkout_url_vazio():
     order = _order()
     order.data.pop("payment")
-    context = _build_context(order, {"order_ref": "PDV-1"}, "order_accepted")
+    context = _build_context(order, {"order_ref": "PDV-260925-A47"}, "order_accepted")
     assert context["checkout_url"] == ""
 
 
@@ -186,7 +187,7 @@ def _renders(context: dict) -> dict[str, str]:
         "sms": notification_sms._build_message("payment_link_sent", ctx),
         "email.body": render_message("payment_link_sent", ctx, notification_email.BODY_TEMPLATES),
         "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_link_sent"], ctx),
-        "seed": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_link_sent"]["body"], ctx),
+        "seed": render_template(NOTIFICATION_TEMPLATES["payment_link_sent"]["body"], ctx),
     }
 
 
@@ -195,11 +196,11 @@ class TestRenderDosTresCanais:
     @pytest.fixture
     def with_deadline(self):
         expires_at = (timezone.now() + timedelta(hours=3)).isoformat()
-        return _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-1"}, "payment_link_sent")
+        return _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     @pytest.fixture
     def without_deadline(self):
-        return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+        return _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     def test_com_prazo_todo_canal_diz_ate_quando_e_a_consequencia(self, with_deadline):
         """A encomenda remota só é liberada contra o pagamento: o cliente lê até
@@ -207,16 +208,16 @@ class TestRenderDosTresCanais:
         for channel, text in _renders(with_deadline).items():
             if channel == "email.subject":
                 continue
-            assert "é só pagar até " in text, f"{channel}: {text!r}"
-            assert "a reserva é liberada" in text, f"{channel}: {text!r}"
-            assert "pagar até ." not in text, f"{channel}: {text!r}"
+            assert "Até " in text, f"{channel}: {text!r}"
+            assert "liberamos a reserva" in text, f"{channel}: {text!r}"
+            assert "Até ." not in text, f"{channel}: {text!r}"
             assert CHECKOUT_URL in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
 
     def test_sem_prazo_nenhum_canal_deixa_rotulo_pendurado(self, without_deadline):
-        """"é só pagar até ." é proibido — a frase inteira some."""
+        """"Até ." é proibido — a frase inteira some."""
         for channel, text in _renders(without_deadline).items():
-            assert "pagar até" not in text, f"{channel}: {text!r}"
+            assert "Até" not in text, f"{channel}: {text!r}"
             assert "reserva" not in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
             if channel != "email.subject":
@@ -236,12 +237,12 @@ class TestRenderDosTresCanais:
     def test_o_sms_nao_leva_o_negrito_do_template_do_admin(self, without_deadline):
         from shopman.shop.models import NotificationTemplate
 
-        seeded = _seed_assignment("FALLBACK_TEMPLATES")["payment_link_sent"]
+        seeded = NOTIFICATION_TEMPLATES["payment_link_sent"]
         NotificationTemplate.objects.create(event="payment_link_sent", is_active=True, **seeded)
 
         sms = notification_sms._build_message("payment_link_sent", without_deadline)
         assert "*" not in sms
-        assert "PDV-1" in sms and CHECKOUT_URL in sms
+        assert "pedido A47 " in sms and CHECKOUT_URL in sms
 
 
 def _renders_expired(context: dict) -> dict[str, str]:
@@ -251,8 +252,8 @@ def _renders_expired(context: dict) -> dict[str, str]:
         "sms": notification_sms._build_message("payment_expired", ctx),
         "email.body": render_message("payment_expired", ctx, notification_email.BODY_TEMPLATES),
         "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_expired"], ctx),
-        "seed": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["body"], ctx),
-        "seed.subject": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["subject"], ctx),
+        "seed": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["body"], ctx),
+        "seed.subject": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["subject"], ctx),
     }
 
 
@@ -263,29 +264,28 @@ class TestPrazoVencidoEmTodoCanal:
 
     @pytest.fixture
     def expired(self):
-        return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_expired")
+        return _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_expired")
 
     def test_todo_canal_diz_que_a_reserva_foi_liberada(self, expired):
         for channel, text in _renders_expired(expired).items():
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
-            assert "PDV-1" in text, f"{channel}: {text!r}"
+            assert "A47" in text and "PDV-260925" not in text, f"{channel}: {text!r}"
             assert "expirou" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
             assert "cancelado" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
             if channel.endswith("subject"):
                 assert "reserva liberada" in text, f"{channel}: {text!r}"
             else:
                 assert "liberamos a reserva" in text, f"{channel}: {text!r}"
-                assert "refazemos o pedido" in text, f"{channel}: {text!r}"
+                assert "Nada foi cobrado" in text, f"{channel}: {text!r}"
 
-    def test_o_sms_e_uma_linha_sem_acento(self, expired):
+    def test_o_sms_e_sem_acento(self, expired):
         sms = _renders_expired(expired)["sms"]
-        assert "\n" not in sms
         assert sms.isascii(), sms
 
 
 class TestSeedDoTemplate:
     def test_o_evento_tem_linha_no_seed(self):
-        templates = _seed_assignment("FALLBACK_TEMPLATES")
+        templates = NOTIFICATION_TEMPLATES
         assert "payment_link_sent" in templates, "sem linha, o lojista não edita nem cola o flow do ManyChat"
         body = templates["payment_link_sent"]["body"]
         assert "{checkout_url}" in body, "o aviso manda para a COBRANÇA, não para o acompanhamento"
@@ -482,8 +482,17 @@ def test_falha_ao_enfileirar_nao_derruba_a_venda(counter):
 # 6. O ManyChat recebe os campos que o template aprovado lê
 # ══════════════════════════════════════════════════════════════════════
 
-#: Os nomes EXATOS que o Pablo cria no painel do ManyChat.
-MANYCHAT_FIELDS = {"order_ref", "customer_name_greeting", "total", "checkout_url", "payment_deadline"}
+#: Contrato aprovado + aliases dos flows criados antes da padronização.
+MANYCHAT_FIELDS = {
+    "order_ref",
+    "order_ref_short",
+    "customer_name",
+    "customer_name_greeting",
+    "total",
+    "order_total_display",
+    "checkout_url",
+    "payment_deadline",
+}
 
 
 @pytest.fixture
@@ -516,15 +525,18 @@ def _fields(calls) -> dict[str, str]:
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
 def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
     expires_at = (timezone.now() + timedelta(hours=3)).isoformat()
-    context = _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-1"}, "payment_link_sent")
+    context = _build_context(_order(expires_at=expires_at), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     assert notification_manychat.send("+5543999990001", "payment_link_sent", context) is True
 
     fields = _fields(manychat_calls)
     assert MANYCHAT_FIELDS <= set(fields), MANYCHAT_FIELDS - set(fields)
-    assert fields["order_ref"] == "PDV-1"
+    assert fields["order_ref"] == "PDV-260925-A47"
+    assert fields["order_ref_short"] == "A47"
+    assert fields["customer_name"] == "Joyce"
     assert fields["customer_name_greeting"] == ", Joyce"
     assert fields["total"] == "R$ 38,00"
+    assert fields["order_total_display"] == "R$ 38,00"
     assert fields["checkout_url"] == CHECKOUT_URL
     assert fields["payment_deadline"].startswith(("hoje às", "amanhã às"))
     assert "phone" not in fields, "no ManyChat o `phone` é NULO; nunca sai daqui"
@@ -532,12 +544,12 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_sem_prazo_o_campo_nao_e_gravado(manychat_calls):
-    """Campo vazio não sobrescreve: o template do painel decide o que mostrar sem prazo."""
-    context = _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
+def test_sem_prazo_o_campo_e_limpo(manychat_calls):
+    """Campo vazio limpa qualquer prazo persistente do envio anterior."""
+    context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     notification_manychat.send("+5543999990001", "payment_link_sent", context)
 
     fields = _fields(manychat_calls)
-    assert "payment_deadline" not in fields
+    assert fields["payment_deadline"] == ""
     assert fields["checkout_url"] == CHECKOUT_URL

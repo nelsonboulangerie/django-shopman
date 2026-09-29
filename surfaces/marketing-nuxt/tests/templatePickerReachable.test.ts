@@ -27,20 +27,28 @@ describe("a configuração de plataforma tem casa", () => {
   });
 
   it("o painel NÃO configura plataforma — só decide", () => {
-    const board = read("../app/pages/index.vue");
+    const board = read("../app/components/MarketingBoard.vue");
     expect(board).not.toContain("onChooseTemplate");
     expect(board).not.toContain("Teste seguro do WhatsApp");
     expect(board).not.toContain("useWhatsAppTemplate");
   });
 
   it("o aviso do painel aponta a casa em vez de configurar", () => {
-    expect(read("../app/pages/index.vue")).toContain("/platforms");
+    const board = read("../app/components/MarketingBoard.vue");
+    expect(board).toContain("path: '/v2'");
+    expect(board).toContain("area: 'platforms'");
   });
 
   it("o teste preserva idempotência no BFF e não serializa destinatário livre", () => {
     const composable = read("../app/composables/useWhatsAppTemplate.ts");
     expect(composable).toContain('"Idempotency-Key"');
     expect(composable).toContain("target_ref: targetRef");
+    expect(composable).toContain(
+      'event: options.event || "announcement_published"',
+    );
+    expect(read("../app/pages/platforms.vue")).toContain(
+      "event: testEvent.value",
+    );
     expect(composable).not.toContain("body: { recipient");
   });
 
@@ -59,9 +67,12 @@ describe("a configuração de plataforma tem casa", () => {
 
   it("edições de campanha e modelo carregam a versão lida e atualizam antes do rebase", () => {
     const campaigns = read("../app/composables/useCampaigns.ts");
+    const campaignActions = read("../app/presentation/campaignActions.ts");
     const templates = read("../app/composables/useAnnouncementTemplates.ts");
+    expect(campaignActions).toContain("base_updated_at");
+    expect(campaigns).toContain("campaignPatchPayload(current, body)");
+    expect(templates).toContain("base_updated_at");
     for (const source of [campaigns, templates]) {
-      expect(source).toContain("base_updated_at");
       expect(source).toContain("httpError(err).status === 409");
       expect(source).toContain("await refresh()");
     }

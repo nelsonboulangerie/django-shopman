@@ -32,8 +32,16 @@ class KDSTicketNotFound(KDSError):
     """
 
 
+class KDSInstanceNotFound(KDSError):
+    """Estação de KDS inexistente ou desativada (ref que sumiu num reseed ou no Admin).
+
+    A camada HTTP mapeia por TIPO para 404: o kiosk que segue pedindo a estação
+    antiga recebe "não existe", não um 500.
+    """
+
+
 class KDSOrderNotFound(KDSError):
-    """Pedido inexistente numa ação de expedição. A camada HTTP mapeia para 404."""
+    """Pedido inexistente numa ação da Saída do KDS. A camada HTTP mapeia para 404."""
 
 
 class OrderError(BackstageServiceError):
@@ -46,6 +54,33 @@ class OrderConflict(OrderError):
     Ex.: recusar um pedido que a auto-confirmação acabou de confirmar. A camada
     HTTP mapeia para 409 (conflito de estado), não 400 (request inválido).
     """
+
+
+class RescheduleError(OrderError):
+    """Reagendamento recusado (``shop.services.reschedule.RescheduleRefused``).
+
+    Carrega ``code`` e ``field`` (``date``/``slot``) para a resposta sair no
+    dialeto ``{detail, field, errors}`` e a tela apontar a entrada certa.
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
+class OrderEditError(OrderError):
+    """Edição da encomenda recusada (``shop.services.order_edit.EditRefused``).
+
+    Mesmo formato do :class:`RescheduleError`: ``code`` estável para a tela
+    decidir, ``field`` para apontar a entrada (``items.<n>``, ``notes``,
+    ``fulfillment.<campo>``, ``date``/``slot``).
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
 
 
 class POSError(BackstageServiceError):
@@ -137,3 +172,15 @@ class RecipeVersionNotFound(BackstageServiceError):
 
 class CatalogConflict(CatalogError):
     """Catalog snapshot changed after preview; no cells were applied."""
+
+
+class CustomerMergeError(BackstageServiceError):
+    """A unificação (ou o desfazer) pedida pelo Gestor não pode acontecer.
+
+    A mensagem é a frase que o gestor lê: diz o que houve e o que ainda dá
+    para fazer. A camada HTTP a devolve como ``detail`` (422).
+    """
+
+
+class CustomerNotFound(CustomerMergeError):
+    """Cadastro inexistente. A camada HTTP mapeia para 404."""

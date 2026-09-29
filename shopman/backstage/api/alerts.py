@@ -107,9 +107,13 @@ class AlertListView(APIView):
             limit = max(1, min(int(raw_limit), 100)) if raw_limit else _DEFAULT_LIMIT
         except (TypeError, ValueError):
             limit = _DEFAULT_LIMIT
-        alerts = alert_service.list_active_alerts(user=request.user, limit=limit)
-        counts = alert_service.active_counts(user=request.user)
-        projection = build_operator_alerts_projection(alerts=alerts, counts=counts)
+        # ``?scope=orders``: o sino do Gestor de pedidos vê só o que é de pedido.
+        scope = str(request.query_params.get("scope") or "").strip()
+        if scope not in alert_service.ALERT_SCOPES:
+            scope = ""
+        alerts = alert_service.list_active_alerts(user=request.user, limit=limit, scope=scope)
+        counts = alert_service.active_counts(user=request.user, scope=scope)
+        projection = build_operator_alerts_projection(alerts=alerts, counts=counts, surface=scope)
         return Response(
             projection_data(
                 projection,

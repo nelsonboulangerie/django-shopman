@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { FAVICON_VERSION, OPERATOR_HEAD_LINKS, resolveOperatorPwa } from "../pwa.config";
 import { OPERATOR_ASSET_VERSION, operatorAppIdentity } from "../appIdentity";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Varredura da FORMA dos ícones instalados das oito superfícies de operador
 // (PWA_ICONS.md, "Forma: quem arredonda o canto"). Windows/macOS/Linux desktop mostram
@@ -17,10 +18,6 @@ import { OPERATOR_ASSET_VERSION, operatorAppIdentity } from "../appIdentity";
 // reprova aqui, e o manifesto apontando para `?v=` velho também.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = [
-  "hub-nuxt", "pos-nuxt", "kds-nuxt", "orders-nuxt",
-  "production-nuxt", "marketing-nuxt", "purchase-nuxt", "bi-nuxt",
-] as const;
 const ROUNDED = ["pwa-64x64.png", "pwa-192x192.png", "pwa-512x512.png"] as const;
 const FULL_BLEED = ["maskable-512x512.png", "apple-touch-icon-180x180.png"] as const;
 const ICON_VERSION = `?v=${OPERATOR_ASSET_VERSION}`;

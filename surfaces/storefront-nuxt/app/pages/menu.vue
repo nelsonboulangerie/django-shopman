@@ -8,23 +8,63 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
+import {
+  catalogFromStructureSnapshot,
+  continuumFeatureEnabled,
+  isCatalogStructureSnapshot,
+  installCatalogStructureSnapshot
+} from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogStructureState } from '~/types/continuum'
+import type { CatalogResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
-const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
 const router = useRouter()
 const session = useShopSession()
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
-const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
-  credentials: 'include'
+const runtimeConfig = useRuntimeConfig()
+const continuumEnabled = continuumFeatureEnabled(runtimeConfig.public.continuumCatalogEnabled)
+const continuum = continuumEnabled
+  ? await useContinuousProjection<CatalogStructureState>({
+      key: 'storefront-menu-continuum-v0.2',
+      path: '/api/v1/storefront/continuum/v0.2/catalog-structure/',
+      enabled: true,
+      accepts: isCatalogStructureSnapshot,
+      install: installCatalogStructureSnapshot,
+      pollMs: 30_000
+    })
+  : null
+const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
+// Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
+// canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
+const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
+const {
+  data,
+  pending: canonicalPending,
+  error: canonicalError,
+  refresh: refreshCanonical
+} = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
+  credentials: 'include',
+  server: canonicalOnServer,
+  lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
 
-watch(() => data.value?.cart, cart => {
-  setFromServer(cart)
-}, { immediate: true })
+const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
+const pending = computed(() => !catalog.value && (canonicalPending.value || continuum?.pending.value))
+const error = computed(() => !catalog.value ? (canonicalError.value || continuum?.error.value) : null)
+const continuumPending = computed(() => !!structureCatalog.value && !data.value?.catalog)
+const continuumFailed = computed(() => continuumPending.value && !!canonicalError.value)
+
+async function refresh () {
+  await Promise.all([
+    continuum?.refresh(),
+    refreshCanonical()
+  ])
+}
+
+requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
 
 const route = useRoute()
 const activeSection = ref('all')
@@ -34,7 +74,6 @@ const appliedFilterKeys = ref<string[]>([])
 // com aviso dietético, de forma transparente e reversível (contador de ocultos).
 const dietaryFilterOn = ref(false)
 
-const catalog = computed(() => data.value?.catalog || null)
 const sections = computed(() => catalog.value?.sections || [])
 const allItems = computed(() => catalog.value?.items || [])
 const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
@@ -80,6 +119,7 @@ const activeSectionCount = computed(() => {
 })
 const menuFocusLabel = computed(() => {
   if (pending.value) return 'Carregando o cardápio.'
+  if (continuumPending.value) return 'Cardápio aberto. Confirmando preços e disponibilidade.'
   const count = formatCount(activeSectionCount.value, 'item encontrado', 'itens encontrados')
   if (hasAppliedFilters.value) return `${count} no filtro ativo.`
   if (activeSection.value !== 'all') return `${count} em ${activeSectionLabel.value}.`
@@ -94,7 +134,10 @@ function sectionDomId (ref: string) {
 
 function menuScrollOffset () {
   if (!import.meta.client) return 140
-  const headerHeight = document.querySelector('header')?.getBoundingClientRect().height || 64
+  // O header mantém 100px no fluxo mesmo colapsado, mas só a navbar de 64px
+  // permanece visível durante a navegação entre seções. Medir o header inteiro
+  // deixava todo destino 36px abaixo do lugar e motivou reancoragens tardias.
+  const headerHeight = document.querySelector('.shop-navbar-bar')?.getBoundingClientRect().height || 64
   const filterHeight = document.querySelector('[data-menu-filterbar]')?.getBoundingClientRect().height || 56
   return headerHeight + filterHeight + 16
 }
@@ -134,11 +177,15 @@ function alignActiveSectionPill (ref: string, behavior?: ScrollBehavior) {
   if (didCenter) lastCenteredPillRef = ref
 }
 
-function scrollToSection (ref: string) {
-  if (!import.meta.client) return
-  const target = (ref === 'all' || ref === FILTERED_SECTION_VALUE)
+function sectionElement (ref: string) {
+  return (ref === 'all' || ref === FILTERED_SECTION_VALUE)
     ? document.querySelector<HTMLElement>('[data-menu-results]')
     : document.getElementById(sectionDomId(ref))
+}
+
+function scrollToSection (ref: string) {
+  if (!import.meta.client) return
+  const target = sectionElement(ref)
   if (!target) return
 
   shopScrollToElement(target, menuScrollOffset(), scrollBehavior())
@@ -154,23 +201,9 @@ function selectSection (value: string | number | undefined) {
   activeSection.value = ref
   void nextTick(() => {
     centerSectionPill(ref, scrollBehavior())
+    // Um gesto, uma rolagem. Repetir aos 180ms/900ms reiniciava o smooth scroll,
+    // fazia a pill chegar antes do conteúdo e deixava a tela se corrigindo sozinha.
     scrollToSection(ref)
-    window.setTimeout(() => {
-      if (programmaticScrollRef !== ref) return
-      activeSection.value = ref
-      centerSectionPill(ref, scrollBehavior())
-      scrollToSection(ref)
-    }, 180)
-    window.setTimeout(() => {
-      if (programmaticScrollRef !== ref) return
-      activeSection.value = ref
-      centerSectionPill(ref)
-      // Re-ancora depois do layout assentar (imagens/medidas tardias).
-      scrollToSection(ref)
-      programmaticScrollRef = ''
-      programmaticScrollUntil = 0
-      queueActiveSectionSync()
-    }, 900)
   })
 }
 
@@ -209,6 +242,7 @@ function clearAllMenuFilters () {
 function clearMenuFilters () {
   appliedFilterKeys.value = []
   activeSection.value = 'all'
+  holdActiveSection('all')
   void nextTick(() => {
     scrollToSection('all')
     queueActiveSectionSync()
@@ -220,17 +254,52 @@ let programmaticScrollRef = ''
 let programmaticScrollUntil = 0
 let lastCenteredPillRef = ''
 let pageScrollTarget: ShopScrollTarget | null = null
+let canonicalRefreshTimer: ReturnType<typeof setTimeout> | undefined
+const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 1_800
+
+function scheduleCanonicalRefresh () {
+  if (!import.meta.client || !continuumEnabled) return
+  const delay = Math.round(30_000 * (0.9 + Math.random() * 0.2))
+  canonicalRefreshTimer = setTimeout(async () => {
+    if (document.visibilityState === 'visible') await refreshCanonical()
+    scheduleCanonicalRefresh()
+  }, delay)
+}
 
 function holdActiveSection (ref: string) {
   programmaticScrollRef = ref
-  programmaticScrollUntil = Date.now() + 900
+  programmaticScrollUntil = Date.now() + PROGRAMMATIC_SCROLL_TIMEOUT_MS
+}
+
+function cancelProgrammaticScroll () {
+  programmaticScrollRef = ''
+  programmaticScrollUntil = 0
+}
+
+function programmaticScrollSettled (ref: string) {
+  const target = sectionElement(ref)
+  if (!target) return true
+
+  const scrollTarget = pageScrollTarget || shopScrollTarget()
+  const metrics = shopScrollMetrics(scrollTarget)
+  if (metrics.top + metrics.height >= metrics.scrollHeight - 8) return true
+
+  const viewportTop = scrollTarget === window
+    ? 0
+    : (scrollTarget as HTMLElement).getBoundingClientRect().top
+  const targetTop = target.getBoundingClientRect().top - viewportTop
+  return Math.abs(targetTop - menuScrollOffset()) <= 3
 }
 
 function syncActiveSectionFromScroll () {
   if (!import.meta.client) return
-  if (programmaticScrollRef && Date.now() < programmaticScrollUntil) {
-    activeSection.value = programmaticScrollRef
-    return
+  if (programmaticScrollRef) {
+    const selectedRef = programmaticScrollRef
+    if (Date.now() < programmaticScrollUntil && !programmaticScrollSettled(selectedRef)) {
+      activeSection.value = selectedRef
+      return
+    }
+    cancelProgrammaticScroll()
   }
 
   const sectionEls = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-section-ref]'))
@@ -315,8 +384,11 @@ onMounted(() => {
   updatePillRailTailWidth()
   pageScrollTarget = shopScrollTarget()
   pageScrollTarget.addEventListener('scroll', queueActiveSectionSync, { passive: true })
+  pageScrollTarget.addEventListener('wheel', cancelProgrammaticScroll, { passive: true })
+  pageScrollTarget.addEventListener('touchstart', cancelProgrammaticScroll, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
+  scheduleCanonicalRefresh()
   queueActiveSectionSync()
 })
 
@@ -324,9 +396,12 @@ watch(() => route.query.secao, applyRouteSection)
 
 onBeforeUnmount(() => {
   pageScrollTarget?.removeEventListener('scroll', queueActiveSectionSync)
+  pageScrollTarget?.removeEventListener('wheel', cancelProgrammaticScroll)
+  pageScrollTarget?.removeEventListener('touchstart', cancelProgrammaticScroll)
   pageScrollTarget = null
   window.removeEventListener('resize', updatePillRailTailWidth)
   window.removeEventListener('resize', queueActiveSectionSync)
+  if (canonicalRefreshTimer) clearTimeout(canonicalRefreshTimer)
   if (scrollRaf) window.cancelAnimationFrame(scrollRaf)
 })
 
@@ -475,6 +550,21 @@ useHead({
         </UiAlert>
 
         <template v-else-if="catalog">
+          <UiAlert
+            v-if="continuumPending"
+            :variant="continuumFailed ? 'warning' : 'info'"
+            :icon="continuumFailed ? 'lucide:refresh-cw' : 'lucide:loader-circle'"
+            data-continuum-catalog-status
+          >
+            <UiAlertTitle>{{ continuumFailed ? 'A vitrine está aberta' : 'Confirmando o cardápio' }}</UiAlertTitle>
+            <UiAlertDescription>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{{ continuumFailed ? 'Os produtos já estão visíveis, mas preços e disponibilidade precisam ser consultados novamente.' : 'Preços, disponibilidade e sua sacola chegam logo em seguida.' }}</span>
+                <UiButton v-if="continuumFailed" size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
+              </div>
+            </UiAlertDescription>
+          </UiAlert>
+
           <UiAlert v-if="catalog.happy_hour?.active" variant="warning" icon="lucide:badge-percent">
             <UiAlertTitle>Happy hour ativo</UiAlertTitle>
             <UiAlertDescription>{{ catalog.happy_hour.discount_percent }}% de desconto aplicado no cardápio.</UiAlertDescription>
@@ -522,6 +612,7 @@ useHead({
                     v-for="item in section.items"
                     :key="`${section.ref}-${item.sku}`"
                     :item="item"
+                    :pending="continuumPending"
                     framed
                     class="border-b"
                   />

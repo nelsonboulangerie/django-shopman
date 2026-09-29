@@ -113,7 +113,7 @@ async function saveProfile(body: Record<string, unknown>) {
       method: "POST", credentials: "include", body,
     });
   } catch {
-    toast.error("Falha ao salvar a preferência do cliente.");
+    toast.error("A preferência do cliente não foi salva. O cadastro segue como estava. Tente de novo.");
   } finally {
     profileSaving.value = false;
   }
@@ -418,7 +418,7 @@ const newCustomerNote = computed(() => {
       <UiDialogHeader>
         <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
         <UiDialogDescription v-if="!isReceiptDecision">
-          Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
+          Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.
         </UiDialogDescription>
       </UiDialogHeader>
 
@@ -504,7 +504,7 @@ const newCustomerNote = computed(() => {
                     class="size-4 shrink-0"
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
-                  <span class="min-w-0 truncate">Sim, liberar</span>
+                  <span class="min-w-0">Sim, liberar</span>
                 </UiButton>
                 <UiButton
                   type="button"
@@ -513,7 +513,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Não liberar</span>
+                  <span class="min-w-0">Não liberar</span>
                 </UiButton>
               </div>
             </div>
@@ -532,7 +532,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Sim, tenho certeza</span>
+                  <span class="min-w-0">Sim, tenho certeza</span>
                 </UiButton>
                 <UiButton
                   type="button"
@@ -541,7 +541,7 @@ const newCustomerNote = computed(() => {
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
-                  <span class="min-w-0 truncate">Voltar</span>
+                  <span class="min-w-0">Voltar</span>
                 </UiButton>
               </div>
             </div>

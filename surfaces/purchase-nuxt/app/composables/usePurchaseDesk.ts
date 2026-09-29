@@ -1,4 +1,5 @@
 import type {
+  PurchaseOpeningPayload,
   PurchaseView,
   PurchaseBaseView,
   PurchaseRequestStatus,
@@ -54,6 +55,9 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
     lineNote: line.lineNote ?? "",
     invoiceProductCode: line.invoiceProductCode ?? "",
     invoiceEan: line.invoiceEan ?? "",
+    invoicePackageEan: line.invoicePackageEan ?? "",
+    invoiceNcm: line.invoiceNcm ?? "",
+    invoiceCest: line.invoiceCest ?? "",
     checked: Boolean(line.checked),
     purchaseQty: Number(line.purchaseQty) || 0,
   }));
@@ -431,6 +435,58 @@ export function usePurchaseDesk() {
       const message = httpErrorMessage(err, "Não foi possível salvar os mínimos.");
       actionError.value = message;
       useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
+  /**
+   * "Permitir revenda": um gesto, que pede só o preço ao ligar.
+   *
+   * Devolve `true` quando o servidor aceitou, para a tela fechar o campo de
+   * preço; a recusa (sem preço, "é produzido aqui") vira a mensagem do toast.
+   */
+  async function setSale(materialSku: string, enabled: boolean, priceInput = ""): Promise<boolean> {
+    if (!requireBackend(enabled ? "colocar à venda" : "tirar da venda")) return false;
+    if (actionPending.value) return false;
+
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.setSale(materialSku, enabled ? { enabled, priceInput } : { enabled });
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, enabled ? "Não foi possível colocar à venda." : "Não foi possível tirar da venda.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
+  /**
+   * "Quando aberto, vira": diz em que insumo a embalagem se abre. A produção abre
+   * sozinha no fechamento da fornada — aqui só se declara o que vem dentro.
+   */
+  async function setOpening(materialSku: string, payload: PurchaseOpeningPayload): Promise<boolean> {
+    if (!requireBackend("salvar o que a embalagem vira")) return false;
+    if (actionPending.value) return false;
+
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.setOpening(materialSku, payload);
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, "Não foi possível salvar o que a embalagem vira.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
     } finally {
       actionPending.value = false;
     }
@@ -1074,6 +1130,8 @@ export function usePurchaseDesk() {
     minStockLineErrors,
     minStockFilledCount,
     setMinStockInput,
+    setSale,
+    setOpening,
     clearMinStock,
     saveMinStock,
     supplierSummaries,

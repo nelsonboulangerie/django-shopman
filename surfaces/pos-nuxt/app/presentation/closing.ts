@@ -89,3 +89,19 @@ export function buildQuantitiesPayload(
   }
   return payload;
 }
+
+/**
+ * A ordem da contagem é a do NOME, não a do SKU: o operador anda pela vitrine
+ * lendo etiquetas, e "BAG-01, CRO-02" não é o que está escrito nelas.
+ */
+export function closingCountOrder(items: ClosingItemProjection[]): ClosingItemProjection[] {
+  return [...items].sort((a, b) => (a.name || a.sku).localeCompare(b.name || b.sku, "pt-BR"));
+}
+
+/** Quantos itens já têm contagem que vale — o "12 de 30" do progresso. */
+export function countedItems(
+  items: ClosingItemProjection[],
+  inputs: Record<string, string>,
+): number {
+  return items.filter((item) => /^\d+$/.test((inputs[item.sku] ?? "").trim())).length;
+}

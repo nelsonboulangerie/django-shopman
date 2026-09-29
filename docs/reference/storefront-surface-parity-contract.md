@@ -61,7 +61,7 @@ componentes, navegacao e storage local.
 
 | ID | Severidade | Contrato | Aceite executavel |
 | --- | --- | --- | --- |
-| `AUTH-PHONE-BR-001` | P0 | Telefone BR com DDI `55` sem `+`, com espacos ou mascara, normaliza para o mesmo E.164 canonico. Ex.: `55 43 98404-9009` -> `+5543984049009`. | Teste de `shopman.utils.phone.normalize_phone`, API `/api/v1/auth/request-code/` e payload Nuxt. |
+| `AUTH-PHONE-BR-001` | P0 | Telefone BR com DDI `55` sem `+`, com espacos ou mascara, normaliza para o mesmo E.164 canonico. Ex.: `55 43 98123-4567` -> `+5543981234567`. | Teste de `shopman.utils.phone.normalize_phone`, API `/api/v1/auth/request-code/` e payload Nuxt. |
 | `AUTH-PHONE-BR-002` | P0 | A superficie nao pode truncar telefone antes de enviar ao backend. O alvo verificado deve ser o telefone normalizado retornado pela API de request-code. | Teste estatico Nuxt: request usa valor digitado, verify usa `requestedPhone` retornado pelo backend. |
 | `AUTH-SESSION-001` | P1 | Usuario autenticado nunca ve CTA principal "Entrar" em header, menu mobile ou bottom tabs. Reload SSR deve nascer autenticado quando cookie existe. | Teste estatico Nuxt: shell e bottom tabs consultam `/api/auth/session/` com cookie SSR; smoke HTTP opcional. |
 | `AUTH-SESSION-002` | P1 | Projection de home anonima nao pode sobrescrever uma sessao autenticada local sem uma resposta explicita de `/auth/session/`. | Teste do composable/session contract. |

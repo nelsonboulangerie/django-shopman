@@ -150,7 +150,7 @@ _CLEARLY_NON_PTBR = re.compile(
     r"nuestro\s+producto)\b"
 )
 _EVENT_PHRASES = {
-    "Fornada concluída": ("saiu do forno", "acabou de sair do forno", "fornada"),
+    "Lote concluído": ("saiu do forno", "acabou de sair do forno", "fornada"),
     "Estoque baixo": ("estoque baixo",),
     "Voltou ao estoque": ("voltou ao estoque", "de volta ao estoque"),
     "Produto novo": ("produto novo", "novidade"),

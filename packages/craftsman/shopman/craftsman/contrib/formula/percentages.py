@@ -165,14 +165,44 @@ def _matches(text: str, latin: tuple[str, ...], cjk: tuple[str, ...]) -> bool:
 
 
 def classify_ingredient(name: str, sku: str = "") -> str:
-    """Papel do ingrediente pelo nome e pelo SKU (``FARINHA-T55`` também conta)."""
+    """Papel do ingrediente pelo nome e pelo SKU (``FARINHA-ANACONDA-PREMIUM`` também conta).
+
+    Vence a palavra que aparece **primeiro no texto**, não a primeira regra da
+    tabela — e isso é a gramática do português, não uma preferência: o
+    substantivo vem antes do qualificador. *Manteiga* sem sal, *manteiga* com
+    sal, *chocolate* ao leite, *farinha* de centeio. É também, por construção, a
+    convenção de SKU desta casa, que põe a **família na frente**.
+
+    ⚠️ Antes disso valia a ordem da tabela, e o defeito apareceu em 24/09/2026:
+    a curadoria trocou `MANTEIGA-FR` por `MANTEIGA-PRESIDENT-SEM-SAL` e a
+    manteiga de 16 fichas virou SAL, porque `salt` está listada antes de `fat`.
+    O SKU não estava errado — o mundo diz "manteiga sem sal". O papel alimenta a
+    lente de padaria, então o engano entrava direto no percentual do padeiro.
+    """
     text = normalize_text(f"{name} {str(sku or '').replace('-', ' ').replace('_', ' ')}")
     if not text:
         return "other"
+
+    melhor, posicao = "other", len(text) + 1
     for role, latin, cjk in _ROLE_KEYWORDS:
-        if _matches(text, latin, cjk):
-            return role
-    return "other"
+        onde = _first_position(text, latin, cjk)
+        if onde is not None and onde < posicao:
+            melhor, posicao = role, onde
+    return melhor
+
+
+def _first_position(text: str, latin, cjk) -> int | None:
+    """Onde, no texto, esta categoria aparece primeiro — ``None`` se não aparece.
+
+    Reaproveita o casamento de ``_matches`` (prefixo para palavra longa, token
+    exato para curta), porque afrouxar aqui faria "sal" casar dentro de
+    "salsinha".
+    """
+    tokens = text.split()
+    for i, token in enumerate(tokens):
+        if _matches(token, latin, cjk):
+            return i
+    return None
 
 
 def looks_like_flour(name: str, sku: str = "") -> bool:

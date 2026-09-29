@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Shopman Orderman — Omnichannel Order Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "Django>=6.0,<6.1",
+    "Django>=6.1,<6.2",
     "shopman-utils>=0.3.0",
 ]
 

@@ -63,6 +63,7 @@ class FiscalBackend(Protocol):
         payment: dict,
         additional_info: str | None = None,
         delivery: dict | None = None,
+        intermediary: dict | None = None,
     ) -> FiscalDocumentResult:
         """Emite documento fiscal.
 
@@ -80,6 +81,12 @@ class FiscalBackend(Protocol):
                 sem este parâmetro quebra na primeira entrega. ``runtime_checkable``
                 NÃO confere assinatura, então a divergência é pega por teste
                 (``shop/tests/test_fiscal_contract.py``).
+            intermediary: Intermediador da transação — ``{"cnpj", "id_cad_int_tran"}``
+                — quando a venda foi feita em plataforma de terceiro
+                (marketplace), ou ``None`` na venda direta. O Ajuste SINIEF
+                22/20 (CONFAZ) exige que o documento identifique quem
+                intermediou; o valor DECLARADO também muda, mas essa parte é
+                decidida antes, por quem monta o payload.
         """
         ...
 

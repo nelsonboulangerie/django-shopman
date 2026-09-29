@@ -97,3 +97,23 @@ def test_flush_nao_apaga_terminal_que_o_seed_nao_recria(loja_configurada, monkey
     # A espécie da estação é o pior dos quatro: some para ATENDIDA, que é falha
     # fechada e silenciosa — um totem pedindo PIN a ninguém.
     assert totem.metadata["station"] == {"mode": "autonomous", "operator": "totem-da-vitrine"}
+
+
+def test_flush_nao_derruba_a_impressora_do_balcao(loja_configurada, monkeypatch):
+    """A credencial do agente de impressão aponta para o terminal com PROTECT.
+
+    Medido em 24/09/2026, num ensaio contra a cópia do alpha: o flush apagava o
+    terminal, estourava ``ProtectedError`` e parava com metade do banco apagado.
+    A credencial é de um dispositivo real — o reseed não pode desligá-la.
+    """
+    from shopman.backstage.models import PrintAgentCredential
+
+    balcao, _totem = loja_configurada
+    credencial, _segredo = PrintAgentCredential.issue(terminal=balcao, label="relay do balcão")
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+
+    call_command("seed", "--flush", stdout=StringIO())
+
+    credencial.refresh_from_db()
+    assert credencial.is_active is True
+    assert credencial.terminal.ref == "pdv-main"

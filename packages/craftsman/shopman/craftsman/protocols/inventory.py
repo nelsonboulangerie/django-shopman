@@ -30,7 +30,7 @@ class MaterialNeed:
 
     sku: str
     quantity: Decimal
-    unit: str = "kg"
+    unit: str = "g"
     position_ref: str | None = None
 
 

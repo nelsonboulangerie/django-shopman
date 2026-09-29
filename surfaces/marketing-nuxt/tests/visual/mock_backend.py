@@ -8,16 +8,42 @@ nenhum adapter/provider é importado e nenhum estado sobrevive a uma requisiçã
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
+from datetime import UTC
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 from urllib.parse import parse_qs, urlparse
 
-FIXED_NOW = "2026-09-10T10:30:00-03:00"
-FIXED_UTC = "2026-09-10T13:30:00+00:00"
+# ⚠️ O relógio é FIXO de propósito: baseline visual com data relativa vira vermelho
+# sozinha no dia seguinte — a casa já perdeu uma matriz inteira assim. A folga existe
+# só para o preview local, onde "Expirou" em cima de tudo torna a tela injulgável:
+# MARKETING_MOCK_LIVE_CLOCK=1 anda o relógio para hoje SEM mexer no que os testes veem.
+_FIXED_LOCAL = "2026-09-10T10:30:00-03:00"
+_FIXED_UTC = "2026-09-10T13:30:00+00:00"
+
+if os.environ.get("MARKETING_MOCK_LIVE_CLOCK") == "1":
+    from datetime import datetime, timedelta
+    from datetime import timezone as _tz
+
+    _agora = datetime.now(_tz(timedelta(hours=-3)))
+    _DESLOCAMENTO = _agora - datetime.fromisoformat(_FIXED_LOCAL)
+    FIXED_NOW = _agora.isoformat(timespec="seconds")
+    FIXED_UTC = _agora.astimezone(UTC).isoformat(timespec="seconds")
+
+    def _anda(carimbo: str) -> str:
+        """Empurra um instante da fixture pelo mesmo tanto que o 'agora' andou."""
+        return (datetime.fromisoformat(carimbo) + _DESLOCAMENTO).isoformat(timespec="seconds")
+else:
+    _DESLOCAMENTO = None
+    FIXED_NOW = _FIXED_LOCAL
+    FIXED_UTC = _FIXED_UTC
+
+    def _anda(carimbo: str) -> str:
+        return carimbo
 REQUEST_REF = "visual-mkt046-request"
 VISUAL_STORY_IMAGE = (
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
@@ -91,7 +117,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "version": 1,
         "name": f"Fornada artesanal {pk:02d}{suffix}",
         "trigger": "production_finished",
-        "trigger_label": "Fornada concluída",
+        "trigger_label": "Lote concluído",
         "trigger_filter": {"collections": ["paes-artesanais"]},
         "template_id": 1,
         "template_name": "Novidades da padaria",
@@ -99,7 +125,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "audience_rules": {"tags": ["clientes-da-casa"]},
         "promotion_ref": "",
         "schedule": {"type": "immediate", "timezone": "America/Sao_Paulo"},
-        "schedule_label": "Assim que a fornada terminar",
+        "schedule_label": "Assim que o lote terminar",
         "fires_on_its_own": False,
         "sent_count": 12 if pk % 3 else 0,
         "reached_total": 999 if pk % 3 else 0,
@@ -169,18 +195,18 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "audience_total": 12,
         "platform_results": [],
         "trigger": "production_finished",
-        "trigger_label": "Fornada concluída",
+        "trigger_label": "Lote concluído",
         "rule_name": "Fornada artesanal",
         "template_name": "Novidades da padaria",
         "sku": "PAO-VISUAL-001",
         "created_at": "2026-09-10T10:00:00-03:00",
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "expires_in_minutes": 60 if status == "pending_review" else 0,
         "scheduled_for": "",
         "published_at": "2026-09-10T10:10:00-03:00" if status == "settled" else "",
         "approved_by": "Operadora Visual" if status not in {"pending_review", "expired"} else "",
         "rejected_by": "Operadora Visual" if status == "rejected" else "",
-        "rejected_reason": "A informação da fornada mudou." if status == "rejected" else "",
+        "rejected_reason": "A informação do lote mudou." if status == "rejected" else "",
         "ai_suggestion_enabled": False,
     }
 
@@ -201,6 +227,7 @@ def all_formats_announcement() -> dict:
         },
         "google_business": {
             "publication_format": "standard",
+            "call_to_action": "call",
             "image_url": VISUAL_WIDE_IMAGE,
         },
         "whatsapp": {"image_url": VISUAL_SQUARE_IMAGE},
@@ -268,7 +295,7 @@ def v2_announcement(
         "platform_refs": ["instagram", "whatsapp"],
         "created_at": "2026-09-10T10:00:00-03:00",
         "age_seconds": 1800,
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "expires_in_seconds": 3600 if state == "pending_review" else 0,
         "scheduled_for": None,
         "approved_at": "2026-09-10T10:05:00-03:00" if state != "pending_review" else None,
@@ -287,7 +314,7 @@ def v2_announcement(
             "policy_version": "visual-v1",
             "cohort_hash": "b" * 64,
             "calculated_at": "2026-09-10T10:04:00-03:00",
-            "expires_at": "2026-09-10T11:30:00-03:00",
+            "expires_at": _anda("2026-09-10T11:30:00-03:00"),
             "freshness": {"state": "fresh", "as_of": FIXED_NOW, "degraded_sources": []},
         },
         "artifact": None,
@@ -376,14 +403,14 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
     return {
         "pk": pk,
         "category": "marketing_approval",
-        "title": "Revisão de fornada aguardando decisão",
+        "title": "Revisão de lote aguardando decisão",
         "message": "O anúncio expira em uma hora e alcança 12 pessoas elegíveis.",
         "lifecycle": lifecycle,
         "severity": "action_required",
         "source": {"condition": "announcement_review", "ref": "announcement:41", "version": 3},
         "owner": {"user_id": 7, "role": "product"},
         "escalation": {"role": "ops", "at": "2026-09-10T11:00:00-03:00"},
-        "expires_at": "2026-09-10T11:30:00-03:00",
+        "expires_at": _anda("2026-09-10T11:30:00-03:00"),
         "seen_at": None,
         "acknowledged_at": None,
         "resolved_at": None,
@@ -574,6 +601,15 @@ class Handler(BaseHTTPRequestHandler):
             actions = [
                 action(
                     f"campaign:{rule['pk']}",
+                    "edit_campaign",
+                    f"/campaigns#campaign-{rule['pk']}",
+                    enabled=True,
+                    version=rule["version"],
+                )
+                for rule in rules
+            ] + [
+                action(
+                    f"campaign:{rule['pk']}",
                     "fire_campaign",
                     f"/api/v1/backstage/marketing/rules/{rule['pk']}/fire/",
                     enabled=fire_enabled and rule["is_active"],
@@ -589,14 +625,59 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"options": {
                 "triggers": [
                     {"value": "manual", "label": "Disparo manual"},
-                    {"value": "production_finished", "label": "Fornada concluída"},
+                    {"value": "production_finished", "label": "Lote concluído"},
                     {"value": "schedule", "label": "Agendado"},
                 ],
-                # Google entra só no cenário dos quatro retratos: acrescentá-lo em todos
-                # mexeria numa pílula a mais em cada baseline que já existe.
-                "platforms": [{"value": "instagram", "label": "Instagram"}, {"value": "facebook", "label": "Facebook"}]
-                + ([{"value": "google_business", "label": "Google"}] if scenario == "board-all-formats" else [])
-                + [{"value": "whatsapp", "label": "WhatsApp"}],
+                # A fixture de produto não pode esconder uma capacidade executável para
+                # preservar screenshots antigos. Plataforma desconectada continua visível
+                # com seu estado; quem limita a escolha é a allow-list do contrato.
+                "platforms": [
+                    {"value": "instagram", "label": "Instagram"},
+                    {"value": "facebook", "label": "Facebook"},
+                    {"value": "google_business", "label": "Google"},
+                    {"value": "whatsapp", "label": "WhatsApp"},
+                ],
+                "delivery_capabilities": [
+                    {
+                        "platform": "instagram",
+                        "label": "Instagram",
+                        "delivery_kind": "publication",
+                        "default_format": "story",
+                        "formats": [
+                            {"ref": "story", "label": "Stories", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": True},
+                            {"ref": "feed", "label": "Feed", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": True},
+                        ],
+                    },
+                    {
+                        "platform": "facebook",
+                        "label": "Facebook",
+                        "delivery_kind": "publication",
+                        "default_format": "feed",
+                        "formats": [
+                            {"ref": "feed", "label": "Feed", "provider_fields": ["publication_format"], "required_provider_fields": ["publication_format"], "media_required": False},
+                        ],
+                    },
+                    {
+                        "platform": "google_business",
+                        "label": "Google Meu Negócio",
+                        "delivery_kind": "publication",
+                        "default_format": "standard",
+                        "formats": [
+                            {"ref": "standard", "label": "Atualização", "provider_fields": ["publication_format", "call_to_action"], "required_provider_fields": ["publication_format"], "media_required": False},
+                            {"ref": "event", "label": "Evento", "provider_fields": ["publication_format", "call_to_action", "event_title", "event_start", "event_end"], "required_provider_fields": ["publication_format", "event_title", "event_start", "event_end"], "media_required": False},
+                            {"ref": "offer", "label": "Oferta", "provider_fields": ["publication_format", "offer_title", "offer_start", "offer_end", "offer_terms"], "required_provider_fields": ["publication_format"], "media_required": False},
+                        ],
+                    },
+                    {
+                        "platform": "whatsapp",
+                        "label": "WhatsApp",
+                        "delivery_kind": "direct_message",
+                        "default_format": "message",
+                        "formats": [
+                            {"ref": "message", "label": "Mensagem", "provider_fields": ["template_name"], "required_provider_fields": [], "media_required": False},
+                        ],
+                    },
+                ],
                 "templates": [template(requires_product=scenario == "fire-product")],
                 "variables": ["product_name", "link"],
                 # ⚠️ Catálogo LONGO de propósito neste cenário: o `UiSelect` só abre o
@@ -614,7 +695,12 @@ class Handler(BaseHTTPRequestHandler):
                 "price_tiers": [{"value": "varejo", "label": "Varejo"}],
                 "tags": [{"value": "clientes-da-casa", "label": "clientes da casa (1.999)"}],
                 "rfm_segments": [{"value": "champion", "label": "Campeões"}],
-                "offers": [],
+                "offers": [
+                    {
+                        "value": "hibisco-primavera",
+                        "label": "Hibisco Primavera · 15% OFF · PRIMAVERA15",
+                    }
+                ],
                 "shop_timezone": "America/Sao_Paulo",
             }})
             return
@@ -792,6 +878,27 @@ class Handler(BaseHTTPRequestHandler):
             platform_content = body.get("platform_content", {})
             if not isinstance(platform_content, dict):
                 platform_content = {}
+            # Prévia da REVISÃO (#1157): o servidor lê o anúncio gravado e aplica as
+            # edições do card; o corpo não carrega mais `platform_content`.
+            if body.get("announcement"):
+                stored = (
+                    all_formats_announcement()
+                    if scenario == "board-all-formats"
+                    else legacy_announcement(int(body["announcement"]))
+                )
+                platform_content = {
+                    key: dict(value) for key, value in stored["platform_content"].items()
+                }
+                google = body.get("google_business")
+                if isinstance(google, dict):
+                    platform_content["google_business"] = {
+                        **{
+                            key: value
+                            for key, value in platform_content.get("google_business", {}).items()
+                            if key == "image_url"
+                        },
+                        **{key: value for key, value in google.items() if value},
+                    }
             previews = {}
             for platform in platforms:
                 rendered = source_body.replace("{{ product_name }}", "Pão artesanal")
@@ -814,11 +921,11 @@ class Handler(BaseHTTPRequestHandler):
                                 else ""
                             )
                         ),
-                        "provider_fields": (
-                            {"publication_format": publication_format}
-                            if publication_format
-                            else {}
-                        ),
+                        "provider_fields": {
+                            key: value
+                            for key, value in variant.items()
+                            if key != "image_url"
+                        },
                         "content_version": 1,
                         "facts_as_of": FIXED_NOW,
                         "facts_hash": "facts-visual-mkt046",
@@ -869,7 +976,7 @@ class Handler(BaseHTTPRequestHandler):
                     "confirmation": {
                         "token": "visual-fire-confirmation-token",
                         "ref": "visual-fire-confirmation-ref",
-                        "expires_at": "2026-09-10T10:35:00-03:00",
+                        "expires_at": _anda("2026-09-10T10:35:00-03:00"),
                         "mode": "none",
                         "step_up": "none",
                         "dual_control": False,
@@ -923,7 +1030,7 @@ class Handler(BaseHTTPRequestHandler):
                 "confirmation": {
                     "token": "visual-confirmation-token",
                     "ref": "visual-confirmation-ref",
-                    "expires_at": "2026-09-10T10:35:00-03:00",
+                    "expires_at": _anda("2026-09-10T10:35:00-03:00"),
                     "mode": "summary",
                     "step_up": "none",
                     "dual_control": False,
@@ -970,8 +1077,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path
-        self._body()
+        body = self._body()
         if re.fullmatch(r"/api/v1/backstage/marketing/rules/\d+/", path):
+            if body.get("base_updated_at") != campaign(1)["updated_at"]:
+                self._send(422, {
+                    "code": "invalid_base_version",
+                    "detail": "A versão de leitura é obrigatória.",
+                })
+                return
             self._send(409, {
                 "code": "version_conflict",
                 "detail": "A campanha mudou em outra sessão.",
@@ -985,6 +1098,16 @@ def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9011
     server = QuietServer(("127.0.0.1", port), Handler)
     print(f"marketing visual mock listening on {port}", flush=True)
+    # ⚠️ A matriz visual crava a hora da PÁGINA em VISUAL_NOW e conta com o backend
+    # declarando o MESMO instante em FIXED_NOW — o aviso de throttle desenha hora de
+    # parede DENTRO da imagem. Com o relógio vivo os dois discordam e retratos
+    # reprovam sem que o diff tenha nada a ver. Quem ligou tem que ver isto.
+    if _DESLOCAMENTO is not None:
+        print(
+            "⚠️  relógio VIVO (MARKETING_MOCK_LIVE_CLOCK=1): serve para o preview local. "
+            "NÃO rode a matriz visual contra este processo — ela espera o relógio fixo.",
+            flush=True,
+        )
     server.serve_forever()
 
 

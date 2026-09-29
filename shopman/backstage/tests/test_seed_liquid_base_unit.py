@@ -38,56 +38,91 @@ from shopman.craftsman.models.recipe import _item_mass_in_kg
 # mesmo número.
 DENSIDADES = {
     "AGUA-FILTRADA": Decimal("1.0"),
-    "LEITE": Decimal("1.03"),
-    "AZEITE": Decimal("0.91"),
-    "CREME-DE-LEITE": Decimal("1.01"),
+    "LEITE-INTEGRAL-A": Decimal("1.03"),
+    "AZEITE-EXTRAVIRGEM": Decimal("0.91"),
+    "NATA-FRESCA": Decimal("1.01"),
 }
 
 # A água vem da torneira e não tem fornecedor (`SUPPLIER_BY_MATERIAL`): nunca
 # chega por nota, então não ganha conversão. Fator que ninguém usa é configuração
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
-COMPRADOS_EM_LITRO = ("LEITE", "AZEITE", "CREME-DE-LEITE")
+COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 37 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 29 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
+#
+# ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE-INTEGRAL-A")`,
+# e ela saiu porque a RECEITA mudou, não porque a conversão foi desfeita: o dono
+# corrigiu que o creme de chocolate é o CREME-BAUNILHA com chocolate derretido,
+# então o leite dele não entra mais direto — entra pela base, onde já está
+# contado em `("creme-baunilha", "LEITE-INTEGRAL-A")`. Linha que sai daqui sem essa
+# explicação é conversão perdida, e o teste é quem grita.
+#
+# ⚠️ E eram 36 até o fim do mesmo dia. A que saiu depois é
+# `("cafe-coado", "AGUA-FILTRADA")`, e ela saiu porque o PRODUTO saiu: o dono
+# marcou o Café Coado `excluir` na planilha de curadoria ("era ideia, não virou
+# produto"), e a ficha foi junto. Não é conversão desfeita — é ficha que não
+# existe mais.
 QUANTIDADES_EM_LITRO = {
     ("creme-levain", "AGUA-FILTRADA"): Decimal("1.700"),
     ("massa-pasta-autolizada", "AGUA-FILTRADA"): Decimal("3.500"),
     ("massa-yudane", "AGUA-FILTRADA"): Decimal("1.000"),
     ("massa-campagne", "AGUA-FILTRADA"): Decimal("3.500"),
     ("massa-ciabatta", "AGUA-FILTRADA"): Decimal("4.000"),
-    ("massa-ciabatta", "AZEITE"): Decimal("0.250"),
-    ("massa-forma", "LEITE"): Decimal("1.800"),
-    ("massa-croissant", "LEITE"): Decimal("1.200"),
-    ("massa-kuropan", "LEITE"): Decimal("1.800"),
+    ("massa-ciabatta", "AZEITE-EXTRAVIRGEM"): Decimal("0.250"),
+    ("massa-forma", "LEITE-INTEGRAL-A"): Decimal("1.800"),
+    ("massa-croissant", "LEITE-INTEGRAL-A"): Decimal("1.200"),
+    ("massa-kuropan", "LEITE-INTEGRAL-A"): Decimal("1.800"),
     ("massa-folhado", "AGUA-FILTRADA"): Decimal("1.800"),
-    ("creme-baunilha", "LEITE"): Decimal("3.400"),
-    ("massa-butter", "LEITE"): Decimal("1.600"),
+    ("creme-baunilha", "LEITE-INTEGRAL-A"): Decimal("3.400"),
+    ("massa-butter", "LEITE-INTEGRAL-A"): Decimal("1.600"),
     ("massa-pita", "AGUA-FILTRADA"): Decimal("3.000"),
-    ("massa-pita", "AZEITE"): Decimal("0.150"),
-    ("recheio-frango", "AZEITE"): Decimal("0.150"),
-    ("recheio-cebola-bacon-tomilho", "AZEITE"): Decimal("0.150"),
-    ("recheio-cebola-azapas", "AZEITE"): Decimal("0.150"),
-    ("molho-bechamel", "LEITE"): Decimal("2.600"),
-    ("creme-chocolate", "LEITE"): Decimal("1.500"),
-    ("creme-leite-ovos", "CREME-DE-LEITE"): Decimal("0.800"),
-    ("creme-leite-ovos", "LEITE"): Decimal("0.600"),
-    ("vinagrete-frances", "AZEITE"): Decimal("0.700"),
-    ("espresso-macchiato", "LEITE"): Decimal("0.020"),
-    ("cafe-coado", "AGUA-FILTRADA"): Decimal("0.200"),
-    ("cappuccino", "LEITE"): Decimal("0.150"),
-    ("mochaccino", "LEITE"): Decimal("0.150"),
-    ("mocha", "LEITE"): Decimal("0.180"),
-    ("caffe-latte", "LEITE"): Decimal("0.220"),
-    ("chocolate-quente", "LEITE"): Decimal("0.220"),
+    ("massa-pita", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("recheio-cebola-azapas", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    ("espresso-macchiato", "LEITE-INTEGRAL-A"): Decimal("0.020"),
+    ("cappuccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
+    ("mochaccino", "LEITE-INTEGRAL-A"): Decimal("0.150"),
+    ("mocha", "LEITE-INTEGRAL-A"): Decimal("0.180"),
+    ("caffe-latte", "LEITE-INTEGRAL-A"): Decimal("0.220"),
+    ("chocolate-quente", "LEITE-INTEGRAL-A"): Decimal("0.220"),
     ("cha-camille", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-rouge", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-sophie", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-bleu", "AGUA-FILTRADA"): Decimal("0.400"),
     ("cha-hibisco", "AGUA-FILTRADA"): Decimal("0.300"),
     ("soft-chai-citrico", "AGUA-FILTRADA"): Decimal("0.250"),
-    ("vienna-gelado", "LEITE"): Decimal("0.050"),
+    ("vienna-gelado", "LEITE-INTEGRAL-A"): Decimal("0.050"),
     ("vienna-gelado", "AGUA-FILTRADA"): Decimal("0.200"),
+}
+
+# Linhas que NASCERAM em kg: vêm da ficha técnica da casa (Maysa), que já pesa
+# os líquidos, e não passaram pela conversão de litro. Estão aqui para que o
+# teste continue gritando quando uma linha de líquido aparece ou some sem aviso.
+#
+# ⚠️ Seis linhas saíram de `QUANTIDADES_EM_LITRO` em 24/09/2026, e saíram
+# porque a RECEITA foi trocada pela real, não porque a conversão foi desfeita
+# (F2 do WP-FICHAS-REAIS-DA-CASA): o bechamel da casa é infusionado e leva nata;
+# o recheio de frango troca o azeite por óleo e ganha o caldo; o de cebola e o
+# vinagrete (que é outra receita) têm a proporção de azeite da ficha dela; e o
+# creme do pain perdu é o «Creme Pain Perdu» dela, com outra proporção.
+NASCIDAS_EM_KG = {
+    ("molho-bechamel", "LEITE-INTEGRAL-A"): Decimal("3.000"),
+    ("molho-bechamel", "NATA-FRESCA"): Decimal("0.255"),
+    ("creme-limao", "LEITE-INTEGRAL-A"): Decimal("1.125"),
+    ("recheio-frango", "AGUA-FILTRADA"): Decimal("1.040"),
+    ("recheio-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.300"),
+    ("vinagrete-frances", "AZEITE-EXTRAVIRGEM"): Decimal("0.150"),
+    # Montagens (fatia B): o creme do pain perdu é o da ficha dela, e o
+    # caramelo e o chantilly chegaram com ela.
+    ("creme-leite-ovos", "LEITE-INTEGRAL-A"): Decimal("1.000"),
+    ("creme-leite-ovos", "NATA-FRESCA"): Decimal("0.375"),
+    ("molho-caramelo", "NATA-FRESCA"): Decimal("1.200"),
+    ("pain-perdu", "NATA-FRESCA"): Decimal("0.025"),
+    # O azeite da finalização das focaccias (dono, 24/09/2026).
+    ("focaccia-dia", "AZEITE-EXTRAVIRGEM"): Decimal("0.012"),
+    ("focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.012"),
+    ("mini-focaccia-alecrim", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
+    ("mini-focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio
@@ -131,7 +166,8 @@ def _liquidos_declarados_no_seed() -> dict[tuple[str, str], Decimal]:
             for item in campos["items"].elts:
                 sku = _literal(item.elts[0])
                 if sku in DENSIDADES:
-                    declaradas[(ref, sku)] = Decimal(_literal(item.elts[1]))
+                    # O seed grava em grama desde 24/09/2026; o registro é em kg.
+                    declaradas[(ref, sku)] = Decimal(_literal(item.elts[1])) / 1000
     assert declaradas, "recipes_data não foi encontrado no fonte do seed"
     return declaradas
 
@@ -144,10 +180,13 @@ def test_cada_quantidade_e_a_do_litro_multiplicada_pela_densidade():
     partir do cadastro anterior, insumo a insumo.
     """
     declaradas = _liquidos_declarados_no_seed()
-    assert set(declaradas) == set(QUANTIDADES_EM_LITRO), (
+    conhecidas = set(QUANTIDADES_EM_LITRO) | set(NASCIDAS_EM_KG)
+    assert set(declaradas) == conhecidas, (
         "linha de líquido que apareceu ou sumiu do seed sem passar por aqui: "
-        f"{sorted(set(declaradas) ^ set(QUANTIDADES_EM_LITRO))}"
+        f"{sorted(set(declaradas) ^ conhecidas)}"
     )
+    for chave, quilos in NASCIDAS_EM_KG.items():
+        assert declaradas[chave] == quilos, chave
     for (ref, sku), litros in sorted(QUANTIDADES_EM_LITRO.items()):
         esperado = (litros * DENSIDADES[sku]).quantize(
             Decimal("0.001"), rounding=ROUND_HALF_UP
@@ -185,18 +224,18 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     for sku, densidade in DENSIDADES.items():
         material = Material.objects.get(sku=sku)
         assert Decimal(str(material.metadata["density_g_per_ml"])) == densidade, sku
-        assert material.unit == "kg", sku
+        assert material.unit == "g", sku
 
-    # A base é a unidade do momento da verdade, e a casa pesa tudo (R1).
+    # A base é a unidade do momento da verdade, e a casa pesa tudo (R1), em grama.
     assert sorted(Material.objects.filter(unit="l").values_list("sku", flat=True)) == []
 
     # `RecipeItem.clean` já obrigaria; o teste diz por quê. Item em `L` para
     # insumo em `kg` seria número mudo: a separação pesaria uma coisa e o ledger
     # baixaria outra.
     itens = RecipeItem.objects.filter(input_sku__in=DENSIDADES)
-    assert itens.count() == len(QUANTIDADES_EM_LITRO)
+    assert itens.count() == len(QUANTIDADES_EM_LITRO) + len(NASCIDAS_EM_KG)
     for item in itens.select_related("recipe"):
-        assert item.unit == "kg", f"{item.recipe.ref}/{item.input_sku}: {item.unit}"
+        assert item.unit == "g", f"{item.recipe.ref}/{item.input_sku}: {item.unit}"
         item.full_clean()
 
     # Misturar não cria matéria: `Recipe.clean` recusa quem rende mais do que
@@ -214,7 +253,7 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     # e limões, aparecem em unidades inteiras: ``(≈ 17 un.)`` e ``(≈ 2 un.)``.
     for sku in COMPRADOS_EM_LITRO:
         conversao = MaterialConversion.objects.get(material__sku=sku, label="litros")
-        assert conversao.to_base_factor == DENSIDADES[sku], sku
+        assert conversao.to_base_factor == DENSIDADES[sku] * 1000, sku  # g por litro
         assert conversao.is_approximate is True, sku
         assert conversao.supplier_id is None, sku
         assert conversao.is_active is True, sku
@@ -222,6 +261,6 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
 
     # O ganho concreto: a massa do item sai direto do cadastro. Antes, item sem
     # `density_g_per_ml` devolvia `None` e calava o invariante da ficha inteira.
-    leite = RecipeItem.objects.filter(input_sku="LEITE").first()
+    leite = RecipeItem.objects.filter(input_sku="LEITE-INTEGRAL-A").first()
     leite.meta = {}
-    assert _item_mass_in_kg(leite) == leite.quantity
+    assert _item_mass_in_kg(leite) == leite.quantity / 1000

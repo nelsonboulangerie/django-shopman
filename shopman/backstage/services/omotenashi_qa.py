@@ -264,7 +264,7 @@ def _kds_check() -> OmotenashiQACheck:
         surface="kds",
         viewport="tablet/touch 1024x768",
         persona="cozinha montando o pedido",
-        title="KDS com tickets vivos, toque e expedição",
+        title="KDS com tickets vivos, toque e Saída",
         url=operator_links.kds_url(),
         expectation="Estação deve mostrar item, tempo e ação primária sem esconder atraso nem cancelamento.",
         evidence=evidence,

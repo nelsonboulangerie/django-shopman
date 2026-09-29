@@ -23,10 +23,9 @@ import logging
 from copy import deepcopy
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-import requests
 from django.conf import settings
 
-from shopman.shop.services import ifood_auth
+from shopman.shop.services import ifood_http
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +38,6 @@ def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
 
 
-def _base_url() -> str:
-    return str(_cfg().get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
-
-
 def _to_q(value) -> int:
     """Convert an iFood decimal currency value (reais) to centavos."""
     try:
@@ -52,17 +47,20 @@ def _to_q(value) -> int:
 
 
 def fetch_order(order_id: str) -> dict:
-    """Fetch the full iFood order by id. Raises :class:`IFoodOrderFetchError`."""
-    headers = ifood_auth.authorized_headers()
-    if not headers:
-        raise IFoodOrderFetchError("iFood OAuth is not configured (client_id/client_secret)")
+    """Fetch the full iFood order by id. Raises :class:`IFoodOrderFetchError`.
 
-    url = f"{_base_url()}/order/v1.0/orders/{order_id}"
-    try:
-        resp = requests.get(url, headers=headers, timeout=int(_cfg().get("timeout") or 30))
-    except requests.RequestException as exc:
-        raise IFoodOrderFetchError(f"iFood order fetch failed: {exc}") from exc
-
+    Leitura pura, então passa por ``ifood_http`` como idempotente: a recusa de
+    edge e o ``5xx`` são retentados. Foi exatamente aqui que o ensaio de
+    12/09/2026 perdeu os detalhes do pedido oficial — o ``PLC`` chegou e o
+    ``GET`` levou 403 do edge, sem nenhuma retentativa.
+    """
+    resp = ifood_http.request(
+        "GET", f"/order/v1.0/orders/{order_id}", label="fetch_order", idempotent=True
+    )
+    if resp is None:
+        raise IFoodOrderFetchError(
+            f"iFood order fetch falhou para {order_id} (sem credencial, transporte ou recusa de edge)"
+        )
     if resp.status_code != 200:
         raise IFoodOrderFetchError(
             f"iFood order fetch HTTP {resp.status_code}: {resp.text[:200]}"
@@ -106,21 +104,60 @@ def map_order(order: dict) -> dict:
 
 
 def _map_customer(customer: dict) -> dict:
+    """Mapeia o objeto ``customer`` do iFood para o snapshot do pedido.
+
+    Três campos que a ingestão descartava e agora preserva, porque cada um
+    responde a uma pergunta que o resto do sistema estava errando:
+
+    - ``ifood_customer_id`` (``customer.id``) — identificador do CLIENTE, não
+      do pedido. É a chave de identidade de ``services/customer._handle_ifood``.
+      Antes a estratégia usava o id do PEDIDO, que é único por compra, então a
+      busca nunca casava e cada pedido criava um ``Customer`` novo.
+    - ``orders_count_on_merchant`` (``ordersCountOnMerchant``) — quantos pedidos
+      esta pessoa já fez NESTA loja, pela contagem do iFood (5 anos). Fato do
+      pedido, preservado no snapshot: vale a contagem no momento da compra.
+    - ``segmentation`` — a Super-Segmentação do iFood. ⚠️ A documentação do
+      iFood diz que é dado confidencial: não vai para o cliente nem para
+      terceiros. Fica no snapshot para leitura interna (B.I.).
+    """
     phone = customer.get("phone") or {}
     if isinstance(phone, dict):
         # iFood masks the number and gives a call localizer to reach the customer.
         number = phone.get("number", "")
         localizer = phone.get("localizer", "")
+        # O localizador VENCE: depois disso a central não repassa a ligação, e
+        # oferecer o código na tela seria mandar o operador discar para o nada.
+        localizer_expiration = phone.get("localizerExpiration", "")
     else:
         number = str(phone)
         localizer = ""
+        localizer_expiration = ""
     return {
         "name": customer.get("name", ""),
+        "ifood_customer_id": str(customer.get("id") or ""),
         "phone": number,
         "phone_localizer": localizer,
+        "phone_localizer_expiration": localizer_expiration,
         "document": customer.get("documentNumber", ""),
         "document_type": customer.get("documentType", ""),
+        "orders_count_on_merchant": _orders_count(customer.get("ordersCountOnMerchant")),
+        "segmentation": str(customer.get("segmentation") or ""),
     }
+
+
+def _orders_count(value) -> int | None:
+    """``ordersCountOnMerchant`` como inteiro, ou ``None`` quando o iFood omite.
+
+    ``None`` e ``0`` são respostas diferentes: ``0`` é "primeira compra nesta
+    loja", ``None`` é "o iFood não informou" — o campo é opcional. Achatar as
+    duas em ``0`` faria o B.I. contar cliente novo onde não há informação.
+    """
+    if value is None:
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _map_delivery(order: dict) -> dict:
@@ -141,6 +178,16 @@ def _map_delivery(order: dict) -> dict:
         "complement": address.get("complement", ""),
         "reference": address.get("reference", ""),
         "postal_code": address.get("postalCode", ""),
+        # Os COMPONENTES do endereço, além do texto formatado. Eles chegavam do
+        # iFood, eram usados só para compor ``formatted`` e morriam aqui — e o
+        # destinatário da NFC-e de entrega a domicílio é montado de componente,
+        # não de texto corrido: sem eles o adapter fiscal recusa a nota por
+        # "confira logradouro, número, bairro, município, UF".
+        "street": address.get("streetName", ""),
+        "number": address.get("streetNumber", ""),
+        "neighborhood": address.get("neighborhood", ""),
+        "city": address.get("city", ""),
+        "state": address.get("state", ""),
         "scheduled_at": delivery.get("deliveryDateTime", ""),
         "pickup_code": delivery.get("pickupCode", ""),
         "delivered_by": delivery.get("deliveredBy", ""),

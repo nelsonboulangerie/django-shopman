@@ -42,8 +42,11 @@ from .home import (
     OmotenashiProjection,
     OpeningHoursEntry,
     ShopStatusProjection,
+    StorefrontShellProjection,
     build_home,
+    build_shell,
 )
+from .legal import LegalProjection, ProcessorProjection, build_legal
 from .order_history import (
     OrderHistoryProjection,
     build_order_history,
@@ -89,6 +92,9 @@ __all__ = [
     "CustomerProfileProjection",
     "DiscountLineProjection",
     "FomoBadge",
+    "LegalProjection",
+    "ProcessorProjection",
+    "build_legal",
     "FAQItemProjection",
     "SiteProjection",
     "HomeHeroCopyProjection",
@@ -112,6 +118,7 @@ __all__ = [
     "ReorderConflictProjection",
     "ShopProjection",
     "ShopStatusProjection",
+    "StorefrontShellProjection",
     "SocialLinkProjection",
     "UpsellSuggestionProjection",
     "badges_for_product",
@@ -123,6 +130,7 @@ __all__ = [
     "get_channel_listing_ref",
     "build_checkout",
     "build_home",
+    "build_shell",
     "build_site",
     "build_order_history",
     "build_order_tracking",

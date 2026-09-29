@@ -3,10 +3,10 @@ import { authPhonePayload, displayBrazilianPhone, displayE164Phone, maskPhoneInp
 
 describe('auth phone payload', () => {
   it('normalizes Brazilian phone variants before auth calls', () => {
-    expect(normalizeAuthPhone('43 98404-9009', 'BR')).toBe('+5543984049009')
-    expect(normalizeAuthPhone('(043) 98404-9009', 'BR')).toBe('+5543984049009')
-    expect(normalizeAuthPhone('+55 (43) 98404-9009', 'BR')).toBe('+5543984049009')
-    expect(normalizeAuthPhone('(43) 9840-4900', 'BR')).toBe('')
+    expect(normalizeAuthPhone('43 98123-4567', 'BR')).toBe('+5543981234567')
+    expect(normalizeAuthPhone('(043) 98123-4567', 'BR')).toBe('+5543981234567')
+    expect(normalizeAuthPhone('+55 (43) 98123-4567', 'BR')).toBe('+5543981234567')
+    expect(normalizeAuthPhone('(43) 9812-3456', 'BR')).toBe('')
   })
 
   it('preserves explicit international numbers', () => {
@@ -37,18 +37,18 @@ describe('auth phone payload', () => {
   })
 
   it('displayE164Phone keeps the +55 country code for the profile label', () => {
-    expect(displayE164Phone('+5543984049009')).toBe('+55 (43) 98404-9009')
+    expect(displayE164Phone('+5543981234567')).toBe('+55 (43) 98123-4567')
     expect(displayE164Phone('+554333231997')).toBe('+55 (43) 3323-1997')
     expect(displayE164Phone('+12025551234')).toBe('+12025551234')
     expect(displayE164Phone('')).toBe('')
   })
 
   it('sends the explicit canonical auth contract fields', () => {
-    expect(authPhonePayload('(43) 98404-9009', 'BR', 'whatsapp')).toEqual({
-      phone: '(43) 98404-9009',
-      phone_normalized: '+5543984049009',
+    expect(authPhonePayload('(43) 98123-4567', 'BR', 'whatsapp')).toEqual({
+      phone: '(43) 98123-4567',
+      phone_normalized: '+5543981234567',
       phone_region: 'BR',
-      target: '+5543984049009',
+      target: '+5543981234567',
       delivery_method: 'whatsapp'
     })
   })
@@ -56,13 +56,13 @@ describe('auth phone payload', () => {
 
 describe('default DDD (Shop.default_ddd) — S2/S4', () => {
   it('assumes the default DDD when a BR number has none (9-digit mobile)', () => {
-    expect(normalizeAuthPhone('98404-9009', 'BR', '43')).toBe('+5543984049009')
-    expect(normalizeAuthPhone('984049009', 'BR', '43')).toBe('+5543984049009')
+    expect(normalizeAuthPhone('98123-4567', 'BR', '43')).toBe('+5543981234567')
+    expect(normalizeAuthPhone('981234567', 'BR', '43')).toBe('+5543981234567')
   })
 
   it('rejects ambiguous DDD-less mobile without inventing a digit', () => {
-    expect(normalizeAuthPhone('9840-4900', 'BR', '43')).toBe('')
-    expect(displayBrazilianPhone('9840-4900', '43')).toBe('')
+    expect(normalizeAuthPhone('9812-3456', 'BR', '43')).toBe('')
+    expect(displayBrazilianPhone('9812-3456', '43')).toBe('')
   })
 
   it('assumes the default DDD for an 8-digit landline', () => {
@@ -70,15 +70,15 @@ describe('default DDD (Shop.default_ddd) — S2/S4', () => {
   })
 
   it('does NOT touch a number that already carries a DDD', () => {
-    expect(normalizeAuthPhone('(43) 98404-9009', 'BR', '11')).toBe('+5543984049009')
+    expect(normalizeAuthPhone('(43) 98123-4567', 'BR', '11')).toBe('+5543981234567')
   })
 
   it('without a default DDD, leaves the (shorter) number as-is (legacy behaviour)', () => {
-    expect(normalizeAuthPhone('984049009', 'BR')).toBe('+55984049009')
+    expect(normalizeAuthPhone('981234567', 'BR')).toBe('+55981234567')
   })
 
   it('displayBrazilianPhone formats a DDD-less input via the default DDD (no more "(55) …")', () => {
-    expect(displayBrazilianPhone('98404-9009', '43')).toBe('(43) 98404-9009')
+    expect(displayBrazilianPhone('98123-4567', '43')).toBe('(43) 98123-4567')
     // e um número cru com DDD já formata (fim do "43984043939" sem máscara)
     expect(displayBrazilianPhone('43984043939', '43')).toBe('(43) 98404-3939')
     expect(displayBrazilianPhone('+5543984043939', '43')).toBe('(43) 98404-3939')

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import timedelta
+from io import StringIO
 
 import pytest
 from django.core.management import call_command
@@ -259,3 +260,113 @@ def test_history_lines_without_a_resolved_sku_are_not_products():
     _run(min_support=2)
 
     assert ProductAffinity.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_a_cesta_do_historico_chega_pelo_codigo_do_catalogo():
+    """O par do Yooga e o par de hoje são o MESMO par, ou a vitrine perde dois anos.
+
+    O histórico guarda o código como o Yooga o escreveu (`CT`), e o catálogo
+    usa o curado (`CRO`). Quem pergunta à afinidade é a vitrine, pelo código do
+    catálogo — sem o de-para, a metade histórica da tabela fica inalcançável, e
+    sem erro nenhum. Até 23/09/2026 os dois códigos coincidiam e a falta não
+    aparecia.
+    """
+    from django.utils import timezone
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.models import AliasStatus, HistoricalSale, HistoricalSaleItem, ProductAlias
+    from shopman.backstage.tests.support import historical_batch
+    from shopman.shop.adapters.baskets import historical_sales
+
+    croissant = Product.objects.create(sku="CRO", name="Croissant", base_price_q=1300)
+    pain = Product.objects.create(sku="PCHOC", name="Pain au Chocolat", base_price_q=1400)
+    for externo, produto in (("CT", croissant), ("PC", pain)):
+        ProductAlias.objects.create(
+            source="yooga", external_sku=externo, external_name=produto.name,
+            product=produto, status=AliasStatus.CONFIRMED,
+        )
+
+    venda = HistoricalSale.objects.create(
+        batch=historical_batch("yooga"), source="yooga", external_id=1,
+        occurred_at=timezone.now(), total_q=2700,
+    )
+    for seq, sku in enumerate(("CT", "PC"), start=1):
+        HistoricalSaleItem.objects.create(
+            sale=venda, seq=seq, sku=sku, product_name=sku, qty=1,
+            unit_price_q=1350, line_total_q=1350,
+        )
+
+    cestas = list(historical_sales(since=timezone.now() - timedelta(days=30)))
+
+    assert len(cestas) == 1
+    assert cestas[0].skus == frozenset({"CRO", "PCHOC"})
+
+
+@pytest.mark.django_db
+def test_sem_de_para_a_cesta_segue_com_o_codigo_da_fonte():
+    """Sem tradução não se inventa uma: a linha é o que ela é."""
+    from django.utils import timezone
+
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+    from shopman.backstage.tests.support import historical_batch
+    from shopman.shop.adapters.baskets import historical_sales
+
+    venda = HistoricalSale.objects.create(
+        batch=historical_batch("yooga"), source="yooga", external_id=2,
+        occurred_at=timezone.now(), total_q=2000,
+    )
+    for seq, sku in enumerate(("MCT", "MPC"), start=1):
+        HistoricalSaleItem.objects.create(
+            sale=venda, seq=seq, sku=sku, product_name=sku, qty=1,
+            unit_price_q=1000, line_total_q=1000,
+        )
+
+    cestas = list(historical_sales(since=timezone.now() - timedelta(days=30)))
+
+    assert cestas[0].skus == frozenset({"MCT", "MPC"})
+
+
+@pytest.mark.django_db
+def test_leitura_parcial_recusa_gravar(monkeypatch):
+    """Fonte que morre no meio deixa tabela que PARECE completa — e isso trava.
+
+    Medido em 23/09/2026: o cursor de servidor cai contra o pool em modo
+    transação, e duas execuções seguidas leram 12.625 e 4.087 cestas das 26.590
+    que existiam. As duas gravaram, com aviso só no log, e os dois números
+    passaram por medição. Agora o comando para.
+    """
+    from django.core.management.base import CommandError
+
+    from shopman.shop.adapters import baskets as fonte
+
+    def fonte_que_morre_no_meio(*, since, failures=None):
+        yield fonte.Basket(skus=frozenset({"CRO", "PCHOC"}), occurred_at=timezone.now())
+        if failures is not None:
+            failures.append("fonte.que.morreu")
+
+    monkeypatch.setattr(fonte, "all_baskets", fonte_que_morre_no_meio)
+
+    with pytest.raises(CommandError) as erro:
+        call_command("compute_product_affinity", "--force", stdout=StringIO())
+
+    assert "não entregaram tudo" in str(erro.value)
+    assert "--allow-partial" in str(erro.value)
+    assert not ProductAffinity.objects.exists()
+
+
+@pytest.mark.django_db
+def test_allow_partial_grava_e_e_escolha_explicita(monkeypatch):
+    from shopman.shop.adapters import baskets as fonte
+
+    def fonte_que_morre_no_meio(*, since, failures=None):
+        for _ in range(6):
+            yield fonte.Basket(skus=frozenset({"CRO", "PCHOC"}), occurred_at=timezone.now())
+        if failures is not None:
+            failures.append("fonte.que.morreu")
+
+    monkeypatch.setattr(fonte, "all_baskets", fonte_que_morre_no_meio)
+
+    call_command("compute_product_affinity", "--force", "--allow-partial", stdout=StringIO())
+
+    assert ProductAffinity.objects.filter(sku_a="CRO", sku_b="PCHOC").exists()

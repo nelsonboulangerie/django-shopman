@@ -51,6 +51,7 @@ IDEMPOTENT_BY_NATURE = {
     "unfire_tab": "cancela o envio de line_ids nomeados; repetir nao desfaz nada a mais",
     "move_tab_lines": "move line_ids nomeados; na segunda vez eles ja nao estao na origem",
     "cancel_recent_sale": "cancela um order_ref nomeado; a venda ja cancelada nao cancela de novo",
+    "emit_fiscal": "emite a NFC-e de um order_ref nomeado; com a nota em andamento o segundo POST e recusado (409), a Directive e dedupe por nfce:<ref>",
     "drawer_open": "abre a gaveta fisica — repetir abre a gaveta de novo, nao gera lancamento",
     "drawer_unlock_attempt": "telemetria da tela de PIN",
     "drawer_left_open": "telemetria: a gaveta ficou aberta sem venda",

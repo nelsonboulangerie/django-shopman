@@ -34,6 +34,30 @@ log in, keep the tab open, and click "Já entrei".
 For local development, keep Django and Nuxt on the same hostname, such as
 `127.0.0.1`, so Django session and CSRF cookies are visible to both ports.
 
+## Leitor de código da Via Cozinha (nota para o gestor)
+
+A estação do KDS sem tela (ex.: Lanches) recebe cada pedido impresso na Via
+Cozinha, e o papel termina num **QR**. Imprimir não conclui o pedido: quem dá o
+pronto é a Saída do KDS, o PDV (ícone de chapéu de cozinheiro na linha que foi
+para a cozinha) ou **o leitor de código ligado ao PC do PDV** — a bancada lê o
+QR do papel quando o lanche fica pronto.
+
+- **Qual leitor serve:** qualquer leitor **2D** (lê QR) em **modo teclado
+  (HID)** com base USB — com fio ou sem fio com a base espetada no PC do
+  balcão. Não precisa de driver nem de programa.
+- **Configuração do leitor:** a de fábrica. O único sufixo é o **Enter**
+  (padrão de quase todos). Nada de prefixo, TAB ou sufixo extra.
+- **Leiaute do teclado:** tanto faz (US ou ABNT2): o código só tem letras,
+  números e hífen.
+- **Em qualquer tela do PDV:** com alguém identificado (PIN/crachá), a leitura
+  vira o aviso "Lanches pronto · Ana · #1234" com um som curto; a leitura não
+  cai no campo que estiver com o cursor. Com a tela travada, o leitor não age.
+- **Quando não dá:** código de outro papel (ou rasgado) diz "Código não
+  reconhecido"; pedido cancelado diz "não prepare"; ler de novo diz "já estava
+  pronto".
+- **Quem pode:** quem opera o PDV (`cashman.operate_pos`) ou o KDS
+  (`backstage.operate_kds`).
+
 ## Production
 
 ```bash

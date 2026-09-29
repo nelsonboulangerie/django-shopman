@@ -1,0 +1,99 @@
+{
+  "$comment": [
+    "REGISTRO ÚNICO DAS SUPERFÍCIES NUXT. Superfície nova entra AQUI primeiro, e todo outro lugar do repositório que enumera superfícies tem de concordar com esta tabela.",
+    "A chave é o id do app: prefixo das envs do grupo (`POS__NUXT_...`), chave do `OPERATOR_HOSTS`, chave de `operator-kit/app-identity.json` e do `operator-router/groups.json`.",
+    "dir: diretório em surfaces/. kind: `customer` (voz própria, não estende a layer) ou `operator` (estende `../operator-kit`). dev_port: porta do `npm run dev`.",
+    "service: componente do spec da DigitalOcean que serve o app — o próprio para a loja, o GRUPO para os apps de operador (ADR-030). ready_path: só quando o app tem readiness própria além do /health/live.",
+    "subdomain: rótulo do hostname em STORE_DOMAIN (`pdv` → pdv.boulangerie.com.br). A loja não tem: é a rota catch-all do ingress. Hostname é DNS e decisão do dono — o registro ANOTA o que existe, não escolhe.",
+    "base_url_env: env do Django com a URL pública do app (links do Admin e tiles do Shopman Apps). O próprio Shopman Apps não tem: ele não se lista.",
+    "hub_tile: chave do tile no Shopman Apps (`shopman/backstage/projections/hub.py` e `SHOPMAN_SURFACE_URLS`). Não é o id: o Gestor é `gestor` e a Loja é `loja` desde antes deste registro."
+  ],
+  "surfaces": {
+    "storefront": {
+      "dir": "storefront-nuxt",
+      "kind": "customer",
+      "dev_port": 3000,
+      "service": "storefront-nuxt",
+      "subdomain": null,
+      "base_url_env": "SHOPMAN_STOREFRONT_BASE_URL",
+      "hub_tile": "loja"
+    },
+    "hub": {
+      "dir": "hub-nuxt",
+      "kind": "operator",
+      "dev_port": 3001,
+      "service": "operator-floor",
+      "subdomain": "central",
+      "base_url_env": null,
+      "hub_tile": null
+    },
+    "pos": {
+      "dir": "pos-nuxt",
+      "kind": "operator",
+      "dev_port": 3002,
+      "service": "operator-floor",
+      "subdomain": "pdv",
+      "base_url_env": "SHOPMAN_POS_BASE_URL",
+      "hub_tile": "pos"
+    },
+    "kds": {
+      "dir": "kds-nuxt",
+      "kind": "operator",
+      "dev_port": 3003,
+      "service": "operator-floor",
+      "subdomain": "kds",
+      "base_url_env": "SHOPMAN_KDS_BASE_URL",
+      "hub_tile": "kds"
+    },
+    "orders": {
+      "dir": "orders-nuxt",
+      "kind": "operator",
+      "dev_port": 3004,
+      "service": "operator-floor",
+      "subdomain": "gestor",
+      "base_url_env": "SHOPMAN_ORDERS_BASE_URL",
+      "hub_tile": "gestor"
+    },
+    "production": {
+      "dir": "production-nuxt",
+      "kind": "operator",
+      "dev_port": 3005,
+      "service": "operator-floor",
+      "subdomain": "prod",
+      "base_url_env": "SHOPMAN_PRODUCTION_BASE_URL",
+      "hub_tile": "production"
+    },
+    "marketing": {
+      "dir": "marketing-nuxt",
+      "kind": "operator",
+      "dev_port": 3006,
+      "service": "operator-office",
+      "ready_path": "/health/ready",
+      "subdomain": "mkt",
+      "base_url_env": "SHOPMAN_MARKETING_BASE_URL",
+      "hub_tile": "marketing"
+    },
+    "bi": {
+      "dir": "bi-nuxt",
+      "kind": "operator",
+      "dev_port": 3007,
+      "service": "operator-office",
+      "subdomain": "bi",
+      "base_url_env": "SHOPMAN_BI_BASE_URL",
+      "hub_tile": "bi"
+    },
+    "purchase": {
+      "dir": "purchase-nuxt",
+      "kind": "operator",
+      "dev_port": 3008,
+      "service": "operator-office",
+      "subdomain": "compras",
+      "base_url_env": "SHOPMAN_PURCHASE_BASE_URL",
+      "hub_tile": "purchase"
+    }
+  },
+  "operator_groups": {
+    "operator-floor": "Chão da loja: PDV, cozinha, pedidos, produção e Shopman Apps.",
+    "operator-office": "Gestão: marketing, B.I. e compras."
+  }
+}

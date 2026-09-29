@@ -16,7 +16,7 @@ from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderIte
 from shopman.craftsman.models.recipe import _item_mass_in_kg
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
-from shopman.orderman.models import IdempotencyKey, Order, OrderItem, Session
+from shopman.orderman.models import Order, OrderItem, Session
 from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Batch, Move, Position
 from shopman.utils import units
@@ -26,6 +26,7 @@ from config.management.commands.seed import (
     _discard_owned_seed_output_batch,
     _ensure_seed_active_production_supply,
     _ensure_seed_standard_batch,
+    prep_daily_needs,
 )
 from shopman.backstage.models import (
     KDSInstance,
@@ -50,18 +51,46 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Product.objects.filter(ingredients_text__icontains="não contém glúten").exists(), (
         "o seed não pode contradizer a política da casa: sem segregação, nenhum item afirma ausência de glúten"
     )
-    for sku in ("BF", "SS", "COMBO-PETIT-DEJ"):
+    for sku in ("TRADI", "SP", "MDLN"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
-        assert fiscal["profile"] == "own_production"
+        assert fiscal["profile"] == "standard"
         assert fiscal["ncm"]
         # CFOP/CSOSN são resolvidos do perfil fiscal na emissão (NFC-e intraestadual).
         resolved = resolve_fiscal_item(from_metadata(metadata))
         assert resolved["cfop"] == "5102"
         assert resolved["icms_situacao_tributaria"] == "102"
+    # A Mercearia real nasce no seed pela mesma tabela do `apply_grocery_catalog`:
+    # vendável no PDV, fora de todo canal remoto (sem foto), com cadastro de compra do mesmo SKU.
+    from shopman.buyman.models import Material
+    from shopman.offerman.models import ListingItem
+
+    from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, LEFT_OUT
+
+    grocery = {p.sku: p for p in Product.objects.filter(sku__in=[i.sku for i in GROCERY])}
+    assert set(grocery) == {i.sku for i in GROCERY}
+    assert not Product.objects.filter(sku__in=LEFT_OUT).exists()
+    for sku, product in grocery.items():
+        refs = set(ListingItem.objects.filter(product=product).values_list("listing__ref", flat=True))
+        assert refs == {"pdv"}, (sku, refs)
+        assert "purchase" not in product.metadata
+        assert Material.objects.get(sku=sku).unit == product.unit
+        assert not from_metadata(product.metadata).errors(), sku
+        wanted = next(i.collection for i in GROCERY if i.sku == sku)
+        assert product.collection_items.filter(collection__ref=wanted).exists(), sku
+    # Os placeholders da despensa saíram (dono, 24/09); as caixas presente entram.
+    assert not Product.objects.filter(sku__in=("MT", "QP", "CX", "BK", "GR", "LN", "THL")).exists()
+    for box in GIFT_BOXES:
+        caixa = Product.objects.get(sku=box.sku)
+        assert caixa.metadata["social"]["brand"] == "Nelson Boulangerie"
+        assert set(ListingItem.objects.filter(product=caixa).values_list("listing__ref", flat=True)) == {"pdv"}
+    rtat = Product.objects.get(sku="RTAT")
+    assert (rtat.name, rtat.base_price_q) == ("Ratatouille 90g", 1800)
+    assert "price_tbd" not in rtat.metadata
+
     croissant_history = [
         item
-        for item in OrderItem.objects.filter(sku="CT").select_related("order")
+        for item in OrderItem.objects.filter(sku="CRO").select_related("order")
         if (item.meta or {}).get("source") == "production_demand_history"
     ]
     assert len(croissant_history) >= 4
@@ -99,7 +128,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         ("massa-tradicao", "mass", 1),
         ("creme-levain", "mass", 1),
         ("creme-baunilha", "cream", 2),
-        ("recheio-frango", "other_filling", 3),
+        ("recheio-cebola-azapas", "other_filling", 3),
     ):
         meta = Recipe.objects.get(ref=ref).meta
         assert meta["shelf_life_days"] == days
@@ -107,27 +136,82 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert meta["shelf_life_source"] == "pre_go_live_example"
         assert meta["shelf_life_review_required"] is True
 
+    # Onde a ficha técnica da casa declara a validade, vale a dela — e ainda
+    # assim pede a revisão assinada: é de 2017-2023, ninguém a reconfirmou.
+    for ref, days in (("recheio-frango", 2), ("molho-bechamel", 7), ("creme-limao", 3)):
+        meta = Recipe.objects.get(ref=ref).meta
+        assert meta["shelf_life_days"] == days
+        assert meta["shelf_life_source"] == "house_recipe_sheet"
+        assert meta["shelf_life_review_required"] is True
+
+    # O aproveitamento da ficha da casa chega à linha: a cebola do recheio
+    # rende 84%, e o que sai do estoque é a BRUTA.
+    cebola = RecipeItem.objects.get(
+        recipe__ref="recheio-cebola-bacon-tomilho", input_sku="CEBOLA-BRANCA"
+    )
+    assert cebola.usable_factor == Decimal("0.84")
+    assert cebola.gross_quantity > cebola.quantity
+
     # Buyman Material master (WP-B4): insumos viram Material first-class (sku sem
     # prefixo INS-), com unit + shelf-life. Os input_sku das receitas resolvem.
     from shopman.buyman.models import Material
 
     # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
-    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
-    # em grão, blends de chá, tônica, folhas da salada…
-    assert Material.objects.count() == 56
-    farinha = Material.objects.get(sku="FARINHA-T65")
-    assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
+    # 26/08) + a mostarda Dijon de food service, que entrou no lugar do `MT` da
+    # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
+    # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
+    # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
+    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
+    # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
+    # compra do mesmo SKU — um por item de `RESALE` e da Mercearia, e um por
+    # caixa física das caixas presente (a embalagem entra pelo Compras).
+    from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, OPENINGS
+    from config.management.commands.apply_product_brands import RESALE
+
+    vendaveis = set(Product.objects.values_list("sku", flat=True))
+    assert Material.objects.exclude(sku__in=vendaveis).count() == 75
+    # O tablete Président de 200 g se abre no insumo que a manteiga de wasabi já
+    # usa: nenhum cadastro novo, nenhuma ficha mexida.
+    for opening in OPENINGS:
+        tablete = Material.objects.get(sku=opening.sku)
+        assert tablete.metadata["opens_into"]["sku"] == opening.opened_sku
+        assert RecipeItem.objects.filter(input_sku=opening.opened_sku, recipe__is_active=True).exists()
+    assert set(Material.objects.filter(sku__in=vendaveis).values_list("sku", flat=True)) == (
+        set(RESALE) | {item.sku for item in GROCERY} | {box.packaging_sku for box in GIFT_BOXES}
+    )
+    # A divisão do café não é cosmética: são dois fornecedores, e um deles vem
+    # direto do produtor. Quem usa cada um vem da ficha, não do nome.
+    assert Material.objects.get(sku="CAFE-ORFEU-CLASSICO").metadata["supplier"] == "orfeu"
+    assert Material.objects.get(sku="CAFE-TAMURA-CHOCOMELO").metadata["supplier"] == "tamura"
+    assert set(
+        RecipeItem.objects.filter(input_sku="CAFE-ORFEU-CLASSICO").values_list(
+            "recipe__ref", flat=True
+        )
+    ) == {"espresso"}, "só o espresso puro leva o Orfeu"
+    assert RecipeItem.objects.filter(input_sku="CAFE-TAMURA-CHOCOMELO").count() == 6
+    assert not Material.objects.filter(sku="CAFE-GRAO").exists()
+    farinha = Material.objects.get(sku="FARINHA-NOVARA-T55")
+    assert (farinha.unit, farinha.shelf_life_days) == ("g", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    # A água da massa é AGUA-FILTRADA: AGUA é a garrafa que se vende no balcão, e
-    # produto e insumo dividem um namespace de SKU só (shop/services/sku_namespace.py).
+    # A água do filtro é AGUA-FILTRADA e fica (dele, 23/09: "Agua pode ser
+    # AGUA-FILTRADA mesmo ok"). O nome nasceu para não colidir com a garrafa que
+    # se vende, e a garrafa já saiu do código `AGUA` — produto e insumo dividem
+    # um namespace de SKU só (shop/services/sku_namespace.py), e o ledger indexa
+    # por ele.
     assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
     assert not Material.objects.filter(sku="AGUA").exists()
-    assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
-    # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
-    # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
-    # derivada na tela de preparo, nunca gravada como verdade.
-    for sku in ("OVOS", "LIMAO", "CANELA", "ALECRIM"):
-        assert Material.objects.get(sku=sku).unit == "kg", sku
+    assert Product.objects.filter(sku="AGUA-MINERAL-PRATA-310").exists()
+    assert not Product.objects.filter(sku="AGUA").exists()
+    assert Material.objects.get(sku="LEVAIN-LIQUIDO").shelf_life_days == 7
+    # Insumo PESADO tem base de peso, e a base é o GRAMA (ADR-024, emenda de
+    # 24/09/2026 — a unidade da balança da casa): "300 de OVOS" é 300 g de ovo,
+    # não 300 ovos. A ajuda "(≈ 6 un.)" é derivada na tela, nunca gravada.
+    for sku in ("OVOS", "LIMAO-SICILIANO", "CANELA-PO", "ALECRIM-FRESCO"):
+        assert Material.objects.get(sku=sku).unit == "g", sku
+    # E o grama é o que deixa a ficha dizer o que vai na peça: 0,1 g de alecrim.
+    assert RecipeItem.objects.get(
+        recipe__ref="focaccia-dia", input_sku="ALECRIM-FRESCO"
+    ).quantity == Decimal("0.1")
     weighed = {
         m.sku: m.unit
         for m in Material.objects.filter(unit__in=["kg", "g"])
@@ -135,17 +219,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for item in RecipeItem.objects.filter(input_sku__in=weighed):
         assert item.unit == weighed[item.input_sku], f"{item.input_sku}: {item.unit}"
         item.full_clean()  # a unidade da ficha bate com a do catálogo
-    # Líquido também conta em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a casa PESA a
+    # Líquido também conta em peso desde o WP-BASE-UNIT-LIQUIDS-KG: a casa PESA a
     # água, o leite e o azeite, e é isso que a R1 pergunta. A densidade continua
     # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
     # da produção diária. O invariante da troca vive em
     # test_seed_liquid_base_unit.py.
-    for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
+    for sku in ("AGUA-FILTRADA", "LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM"):
         material = Material.objects.get(sku=sku)
-        assert material.unit == "kg", sku
+        assert material.unit == "g", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku
         for item in RecipeItem.objects.filter(input_sku=sku):
-            assert item.unit == "kg", f"{sku}: {item.unit}"
+            assert item.unit == "g", f"{sku}: {item.unit}"
             item.full_clean()
     # A equivalência aproximada do que se pesa e se conta: é ela que faz a lista
     # de separação dizer "(≈ 6 un.)" abaixo de "300 g" (ADR-024 §4).
@@ -154,8 +238,8 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     ovo = MaterialConversion.objects.get(material__sku="OVOS", label="ovos")
     assert ovo.is_approximate is True
     assert ovo.supplier_id is None
-    assert ovo.to_base_factor == Decimal("0.050000")
-    assert MaterialConversion.objects.filter(material__sku="LIMAO").exists()
+    assert ovo.to_base_factor == Decimal("50")
+    assert MaterialConversion.objects.filter(material__sku="LIMAO-SICILIANO").exists()
 
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.
@@ -173,16 +257,16 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.stockman.models import Quant
 
     warehouse = Position.objects.get(ref="deposito")
-    assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
+    assert Quant.objects.filter(sku="FARINHA-NOVARA-T55", position=warehouse).exists()
     # O saldo de abertura não é mais um 500 chapado: deriva do plano do dia ×
     # cobertura de compra e chega em SACAS fechadas de 25 kg (dono, 26/08).
     # O invariante é o mecanismo, não o número — o número muda com o plano.
-    farinha_abertura = stock_service.available("FARINHA-T65", position=warehouse)
+    farinha_abertura = stock_service.available("FARINHA-NOVARA-T55", position=warehouse)
     assert farinha_abertura > 0
-    assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
-    assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
+    assert farinha_abertura % Decimal("25000") == 0, "farinha entra em saca fechada de 25 kg"
+    assert farinha_abertura <= Decimal("625000"), "teto de um pedido: 25 sacas"
 
-    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
+    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CRO"])
     assert suggestions
     assert suggestions[0].quantity > 0
 
@@ -296,18 +380,27 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 
     # E a prova pelo comportamento: o ciclo do ``maintenance_worker`` logo após
     # um reseed não pode mover um grama de insumo antigo.
-    flour_before = stock_service.available("FARINHA-T65")
+    flour_before = stock_service.available("FARINHA-NOVARA-T55")
     moves_before = Move.objects.count()
     call_command("sweep_unrealized_production", "--minutes", "1", stdout=StringIO())
-    assert stock_service.available("FARINHA-T65") == flour_before
+    assert stock_service.available("FARINHA-NOVARA-T55") == flour_before
     assert Move.objects.count() == moves_before
 
-    # Mise en place: as dez receitas que consomem massa/recheio precisam achar
-    # o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
-    # reprovava toda fornada dessas dez, e o operador via "Insumos
-    # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
-    # Alarme sempre errado vira botão que se aprende a apertar.
-    for prep_sku in ("MASSA-CROISSANT", "MASSA-BRIOCHE", "MASSA-FORMA", "RECHEIO-MACA"):
+    # Mise en place: toda receita do plano que consome massa/recheio precisa
+    # achar o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
+    # reprovava a fornada, e o operador via "Insumos insuficientes" com o
+    # atalho "Concluir mesmo assim" a um toque, todo dia. Alarme sempre errado
+    # vira botão que se aprende a apertar.
+    #
+    # A lista sai de ``prep_daily_needs()`` — a MESMA função que o seed usa
+    # para dimensionar a mise en place —, e não de nomes escritos à mão aqui.
+    # Ela já foi uma tupla de quatro SKUs, e em 23/09 a correção da massa dos
+    # bichinhos (de brioche para butter, decisão do dono) tirou MASSA-BRIOCHE
+    # do plano: o seed parou de produzi-la, corretamente, e o teste reprovou
+    # por cobrar um nome que ele próprio tinha congelado. Derivar é o conserto.
+    prep_needs = prep_daily_needs()
+    assert prep_needs, "o plano do seed deixou de consumir pré-preparo"
+    for prep_sku in sorted(prep_needs):
         assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
     crying = sorted(
         {
@@ -340,7 +433,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
             creating_matter.append(sheet.ref)
     assert not creating_matter, f"fichas que criam matéria do nada: {creating_matter}"
 
-    assert Batch.objects.filter(sku="CT").exists()
+    assert Batch.objects.filter(sku="CRO").exists()
     assert set(Position.objects.filter(ref__in=["massa", "molde", "forno"]).values_list("ref", flat=True)) == {
         "massa",
         "molde",
@@ -354,7 +447,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         resolved_by="system:production-outcome-recorded",
     ).exists()
     assert OperatorAlert.objects.filter(type="production_stock_short", acknowledged=False).exists()
-    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "expedicao"}
+    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "saida"}
     assert set(OperationChecklistTemplate.objects.values_list("ref", flat=True)) >= {
         "nelson-opening",
         "nelson-routine",
@@ -371,19 +464,46 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert edge_keys >= {
         "security:payment-pending-near-expiry",
         "security:payment-expired-low-attention",
-        "security:payment-after-cancel",
     }
     assert "security:ifood-stale-confirmation" not in edge_keys
 
     edge_order_refs = {order.ref for order in edge_orders}
     assert PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.PENDING).count() >= 2
-    assert PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.CAPTURED).exists()
+    assert not PaymentIntent.objects.filter(order_ref__in=edge_order_refs, status=PaymentIntent.Status.CAPTURED).exists()
     for intent in PaymentIntent.objects.filter(status=PaymentIntent.Status.CAPTURED):
         order = Order.objects.get(ref=intent.order_ref)
         assert ((order.data or {}).get("payment") or {}).get("intent_ref") == intent.ref
-    assert OperatorAlert.objects.filter(type="payment_after_cancel", severity="critical", acknowledged=False).exists()
-    # (alerta stale_new_order + webhook:ifood saíram junto com o edge iFood parado — Entrada vazia)
-    assert IdempotencyKey.objects.filter(scope="webhook:efi-pix", status="done").exists()
+    assert not OperatorAlert.objects.filter(type="payment_after_cancel").exists()
+    # A cobrança Pix semeada nasce no gateway do adapter em uso, e a Efí com o
+    # ambiente de origem: o estorno de um pedido semeado não pode cair na trava
+    # de ambiente (``payment_reconciliation_failed`` crítico a cada reseed).
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services.payment import _gateway_for_adapter
+
+    pix_gateway = _gateway_for_adapter(get_adapter("payment", method="pix")) or "mock"
+    # (``gateway=""`` é o Pix de balcão atestado no terminal: não passa por gateway.)
+    pix_intents = PaymentIntent.objects.filter(method=PaymentIntent.Method.PIX).exclude(gateway="")
+    assert set(pix_intents.values_list("gateway", flat=True)) == {pix_gateway}
+    if pix_gateway == "efi":
+        assert not pix_intents.filter(gateway_data__provider_environment__isnull=True).exists()
+    assert not OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
+    # O volume nativo do B.I. (BIV-*) registra no Payman a venda por Pix/cartão,
+    # como o PDV: a conciliação diária não acha venda digital sem pagamento.
+    from shopman.backstage.services.financial_reconciliation import build_financial_reconciliation
+
+    biv_days = sorted({d.date() for d in Order.objects.filter(ref__startswith="BIV-").values_list("created_at", flat=True)})
+    assert biv_days
+    for day in biv_days[-3:]:
+        report = build_financial_reconciliation(reconciliation_date=day)
+        missing = [i.order_ref for i in report.issues if i.code == "digital_order_missing_intent"]
+        assert not [ref for ref in missing if ref.startswith("BIV-")], (day, missing[:5])
+    # Pedido cancelado com pagamento capturado é alerta crítico real na
+    # conciliação (e-mail do ti@): o seed não planta nenhum.
+    today_report = build_financial_reconciliation(reconciliation_date=timezone.localdate())
+    captured_on_terminal = [
+        i.order_ref for i in today_report.issues if i.code == "terminal_order_with_captured_balance"
+    ]
+    assert not captured_on_terminal, captured_on_terminal
 
     low_attention = Customer.objects.get(ref="CLI-001")
     assert low_attention.metadata["seed_persona"] == "low_attention"
@@ -392,6 +512,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     missing = [check.id for check in qa_report.checks if check.status == "missing"]
     assert qa_report.ready_count == len(qa_report.checks)
     assert not missing
+
+    # As entregas da casa saem com NFC-e de entrega a domicílio: o payload que o
+    # seed produz passa na mesma validação do adapter (CPF + endereço completo).
+    # Sem isso cada reseed plantava um `fiscal_emit_failed` crítico no Gestor.
+    from shopman.shop.adapters.fiscal_focusnfe import _home_delivery_fields
+    from shopman.shop.services import fiscal
+
+    for ref in ("DLV-ACERTADA", "DLV-NARUA"):
+        payload = fiscal.build_emission_payload(Order.objects.get(ref=ref))
+        assert _home_delivery_fields({}, payload["customer"], payload["delivery"]), ref
+    assert not OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref__startswith="DLV-").exists()
 
 
 @pytest.mark.django_db
@@ -506,7 +637,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     assert work_order.status == WorkOrder.Status.PLANNED
     planned = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="",
@@ -522,7 +653,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     )
     work_order.refresh_from_db()
     started = Quant.objects.get(
-        sku="CT",
+        sku="CRO",
         target_date=today,
         position=production,
         batch="started",
@@ -549,7 +680,7 @@ def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch
     assert finished == work_order.started_qty
     assert work_order.status == WorkOrder.Status.FINISHED
     assert Quant.objects.filter(
-        sku="CT",
+        sku="CRO",
         target_date__isnull=True,
         batch=output.batch_ref,
         _quantity=work_order.started_qty,
@@ -577,8 +708,11 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
     from shopman.backstage.services.operator import eligible_operators, verify_operator_pin
 
+    # `cashman.operate_pos`, e não `backstage.operate_pos`: a permissão do PDV
+    # mora no cashman (ADR-022). A permissão inexistente passava só porque o
+    # `admin` superusuário tem `has_perm` sempre True — e era ele quem destravava.
     for perm in (
-        "backstage.operate_pos",
+        "cashman.operate_pos",
         "backstage.operate_kds",
         "backstage.operate_production",
     ):
@@ -588,13 +722,14 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
             f"PIN 1234 não destrava {perm}"
         )
 
-    # O superuser 'admin' também opera — PIN destrava qualquer superfície.
+    # O seed não dá o PIN de dev ao superusuário (o 1234 que o balcão inteiro
+    # conhece): ele não aparece na lista nem destrava com esse PIN até cadastrar
+    # o próprio. O destrave em si aceita superusuário — ver `_eligible`.
     admin = User.objects.get(username="admin")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_pos")
-    assert verify_operator_pin(admin, "1234", required_perm="backstage.operate_kds")
-
-    # PIN errado nunca destrava.
-    assert not verify_operator_pin(admin, "0000", required_perm="backstage.operate_pos")
+    for perm in ("cashman.operate_pos", "backstage.operate_kds", "backstage.operate_production"):
+        assert admin not in eligible_operators(perm=perm)
+    assert not verify_operator_pin(admin, "1234", required_perm="cashman.operate_pos")
+    assert not verify_operator_pin(admin, "1234", required_perm=None)
 
 
 @pytest.mark.django_db
@@ -610,7 +745,7 @@ def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
 def test_seed_batch_helper_never_rewrites_frozen_quality():
     batch = Batch.objects.create(
         ref="CT-20260909-SEED",
-        sku="CT",
+        sku="CRO",
         production_date=date(2026, 9, 9),
         expiry_date=date(2026, 9, 9),
         quality_grade_ref="fair",
@@ -636,26 +771,26 @@ def test_seed_batch_helper_never_rewrites_frozen_quality():
 def test_seed_only_replaces_output_batch_that_carries_its_signature():
     owned = Batch.objects.create(
         ref="CT-20260909-OWNED",
-        sku="CT",
+        sku="CRO",
         notes="Seed Nelson producao WO-SEED",
     )
     _discard_owned_seed_output_batch(
         ref=owned.ref,
-        sku="CT",
+        sku="CRO",
         work_order_ref="WO-SEED",
     )
     assert not Batch.objects.filter(pk=owned.pk).exists()
 
     real = Batch.objects.create(
         ref="CT-20260909-REAL",
-        sku="CT",
+        sku="CRO",
         notes="Produção conferida pela equipe",
         quality_grade_ref="fair",
     )
     with pytest.raises(CommandError, match="fora do domínio do seed"):
         _discard_owned_seed_output_batch(
             ref=real.ref,
-            sku="CT",
+            sku="CRO",
             work_order_ref="WO-SEED",
         )
     real.refresh_from_db()

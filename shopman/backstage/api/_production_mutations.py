@@ -714,7 +714,7 @@ def validated_body(
         age_seconds = max(0, int((timezone.now() - generated_at).total_seconds())) if generated_at is not None else None
         raise ProductionProjectionExpiredError(
             detail={
-                "detail": "A projeção de produção expirou. Atualize o painel antes de agir.",
+                "detail": "Nada foi salvo: os números desta tela passaram do prazo antes de o pedido chegar.",
                 "error": {
                     "code": "stale_projection",
                     "age_seconds": age_seconds,
@@ -723,7 +723,7 @@ def validated_body(
                     "current": None,
                     "recovery": {
                         "action": "refresh",
-                        "label": "Atualizar painel",
+                        "label": "Atualizar os números",
                     },
                 },
             },

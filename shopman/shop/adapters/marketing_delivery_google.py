@@ -1,4 +1,9 @@
-"""Durable Google Business Profile standard-post publication lane."""
+"""Durable Google Business Profile post lane: update, event and offer posts.
+
+The request body comes from ``marketing_google_post.request_payload`` — the same
+module that validates the preview and the approval — so a button only exists when
+the operator chose it, and the post type is the sealed ``publication_format``.
+"""
 
 from __future__ import annotations
 
@@ -16,11 +21,17 @@ from shopman.shop.adapters.marketing_delivery_http import (
     request_form_json,
     request_json,
 )
+from shopman.shop.services import marketing_google_post as google_post
 from shopman.shop.services.marketing_contracts import (
+    MarketingContractError,
     ProviderCallFailure,
     ProviderOutcome,
     ProviderOutcomeKind,
 )
+
+#: ``lookup`` devolve o ``LocalPostState`` (LIVE/REJECTED/PROCESSING), não só a
+#: existência do post — a passada de confirmação usa isso depois do aceite.
+CONFIRMS_PUBLICATION_STATE = True
 
 _POST_ID = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 _TOKEN_CACHE: dict[str, tuple[str, float]] = {}
@@ -44,22 +55,37 @@ def send(*, artifact, target_key: str, idempotency_token: str) -> ProviderOutcom
     if not is_available():
         _not_attempted("google_publication_disabled")
     fields = dict(artifact.provider_fields)
-    if artifact.platform != "google_business" or fields.get("publication_format") != "standard":
+    if (
+        artifact.platform != "google_business"
+        or fields.get("publication_format") not in google_post.TOPIC_TYPES
+    ):
         _not_attempted("google_publication_format_missing_or_invalid")
 
     if artifact.image_url and not _public_media_url(artifact.image_url):
         _not_attempted("google_media_url_not_public")
+    needs_link = fields.get("publication_format") == "offer" or (
+        google_post.call_to_action(fields) not in {google_post.NO_CALL_TO_ACTION, "call"}
+    )
+    if needs_link and not _public_media_url(artifact.link):
+        _not_attempted("google_link_not_public")
+    try:
+        google_post.validate_artifact(
+            provider_fields=fields,
+            body=artifact.body,
+            hashtags=artifact.hashtags,
+            link=artifact.link,
+            image_url=artifact.image_url,
+        )
+    except MarketingContractError:
+        # Sealed content that the post rules refuse never becomes a network call,
+        # and repeating it would refuse again.
+        raise ProviderCallFailure(
+            ProviderOutcomeKind.FAILED_FINAL,
+            "google_post_contract_invalid",
+        ) from None
     config = _config()
     access_token = _access_token(config)
-    payload: dict = {
-        "languageCode": "pt-BR",
-        "summary": _summary(artifact),
-        "topicType": "STANDARD",
-    }
-    if artifact.link:
-        payload["callToAction"] = {"actionType": "ORDER", "url": artifact.link}
-    if artifact.image_url:
-        payload["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": artifact.image_url}]
+    payload = google_post.request_payload(artifact)
 
     try:
         result = request_json(
@@ -90,7 +116,7 @@ def send(*, artifact, target_key: str, idempotency_token: str) -> ProviderOutcom
         )
     return ProviderOutcome(
         kind=ProviderOutcomeKind.ACCEPTED_UNCONFIRMED,
-        code="google_standard_post_accepted",
+        code=f"google_{fields['publication_format']}_post_accepted",
         retryable=False,
         provider_receipt_ref=f"gbp:{post_id}",
     )
@@ -130,17 +156,37 @@ def lookup(
             ProviderOutcomeKind.UNKNOWN,
             "google_lookup_response_invalid",
         )
+    return _state_outcome(str(result.get("state") or ""), post_id=post_id)
+
+
+def _state_outcome(state: str, *, post_id: str) -> ProviderOutcome:
+    """O ``LocalPostState`` do Google vira o estado do ledger.
+
+    ``PROCESSING`` não é falha: a foto aparece ~1–2 min depois do texto, e o post
+    fica aceito até o Google decidir. ``REJECTED`` é a política de conteúdo.
+    """
+
+    receipt = f"gbp:{post_id}"
+    if state in {"LIVE", "RECURRING", "SCHEDULED"}:
+        return ProviderOutcome(
+            kind=ProviderOutcomeKind.CONFIRMED,
+            code=f"google_post_{state.lower()}",
+            retryable=False,
+            provider_receipt_ref=receipt,
+        )
+    if state == "REJECTED":
+        return ProviderOutcome(
+            kind=ProviderOutcomeKind.FAILED_FINAL,
+            code="google_post_rejected",
+            retryable=False,
+            provider_receipt_ref=receipt,
+        )
     return ProviderOutcome(
-        kind=ProviderOutcomeKind.CONFIRMED,
-        code="google_publication_confirmed",
+        kind=ProviderOutcomeKind.ACCEPTED_UNCONFIRMED,
+        code="google_post_processing",
         retryable=False,
-        provider_receipt_ref=f"gbp:{post_id}",
+        provider_receipt_ref=receipt,
     )
-
-
-def _summary(artifact) -> str:
-    tags = " ".join(f"#{tag}" for tag in artifact.hashtags)
-    return "\n\n".join(part for part in (artifact.body, tags) if part)
 
 
 def _public_media_url(value: str) -> bool:

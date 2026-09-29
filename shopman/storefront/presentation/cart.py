@@ -236,7 +236,7 @@ def build_cart(
     # Selo do item preparado na hora. Configurável no Admin como todo o resto da voz
     # da casa — o padrão diz o que É, não o que falta.
     made_to_order_label = (
-        resolve_copy("CART_MADE_TO_ORDER", moment="*", audience="*").title or ""
+        resolve_copy("PRODUCT_MADE_TO_ORDER", moment="*", audience="*").title or ""
     ).strip()
     # Quem já pediu o aviso vê "Anotado" também na sacola — mesmo dono da
     # pergunta que o card e a PDP usam.

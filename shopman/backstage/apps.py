@@ -71,6 +71,42 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # A DANFE da entrega sai pela impressora do despacho, pelo relay, sem
+        # depender de onde o Gestor está aberto. Duas portas, porque a ordem
+        # varia: a nota autoriza depois do despacho (o normal) ou o pedido é
+        # despachado com a nota já autorizada. Ver services/order_danfe.py.
+        from shopman.orderman.signals import order_changed
+
+        from shopman.backstage.services.order_danfe import on_nfce_authorized, on_order_changed
+        from shopman.shop.signals import nfce_authorized
+
+        nfce_authorized.connect(
+            on_nfce_authorized,
+            dispatch_uid="backstage.order_danfe.on_nfce_authorized",
+            weak=False,
+        )
+        order_changed.connect(
+            on_order_changed,
+            dispatch_uid="backstage.order_danfe.on_order_changed",
+            weak=False,
+        )
+
+        # A Via Cozinha: o posto do KDS sem tela recebe cada ticket impresso na
+        # impressora escolhida no posto, pelo relay. Receiver próprio, fora dos
+        # emissores de SSE: imprimir e avisar a tela são efeitos independentes.
+        # Ver services/kitchen_ticket_print.py.
+        from django.db.models.signals import post_save
+
+        from shopman.backstage.models import KDSTicket
+        from shopman.backstage.services.kitchen_ticket_print import on_ticket_saved
+
+        post_save.connect(
+            on_ticket_saved,
+            sender=KDSTicket,
+            dispatch_uid="backstage.kitchen_ticket_print.on_ticket_saved",
+            weak=False,
+        )
+
         # Trilha de acesso: quem entrou, por qual porta, de onde. O sucesso vem
         # do signal do PRÓPRIO Django — os quatro caminhos de operador (senha do
         # Admin, senha do app, PIN, crachá) terminam todos em `login()`, então
@@ -99,3 +135,11 @@ class BackstageConfig(AppConfig):
         from shopman.backstage.backup_resources import register_backstage_resources
 
         register_backstage_resources()
+
+        # A revisão campo a campo da sugestão do GTIN entra por cima do Admin de
+        # Produto que o Core registrou. Precisa ser aqui, no ready() do último
+        # app: as abas fiscal e social também são compostas em ready(), e o
+        # autodiscover do admin roda antes de todos eles.
+        from shopman.backstage.admin.product_enrichment import install_enrichment_review
+
+        install_enrichment_review()

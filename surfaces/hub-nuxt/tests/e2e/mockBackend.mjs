@@ -17,7 +17,7 @@ const HUB = {
       // celular quebrava em alturas diferentes. Trocar o registro sem trocar estes dois
       // deixa a medida do `mobileTiles.spec.ts` medindo um caso fácil.
       { ref: "purchase", label: "Compras", description: "Comprar e receber insumos", icon: "package", url: "http://127.0.0.1:3008/", kind: "launch" },
-      { ref: "production", label: "Produção", description: "Produção e fornadas", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch" },
+      { ref: "production", label: "Produção", description: "Produção e lotes", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch" },
       { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external" },
     ],
   },

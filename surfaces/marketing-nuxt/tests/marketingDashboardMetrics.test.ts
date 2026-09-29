@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("métricas operacionais do painel", () => {
   it("renders ledger facts and never claims reach from accepted sends", () => {
     const page = readFileSync(
-      new URL("../app/pages/index.vue", import.meta.url),
+      new URL("../app/components/MarketingBoard.vue", import.meta.url),
       "utf8",
     );
 
@@ -23,7 +23,7 @@ describe("métricas operacionais do painel", () => {
   // voltar a chamar as duas coisas pelo mesmo nome.
   it("nunca conta pessoas e postagens sob o mesmo rótulo", () => {
     const page = readFileSync(
-      new URL("../app/pages/index.vue", import.meta.url),
+      new URL("../app/components/MarketingBoard.vue", import.meta.url),
       "utf8",
     );
 

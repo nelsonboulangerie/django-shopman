@@ -70,7 +70,7 @@ test.describe('smoke — páginas e navegação', () => {
   })
 
   test('termos e privacidade renderizam', async ({ page }) => {
-    for (const route of ['/terms', '/privacy']) {
+    for (const route of ['/termos', '/privacidade']) {
       const res = await page.goto(route, { waitUntil: 'domcontentloaded' })
       await page.waitForTimeout(1200)
       expect(res?.status()).toBe(200)

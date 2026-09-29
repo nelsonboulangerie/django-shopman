@@ -73,7 +73,7 @@ export function useShopSession () {
     shop_status: ShopStatusProjection
     notices?: HomeNoticeProjection[]
     opening_hours?: OpeningHoursEntry[]
-    last_order_ref: string | null
+    last_order_ref?: string | null
     public_config?: PublicConfigProjection
   } | null | undefined, options?: { preserveAuthenticated?: boolean }) {
     if (!home) return
@@ -96,7 +96,7 @@ export function useShopSession () {
         : preserveAuthenticated ? state.value.welcomeAsksMarketing : false,
       welcomeSuggestedName: keepIdentity ? state.value.welcomeSuggestedName : null,
       lastOrderRef: homeAuthenticated
-        ? home.last_order_ref
+        ? home.last_order_ref ?? null
         : preserveAuthenticated ? state.value.lastOrderRef : null,
       shop: home.shop,
       shopStatus: home.shop_status,

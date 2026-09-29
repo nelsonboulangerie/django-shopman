@@ -18,6 +18,7 @@ from shopman.shop.services import sessions as session_service
 from shopman.storefront.api import clean_name
 from shopman.storefront.cart import CHANNEL_REF
 from shopman.storefront.identity import knows_only_the_number
+from shopman.storefront.presentation.legal import order_legal_snapshot
 from shopman.storefront.services import orders as order_service
 
 from .serializers import (
@@ -306,6 +307,22 @@ class CheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # CPF/CNPJ na nota: validado AQUI, no campo, antes de qualquer outra
+        # coisa do pedido. Na entrega, se ele é exigido é pergunta da trava do
+        # commit (a mesma regra da emissão); na retirada é o "CPF na nota?" do
+        # balcão, opcional (decisão do dono, 25/09/2026). Se veio, tem de estar certo.
+        from shopman.utils.documents import is_valid_tax_id
+
+        fiscal_tax_id = "".join(ch for ch in validated_data.get("fiscal_tax_id", "") if ch.isdigit())
+        if fiscal_tax_id and not is_valid_tax_id(fiscal_tax_id):
+            from shopman.shop.services import delivery_fiscal_identity
+
+            message = delivery_fiscal_identity.TAX_ID_INVALID_MESSAGE
+            return Response(
+                {"detail": message, "field": "fiscal_tax_id", "errors": {"fiscal_tax_id": message}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if fulfillment_type == "delivery" and saved_address_id:
             saved_payload, saved_error = _saved_address_payload(request, saved_address_id)
             if saved_error:
@@ -382,6 +399,10 @@ class CheckoutView(APIView):
             # Omotenashi: lembrar escolhas é o default; toggle desmarcado → False.
             # (Endereço novo é salvo sempre, independente disto.)
             "save_as_default": validated_data.get("save_as_default", True),
+            # Qual versão de Termos e Privacidade valia neste pedido, com a URL da
+            # cópia permanente (e o SHA-256, se já arquivada). Vai para a parte
+            # SELADA do pedido: a página viva muda, o pedido não.
+            "legal": order_legal_snapshot(),
         }
         if notes:
             checkout_data["order_notes"] = notes
@@ -401,6 +422,9 @@ class CheckoutView(APIView):
             checkout_data["delivery_date"] = delivery_date
         if delivery_time_slot:
             checkout_data["delivery_time_slot"] = delivery_time_slot
+        # Sempre gravada: uma tentativa anterior com CPF não pode deixar o
+        # documento na sessão de um pedido que voltou sem ele.
+        checkout_data["fiscal"] = {"tax_id": fiscal_tax_id} if fiscal_tax_id else {}
         if payment_method in {"pix", "card"}:
             checkout_data["payment"] = {"method": payment_method}
         elif payment_method == "cash":
@@ -453,8 +477,9 @@ class CheckoutView(APIView):
                 if loyalty_balance_q > 0:
                     checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
             except Exception:
-                logger.debug("views.post degraded; using fallback", exc_info=True)
-                pass
+                # O cliente pediu para usar os pontos: seguir sem eles é
+                # degradação que alguém precisa ver, não um detalhe de debug.
+                logger.warning("storefront.checkout loyalty_balance failed; checkout without redemption", exc_info=True)
 
         # Passou por todas as validações: agora sim a tentativa CONTA.
         if self._rate_limited(request, increment=True):
@@ -489,6 +514,13 @@ class CheckoutView(APIView):
                     status=order_error.http_status,
                 )
             raise
+
+        # "Guardar no seu cadastro?": o desfecho NÃO volta na resposta. Dizer
+        # "não entrou" a quem pediu deixaria inferir que o documento é de outra
+        # conta (a loja nunca revela isso, PR #553); a resposta é a mesma, byte
+        # a byte, tenha gravado ou não. O porquê fica no log do servidor.
+        if fiscal_tax_id and validated_data.get("save_fiscal_tax_id"):
+            _save_fiscal_tax_id(request, fiscal_tax_id, order_ref=result.order_ref)
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
@@ -538,6 +570,43 @@ class CheckoutView(APIView):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(CHECKOUT_RATE_LIMIT_RETRY_SECONDS)},
         )
+
+
+def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
+    """Guarda o CPF da nota no cadastro porque a pessoa respondeu que sim.
+
+    Não devolve nada, de propósito: quem chama não tem o que dizer ao cliente.
+    O desfecho fica SÓ no servidor, e sem dado pessoal na linha (ref do pedido e
+    desfecho; nunca o documento nem a outra conta). Documento de outra conta
+    não se revela na loja (PR #553): ``customer_tax_id.save_to_customer`` o
+    guarda como preferência da nota, sem tocar a identidade, para que a próxima
+    visita também não denuncie a diferença. Nunca derruba o pedido já
+    confirmado: a nota sai com o CPF informado de qualquer jeito. Sessão que só
+    conhece o número (link de campanha) não grava identidade fiscal: a tela nem
+    oferece.
+    """
+    from shopman.shop.services import customer_tax_id
+
+    customer = getattr(request, "customer", None)
+    if customer is None or knows_only_the_number(request):
+        logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=no_identified_customer", order_ref)
+        return
+    try:
+        outcome = customer_tax_id.save_to_customer(customer.uuid, tax_id)
+    except Exception:
+        logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
+        return
+    if outcome == customer_tax_id.OWNED_BY_OTHER:
+        # Sinal operacional: alguém pediu para guardar um documento que já é de
+        # outro cadastro (nota do cônjuge, da empresa, ou cadastro duplicado).
+        logger.warning(
+            "storefront.checkout save_fiscal_tax_id order=%s outcome=%s: documento de outro cadastro, "
+            "guardado só como preferência da nota",
+            order_ref,
+            outcome,
+        )
+        return
+    logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=%s", order_ref, outcome)
 
 
 def _closed_shop_hint() -> dict:

@@ -7,6 +7,7 @@ rules.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from django.utils.decorators import method_decorator
@@ -23,14 +24,22 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
+from shopman.storefront.observability import (
+    capture_catalog_timing,
+    catalog_stage,
+    log_catalog_observation,
+)
 from shopman.storefront.presentation import (
     build_cart,
     build_catalog,
     build_catalog_items_for_skus,
     build_checkout,
     build_home,
+    build_legal,
     build_product_detail,
     build_reorder_conflict,
+    build_shell,
     build_site,
     notify_subscribed_skus,
 )
@@ -285,10 +294,51 @@ class StorefrontHomeView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
+        summary="Storefront global shell projection",
+        responses={200: OpenApiResponse(description="Global shell state plus cart projection.")},
+    ),
+)
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class StorefrontShellView(APIView):
+    """GET /api/v1/storefront/shell/ — estado global sem reconstruir catálogo."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        shell = build_shell(
+            request=request,
+            cart_has_items=cart.items_count > 0 and not cart.is_empty,
+        )
+        return Response({
+            "shell": projection_data(shell),
+            "cart": projection_data(cart),
+        })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
         summary="Storefront public site projection",
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
 )
+class StorefrontLegalView(APIView):
+    """GET /api/v1/storefront/legal/ — o que as páginas de Termos e Privacidade AFIRMAM.
+
+    A lista de operadores e a data saem daqui, e não do `.vue`, porque texto que copia a
+    verdade envelhece em silêncio: em 23/09/2026 cinco terceiros já recebiam dado de
+    cliente sem constar da lista que a página chamava de "a lista inteira".
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"legal": projection_data(build_legal())})
+
+
 class StorefrontSiteView(APIView):
     """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
 
@@ -307,6 +357,89 @@ class StorefrontSiteView(APIView):
         return Response({"site": projection_data(site)})
 
 
+def _gone_products() -> dict:
+    """{sku apagado: {"collection": ref, "collection_name": nome}} — o 410 da loja.
+
+    Produto apagado nao deixa rastro no banco, e o 404 mentiria por omissao:
+    diria "nunca existiu" sobre um endereco que o Google indexou. A lapide
+    (``RetiredProduct``) guarda que existiu e de que prateleiras ele saiu.
+
+    Sai a PRIMEIRA coleccao que ainda existe e ainda tem produto publicado. A
+    prateleira vazia nao vira destino: a colecao "Combos" ficou sem nenhum item
+    quando o combo saiu, em 23/09/2026.
+
+    A lapide vale enquanto o SKU nao EXISTIR no catalogo — e existir aqui inclui
+    o despublicado. Codigo pode renascer fora da vitrine (a geleia `GL` sai hoje
+    e volta como dois produtos), e dizer "nao existe mais" sobre algo que existe
+    seria mentira: para esse a resposta e o 404, que e reversivel.
+    """
+    from shopman.shop.models import RetiredProduct
+    from shopman.shop.projections import catalog_context
+
+    def primeira_viva(refs):
+        for ref in refs:
+            colecao = catalog_context.get_active_collection(ref)
+            if colecao is None:
+                continue
+            if catalog_context.filter_by_collection(catalog_context.published_products(), ref).exists():
+                return ref, colecao.name
+        return "", ""
+
+    existentes = frozenset(catalog_context.products_queryset().values_list("sku", flat=True))
+    saida = {}
+    for lapide in RetiredProduct.objects.all():
+        if lapide.sku in existentes:
+            continue
+        ref, nome = primeira_viva(lapide.refs)
+        saida[lapide.sku] = {"collection": ref, "collection_name": nome}
+    return saida
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Retired product codes and where they went",
+        responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
+    ),
+)
+class StorefrontSkuRedirectsView(APIView):
+    """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
+
+    A URL do produto é o SKU, e o catálogo trocou de código duas vezes
+    (``CROISSANT`` → ``CT`` → ``CRO``). Sem este mapa, endereço que o Google
+    indexou vira 404 e a página recomeça do zero na busca.
+
+    Só sai o código que chega a produto VIVO (``retired_skus``): quem não chega
+    não tem destino honesto, e mandar a pessoa para outro 404 é pior que dizer
+    que não existe.
+
+    Público e sem sessão, como o resto do que a loja mostra a quem não entrou. O
+    ``Cache-Control`` é curto de propósito: rename é raro, mas quando acontece a
+    loja tem de acompanhar no mesmo dia.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from shopman.shop.projections import catalog_context
+        from shopman.shop.services.sku_history import retired_skus
+
+        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
+        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
+        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
+        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
+        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
+        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
+        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
+        response = Response({
+            "redirects": retired_skus(published),
+            "gone": _gone_products(),
+        })
+        response["Cache-Control"] = "public, max-age=300"
+        return response
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
@@ -320,19 +453,78 @@ class StorefrontMenuView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    include_cart = True
 
     def get(self, request, collection: str | None = None):
-        if collection is not None:
-            catalog_service.ensure_active_collection(collection)
-        catalog = build_catalog(
-            channel_ref=STOREFRONT_CHANNEL_REF,
-            collection_ref=collection,
-            request=request,
+        with capture_catalog_timing() as timing:
+            with catalog_stage("projection"):
+                if collection is not None:
+                    catalog_service.ensure_active_collection(collection)
+                catalog = build_catalog(
+                    channel_ref=STOREFRONT_CHANNEL_REF,
+                    collection_ref=collection,
+                    request=request,
+                )
+                with catalog_stage("personalization"):
+                    catalog_projection = projection_data(catalog)
+                    payload = {"catalog": catalog_projection}
+                    if self.include_cart:
+                        payload["cart"] = _cart_payload(request)
+
+            shadow = None
+            shadow_error = False
+            shadow_query_count = 0
+            if collection is None and shadow_enabled():
+                try:
+                    queries_before_shadow = timing.query_count
+                    with catalog_stage("shadow"):
+                        shadow = compare_shadow(
+                            catalog_projection,
+                            channel_ref=STOREFRONT_CHANNEL_REF,
+                        )
+                    shadow_query_count = timing.query_count - queries_before_shadow
+                except Exception:
+                    # Shadow nunca muda disponibilidade do caminho canônico.
+                    shadow_error = True
+                    logger.exception("continuum_catalog_shadow_failed")
+
+            response = Response(payload)
+            response["Server-Timing"] = timing.server_timing()
+
+        response_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
+        log_catalog_observation(
+            path="storefront_menu" if self.include_cart else "storefront_catalog",
+            mode="shadow" if shadow_enabled() else "baseline",
+            status=200,
+            query_count=timing.query_count,
+            response_bytes=response_bytes,
+            snapshot_bytes=shadow.snapshot_bytes if shadow else 0,
+            cache_status=shadow.cache_status if shadow else "off",
+            snapshot_sequence=shadow.head.sequence if shadow else 0,
+            snapshot_age_ms=head_age_ms(shadow.head) if shadow else 0,
+            shadow_equal=shadow.equal if shadow else None,
+            shadow_error=shadow_error,
+            shadow_ms=timing.durations_ms.get("shadow", 0.0),
+            shadow_query_count=shadow_query_count,
+            projection_ms=timing.durations_ms.get("projection", 0.0),
+            availability_ms=timing.durations_ms.get("availability", 0.0),
+            personalization_ms=timing.durations_ms.get("personalization", 0.0),
+            db_ms=timing.durations_ms.get("db", 0.0),
         )
-        return Response({
-            "catalog": projection_data(catalog),
-            "cart": _cart_payload(request),
-        })
+        return response
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Storefront canonical catalog projection",
+        responses={200: OpenApiResponse(description="Catalog projection without cart projection.")},
+    ),
+)
+class StorefrontCatalogView(StorefrontMenuView):
+    """Catálogo canônico sem reconstruir a sacola já entregue pelo shell."""
+
+    include_cart = False
 
 
 @extend_schema_view(
@@ -508,6 +700,7 @@ class OrderReorderView(APIView):
         summary="Claim an announced offer — assembles the bag, resolving price now",
         responses={
             200: OpenApiResponse(description="Cart projection after the offer was claimed."),
+            400: DetailSerializer,
             404: DetailSerializer,
             409: DetailSerializer,
         },
@@ -524,8 +717,10 @@ class OfferClaimView(APIView):
     oferta; a autenticação acontece no checkout, onde já acontecia. Ninguém precisa estar
     logado para encher uma sacola.
 
-    Mesmo contrato do `reorder`: 409 quando a sacola já tem itens e o cliente não disse
-    se quer somar ou trocar — decidir por ele apagaria uma sacola que ele montou.
+    **A oferta sempre soma** (decisão do dono, 24/09/2026): o que já estava na sacola
+    fica, e a resposta diz `kept_existing_items` para a tela perguntar DEPOIS se o
+    cliente quer manter tudo. Quem responde "só a oferta" volta com `mode=replace`, que
+    esvazia a sacola e remonta a oferta. Nunca se troca sem esse pedido explícito.
     """
 
     permission_classes = [AllowAny]
@@ -548,6 +743,11 @@ class OfferClaimView(APIView):
             )
 
         mode = str((request.data.get("mode") if hasattr(request, "data") else "") or "").strip().lower()
+        if mode not in {"", "replace"}:
+            return Response(
+                {"detail": "Modo de oferta desconhecido.", "error_code": "invalid_mode"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         key = remote_mutations.idempotency_key_from_request(
             request,
@@ -583,20 +783,15 @@ class OfferClaimView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            # ⚠️ A pergunta "sua sacola já tem itens" mora AQUI, dentro da execução, e não
-            # antes dela. Fora, o segundo toque no mesmo link cairia neste 409 em vez de
-            # repetir a resposta guardada — e aí a idempotência que a Action promete não
-            # existiria justamente no caso que ela existe para cobrir.
-            if CartService.has_items(request) and mode not in {"replace", "append"}:
-                return (
-                    {
-                        "detail": "Você já tem itens na sacola. Somar a oferta ou trocar?",
-                        "error_code": "cart_not_empty",
-                    },
-                    status.HTTP_409_CONFLICT,
-                )
+            # ⚠️ "A sacola já tinha itens" é lido AQUI, dentro da execução e antes de
+            # somar: depois não há como saber (um item que já estava lá E está na oferta
+            # volta em `added`). E dentro da execução, o toque repetido no mesmo link
+            # repete a resposta guardada — com o mesmo `kept_existing_items`.
             if mode == "replace":
                 CartService.clear_items(request)
+                kept_existing_items = False
+            else:
+                kept_existing_items = CartService.has_items(request)
             result = offer_service.add_offer_items(
                 request, promotion,
                 cart_service=CartService,
@@ -608,6 +803,7 @@ class OfferClaimView(APIView):
                     "offer": {"ref": promotion.ref, "name": promotion.name},
                     "added": list(result.added),
                     "skipped": _skipped_offer_items(result.skipped, request=request),
+                    "kept_existing_items": kept_existing_items,
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,

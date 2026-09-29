@@ -15,6 +15,7 @@ import type {
   ProductDetailPatch,
   ProductEditConflict,
   ProductDetailProjection,
+  SkuRoles,
 } from "~/types/catalog";
 
 const props = defineProps<{
@@ -32,6 +33,9 @@ const props = defineProps<{
   initialTab?: string;
   conflict?: ProductEditConflict | null;
   error?: string;
+  // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
+  roles?: SkuRoles | null;
+  purchaseBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,7 +43,37 @@ const emit = defineEmits<{
   save: [patch: ProductDetailPatch];
   "review-conflict": [keepDraft: boolean];
   "dirty-change": [dirty: boolean];
+  "set-purchasable": [enabled: boolean];
 }>();
+
+// Vendido por peso = unidade de venda kg (contrato do PDV). Desligar volta a
+// vender por unidade; outra unidade (lt, dz) se escreve no campo Unidade.
+const soldByWeight = computed(() => draft.unit.trim().toLowerCase() === "kg");
+function setSoldByWeight(on: boolean) {
+  draft.unit = on ? "kg" : "un";
+}
+
+// O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
+// deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
+// aqui" deixaria o quadrado marcado, mentindo.
+function onPurchaseChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const wanted = input.checked;
+  input.checked = Boolean(props.roles?.purchasable);
+  emit("set-purchasable", wanted);
+}
+
+// Comprável · Vendável · Produzido · Usado em receita — só o que é verdade.
+const roleBadges = computed(() => {
+  const roles = props.roles;
+  if (!roles) return [];
+  return [
+    roles.purchasable && "Comprável",
+    roles.sellable && "Vendável",
+    roles.produced && "Produzido",
+    roles.used_in_recipe && "Usado em receita",
+  ].filter((badge): badge is string => Boolean(badge));
+});
 
 const TABS = [
   { id: "geral", label: "Geral" },
@@ -125,7 +159,7 @@ const draft = reactive({
     hashtagsText: "",
     social_caption: "",
   },
-  fiscal: { profile: "own_production", ncm: "", cest: "", unit: "UN" },
+  fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN", origin: "0" },
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
@@ -175,10 +209,11 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.social.social_caption = s?.social_caption ?? "";
 
   const f = detail?.fiscal;
-  draft.fiscal.profile = f?.profile || "own_production";
+  draft.fiscal.profile = f?.profile || "standard";
   draft.fiscal.ncm = f?.ncm ?? "";
   draft.fiscal.cest = f?.cest ?? "";
   draft.fiscal.unit = f?.unit || "UN";
+  draft.fiscal.origin = f?.origin || "0";
 }
 
 watch(
@@ -314,6 +349,7 @@ function buildPatch(): ProductDetailPatch {
   if (draft.fiscal.ncm.trim() !== f.ncm) fiscal.ncm = draft.fiscal.ncm.trim();
   if (draft.fiscal.cest.trim() !== f.cest) fiscal.cest = draft.fiscal.cest.trim();
   if (draft.fiscal.unit.trim() !== f.unit) fiscal.unit = draft.fiscal.unit.trim();
+  if (draft.fiscal.origin !== (f.origin || "0")) fiscal.origin = draft.fiscal.origin;
   if (Object.keys(fiscal).length) patch.fiscal = fiscal as ProductDetailPatch["fiscal"];
 
   return patch;
@@ -329,6 +365,25 @@ function onSave() {
   emit("save", buildPatch());
 }
 
+// GTIN recusado pela SEFAZ. A nota já saiu de novo sem GTIN; o que falta é
+// alguém com a embalagem na mão. Código diferente: corrige o campo e salva.
+// Mesmo código, ou produto sem código de barras: "Manter sem GTIN na nota",
+// que salva junto o que mais estiver no rascunho.
+const gtinRejected = computed(() => props.detail?.gtin_rejected ?? null);
+const gtinRejectedWhen = computed(() => {
+  const at = new Date(gtinRejected.value?.at ?? "");
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+});
+const gtinStillRejected = computed(() =>
+  !!gtinRejected.value && draft.social.gtin.trim() === gtinRejected.value.gtin);
+const canKeepWithoutGtin = computed(() =>
+  !!gtinRejected.value && !gtinRejected.value.confirmed && gtinStillRejected.value
+  && !props.busy && !props.loading && !props.conflict && !formInvalid.value);
+function keepWithoutGtin() {
+  if (!canKeepWithoutGtin.value) return;
+  emit("save", { ...buildPatch(), gtin_rejected: { confirmed: true } });
+}
+
 const discardRequested = ref(false);
 function requestClose(open: boolean) {
   if (!open && props.busy) return;
@@ -338,7 +393,7 @@ function requestClose(open: boolean) {
 watch(() => props.open, () => { discardRequested.value = false; });
 const conflictLabels: Record<string, string> = {
   name: "Nome", short_description: "Descrição curta", long_description: "Descrição completa",
-  keywords: "Palavras-chave", image_url: "Imagem", base_price_q: "Preço base",
+  keywords: "Palavras-chave", image_url: "Imagem", base_price_q: "Preço",
   unit: "Unidade", unit_weight_g: "Peso por unidade", availability_policy: "Disponibilidade",
   shelf_life_days: "Validade", storage_tip: "Conservação", production_cycle_hours: "Tempo de produção",
   is_batch_produced: "Produção em lote", is_published: "Publicado", is_sellable: "Disponível para venda",
@@ -397,7 +452,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
       <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
         <p>Seu rascunho foi preservado. Confira os campos que mudaram desde sua leitura:</p>
         <ul><li v-for="field in conflict.conflicting_fields" :key="field">
-          {{ conflictLabels[field] || "Campo editado" }} — atual: {{ currentValue(field) }}
+          {{ conflictLabels[field] || "Campo editado" }}. Valor atual: {{ currentValue(field) }}
           <span v-if="sourceChange(field)" class="block text-xs">{{ sourceChange(field) }}</span>
         </li></ul>
         <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', true)">Manter meu rascunho</button>
@@ -489,18 +544,31 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
           <!-- Preço e config -->
           <div v-show="tab === 'config'" class="space-y-4">
+            <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
+                 preço passa a ser o preço do quilo. O preço final sai da balança
+                 do balcão, então o item não vai para canal remoto. -->
+            <label class="flex items-center gap-2 text-sm" data-testid="sold-by-weight">
+              <input
+                type="checkbox" class="size-4 rounded border-border"
+                :checked="soldByWeight"
+                @change="setSoldByWeight(($event.target as HTMLInputElement).checked)"
+              />
+              Vendido por peso
+            </label>
+            <p v-if="soldByWeight" class="-mt-2 text-xs text-muted-foreground">Vendido só no balcão: o preço final sai da balança.</p>
+
             <div class="grid grid-cols-2 gap-3">
               <label class="block">
-                <span :class="labelClass">Preço base (R$)</span>
+                <span :class="labelClass">{{ soldByWeight ? "Preço por kg" : "Preço" }}</span>
                 <input
                   v-model="draft.priceText" :class="fieldClass" type="text" inputmode="decimal" placeholder="0,00"
                   :aria-invalid="priceInvalid"
                 />
                 <span v-if="priceInvalid" class="mt-1 block text-xs text-destructive">Informe um valor válido.</span>
               </label>
-              <label class="block">
+              <label v-if="!soldByWeight" class="block">
                 <span :class="labelClass">Unidade</span>
-                <input v-model="draft.unit" :class="fieldClass" type="text" placeholder="un, kg, lt" />
+                <input v-model="draft.unit" :class="fieldClass" type="text" placeholder="un, lt" />
               </label>
             </div>
 
@@ -541,6 +609,29 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               <input v-model="draft.allows_next_day_sale" type="checkbox" class="size-4 rounded border-border" />
               Pode ser vendido no dia seguinte
             </label>
+
+            <!-- Permitir compra: o cadastro de compra do MESMO SKU (mesmo estoque).
+                 Vale na hora, fora do "Salvar" — é interruptor, não rascunho. -->
+            <div class="space-y-2 rounded-lg border border-border p-3" data-testid="purchase-toggle">
+              <p :class="sectionClass">Compra</p>
+              <div v-if="roleBadges.length" class="flex flex-wrap gap-1">
+                <span v-for="badge in roleBadges" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
+              </div>
+              <p v-if="roles?.produced && !roles?.purchasable" class="text-xs text-muted-foreground">
+                É produzido aqui: o estoque entra pela Produção, não pela compra.
+              </p>
+              <label v-else class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" class="size-4 rounded border-border"
+                  :checked="Boolean(roles?.purchasable)" :disabled="purchaseBusy || !roles"
+                  @change="onPurchaseChange"
+                />
+                Permitir compra
+              </label>
+              <p v-if="roles?.purchasable" class="text-xs text-muted-foreground">
+                Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+              </p>
+            </div>
 
             <div class="space-y-2 rounded-lg border border-border p-3">
               <p :class="sectionClass">Visibilidade</p>
@@ -668,6 +759,45 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </label>
             </div>
 
+            <div
+              v-if="gtinRejected"
+              class="space-y-2 rounded-lg border px-3 py-2 text-sm"
+              :class="gtinRejected.confirmed ? 'border-border bg-muted/40' : 'border-amber-500/40 bg-amber-500/10'"
+              data-gtin-rejected
+            >
+              <template v-if="gtinRejected.confirmed">
+                <p data-gtin-rejected-confirmed>
+                  Sai sem GTIN na NFC-e. A SEFAZ recusou o código {{ gtinRejected.gtin }}, e {{ gtinRejected.confirmed_by || "o gestor" }} conferiu a embalagem.
+                  Para voltar a mandar o GTIN, corrija o campo e salve.
+                </p>
+              </template>
+              <template v-else>
+                <p class="font-medium">
+                  A SEFAZ recusou o GTIN {{ gtinRejected.gtin }} na NFC-e do pedido {{ gtinRejected.order_ref }}<template v-if="gtinRejectedWhen">, em {{ gtinRejectedWhen }}</template>.
+                </p>
+                <p class="text-muted-foreground">
+                  A nota saiu de novo sem GTIN, e o produto segue saindo assim até alguém conferir. Compare com o código da embalagem:
+                  se for outro, corrija o campo e salve; se for o mesmo, ou se o produto não tiver código de barras, toque em Manter sem GTIN na nota.
+                </p>
+                <p v-if="gtinRejected.reason" class="text-xs text-muted-foreground" data-gtin-rejected-reason>
+                  Motivo da SEFAZ (rejeição {{ gtinRejected.code }}): {{ gtinRejected.reason }}
+                </p>
+                <p v-if="!gtinStillRejected" class="text-xs" data-gtin-rejected-corrected>
+                  Ao salvar, o código novo volta a ir na nota.
+                </p>
+                <button
+                  v-else
+                  type="button"
+                  class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50"
+                  :disabled="!canKeepWithoutGtin"
+                  data-gtin-keep-without
+                  @click="keepWithoutGtin"
+                >
+                  Manter sem GTIN na nota
+                </button>
+              </template>
+            </div>
+
             <label class="block">
               <span :class="labelClass">MPN (código do fabricante)</span>
               <input v-model="draft.social.mpn" :class="fieldClass" type="text" placeholder="Opcional" />
@@ -718,7 +848,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           <!-- Fiscal (NFC-e) -->
           <div v-show="tab === 'fiscal'" class="space-y-4">
             <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Usado na emissão da NFC-e. CFOP, CSOSN, origem e PIS/COFINS vêm do perfil — aqui
+              Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil; aqui fica
               só o que muda de produto para produto.
             </p>
 
@@ -744,7 +874,14 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </label>
             </div>
 
-            <label v-if="activeFiscalProfile?.requires_cest" class="block">
+            <label class="block">
+              <span :class="labelClass">Origem da mercadoria</span>
+              <UiNativeSelect v-model="draft.fiscal.origin" class="w-full">
+                <option v-for="o in props.detail?.fiscal_origins ?? []" :key="o.key" :value="o.key">{{ o.name }}</option>
+              </UiNativeSelect>
+            </label>
+
+            <label class="block">
               <span :class="labelClass">CEST</span>
               <input
                 v-model="draft.fiscal.cest" :class="fieldClass" type="text" inputmode="numeric"
@@ -752,12 +889,16 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               />
               <span v-if="cestInvalid" class="mt-1 block text-xs text-destructive">CEST deve ter 7 dígitos.</span>
               <span v-else-if="cestRequired" class="mt-1 block text-xs text-amber-600 dark:text-amber-400">
-                Obrigatório para itens de revenda com substituição tributária.
+                Obrigatório com substituição tributária.
               </span>
+              <span v-else class="mt-1 block text-xs text-muted-foreground">
+                Identificação da mercadoria; a tributação vem do perfil fiscal.
+              </span>
+              <span
+                v-for="warning in props.detail?.fiscal_warnings ?? []" :key="warning"
+                class="mt-1 block text-xs text-amber-600 dark:text-amber-400"
+              >{{ warning }}</span>
             </label>
-            <p v-else class="text-xs text-muted-foreground">
-              CEST não se aplica a fabricação própria.
-            </p>
           </div>
         </template>
       </div>

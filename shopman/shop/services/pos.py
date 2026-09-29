@@ -17,8 +17,10 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from shopman.cashman import services as cash_ledger
+from shopman.orderman.exceptions import CommitError as OrderCommitError
+from shopman.orderman.exceptions import ValidationError as OrderValidationError
 from shopman.orderman.models import Order, Session
-from shopman.utils.monetary import format_money
+from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
@@ -26,6 +28,7 @@ from shopman.shop.models import Channel
 from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import sessions as session_service
+from shopman.shop.services import weighed_sale
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION, PosIntentError, parse_pos_sale_intent
 
@@ -112,6 +115,10 @@ class PosSaleReview:
     #: A primeira janela oferecível deste dia para este carrinho, ou "". A tela
     #: usa para pré-selecionar sem ter que refazer a conta do servidor.
     delivery_earliest_slot: str = ""
+    #: ENTREGA COM NOTA: esta entrega vai ter NFC-e mesmo sem CPF, e a nota de
+    #: entrega não sai sem ele. A tela trava o fechamento enquanto "CPF na
+    #: nota" estiver vazio (a review não é refeita quando o CPF muda).
+    delivery_tax_id_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -299,9 +306,21 @@ def close_sale(
     operator_username: str,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
+    from shopman.shop.services import pos_edit_session
+
+    # A comanda virtual da edição de encomenda não vira venda nova: o gesto
+    # dela é "Salvar alterações" (``order_edit``).
+    if isinstance(payload, dict) and pos_edit_session.is_edit_session(
+        _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    ):
+        raise PosIntentError(
+            code="edit_session_no_sale", message=pos_edit_session.REFUSAL_MESSAGE, field="tab_session_key", focus="cart",
+        )
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    weighed_sale.apply_to_payload(payload, channel=channel)
+    _refuse_priceless_items(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
     # media o desconto de linha contra o preco JA descontado. Duas consequencias,
@@ -322,6 +341,8 @@ def close_sale(
     _require_customer_if_scheduled(payload)
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
+    _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
+    _require_delivery_minimum(payload)
     _require_house_account_if_on_account(
         payload,
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
@@ -376,16 +397,23 @@ def close_sale(
                         message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
                 direct_checkout = False
 
-            result, session, tab_ref = _commit_sale_session(
-                session=session,
-                channel=channel,
-                config=config,
-                payload=payload,
-                actor=actor,
-                operator_username=operator_username,
-                direct_checkout=direct_checkout,
-                approved_by=approved_by,
-            )
+            try:
+                result, session, tab_ref = _commit_sale_session(
+                    session=session,
+                    channel=channel,
+                    config=config,
+                    payload=payload,
+                    actor=actor,
+                    operator_username=operator_username,
+                    direct_checkout=direct_checkout,
+                    approved_by=approved_by,
+                )
+            except (OrderValidationError, OrderCommitError) as exc:
+                # A regra do commit recusou: NADA nasceu (a transação desfaz o
+                # claim e a sessão). Sem esta tradução a recusa subia crua, virava
+                # 500, e o PDV acendia "Resultado da cobrança não confirmado" —
+                # a trava contra cobrança dupla — por um pedido que nunca existiu.
+                raise _commit_refusal(exc) from exc
             _answer_sale_claim(claim, order_ref=result.order_ref)
 
             from shopman.shop.services.pos_sale_recovery import prepare
@@ -435,8 +463,11 @@ def _resume_committed_sale(order_ref: str) -> PosSaleResult:
         from shopman.shop.services import fiscal as fiscal_service
         from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
 
+        # Venda de balcão emite no fechamento; encomenda (retirada/entrega pela
+        # frente) sai daqui só com a Via Recibo, e a nota nasce na saída da
+        # mercadoria (``fiscal.emit_on_payment``, decisão de 26/09/2026).
         if not requires_captured_payment(order) or payment_is_captured(order):
-            fiscal_service.emit(order)
+            fiscal_service.emit_on_payment(order)
     except Exception as exc:
         logger.warning("pos_close_fiscal_emit_failed order=%s", order_ref, exc_info=True)
         _alert_fiscal_emit_failed(order_ref, exc)
@@ -648,6 +679,8 @@ def review_sale(
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     require_receipt_identity_choice(payload)
     channel, _config = _channel_and_config(channel_ref)
+    weighed_sale.apply_to_payload(payload, channel=channel)
+    _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
         raise ValueError("Abra um POS tab antes de finalizar.")
@@ -693,6 +726,22 @@ def review_sale(
                 f"Este endereço está fora da área de entrega{distancia}. "
                 "Confira o combinado antes de finalizar."
             ),
+        })
+    # Endereço incompleto para a nota da entrega: aviso aqui (a review é tela);
+    # a recusa mora em `_require_delivery_fiscal_identity`, no `close_sale`.
+    address_warning = _delivery_address_warning(payload, channel_ref=channel.ref)
+    if address_warning:
+        warnings.append(address_warning)
+    # Mínimo de entrega: aviso aqui, com a frase da recusa; a tela trava o
+    # Validar com ele (a recusa mora em `_require_delivery_minimum`).
+    delivery_minimum_q = _delivery_minimum_shortfall_q(payload)
+    if delivery_minimum_q:
+        from shopman.shop.rules.validation import delivery_minimum_message
+
+        warnings.append({
+            "code": "below_delivery_minimum",
+            "field": "items",
+            "message": delivery_minimum_message(delivery_minimum_q),
         })
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
@@ -771,33 +820,34 @@ def review_sale(
 
     approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
 
-    # Aviso não-bloqueante de disponibilidade (Q1): no balcão a venda vale mesmo
-    # sem estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita),
-    # mas o operador deve VER a falta em vez de descobrir depois.
+    # Aviso não-bloqueante de disponibilidade: no balcão a venda vale mesmo sem
+    # estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita), mas
+    # o operador deve VER a falta em vez de descobrir depois.
+    #
+    # A pergunta é feita PARA A DATA DO PEDIDO. Sem `target_date`, o `decide`
+    # cai em ``timezone.localdate()`` e a encomenda para sexta era conferida
+    # contra o estoque de hoje — o aviso saía errado nos dois sentidos: gritava
+    # falta que a fornada de sexta cobre, e calava falta real da data.
     from shopman.shop.services import availability
 
+    target_date = _payload_commitment_date(payload)
     for item in payload.get("items", []):
         if _is_delivery_fee_item(item):
             continue
         sku = str(item.get("sku") or "")
-        try:
-            qty = int(item.get("qty", 1))
-        except (TypeError, ValueError):
-            continue
+        qty = _line_qty(item)
         if not sku or qty <= 0:
             continue
-        decision = availability.decide(sku, qty, channel_ref=channel.ref)
+        decision = availability.decide(
+            sku, qty, channel_ref=channel.ref, target_date=target_date,
+        )
         if decision.get("approved"):
             continue
-        try:
-            available = int(decision.get("available_qty") or 0)
-        except (TypeError, ValueError):
-            available = 0
         name = str(item.get("name") or sku)
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
-            "message": f"{name}: só {available} em estoque. A venda de balcão vale; confira o estoque depois.",
+            "message": f"{name}: {_availability_shortfall(decision)}",
         })
 
     return PosSaleReview(
@@ -835,6 +885,7 @@ def review_sale(
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
         delivery_earliest_slot=delivery_earliest_slot,
+        delivery_tax_id_required=_delivery_tax_id_required(payload, channel_ref=channel.ref),
     )
 
 
@@ -883,6 +934,65 @@ def _schedule_review_context(payload: dict):
     return day, tuple(context["windows"]), context["earliest_ref"]
 
 
+def _payload_commitment_date(payload: dict):
+    """A data PARA A QUAL o pedido é — hoje quando o balcão não agendou nada.
+
+    É o mesmo ``delivery_date`` que o agendamento grava (``_append_schedule_ops``)
+    e que ``get_commitment_date`` lê no pedido já criado; aqui ele é lido do
+    payload porque a review acontece ANTES de o pedido existir.
+    """
+    from datetime import date as _date
+
+    raw = str(payload.get("delivery_date") or "").strip()
+    if raw:
+        try:
+            return _date.fromisoformat(raw)
+        except ValueError:  # silêncio-deliberado: data ilegível é recusada com
+            pass            # motivo por `_validate_schedule`; aqui só decide para
+    return timezone.localdate()  # QUE DIA perguntar o estoque, e hoje é o certo.
+
+
+def _qty_display(value) -> str:
+    """Quantidade na língua do balcão: ``3``, ``0,5``, ``1,25``.
+
+    Vírgula porque é texto que o operador lê, e sem zero à toa porque
+    "só 3,00 em estoque" soa a sistema, não a padaria.
+    """
+    from decimal import Decimal as _D
+    from decimal import InvalidOperation
+
+    try:
+        number = _D(str(value)).normalize()
+    except (InvalidOperation, ValueError, TypeError):
+        return "0"
+    text = format(number, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return (text or "0").replace(".", ",")
+
+
+def _availability_shortfall(decision: dict) -> str:
+    """Por que este item não foi aprovado — na língua do balcão.
+
+    Quatro causas distintas saíam com a MESMA frase ("só N em estoque"), o que
+    mandava o operador conferir a gôndola quando o problema era o produto estar
+    pausado ou fora do cardápio do PDV. E ``int(available_qty)`` truncava: meio
+    quilo de queijo virava "só 0 em estoque" numa venda que estava correta.
+    """
+    if decision.get("is_paused"):
+        return "pausado no cardápio do balcão. A venda vale; confira o cadastro."
+    if decision.get("reason_code") == "not_in_listing":
+        return "fora do cardápio do balcão. A venda vale; confira o cadastro."
+    if decision.get("is_planned"):
+        # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
+        # isto precisa combinar a espera com o cliente, não caçar unidade na
+        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
+        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
+        return "ainda não está pronto: sai do lote planejado para a data."
+    available = decision.get("available_qty") or 0
+    return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
+
+
 def _validate_schedule(payload: dict) -> None:
     """A DATA e a JANELA combinadas têm que ser cumpríveis. Falha FECHADO.
 
@@ -926,6 +1036,14 @@ def _validate_schedule(payload: dict) -> None:
             raise ValueError(
                 f"A casa aceita encomenda até {teto.strftime('%d/%m/%Y')}. Escolha uma data mais próxima."
             )
+        # Dia fechado (feriado, férias ou dia da semana sem expediente): a loja
+        # online sempre recusou, e o balcão aceitava — encomenda prometida para
+        # um dia em que ninguém abre a porta. A regra é a mesma das outras portas.
+        from shopman.shop.services import preorder_dates
+
+        refusal = preorder_dates.date_refusal(day, today=hoje)
+        if refusal:
+            raise ValueError(refusal)
     else:
         day = hoje
 
@@ -980,6 +1098,206 @@ def _require_contact_if_payment_link(payload: dict) -> None:
     )
 
 
+def _delivery_fiscal_order_view(payload: dict, *, channel_ref: str, require_complete: bool, with_tax_id: bool = True):
+    """O pedido de entrega que ainda não existe, como a regra fiscal o lê.
+
+    A pergunta "vai ter nota?" é a da emissão: ela lê o pagamento (as linhas),
+    o pedido de comprovante e o CPF. Então o pedido é montado com os mesmos
+    dados que o ``build_session_ops`` vai gravar.
+    """
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    payment_collection = _payload_payment_collection(payload, "delivery")
+    total_q = _payload_total_q(payload)
+    tenders = _payload_tenders(
+        payload,
+        payment_collection=payment_collection,
+        total_q=total_q,
+        pos_terminal_ref=str(payload.get("pos_terminal_ref") or "").strip(),
+        require_complete=require_complete,
+    )
+    structured = payload.get("delivery_address_structured")
+    data = {
+        "fulfillment_type": "delivery",
+        "payment": {
+            "method": _legacy_payment_method(payload, tenders),
+            "collection": payment_collection,
+            "amount_q": total_q,
+            **({"tenders": tenders} if tenders else {}),
+        },
+        "receipt": {"channels": list(payload.get("receipt_channels") or [])},
+        "delivery_address_structured": structured if isinstance(structured, dict) else {},
+    }
+    tax_id = str(payload.get("fiscal_tax_id") or "").strip()
+    if with_tax_id and tax_id:
+        data["fiscal"] = {"tax_id": tax_id}
+    return identity.order_view(data=data, channel_ref=channel_ref, total_q=total_q)
+
+
+def _delivery_tax_id_required(payload: dict, *, channel_ref: str) -> bool:
+    """Esta entrega vai ter nota MESMO sem CPF? Então o CPF é obrigatório.
+
+    Publicado na review para a tela travar o botão ao vivo: o "CPF na nota"
+    não refaz a review (não muda o total), então a tela confere o campo por
+    conta própria contra esta resposta.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return False
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    return identity.requires_delivery_fiscal_identity(
+        _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=False, with_tax_id=False)
+    )
+
+
+def _delivery_address_warning(payload: dict, *, channel_ref: str) -> dict | None:
+    """A ressalva de endereço incompleto para a nota, na review (não trava a conta)."""
+    if _payload_fulfillment_type(payload) != "delivery":
+        return None
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    order = _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=False)
+    if not identity.requires_delivery_fiscal_identity(order):
+        return None
+    structured = (order.data or {}).get("delivery_address_structured") or {}
+    gaps = [
+        gap for gap in identity.recipient_gaps(tax_id="", address=structured)
+        if gap.field == identity.ADDRESS_FIELD
+    ]
+    if not gaps:
+        return None
+    return {
+        "code": "delivery_address_incomplete",
+        "field": "delivery_address",
+        "message": identity.address_gap_message(gaps),
+    }
+
+
+def _require_delivery_fiscal_identity(payload: dict, *, channel_ref: str) -> None:
+    """Entrega com nota não fecha sem o CPF/CNPJ e o endereço completo.
+
+    A mesma trava do commit (``rules.validation.DeliveryFiscalIdentityRule``),
+    perguntada antes do commit para a recusa chegar no campo em que o operador
+    conserta, e não como erro genérico.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    order = _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=True)
+    gaps = identity.delivery_fiscal_gaps(order)
+    refused = identity.refusal(gaps)
+    if refused is None:
+        return
+    code, field, _customer_message = refused
+    if field == identity.TAX_ID_FIELD:
+        raise PosIntentError(
+            code=code,
+            message=DELIVERY_TAX_ID_REQUIRED_MESSAGE,
+            field="fiscal_tax_id",
+            focus="receipt",
+            recovery="Preencha \"CPF na nota\". Sem o documento, a entrega não fecha; a retirada continua.",
+        )
+    raise PosIntentError(
+        code=code,
+        message=identity.address_gap_message(gaps),
+        field="delivery_address",
+        focus="delivery_address",
+        recovery="Complete o endereço da entrega. A nota fiscal sai com ele.",
+    )
+
+
+def _delivery_minimum_shortfall_q(payload: dict) -> int:
+    """O mínimo de entrega que esta venda NÃO alcança; ``0`` quando alcança ou não há.
+
+    A mesma conta do commit (``rules.validation.DeliveryZoneRule``): as linhas de
+    mercadoria já com os descontos manuais, sem a taxa de entrega. Retirada nunca
+    tem mínimo.
+    """
+    if _payload_fulfillment_type(payload) != "delivery":
+        return 0
+    from shopman.shop.projections.cart import shop_rule_q
+
+    minimum_q = shop_rule_q("delivery_minimum_q")
+    if not minimum_q:
+        return 0
+    goods = {**payload, "items": [i for i in payload.get("items", []) if not _is_delivery_fee_item(i)]}
+    goods_q = (
+        _payload_subtotal_q(goods)
+        - _payload_line_discounts_q(goods)
+        - _payload_applied_order_discount_q(goods)
+    )
+    return minimum_q if goods_q < minimum_q else 0
+
+
+DELIVERY_MINIMUM_RECOVERY = "Acrescente itens até o mínimo, ou troque a entrega por retirada."
+
+
+def _require_delivery_minimum(payload: dict) -> None:
+    """Entrega abaixo do mínimo não fecha — perguntado antes do commit, com a frase do commit."""
+    minimum_q = _delivery_minimum_shortfall_q(payload)
+    if not minimum_q:
+        return
+    from shopman.shop.rules.validation import delivery_minimum_message
+
+    raise PosIntentError(
+        code="below_delivery_minimum",
+        message=delivery_minimum_message(minimum_q),
+        field="items",
+        focus="cart",
+        recovery=DELIVERY_MINIMUM_RECOVERY,
+    )
+
+
+#: Recusas do commit que se consertam no endereço da entrega.
+_COMMIT_ADDRESS_CODES = frozenset({
+    "delivery_zone_not_covered", "delivery_zone_unverified", "delivery_address_mismatch",
+})
+#: Recusas do commit que dizem "o estado mudou": conferir e tentar de novo.
+_COMMIT_CONFLICT_CODES = frozenset({
+    "revision_changed", "in_progress", "blocking_issues", "stale_checks", "hold_expired",
+})
+
+
+def _commit_refusal(exc) -> PosIntentError:
+    """Uma recusa das regras do commit, no dialeto do PDV (``PosIntentError``).
+
+    Cobre TODA regra de ``rules/validation.py`` (e as do Orderman) de uma vez: a
+    frase é a da regra; ``field``/``focus`` levam o operador ao lugar que conserta.
+    As que o PDV sabe perguntar antes (CPF da nota, endereço, mínimo, preço)
+    chegam antes por ``_require_*``; esta é a rede para o resto.
+    """
+    from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES, TAX_ID_FIELD
+
+    code = str(getattr(exc, "code", "") or "commit_refused")
+    message = str(getattr(exc, "message", "") or "") or "A venda foi recusada pelas regras da loja."
+    context = dict(getattr(exc, "context", None) or {})
+    field, focus, recovery = "", "cart", ""
+    if code == "below_delivery_minimum":
+        field, recovery = "items", DELIVERY_MINIMUM_RECOVERY
+    elif code == "price_missing":
+        field = "items"
+    elif code in _COMMIT_ADDRESS_CODES:
+        field = focus = "delivery_address"
+    elif code in REFUSAL_CODES:
+        if context.get("field") == TAX_ID_FIELD:
+            field, focus = "fiscal_tax_id", "receipt"
+        else:
+            field = focus = "delivery_address"
+    return PosIntentError(
+        code=code,
+        message=message,
+        field=field,
+        focus=focus,
+        status=409 if code in _COMMIT_CONFLICT_CODES else 422,
+        recovery=recovery,
+    )
+
+
+#: A frase do balcão para a entrega com nota sem CPF (a tela usa a mesma).
+DELIVERY_TAX_ID_REQUIRED_MESSAGE = "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente."
+
+
 def _payload_payment_method_set(payload: dict) -> set[str]:
     """As formas que a venda usa — pelos tenders, ou pelo método do pedido."""
     tenders = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
@@ -1005,13 +1323,9 @@ def _require_customer_if_scheduled(payload: dict) -> None:
 
 def _max_preorder_days() -> int:
     """Até quantos dias à frente a casa aceita encomenda (Admin, default 30)."""
-    try:
-        from shopman.shop.projections import checkout_context
+    from shopman.shop.services.preorder_dates import max_preorder_days
 
-        return max(0, int(checkout_context.preorder_config()[0]))
-    except Exception:
-        logger.warning("pos: could not read max_preorder_days; using 30", exc_info=True)
-        return 30
+    return max_preorder_days()
 
 
 def _payload_skus(payload: dict) -> list[str]:
@@ -1086,12 +1400,21 @@ def save_pos_tab(
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    from shopman.shop.services import pos_edit_session
+
+    # Na comanda da edição, a peça pesada que já estava no pedido fica com o peso
+    # e o preço vendidos (não se reconverte pela etiqueta de hoje).
+    pinned = pos_edit_session.pin_session_lines(session, payload) if pos_edit_session.is_edit_session(session) else set()
+    weighed_sale.apply_to_payload(payload, channel=channel, skip_line_ids=pinned)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
     if payload.get("sales_mode") == "order" and payload.get("items"):
         _validate_schedule(payload)
     before_items = session.items
+    if pos_edit_session.is_edit_session(session):
+        return _save_edit_session(session, payload, channel=channel, config=config, actor=actor,
+            operator_username=operator_username)
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -1126,6 +1449,34 @@ def save_pos_tab(
         _audit_line_diff(session, before=before_items, after=payload.get("items", []), actor=operator_username)
     logger.info("pos_save_tab tab=%s session=%s operator=%s", tab_ref, session.session_key, operator_username)
     return PosTabResult(tab_ref=tab_ref, tab_display=tab_display, session_key=session.session_key)
+
+
+def _save_edit_session(session, payload, *, channel, config, actor: str, operator_username: str) -> PosTabResult:
+    """Autosave da comanda virtual da edição (``pos_edit_session``).
+
+    Mesmas operações da comanda, sem o que faz dela uma comanda do quadro:
+    nada de ``tab_ref`` nem ``POSTab``. A marca ``pos_edit`` é regravada porque
+    a troca de operações da comanda não a conhece.
+    """
+    from shopman.shop.services import pos_edit_session
+
+    ops = _replace_session_ops(session, payload, operator_username)
+    ops.extend([
+        {"op": "set_data", "path": "origin_channel", "value": "pos"},
+        {"op": "set_data", "path": "fulfillment_type", "value": _payload_fulfillment_type(payload)},
+        {"op": "set_data", "path": "pos_operator", "value": operator_username},
+        {"op": "set_data", "path": "last_touched_at", "value": timezone.now().isoformat()},
+        {"op": "set_data", "path": pos_edit_session.DATA_KEY, "value": pos_edit_session.edit_info(session)},
+    ])
+    session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=ops,
+        ctx={"actor": actor},
+        channel_config=config.to_dict(),
+    )
+    ref = str(session.handle_ref or "")
+    return PosTabResult(tab_ref=ref, tab_display=f"Encomenda {ref}", session_key=session.session_key)
 
 
 def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str) -> bool:
@@ -1407,7 +1758,7 @@ def _session_to_fire_lines(session: Session) -> list[dict]:
             "line_id": item.get("line_id", ""),
             "sku": item.get("sku", ""),
             "name": item.get("name") or item.get("sku", ""),
-            "qty": int(item.get("qty", 1)),
+            "qty": weighed_sale.qty_number(item.get("qty", 1)),
             "notes": meta.get("notes", ""),
             "meta": meta,
         })
@@ -1447,8 +1798,13 @@ def fire_pos_tab(
             focus="cart",
         )
 
+    from shopman.shop.services import pos_edit_session
     from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
 
+    if pos_edit_session.is_edit_session(session):
+        raise PosIntentError(
+            code="edit_session_no_fire", message=pos_edit_session.REFUSAL_MESSAGE, field="session_key", focus="cart",
+        )
     validate_sales_mode(session_sales_payload(session), require_ready=True)
 
     # Uma comanda de encomenda pode ser montada (e até paga) antes do dia
@@ -1516,11 +1872,13 @@ def fire_pos_tab(
     # (o operador reduziu a quantidade de algo que a cozinha já está fazendo).
     # Só conta o que o ledger confirmou — uma linha sem estação de destino não
     # chega à cozinha, e marcá-la aqui acenderia o selo de sobra sem sobra.
-    fired_qty = {str(k): int(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()}
+    fired_qty = {
+        str(k): weighed_sale.qty_number(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()
+    }
     fired_set = set(fired)
     for line in to_fire:
         if line["line_id"] in fired_set:
-            fired_qty[line["line_id"]] = int(line["qty"])
+            fired_qty[line["line_id"]] = weighed_sale.qty_number(line["qty"])
     session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
@@ -1771,7 +2129,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         op = {
             "op": "add_line",
             "sku": item["sku"],
-            "qty": int(item.get("qty", 1)),
+            # Inteiro na venda por unidade; kg com 3 casas na linha pesada — que
+            # o ``weighed_sale.apply_to_payload`` já resolveu a partir da
+            # etiqueta ou do peso. ``int()`` aqui zerava 0,312 kg em silêncio.
+            "qty": _line_qty(item),
             "unit_price_q": int(item["unit_price_q"]),
         }
         # A identidade da linha VEM DO CLIENTE e é preservada no remove+readd do
@@ -1794,6 +2155,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             if approved_by:
                 line_discount["approved_by"] = approved_by
             meta["manual_discount"] = line_discount
+        # O que o operador tinha em mãos (etiqueta ou peso) e o que isso virou.
+        # Registro, não preço: o kernel reprecifica a linha pelo catálogo.
+        if isinstance(item.get("weighed"), dict):
+            meta["weighed"] = {**item["weighed"], "by": _bare_username(operator_username)}
         # O preco de ETIQUETA viaja com a linha da comanda, como o modifier
         # de pricing carimba na venda: sem _list_q na sessao, a review fica
         # sem regua para o "maior desconto ganha" e sem preco para carimbar.
@@ -2322,10 +2687,54 @@ def _payload_subtotal_q(payload: dict) -> int:
     subtotal_q = 0
     for item in payload.get("items", []):
         try:
-            subtotal_q += int(item.get("qty", 1)) * int(item.get("unit_price_q", 0))
+            subtotal_q += monetary_mult(Decimal(_line_qty(item)), int(item.get("unit_price_q", 0)))
         except (TypeError, ValueError):
             continue
     return max(0, subtotal_q)
+
+
+def _line_qty(item: dict) -> Decimal | int:
+    """A quantidade da linha sem truncar: ``int`` na venda por unidade, ``Decimal`` na pesada.
+
+    O PDV somava ``int(qty) × preço`` em seis lugares. Com a venda por peso isso
+    virava zero (0,312 kg → 0) e a review prometia R$ 0,00 por um queijo de
+    R$ 28,05. A conta com fração é a do kernel: ``monetary_mult``, meio para cima.
+    """
+    try:
+        qty = Decimal(str(item.get("qty", 1)))
+    except (InvalidOperation, TypeError, ValueError):
+        return 0
+    if not qty.is_finite():
+        return 0
+    return int(qty) if qty == qty.to_integral_value() else qty
+
+
+def _refuse_priceless_items(payload: dict, *, channel) -> None:
+    """O balcão não vende item sem preço no catálogo — e diz qual, antes do caixa.
+
+    A mesma regra do validador de commit (``rules.validation.PricedItemsRule``),
+    que vale para todo canal; aqui ela chega CEDO e com o nome do item, na review,
+    em vez de virar um erro genérico do fechamento. O preço que conta é o do
+    CATÁLOGO (o do navegador é só vitrine): um desconto de 100% não é preço zero,
+    é desconto, e passa pela régua do desconto.
+    """
+    from shopman.shop.handlers.pricing import OffermanPricingBackend
+
+    backend = OffermanPricingBackend()
+    for idx, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        sku = str(item.get("sku") or "")
+        if int(backend.get_price(sku, channel, qty=Decimal(1)) or 0) > 0:
+            continue
+        name = str(item.get("name") or sku)
+        raise PosIntentError(
+            code="price_missing",
+            message=f"{name} está sem preço no cadastro e não pode ser vendido.",
+            field=f"items.{idx}",
+            focus="cart",
+            recovery="Cadastre o preço no catálogo. Para dar o item, use desconto de 100%.",
+        )
 
 
 def _ensure_resolved_prices(payload: dict) -> None:
@@ -2363,12 +2772,12 @@ def _payload_applied_order_discount_q(payload: dict) -> int:
     for item in payload.get("items", []):
         if _is_non_merchandise_line(item):
             continue
-        qty = max(0, int(item.get("qty", 1)))
+        qty = max(0, _line_qty(item))
         if not qty:
             continue
         line_gain_q = _payload_line_discounts_q({"items": [item]})
-        unit_q = max(0, int(item.get("unit_price_q", 0)) - line_gain_q // qty)
-        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": qty * unit_q})
+        unit_q = max(0, int(item.get("unit_price_q", 0)) - int(Decimal(line_gain_q) / Decimal(qty)))
+        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": monetary_mult(Decimal(qty), unit_q)})
     return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
 
 
@@ -2459,9 +2868,9 @@ def _payload_line_discounts_q(payload: dict) -> int:
             continue
         try:
             unit_price_q = int(item.get("unit_price_q", 0))
-            qty = int(item.get("qty", 1))
         except (TypeError, ValueError):
             continue
+        qty = _line_qty(item)
         # Sem etiqueta declarada, a linha não tem desconto automático a bater:
         # etiqueta e preço cobrado são o mesmo número.
         list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
@@ -2478,8 +2887,12 @@ def _payload_line_discounts_q(payload: dict) -> int:
                 int(round(list_price_q * line_discount["value"] / 100)),
                 list_price_q,
             )
-        gain_per_unit = max(0, manual_per_unit - auto_per_unit)
-        total += min(gain_per_unit, unit_price_q) * max(0, qty)
+        gain_per_unit = min(max(0, manual_per_unit - auto_per_unit), unit_price_q)
+        # Por unidade, e o total da linha pela conta do kernel: com quantidade
+        # fracionária (kg) o desconto é a diferença entre os dois totais
+        # arredondados, não ``ganho × qty`` — que dá fração de centavo.
+        line_qty = Decimal(max(0, qty))
+        total += monetary_mult(line_qty, unit_price_q) - monetary_mult(line_qty, unit_price_q - gain_per_unit)
     return total
 
 
@@ -2578,6 +2991,28 @@ def _resolve_delivery_fee(payload: dict) -> DeliveryFeeResolution:
     resolution = _compute_delivery_fee(payload)
     payload[_DELIVERY_FEE_RESOLUTION_KEY] = resolution
     return resolution
+
+
+def resolve_delivery_fee(
+    *, address_structured: dict | None, address_text: str = "", merchandise_q: int, override_q=None,
+) -> DeliveryFeeResolution:
+    """A taxa de entrega pelo MESMO motor da venda, para quem não tem um carrinho do PDV.
+
+    É a porta da edição da encomenda (``order_edit``): a retirada que vira
+    entrega paga a taxa que a venda cobraria para aquele endereço — zona,
+    faixa de distância e frete grátis acima de um valor —, ou a exceção que o
+    operador assume (``override_q``). ``merchandise_q`` é o valor dos produtos,
+    que decide o frete grátis.
+    """
+    payload: dict = {
+        "fulfillment_type": "delivery",
+        "delivery_address_structured": dict(address_structured or {}),
+        "delivery_address": str(address_text or ""),
+        "items": [{"sku": "_merchandise", "qty": 1, "unit_price_q": max(0, int(merchandise_q or 0))}],
+    }
+    if override_q not in (None, ""):
+        payload["delivery_fee_override_q"] = override_q
+    return _compute_delivery_fee(payload)
 
 
 def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:

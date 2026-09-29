@@ -22,7 +22,12 @@ def __getattr__(name):
         from shopman.offerman.contrib.substitutes import substitutes as _subs
 
         return getattr(_subs, name)
-    elif name in ("ProductSocialAttributes", "get_social_attributes", "set_social_attributes"):
+    elif name in (
+        "ProductSocialAttributes",
+        "get_social_attributes",
+        "set_social_attributes",
+        "gtin_is_valid",
+    ):
         from shopman.offerman.contrib.social import schema
 
         return getattr(schema, name)
@@ -41,5 +46,8 @@ __all__ = [
     "ProductSocialAttributes",
     "get_social_attributes",
     "set_social_attributes",
+    # Dígito verificador GS1: o mesmo validador para o cadastro, a leitura da
+    # NF-e de compra e a sugestão de catálogo por GTIN.
+    "gtin_is_valid",
 ]
 __version__ = "0.3.0"

@@ -11,8 +11,8 @@ export interface SitemapUrl {
 // e ficam no fim da fila.
 const STATIC_PAGES: ReadonlyArray<{ path: string, priority: string }> = [
   { path: '/faq', priority: '0.6' },
-  { path: '/privacy', priority: '0.2' },
-  { path: '/terms', priority: '0.2' }
+  { path: '/privacidade', priority: '0.2' },
+  { path: '/termos', priority: '0.2' }
 ]
 
 function escapeXml (value: string): string {

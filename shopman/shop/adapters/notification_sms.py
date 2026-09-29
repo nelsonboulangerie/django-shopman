@@ -20,6 +20,8 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from shopman.shop import notification_copy
+
 from ._sms import to_digits
 
 logger = logging.getLogger(__name__)
@@ -29,25 +31,6 @@ logger = logging.getLogger(__name__)
 # só o fallback: o template do Admin (NotificationTemplate) vale para todos os canais
 # e ESSE é acentuado; aqui, sem acento é decisão de custo, não erro.
 MESSAGE_TEMPLATES: dict[str, str] = {
-    "order_received": "Recebemos o pedido {order_ref}. O estabelecimento vai conferir a disponibilidade.",
-    "order_accepted": "Pedido {order_ref} confirmado! Total: {total}",
-    "order_preparing": "Pedido {order_ref} em preparo! Avisaremos quando estiver pronto.",
-    "order_ready_pickup": "Pedido {order_ref} pronto para retirada!",
-    "order_ready_delivery": "Pedido {order_ref} pronto! Sera enviado em breve.",
-    "order_dispatched": "Pedido {order_ref} saiu para entrega! Quando receber, confirme aqui: {tracking_url}",
-    "order_delivered": "Pedido {order_ref} entregue. Obrigado!",
-    "order_cancelled": "Pedido {order_ref} cancelado.{reason_note}\nVeja os detalhes: {tracking_url}",
-    "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento.{reason_note}\nVeja os detalhes: {tracking_url}",
-    "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Avisamos a cada passo: {tracking_url}",
-    "payment_requested": "Pedido {order_ref}: disponibilidade confirmada. Pague aqui: {payment_url}",
-    "payment_link_sent": "Anotamos o pedido {order_ref}, {total}. Pague aqui: {checkout_url}{payment_deadline_note}",
-    "payment_expired": "Nao recebemos o pagamento do pedido {order_ref} no prazo e liberamos a reserva. Se ainda quiser, fale com a gente que refazemos o pedido.",
-    "payment_failed": "Nao conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
-    "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",
-    "waitlist_available": "Sua fornada saiu! Confirme o pedido {order_ref} para garantir o seu: {tracking_url}",
-    "waitlist_released": "O prazo de confirmacao do pedido {order_ref} passou e liberamos a sua vaga. Nada foi cobrado.",
-    "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}{management_note}",
-    "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}",
     "announcement_published": "{body} {cta} {action_url}",
     "purchase_request": (
         "Ola, {supplier_greeting}! Pedido {purchase_ref} da {shop_name}: "
@@ -55,6 +38,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Pode confirmar disponibilidade e prazo?"
     ),
     "purchase_receipt_rejected": "Devolução {receipt_ref}: {supplier_name}. Motivo: {reason}",
+    # Avisos ao cliente: fonte única em `shopman/shop/notification_copy.py`.
+    **notification_copy.sms_bodies(),
 }
 
 _COMTELE_SEND_URL = "https://api.comtele.com.br/messages/sms/send"

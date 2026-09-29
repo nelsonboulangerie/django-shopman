@@ -1483,6 +1483,11 @@ def test_expired_projection_allows_only_the_exact_committed_retry(
     )
     assert stale_new_attempt.status_code == 409
     assert stale_new_attempt.json()["error"]["code"] == "stale_projection"
+    # A recusa diz ao operador o que importa (nada foi salvo) e por quê, sem jargão.
+    stale_body = stale_new_attempt.json()
+    assert stale_body["detail"].startswith("Nada foi salvo")
+    assert "projeção" not in stale_body["detail"]
+    assert stale_body["error"]["recovery"] == {"action": "refresh", "label": "Atualizar os números"}
 
 
 @pytest.mark.django_db

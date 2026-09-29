@@ -52,6 +52,7 @@ def test_request_returns_protocol_without_changing_order_and_routes_to_orders(cl
     assert event.payload == {
         "protocol": request["protocol"],
         "reason": "Não vou conseguir receber no horário.",
+        "before_preparation": True,
     }
     alert = OperatorAlert.objects.get(
         type="customer_cancellation_requested",
@@ -59,7 +60,38 @@ def test_request_returns_protocol_without_changing_order_and_routes_to_orders(cl
     )
     assert alert.audience == "orders"
     assert request["protocol"] in alert.message
+
+
+def test_paid_order_before_preparation_tells_the_operator_the_terms_rule(client, order_paid):
+    # Termos §7: pedido pago e ainda não preparado — a desistência vale e o valor
+    # volta inteiro. O alerta não pede "decisão": diz a regra e o gesto.
+    assert order_paid.status == "accepted"
+
+    assert _request(client, order_paid.ref).status_code == 200
+
+    alert = OperatorAlert.objects.get(
+        type="customer_cancellation_requested",
+        order_ref=order_paid.ref,
+    )
+    assert "Termos (§7)" in alert.message
+    assert "o valor volta inteiro" in alert.message
+    assert "eventual estorno" not in alert.message
+
+
+def test_paid_order_in_preparation_keeps_the_request_for_analysis(client, order_paid):
+    order_paid.status = "preparing"
+    order_paid.save(update_fields=["status"])
+
+    assert _request(client, order_paid.ref).status_code == 200
+
+    event = OrderEvent.objects.get(order=order_paid, type=EVENT_TYPE)
+    assert event.payload["before_preparation"] is False
+    alert = OperatorAlert.objects.get(
+        type="customer_cancellation_requested",
+        order_ref=order_paid.ref,
+    )
     assert "eventual estorno" in alert.message
+    assert "Termos (§7)" not in alert.message
 
 
 def test_request_is_idempotent_and_tracking_keeps_the_same_protocol(client, order_paid):

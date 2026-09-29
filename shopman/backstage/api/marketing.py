@@ -579,6 +579,7 @@ class AnnouncementApproveView(_CampaignBase):
             "hashtags",
             "image_url",
             "platforms",
+            "google_business",
             "publish_at",
             "publish_mode",
             "publish_timezone",
@@ -655,6 +656,14 @@ class AnnouncementApproveView(_CampaignBase):
             # changed after the announcement was created would approve content
             # different from what the operator reviewed.
             platform_content = dict(announcement.platform_content or {})
+            if "google_business" in edits:
+                from shopman.shop.services.marketing_google_post import (
+                    with_review_options,
+                )
+
+                platform_content = with_review_options(
+                    platform_content, edits["google_business"]
+                )
 
         try:
             result = marketing_approval.approve_command(
@@ -752,7 +761,7 @@ class WhatsAppTestSendView(_CampaignBase):
                 headers={"Retry-After": "60"},
             )
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"target_ref", "sku", "body"})
+        unexpected = sorted(set(payload) - {"target_ref", "event", "sku", "body"})
         if unexpected:
             return Response(
                 {
@@ -767,11 +776,21 @@ class WhatsAppTestSendView(_CampaignBase):
                 str(payload.get("target_ref") or ""),
                 actor=request.user,
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                event=str(payload.get("event") or "announcement_published"),
                 sku=str(payload.get("sku") or ""),
                 body=str(payload.get("body") or ""),
             )
         except campaign_service.MarketingTestConflict as exc:
             return Response({"detail": str(exc), "code": "idempotency_conflict"}, status=409)
+        except campaign_service.MarketingTestBindingChanged as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "code": "template_binding_changed",
+                    "receipt_ref": exc.receipt_ref,
+                },
+                status=409,
+            )
         except campaign_service.MarketingTestThrottled as exc:
             return Response(
                 {"detail": str(exc), "code": "test_send_throttled"},
@@ -811,6 +830,7 @@ class WhatsAppTestSendView(_CampaignBase):
                 "ok": outcome.accepted,
                 "backend": outcome.backend,
                 "target_ref": outcome.target_ref,
+                "event": outcome.event,
                 "fields": outcome.fields,
                 "receipt_ref": outcome.receipt_ref,
                 "state": outcome.state,
@@ -1211,6 +1231,8 @@ class PreviewView(_CampaignBase):
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
+        if payload.get("announcement") not in (None, ""):
+            return self._announcement_preview(payload)
         try:
             common = {
                 "sku": str(payload.get("sku") or ""),
@@ -1238,6 +1260,48 @@ class PreviewView(_CampaignBase):
                     platform=str(payload.get("platform") or "instagram"),
                     **common,
                 )
+        except MarketingContractError as exc:
+            return _command_error_response(exc)
+        return Response(preview)
+
+    def _announcement_preview(self, payload):
+        """Revisão de anúncio que JÁ existe: o conteúdo gravado + as edições do card.
+
+        Sem produto de exemplo: o exemplo explica um modelo no formulário, e aqui mentiria
+        sobre o que a aprovação publica (ver `campaign.preview_announcement`).
+        """
+        pk = _command_int(payload.get("announcement"))
+        announcement = _announcement_or_none(pk) if pk and pk > 0 else None
+        if announcement is None:
+            return Response(
+                {"code": "announcement_not_found", "detail": "Anúncio não encontrado."},
+                status=404,
+            )
+        edits, error = _announcement_edits(
+            {
+                key: payload[key]
+                for key in ("body", "hashtags", "platforms", "google_business")
+                if key in payload
+            }
+        )
+        if error:
+            field = str(error.get("field") or "payload")
+            return Response(
+                {
+                    "code": "invalid_preview_content",
+                    "detail": error["detail"],
+                    "field_errors": {field: [error["detail"]]},
+                },
+                status=422,
+            )
+        try:
+            preview = campaign_service.preview_announcement(
+                announcement,
+                platforms=edits.get("platforms", list(announcement.platforms or [])),
+                body=edits.get("body"),
+                hashtags=edits.get("hashtags"),
+                google_business=edits.get("google_business"),
+            )
         except MarketingContractError as exc:
             return _command_error_response(exc)
         return Response(preview)
@@ -1351,10 +1415,18 @@ class WhatsAppTemplateView(_CampaignBase):
     def get(self, request):
         from shopman.shop.models import NotificationTemplate
         from shopman.shop.services import delivery_readiness, manychat_flows
+        from shopman.shop.services.marketing_platform_configuration import (
+            TRANSACTIONAL_WHATSAPP_EVENTS,
+            WHATSAPP_EVENT_LABELS,
+        )
 
         template = NotificationTemplate.objects.filter(event=self.EVENT).first()
         current = (template.whatsapp_flow_ns or "") if template else ""
         catalog = manychat_flows.flow_catalog(force=request.query_params.get("refresh") == "1")
+        names = dict(catalog.flows)
+        rows = NotificationTemplate.objects.filter(
+            event__in=TRANSACTIONAL_WHATSAPP_EVENTS
+        ).in_bulk(field_name="event")
         readiness = delivery_readiness.readiness_for(("whatsapp",))[0]
         can_send_test = request.user.has_perm("shop.send_marketing_test")
 
@@ -1378,6 +1450,32 @@ class WhatsAppTemplateView(_CampaignBase):
                 "catalog_as_of": catalog.facts_as_of,
                 "catalog_fresh_until": catalog.fresh_until,
                 "catalog_hash": catalog.catalog_hash,
+                "notification_templates": [
+                    {
+                        "event": event,
+                        "label": WHATSAPP_EVENT_LABELS[event],
+                        "current": (
+                            (rows[event].whatsapp_flow_ns or "")
+                            if event in rows
+                            else ""
+                        ),
+                        "current_name": names.get(
+                            (rows[event].whatsapp_flow_ns or "")
+                            if event in rows
+                            else "",
+                            "",
+                        ),
+                        "current_active": bool(
+                            event in rows and rows[event].is_active
+                        ),
+                        "version": rows[event].version if event in rows else 1,
+                        "available": event in rows,
+                        "configured": bool(
+                            event in rows and rows[event].whatsapp_flow_ns
+                        ),
+                    }
+                    for event in TRANSACTIONAL_WHATSAPP_EVENTS
+                ],
                 "readiness_state": readiness.state,
                 "readiness_reason_code": readiness.reason_code,
                 "can_send_test": can_send_test,
@@ -1392,7 +1490,10 @@ class WhatsAppTemplateView(_CampaignBase):
         )
 
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - ({"flow_ns", "base_version"} | _AUTHORIZATION_FIELDS))
+        unexpected = sorted(
+            set(payload)
+            - ({"event", "flow_ns", "base_version"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -1405,6 +1506,7 @@ class WhatsAppTemplateView(_CampaignBase):
                 base_version=base_version,
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                event=str(payload.get("event") or self.EVENT),
                 authorize=_command_authorizer(
                     request,
                     capability="shop.configure_marketing_platforms",
@@ -1945,6 +2047,27 @@ def _announcement_edits(data) -> tuple[dict, dict | None]:
         if not platforms:
             return {}, {"detail": "Escolha ao menos uma plataforma.", "field": "platforms"}
         edits["platforms"] = platforms
+    if "google_business" in data:
+        options = data.get("google_business")
+        if not isinstance(options, dict):
+            return {}, {
+                "detail": "As opções do Google precisam ser um objeto.",
+                "field": "google_business",
+            }
+        from shopman.shop.services.marketing_google_post import REVIEW_OPTION_KEYS
+
+        unknown = sorted(set(options) - REVIEW_OPTION_KEYS)
+        if unknown:
+            return {}, {
+                "detail": "Há uma opção do Google que a revisão não altera.",
+                "field": f"google_business.{unknown[0]}",
+            }
+        if any(not isinstance(value, str) for value in options.values()):
+            return {}, {
+                "detail": "As opções do Google precisam ser texto.",
+                "field": "google_business",
+            }
+        edits["google_business"] = {key: value.strip() for key, value in options.items()}
 
     return edits, None
 

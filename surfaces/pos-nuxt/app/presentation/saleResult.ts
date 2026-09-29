@@ -87,22 +87,39 @@ export function resolveFiscalState(
   return response.fiscal_expected ? "queued" : "not_expected";
 }
 
-/** O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado. */
+/**
+ * O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado.
+ *
+ * ⚠️ `not_expected` é o COMPORTAMENTO PADRÃO da casa (nota só quando pedem: nota,
+ * CPF ou comprovante), não um defeito. Um rótulo de ausência lê como falta — o
+ * operador veria uma venda normal marcada como se algo tivesse dado errado.
+ * "Emissão não estabelecida" (escolha do Pablo) diz o fato sem alarme: a regra
+ * não estabeleceu nota para esta venda. NÃO "revogada" — no vocabulário fiscal
+ * isso é nota que existiu e foi desfeita, rótulo que mente. Os outros estados
+ * falam o MESMO texto da pill do Gestor de Pedidos (`order_queue._FISCAL_PILL`).
+ * ⚠️ Este não: o Gestor passou a dizer "Sem NFC-e neste pedido" (#1143), e a
+ * escolha entre os dois é do dono. O alarme fica com quem merece (`failed`), e o chip
+ * continua neutro (`not_requested` em `PosRecentSales`). Se o cliente voltar
+ * pedindo, a emissão avulsa sai da mesma lista, com gerente.
+ */
 export function fiscalStateLabel(state: PosFiscalState): string {
   switch (state) {
     case "authorized": return "NFC-e autorizada";
-    case "queued": return "NFC-e na fila";
-    case "awaiting_payment": return "NFC-e aguarda o pagamento";
-    case "failed": return "NFC-e falhou";
-    default: return "Sem NFC-e";
+    case "queued": return "NFC-e em emissão";
+    case "awaiting_payment": return "NFC-e sai quando o pagamento confirmar";
+    case "awaiting_pickup": return "NFC-e sai na retirada";
+    case "awaiting_delivery": return "NFC-e sai na entrega";
+    case "failed": return "NFC-e não autorizada";
+    default: return "Emissão não estabelecida";
   }
 }
 
 export type DanfeOffer =
   | { kind: "print"; label: "Imprimir DANFE" }
-  | { kind: "queued"; label: "NFC-e na fila…" }
+  | { kind: "queued"; label: "NFC-e em emissão…" }
   | { kind: "awaiting_payment"; label: "NFC-e sai quando o pagamento confirmar" }
-  | { kind: "failed"; label: "NFC-e falhou — veja Últimas vendas" }
+  | { kind: "awaiting_handoff"; label: "NFC-e sai na retirada" | "NFC-e sai na entrega" }
+  | { kind: "failed"; label: "NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e." }
   | null;
 
 /**
@@ -113,13 +130,17 @@ export type DanfeOffer =
  * lia um erro por uma nota que ainda não existia. Só `authorized` ganha o botão
  * vivo; `queued` mostra o botão desabilitado (a impressão automática promove
  * quando o 409 vira 200); `awaiting_payment` e `failed` dizem o próximo passo.
+ * Encomenda paga antes (`awaiting_pickup`/`awaiting_delivery`) não tem DANFE
+ * agora: o papel do pagamento é o recibo, e a frase diz QUANDO a nota sai.
  */
 export function danfeOffer(state: PosFiscalState): DanfeOffer {
   switch (state) {
     case "authorized": return { kind: "print", label: "Imprimir DANFE" };
-    case "queued": return { kind: "queued", label: "NFC-e na fila…" };
+    case "queued": return { kind: "queued", label: "NFC-e em emissão…" };
     case "awaiting_payment": return { kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" };
-    case "failed": return { kind: "failed", label: "NFC-e falhou — veja Últimas vendas" };
+    case "awaiting_pickup": return { kind: "awaiting_handoff", label: "NFC-e sai na retirada" };
+    case "awaiting_delivery": return { kind: "awaiting_handoff", label: "NFC-e sai na entrega" };
+    case "failed": return { kind: "failed", label: "NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e." };
     default: return null;
   }
 }

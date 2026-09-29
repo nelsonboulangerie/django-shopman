@@ -174,7 +174,13 @@ def main() -> int:
                 "```",
                 "",
                 f"- Version: `{version}`",
-                f"- Package root: `{package_root}`",
+                # Caminho RELATIVO ao venv, não absoluto. O absoluto embutia o
+                # diretório de quem rodou o snapshot: o inventário do `main`
+                # carregava o `.venv` do checkout principal, e regerá-lo de uma
+                # worktree trocava a linha por um caminho `.claude/worktrees/…`
+                # que deixa de existir quando a worktree é removida. Ruído de
+                # diff garantido, e um ponteiro para lugar nenhum no commit.
+                f"- Package root: `{_relative_package_root(package_root)}`",
                 "",
                 "## Official References",
                 "",
@@ -294,6 +300,20 @@ def _bullets(items) -> list[str]:
     if not values:
         return ["- None found"]
     return [f"- {item}" for item in values]
+
+
+def _relative_package_root(package_root: Path) -> str:
+    """O caminho do pacote sem o diretório de quem rodou o snapshot.
+
+    O inventário é versionado, então um caminho absoluto ali é a máquina de
+    alguém entrando no commit. Fora do repositório (venv de sistema, site-packages
+    global) não há prefixo comum para remover — aí o absoluto é a única resposta
+    honesta e fica como está.
+    """
+    try:
+        return str(package_root.resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(package_root)
 
 
 if __name__ == "__main__":

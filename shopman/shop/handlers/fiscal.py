@@ -2,6 +2,8 @@
 Fiscal handlers — emissão e cancelamento de NFC-e.
 
 Tratamento de erro de produção:
+- Rejeição da SEFAZ por GTIN → reemite na hora com "SEM GTIN", marca o
+  produto e alerta (``_reemit_without_rejected_gtin``): o GTIN nunca trava a venda.
 - Falha de transporte/5xx/processando → ``DirectiveTransientError`` (retry com
   backoff); rejeição/payload/4xx → ``DirectiveTerminalError`` (visível na fila).
 - Retry NUNCA re-POSTa cego: consulta ``query_status`` primeiro. Um timeout
@@ -12,6 +14,7 @@ Tratamento de erro de produção:
 from __future__ import annotations
 
 import logging
+import re
 
 from shopman.fiscalman.contracts import FiscalBackend, FiscalDocumentResult
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
@@ -38,6 +41,35 @@ def _is_transient(error_code: str | None) -> bool:
     return code in _TRANSIENT_CODES or code.startswith(_TRANSIENT_PREFIXES)
 
 
+# A SEFAZ aponta o item pelo número dele na nota: "[nItem:3]" / "[nItem: 3]".
+_ITEM_NUMBER = re.compile(r"nItem\s*:\s*(\d+)", re.IGNORECASE)
+
+
+def _is_delivery_fee_line(item: dict) -> bool:
+    """A taxa de entrega não é item da nota (vira frete) e não conta no nItem.
+
+    Mesma regra do adapter (``fiscal_focusnfe._is_delivery_fee_item``), que
+    numera só a mercadoria. Se as duas divergirem, o item apontado não leva
+    GTIN e a reemissão cai no caminho seguro: tira o GTIN de todos.
+    """
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
+
+
+def _items_with_rejected_gtin(items: list[dict], sefaz_message: str) -> list[dict]:
+    """Itens cujo GTIN sai da nota: o apontado pela SEFAZ, ou todos que o levam."""
+    with_gtin = [item for item in items if str(item.get("gtin") or "").strip()]
+    match = _ITEM_NUMBER.search(sefaz_message)
+    if match:
+        merchandise = [item for item in items if not _is_delivery_fee_line(item)]
+        number = int(match.group(1))
+        if 1 <= number <= len(merchandise):
+            pointed = merchandise[number - 1]
+            if str(pointed.get("gtin") or "").strip():
+                return [pointed]
+    return with_gtin
+
+
 class NFCeEmitHandler:
     """Directive handler para emissão de NFC-e. Topic: fiscal.emit_nfce"""
 
@@ -50,10 +82,40 @@ class NFCeEmitHandler:
         from shopman.shop.services.observability import create_operator_alert
 
         order_ref = str((message.payload or {}).get("order_ref") or "")
+        if self._undone_before_any_emission(order_ref, message):
+            return
         create_operator_alert(
             type="fiscal_emit_failed", severity="critical", order_ref=order_ref,
-            message=f"NFC-e do pedido {order_ref} sem emissão confirmada após {message.attempts} tentativa(s). Confira a fila fiscal e consulte a referência antes de reenviar.",
+            message=(
+                f"A NFC-e do pedido {order_ref} não foi autorizada depois de {message.attempts} "
+                "tentativa(s). Abra o pedido e toque em Reprocessar NFC-e; se falhar de novo, "
+                "chame o contador."
+            ),
             dedupe_key=f"fiscal_emit_failed:{order_ref}",
+        )
+
+    @staticmethod
+    def _undone_before_any_emission(order_ref: str, message: Directive) -> bool:
+        """Venda desfeita antes da 1ª tentativa: a recusa É o desfecho certo.
+
+        Na 1ª execução (``attempts == 1``) nenhum POST aconteceu, então não há
+        nota que possa ter ficado autorizada sem chave — não há o que o
+        operador conferir. Alertar ``fiscal_emit_failed`` aqui só ensinava o
+        balcão a ignorar o alerta que importa. Com ``attempts > 1`` (retry, ou
+        emissão reaberta por ``fiscal.cancel`` para consulta) o alerta fica:
+        pode haver nota órfã.
+        """
+        from shopman.orderman.models import Order
+
+        if int(message.attempts or 0) > 1:
+            return False
+        row = Order.objects.filter(ref=order_ref).values_list("status", "data").first()
+        if row is None:
+            return False
+        status, data = row
+        return (
+            status in (Order.Status.CANCELLED, Order.Status.RETURNED)
+            and not (data or {}).get("nfce_access_key")
         )
 
     def __init__(self, backend: FiscalBackend):
@@ -79,30 +141,36 @@ class NFCeEmitHandler:
             self._send_receipt_email(order)
             return
 
+        # attempts > 1 (não > 0): o dispatcher incrementa attempts para 1 ANTES
+        # de chamar o handler, então a PRIMEIRA execução já chega com attempts=1;
+        # só a partir da 2ª (re-claim após transiente) é retry de verdade — e
+        # só então pode existir um POST anterior com a resposta perdida.
+        is_retry = int(getattr(message, "attempts", 0) or 0) > 1
+
         if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
+            # Venda desfeita enquanto a emissão estava em retry: o POST anterior
+            # pode ter AUTORIZADO a nota (timeout pós-emissão). Recusar sem
+            # consultar deixava nota válida na SEFAZ sem chave no pedido e sem
+            # cancelamento — ``fiscal.cancel`` não age sem a chave. Nunca POSTa
+            # para pedido desfeito: só consulta, adota e cancela.
+            if is_retry and self._adopt_for_cancellation(order, order_ref):
+                return
             raise DirectiveTerminalError(
                 f"Pedido {order_ref} está {order.status}: não emitir NFC-e."
             )
 
         # Retry: o POST anterior pode ter emitido e a resposta se perdido
         # (timeout/worker morto). Consultar antes de re-POSTar com o mesmo ref.
-        # attempts > 1 (não > 0): o dispatcher incrementa attempts para 1 ANTES
-        # de chamar o handler, então a PRIMEIRA execução já chega com attempts=1;
-        # só a partir da 2ª (re-claim após transiente) é retry de verdade.
-        if int(getattr(message, "attempts", 0) or 0) > 1:
+        if is_retry:
             if self._adopt_existing(order, order_ref):
                 return
 
-        result = self.backend.emit(
-            reference=order_ref, items=payload["items"],
-            customer=payload.get("customer"), payment=payload["payment"],
-            additional_info=payload.get("additional_info"),
-            delivery=payload.get("delivery"),
-        )
+        result = self._emit(order_ref, payload)
+        result = self._reemit_without_rejected_gtin(message, order_ref, payload, result)
 
         if result.success:
             self._record(order, result)
-            self._send_receipt_email(order)
+            self._after_authorized(order)
             return
 
         if result.error_code in _REFERENCE_CONFLICT_CODES:
@@ -128,6 +196,109 @@ class NFCeEmitHandler:
             )
         raise DirectiveTerminalError(f"NFC-e emission failed: {result.error_message}")
 
+    def _emit(self, order_ref: str, payload: dict) -> FiscalDocumentResult:
+        return self.backend.emit(
+            reference=order_ref, items=payload["items"],
+            customer=payload.get("customer"), payment=payload["payment"],
+            additional_info=payload.get("additional_info"),
+            delivery=payload.get("delivery"),
+            intermediary=payload.get("intermediary"),
+        )
+
+    def _reemit_without_rejected_gtin(
+        self, message: Directive, order_ref: str, payload: dict, result: FiscalDocumentResult,
+    ) -> FiscalDocumentResult:
+        """SEFAZ recusou o GTIN → a mesma nota sai de novo com "SEM GTIN".
+
+        Decisão do dono (24/09/2026): o GTIN nunca trava a venda. Para cada
+        rejeição de GTIN (``services.fiscal.SEFAZ_GTIN_REJECTION_CODES``):
+
+        1. o item culpado sai "SEM GTIN" — o apontado por ``[nItem:N]`` na
+           mensagem da SEFAZ; sem apontamento (ou apontando item que não levava
+           GTIN), TODOS os itens que levavam GTIN;
+        2. o produto ganha ``metadata['gtin_nf_rejected']`` — dali em diante
+           ``_trusted_gtin`` o manda "SEM GTIN" em toda nota, até alguém
+           conferir a embalagem e limpar a marca;
+        3. o payload da directive é regravado, para que um retry transiente
+           depois daqui também saia "SEM GTIN";
+        4. a nota é reenviada com a MESMA referência: nota rejeitada não fica
+           na SEFAZ, e a Focus aceita o reenvio da ref em ``erro_autorizacao``
+           (só recusa ref já autorizada — ``already_processed``).
+
+        Repete enquanto a SEFAZ acusar outro item (ela aponta um por vez);
+        termina porque cada volta tira ao menos um GTIN. Rejeição que não é de
+        GTIN, ou GTIN que já não está na nota (889, por exemplo), volta ao
+        caminho de sempre. Ao fim, um alerta diz qual produto e qual código.
+        """
+        from shopman.shop.services import fiscal as fiscal_service
+
+        stripped: list[dict] = []
+        while not result.success:
+            code = fiscal_service.sefaz_gtin_rejection_code(result.error_code)
+            if not code:
+                break
+            items = payload.get("items") or []
+            targets = _items_with_rejected_gtin(items, result.error_message or "")
+            if not targets:
+                break
+            for item in targets:
+                sku = str(item.get("sku") or "")
+                gtin = str(item.get("gtin") or "")
+                item["gtin"] = ""
+                fiscal_service.mark_gtin_rejected(
+                    sku, gtin=gtin, code=code, reason=result.error_message or "", order_ref=order_ref,
+                )
+                stripped.append({
+                    "sku": sku, "name": str(item.get("name") or sku), "gtin": gtin,
+                    "code": code, "reason": result.error_message or "",
+                })
+            Directive.objects.filter(pk=message.pk).update(payload=payload)
+            message.payload = payload
+            logger.warning(
+                "fiscal.emit: GTIN recusado pela SEFAZ (%s), reenviando SEM GTIN order=%s skus=%s",
+                code, order_ref, [item.get("sku") for item in targets],
+            )
+            result = self._emit(order_ref, payload)
+
+        if stripped:
+            self._alert_gtin_rejected(order_ref, stripped, result)
+        return result
+
+    @staticmethod
+    def _alert_gtin_rejected(order_ref: str, stripped: list[dict], result: FiscalDocumentResult) -> None:
+        """Um alerta por produto: cada um tem o seu gesto no Catálogo e fecha sozinho.
+
+        O alerta leva ao produto ("Conferir o GTIN no Catálogo"), onde o gestor
+        corrige o código lido na embalagem ou confirma que ele sai sem GTIN
+        (``backstage.services.catalog._settle_rejected_gtin``).
+        """
+        from shopman.shop.services import fiscal as fiscal_service
+        from shopman.shop.services.observability import create_operator_alert
+
+        outcome = (
+            "A nota saiu de novo sem GTIN e foi autorizada."
+            if result.success
+            else "A nota foi enviada de novo sem GTIN e ainda não foi autorizada: "
+            "abra o pedido e toque em Reprocessar NFC-e."
+        )
+        seen: set[str] = set()
+        for row in stripped:
+            if row["sku"] in seen:
+                continue
+            seen.add(row["sku"])
+            create_operator_alert(
+                type="fiscal_gtin_rejected",  # == fiscal_service.GTIN_REJECTED_ALERT_TYPE (literal para a varredura de tipos)
+                severity="warning",
+                message=(
+                    f"A SEFAZ recusou o GTIN {row['gtin']} de {row['name']} (SKU {row['sku']}) "
+                    f"na NFC-e do pedido {order_ref} (rejeição {row['code']}). {outcome} "
+                    "Até alguém conferir, esse produto sai sem GTIN nas notas e a venda segue. "
+                    "Abra o produto no Catálogo e compare com o código da embalagem."
+                ),
+                order_ref=order_ref,
+                dedupe_key=fiscal_service.gtin_rejected_alert_dedupe_key(order_ref, row["sku"]),
+            )
+
     def _adopt_existing(self, order, order_ref: str) -> bool:
         """Consulta o Focus pelo ref; se autorizada, adota a nota existente."""
         query = getattr(self.backend, "query_status", None)
@@ -136,10 +307,86 @@ class NFCeEmitHandler:
         status = query(reference=order_ref)
         if status.success and status.access_key:
             self._record(order, status)
-            self._send_receipt_email(order)
+            self._after_authorized(order)
             logger.info("fiscal.emit: nota existente adotada via consulta order=%s", order_ref)
             return True
         return False
+
+    def _adopt_for_cancellation(self, order, order_ref: str) -> bool:
+        """Pedido desfeito com POST anterior: a nota existe? Então adote e cancele.
+
+        ``True`` quando adotou (a directive de emissão termina ``done`` e a de
+        cancelamento fica na fila). Nota ainda em processamento ou Focus fora é
+        transiente: consultar de novo, porque recusar agora é o que deixava a
+        nota órfã. Sem nota, ``False`` — a recusa terminal segue no chamador.
+        """
+        query = getattr(self.backend, "query_status", None)
+        if query is None:
+            return False
+        status = query(reference=order_ref)
+        if status.success and status.access_key:
+            self._record(order, status)
+            self._after_authorized(order)
+            logger.warning(
+                "fiscal.emit: nota autorizada de pedido desfeito adotada para cancelamento order=%s",
+                order_ref,
+            )
+            return True
+        if _is_transient(status.error_code):
+            raise DirectiveTransientError(
+                f"Pedido {order_ref} desfeito com NFC-e sem resposta ({status.error_code}): "
+                "consultar de novo antes de encerrar."
+            )
+        return False
+
+    def _after_authorized(self, order) -> None:
+        """Nota gravada: pedido vivo recebe o e-mail; pedido desfeito, o cancelamento.
+
+        A venda pode ter sido desfeita com o POST em voo — ``_on_cancelled``
+        chamou ``fiscal.cancel`` quando ainda não havia chave, e ninguém mais
+        pediria o cancelamento desta nota. O status vem da linha, não do
+        objeto lido no início do ``handle``.
+        """
+        from shopman.orderman.models import Order
+
+        order.status = Order.objects.values_list("status", flat=True).get(pk=order.pk)
+        if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
+            from shopman.shop.services import fiscal
+
+            fiscal.cancel(order)
+            return
+        self._send_receipt_email(order)
+        # A DANFE da entrega sai pela impressora do despacho, e quem sabe
+        # imprimir é o backstage: o shop só anuncia.
+        from shopman.shop.signals import nfce_authorized
+
+        nfce_authorized.send(sender=type(self), order=order)
+        self._notify_online_customer(order)
+
+    @staticmethod
+    def _notify_online_customer(order) -> None:
+        """Pedido da loja online: a nota vai ao cliente, e numa mensagem só.
+
+        Decisões do dono (25/09/2026): a loja online não imprime nem pede e-mail;
+        a nota chega DIGITAL — na página do pedido e com o link da DANFE pela
+        cadeia de avisos do pedido (WhatsApp primeiro). E menos mensagens: o link
+        vai DENTRO da mensagem de status que ainda vai sair (pronto, saiu,
+        entregue); o aviso avulso ``fiscal_note_ready`` só sai quando a nota
+        autoriza depois da última delas. Quem decide é
+        ``notification.send_fiscal_note_unless_carried`` (só o canal da loja: o
+        balcão entrega a nota no papel ou no e-mail que o operador anotou, e o
+        marketplace não é contato nosso).
+
+        Best-effort, como o e-mail: a nota já existe, e o aviso não pode derrubar
+        a directive de emissão. A menção é reservada no pedido, então o retry da
+        directive não repete a mensagem.
+        """
+        try:
+            from shopman.shop.services import notification
+
+            notification.send_fiscal_note_unless_carried(order)
+        except Exception:
+            logger.warning("fiscal.notify: aviso da nota não agendado order=%s", order.ref, exc_info=True)
 
     def _send_receipt_email(self, order) -> None:
         """Nota autorizada + cliente pediu e-mail → o Focus envia (DANFE + XML).
@@ -234,6 +481,19 @@ class NFCeEmitHandler:
             locked = Order.objects.select_for_update().get(pk=order.pk)
             data = dict(locked.data or {})
             data["nfce_access_key"] = result.access_key
+            # O relógio do cancelamento conta da AUTORIZAÇÃO DE USO, não da
+            # emissão nem do salvamento aqui (RICMS/PR, Anexo III, Subanexo I,
+            # art. 35). O adapter já lia ``data_autorizacao`` da Focus e o
+            # contrato já carregava o campo; o que faltava era gravá-lo, e sem
+            # ele ninguém consegue dizer se ainda dá tempo de cancelar.
+            #
+            # Só TEXTO entra: o destino é um JSONField, e o contrato tipa o
+            # campo como ``str | None``. Backend que devolva outra coisa grava
+            # vazio — e vazio tem caminho próprio ("não deu para medir o
+            # prazo"), em vez de explodir na serialização e derrubar a
+            # gravação da chave de acesso junto.
+            authorized_at = result.authorization_date
+            data["nfce_authorized_at"] = authorized_at if isinstance(authorized_at, str) else ""
             data["nfce_number"] = result.document_number
             data["nfce_series"] = result.document_series
             data["nfce_protocol"] = result.protocol_number
@@ -246,6 +506,12 @@ class NFCeEmitHandler:
 
         # O objeto do chamador segue em uso (guarda de idempotência, logs).
         order.data = data
+
+        # A nota da entrega nasce com a sacola pronta e a DANFE vai dentro
+        # dela: o Gestor precisa saber AGORA, não no próximo poll.
+        from shopman.shop.handlers._sse_emitters import emit_fiscal_update
+
+        emit_fiscal_update(locked)
 
 
 class NFCeCancelHandler:
@@ -297,9 +563,9 @@ class NFCeCancelHandler:
             type="fiscal_cancel_failed",
             severity="critical",
             message=(
-                f"Cancelamento da NFC-e do pedido {order.ref} FALHOU "
-                f"({result.error_message}). A nota continua válida na SEFAZ — "
-                "resolver com o contador (cancelamento fora da janela exige outro instrumento)."
+                f"O cancelamento da NFC-e do pedido {order.ref} falhou "
+                f"({result.error_message}). A nota continua valendo na SEFAZ. "
+                "Leve o caso ao contador: fora do prazo, o cancelamento é feito por outro documento."
             ),
             order_ref=order.ref,
             dedupe_key=f"fiscal_cancel_failed:{order.ref}",

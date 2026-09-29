@@ -1,7 +1,8 @@
 """Busca sugestão de catálogo por GTIN para os produtos de revenda.
 
-Grava em ``Product.metadata['enrichment']`` como rascunho `pending`. **Não
-altera o produto** — quem aceita é gente, pela ação do Admin.
+Grava em ``Product.metadata['enrichment']`` como rascunho por campo. **Não
+altera o produto** — quem aceita é gente, campo a campo, pela ação "Revisar
+sugestão do GTIN" na ficha do produto no Admin.
 
 Uso:
     python manage.py fetch_product_enrichment            # até 25 (cota grátis)
@@ -16,7 +17,12 @@ from django.core.management.base import BaseCommand
 from shopman.offerman import get_social_attributes
 from shopman.offerman.models import Product
 
-from shopman.shop.services.product_enrichment import build_suggestion
+from shopman.shop.services.product_enrichment import (
+    SOURCE_NFE,
+    build_suggestion,
+    draft,
+    merge_into_metadata,
+)
 
 # O plano Basic da Cosmos dá 25 consultas/dia, de graça. O teto padrão é esse
 # de propósito: quem roda sem pensar não estoura a cota nem descobre isso por
@@ -25,7 +31,7 @@ COTA_DIARIA_GRATIS = 25
 
 
 class Command(BaseCommand):
-    help = "Sugestão de catálogo (foto, NCM, alérgeno) por GTIN — grava como rascunho."
+    help = "Sugestão de catálogo por GTIN (nome, marca, NCM, alérgeno…) — grava como rascunho por campo."
 
     def add_arguments(self, parser):
         parser.add_argument("--sku", action="append", default=[], help="Limita a estes SKUs.")
@@ -41,20 +47,21 @@ class Command(BaseCommand):
 
         alvos = []
         for p in qs.order_by("sku"):
-            gtin = get_social_attributes(p).gtin
+            atual = draft(p)
+            # O GTIN cadastrado vale; sem ele, o que a NF-e de compra declarou
+            # (e ainda espera aceite) já basta para perguntar às outras fontes.
+            gtin = get_social_attributes(p).gtin or str(atual.get("gtin") or "")
             if not gtin:
                 continue
-            # Aceito não se mexe: reconsultar sobrescreveria a decisão de quem
-            # conferiu o rótulo com o pote na mão.
-            atual = (p.metadata or {}).get("enrichment") or {}
-            if atual.get("status") == "accepted" and not refetch:
-                continue
-            if atual.get("status") == "pending" and not refetch:
+            # Já consultado não se reconsulta sem pedir: gasta cota. Campo
+            # aceito nunca é tocado — a fusão só mexe no que ainda é rascunho.
+            consultado = set(atual.get("sources") or []) - {SOURCE_NFE}
+            if (consultado or atual.get("notes")) and not refetch:
                 continue
             alvos.append((p, gtin))
 
         if not alvos:
-            self.stdout.write("Nada a buscar: nenhum produto com GTIN pendente.")
+            self.stdout.write("Nada a buscar: nenhum produto com GTIN ainda não consultado.")
             self._dica_gtin(qs)
             return
 
@@ -73,28 +80,34 @@ class Command(BaseCommand):
             s = build_suggestion(gtin)
             if s.is_empty():
                 vazio += 1
-                self.stdout.write(f"  {produto.sku:14} {gtin:15} nada encontrado")
+                self.stdout.write(f"  {produto.sku:14} {gtin:15} {s.notes[0] if s.notes else ''}")
+                if not dry:
+                    # A ausência também se grava: é ela que diz ao Admin (e à
+                    # próxima rodada) que a pergunta já foi feita, e a quem.
+                    produto.metadata = merge_into_metadata(produto.metadata, s)
+                    produto.save(update_fields=["metadata"])
                 continue
             achou += 1
             fontes = "+".join(s.sources) or "—"
             self.stdout.write(
                 f"  {produto.sku:14} {gtin:15} {fontes:22} "
-                f"foto={'sim' if s.image_url else 'não':3} ncm={s.ncm or '—':10} "
-                f"alérgenos={s.allergens or '—'}"
+                f"campos={','.join(s.fields) or '—'} "
+                f"foto-ref={'sim' if s.reference_photo else 'não'}"
             )
             for nota in s.notes:
                 self.stdout.write(self.style.WARNING(f"      ⚠️  {nota}"))
             if not dry:
-                meta = dict(produto.metadata or {})
-                meta["enrichment"] = s.to_metadata()
-                produto.metadata = meta
+                produto.metadata = merge_into_metadata(produto.metadata, s)
                 produto.save(update_fields=["metadata"])
 
         self.stdout.write("")
         acao = "encontrados (nada gravado, --dry-run)" if dry else "gravados como rascunho"
         self.stdout.write(self.style.SUCCESS(f"{achou} {acao}; {vazio} sem retorno."))
         if achou and not dry:
-            self.stdout.write("Aceite no Admin: nada disso entra no produto sozinho.")
+            self.stdout.write(
+                "Aceite no Admin, campo a campo (Produto → Revisar sugestão do GTIN): "
+                "nada disso entra no produto sozinho."
+            )
 
     def _dica_gtin(self, qs):
         """Sem GTIN não há o que consultar — dizer isso vale mais que o silêncio."""

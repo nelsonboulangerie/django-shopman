@@ -27,6 +27,33 @@ class BasicAvailability:
     can_add_to_cart: bool
 
 
+@dataclass(frozen=True)
+class CommercialIdentity:
+    """Quem fabrica o produto e como ele se identifica no comércio.
+
+    É o mesmo dado que o feed do Google/Meta publica (``Product.metadata['social']``,
+    editado no Catálogo do Gestor). Vazio quer dizer "não informado" — não é licença
+    para supor que a marca é a da loja: a loja também revende produto de terceiro.
+    """
+
+    brand: str
+    gtin: str
+    mpn: str
+    condition: str
+
+
+def commercial_identity(product) -> CommercialIdentity:
+    from shopman.offerman import get_social_attributes
+
+    attrs = get_social_attributes(product)
+    return CommercialIdentity(
+        brand=attrs.brand.strip(),
+        gtin=attrs.gtin.strip(),
+        mpn=attrs.mpn.strip(),
+        condition=attrs.condition,
+    )
+
+
 def products_queryset():
     from shopman.offerman.models import Product
 

@@ -32,7 +32,7 @@ from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.services import lead_time as lead_time_service
-from shopman.shop.services.order_helpers import get_commitment_date
+from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,14 @@ def hold(order, *, require_all: bool = False) -> None:
       Encomenda com Quant planejado da data segue valendo (o hold ancora no
       plano e o gate nem dispara); venda imediata de estoque de hoje idem.
     """
+    # Pedido de teste de marketplace (homologação) não reserva: a reserva sai
+    # do estoque de venda da padaria e pode derrubar o cliente real que compra
+    # o mesmo pão no mesmo minuto. Sem hold aqui, o fulfill adiante também não
+    # tem o que baixar.
+    if is_test_order(order):
+        logger.info("stock.hold: pedido de teste order=%s — reserva suprimida", order.ref)
+        return
+
     if "hold_ids" in (order.data or {}):
         logger.info("stock.hold: skip (holds já criados) order=%s", order.ref)
         return
@@ -107,6 +115,14 @@ def hold(order, *, require_all: bool = False) -> None:
 
     adapter = get_adapter("stock")
     hold_ids: list[dict] = []
+    # Só a venda já consumada fora (``payment.timing == "external"``: balcão,
+    # marketplace pago) e só para hoje: encomenda não tirou pão de ninguém.
+    cede_cart_holds = (
+        not require_all
+        and adopt_session_holds
+        and _sale_consummated_outside(order)
+    )
+    ceded_holds: list[dict] = []
 
     # Prior availability decisions (from _check_availability at on_commit).
     # Keyed by item SKU. Empty for channels that skip the availability gate (e.g. POS).
@@ -125,7 +141,7 @@ def hold(order, *, require_all: bool = False) -> None:
         # Existing reservations secure quantity, not permission to sell. Recheck
         # the current offering before adopting them (including the bundle root).
         if require_all:
-            _require_current_sellability(adapter, item, sku, qty)
+            _require_current_sellability(adapter, item, sku, qty, channel_ref=getattr(order, "channel_ref", None))
 
         # Expand bundles into components
         components = _expand_if_bundle(sku, qty)
@@ -134,7 +150,7 @@ def hold(order, *, require_all: bool = False) -> None:
             comp_sku = comp["sku"]
             comp_qty = Decimal(str(comp["qty"]))
             if require_all and comp_sku != sku:
-                _require_current_sellability(adapter, item, comp_sku, comp_qty)
+                _require_current_sellability(adapter, item, comp_sku, comp_qty, channel_ref=getattr(order, "channel_ref", None))
 
             # SKUs not tracked by Stockman need no hold — skip silently.
             # Exceção (canal gated): SKU fora do CATÁLOGO não pode virar
@@ -161,7 +177,19 @@ def hold(order, *, require_all: bool = False) -> None:
             else:
                 adopted_pairs, unmet_qty = [], comp_qty
             for hid, hqty in adopted_pairs:
-                _retag_hold_for_order(hid, order.ref)
+                if not _retag_hold_for_order(hid, order.ref):
+                    # A reserva deixou de valer entre a leitura da sacola e a
+                    # adoção: venceu, ou cedeu a uma venda de balcão no mesmo
+                    # instante (``reserve_ceding_cart_holds``). Registrá-la
+                    # daria ao pedido uma reserva morta — pedido pago sem
+                    # baixa. O que ela cobria volta a faltar e segue o
+                    # caminho de sempre: nova reserva ou "esgotou".
+                    logger.info(
+                        "stock.hold: hold da sacola perdido na adoção order=%s hold=%s qty=%s",
+                        order.ref, hid, hqty,
+                    )
+                    unmet_qty += hqty
+                    continue
                 hold_ids.append(
                     {"sku": comp_sku, "hold_id": hid, "qty": float(hqty)}
                 )
@@ -186,15 +214,26 @@ def hold(order, *, require_all: bool = False) -> None:
             # channel_ref aplica o escopo de POSIÇÕES do canal (excluded_positions,
             # posições staff-only). apply_safety_margin=False: a margem é buffer
             # de vitrine — um pedido JÁ commitado pode consumi-la.
+            # O dono é o PEDIDO desde já: vale o mesmo backstop longo do hold
+            # adotado da sacola (``_retag_hold_for_order``). Com o TTL de
+            # carrinho (30 min) a reserva vencia no meio de um PIX lento ou de
+            # uma confirmação manual, o sweep a soltava, e o ``fulfill`` falhava
+            # sem re-reservar (``hold_ids`` já existe) — pão vendido duas vezes.
+            # Reserva sem prazo (fornada/demanda) segue sem prazo: o adapter
+            # zera ``expires_at`` dela.
+            order_hold_kwargs = {
+                "reference": f"order:{order.ref}",
+                "target_date": target_date,
+                "channel_ref": getattr(order, "channel_ref", None),
+                "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+                "apply_safety_margin": False,
+                "priority": _ORDER_HOLD_PRIORITY,
+            }
             result = adapter.create_hold(
                 sku=comp_sku,
                 qty=unmet_qty,
-                reference=f"order:{order.ref}",
-                target_date=target_date,
-                channel_ref=getattr(order, "channel_ref", None),
-                apply_safety_margin=False,
                 allow_demand=comp_allow_demand,
-                priority=_ORDER_HOLD_PRIORITY,
+                **order_hold_kwargs,
             )
             if not result.get("success"):
                 logger.warning(
@@ -220,10 +259,47 @@ def hold(order, *, require_all: bool = False) -> None:
                         {"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True}
                     )
                     continue
-                _alert_hold_gap(
-                    order, comp_sku, unmet_qty,
-                    "lead_time" if lead_time_earliest is not None else result.get("error_code"),
-                )
+                # Caminho brando (pedido já consumado fora: PDV, iFood). A
+                # reserva é 1:1 por quant e desconta as sacolas alheias; o que
+                # não cabe INTEIRO numa reserva ainda pode caber em pedaços.
+                # Reservar o que existe livre garante a baixa dele no
+                # ``fulfill`` — sem isso, 3 pedidos com 2 livres baixavam 0.
+                # O alerta fica só para o resto.
+                #
+                # Venda consumada de hoje (balcão, marketplace pago) vale mais
+                # que sacola: se o livre não basta, cedem as reservas de
+                # CARRINHO — as mais novas primeiro, só o que falta. Reserva de
+                # pedido não cede; o que nem assim couber é venda acima do
+                # estoque de verdade e vira o alerta abaixo.
+                if cede_cart_holds:
+                    parts, ceded = adapter.reserve_ceding_cart_holds(
+                        sku=comp_sku,
+                        qty=unmet_qty,
+                        beneficiary=f"order:{order.ref}",
+                        exclude_references=(session_key,) if session_key else (),
+                        **order_hold_kwargs,
+                    )
+                    for entry in ceded:
+                        ceded_holds.append({"sku": comp_sku, **entry})
+                else:
+                    parts = adapter.create_holds_up_to(
+                        sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
+                    )
+                for part_id, part_qty in parts:
+                    hold_ids.append({
+                        "sku": comp_sku,
+                        "hold_id": part_id,
+                        "qty": float(part_qty),
+                    })
+                    unmet_qty -= part_qty
+                if unmet_qty > 0:
+                    # O saldo do Stockman vem com 3 casas: "1×", não "1.000×".
+                    if unmet_qty == unmet_qty.to_integral_value():
+                        unmet_qty = unmet_qty.quantize(Decimal("1"))
+                    _alert_hold_gap(
+                        order, comp_sku, unmet_qty,
+                        "lead_time" if lead_time_earliest is not None else result.get("error_code"),
+                    )
                 continue
 
             hold_ids.append({
@@ -241,6 +317,9 @@ def hold(order, *, require_all: bool = False) -> None:
         adapter.release_holds(leftover_ids)
 
     order.data["hold_ids"] = hold_ids
+    if ceded_holds:
+        # Trilha para o operador: de quais sacolas saiu o que esta venda levou.
+        order.data["stock_ceded_holds"] = ceded_holds
     order.save(update_fields=["data", "updated_at"])
 
     logger.info("stock.hold: %d holds for order %s", len(hold_ids), order.ref)
@@ -261,6 +340,14 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
 
     SYNC — must complete before notifying client.
     """
+    # Pedido de teste de marketplace: a baixa tiraria pão de verdade da
+    # prateleira para uma venda que nunca aconteceu. O gate está aqui, e não só
+    # na ausência de hold, porque a baixa é o efeito irreversível — se um hold
+    # existir por qualquer caminho, ele não vira saída de estoque.
+    if is_test_order(order):
+        logger.info("stock.fulfill: pedido de teste order=%s — baixa suprimida", order.ref)
+        return
+
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
@@ -298,9 +385,9 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
             type="stock_fulfill_failed",
             severity="critical",
             message=(
-                f"Baixa de estoque FALHOU para o pedido {order.ref} "
-                f"({errors} item(ns): {', '.join(failed_skus) or 'ver logs'}). "
-                "O estoque do sistema está acima do físico — conferir e ajustar."
+                f"A baixa de estoque do pedido {order.ref} não saiu "
+                f"({errors} item(ns): {', '.join(failed_skus) or 'ver logs'}). O estoque do sistema "
+                "ficou acima do que há na prateleira. Conte esses itens e ajuste no Estoque."
             ),
             order_ref=order.ref,
             dedupe_key=f"stock_fulfill_failed:{order.ref}",
@@ -374,11 +461,22 @@ def revert(order) -> None:
 
     SYNC — devolução ao estoque.
     """
+    # Pedido de teste de marketplace: ``revert`` não depende de hold — percorre
+    # os itens e CREDITA o estoque. Numa devolução de pedido de teste, isso
+    # inventaria pão que a casa nunca produziu.
+    if is_test_order(order):
+        logger.info("stock.revert: pedido de teste order=%s — devolução suprimida", order.ref)
+        return
+
     adapter = get_adapter("stock")
     if not adapter:
         return
 
-    for item in order.items.all():
+    # Pedido + ajustes: devolver a lista ORIGINAL de um pedido que o cliente
+    # alterou creditaria pão que nunca saiu (ou deixaria de creditar o que saiu).
+    from shopman.shop.services import order_composition
+
+    for item in order_composition.effective_items(order):
         if (item.meta or {}).get("non_production") or (item.meta or {}).get("type") == "delivery_fee":
             continue
         try:
@@ -392,6 +490,205 @@ def revert(order) -> None:
                 "stock.revert: failed for sku=%s order=%s: %s",
                 item.sku, order.ref, exc,
             )
+
+
+def reconcile_to_items(order, *, items: list[dict], reference: str, require_all: bool = False) -> dict:
+    """Traz as reservas e baixas do pedido para a lista de itens que vale AGORA.
+
+    Chamada quando o pedido muda depois de já existir — pelo ``ORDER_PATCHED``
+    do iFood, em que o cliente acrescenta, tira ou troca a quantidade de um item
+    depois de confirmado, e pela edição da encomenda no balcão
+    (``order_edit``). Não é uma segunda reserva nem
+    uma reserva do zero: é a DIFERENÇA entre o que está reservado/baixado e o
+    que o pedido pede agora.
+
+    A pergunta que decide cada movimento é o estado do hold, não o status do
+    pedido (``adapter.hold_state``):
+
+    - **hold ainda ativo** (``pending``/``confirmed``) e sobrando: libera. Não
+      existe liberação parcial no Stockman, então liberar 1 de um hold de 3 é
+      liberar os 3 e reservar 2 de novo — e é por isso que este caminho tem de
+      estar dentro da transação de quem chamou.
+    - **hold já baixado** (``fulfilled``) e sobrando: DEVOLVE ao ledger, na
+      posição de onde saiu (``return_fulfilled_hold``), que é o mesmo caminho do
+      cancelamento tardio do PDV. A entrada em ``hold_ids`` encolhe junto, para
+      um cancelamento posterior não devolver o mesmo pão duas vezes.
+    - **faltando**: reserva o que falta; se o pedido JÁ teve baixa, a reserva
+      nova nasce e é baixada no mesmo passo — senão o pedido sairia com pão que
+      o sistema ainda conta como disponível.
+
+    O que não cabe em reserva nenhuma vira ``stock_hold_gap``, o mesmo alerta do
+    caminho brando do ``hold``: venda acima do estoque de verdade é fato
+    operacional, não erro de programa. ``require_all=True`` é o gate do balcão:
+    quem edita a encomenda está com o cliente na linha e pode escolher outra
+    coisa, então o que falta levanta ``ValidationError(insufficient_stock)`` e a
+    transação do chamador desfaz tudo — reservas inclusive. O iFood segue no
+    caminho brando: lá a alteração já aconteceu do lado do cliente.
+
+    Devolve um resumo ``{released, returned, held, fulfilled, gaps}`` para o
+    chamador registrar no pedido. SYNC, e para ser chamada DENTRO de uma
+    transação com o pedido travado.
+    """
+    if is_test_order(order):
+        logger.info("stock.reconcile_to_items: pedido de teste order=%s — nada a ajustar", order.ref)
+        return {"skipped": "test_order"}
+
+    entries = [dict(entry) for entry in ((order.data or {}).get("hold_ids") or [])]
+    if not entries:
+        # O pedido ainda não reservou (ou o canal não reserva). Não há o que
+        # reconciliar, e o ``hold`` que vier depois já lê a leitura composta.
+        logger.info("stock.reconcile_to_items: order=%s sem reservas — nada a ajustar", order.ref)
+        return {"skipped": "no_holds"}
+
+    adapter = get_adapter("stock")
+    target = _component_quantities(items)
+    held: dict[str, Decimal] = {}
+    for entry in entries:
+        if entry.get("hold_id"):
+            held[entry["sku"]] = held.get(entry["sku"], Decimal("0")) + Decimal(str(entry.get("qty") or 0))
+
+    untracked_skus = {entry["sku"] for entry in entries if entry.get("untracked")}
+    prior_decisions = {
+        d["sku"]: d
+        for d in (order.data or {}).get("availability_decision", {}).get("decisions", [])
+        if d.get("sku")
+    }
+    # Um pedido com QUALQUER hold já baixado é um pedido cuja mercadoria já saiu
+    # do saldo: o item que entra agora tem de sair junto, ou o sistema conta
+    # disponível o que a cozinha vai embalar.
+    order_fulfilled = any(
+        adapter.hold_state(entry["hold_id"]) == "fulfilled" for entry in entries if entry.get("hold_id")
+    )
+    hold_kwargs = {
+        "reference": f"order:{order.ref}",
+        "target_date": get_commitment_date(order),
+        "channel_ref": getattr(order, "channel_ref", None),
+        "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+        "apply_safety_margin": False,
+        "priority": _ORDER_HOLD_PRIORITY,
+    }
+
+    summary = {"released": [], "returned": [], "held": [], "fulfilled": [], "gaps": []}
+    for sku in sorted(set(target) | set(held)):
+        delta = target.get(sku, Decimal("0")) - held.get(sku, Decimal("0"))
+        if delta == 0:
+            continue
+        if sku in untracked_skus or (
+            sku not in held and _is_untracked(sku, prior_decisions, adapter)
+        ):
+            # SKU que o Stockman não rastreia: não havia reserva e não há o que
+            # reservar. Registrar a linha mantém o inventário de ``hold_ids``
+            # honesto sobre o que o pedido carrega.
+            if sku not in held and sku not in untracked_skus:
+                entries.append({"sku": sku, "hold_id": None, "qty": 0, "untracked": True})
+            continue
+        if delta > 0:
+            _reconcile_increase(
+                adapter, order, sku, delta, entries, summary,
+                hold_kwargs=hold_kwargs, fulfill_now=order_fulfilled, require_all=require_all,
+            )
+        else:
+            _reconcile_decrease(
+                adapter, order, sku, -delta, entries, summary,
+                hold_kwargs=hold_kwargs, reference=reference,
+            )
+
+    data = dict(order.data or {})
+    data["hold_ids"] = entries
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    logger.info("stock.reconcile_to_items: order=%s %s", order.ref, summary)
+    return summary
+
+
+def _component_quantities(items: list[dict]) -> dict[str, Decimal]:
+    """Itens do pedido → quantidade por COMPONENTE (combos expandidos)."""
+    quantities: dict[str, Decimal] = {}
+    for item in items:
+        meta = item.get("meta") or {}
+        if meta.get("non_production") or meta.get("type") == "delivery_fee":
+            continue
+        for comp in _expand_if_bundle(item["sku"], Decimal(str(item["qty"]))):
+            sku = comp["sku"]
+            quantities[sku] = quantities.get(sku, Decimal("0")) + Decimal(str(comp["qty"]))
+    return quantities
+
+
+def _reconcile_increase(
+    adapter, order, sku, qty, entries, summary, *, hold_kwargs, fulfill_now, require_all=False,
+) -> None:
+    """Reserva o que o pedido passou a pedir a mais (e baixa, se o resto já baixou)."""
+    parts = adapter.create_holds_up_to(sku=sku, qty=qty, **hold_kwargs)
+    if require_all:
+        covered = sum((part_qty for _hold_id, part_qty in parts), Decimal("0"))
+        if covered < qty:
+            raise _insufficient_stock_error({"sku": sku}, sku, qty, "")
+    remaining = qty
+    for hold_id, part_qty in parts:
+        entries.append({"sku": sku, "hold_id": hold_id, "qty": float(part_qty)})
+        summary["held"].append({"sku": sku, "qty": float(part_qty)})
+        remaining -= part_qty
+        if not fulfill_now:
+            continue
+        result = adapter.fulfill_hold(hold_id, qty=part_qty)
+        if result.get("success"):
+            summary["fulfilled"].append({"sku": sku, "qty": float(part_qty)})
+        else:
+            logger.error(
+                "stock.reconcile_to_items: baixa do item acrescentado falhou sku=%s order=%s: %s",
+                sku, order.ref, result.get("message"),
+            )
+            _alert_hold_gap(order, sku, part_qty, result.get("error_code") or "fulfill_failed")
+            summary["gaps"].append({"sku": sku, "qty": float(part_qty), "reason": "fulfill_failed"})
+    if remaining > 0:
+        _alert_hold_gap(order, sku, remaining, "patched_increase")
+        summary["gaps"].append({"sku": sku, "qty": float(remaining), "reason": "insufficient_stock"})
+
+
+def _reconcile_decrease(adapter, order, sku, qty, entries, summary, *, hold_kwargs, reference) -> None:
+    """Desfaz o que o pedido deixou de pedir — liberando ou devolvendo."""
+    remaining = qty
+    # Do mais novo para o mais antigo: a reserva recém-criada é a que menos
+    # tempo passou protegendo alguma coisa.
+    for entry in reversed([e for e in entries if e.get("sku") == sku and e.get("hold_id")]):
+        if remaining <= 0:
+            break
+        entry_qty = Decimal(str(entry.get("qty") or 0))
+        take = min(entry_qty, remaining)
+        state = adapter.hold_state(entry["hold_id"])
+        if state == "fulfilled":
+            returned = adapter.return_fulfilled_hold(
+                entry["hold_id"], take,
+                reference=reference,
+                reason=f"Item retirado do pedido {order.ref} pelo cliente",
+            )
+            if not returned:
+                logger.warning(
+                    "stock.reconcile_to_items: devolução recusada hold=%s order=%s",
+                    entry["hold_id"], order.ref,
+                )
+                continue
+            summary["returned"].append({"sku": sku, "qty": float(take)})
+        elif state in ("pending", "confirmed"):
+            adapter.release_holds([entry["hold_id"]])
+            summary["released"].append({"sku": sku, "qty": float(entry_qty)})
+            if entry_qty > take:
+                # Liberação parcial não existe: solta o hold inteiro e reserva
+                # de volta o que o pedido continua pedindo.
+                parts = adapter.create_holds_up_to(sku=sku, qty=entry_qty - take, **hold_kwargs)
+                for hold_id, part_qty in parts:
+                    entries.append({"sku": sku, "hold_id": hold_id, "qty": float(part_qty)})
+                    summary["held"].append({"sku": sku, "qty": float(part_qty)})
+        else:
+            # ``released`` ou hold que sumiu: a entrada não cobre mais nada.
+            logger.info(
+                "stock.reconcile_to_items: hold %s do pedido %s já não está ativo (%s)",
+                entry["hold_id"], order.ref, state or "inexistente",
+            )
+        entries.remove(entry)
+        if state == "fulfilled" and entry_qty > take:
+            entries.append({"sku": sku, "hold_id": entry["hold_id"], "qty": float(entry_qty - take)})
+        remaining -= take
 
 
 # ── helpers ──
@@ -430,9 +727,18 @@ def _sku_known_to_catalog(sku: str) -> bool:
 
 
 
-def _require_current_sellability(adapter, item: dict, sku: str, qty) -> None:
+def _require_current_sellability(adapter, item: dict, sku: str, qty, *, channel_ref: str | None) -> None:
     # Unknown SKUs retain the channel's explicit allow_untracked policy below.
     if _sku_known_to_catalog(sku) and adapter.get_availability(sku).get("is_paused") is True:
+        raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
+    # O ``is_paused`` do Stockman só enxerga a pausa GLOBAL (Product). A pausa
+    # POR CANAL mora no ListingItem do canal — a mesma régua de
+    # ``availability.decide``. Só a pausa explícita recusa: canal sem listing
+    # (PDV) e SKU fora do listing (componente de combo) seguem como estavam.
+    from shopman.shop.services.availability import _sku_in_channel_listing
+
+    listing_item = _sku_in_channel_listing(sku, channel_ref)
+    if isinstance(listing_item, dict) and not listing_item.get("is_sellable", True):
         raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
 
 
@@ -619,8 +925,11 @@ _ORDER_HOLD_BACKSTOP_HOURS = 48
 _ORDER_HOLD_PRIORITY = 0
 
 
-def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
+def _retag_hold_for_order(hold_id: str, order_ref: str) -> bool:
     """Update Hold.metadata.reference from session_key to order ref.
+
+    Devolve ``False`` quando o hold já não está ativo (venceu ou cedeu) — o
+    chamador não pode contá-lo como reserva do pedido.
 
     This is bookkeeping so the hold can be discovered later via
     `release_holds_for_reference("order:<ref>")` if needed.
@@ -640,11 +949,13 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
     from datetime import timedelta
 
     adapter = get_adapter("stock")
-    adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY)
+    if not adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY):
+        return False
     if _is_fermata_hold(hold_id):
-        return
+        return True
     backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
     adapter.extend_hold(hold_id, expires_at=backstop)
+    return True
 
 
 def _is_fermata_hold(hold_id: str) -> bool:
@@ -672,6 +983,25 @@ def _is_fermata_hold(hold_id: str) -> bool:
     if hold is None:
         return False
     return hold.expires_at is None and waitlist.is_waitlist_hold(hold)
+
+
+def _sale_consummated_outside(order) -> bool:
+    """O pedido é venda já consumada fora (``payment.timing == "external"``)?
+
+    O mesmo critério do ``lifecycle.secure_stock`` para não recusar a venda:
+    balcão (o pão saiu pela porta) e marketplace (pago lá). Config ilegível
+    responde ``False``: sem certeza, nenhuma sacola alheia é tocada.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        return ChannelConfig.for_channel(order.channel_ref).payment.timing == "external"
+    except Exception:
+        logger.warning(
+            "stock._sale_consummated_outside: config lookup failed channel=%s",
+            getattr(order, "channel_ref", None),
+        )
+        return False
 
 
 def _channel_allows_preorder(order) -> bool:

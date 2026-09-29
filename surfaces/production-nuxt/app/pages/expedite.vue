@@ -21,6 +21,10 @@ import {
 
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
+type QueueTab = "expedition" | "quality";
+const activeQueue = ref<QueueTab>(
+  route.hash === "#quality" ? "quality" : "expedition",
+);
 const {
   kiosk,
   selectedDate,
@@ -80,7 +84,21 @@ const openOrders = computed(() =>
   (kiosk.value?.orders ?? []).filter((o) => !o.closed && matches(o)),
 );
 const closedOrders = computed(() =>
-  (kiosk.value?.orders ?? []).filter((o) => o.closed && matches(o)),
+  (kiosk.value?.orders ?? [])
+    .filter((o) => o.closed && matches(o))
+    .sort((left, right) =>
+      left.quality_reviewed === right.quality_reviewed
+        ? 0
+        : left.quality_reviewed
+          ? 1
+          : -1,
+    ),
+);
+const qualityPendingCount = computed(
+  () =>
+    (kiosk.value?.orders ?? []).filter(
+      (order) => order.closed && !order.quality_reviewed,
+    ).length,
 );
 // A próxima a vencer ganha moldura: a primeira aberta (started primeiro).
 const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
@@ -155,7 +173,7 @@ async function confirmQuality(order: QCOrderCardProjection) {
   if (!reviewAvailable(order)) return;
   if (
     !window.confirm(
-      `Confirmar a qualidade da fornada de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
+      `Confirmar a qualidade do lote de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
     )
   )
     return;
@@ -231,7 +249,7 @@ async function onConfirm(
     // localStorage e alarma depois, num card que nem existe mais.
     if (closingOrder && !correcting) oven.clear(ovenKey(closingOrder));
     useSonner.success(
-      correcting ? "Qualidade corrigida." : "Quantidade concluída.",
+      correcting ? "Qualidade corrigida." : "Lote enviado para Qualidade (QC).",
     );
     backToBoard();
     return;
@@ -256,7 +274,7 @@ const screenInitialPartition = computed(() =>
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
-  if (!order) return selectedRecipe.value ? "Fornada avulsa" : "";
+  if (!order) return selectedRecipe.value ? "Lote avulso" : "";
   const bits = [
     order.output_sku,
     showPosition.value ? order.position_ref : "",
@@ -435,11 +453,17 @@ function onTimerKeydown(event: KeyboardEvent) {
   <main class="flex min-h-screen flex-col">
     <ProductionHeader
       v-model:query="query"
-      title="Expedição"
-      :count="kiosk?.closed_count"
-      :count-label="`de ${kiosk?.total_count ?? 0} concluídas`"
+      :title="activeQueue === 'quality' ? 'Qualidade (QC)' : 'Expedição'"
+      :count="
+        activeQueue === 'quality' ? qualityPendingCount : openOrders.length
+      "
+      :count-label="
+        activeQueue === 'quality'
+          ? 'aguardando revisão'
+          : 'lotes para finalizar'
+      "
       :progress="
-        kiosk && kiosk.total_count > 0
+        activeQueue === 'expedition' && kiosk && kiosk.total_count > 0
           ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
           : null
       "
@@ -464,14 +488,14 @@ function onTimerKeydown(event: KeyboardEvent) {
       @confirm="onConfirm($event)"
     />
 
-    <!-- Painel de fornadas do dia. -->
+    <!-- Painel de lotes do dia. -->
     <div v-else class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
       <div class="flex items-center justify-between gap-3">
         <!-- Data: mesmo padrão de chips das outras telas do backstage. -->
         <div
           class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
-          aria-label="Data das fornadas"
+          aria-label="Data dos lotes"
         >
           <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
           <button
@@ -494,12 +518,14 @@ function onTimerKeydown(event: KeyboardEvent) {
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
           >
-            <span aria-hidden="true">{{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}</span>
+            <span aria-hidden="true">{{
+              isCustomDate ? kiosk?.selected_date_display : "Outra data"
+            }}</span>
             <input
               v-model="selectedDate"
               type="date"
               class="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Escolher a data das fornadas"
+              aria-label="Escolher a data dos lotes"
             />
           </label>
         </div>
@@ -531,10 +557,54 @@ function onTimerKeydown(event: KeyboardEvent) {
               "
             >
               <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
-              Fornada avulsa
+              Lote avulso
             </UiButton>
           </UiPopoverContent>
         </UiPopover>
+      </div>
+
+      <div
+        class="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1"
+        role="tablist"
+        aria-label="Etapas de expedição e qualidade"
+      >
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeQueue === 'expedition'"
+          aria-controls="expedition-panel"
+          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
+          :class="
+            activeQueue === 'expedition'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="activeQueue = 'expedition'"
+        >
+          Expedição
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeQueue === 'quality'"
+          aria-controls="quality-panel"
+          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
+          :class="
+            activeQueue === 'quality'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="activeQueue = 'quality'"
+        >
+          Qualidade (QC)
+          <span
+            v-if="qualityPendingCount > 0"
+            class="inline-flex min-w-5 items-center justify-center rounded-full bg-warning px-1.5 py-0.5 text-xs font-bold leading-none text-warning-foreground"
+            aria-label="Lotes aguardando revisão de qualidade"
+          >
+            {{ qualityPendingCount }}
+          </span>
+        </button>
       </div>
 
       <div
@@ -551,7 +621,9 @@ function onTimerKeydown(event: KeyboardEvent) {
            vai direto ao dia pendente mais recente. -->
       <!-- Aviso inteiro é acionável para levar ao dia pendente; não é um CTA isolado. -->
       <button
-        v-if="kiosk && kiosk.previous_open_count > 0"
+        v-if="
+          activeQueue === 'expedition' && kiosk && kiosk.previous_open_count > 0
+        "
         type="button"
         class="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition hover:bg-warning/20"
         @click="selectedDate = kiosk.previous_open_date"
@@ -560,9 +632,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         <span>
           <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
           {{
-            kiosk.previous_open_count === 1
-              ? "fornada aberta"
-              : "fornadas abertas"
+            kiosk.previous_open_count === 1 ? "lote aberto" : "lotes abertos"
           }}
           de dias anteriores. Toque para ver.
         </span>
@@ -578,10 +648,27 @@ function onTimerKeydown(event: KeyboardEvent) {
         v-else-if="kiosk && !kiosk.orders.length"
         class="py-10 text-center text-muted-foreground"
       >
-        Nenhuma fornada planejada para hoje.
+        Nenhum lote planejado para hoje.
+      </p>
+      <p
+        v-else-if="kiosk && activeQueue === 'expedition' && !openOrders.length"
+        class="py-10 text-center text-muted-foreground"
+      >
+        Nenhum lote aguardando expedição.
+      </p>
+      <p
+        v-else-if="kiosk && activeQueue === 'quality' && !closedOrders.length"
+        class="py-10 text-center text-muted-foreground"
+      >
+        Nenhum lote na Qualidade (QC).
       </p>
 
-      <div class="grid gap-2">
+      <div
+        v-if="activeQueue === 'expedition'"
+        id="expedition-panel"
+        role="tabpanel"
+        class="grid gap-2"
+      >
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
              fornada é o botão quadrado do previsto, à direita. Alarmando, o
              card inteiro oscila em danger — visível do outro lado do fournil. -->
@@ -665,7 +752,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             }"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
-            :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
+            :aria-label="`Finalizar o lote de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums"
@@ -679,8 +766,10 @@ function onTimerKeydown(event: KeyboardEvent) {
             >
           </button>
         </div>
+      </div>
 
-        <!-- Fechadas: visíveis e esmaecidas, com a partição declarada. -->
+      <div v-else id="quality-panel" role="tabpanel" class="grid gap-2">
+        <!-- Lotes concluídos vivem em QC; pendências aparecem antes do histórico revisado. -->
         <div
           v-for="order in closedOrders"
           :key="order.pk"
@@ -730,7 +819,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               size="sm"
               :disabled="submitting"
               :aria-busy="submitting"
-              :aria-label="`Confirmar qualidade da fornada de ${order.recipe_name}`"
+              :aria-label="`Confirmar qualidade do lote de ${order.recipe_name}`"
               @click="confirmQuality(order)"
             >
               <Icon name="lucide:badge-check" class="size-3.5" />
@@ -741,7 +830,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               type="button"
               variant="outline"
               size="sm"
-              :aria-label="`Corrigir qualidade da fornada de ${order.recipe_name}`"
+              :aria-label="`Corrigir qualidade do lote de ${order.recipe_name}`"
               @click="openCorrection(order)"
             >
               <Icon name="lucide:shield-check" class="size-3.5" />
@@ -752,15 +841,15 @@ function onTimerKeydown(event: KeyboardEvent) {
       </div>
     </div>
 
-    <!-- Fornada avulsa: lista de receitas, nasce sem previsto. -->
+    <!-- Lote avulso: lista de receitas, nasce sem previsto. -->
     <UiSheet
       :open="recipePickerOpen"
       @update:open="(v: boolean) => (recipePickerOpen = v)"
     >
-      <UiSheetContent side="bottom" title="Fornada avulsa">
+      <UiSheetContent side="bottom" title="Lote avulso">
         <template #content>
           <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
-            <!-- Receitas são tiles de escolha para criar a fornada avulsa, não CTAs repetidos. -->
+            <!-- Receitas são tiles de escolha para criar o lote avulso, não CTAs repetidos. -->
             <button
               v-for="recipe in kiosk?.recipes ?? []"
               :key="recipe.pk"

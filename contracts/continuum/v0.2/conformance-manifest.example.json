@@ -1,0 +1,292 @@
+{
+  "protocol_version": "0.2",
+  "implementation_id": "example-continuity-adapters",
+  "generated_at": "2026-09-27T12:00:00Z",
+  "state_domain_registry": {
+    "public_snapshot_http": {
+      "kind": "cache",
+      "adapter_locator": "urn:continuum-state-domain:public-snapshot-http",
+      "namespace": "public-snapshot-http",
+      "canonicalizer": {"id": "continuum.state-domain-jcs", "version": "1"},
+      "effective_backing_identity": {"kind": "cache", "backend_instance": "cache-cluster-public", "partition": "production", "namespace": "public-snapshot-http"},
+      "effective_backing_identity_digest": "sha256-UZuVm_UA5bqwq3fdHGOSq43oe-j-NTv71v66GIwTMTE",
+      "trace_evidence": "urn:continuum-trace:state-public-snapshot-http"
+    },
+    "public_live_fetch": {
+      "kind": "memory",
+      "adapter_locator": "urn:continuum-state-domain:public-live-fetch",
+      "namespace": "public-live-fetch",
+      "canonicalizer": {"id": "continuum.state-domain-jcs", "version": "1"},
+      "effective_backing_identity": {"kind": "memory", "backend_instance": "continuum-runtime-public", "partition": "production", "namespace": "public-live-fetch"},
+      "effective_backing_identity_digest": "sha256-N_L9j2QqnDOBoJlRjq7VVqWZd_aucpZgVCQuJiXw65w",
+      "trace_evidence": "urn:continuum-trace:state-public-live-fetch"
+    },
+    "public_continuity_end_to_end": {
+      "kind": "cache",
+      "adapter_locator": "urn:continuum-state-domain:public-continuity-end-to-end",
+      "namespace": "public-continuity-end-to-end",
+      "canonicalizer": {"id": "continuum.state-domain-jcs", "version": "1"},
+      "effective_backing_identity": {"kind": "cache", "backend_instance": "cache-cluster-continuity", "partition": "production", "namespace": "public-continuity-end-to-end"},
+      "effective_backing_identity_digest": "sha256-ldpTF7jF9Z2iDITwzXCnu7HPm8Jx5ZyY4BnQWNbGpIQ",
+      "trace_evidence": "urn:continuum-trace:state-public-continuity-end-to-end"
+    },
+    "protected_command_non_cookie": {
+      "kind": "command-store",
+      "adapter_locator": "urn:continuum-state-domain:protected-command-non-cookie",
+      "namespace": "protected-command-non-cookie",
+      "canonicalizer": {"id": "continuum.state-domain-jcs", "version": "1"},
+      "effective_backing_identity": {"kind": "command-store", "backend_instance": "command-ledger-primary", "partition": "production", "namespace": "protected-command-non-cookie"},
+      "effective_backing_identity_digest": "sha256-W979cXOWd45Wm7zvYXQwQTn0o4UhU8aTBcWDK82dxHs",
+      "trace_evidence": "urn:continuum-trace:state-protected-command-non-cookie"
+    }
+  },
+  "units": [
+    {
+      "id": "public_snapshot_http",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "profiles": [
+        "public-data",
+        "public-shared-cache",
+        "service-worker-present",
+        "ssr-bootstrap",
+        "rollout-candidate"
+      ],
+      "layers": ["http", "cache", "parser", "producer", "rollout"],
+      "result_document": "urn:continuum-result:public-snapshot-http",
+      "trace_evidence": "urn:continuum-trace:public-snapshot-http",
+      "targets": {
+        "snapshot_public": {
+          "adapter": "HTTP GET https://public.example.test/continuum/v0.2/example",
+          "result_paths": ["/response", "/cache", "/client"]
+        },
+        "ssr_document_with_continuum_bootstrap": {
+          "adapter": "HTTP GET https://www.example.test/example"
+        }
+      },
+      "state_domains": ["public_snapshot_http"],
+      "limits": {
+        "max_compressed_response_bytes": 262144,
+        "max_decoded_response_bytes": 1048576,
+        "max_response_head_bytes": 65536,
+        "max_request_head_bytes": 65536,
+        "max_request_identifier_bytes": 16384,
+        "max_json_nodes": 100000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1048576,
+        "max_resident_bytes": 4194304,
+        "max_decompression_ratio_milli": 20000,
+        "max_decompression_ms": 1000,
+        "max_repair_attempts": 3,
+        "max_retry_ms": 30000
+      },
+      "representation_dimensions": [
+        "trusted_host",
+        "normalized_query",
+        "locale",
+        "currency",
+        "channel",
+        "price_context",
+        "schema",
+        "tenant_audience",
+        "rollout_cohort"
+      ],
+      "rollout": {
+        "owner": "example-team",
+        "observation_window_ms": 3600000,
+        "comparison_population": "authorized snapshot operations assigned to the same rollout cohort and representation dimensions",
+        "latency_metric": "continuum.snapshot.duration_ms",
+        "error_event": "continuum.snapshot.error",
+        "minimum_candidate_samples": 1000,
+        "minimum_baseline_samples": 1000,
+        "thresholds": {
+          "semantic_divergence_ppm": 0,
+          "cross_audience_leaks": 0,
+          "repair_loop_rate": 0.001,
+          "max_resident_bytes": 4194304,
+          "reconnect_storm_rate": 0.01,
+          "p95_latency_regression_ms": 50,
+          "error_rate_regression": 0.001
+        }
+      }
+    },
+    {
+      "id": "public_live_fetch",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "profiles": ["public-data", "fetch-stream", "subscribe-first"],
+      "layers": ["http", "cache", "sse", "parser", "producer"],
+      "result_document": "urn:continuum-result:public-live-fetch",
+      "trace_evidence": "urn:continuum-trace:public-live-fetch",
+      "targets": {
+        "public_fetch_stream": {
+          "adapter": "fetch-stream https://public.example.test/continuum/v0.2/example/stream",
+          "result_paths": ["/request", "/connection", "/reader"]
+        },
+        "canonical_snapshot": {
+          "adapter": "HTTP GET https://public.example.test/continuum/v0.2/example"
+        }
+      },
+      "state_domains": ["public_live_fetch"],
+      "limits": {
+        "max_compressed_response_bytes": 262144,
+        "max_decoded_response_bytes": 1048576,
+        "max_response_head_bytes": 65536,
+        "max_request_head_bytes": 65536,
+        "max_request_identifier_bytes": 16384,
+        "max_sse_line_bytes": 16384,
+        "max_sse_event_data_bytes": 65536,
+        "max_json_nodes": 100000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1048576,
+        "max_resident_bytes": 4194304,
+        "max_decompression_ratio_milli": 20000,
+        "max_decompression_ms": 1000,
+        "max_queue_events": 64,
+        "max_queue_bytes": 524288,
+        "max_dedupe_entries": 1024,
+        "max_events_per_subscription_generation": 10000,
+        "max_bytes_per_subscription_generation": 67108864,
+        "max_subscription_generation_ms": 3600000,
+        "max_streams_per_connection": 16,
+        "max_connections_per_principal": 2,
+        "max_connections_per_tenant": 200,
+        "max_connections_per_ip": 20,
+        "max_events_per_second": 100,
+        "max_reconnects_per_minute": 10,
+        "max_backoff_ms": 30000,
+        "max_repair_attempts": 3,
+        "max_retry_ms": 30000,
+        "max_canonical_reconcile_interval_ms": 60000,
+        "max_canonical_reconcile_jitter_ms": 5000
+      }
+    },
+    {
+      "id": "public_continuity_end_to_end",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "profiles": [
+        "public-data",
+        "public-shared-cache",
+        "fetch-stream",
+        "service-worker-present",
+        "ssr-bootstrap",
+        "subscribe-first",
+        "rollout-candidate"
+      ],
+      "layers": ["http", "cache", "sse", "parser", "producer", "rollout"],
+      "result_document": "urn:continuum-result:public-continuity",
+      "trace_evidence": "urn:continuum-trace:public-continuity",
+      "targets": {
+        "continuity_end_to_end": {
+          "adapter": "end-to-end public snapshot plus fetch-stream"
+        }
+      },
+      "state_domains": ["public_continuity_end_to_end"],
+      "limits": {
+        "max_compressed_response_bytes": 262144,
+        "max_decoded_response_bytes": 1048576,
+        "max_response_head_bytes": 65536,
+        "max_request_head_bytes": 65536,
+        "max_request_identifier_bytes": 16384,
+        "max_sse_line_bytes": 16384,
+        "max_sse_event_data_bytes": 65536,
+        "max_json_nodes": 100000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1048576,
+        "max_resident_bytes": 4194304,
+        "max_decompression_ratio_milli": 20000,
+        "max_decompression_ms": 1000,
+        "max_queue_events": 64,
+        "max_queue_bytes": 524288,
+        "max_dedupe_entries": 1024,
+        "max_events_per_subscription_generation": 10000,
+        "max_bytes_per_subscription_generation": 67108864,
+        "max_subscription_generation_ms": 3600000,
+        "max_streams_per_connection": 16,
+        "max_connections_per_principal": 2,
+        "max_connections_per_tenant": 200,
+        "max_connections_per_ip": 20,
+        "max_events_per_second": 100,
+        "max_reconnects_per_minute": 10,
+        "max_backoff_ms": 30000,
+        "max_repair_attempts": 3,
+        "max_retry_ms": 30000,
+        "max_canonical_reconcile_interval_ms": 60000,
+        "max_canonical_reconcile_jitter_ms": 5000
+      },
+      "representation_dimensions": [
+        "trusted_host",
+        "normalized_query",
+        "locale",
+        "currency",
+        "channel",
+        "price_context",
+        "schema",
+        "tenant_audience",
+        "rollout_cohort"
+      ],
+      "rollout": {
+        "owner": "example-team",
+        "observation_window_ms": 3600000,
+        "comparison_population": "authorized continuity operations assigned to the same rollout cohort and representation dimensions",
+        "latency_metric": "continuum.operation.duration_ms",
+        "error_event": "continuum.operation.error",
+        "minimum_candidate_samples": 1000,
+        "minimum_baseline_samples": 1000,
+        "thresholds": {
+          "semantic_divergence_ppm": 0,
+          "cross_audience_leaks": 0,
+          "repair_loop_rate": 0.001,
+          "max_resident_bytes": 4194304,
+          "reconnect_storm_rate": 0.01,
+          "p95_latency_regression_ms": 50,
+          "error_rate_regression": 0.001
+        }
+      }
+    },
+    {
+      "id": "protected_command_non_cookie",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "profiles": ["protected-data", "non-cookie-auth"],
+      "layers": ["authorization", "http", "cache", "parser", "producer", "command"],
+      "result_document": "urn:continuum-result:protected-command-non-cookie",
+      "trace_evidence": "urn:continuum-trace:protected-command-non-cookie",
+      "targets": {
+        "command_ids": {
+          "adapter": "HTTP POST https://commands.example.test/continuum/command-ids"
+        },
+        "command_submit": {
+          "adapter": "HTTP POST https://commands.example.test/continuum/commands/example.set-value"
+        },
+        "receipt_lookup": {
+          "adapter": "HTTP GET https://commands.example.test/continuum/receipts/{receipt_token}"
+        },
+        "command_auth_lease": {
+          "adapter": "HTTP POST https://commands.example.test/continuum/auth/lease"
+        }
+      },
+      "state_domains": ["protected_command_non_cookie"],
+      "limits": {
+        "max_compressed_response_bytes": 262144,
+        "max_decoded_response_bytes": 1048576,
+        "max_response_head_bytes": 65536,
+        "max_request_head_bytes": 65536,
+        "max_request_body_bytes": 1048576,
+        "max_request_identifier_bytes": 16384,
+        "max_json_nodes": 100000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1048576,
+        "max_resident_bytes": 4194304,
+        "max_decompression_ratio_milli": 20000,
+        "max_decompression_ms": 1000,
+        "max_pending_commands": 1000,
+        "max_command_operations_per_minute": 600,
+        "max_command_retry_ms": 86400000,
+        "max_accepted_terminal_ms": 60000,
+        "max_receipt_retention_ms": 604800000,
+        "max_lease_ms": 30000,
+        "max_revocation_sla_ms": 60000,
+        "max_active_subscription_lineages_per_context": 8,
+        "max_lease_operations_per_minute": 60
+      }
+    }
+  ]
+}

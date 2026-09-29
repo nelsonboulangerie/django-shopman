@@ -14,18 +14,9 @@ import {
   checkDjangoReadiness,
   ProbeRateLimiter,
 } from "../server/utils/healthProbe";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const OPERATOR_APPS = [
-  "pos-nuxt",
-  "kds-nuxt",
-  "orders-nuxt",
-  "production-nuxt",
-  "purchase-nuxt",
-  "marketing-nuxt",
-  "bi-nuxt",
-  "hub-nuxt",
-] as const;
 
 afterEach(() => {
   vi.unstubAllGlobals();

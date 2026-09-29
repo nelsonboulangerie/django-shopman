@@ -43,9 +43,9 @@ def flour_formula(*, water=700, salt=20, parts=None, extra=()):
         "basis_g": None,
         "standardized": False,
         "items": [
-            {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
+            {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
-            {"sku": "SAL", "name": "Sal", "role": "salt", "quantity": salt, "unit": "g"},
+            {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": salt, "unit": "g"},
             *extra,
         ],
         "parts": parts or [],
@@ -60,7 +60,7 @@ def published_levain():
         formula={
             "anchor": {"kind": "flour"},
             "items": [
-                {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
+                {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
                 {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
             ],
             "parts": [],
@@ -134,11 +134,11 @@ def test_bakery_lens_items_metrics_and_tones(published_levain):
     assert salt.pct_display == "2%"
 
     assert [(item.sku, item.quantity_display) for item in lens.final_mix] == [
-        ("FARINHA-T55", "800 g"), ("AGUA-FILTRADA", "500 g"), ("SAL", "20 g"),
+        ("FARINHA-ANACONDA-PREMIUM", "800 g"), ("AGUA-FILTRADA", "500 g"), ("SAL-REFINADO", "20 g"),
     ]
     assert [(item.sku, item.quantity_display, item.role_label) for item in lens.bom] == [
-        ("FARINHA-T55", "800 g", "Farinha"), ("AGUA-FILTRADA", "500 g", "Líquido"),
-        ("SAL", "20 g", "Sal"), ("LEVAIN", "400 g", "Pré-fermento"),
+        ("FARINHA-ANACONDA-PREMIUM", "800 g", "Farinha"), ("AGUA-FILTRADA", "500 g", "Líquido"),
+        ("SAL-REFINADO", "20 g", "Sal"), ("LEVAIN", "400 g", "Pré-fermento"),
     ]
     (part,) = lens.parts
     assert part.kind_label == "Pré-fermento"
@@ -174,7 +174,7 @@ def test_analysis_warnings_and_their_tone():
         flour_formula(
             parts=[{"sku": "POOLISH", "kind": "preferment", "flour_pct": 30}],
             extra=(
-                {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 100, "unit": "ml"},
+                {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 100, "unit": "ml"},
                 {"sku": "OVOS", "name": "Ovos", "role": "egg", "quantity": 2, "unit": "un"},
             ),
         ),
@@ -195,8 +195,8 @@ def test_non_flour_anchor_mutes_the_bakery_metrics():
     cream = {
         "anchor": {"kind": "total"},
         "items": [
-            {"sku": "LEITE", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"},
-            {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
+            {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"},
+            {"sku": "ACUCAR-CRISTAL", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
         ],
         "parts": [],
     }
@@ -256,14 +256,14 @@ def test_card_hydration_only_with_a_flour_anchor():
         cream,
         formula={
             "anchor": {"kind": "total"},
-            "items": [{"sku": "LEITE", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"}],
+            "items": [{"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"}],
             "parts": [],
         },
         yield_quantity=1, yield_unit="kg",
     ))
     craftsman.create_version(cream, formula={
         "anchor": {"kind": "total"},
-        "items": [{"sku": "LEITE", "name": "Leite", "role": "dairy", "quantity": 2, "unit": "kg"}],
+        "items": [{"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 2, "unit": "kg"}],
         "parts": [],
     }, yield_quantity=2, yield_unit="kg")
     Material.objects.create(sku="CREME-CONF", name="Creme de confeiteiro pronto", unit="kg")
@@ -297,7 +297,7 @@ def test_entry_detail_orders_versions_newest_first_and_names_the_sheet():
     assert detail.versions[1].status_label == "Publicada"
     assert detail.versions[1].published_at_display != ""
     assert detail.versions[1].source_label == "Manual"
-    assert detail.versions[1].formula["items"][0]["sku"] == "FARINHA-T55"
+    assert detail.versions[1].formula["items"][0]["sku"] == "FARINHA-ANACONDA-PREMIUM"
 
     with pytest.raises(RecipeEntryNotFound):
         build_recipe_entry("nao-existe")
@@ -306,7 +306,7 @@ def test_entry_detail_orders_versions_newest_first_and_names_the_sheet():
 def test_a_bootstrapped_sheet_reads_as_a_ficha_version():
     recipe = Recipe.objects.create(ref="massa-yudane", name="Yudane", output_sku="YUDANE", batch_size=Decimal("1.9"),
                                    meta={"output_unit": "kg"})
-    RecipeItem.objects.create(recipe=recipe, input_sku="FARINHA-T55", quantity=Decimal("1"), unit="kg", sort_order=0)
+    RecipeItem.objects.create(recipe=recipe, input_sku="FARINHA-ANACONDA-PREMIUM", quantity=Decimal("1"), unit="kg", sort_order=0)
     RecipeItem.objects.create(recipe=recipe, input_sku="AGUA-FILTRADA", quantity=Decimal("1"), unit="kg", sort_order=1)
     craftsman.bootstrap_entry_from_recipe(recipe)
 
@@ -326,17 +326,17 @@ def test_a_bootstrapped_sheet_reads_as_a_ficha_version():
 def test_compare_tones_and_deltas():
     entry = craftsman.create_entry(ref="massa-tradicao", name="Massa Tradição", kind="bread", output_sku="MASSA-TRADICAO")
     craftsman.create_version(entry, formula=flour_formula(), yield_quantity="1.7", yield_unit="kg")
-    with_malt = flour_formula(water=750, extra=({"sku": "MALTE", "name": "Malte", "role": "sugar", "quantity": 10, "unit": "g"},))
+    with_malt = flour_formula(water=750, extra=({"sku": "MALTE-EXTRATO", "name": "Malte", "role": "sugar", "quantity": 10, "unit": "g"},))
     craftsman.create_version(entry, formula=with_malt, yield_quantity="1.7", yield_unit="kg")
 
     compare = build_recipe_compare("massa-tradicao@1", "massa-tradicao@2")
     rows = {row.sku: row for row in compare.rows}
-    assert rows["FARINHA-T55"].tone == "muted"
-    assert rows["FARINHA-T55"].delta_display == "0 g"
+    assert rows["FARINHA-ANACONDA-PREMIUM"].tone == "muted"
+    assert rows["FARINHA-ANACONDA-PREMIUM"].delta_display == "0 g"
     assert rows["AGUA-FILTRADA"].tone == "ok"
     assert rows["AGUA-FILTRADA"].delta_display == "+50 g"
-    assert rows["MALTE"].tone == "warning"
-    assert (rows["MALTE"].a_display, rows["MALTE"].b_display, rows["MALTE"].delta_display) == ("", "10 g", "")
+    assert rows["MALTE-EXTRATO"].tone == "warning"
+    assert (rows["MALTE-EXTRATO"].a_display, rows["MALTE-EXTRATO"].b_display, rows["MALTE-EXTRATO"].delta_display) == ("", "10 g", "")
     metrics = {metric.label: metric for metric in compare.metrics}
     assert metrics["Rendimento"].tone == "muted"
     assert metrics["Hidratação"].delta_display == "+5%"
@@ -359,19 +359,19 @@ def test_reference_for_kind():
 
 def test_ingredient_options_prefer_the_part_over_a_material_with_the_same_sku(published_levain):
     Material.objects.create(sku="LEVAIN", name="Levain (insumo)", unit="kg")
-    Material.objects.create(sku="FARINHA-T55", name="Farinha de trigo T55", unit="kg")
+    Material.objects.create(sku="FARINHA-ANACONDA-PREMIUM", name="Farinha de trigo T55", unit="kg")
     options = build_ingredient_options("")
     levain = [option for option in options if option.sku == "LEVAIN"]
     assert len(levain) == 1
     assert levain[0].is_part is True
     assert levain[0].name == "Levain"
-    assert [option.sku for option in options] == ["LEVAIN", "FARINHA-T55"]
+    assert [option.sku for option in options] == ["LEVAIN", "FARINHA-ANACONDA-PREMIUM"]
 
 
 def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_levain):
-    Material.objects.create(sku="FARINHA-T65", name="Farinha de trigo T65", unit="kg")
+    Material.objects.create(sku="FARINHA-NOVARA-T55", name="Farinha de trigo T65", unit="kg")
     Material.objects.create(sku="AGUA-FILTRADA", name="Água filtrada", unit="l")
-    Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
     captured = CapturedRecipe(
         name="Pão de campanha", kind="bread", language="fr", yield_quantity=Decimal("2"), yield_unit="un",
         items=(
@@ -385,9 +385,9 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     draft = build_capture_draft(captured)
     assert draft.yield_quantity == "2"
     flour, water, levain, pepper = draft.items
-    assert (flour.sku, flour.role, flour.quantity, flour.unit) == ("FARINHA-T65", "flour", "1", "kg")
+    assert (flour.sku, flour.role, flour.quantity, flour.unit) == ("FARINHA-NOVARA-T55", "flour", "1", "kg")
     assert flour.match_confidence.endswith("%")
-    assert flour.candidates[0].sku == "FARINHA-T65"
+    assert flour.candidates[0].sku == "FARINHA-NOVARA-T55"
     assert (water.sku, water.role) == ("AGUA-FILTRADA", "liquid")
     assert (levain.sku, levain.role) == ("LEVAIN", "other")
     assert any(candidate.is_part and candidate.entry_ref == "creme-levain" for candidate in levain.candidates)
@@ -396,7 +396,7 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     assert draft.formula["anchor"] == {"kind": "flour"}
     assert draft.formula["standardized"] is False
     assert [(line["sku"], line["quantity"], line["unit"]) for line in draft.formula["items"]] == [
-        ("FARINHA-T65", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("LEVAIN", "200", "g"),
+        ("FARINHA-NOVARA-T55", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("LEVAIN", "200", "g"),
     ]
 
 
@@ -445,9 +445,9 @@ def test_a_cream_with_a_flour_anchor_is_not_a_bakery_lens():
     formula = {
         "anchor": {"kind": "flour"},
         "items": [
-            {"sku": "FARINHA-T55", "name": "Farinha", "role": "flour", "quantity": 300, "unit": "g"},
-            {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 1000, "unit": "g"},
-            {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
+            {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha", "role": "flour", "quantity": 300, "unit": "g"},
+            {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 1000, "unit": "g"},
+            {"sku": "ACUCAR-CRISTAL", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
         ],
         "parts": [],
     }

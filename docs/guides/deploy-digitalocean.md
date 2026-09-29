@@ -32,7 +32,11 @@ Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 
 - `web`: Daphne ASGI em `config.asgi:application`;
 - `directive-worker`: `python manage.py process_directives --watch`;
-- `release`: job `PRE_DEPLOY` com `check --deploy` e migrations;
+- `release`: job `PRE_DEPLOY` com `check --deploy`, `migration_safety` e
+  migrations. O `migration_safety` roda ANTES do `migrate` e, pós-`go-live-v1`,
+  RECUSA o deploy quando ha migracao destrutiva pendente sem ponto de
+  restauracao declarado em `SHOPMAN_MIGRATION_BACKUP_REF`
+  ([backup-e-restore](../runbooks/backup-e-restore.md));
 - `postgres`: PostgreSQL 16 gerenciado (`shopman-staging-postgres`);
 - `cache`: Valkey 8 gerenciado (`shopman-staging-cache`), exposto ao Django via `REDIS_URL`;
 - pagamentos em staging técnico via `payment_mock` para Pix e cartão, com
@@ -107,6 +111,11 @@ Não suba `DATABASE_CONN_MAX_AGE` para `60` no Postgres pequeno sem pool: em
 ASGI/Daphne ele pode acumular conexões ociosas e causar `remaining connection
 slots are reserved`. Sem pool, use `DATABASE_CONN_MAX_AGE=0`. Com pool em modo
 transaction, mantenha `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`.
+
+O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
+conexão direta** (porta `25060`, banco `shopman`), nunca pelo pool (`25061`): em modo
+transaction o `pg_dump` deixa `search_path=''` numa conexão de servidor que o próximo
+cliente herda, e o `directive-worker` passa a não achar `orderman_directive`.
 
 Para exercitar gateways sandbox reais, adicione também:
 

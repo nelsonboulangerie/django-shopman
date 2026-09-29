@@ -32,6 +32,7 @@ import type {
 } from "~/types/pos";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
+import { ordersQueueUrl } from "~/presentation/crossAppLinks";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
@@ -48,6 +49,7 @@ import {
   tenderLineView,
 } from "~/presentation/payment";
 import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
+import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -55,7 +57,8 @@ import {
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { isValidTaxId } from "~/presentation/taxId";
+import { deliveryTaxIdMissing, maskTaxId, taxIdEcho as taxIdEchoFor } from "~/presentation/taxId";
+import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
   receiptContactChecked,
@@ -306,7 +309,11 @@ const reviewWarnings = computed(() => {
       // sem caminho e — porque a review só é refeita quando o CARRINHO muda —
       // podendo ficar defasado ao lado de um cabeçalho já com o nome do cliente.
       // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
-      && w.code !== "customer_required_for_scheduled",
+      && w.code !== "customer_required_for_scheduled"
+      // Endereço incompleto para a nota e mínimo de entrega: quem fala é o
+      // bloqueio do Validar.
+      && w.code !== "delivery_address_incomplete"
+      && w.code !== "below_delivery_minimum",
   );
   return fromServer;
 });
@@ -384,39 +391,13 @@ const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.sele
 // abaixo dizia "Documento incompleto" sobre um número que parecia perfeito.
 // Guardamos só dígitos (é o que o intent envia de qualquer jeito) e cortamos na
 // origem.
-const invoiceTaxIdMasked = computed(() => {
-  const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 11) {
-    return d
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-  return d
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
-});
+const invoiceTaxIdMasked = computed(() => maskTaxId(props.invoiceTaxId));
 
 // "Sai na nota" é uma PROMESSA, e promessa se confere. Onze dígitos quaisquer
 // viravam um check verde: o operador lia de volta com confiança, o cliente
 // confirmava, e a rejeição da NFC-e chegava com ele já na rua. Contar dígito não
 // é conferir documento — quem confere é o dígito verificador.
-const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
-  const digits = props.invoiceTaxId.replace(/\D/g, "");
-  if (!digits) return { ok: false, text: "Digite o documento — sem ele a nota sai sem CPF." };
-  if (digits.length !== 11 && digits.length !== 14) {
-    return { ok: false, text: "Documento incompleto — a nota sai sem CPF." };
-  }
-  if (!isValidTaxId(digits)) {
-    return { ok: false, text: "Documento inválido — confira com o cliente." };
-  }
-  if (digits.length === 11) {
-    return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
-  }
-  return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
-});
+const taxIdEcho = computed(() => taxIdEchoFor(props.invoiceTaxId));
 
 // "Do cadastro" só se o valor ainda É o do cadastro: assim que o operador troca,
 // o aviso some, porque aí não é mais o documento do cliente que está ali.
@@ -545,6 +526,7 @@ const summaryLines = computed(() =>
     lineId: item.line_id,
     name: item.name,
     qty: item.qty,
+    qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
     /** A etiqueta riscada, quando o que se cobra é menor. "" quando não há. */
     listDisplay: lineListTotalDisplay(item),
@@ -557,7 +539,7 @@ const summaryLines = computed(() =>
 const discountByScope = computed(
   () => !!props.review && (props.review.line_discount_q > 0 || props.review.order_discount_q > 0),
 );
-const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
+const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + lineUnits(item), 0));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -568,7 +550,12 @@ const kitchenSurplus = computed(() => props.items.reduce((total, item) => total 
 // A frase é presentation PURA (`kitchenHandoffNote`): ela conta unidades, como o
 // botão de enviar, e não linhas — "1 item já está na cozinha" com três chás numa
 // linha só era o número errado no lugar onde o operador confere o que já saiu.
-const kitchenNote = computed(() => kitchenHandoffNote(props.items));
+// Encomenda para OUTRO dia: a cozinha só a recebe na data combinada. As duas
+// datas são ISO (AAAA-MM-DD) e o "hoje" é o da loja, vindo do servidor.
+const kitchenDeferred = computed(() =>
+  Boolean(props.scheduleToday) && (props.deliveryDateEffective || "") > props.scheduleToday,
+);
+const kitchenNote = computed(() => kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value }));
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -626,10 +613,16 @@ const pixProviderTestExceeded = computed(() =>
 const pixProviderTestMixed = computed(() =>
   hasPixProviderTestTender.value && (splitActive.value || hasNonPixTender.value),
 );
+const pixProviderTestLimitDisplay = computed(() => pixProviderTest.value?.max_amount_display || "R$ 10,00");
 const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
-  "Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. "
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}. `
   + "Para continuar, troque a forma de pagamento ou ajuste os itens do pedido."
 ));
+// Dentro do limite o aviso só informa: a frase do contrato manda trocar a forma,
+// e isso ao lado de "está dentro do limite" obriga o operador a escolher uma leitura.
+const pixProviderTestWithinLimitMessage = computed(() =>
+  `Ambiente de testes: a Efí simula a confirmação de Pix de até ${pixProviderTestLimitDisplay.value}.`,
+);
 /** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
  *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
@@ -791,12 +784,19 @@ const ctaBlock = computed<{
   // porque é uma limitação do instrumento já escolhido, independente dos
   // demais dados do pedido — o aviso precisa estar presente enquanto o Pix está.
   if (pixProviderTestMixed.value) {
+    // "Ajustar itens" não desfaz a combinação, então não é saída aqui. Pix
+    // sozinho só é saída quando o total cabe no teto.
+    const pixAloneFits = !exceedsPaymentConstraint(props.paymentTotalQ, pixProviderTest.value);
+    const pixAlone = splitActive.value
+      ? "Desfaça a divisão para usar Pix sozinho no total"
+      : "Use Pix sozinho no total";
     return {
       message: "Pix não pode ser combinado nem dividido durante os testes da Efí.",
-      hint: "Remova o Pix e escolha outra forma para esta divisão.",
+      hint: pixAloneFits
+        ? `${pixAlone}, ou remova o Pix e escolha outra forma.`
+        : "Remova o Pix e escolha outra forma.",
       actions: [
         { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
-        { label: "Ajustar itens", run: returnToCart },
       ],
     };
   }
@@ -833,6 +833,52 @@ const ctaBlock = computed<{
       action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
     };
   }
+  // ENTREGA COM NOTA sem o documento: a gêmea de `delivery_tax_id_required` do
+  // fechamento. A SEFAZ recusa a nota de entrega sem CPF/CNPJ, e a recusa
+  // chegava com o entregador na rua; agora o Validar trava aqui, com o toque
+  // que abre o campo.
+  if (deliveryTaxIdMissing({
+    fulfillmentType: props.fulfillmentType,
+    required: props.review?.delivery_tax_id_required,
+    wantsCpfOnInvoice: props.wantsCpfOnInvoice,
+    invoiceTaxId: props.invoiceTaxId,
+  })) {
+    return {
+      message: "Entrega com nota fiscal: falta o CPF ou CNPJ do cliente.",
+      hint: "Sem ele, a entrega não fecha; a retirada continua.",
+      action: {
+        label: "Preencher CPF na nota",
+        run: () => {
+          if (!props.wantsCpfOnInvoice) emit("update:wantsCpfOnInvoice", true);
+          focusByAriaLabel("CPF que sai na nota");
+        },
+      },
+    };
+  }
+  // Endereço sem as partes que a nota exige (rua, número, bairro, cidade,
+  // estado, CEP): a review diz o que falta; aqui ela trava, como o fechamento.
+  const addressGap = props.review?.warnings?.find((w) => w.code === "delivery_address_incomplete");
+  if (props.fulfillmentType === "delivery" && addressGap) {
+    return {
+      message: addressGap.message,
+      hint: "A nota fiscal da entrega sai com o endereço completo.",
+      action: { label: "Completar endereço", run: () => { fulfillmentSheetOpen.value = true; } },
+    };
+  }
+  // `below_delivery_minimum`: a gêmea do `DeliveryZoneRule`. A frase é a do
+  // commit, vinda na review; antes dela a recusa só chegava ao Validar — como
+  // 500, que o PDV lia como "cobrança não confirmada".
+  const belowMinimum = props.review?.warnings?.find((w) => w.code === "below_delivery_minimum");
+  if (props.fulfillmentType === "delivery" && belowMinimum) {
+    return {
+      message: belowMinimum.message,
+      hint: "Acrescente itens até o mínimo, ou troque a entrega por retirada.",
+      actions: [
+        { label: "Acrescentar itens", run: returnToCart },
+        { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+      ],
+    };
+  }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
   // cobre o caso comum (cai no e-mail do cadastro); quando os dois estão vazios,
   // a recusa vinha no Validar.
@@ -856,7 +902,7 @@ const ctaBlock = computed<{
   if (hasLinkTender.value && !props.customerPhone.trim() && !props.customerEmail.trim()) {
     return {
       message: "O link precisa de um contato.",
-      hint: "Telefone ou e-mail — é por onde ele vai.",
+      hint: "Telefone ou e-mail: é por onde o link chega ao cliente.",
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
@@ -898,10 +944,27 @@ type CheckoutNotice = {
   tone?: "block" | "warn";
   action?: CheckoutAction;
   actions?: CheckoutAction[];
+  /** Saída para OUTRO app de operador. Ver `noticeLink` logo abaixo. */
+  link?: { href: string; label: string };
 };
 
 function noticeActions(note: CheckoutNotice): CheckoutAction[] {
   return note.actions || (note.action ? [note.action] : []);
+}
+
+// "Registre o recebimento NO GESTOR" citava o app vizinho e não levava, com o
+// `ordersUrl` já no `runtimeConfig`. O pedido ainda não existe aqui (este é o
+// checkout, antes do commit), então não há `order_ref` para apontar: o destino
+// honesto é a FILA do Gestor, e o rótulo promete a fila.
+const workspaceRuntimeConfig = useRuntimeConfig();
+const ordersQueueHref = computed(() =>
+  ordersQueueUrl(String(workspaceRuntimeConfig.public.ordersUrl || "")),
+);
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
+function noticeLink(): { href: string; label: string } | undefined {
+  return ordersQueueHref.value
+    ? { href: ordersQueueHref.value, label: "Abrir a fila do Gestor" }
+    : undefined;
 }
 
 // AVISOS — o bloqueio primeiro, depois as consequências, depois as ressalvas.
@@ -938,7 +1001,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       key: "pix-provider-test",
       tone: "warn",
       icon: "lucide:flask-conical",
-      message: pixProviderTestMessage.value,
+      message: pixProviderTestWithinLimitMessage.value,
       hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
     });
   }
@@ -952,7 +1015,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       tone: "warn",
       icon: "lucide:triangle-alert",
       message: `A cozinha preparou ${kitchenSurplus.value} ${kitchenSurplus.value === 1 ? "item" : "itens"} a mais do que esta conta cobra.`,
-      hint: "Cancele o envio da linha, ou avise o preparo — a diferença sai sem pagamento.",
+      hint: "Cancele o envio da linha ou avise o preparo. Se nada mudar, a diferença sai sem pagamento.",
     });
   }
   if (props.items.length && kitchenNote.value) {
@@ -972,6 +1035,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       message: props.fulfillmentType === "pickup"
         ? "Dinheiro pendente. Registre o recebimento no Gestor antes de concluir a retirada."
         : "Dinheiro pendente. O troco calculado será separado no despacho.",
+      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
   if (onDelivery.value && machineTenders.value.length) {
@@ -981,28 +1045,24 @@ const notices = computed<CheckoutNotice[]>(() => {
       message: props.fulfillmentType === "pickup"
         ? "Passe o cartão na retirada e registre o recebimento no Gestor antes de concluir o pedido."
         : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
+      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
-  if (wantsPrintedReceipt.value) {
-    // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
-    // autorizada — o papel é o espelho da nota —, então pedir papel é pedir a
-    // nota, e a regra fiscal do servidor lê este canal e emite. Antes o toggle
-    // não decidia nada: dinheiro sem CPF ligava "Impressa?", não gerava nota
-    // nenhuma e nada saía na bobina, calado.
-    //
-    // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
-    // SEFAZ. Prometer o instante seria a segunda mentira.
-    //
-    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
-    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
-    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
-    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+  // PEDIR O COMPROVANTE É PEDIR A NOTA — papel ou e-mail, como o CPF. Não
+  // existe DANFE nem XML sem NFC-e autorizada, e a regra fiscal do servidor lê
+  // estes canais e emite. A frase só promete quando o CONTRATO confirma
+  // (`capabilities.receipt_requests_emission`); a redação mora em
+  // `presentation/receiptRequest.ts`.
+  const receiptNote = receiptRequestNote({
+    print: wantsPrintedReceipt.value,
+    email: wantsEmailReceipt.value,
+    emits: receiptRequestEmits(props.checkoutContract),
+  });
+  if (receiptNote) {
     notes.push({
-      key: "print",
-      icon: "lucide:printer",
-      message: props.checkoutContract?.receipt_requests_emission
-        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
-        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+      key: "receipt",
+      icon: wantsPrintedReceipt.value ? "lucide:printer" : "lucide:mail",
+      message: receiptNote,
     });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
@@ -1167,7 +1227,7 @@ defineExpose({
          abertura do atendimento, e agora moram na barra do topo, que segue
          visível durante o checkout. Perguntar de novo aqui era ter o mesmo botão
          em dois lugares da mesma tela. -->
-    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden lg:flex-row">
+    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden lg:flex-row lg:gap-4 xl:gap-6">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
            espalhado não responde "qual é a próxima ação"). Quatro seções, na
@@ -1179,7 +1239,10 @@ defineExpose({
            `overflow-y-auto`: com a nota aberta a coluna pode passar da altura
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
-      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[360px] lg:shrink-0">
+      <!-- As laterais cedem largura antes do meio: com 360px fixos de cada lado,
+           1024px de tela com a barra lateral estendida deixavam ~30px para o
+           centro, e o aviso da cozinha virava uma palavra por linha. -->
+      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[clamp(17rem,31%,22.5rem)] lg:shrink-0 @container">
         <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
              + teclado de valor. Última seção de propósito: desagua no Validar. -->
         <!-- CONTEXTO DA VENDA — quem compra, como recebe, se tem desconto.
@@ -1217,27 +1280,30 @@ defineExpose({
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               type="button"
-              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
               :aria-pressed="hasDiscount"
               :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
               @click="discountSheetOpen = true"
             >
               <Icon name="lucide:tag" class="size-4 shrink-0" />
-              <span class="min-w-0 flex-1 truncate text-left">Desconto</span>
+              <span class="min-w-0 flex-1 text-left leading-tight">Desconto</span>
               <!-- O BADGE É O ESTADO. Ligado, o botão diz o quanto — ninguém
                    precisa abrir o modal para conferir se há desconto e de que
                    tamanho. Desligado, o mesmo canto carrega o atalho. -->
               <UiBadge v-if="hasDiscount" class="shrink-0 tabular-nums">−{{ discountSummary }}</UiBadge>
+              <!-- Coluna estreita (1024px com a barra lateral estendida): o
+                   atalho sai antes que o rótulo encolha. -->
               <OperatorKbd
                 v-else
+                class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F9</OperatorKbd>
             </button>
 
             <button
               type="button"
-              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="[
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
               ]"
@@ -1254,7 +1320,7 @@ defineExpose({
               @click="splitSheetOpen = true"
             >
               <Icon name="lucide:users" class="size-4 shrink-0" />
-              <span class="min-w-0 flex-1 truncate text-left">Dividir conta</span>
+              <span class="min-w-0 flex-1 text-left leading-tight">Dividir conta</span>
               <!-- "3" enquanto armado, "1/3" a partir da primeira parte: ARMADO
                    e EM USO são estados diferentes, e o segundo é o que impede o
                    operador de desligar a divisão sem perceber que já lançou. -->
@@ -1263,6 +1329,7 @@ defineExpose({
                    desligado, ele carrega o atalho. -->
               <OperatorKbd
                 v-else
+                class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F10</OperatorKbd>
             </button>
@@ -1286,7 +1353,7 @@ defineExpose({
               v-for="collection in deliveryCollections"
               :key="collection.ref"
               type="button"
-              class="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 text-sm font-semibold transition"
+              class="flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 py-1 text-sm font-semibold leading-tight transition"
               :class="paymentCollection === collection.ref
                 ? 'bg-primary text-primary-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground'"
@@ -1294,7 +1361,7 @@ defineExpose({
               @click="$emit('update:paymentCollection', collection.ref)"
             >
               <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : fulfillmentType === 'pickup' ? 'lucide:hand-coins' : 'lucide:bike'" class="size-4 shrink-0" />
-              <span class="truncate">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
+              <span>{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
             </button>
           </div>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
@@ -1367,7 +1434,8 @@ defineExpose({
                  rótulo e o texto vazando por cima da borda assim que o trilho de
                  cédulas aparecia e estreitava o teclado. Em linha própria, cada
                  um tem metade da largura do teclado e o rótulo cabe em qualquer
-                 zoom; `min-w-0` + `truncate` fecham a porta do estouro. -->
+                 zoom. Sem `truncate`: rótulo de ação não se corta — "Exa…" não
+                 diz nada ao operador (guardrails.copyNeverTruncates). -->
             <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
@@ -1377,7 +1445,7 @@ defineExpose({
               title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
-              <span class="truncate">Exato</span>
+              <span>Exato</span>
               <OperatorKbd aria-hidden="true">=</OperatorKbd>
             </button>
             <button
@@ -1389,7 +1457,7 @@ defineExpose({
               @click="$emit('tenderClear')"
             >
               <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
-              <span class="truncate">Limpar</span>
+              <span>Limpar</span>
             </button>
             </div>
           </div>
@@ -1452,7 +1520,10 @@ defineExpose({
            A largura é a que resta das duas colunas fixas; por isso o total
            escala com a janela (no `xl` a faixa do meio é a mais estreita das
            três configurações, e um `text-8xl` ali transbordava). -->
-      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 lg:order-none">
+      <!-- `overflow-y-auto`: aviso de bloqueio grande (o CPF da nota da entrega)
+           numa tela de 768px empurrava as linhas de pagamento e o RESTANTE para
+           fora da coluna — cortados, sem rolagem. -->
+      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto py-1 lg:order-none">
 
         <!-- AVISOS — o que finalizar VAI fazer, e o que a review RESSALVA.
              Nada aqui pede ação: o que pede ação mora no rodapé, encostado no
@@ -1487,16 +1558,33 @@ defineExpose({
               >{{ note.message }}</span>
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
+            <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do
+                 aviso. Ao lado, ele disputava a linha com a frase: na coluna do
+                 meio de um balcão de 1024px, "Entrega com nota fiscal: falta o
+                 CPF…" virava uma palavra por linha, espremida pelo botão. -->
             <div
-              v-if="noticeActions(note).length"
-              class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"
+              v-if="noticeActions(note).length || note.link"
+              class="flex w-full flex-wrap gap-2"
             >
+              <!-- A menção ao app vizinho vira porta. Ver `noticeLink()`. -->
+              <UiButton
+                v-if="note.link"
+                size="lg"
+                variant="outline"
+                class="h-auto min-h-11 max-w-full gap-1.5 whitespace-normal py-2 text-left"
+                :href="note.link.href"
+                v-bind="crossAppAttrs(note.link.href)"
+                data-notice-app-link
+              >
+                <Icon name="lucide:external-link" class="size-4" />
+                {{ note.link.label }}
+              </UiButton>
               <UiButton
                 v-for="action in noticeActions(note)"
                 :key="action.label"
                 size="lg"
                 variant="outline"
-                class="h-11 w-full shrink-0 sm:w-auto"
+                class="h-auto min-h-11 max-w-full whitespace-normal py-2 text-left"
                 @click="action.run()"
               >
                 {{ action.label }}
@@ -1543,19 +1631,19 @@ defineExpose({
             <li
               v-for="(tender, idx) in tenderLines"
               :key="idx"
-              class="flex h-11 items-center gap-1 rounded-md border pr-1 transition"
+              class="flex min-h-11 items-center gap-1 rounded-md border pr-1 transition"
               :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
             >
               <button
                 type="button"
-                class="flex h-full min-w-0 flex-1 items-center justify-between gap-2 rounded-l-md px-3 text-left"
+                class="flex min-h-11 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 self-stretch rounded-l-md px-3 py-1 text-left"
                 :aria-current="idx === selectedTenderIndex ? 'true' : undefined"
                 :aria-label="`Editar ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('selectTender', idx)"
               >
                 <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
                   <Icon :name="tender.icon" class="size-4 shrink-0" />
-                  <span class="truncate">{{ tender.label }}</span>
+                  <span class="leading-tight">{{ tender.label }}</span>
                 </span>
                 <strong class="shrink-0 text-lg tabular-nums">{{ tender.amountDisplay }}</strong>
               </button>
@@ -1616,7 +1704,7 @@ defineExpose({
            fiscais com ela — abaixo de 1024px o operador não teria onde dizer
            "CPF na nota?". Agora as três colunas empilham em vez de sumir: o
            corte de layout virou `lg`, e abaixo dele a tela é uma coluna só. -->
-      <div class="order-3 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[360px] lg:shrink-0">
+      <div class="order-3 flex min-h-0 flex-col gap-3 overflow-y-auto lg:order-none lg:w-[clamp(16rem,28%,22.5rem)] lg:shrink-0">
         <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e
@@ -1633,8 +1721,8 @@ defineExpose({
             <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
-                  <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
-                  <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
+                  <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.name">{{ line.name }}</span>
                   <span
                     v-if="line.listDisplay"
                     class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
@@ -1891,6 +1979,7 @@ defineExpose({
     :delivery-fee-override-input="deliveryFeeOverrideInput"
     :delivery-fee-q="deliveryFeeQ"
     :delivery-fee-source="deliveryFeeSource"
+    :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
@@ -2018,7 +2107,7 @@ defineExpose({
       <UiDialogHeader>
         <UiDialogTitle>Dividir conta</UiDialogTitle>
         <UiDialogDescription>
-          Em quantas pessoas — digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
+          Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
         </UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
@@ -2058,7 +2147,7 @@ defineExpose({
             <OperatorKbd aria-hidden="true">1</OperatorKbd>
           </UiButton>
           <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
-            As partes já lançadas continuam na conta — remova cada linha de pagamento se quiser recomeçar.
+            As partes já lançadas continuam na conta. Para recomeçar, remova cada linha de pagamento.
           </p>
         </template>
       </UiDialogFooter>
@@ -2108,7 +2197,7 @@ defineExpose({
           <p v-if="review" class="text-center text-sm text-muted-foreground">
             Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
           </p>
-          <UiButton class="w-full" @click="discountSheetOpen = false">Concluir</UiButton>
+          <UiButton class="w-full" @click="discountSheetOpen = false">Voltar ao pagamento</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

@@ -172,6 +172,10 @@ def _publish_surface_changed(surface_ref: str) -> None:
         return
     try:
         send_event(f"stock-{surface_ref}", "listing-changed", {"surface_ref": surface_ref})
+        # A TV (menuboard) assina ``stock-catalog``, não ``stock-{ref}``: sem este
+        # segundo envio, ligar/desligar, trocar coleções ou rotação só chegava ao
+        # quadro no poll de 30 s. O quadro filtra nada — relê o próprio estado.
+        send_event("stock-catalog", "listing-changed", {"surface_ref": surface_ref})
     except Exception:
         logger.warning("SSE surface emit failed ref=%s", surface_ref, exc_info=True)
 
@@ -333,6 +337,39 @@ def emit_courier_update(order, payload: dict) -> None:
         "orders",
         "backstage-orders-update",
         {**body, "status": order.status},
+        scope=_scope_for_order(order),
+    )
+
+
+def emit_fiscal_update(order) -> None:
+    """A NFC-e do pedido mudou (autorizou): o quadro do Gestor relê.
+
+    Sem este sinal o card só descobria a nota no poll de 30 s — e a DANFE da
+    entrega, que sai sozinha quando a autorização chega
+    (``backstage/services/order_danfe.py``), saía depois de a sacola ir embora.
+    """
+    if _is_pos_counter_order(order):
+        return
+    _emit_backstage(
+        "orders",
+        "backstage-orders-update",
+        {"ref": order.ref, "status": order.status, "kind": "fiscal_changed"},
+        scope=_scope_for_order(order),
+    )
+
+
+def emit_danfe_update(order) -> None:
+    """A impressão da DANFE da entrega mudou (enviada, saiu, não saiu): o quadro relê.
+
+    Quem imprime é o relay do servidor (``backstage/services/order_danfe.py``);
+    o card acompanha pelo mesmo canal dos pedidos, sem esperar o poll.
+    """
+    if _is_pos_counter_order(order):
+        return
+    _emit_backstage(
+        "orders",
+        "backstage-orders-update",
+        {"ref": order.ref, "status": order.status, "kind": "danfe_changed"},
         scope=_scope_for_order(order),
     )
 

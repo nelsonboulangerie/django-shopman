@@ -131,7 +131,13 @@ export function useOrderDetail(orderRef: string) {
       ...(equipmentBack ? { equipment_back: true } : {}),
       ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
-  const requeueFiscal = () => act("requeue-fiscal");
+  // A nota volta para a emissão; o alerta de NFC-e não autorizada fecha no
+  // servidor. O resultado chega pelo SSE do pedido (autorizada ou recusada).
+  async function requeueFiscal(): Promise<boolean> {
+    const ok = await act("requeue-fiscal");
+    if (ok) useSonner.success("NFC-e enviada de novo. O pedido mostra quando ela for autorizada.");
+    return ok;
+  }
 
   // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
   // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
@@ -167,13 +173,13 @@ export function useOrderDetail(orderRef: string) {
   // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
   async function courierDispatch(): Promise<boolean> {
     const ok = await act("courier-dispatch");
-    if (ok) useSonner.success("Solicitação de entregador enfileirada.");
+    if (ok) useSonner.success("Pedido de entregador enviado à central.");
     return ok;
   }
 
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
-    if (ok) useSonner.success("Solicitação de cancelamento enfileirada; aguardando a central.");
+    if (ok) useSonner.success("Cancelamento da corrida pedido. Falta a central confirmar.");
     return ok;
   }
 

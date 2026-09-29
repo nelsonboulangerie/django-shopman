@@ -149,7 +149,7 @@ def _detect_missed_batch(day: date) -> list:
         detector="missed_batch",
         started_at=window[0],
         ended_at=window[1],
-        signal=f"fornada planejada não saiu: {names}",
+        signal=f"lote planejado não saiu: {names}",
     )
     return [episode] if episode else []
 

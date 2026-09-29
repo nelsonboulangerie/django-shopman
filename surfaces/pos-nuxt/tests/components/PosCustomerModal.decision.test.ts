@@ -166,7 +166,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
   // "atender Bruno" e "manter Ana" resolvem quando são duas pessoas.
   it("o conflito oferece UNIFICAR quando os dois são a mesma pessoa", async () => {
     const wrapper = await mount({ customerDecision: CONFLICT });
-    const unificar = buttonByText("É a mesma pessoa — unificar cadastros");
+    const unificar = buttonByText("É a mesma pessoa: unificar cadastros");
     expect(unificar).toBeTruthy();
 
     unificar!.click();
@@ -176,7 +176,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
   it("a unificação em voo não dispara duas vezes", async () => {
     await mount({ customerDecision: CONFLICT, customerMergeBusy: true });
-    expect(buttonByText("É a mesma pessoa — unificar cadastros")!.disabled).toBe(true);
+    expect(buttonByText("É a mesma pessoa: unificar cadastros")!.disabled).toBe(true);
   });
 
   // ⚠️ O dono está DESATIVADO: não aparece na busca do operador, e o Core
@@ -188,7 +188,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
     expect(text).toContain("Este WhatsApp está preso num cadastro desativado");
     expect(text).toContain("Cadastro Antigo");
-    expect(buttonByText("É a mesma pessoa — unificar cadastros")).toBeFalsy();
+    expect(buttonByText("É a mesma pessoa: unificar cadastros")).toBeFalsy();
 
     // UM botão de liberar, não dois: o rótulo vinha no `confirmLabel` e no
     // campo `release`, e sobrava um caminho morto na estrutura da decisão.

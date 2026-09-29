@@ -315,7 +315,7 @@ class AnnouncementTemplate(models.Model):
 | `{{hashtags}}` | `metadata["social"]["hashtags"]` | "#croissant #fresquinho" |
 | `{{link}}` | Deep link storefront | `https://nelson.boulangerie/produto/croissant-tradicional` |
 | `{{available_qty}}` | `Quant.available` — quantas há AGORA | "5" |
-| `{{availability_phrase}}` | frase pronta do backend; usa `available_qty` quando confiável e fallback neutro quando não há contagem | "Neste momento ainda temos 5 unidades." |
+| `{{availability_phrase}}` | frase pronta do backend; usa `available_qty` quando confiável e fallback neutro quando não há contagem | "No momento temos 5 un. disponíveis." |
 | `{{customer_name}}` | primeiro nome de quem recebe | "Pablo" |
 | `{{product_sku}}` | `sku`, sufixo que o botão gruda no fim do link | "BAGUETE" |
 | `{{product_image_url}}` | foto do produto, **absoluta** (a Meta busca do lado dela) | `https://…/bf.jpg` |

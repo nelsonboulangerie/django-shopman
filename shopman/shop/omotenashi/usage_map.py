@@ -57,9 +57,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CART_EMPTY": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
-    "CART_MADE_TO_ORDER": (
-        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
-    ),
     "CART_UNAVAILABLE_BANNER": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
@@ -135,6 +132,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),
     "DEVICE_LIST_EMPTY": (
+        ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
+    ),
+    "DEVICE_LIST_LAST_USED_PREFIX": (
+        ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
+    ),
+    "DEVICE_LIST_NEAR_PREFIX": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),
     "DEVICE_LIST_REGISTERED_PREFIX": (
@@ -335,9 +338,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "LOGIN_NAME_SUBTITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "LOGIN_NO_PASSWORD_NOTE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
     "LOGIN_PHONE_CTA_SMS": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
@@ -365,16 +365,19 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "LOGIN_WA_CART_KEPT": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "LOGIN_WA_GLIMPSE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "LOGIN_WA_GLIMPSE_WITH_CART": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
     "LOGIN_WA_MANUAL_INTRO": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_MANUAL_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_STEPS": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_WAITING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_WHY": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGOUT_FAREWELL": (
@@ -464,6 +467,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PRODUCT_CROSS_SELL_HEADING": (
         ("shopman/storefront/presentation/product_detail.py", "Loja", "Página do produto"),
     ),
+    "PRODUCT_MADE_TO_ORDER": (
+        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
+        ("shopman/storefront/presentation/product_detail.py", "Loja", "Página do produto"),
+    ),
     "PROFILE_BIRTHDAY_FIELD": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),
@@ -506,19 +513,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PWA_INSTALL_TITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "PWA_IOS_ADD_STEP": (
+    "PWA_MANUAL_DONE_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
-    "PWA_IOS_DONE_CTA": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_MESSAGE": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_SHARE_STEP": (
-        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
-    ),
-    "PWA_IOS_TITLE": (
+    "PWA_MANUAL_TITLE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "PWA_OFFLINE_MESSAGE": (

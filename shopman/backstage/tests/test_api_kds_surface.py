@@ -34,7 +34,7 @@ def kds_operator(db):
 @pytest.fixture
 def kds_setup(db):
     prep = KDSInstance.objects.create(ref="prep-api", name="Preparo API", type="prep", target_time_minutes=10)
-    expedition = KDSInstance.objects.create(ref="exp-api", name="Expedição API", type="expedition")
+    expedition = KDSInstance.objects.create(ref="exp-api", name="Saída API", type="expedition")
     order = Order.objects.create(
         ref="KDS-API-1",
         channel_ref="web",
@@ -111,6 +111,24 @@ def test_board_rejects_invalid_or_past_service_date(client, kds_operator, kds_se
     url = reverse("api-backstage-kds-board", args=[prep.ref])
     assert client.get(url, {"date": "amanha"}).status_code == 400
     assert client.get(url, {"date": "2000-01-01"}).status_code == 400
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("state", ["unknown", "inactive"])
+def test_board_of_a_station_that_no_longer_exists_is_404(client, kds_operator, kds_setup, state):
+    """SHOPMAN-7: depois do reseed o kiosk seguia pedindo /kds/lanches/ e levava 500."""
+    prep = kds_setup[0]
+    ref = "lanches"
+    if state == "inactive":
+        prep.is_active = False
+        prep.save(update_fields=["is_active"])
+        ref = prep.ref
+    client.force_login(kds_operator)
+
+    response = client.get(reverse("api-backstage-kds-board", args=[ref]))
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."}
 
 
 # ── Write actions ──────────────────────────────────────────────────────────

@@ -51,8 +51,8 @@ async function goToCashSession() {
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
-      <h1 class="min-w-0 truncate text-lg font-semibold">Relatório de caixa</h1>
-      <span v-if="report" class="ml-auto truncate text-sm text-muted-foreground">
+      <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Relatório de caixa</h1>
+      <span v-if="report" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
         {{ report.date_display }} · leituras X/Z do dia
       </span>
       <UiButton
@@ -75,7 +75,7 @@ async function goToCashSession() {
           <h2 class="text-base font-semibold">Relatório é de quem audita</h2>
         </div>
         <p class="text-sm text-muted-foreground">
-          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita — quem vê a
+          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a
           apuração é a gestão.
         </p>
         <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>

@@ -1,5 +1,8 @@
 """
-Mutações dos canais de EXIBIÇÃO para o Gestor — ligar/pausar + escolher coleções.
+Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação e pausa por item.
+
+Ligar/desligar o canal (de venda OU de exibição) é o toggle "Ativo", que mora em
+``shopman.shop.services.channel_switch``.
 
 Escreve no ``Channel`` de ``commerce_policy="display"`` (as coleções e a pausa local
 vivem no aspecto ``config.display``, sem migração — é o padrão de extensibilidade do
@@ -53,13 +56,15 @@ class FeedConflict(CatalogError):
 
 
 def revision(channel, field: str) -> str:
+    from shopman.shop.services.menuboard_schedule import automatic_settings
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     display = _display(channel)
+    automatic_enabled, idle_messages = automatic_settings(channel)
     values = {
-        "active": channel.is_active,
         "collections": display.get("collections") or [],
         "rotation": [display.get("rotate_seconds", 0), display.get("items_per_page", 0)],
+        "automatic": [automatic_enabled, idle_messages],
     }
     return mutation_fingerprint({"version": 1, "ref": channel.ref, "policy": channel.commerce_policy,
         "format": display.get("format") or "", "field": field, "value": values[field]})
@@ -68,16 +73,6 @@ def revision(channel, field: str) -> str:
 def _check_revision(channel, field: str, expected_revision):
     if expected_revision is not None and revision(channel, field) != expected_revision:
         raise FeedConflict("Este campo mudou. Seu rascunho foi preservado; confira o valor atual antes de salvar.")
-
-
-@transaction.atomic
-def set_active(ref: str, is_active: bool, *, expected_revision=None) -> None:
-    sc = _display_channel(ref)
-    _check_revision(sc, "active", expected_revision)
-    if sc.is_active != is_active:
-        sc.is_active = is_active
-        sc.save(update_fields=["is_active"])
-        _notify(ref)
 
 
 @transaction.atomic
@@ -141,6 +136,36 @@ def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int, expected
     ):
         display["rotate_seconds"] = rotate_seconds
         display["items_per_page"] = items_per_page
+        _save_display(sc, display)
+        _notify(ref)
+
+
+@transaction.atomic
+def set_automatic(ref: str, *, enabled: bool, idle_messages: list[str], expected_revision=None) -> None:
+    """Liga/desliga a janela automática e configura até duas frases do descanso."""
+    from shopman.shop.services.menuboard_schedule import MAX_IDLE_MESSAGE_LENGTH, normalize_idle_messages
+
+    if not isinstance(enabled, bool):
+        raise CatalogError("enabled deve ser verdadeiro ou falso.")
+    if (
+        not isinstance(idle_messages, list)
+        or not 1 <= len(idle_messages) <= 2
+        or not all(isinstance(value, str) for value in idle_messages)
+    ):
+        raise CatalogError("Informe uma ou duas mensagens de descanso.")
+    messages = normalize_idle_messages(idle_messages)
+    if any(len(message) > MAX_IDLE_MESSAGE_LENGTH for message in messages):
+        raise CatalogError(f"Cada mensagem de descanso deve ter até {MAX_IDLE_MESSAGE_LENGTH} caracteres.")
+
+    sc = _display_channel(ref)
+    _check_revision(sc, "automatic", expected_revision)
+    display = _display(sc)
+    if display.get("format"):
+        raise CatalogError(f"'{ref}' é um feed de plataforma — modo automático existe apenas no menuboard.")
+
+    value = {"enabled": enabled, "idle_messages": list(messages)}
+    if display.get("automatic") != value:
+        display["automatic"] = value
         _save_display(sc, display)
         _notify(ref)
 

@@ -33,6 +33,8 @@ export interface ClosingPendingProduction {
   status: string;
   status_label: string;
   quantity: string;
+  /** ISO "2026-04-16" — a data que o link para a Produção precisa. */
+  target_date: string;
   target_date_display: string;
   is_overdue: boolean;
 }

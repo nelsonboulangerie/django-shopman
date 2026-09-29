@@ -49,7 +49,7 @@ class TestRecipeItemUnitValidation:
     def test_clean_accepts_the_base_unit_spelling_of_the_material(self, recipe):
         # A unidade-base do Material é "l" (minúscula); a ficha guarda "L".
         # É esta linha que faz as duas se reconhecerem.
-        item = RecipeItem(recipe=recipe, input_sku="LEITE", quantity=Decimal("1"), unit="l")
+        item = RecipeItem(recipe=recipe, input_sku="LEITE-INTEGRAL-A", quantity=Decimal("1"), unit="l")
         item.clean()
         assert item.unit == "L"
 

@@ -166,6 +166,39 @@ def test_example_on_request_or_tax_id():
     assert r(_order(fiscal={}, customer={})) is False
 
 
+def test_on_request_or_tax_id_treats_paper_and_email_like_the_cpf():
+    """"Impressa?" e "Por e-mail?" pedem a nota como "CPF na nota?" pede.
+
+    O pedido de comprovante vivia só no ``on_requested_receipt`` avulso: numa
+    env que carregasse a base (``on_request_or_tax_id``) sem ele, o CPF emitia
+    e o papel e o e-mail não — a mesma pergunta respondida de dois jeitos. Agora
+    a base lê as três portas.
+    """
+    r = fiscal_resolvers.on_request_or_tax_id
+    assert r(_order(receipt={"channels": ["print"]})) is True
+    assert r(_order(receipt={"channels": ["email"]})) is True
+    assert r(_order(receipt={"channels": ["print", "email"]})) is True
+    assert r(_order(receipt={"channels": []})) is False
+    # Endereço gravado sem canal pedido não é pedido de nada.
+    assert r(_order(receipt={"email": "cliente@example.org"})) is False
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id")
+def test_base_resolver_alone_emits_for_paper_and_email():
+    assert emission_resolver(_order(receipt={"channels": ["print"]})) is True
+    assert emission_resolver(_order(receipt={"channels": ["email"]})) is True
+    assert emission_resolver(_order(fiscal={"tax_id": "12345678909"})) is True
+    assert emission_resolver(_order()) is False
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER="")
+def test_fallback_without_resolver_honors_every_request_of_the_counter():
+    assert emission_resolver(_order(receipt={"channels": ["print"]})) is True
+    assert emission_resolver(_order(receipt={"channels": ["email"]})) is True
+    assert emission_resolver(_order(fiscal={"tax_id": "12345678909"})) is True
+    assert emission_resolver(_order()) is False
+
+
 def test_example_on_requested_receipt():
     # Pedir o documento É pedir a nota, em QUALQUER canal: não existe DANFE nem
     # XML sem NFC-e autorizada.

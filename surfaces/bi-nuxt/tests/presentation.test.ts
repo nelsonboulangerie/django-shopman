@@ -106,8 +106,8 @@ describe("presentation/bi", () => {
   });
 
   it("cobertura sempre carrega o denominador", () => {
-    expect(coverageLabel(3, 12)).toBe("3 de 12 fornadas medidas");
-    expect(coverageLabel(0, 0)).toBe("Sem fornadas no período");
+    expect(coverageLabel(3, 12)).toBe("3 de 12 lotes medidos");
+    expect(coverageLabel(0, 0)).toBe("Sem lotes no período");
   });
 
   it("delta honesto: sem base vira travessão; tom segue melhorou/piorou", () => {

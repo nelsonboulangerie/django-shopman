@@ -38,6 +38,7 @@ def _api_key(settings):
     base = dict(getattr(settings, "DOORMAN", {}) or {})
     base["ACCESS_LINK_API_KEY"] = KEY
     settings.DOORMAN = base
+    settings.SHOPMAN_WA_VERIFY = {"number": "554333231997"}
 
 
 def _post(payload):

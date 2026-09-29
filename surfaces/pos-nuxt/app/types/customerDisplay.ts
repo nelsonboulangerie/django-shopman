@@ -12,6 +12,8 @@ export type CustomerDisplayPhase = "idle" | "sale" | "payment" | "result";
 export interface CustomerDisplayItem {
   name: string;
   qty: number;
+  /** "2×" ou "0,312 kg" (peça pesada). */
+  qtyLabel?: string;
   unitDisplay: string;
   /** Total da linha JÁ com o desconto da linha aplicado (estimativa local). */
   totalDisplay: string;

@@ -22,13 +22,13 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "Django>=6.0,<6.1",
+    "Django>=6.1,<6.2",
     "phonenumbers>=8.13",
 ]
 
 [project.optional-dependencies]
 unfold = [
-    "django-unfold>=0.92,<0.93",
+    "django-unfold>=0.107,<0.108",
 ]
 dev = [
     "pytest",

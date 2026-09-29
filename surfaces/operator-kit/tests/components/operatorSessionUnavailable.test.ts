@@ -20,7 +20,7 @@ describe("OperatorSessionUnavailable", () => {
   it("oferece tentar de novo, e avisa quem a montou", async () => {
     const page = await mountSuspended(OperatorSessionUnavailable);
 
-    const botao = page.findAll("button").find(b => b.text().includes("Tentar novamente"));
+    const botao = page.findAll("button").find(b => b.text().includes("Tentar de novo"));
     expect(botao).toBeDefined();
     await botao!.trigger("click");
     expect(page.emitted("retry")).toHaveLength(1);

@@ -30,8 +30,12 @@ Payload shape (canonical)
             "phone": "",
         },
         "delivery": {
-            "type": "DELIVERY",        # DELIVERY | TAKEOUT
-            "address": "Rua X, 123",   # free-text
+            "type": "DELIVERY",          # DELIVERY | TAKEOUT
+            "address": "Rua X, 123",     # free-text
+            "complement": "Apto 42",     # optional — apartment/block/back door
+            "reference": "portão azul",  # optional — landmark the customer typed
+            "postal_code": "86020-000",  # optional
+            "delivered_by": "MERCHANT",  # optional — MERCHANT | IFOOD
         },
         "items": [
             {
@@ -50,6 +54,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -100,7 +105,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             f"Canal iFood '{channel_ref}' não encontrado. Rode o seed ou crie o canal no admin.",
         ) from e
 
-    items = _normalize_items(payload["items"])
+    items = normalize_items(payload["items"])
     items_subtotal_q = sum(int(item["line_total_q"]) for item in items)
     # Marketplace orders are pre-priced by iFood: the authoritative total is the
     # grand total (orderAmount = subtotal + delivery fee + service fees − benefits).
@@ -109,19 +114,22 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
     total_q = order_amount_q or items_subtotal_q
 
     order_code = payload["order_code"]
+    delivery = payload.get("delivery") or {}
+    fulfillment_type = _fulfillment_type(payload)
 
     order_data = {
         "origin_channel": channel_ref,
         "external_order_code": order_code,
         "merchant_id": payload.get("merchant_id", ""),
         "customer": payload.get("customer") or {},
-        "delivery_address": (payload.get("delivery") or {}).get("address", ""),
-        "fulfillment_type": _fulfillment_type(payload),
+        "delivery_address": delivery.get("address", ""),
+        "fulfillment_type": fulfillment_type,
         "order_notes": payload.get("notes", ""),
         "payment": {
             "method": "external",
             "gateway": "ifood",
             "status": payment_status_from_payload(payload.get("payments") or {}, total_q),
+            **_collection_on_delivery(payload, delivery, fulfillment_type),
         },
         "ifood": {
             "order_code": order_code,
@@ -134,10 +142,14 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
             "benefits": payload.get("benefits") or [],
-            "delivered_by": (payload.get("delivery") or {}).get("delivered_by", ""),
-            "pickup_code": (payload.get("delivery") or {}).get("pickup_code", ""),
+            "delivered_by": delivery.get("delivered_by", ""),
+            "pickup_code": delivery.get("pickup_code", ""),
         },
     }
+
+    structured = _delivery_address_structured(delivery)
+    if structured:
+        order_data["delivery_address_structured"] = structured
 
     # iFood's optional customer.documentNumber is supplied for this order's
     # tax document, unlike a document fetched from our CRM. Bridge it to the
@@ -156,9 +168,24 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         if delivery_date is not None:
             order_data["delivery_date"] = delivery_date.isoformat()
 
+    # Prazo do marketplace, gravado no pedido em vez de recalculado: é fato da
+    # ingestão (quando ELE nasceu lá, com o SLA que valia então), não config de hoje.
+    confirm_by = _external_confirm_deadline(channel_ref, payload.get("created_at"))
+    if confirm_by:
+        order_data["ifood"]["confirm_by"] = confirm_by
+
+    # O pedido já tem um número no iFood, e é esse que o cliente, o portal e o suporte
+    # falam. Adotá-lo como sufixo do ref (IFOOD-260919-4994) evita a tradução que o
+    # operador tinha de fazer de cabeça; ocupado ou ausente, cai no sorteio de sempre.
+    display_id = str(payload.get("display_id") or "").strip()
+    ref = generate_order_ref(channel_ref=channel_ref, preferred_suffix=display_id)
+    order_data["ifood"]["ref_from_display_id"] = bool(
+        display_id and ref.endswith(f"-{display_id.upper()}")
+    )
+
     with transaction.atomic():
         order = Order.objects.create(
-            ref=generate_order_ref(channel_ref=channel_ref),
+            ref=ref,
             channel_ref=channel_ref,
             session_key=session_key_for_order(payload.get("merchant_id", ""), order_code),
             external_ref=order_code,
@@ -213,6 +240,30 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
 # ── helpers ───────────────────────────────────────────────────────────
 
 
+def _external_confirm_deadline(channel_ref: str, created_at) -> str:
+    """Quando o MARKETPLACE cancela o pedido se ninguém confirmar (ISO), ou "".
+
+    Lido do canal (``confirmation.external_sla_minutes``) e contado a partir do
+    ``createdAt`` do iFood, não da nossa ingestão: o relógio deles já estava correndo
+    antes de o evento chegar no polling.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
+    except Exception:  # canal ausente ou config inválida não impede ingerir o pedido
+        logger.warning("ifood_ingest: SLA externo indisponível para %s — card fica sem contagem", channel_ref)
+        return ""
+    if minutes <= 0 or not created_at:
+        return ""
+    placed = parse_datetime(str(created_at))
+    if placed is None:
+        return ""
+    return (placed + timedelta(minutes=minutes)).isoformat()
+
+
 def payment_status_from_payload(payments: dict, total_q: int) -> str:
     """Report iFood's settlement evidence without initiating a local charge.
 
@@ -234,6 +285,114 @@ def payment_status_from_payload(payments: dict, total_q: int) -> str:
     return "unknown"
 
 
+def _delivery_address_structured(delivery: dict) -> dict:
+    """O que o entregador precisa e o endereço formatado não carrega.
+
+    O ``formattedAddress`` do iFood é rua, número e bairro. O complemento
+    (apto, bloco, fundos), o ponto de referência que o cliente digitou e o CEP
+    vêm em campos SEPARADOS — e eram descartados aqui, embora o mapper já os
+    trouxesse. O entregador saía sem saber em que andar tocar.
+
+    Grava na chave que as duas superfícies de despacho JÁ leem:
+    ``delivery_address_structured``, a mesma do checkout da loja
+    (``backstage.projections.order_queue._delivery_address`` e
+    ``backstage.services.receipt_escpos._delivery_lines``). O ponto de
+    referência entra como ``delivery_instructions`` porque é ele que as duas
+    imprimem sob "Referência:".
+
+    O endereço formatado NÃO é repetido aqui: ele já é ``delivery_address``, e
+    dois donos do mesmo texto é divergência esperando acontecer.
+
+    Os COMPONENTES (logradouro, número, bairro, município, UF) entram pelo
+    vocabulário canônico da casa — o mesmo que o checkout da loja grava e que o
+    adapter fiscal lê. Não é repetir o texto formatado com outro nome: o
+    destinatário da NFC-e de entrega a domicílio é montado de componente, e sem
+    eles o pedido iFood de entrega era recusado antes do HTTP, por "confira
+    logradouro, número, bairro, município, UF" — ou seja, não emitia nota
+    nenhuma. Quem imprime a comanda continua lendo ``delivery_address`` e o
+    complemento, e não vê diferença.
+    """
+    fields = {
+        "complement": delivery.get("complement", ""),
+        "delivery_instructions": delivery.get("reference", ""),
+        "postal_code": delivery.get("postal_code", ""),
+        "route": delivery.get("street", ""),
+        "street_number": delivery.get("number", ""),
+        "neighborhood": delivery.get("neighborhood", ""),
+        "city": delivery.get("city", ""),
+        "state_code": delivery.get("state", ""),
+    }
+    return {key: str(value).strip() for key, value in fields.items() if str(value or "").strip()}
+
+
+#: Formas de pagamento do iFood → refs da casa. Só as que a casa sabe NOMEAR em
+#: português na tela e no papel: fora daqui, a comanda imprimiria o vocabulário
+#: cru do marketplace ("meal_voucher") num papel de balcão.
+_IFOOD_PAYMENT_METHOD_REFS = {
+    "CASH": "cash",
+    "CREDIT": "credit",
+    "DEBIT": "debit",
+    "PIX": "pix",
+}
+
+
+def _collection_on_delivery(payload: dict, delivery: dict, fulfillment_type: str) -> dict:
+    """Marca de "o dinheiro entra na porta" para o pedido iFood com saldo em aberto.
+
+    O ingest já distinguia pagamento pendente (``payment_status_from_payload``),
+    mas ninguém dizia ONDE ele seria recebido — e ``collection`` é justamente a
+    marca canônica que o Gestor e a comanda leem para oferecer o acerto, imprimir
+    "COBRAR NA ENTREGA" e o troco (``docs/reference/data-schemas.md``). Sem ela a
+    filipeta saía só com "PAGAMENTO PENDENTE": sem valor a cobrar e sem troco.
+
+    Três portas, todas fechando por falta de prova, nunca por suposição:
+
+    1. **Só entrega.** Na retirada o dinheiro entra no balcão, e a marca de
+       balcão (``terminal``) significa *já recebido* — que não é o caso.
+    2. **Só quando o iFood diz que a LOJA entrega.** Com entregador do iFood
+       quem recebe é o iFood, e o repasse vem no acerto deles; carimbar
+       ``on_delivery`` ali mandaria a casa cobrar de novo e abriria acerto de
+       dinheiro que nunca passou pela gaveta. ``delivered_by`` ausente é
+       desconhecido, e desconhecido não autoriza cobrança.
+    3. **Só com a forma de pagamento nomeada.** Um valor em aberto sem método
+       reconhecido continua saindo como "PAGAMENTO PENDENTE" — o Gestor já
+       detalha o caso em ``backstage.projections.ifood.payment_summary``.
+    """
+    if fulfillment_type != "delivery":
+        return {}
+    if str(delivery.get("delivered_by") or "").upper() != "MERCHANT":
+        return {}
+
+    tenders: list[dict] = []
+    change_for_q = 0
+    for method in (payload.get("payments") or {}).get("methods") or []:
+        if not isinstance(method, dict):
+            continue
+        amount_q = int(method.get("value_q") or 0)
+        # ``prepaid is None`` é ausência de informação (o iFood não mandou a
+        # flag): não é prova de que falta receber.
+        if amount_q <= 0 or method.get("prepaid") is not False:
+            continue
+        ref = _IFOOD_PAYMENT_METHOD_REFS.get(str(method.get("method") or "").upper())
+        if ref is None:
+            return {}
+        tenders.append({
+            "method": ref,
+            "amount_q": amount_q,
+            "collection": "on_delivery",
+            "status": "pending",
+        })
+        if ref == "cash":
+            change_for_q = max(change_for_q, int(method.get("change_for_q") or 0))
+
+    if not tenders:
+        return {}
+    collection = {"collection": "on_delivery", "tenders": tenders}
+    if change_for_q:
+        collection["change_for_q"] = change_for_q
+    return collection
+
+
 def _validate_payload(payload: dict) -> None:
     if not isinstance(payload, dict):
         raise IFoodIngestError("invalid_payload", "Payload deve ser um dict")
@@ -244,8 +403,14 @@ def _validate_payload(payload: dict) -> None:
         raise IFoodIngestError("missing_items", "items (lista não vazia) é obrigatório")
 
 
-def _normalize_items(raw_items: list[dict]) -> list[dict]:
-    """Ensure every item has line_id / line_total_q computed."""
+def normalize_items(raw_items: list[dict]) -> list[dict]:
+    """Ensure every item has line_id / line_total_q computed.
+
+    Público porque a reconciliação de um pedido ALTERADO
+    (``ifood_events._process_patch``) relê o pedido inteiro e precisa da mesma
+    normalização que a ingestão usou — duas normalizações do mesmo payload
+    seriam duas verdades sobre o mesmo pedido.
+    """
     normalized: list[dict] = []
     for idx, raw in enumerate(raw_items, start=1):
         if not raw.get("sku"):
@@ -273,4 +438,4 @@ def _fulfillment_type(payload: dict) -> str:
     return "delivery" if kind == "DELIVERY" else "pickup"
 
 
-__all__ = ["ingest", "IFoodIngestError", "IFOOD_CHANNEL_REF"]
+__all__ = ["ingest", "normalize_items", "IFoodIngestError", "IFOOD_CHANNEL_REF"]

@@ -109,8 +109,8 @@ export function delta(
 
 /** Cobertura da medição de forno, sempre com o denominador à vista. */
 export function coverageLabel(measured: number, finished: number): string {
-  if (!finished) return "Sem fornadas no período";
-  return `${formatInt(measured)} de ${formatInt(finished)} fornadas medidas`;
+  if (!finished) return "Sem lotes no período";
+  return `${formatInt(measured)} de ${formatInt(finished)} lotes medidos`;
 }
 
 // ── Janela de análise ────────────────────────────────────────────────────────

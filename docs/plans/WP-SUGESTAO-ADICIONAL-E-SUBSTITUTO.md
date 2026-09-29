@@ -197,6 +197,156 @@ já tem como relógio. Quem sabe quanto custa o cálculo é o comando.
 **`reasons` não vai para o cliente.** Fica na projection do `shop`, para o Admin
 explicar e o B.I. medir. Na tela de quem compra, é só um convite.
 
+## Adicional é complemento, não substituto (23/09/2026)
+
+O dono pôs 2 Croque Madame na sacola e recebeu "Que tal adicionar? Croque
+Monsieur". Três portas do motor, todas em `shop/projections/suggestions.py`:
+
+1. **Nada excluía o mesmo papel.** Os três croques moram em `salgados` e têm
+   os mesmos atributos (comida/salgado/quente). Agora a **coleção primária
+   igual** à de um item da sacola é portão (definição de complemento, não
+   configurável), e `distinct_from_cart` (default `["natureza", "sabor"]`) é
+   portão configurável: mesmos valores em todos = mesmo papel. Atributo em
+   branco nunca exclui.
+2. **Afinidade sem teto passava por cima do pareamento.** Quem pede um croque
+   para a mesa pede o outro: lift alto, `3×(lift−1)` contra `comida → bebida`
+   peso 3. Agora **o pareamento vem primeiro na ordem**; a afinidade ordena
+   dentro dele e só fala sozinha quando nenhum pareamento casa.
+3. **O pareamento não via a bebida.** A fila do pareamento só ganhava a vaga
+   que a afinidade deixasse, em ordem alfabética de SKU. Agora ela é o
+   catálogo que de fato casa algum pareamento, por peso. E preço deixou de ser
+   motivo sozinho ("mais barato" fazia de qualquer item uma sugestão).
+
+Default novo, a confirmar com o dono: `natureza=bebida → sabor=doce` (peso 2),
+o espelho de "doce pede café". Migração `0069` troca a regra no ar só se ela
+ainda é a da `0030`; se o gestor mexeu, só acrescenta o portão.
+
+## Os critérios do dono, e o estresse que os mede (23/09/2026, 2ª rodada)
+
+Palavras dele: "a primeira frente de sugestão de complemento deve ser bebida
+com comida e comida com bebida"; bebida quente + doce e bebida gelada + salgado
+"são preferenciais, mas não devem excluir cruzamentos diferentes"; "bebida com
+bebida acho que não"; "se já tem salgado e já tem bebida, oferece um doce,
+claro!"; "um sistema bastante útil e inteligente, não algo desumano ou
+engessado".
+
+| Sacola | Frente (peso 3) | Preferência (soma) |
+|---|---|---|
+| só comida | bebida | salgado → gelada (+2) · doce → quente (+2) · temperatura ambiente (pão, folhado, doce) → quente (+1) |
+| só bebida | comida | quente → doce (+2) · gelada → salgado (+2) |
+| salgado + bebida | doce (3, +1 genérico, +1 "salgado pede doce") | — |
+| comida + bebida | doce (+1) | pão → acompanhamento (+2) |
+| doce + bebida, sem salgado | pão para levar (`sabor=neutro` + `tag: pao`, +1) | **pergunta aberta** |
+| salgado + doce + bebida | nada (a mesa está completa) | — |
+| sem bebida disponível | salgado → doce (+1) | — |
+
+Portões novos: `one_per_cart: [natureza=bebida]` (bebida com bebida, não) e
+**qualquer coleção em comum**, não só a primária (o Pain au Chocolat é Folhados
+e também Doces). Esquema novo: `when` aceita lista (a sacola tem cada uma),
+`when_absent` (a sacola não tem nenhuma), `suggest` aceita lista (o candidato
+é tudo isso). O histórico e o preço **desempatam**: somam no máximo 0,9, abaixo
+do menor degrau entre pesos, então nunca invertem uma preferência.
+
+Saíram: `quente → gelado` (era bebida com bebida) e `doce → tag: café` (a
+palavra-chave do seed é `cafe`, sem acento: o pareamento nunca casou).
+
+`propose_product_attributes`: a coleção secundária responde o **sabor** que a
+primária deixa em branco, quando as secundárias concordam (Pain au Chocolat →
+doce). Natureza e temperatura continuam da primária.
+
+**O estresse** (`shop/tests/test_suggestion_stress.py`): 396 sacolas geradas
+sobre um recorte fiel do seed (32 SKUs, coleções e palavras-chave do
+`seed.py`, atributos pelo próprio `propose_product_attributes`), histórico de
+mesa adversário, casos-limite (tudo esgotado, sem gelada, sem bebida alguma,
+sacola com tudo) e uma nota de atendente por sacola, dada por uma rubrica que
+não lê os atributos do motor (3 ideal · 2 aceitável · 1 estranho · 0 absurdo).
+
+| | 3 | 2 | 1 | 0 | média |
+|---|---|---|---|---|---|
+| antes (`main` com #1029) | 84 | 72 | 0 | 240 | 1,00 |
+| depois, cardápio como está no seed | 287 | 80 | 11 | 18 | 2,61 |
+| depois, Brioche Chocolat curado (`sabor=doce`) | 303 | 93 | 0 | 0 | 2,77 |
+
+Os 29 que sobram (11 com nota 1, 18 com nota 0) são **todos** com o Brioche
+Chocolat: ele mora só em Macios (vira `sabor=neutro`, como o pão de forma), sem
+palavra-chave, enquanto os irmãos recheados (Pain aux Raisins, Pain au Chocolat)
+também estão em Doces. É lacuna de dado, não de peso: com o sabor curado, zero.
+Os 2 que ficam são os cruzamentos quando a preferida está esgotada (o
+"não exclui" dele), a mercearia sozinha e o doce + bebida, que é a pergunta
+aberta.
+
+## Doce + bebida pede salgado, e os pães doces entram em Doces (24/09/2026)
+
+Respostas do dono às três perguntas da rodada anterior:
+
+1. **"Brioche Chocolat é Doce sim. E tem mais opções que provavelmente deveriam
+   estar em doces."** Entraram em Doces como coleção ADICIONAL (Macios continua
+   a casa deles), no `seed.py` e no alpha: Brioche Chocolat, Cornet de
+   Chocolate, Coelhinho de Chocolate, Ursinho e Porquinho. Ficaram de fora por
+   dúvida: Cornet (recheio do dia), Melonpan e Kuro Pan ("levemente doce").
+   Pain Perdu, Maçã e Bichon au Citron já estavam lá.
+2. `propose_product_attributes`: "neutro" é o palpite mais fraco (pão macio não
+   é doce nem salgado), e uma secundária que concorda em doce ou salgado o
+   vence. Rodado no alpha em 24/09: **0 valores preenchidos**, e não por
+   defeito — só 13 produtos estão publicados e vendáveis lá, todos já com os
+   três atributos, e nenhum dos cinco novos doces está à venda.
+3. **Doce + bebida, sem salgado → 1º um salgado** (peso 3; o leve, de
+   temperatura ambiente, +1; com bebida gelada, +2), **2º o pão para levar**
+   (peso 1). "Bebida quente ↔ doce, bebida gelada ↔ salgado são bidirecionais e
+   não excluem outras sugestões, desde que tenham outro fator preponderante":
+   o fator preponderante (bebida ↔ comida, depois o prato que falta) pesa 3; as
+   duas afinidades somam por cima, nos dois sentidos, e nunca filtram.
+
+O portão de coleção em comum ganhou uma exceção: não exclui quando os dois têm
+valor conhecido e diferente num atributo de `distinct_from_cart`. Folhados
+agrupa pela massa, não pela função, e o croissant de presunto e queijo completa
+o pain au chocolat em vez de substituí-lo.
+
+| estresse (449 sacolas, Doces corrigidos) | 3 | 2 | 1 | 0 | média |
+|---|---|---|---|---|---|
+| antes (`main` com #1035) | 311 | 84 | 54 | 0 | 2,57 |
+| depois | 424 | 25 | 0 | 0 | 2,94 |
+
+Os 25 com nota 2 são a mercearia sozinha e os cruzamentos quando a preferida
+está esgotada. Esse cruzado é o "não exclui" do dono.
+
+## Pão pede mercearia, e as bebidas voltam ao catálogo (24/09/2026, 2ª rodada)
+
+**Pão para levar** (sacola só de pão, sem refeição) → a mercearia é o
+complemento principal: o pote genérico pesa 3 e perde para o café (3 + 1); o
+pote que VAI naquele pão soma +2 e ganha. **Em refeição** (já há bebida) os
+pares de pote não falam — o doce que falta na mesa vem antes.
+
+Pares (peso 2, bônus, nunca filtro; `tag` = palavra-chave do produto,
+`collection` = coleção; o lado "pão" exige `sabor=neutro` no MESMO item, pela
+condição nova `all`, para a focaccia salgada não pedir o queijo do pão):
+
+| pão | pote |
+|---|---|
+| Rústicos (baguete, campagne, ciabatta…) | queijo · patê · tapenade · picles · manteiga |
+| focaccia · pão italiano | tapenade · azeite |
+| campagne | camembert |
+| croissant | geleia · mel · manteiga |
+| brioche | geleia · doce de leite · mel |
+| pain perdu (rabanada) | mel · doce de leite |
+| shokupan · **Kuro Pan** (dono: "combinação clássica") | manteiga · geleia |
+| pão de hot dog | mostarda |
+| pão de hambúrguer | mostarda · picles · queijo · bacon |
+
+E o caminho de volta (pote na sacola → o pão em que ele vai): queijo e patê →
+rústico; tapenade → focaccia/italiano; geleia → croissant/brioche/shokupan/Kuro
+Pan; manteiga → shokupan/Kuro Pan/rústico; mostarda → hot dog/hambúrguer;
+picles → hambúrguer.
+
+⚠️ Hoje a mercearia do alpha é placeholder (preço a definir, fora de venda) e
+não há geleia, manteiga, mel, azeite nem doce de leite no catálogo. Os pares
+estão prontos e não sugerem nada até o produto existir e estar à venda.
+
+| estresse (722 sacolas, com pão para levar e mercearia) | 3 | 2 | 1 | 0 | média |
+|---|---|---|---|---|---|
+| antes (#1040) | 555 | 167 | 0 | 0 | 2,77 |
+| depois | 684 | 38 | 0 | 0 | 2,95 |
+
 ## Referências
 
 - [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (a sugestão no chat é uma por conversa; desligada até F1)

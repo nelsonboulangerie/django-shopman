@@ -38,8 +38,8 @@ def materials(db):
     Material = apps.get_model("buyman", "Material")
     return [
         Material.objects.create(sku="CAFE-GRAO", name="Cafe em grao", unit="kg"),
-        Material.objects.create(sku="FARINHA-T45", name="Farinha T45", unit="kg"),
-        Material.objects.create(sku="ACUCAR", name="Acucar refinado", unit="kg"),
+        Material.objects.create(sku="FARINHA-BAGATELLE-T45", name="Farinha T45", unit="kg"),
+        Material.objects.create(sku="ACUCAR-CRISTAL", name="Acucar refinado", unit="kg"),
     ]
 
 
@@ -56,14 +56,14 @@ def test_lanca_varios_custos_de_uma_vez(supplier, materials):
             "makePreferred": True,
             "costs": [
                 {"materialSku": "CAFE-GRAO", "costInput": "45,00"},
-                {"materialSku": "FARINHA-T45", "costInput": "3,20"},
-                {"materialSku": "ACUCAR", "costInput": "4,10"},
+                {"materialSku": "FARINHA-BAGATELLE-T45", "costInput": "3,20"},
+                {"materialSku": "ACUCAR-CRISTAL", "costInput": "4,10"},
             ],
         }
     )
 
     assert result["saved"] == 3
-    for sku, cents in (("CAFE-GRAO", 4500), ("FARINHA-T45", 320), ("ACUCAR", 410)):
+    for sku, cents in (("CAFE-GRAO", 4500), ("FARINHA-BAGATELLE-T45", 320), ("ACUCAR-CRISTAL", 410)):
         cost = _costs_for(sku).get()
         assert cost.cost_q == cents
         assert cost.supplier.ref == "SUP-TAMURA"
@@ -80,13 +80,13 @@ def test_o_fornecedor_da_linha_vence_o_do_lote(supplier, outro_supplier, materia
             "makePreferred": True,
             "costs": [
                 {"materialSku": "CAFE-GRAO", "costInput": "45,00"},
-                {"materialSku": "FARINHA-T45", "costInput": "3,20", "supplierRef": "SUP-COFERPAN"},
+                {"materialSku": "FARINHA-BAGATELLE-T45", "costInput": "3,20", "supplierRef": "SUP-COFERPAN"},
             ],
         }
     )
 
     assert _costs_for("CAFE-GRAO").get().supplier.ref == "SUP-TAMURA"
-    assert _costs_for("FARINHA-T45").get().supplier.ref == "SUP-COFERPAN"
+    assert _costs_for("FARINHA-BAGATELLE-T45").get().supplier.ref == "SUP-COFERPAN"
 
 
 @pytest.mark.django_db
@@ -120,7 +120,7 @@ def test_valor_zerado_e_recusado_com_a_linha_apontada(supplier, materials):
                 "supplierRef": "SUP-TAMURA",
                 "costs": [
                     {"materialSku": "CAFE-GRAO", "costInput": "45,00"},
-                    {"materialSku": "FARINHA-T45", "costInput": "0,00"},
+                    {"materialSku": "FARINHA-BAGATELLE-T45", "costInput": "0,00"},
                 ],
             }
         )
@@ -138,14 +138,14 @@ def test_linha_em_branco_e_ignorada(supplier, materials):
             "supplierRef": "SUP-TAMURA",
             "costs": [
                 {"materialSku": "CAFE-GRAO", "costInput": "45,00"},
-                {"materialSku": "FARINHA-T45", "costInput": ""},
-                {"materialSku": "ACUCAR", "costInput": "   "},
+                {"materialSku": "FARINHA-BAGATELLE-T45", "costInput": ""},
+                {"materialSku": "ACUCAR-CRISTAL", "costInput": "   "},
             ],
         }
     )
 
     assert result["saved"] == 1
-    assert not _costs_for("FARINHA-T45").exists()
+    assert not _costs_for("FARINHA-BAGATELLE-T45").exists()
 
 
 @pytest.mark.django_db

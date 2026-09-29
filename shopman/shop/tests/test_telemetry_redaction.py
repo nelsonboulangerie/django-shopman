@@ -6,7 +6,7 @@ import time
 from datetime import UTC, datetime
 
 from shopman.shop.logging import JsonLogFormatter, PrivacySafeFormatter
-from shopman.shop.telemetry_redaction import REDACTED, redact_observability_value
+from shopman.shop.telemetry_redaction import REDACTED, redact_observability_value, redact_text
 
 
 def test_recursive_redaction_keeps_safe_technical_refs_only():
@@ -173,3 +173,55 @@ def test_human_formatter_redacts_extra_and_exception_without_mutating_record():
     assert "CUS-PRIVATE" not in rendered
     assert "123.456.789-10" not in rendered
     assert record.args == ("customer_ref=CUS-PRIVATE",)
+
+
+def test_referencia_do_edge_sobrevive_a_redacao():
+    """O timestamp Unix da referência do Akamai tem forma de telefone.
+
+    Ele é o que o suporte do iFood usa para achar a regra que bloqueou o
+    polling; redigido, o chamado volta sem resposta. Ver `ifood_http`.
+    """
+    texto = "ifood_http.poll: recusa=edge referencia=Reference #18.1f9ab259.1758275496.3d4e5f6a"
+    saida = redact_text(texto)
+    assert "18.1f9ab259.1758275496.3d4e5f6a" in saida
+    assert "[phone]" not in saida
+
+
+def test_a_excecao_da_referencia_nao_abre_passagem_para_telefone():
+    """A guarda é da referência, não de qualquer corrida de dígitos."""
+    assert "[phone]" in redact_text("contato 11 98765-4321")
+    assert "[phone]" in redact_text("Reference #18.abc concluída; ligar para 11987654321")
+    # A forma protegida é a da referência inteira; um trecho parecido não passa.
+    assert "[phone]" in redact_text("pedido 18.1f9ab259 e telefone 11987654321")
+
+
+def test_data_iso_sobrevive_a_redacao():
+    """Data ISO tem oito dígitos com hífen — forma de telefone para o regex.
+
+    A mensagem da reconciliação financeira chegava ao Sentry como
+    "Reconciliação financeira de [phone]"; a data é o que diz qual dia divergiu.
+    """
+    casos = [
+        "Reconciliação financeira de 2026-09-21 encontrou divergências.",
+        "janela 2026-09-21T14:30:00Z até 2026-09-22T02:00:00.123456+00:00",
+        "fechamento 2026-09-21 14:30:00 e 2026-09-21 14:30",
+        "de 2026-12-31 a 2027-01-01",
+    ]
+    for texto in casos:
+        saida = redact_text(texto)
+        assert saida == texto, saida
+
+
+def test_a_excecao_da_data_nao_abre_passagem_para_telefone():
+    """A guarda é da data válida, não de qualquer corrida de dígitos com hífen."""
+    assert redact_text("dia 2026-09-21, ligar para 11 98765-4321") == (
+        "dia 2026-09-21, ligar para [phone]"
+    )
+    assert "[phone]" in redact_text("telefone +55 43 99999-8888")
+    assert "[phone]" in redact_text("telefone (43) 3025-1234")
+    assert "[phone]" in redact_text("telefone 43999998888")
+    # Mês 13 / dia 32 não é data: segue sendo tratado como telefone.
+    assert "[phone]" in redact_text("código 4399-13-12")
+    assert "[phone]" in redact_text("código 4399-12-32")
+    # Data grudada em mais dígitos não é data isolada.
+    assert "[phone]" in redact_text("número 2026-09-21-4321")

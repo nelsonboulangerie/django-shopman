@@ -45,7 +45,7 @@ class LifecyclePhaseHandler:
             if isinstance(exc, DirectiveTerminalError) or message.attempts >= MAX_ATTEMPTS:
                 create_operator_alert(
                     type="lifecycle_phase_stuck", severity="critical", order_ref=ref,
-                    message=f"Pedido {ref}: fase {phase} pendente. Confira os efeitos antes de retomar. {exc}",
+                    message=lifecycle.phase_stuck_message(ref, phase, str(exc)),
                     dedupe_key=f"lifecycle_phase_stuck:{ref}:{phase}",
                 )
             raise

@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_creates_missing_order_updated_template_and_preserves_curated_row():
+    import importlib
+
+    # O texto que ESTA migração grava é o histórico dela (a 0082 o troca pelo
+    # aprovado pelo dono): compara com a constante da própria migração.
+    migration = importlib.import_module("shopman.shop.migrations.0081_order_updated_notification_template")
+
+    before = [("shop", "0080_order_rescheduled_notification_template")]
+    after = [("shop", "0081_order_updated_notification_template")]
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(before)
+    old_apps = executor.loader.project_state(before).apps
+    OldTemplate = old_apps.get_model("shop", "NotificationTemplate")
+    OldTemplate.objects.filter(event="order_updated").delete()
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(after)
+    new_apps = executor.loader.project_state(after).apps
+    created = new_apps.get_model("shop", "NotificationTemplate").objects.get(event="order_updated")
+    # A migração grava a MESMA frase da fonte única.
+    assert created.subject == migration.SUBJECT
+    assert created.body == migration.BODY
+    assert created.whatsapp_flow_ns == ""
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(before)
+    old_apps = executor.loader.project_state(before).apps
+    OldTemplate = old_apps.get_model("shop", "NotificationTemplate")
+    assert not OldTemplate.objects.filter(event="order_updated").exists()
+    curated = OldTemplate.objects.create(
+        event="order_updated",
+        subject="Texto aprovado pela loja",
+        body="Corpo aprovado pela loja",
+        whatsapp_flow_ns="content_curated",
+        is_active=False,
+    )
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(after)
+    new_apps = executor.loader.project_state(after).apps
+    preserved = new_apps.get_model("shop", "NotificationTemplate").objects.get(pk=curated.pk)
+    assert preserved.subject == "Texto aprovado pela loja"
+    assert preserved.whatsapp_flow_ns == "content_curated"
+    assert preserved.is_active is False
+
+    MigrationExecutor(connection).migrate(after)

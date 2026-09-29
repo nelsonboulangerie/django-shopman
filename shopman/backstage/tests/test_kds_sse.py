@@ -108,20 +108,20 @@ def test_kds_multi_instance_scopes_events_per_station(monkeypatch):
     monkeypatch.setattr(_sse_emitters, "_emit_backstage", fake_emit)
 
     prep = KDSInstance.objects.create(ref="prep-multi", name="Preparo", type="prep")
-    expedicao = KDSInstance.objects.create(ref="expedicao-multi", name="Expedição", type="expedition")
+    saida = KDSInstance.objects.create(ref="saida-multi", name="Saída", type="expedition")
     order_a = Order.objects.create(ref="MULTI-A", channel_ref="web", session_key="sk-multi-a", status="accepted", total_q=100)
     order_b = Order.objects.create(ref="MULTI-B", channel_ref="web", session_key="sk-multi-b", status="accepted", total_q=100)
 
     KDSTicket.objects.create(session_key=order_a.session_key, kds_instance=prep, items=[])
-    KDSTicket.objects.create(session_key=order_b.session_key, kds_instance=expedicao, items=[])
+    KDSTicket.objects.create(session_key=order_b.session_key, kds_instance=saida, items=[])
 
     prep_scopes = {scope for scope, _ in captured if scope == "prep-multi"}
-    exp_scopes = {scope for scope, _ in captured if scope == "expedicao-multi"}
+    exp_scopes = {scope for scope, _ in captured if scope == "saida-multi"}
     assert prep_scopes == {"prep-multi"}
-    assert exp_scopes == {"expedicao-multi"}
+    assert exp_scopes == {"saida-multi"}
 
     # Each station's payload only references its own ref
     prep_refs = {ref for scope, ref in captured if scope == "prep-multi"}
-    exp_refs = {ref for scope, ref in captured if scope == "expedicao-multi"}
+    exp_refs = {ref for scope, ref in captured if scope == "saida-multi"}
     assert prep_refs == {"prep-multi"}
-    assert exp_refs == {"expedicao-multi"}
+    assert exp_refs == {"saida-multi"}

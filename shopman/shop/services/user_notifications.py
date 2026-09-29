@@ -26,7 +26,11 @@ from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
 logger = logging.getLogger(__name__)
 
 ANNOUNCEMENT_REVIEW = "announcement_review"
+PRODUCTION_QUALITY_REVIEW = "production_quality_review"
+STOCK_ALERT_DELIVERY_INCIDENT = "stock_alert_delivery_incident"
 OWNER_PRODUCT = "product"
+OWNER_PRODUCTION = "production"
+OWNER_ORDERS = "orders"
 ESCALATION_OPS = "ops"
 
 
@@ -323,6 +327,12 @@ def reconcile_user_notifications(*, user) -> int:
         # existentes; novos produtores devem adotar ``create_condition_alert``.
         if not row["source_condition"]:
             continue
+        if row["source_condition"] == PRODUCTION_QUALITY_REVIEW:
+            changed += reconcile_production_quality_review(row["source_ref"])
+            continue
+        if row["source_condition"] == STOCK_ALERT_DELIVERY_INCIDENT:
+            changed += reconcile_stock_alert_delivery_incident(row["source_ref"])
+            continue
         if row["source_condition"] != ANNOUNCEMENT_REVIEW:
             changed += reconcile_condition(
                 source_condition=row["source_condition"],
@@ -342,6 +352,87 @@ def reconcile_user_notifications(*, user) -> int:
             continue
         changed += reconcile_announcement_review(announcement)
     return changed
+
+
+def reconcile_production_quality_review(source_ref: str) -> int:
+    """Keep a manager QC alert open until the batch is reviewed.
+
+    The signal handler closes the happy path immediately.  This read-side
+    reconciliation is the recovery net for a missed SSE/push or a process
+    interruption between the immutable QC fact and the personal notification.
+    """
+    work_order_id = _resource_id(source_ref, "work_order")
+    if work_order_id is None:
+        return reconcile_condition(
+            source_condition=PRODUCTION_QUALITY_REVIEW,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="invalid_work_order_ref",
+        )
+
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+    work_order = WorkOrder.objects.filter(pk=work_order_id).only("pk", "status").first()
+    if work_order is None:
+        return reconcile_condition(
+            source_condition=PRODUCTION_QUALITY_REVIEW,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="work_order_missing",
+        )
+    if WorkOrderEvent.objects.filter(
+        work_order_id=work_order_id,
+        kind__in=(
+            WorkOrderEvent.Kind.QUALITY_REVIEWED,
+            WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        ),
+    ).exists():
+        return reconcile_condition(
+            source_condition=PRODUCTION_QUALITY_REVIEW,
+            source_ref=source_ref,
+            state=NotificationLifecycle.RESOLVED,
+            outcome_code="production_quality_reviewed",
+        )
+    if work_order.status == WorkOrder.Status.FINISHED:
+        return 0
+    return reconcile_condition(
+        source_condition=PRODUCTION_QUALITY_REVIEW,
+        source_ref=source_ref,
+        state=NotificationLifecycle.EXPIRED,
+        outcome_code=f"work_order_{work_order.status}",
+    )
+
+
+def reconcile_stock_alert_delivery_incident(source_ref: str) -> int:
+    """Keep the incident visible while provider acceptance is unresolved."""
+
+    delivery_id = _resource_id(source_ref, "stock_alert_delivery")
+    if delivery_id is None:
+        return reconcile_condition(
+            source_condition=STOCK_ALERT_DELIVERY_INCIDENT,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="invalid_stock_alert_delivery_ref",
+        )
+
+    from shopman.shop.adapters import audience_sources
+
+    status = audience_sources.stock_alert_delivery_status(delivery_id)
+    if status is None:
+        return reconcile_condition(
+            source_condition=STOCK_ALERT_DELIVERY_INCIDENT,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="stock_alert_delivery_missing",
+        )
+    if status == "indeterminate":
+        return 0
+    return reconcile_condition(
+        source_condition=STOCK_ALERT_DELIVERY_INCIDENT,
+        source_ref=source_ref,
+        state=NotificationLifecycle.RESOLVED,
+        outcome_code=f"stock_alert_delivery_{status}",
+    )
 
 
 def reconcile_announcement_review(announcement: Announcement) -> int:
@@ -679,6 +770,14 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
         resource_id = _resource_id(source_ref, "announcement")
         if resource_id is not None:
             return f"/announcements/{resource_id}#review"
+    if source_condition == PRODUCTION_QUALITY_REVIEW:
+        resource_id = _resource_id(source_ref, "work_order")
+        if resource_id is not None:
+            return "/expedite#quality"
+    if source_condition == STOCK_ALERT_DELIVERY_INCIDENT:
+        resource_id = _resource_id(source_ref, "stock_alert_delivery")
+        if resource_id is not None:
+            return "/"
     return ""
 
 
@@ -715,7 +814,11 @@ def _source_command(
 
 __all__ = [
     "ANNOUNCEMENT_REVIEW",
+    "PRODUCTION_QUALITY_REVIEW",
+    "STOCK_ALERT_DELIVERY_INCIDENT",
     "ESCALATION_OPS",
+    "OWNER_ORDERS",
+    "OWNER_PRODUCTION",
     "OWNER_PRODUCT",
     "AlertCreation",
     "acknowledge",
@@ -724,6 +827,8 @@ __all__ = [
     "mark_seen_many",
     "push_user_notification",
     "reconcile_announcement_review",
+    "reconcile_production_quality_review",
+    "reconcile_stock_alert_delivery_incident",
     "reconcile_condition",
     "reconcile_user_notifications",
     "record_action",

@@ -227,7 +227,7 @@ def test_subscribe_race_with_ineligible_old_writer_fails_closed_without_500():
 
 
 def test_subscribe_rejects_ambiguous_mobile_without_creating_subscription():
-    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9840-4900", adult_declared=True) is None
+    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9812-3456", adult_declared=True) is None
     assert not StockAlertSubscription.objects.filter(sku="SKU-AMBIGUOUS").exists()
 
 
@@ -367,7 +367,7 @@ def test_notify_context_includes_truthful_availability_phrase():
     assert nf.call_args.kwargs["event"] == "production_ready"
     context = nf.call_args.kwargs["context"]
     assert context["available_qty"] == "12"
-    assert context["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+    assert context["availability_phrase"] == "No momento temos 12 un. disponíveis."
     assert urlsplit(context["management_url"]).path == "/gerenciar-aviso"
     assert urlsplit(context["management_url"]).fragment
     assert context["management_url"] in context["management_note"]
@@ -391,7 +391,7 @@ def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
 def test_availability_phrase_uses_singular_for_one_unit():
     from shopman.shop.services.availability_copy import availability_phrase
 
-    assert availability_phrase(1) == "Neste momento ainda temos 1 unidade."
+    assert availability_phrase(1) == "No momento temos 1 un. disponível."
 
 
 def test_notify_skips_when_still_unavailable():
@@ -1019,7 +1019,7 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
 
 def test_endpoint_anonymous_does_not_normalize_or_persist_typed_phone(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9812-3456"})
     assert resp.status_code == 401
     assert resp.json()["auth_required"] is True
     assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
@@ -1694,6 +1694,20 @@ def test_unavailable_at_provider_boundary_suppresses_delivery():
 
 
 def test_lost_provider_response_is_not_retried_blindly(django_capture_on_commit_callbacks):
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Permission
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.models import NotificationLifecycle, NotificationSeverity, UserNotification
+    from shopman.shop.services.user_notifications import reconcile_user_notifications
+    from shopman.storefront.stock_alert_delivery import _alert_indeterminate
+
+    gestor = get_user_model().objects.create_user(
+        "gestor-stock-alert", password="x", is_staff=True, is_active=True
+    )
+    gestor.user_permissions.add(
+        Permission.objects.get(content_type__app_label="shop", codename="manage_orders")
+    )
     sub = stock_alerts.subscribe("SKU-UNKNOWN", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
@@ -1701,7 +1715,7 @@ def test_lost_provider_response_is_not_retried_blindly(django_capture_on_commit_
             "shopman.shop.notifications.notify",
             return_value=NotificationResult(success=False, error="acceptance_unconfirmed", outcome_unknown=True),
         ) as notify,
-        patch("shopman.shop.services.observability.create_operator_alert") as alert,
+        patch("shopman.shop.services.critical_alerts.enqueue"),
     ):
         stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-unknown")
         with django_capture_on_commit_callbacks(execute=True):
@@ -1709,8 +1723,31 @@ def test_lost_provider_response_is_not_retried_blindly(django_capture_on_commit_
         _deliver_queued()
 
     assert notify.call_count == 1
-    assert StockAlertDelivery.objects.get().status == "indeterminate"
-    alert.assert_called_once()
+    delivery = StockAlertDelivery.objects.get()
+    assert delivery.status == "indeterminate"
+
+    operator_alert = OperatorAlert.objects.get(type="stock_alert_dispatch_unknown")
+    assert operator_alert.severity == "critical"
+    assert str(delivery.ref) in operator_alert.message
+    manager_alert = UserNotification.objects.get(user=gestor)
+    assert manager_alert.severity == NotificationSeverity.CRITICAL
+    assert manager_alert.lifecycle == NotificationLifecycle.UNSEEN
+    assert manager_alert.source_condition == "stock_alert_delivery_incident"
+    assert str(delivery.ref) in manager_alert.message
+    assert PHONE not in manager_alert.message
+
+    # Reentrar no handler não multiplica o incidente nem a caixa pessoal.
+    with patch("shopman.shop.services.critical_alerts.enqueue"):
+        _alert_indeterminate(delivery.pk)
+    assert OperatorAlert.objects.filter(type="stock_alert_dispatch_unknown").count() == 1
+    assert UserNotification.objects.filter(user=gestor).count() == 1
+
+    # Quando uma conciliação externa definir o resultado, o alerta pessoal fecha.
+    delivery.status = StockAlertDelivery.Status.ACCEPTED
+    delivery.save(update_fields=["status", "updated_at"])
+    assert reconcile_user_notifications(user=gestor) == 1
+    manager_alert.refresh_from_db()
+    assert manager_alert.lifecycle == NotificationLifecycle.RESOLVED
 
 
 def test_stale_worker_claim_is_indeterminate_and_alerted_without_resend():
@@ -1753,6 +1790,42 @@ def test_delivery_sla_command_alerts_with_counts_and_runbook():
     assert "queued" in message
     assert "docs/runbooks/stock-alert-delivery.md" in message
     assert PHONE not in message
+
+
+def test_delivery_sla_backfills_critical_manager_incident_for_unknown_result():
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Permission
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.models import UserNotification
+
+    gestor = get_user_model().objects.create_user(
+        "gestor-stock-alert-recovery", password="x", is_staff=True, is_active=True
+    )
+    gestor.user_permissions.add(
+        Permission.objects.get(content_type__app_label="shop", codename="manage_orders")
+    )
+    sub = stock_alerts.subscribe("SKU-UNKNOWN-RECOVERY", phone=PHONE, adult_declared=True)
+    with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
+        stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-unknown-recovery")
+    delivery = StockAlertDelivery.objects.get()
+    delivery.status = StockAlertDelivery.Status.INDETERMINATE
+    delivery.last_error_code = "acceptance_unconfirmed"
+    delivery.save(update_fields=["status", "last_error_code", "updated_at"])
+    StockAlertDelivery.objects.filter(pk=delivery.pk).update(
+        updated_at=timezone.now() - timedelta(minutes=11)
+    )
+
+    with patch("shopman.shop.services.critical_alerts.enqueue"):
+        call_command("check_stock_alert_delivery_sla", minutes=10, stdout=StringIO())
+
+    incident = OperatorAlert.objects.get(type="stock_alert_dispatch_unknown")
+    assert incident.severity == "critical"
+    assert UserNotification.objects.filter(
+        user=gestor,
+        source_condition="stock_alert_delivery_incident",
+        severity="critical",
+    ).exists()
 
 
 def test_partial_failure_keeps_independent_receipts_and_same_occurrence():

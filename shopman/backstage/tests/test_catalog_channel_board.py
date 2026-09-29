@@ -1,4 +1,4 @@
-"""Canais externos têm diagnóstico local, sem controles de exibição."""
+"""Canais de venda: diagnóstico local de envio + o toggle "Ativo" comum a todo canal."""
 
 import pytest
 
@@ -20,7 +20,9 @@ def test_existing_ifood_visible_with_disabled_projection(monkeypatch):
     assert channel.projection_enabled is False
     assert 'Sem envio externo' in channel.diagnostic
     assert channel.catalog_path == '/catalog'
-    assert not hasattr(channel, 'is_active')
+    # O card de venda tem o MESMO toggle do feed (sem coleções nem rotação).
+    assert channel.is_active is True
+    assert channel.switch is not None and channel.switch.is_active is True
     assert not hasattr(channel, 'actions')
 
 

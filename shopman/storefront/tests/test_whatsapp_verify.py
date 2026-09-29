@@ -1,9 +1,9 @@
 """Start leve do login por WhatsApp (ACCESS-LINK-UNIFICATION).
 
 O ``/start/`` só guarda o contexto do site (sacola anônima + destino) sob um código
-``NB-XxXx`` de uso único e devolve o deep link ``wa.me`` já preenchido. Sem
-handshake/token/poll/SSE: a identidade é o número que envia a mensagem; o login
-acontece depois, pelo access link que o ManyChat devolve (ver ``AccessLinkCreateView``).
+``NB-XxXx`` de uso único e devolve o deep link ``wa.me`` já preenchido. A identidade é
+o número que envia a mensagem; ela libera a aba de origem pelo ``claim``, e o access
+link do ManyChat segue como reserva (ver ``AccessLinkCreateView``).
 As views legado do reverse-OTP (confirm/status/SSE) foram removidas em F4.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from django.test import Client, override_settings
 from shopman.doorman.services.link_state import pop_state
 from shopman.guestman.models import Customer
 
+from shopman.shop.models import Shop
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -68,14 +69,30 @@ def test_start_returns_code_and_deep_link(client: Client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["code"].startswith("NB-")
-    assert body["message"] == f"#menu {body['code']}"
+    # Frase humana, com a palavra-chave do flow ("quero entrar no site") e o código.
+    assert body["message"].startswith("Olá! Quero entrar no site da ")
+    assert body["message"].endswith(f"(ref. {body['code']})")
     assert body["wa_number"] == "554333231997"
     assert body["has_context"] is False
     assert body["has_cart_context"] is False
     assert "wa.me/554333231997" in body["deep_link"]
-    assert "%23menu%20" in body["deep_link"]
-    # A mensagem inteira vai pré-preenchida; #menu roteia o flow e NB carrega contexto.
+    assert "Quero%20entrar%20no%20site" in body["deep_link"]
+    # A mensagem inteira vai pré-preenchida; a frase roteia o flow e NB carrega contexto.
     assert body["code"] in body["deep_link"]
+
+
+@override_settings(SHOPMAN_WA_VERIFY={"number": ""})
+def test_start_without_store_whatsapp_fails_with_sms_recovery(client: Client):
+    Shop.objects.all().update(phone="")
+
+    resp = _post_json(client, "/api/v1/auth/whatsapp/start/", {})
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "detail": "O WhatsApp da loja está indisponível agora. Entre por SMS ou peça ajuda.",
+        "error_code": "whatsapp_unavailable",
+        "recovery": {"primary": "sms", "help_url": "/faq"},
+    }
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -86,7 +103,11 @@ def test_start_stores_cart_and_next_under_code(client: Client):
     body = resp.json()
     assert body["has_context"] is True
     assert body["has_cart_context"] is True
-    assert pop_state(body["code"]) == {"cart_session_key": cart_key, "next": "/checkout"}
+    state = pop_state(body["code"])
+    # A sessão que apertou o botão também fica no estado: é ela que entra quando a
+    # mensagem chega (impressão digital, nunca a chave).
+    assert len(state.pop("origin")) == 64
+    assert state == {"cart_session_key": cart_key, "next": "/checkout"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -96,8 +117,8 @@ def test_start_without_context_still_issues_code(client: Client):
     assert body["code"].startswith("NB-")
     assert body["has_context"] is False
     assert body["has_cart_context"] is False
-    # Estado vazio → o create degrada para o link genérico (sem sacola/destino).
-    assert pop_state(body["code"]) == {}
+    # Sem sacola/destino → o create degrada para o link genérico. Só a origem fica.
+    assert set(pop_state(body["code"])) == {"origin"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -105,7 +126,7 @@ def test_start_does_not_send_empty_checkout_context(client: Client):
     resp = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"})
     body = resp.json()
     assert body["has_context"] is False
-    assert pop_state(body["code"]) == {}
+    assert set(pop_state(body["code"])) == {"origin"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -151,3 +172,14 @@ def test_full_whatsapp_handoff_preserves_cart_in_new_browser(client: Client):
     cart = in_app_browser.get("/api/v1/storefront/cart/").json()["cart"]
     assert cart["items_count"] == 1
     assert cart["items"][0]["sku"] == sku
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
+def test_a_frase_humana_ainda_carrega_o_codigo(client: Client):
+    """A frase nova não pode esconder o NB- do backend: o create o extrai do texto."""
+    from shopman.doorman.services.link_state import contains_code, extract_code
+
+    body = _post_json(client, "/api/v1/auth/whatsapp/start/", {}).json()
+    assert contains_code(body["message"])
+    assert extract_code(body["message"]) == body["code"]
+    assert "quero entrar no site" in body["message"].lower()  # a palavra-chave do flow

@@ -5,7 +5,7 @@ Uses Google's libphonenumber for robust normalization and validation.
 Replaces the custom implementations in auth/utils.py and customers/utils.py.
 
 Handles the known Manychat bug where Brazilian numbers are sent without
-the country code 55 (e.g., +43984049009 instead of +5543984049009).
+the country code 55 (e.g., +43981234567 instead of +5543981234567).
 """
 
 import re
@@ -90,7 +90,7 @@ def _prepare_phone_digits_for_parse(
                 return f"55{repaired}", True
 
     # A bare 55DD... value in a Brazilian field is DDI 55, not DDD 55.
-    # libphonenumber.parse("5543984049009", "BR") otherwise interprets the
+    # libphonenumber.parse("5543981234567", "BR") otherwise interprets the
     # first 55 as area code and can collapse the actual phone identity.
     if not has_plus and digits.startswith("55") and len(digits) in (12, 13, 14):
         national = digits[2:]

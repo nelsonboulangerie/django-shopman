@@ -53,7 +53,7 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 
 const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
-  { credentials: 'include', headers: requestHeaders }
+  { credentials: 'include', headers: requestHeaders, lazy: true }
 )
 
 const tracking = computed(() => data.value || null)
@@ -470,7 +470,7 @@ useSeoMeta({
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
-            { label: 'Pedidos', link: '/conta' },
+            { label: 'Pedidos', link: '/conta/pedidos' },
             { label: `Pedido ${orderRef}` }
           ]"
         />
@@ -836,6 +836,9 @@ useSeoMeta({
               </UiTabs>
             </UiCardContent>
           </UiCard>
+
+          <!-- A nota fiscal chega digital: aqui, quando autorizada. -->
+          <OrderFiscalNote v-if="tracking.fiscal_note" :note="tracking.fiscal_note" />
         </template>
       </section>
 

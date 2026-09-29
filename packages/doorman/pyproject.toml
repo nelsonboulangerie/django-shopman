@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Shopman Doorman — Phone-First Authentication"
 requires-python = ">=3.12"
 dependencies = [
-    "Django>=6.0,<6.1",
+    "Django>=6.1,<6.2",
     # Passkey (WebAuthn). A verificação de assertion é criptografia com formato binário
     # (CBOR + COSE + contadores anti-replay): escrever isso na unha é como escrever o próprio
     # TLS — a biblioteca de referência do ecossistema Python é a resposta certa.

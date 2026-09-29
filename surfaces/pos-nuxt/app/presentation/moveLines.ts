@@ -11,6 +11,7 @@
 
 import type { POSCartItem, POSTabProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { isWeighedLine, lineAmountQ, lineQtyLabel } from "~/presentation/weighed";
 
 export type MoveMode = "split" | "transfer" | "merge";
 
@@ -87,8 +88,8 @@ export interface MoveLineView {
 export function moveLineView(item: POSCartItem): MoveLineView {
   return {
     id: moveLineId(item),
-    label: `${item.qty}x ${item.name}`,
-    amountDisplay: formatBRL(item.price_q * item.qty),
+    label: isWeighedLine(item) ? `${lineQtyLabel(item)} ${item.name}` : `${item.qty}x ${item.name}`,
+    amountDisplay: formatBRL(lineAmountQ(item.price_q, item)),
   };
 }
 

@@ -60,7 +60,7 @@ export function useQcKiosk(initialDate = "") {
       idempotencyKey: string,
       metadata: ProductionMutationMetadata,
     ) => Promise<unknown>,
-    fallbackError = "Não deu para fechar a fornada. Tente de novo.",
+    fallbackError = "Não deu para fechar o lote. Tente de novo.",
   ): Promise<QcActResult> {
     if (submitting.value) return { ok: false };
     const authorization = mutationGuard.authorizeMutation(attemptRef);

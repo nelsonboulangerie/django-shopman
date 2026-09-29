@@ -91,7 +91,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { countUnits, pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptFiscalHandoffLine, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -152,7 +152,8 @@ function action(overrides: Partial<Action> & { ref: string }): Action {
 function product(overrides: Partial<POSProductProjection> & { sku: string }): POSProductProjection {
   return {
     name: overrides.sku,
-    price_q: 0,
+    // Com preço: produto sem preço não vende (a busca pula, o tile fica inerte).
+    price_q: 100,
     price_display: "",
     collection_ref: "",
     collection_color: "",
@@ -250,6 +251,39 @@ describe("presentation/catalog — grid shaping", () => {
     expect(filterProducts(products, {}).length).toBe(3);
   });
 
+  it("o leitor de código de barras acha o produto pelo GTIN", () => {
+    // O leitor é um teclado: ele DIGITA os dígitos no campo de busca e manda
+    // Enter. Sem o GTIN no índice, bipar o pote de geleia não achava nada.
+    const products = [
+      product({ sku: "PAO-FRANCES", name: "Pão Francês", collection_ref: "paes" }),
+      product({
+        sku: "STDALFOUR-GELEIA-FIGO-284",
+        name: "Geleia de Figo St. Dalfour 284g",
+        collection_ref: "mercearia",
+        gtin: "0084380959042",
+      }),
+    ];
+
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "STDALFOUR-GELEIA-FIGO-284",
+    ]);
+    // Código de barras casa INTEIRO: pedaço de código não vira produto errado.
+    expect(filterProducts(products, { query: "008438" })).toEqual([]);
+  });
+
+  it("o produto bipado vem na frente do que só contém os dígitos no nome", () => {
+    const products = [
+      product({ sku: "VALE-084", name: "Vale 0084380959042", collection_ref: "doces" }),
+      product({ sku: "GELEIA", name: "Geleia", collection_ref: "mercearia", gtin: "0084380959042" }),
+    ];
+
+    // O Enter que o leitor manda em seguida pega o PRIMEIRO da lista.
+    expect(filterProducts(products, { query: "0084380959042" }).map((p) => p.sku)).toEqual([
+      "GELEIA",
+      "VALE-084",
+    ]);
+  });
+
   it("acha produto sem acento e prioriza início de palavra", () => {
     const products = [
       product({ sku: "TRUFA-PAPAIA", name: "Trufa de Papaia", collection_ref: "doces" }),
@@ -296,6 +330,8 @@ describe("presentation/catalog — grid shaping", () => {
     expect(enterTargetProduct(products, "   ")).toBeNull();
     // Sem resultado algum → nada.
     expect(enterTargetProduct([], "xyz")).toBeNull();
+    // Sem preço no catálogo não vende: Enter pula como pula o esgotado.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café", price_q: 0 })], "cafe")).toBeNull();
   });
 
   it("o tile sem foto veste cor e ícone da coleção primária", () => {
@@ -1493,6 +1529,13 @@ describe("a frase da cozinha no checkout conta unidades", () => {
       .toBe("Ao finalizar, o item vai para a cozinha.");
   });
 
+  it("encomenda para outro dia: vai para a cozinha no DIA, não ao finalizar", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })], { deferred: true }))
+      .toBe("O item vai para a cozinha no dia da encomenda.");
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })], { deferred: true }))
+      .toBe("Os 3 itens vão para a cozinha no dia da encomenda.");
+  });
+
   it("parte na cozinha: os dois números, ambos em unidades", () => {
     const note = kitchenHandoffNote([
       linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),
@@ -1515,5 +1558,17 @@ describe("a frase da cozinha no checkout conta unidades", () => {
 
   it("carrinho vazio não fala", () => {
     expect(kitchenHandoffNote([])).toBe("");
+  });
+});
+
+describe("receiptFiscalHandoffLine — o recibo da encomenda diz quando a nota sai", () => {
+  it("fala a mesma frase do servidor (`receipt_escpos._fiscal_handoff_line`)", () => {
+    expect(receiptFiscalHandoffLine("awaiting_pickup")).toBe("A nota fiscal sai na retirada.");
+    expect(receiptFiscalHandoffLine("awaiting_delivery")).toBe("A nota fiscal sai na entrega.");
+  });
+  it("venda de balcão e nota já resolvida não ganham frase", () => {
+    for (const state of ["queued", "authorized", "not_expected", "awaiting_payment", "failed"] as const) {
+      expect(receiptFiscalHandoffLine(state)).toBe("");
+    }
   });
 });

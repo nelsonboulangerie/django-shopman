@@ -8,6 +8,7 @@
 import type {
   KDSBoardProjection as KDSBoardContract,
   KDSCustomerStatusProjection,
+  KDSExitPreparingCardProjection,
   KDSExpeditionCardProjection,
   KDSInstanceSummaryProjection,
   KDSTicketProjection as KDSTicketContract,
@@ -16,6 +17,8 @@ import type {
 export type {
   KDSCustomerOrderProjection,
   KDSCustomerStatusProjection,
+  KDSExitPreparingCardProjection,
+  KDSExitStationChipProjection,
   KDSExpeditionCardProjection,
   KDSInstanceSummaryProjection,
   KDSItemProjection,
@@ -32,6 +35,8 @@ export interface KDSBoardProjection extends KDSBoardContract {
   tickets: (KDSTicketProjection | KDSExpeditionCardProjection)[];
   cancelled_tickets: KDSTicketProjection[];
   recent_done: KDSTicketProjection[]; // para recall (desfazer finalização)
+  /** Só na Saída: pedidos que ainda esperam alguma estação (coluna "Em preparo"). */
+  preparing: KDSExitPreparingCardProjection[];
 }
 
 // API envelopes (shopman/backstage/api/kds.py response shapes).

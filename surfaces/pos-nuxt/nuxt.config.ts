@@ -39,6 +39,14 @@ export default defineNuxtConfig({
     },
   },
 
+  // 301 da rota antiga → a casa nova. "Fichas de pedido" (`/tickets`) virou a
+  // Via Pedido – painel, card da seção Encomendas (ENCOMENDAS-PDV-PLAN, WP-E2);
+  // o kiosk do painel de parede tem bookmark da antiga. Mesmo mecanismo das rotas
+  // pt-br antigas (PR #68): `routeRules` do Nitro, direto ao destino final.
+  routeRules: {
+    "/tickets": { redirect: { to: "/preorders/panel", statusCode: 301 } },
+  },
+
   modules: [
     definePwaCapability({
       app: "pos",
@@ -48,7 +56,7 @@ export default defineNuxtConfig({
       // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
       // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
       // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
-      // fechamento é digitada e não está salva; `/tickets`, porque a seleção de fichas
+      // fechamento é digitada e não está salva; `/preorders/panel`, porque a seleção de vias
       // para impressão é rascunho.
       //
       // ⚠️ `/display` fica de fora pelo motivo mais forte de todos: `skipWaiting` vale

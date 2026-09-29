@@ -25,6 +25,10 @@ import {
   receiptOutcomeSummary,
   isApproximateCost,
   purchaseUnitLabel,
+  resaleCopy,
+  resaleSuggestionView,
+  openingView,
+  skuRoleBadges,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
@@ -70,6 +74,8 @@ const {
   minStockLineErrors,
   minStockFilledCount,
   setMinStockInput,
+  setSale,
+  setOpening,
   clearMinStock,
   saveMinStock,
   supplierSummaries,
@@ -170,6 +176,77 @@ const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
   { key: "costs", label: "Custos", icon: "lucide:calculator" },
   { key: "count", label: "Contagem", icon: "lucide:clipboard-check" },
 ];
+
+// "Permitir revenda" do item aberto: o campo de preço só existe depois do gesto,
+// e volta fechado quando outro item é aberto.
+const saleOpen = ref(false);
+const salePriceInput = ref("");
+watch(
+  () => selectedMaterial.value?.sku,
+  () => {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+  },
+);
+
+// O quadrado mostra o que o servidor diz (ou o formulário aberto): desligar
+// uma revenda ativa é gesto na hora; ligar abre o campo de preço.
+async function onResaleToggle(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const material = selectedMaterial.value;
+  if (!material) return;
+  if (input.checked) {
+    saleOpen.value = true;
+    salePriceInput.value = resaleSuggestionView(material.saleSuggestion, material.unit)?.input ?? "";
+    return;
+  }
+  if (saleOpen.value && !material.roles?.sellable) {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+    return;
+  }
+  input.checked = true;
+  await setSale(material.sku, false);
+}
+
+// "Quando aberto, vira" do item aberto: rascunho local, reidratado a cada item.
+const CREATE_OPENED = "__create__";
+const openingDraft = reactive({ open: false, target: "", quantity: "", shelfLifeDays: "" });
+watch(
+  () => selectedMaterial.value?.sku,
+  () => {
+    const material = selectedMaterial.value;
+    openingDraft.open = false;
+    openingDraft.target = material?.opensInto?.sku ?? CREATE_OPENED;
+    openingDraft.quantity = material?.opensInto?.quantity.replace(".", ",") ?? (material ? openingView(material, materials.value).suggestedQuantity : "");
+    openingDraft.shelfLifeDays = material?.opensInto?.shelfLifeDays?.toString() ?? "";
+  },
+  { immediate: true },
+);
+
+async function saveOpening() {
+  const material = selectedMaterial.value;
+  if (!material) return;
+  const creating = openingDraft.target === CREATE_OPENED;
+  const ok = await setOpening(material.sku, {
+    enabled: true,
+    createOpened: creating,
+    openedSku: creating ? "" : openingDraft.target,
+    openedUnit: "kg",
+    quantity: openingDraft.quantity,
+    shelfLifeDays: openingDraft.shelfLifeDays,
+  });
+  if (ok) openingDraft.open = false;
+}
+
+async function confirmSale() {
+  const material = selectedMaterial.value;
+  if (!material) return;
+  if (await setSale(material.sku, true, salePriceInput.value)) {
+    saleOpen.value = false;
+    salePriceInput.value = "";
+  }
+}
 
 const countConfirmOpen = ref(false);
 
@@ -861,7 +938,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <div><dt class="text-xs text-muted-foreground">Estimado</dt><dd class="font-semibold tabular-nums">{{ formatMoney(row.estimatedCostQ) }}</dd></div>
             </dl>
             <div class="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openQuoteFor(row.material, row.supplier?.ref)">Ajustar</button>
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openQuoteFor(row.material, row.supplier?.ref)">Lançar custo</button>
               <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || purchaseRequestStatus(row.material.sku) === 'sent' || actionPending" @click="sendPurchaseRequest(row.material.sku)">
                 {{ purchaseRequestStatus(row.material.sku) === "sent" ? "Enviado" : "Enviar pedido" }}
               </button>
@@ -1228,6 +1305,9 @@ onBeforeUnmount(stopInvoiceScanner);
                   <td class="px-3 py-2">
                     <button type="button" class="text-left font-semibold hover:underline" @click="selectMaterial(material.sku)">{{ material.name }}</button>
                     <p class="text-xs text-muted-foreground">{{ material.category }} · {{ material.recipes.join(", ") }}</p>
+                    <p v-if="skuRoleBadges(material.roles).length" class="mt-1 flex flex-wrap gap-1">
+                      <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{{ badge }}</span>
+                    </p>
                   </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatStockOnHand(material) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ coverageLabel(material.coverageDays) }}</td>
@@ -1302,6 +1382,107 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="mt-4 space-y-2">
             <div v-for="issue in selectedMaterial.issues" :key="issue.key" class="rounded-md border p-2 text-sm" :class="toneClasses[issue.tone]">{{ issue.label }}</div>
             <p v-if="!selectedMaterial.issues.length" class="rounded-md border border-success/25 bg-success/10 p-2 text-sm text-success">Sem pontos de atenção</p>
+          </div>
+          <!-- Permitir revenda: um gesto, que pede só o preço. O cadastro de venda
+               nasce com o MESMO SKU (mesmo estoque) e entra no PDV; loja online
+               só com foto. Desligar tira da venda sem apagar nada. -->
+          <div class="mt-4 border-t border-border pt-4" data-testid="sale-toggle">
+            <div class="flex flex-wrap gap-1">
+              <span v-for="badge in skuRoleBadges(selectedMaterial.roles)" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
+            </div>
+            <p v-if="selectedMaterial.roles?.produced && !selectedMaterial.roles?.sellable" class="mt-3 text-xs text-muted-foreground">
+              É produzido aqui: a venda dele é do Catálogo, não do Compras.
+            </p>
+            <template v-else>
+              <label class="mt-3 flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox" class="form-checkbox rounded border-border text-primary"
+                  :checked="Boolean(selectedMaterial.roles?.sellable) || saleOpen"
+                  :disabled="readonlyFallback || actionPending"
+                  @change="onResaleToggle"
+                />
+                Permitir revenda
+              </label>
+              <p v-if="selectedMaterial.roles?.sellable" class="mt-1 text-sm">
+                <template v-if="selectedMaterial.unit === 'kg'">Vendido só no balcão, por peso:</template>
+                <template v-else>À venda no PDV:</template>
+                <span class="font-semibold tabular-nums">{{ formatMoney(selectedMaterial.salePriceQ ?? 0) }}</span> / {{ selectedMaterial.unit }}.
+              </p>
+              <form v-else-if="saleOpen" class="mt-2 space-y-2" @submit.prevent="confirmSale()">
+                <label class="block">
+                  <span class="block text-xs font-medium text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).priceLabel }}</span>
+                  <input v-model="salePriceInput" inputmode="decimal" required placeholder="0,00" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
+                </label>
+                <p v-if="resaleSuggestionView(selectedMaterial.saleSuggestion, selectedMaterial.unit)" class="text-xs text-muted-foreground">
+                  Sugerido: {{ resaleSuggestionView(selectedMaterial.saleSuggestion, selectedMaterial.unit)?.basis }}
+                </p>
+                <p v-else class="text-xs text-muted-foreground">Sem custo de compra registrado: informe o preço.</p>
+                <p class="text-xs text-muted-foreground">{{ resaleCopy(selectedMaterial.unit, salePriceInput).reach }}</p>
+                <button
+                  type="submit"
+                  class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  :disabled="readonlyFallback || actionPending || !resaleCopy(selectedMaterial.unit, salePriceInput).ready"
+                >
+                  Colocar à venda
+                </button>
+              </form>
+            </template>
+          </div>
+          <!-- Quando aberto, vira: a embalagem por unidade que a produção usa em
+               gramas. A produção abre sozinha no fechamento da fornada; aqui só
+               se diz o que vem dentro. Sem botão de abrir: ajuste raro é da
+               contagem de estoque. -->
+          <div v-if="openingView(selectedMaterial, materials).canOpen" class="mt-4 border-t border-border pt-4" data-testid="opening">
+            <div class="flex items-baseline justify-between gap-2">
+              <p class="text-sm font-semibold">Quando aberto, vira</p>
+              <button
+                v-if="!openingDraft.open"
+                type="button"
+                class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                :disabled="readonlyFallback || actionPending"
+                @click="openingDraft.open = true"
+              >
+                {{ selectedMaterial.opensInto ? "Alterar" : "Definir" }}
+              </button>
+            </div>
+            <p v-if="selectedMaterial.opensInto && !openingDraft.open" class="mt-1 text-sm">{{ openingView(selectedMaterial, materials).summary }}</p>
+            <p v-else-if="!openingDraft.open" class="mt-1 text-xs text-muted-foreground">
+              Só se a produção usa este item em peso. Ela abre uma embalagem quando precisa.
+            </p>
+            <form v-if="openingDraft.open" class="mt-2 space-y-2" @submit.prevent="saveOpening()">
+              <label class="block">
+                <span class="block text-xs font-medium text-muted-foreground">Insumo aberto</span>
+                <select v-model="openingDraft.target" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm">
+                  <option :value="CREATE_OPENED">Criar a partir desta embalagem (em kg)</option>
+                  <option v-for="option in openingView(selectedMaterial, materials).options" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="block">
+                  <span class="block text-xs font-medium text-muted-foreground">Quanto vem em uma embalagem</span>
+                  <input v-model="openingDraft.quantity" inputmode="decimal" required placeholder="0,200" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
+                </label>
+                <label class="block">
+                  <span class="block text-xs font-medium text-muted-foreground">Validade depois de aberto (dias)</span>
+                  <input v-model="openingDraft.shelfLifeDays" inputmode="numeric" placeholder="Sem prazo" class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums" />
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="submit" class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || actionPending || !openingDraft.quantity.trim()">
+                  Salvar
+                </button>
+                <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openingDraft.open = false">Cancelar</button>
+                <button
+                  v-if="selectedMaterial.opensInto"
+                  type="button"
+                  class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                  :disabled="readonlyFallback || actionPending"
+                  @click="setOpening(selectedMaterial.sku, { enabled: false }).then((ok) => { if (ok) openingDraft.open = false; })"
+                >
+                  Não abre mais
+                </button>
+              </div>
+            </form>
           </div>
           <div class="mt-4 border-t border-border pt-4">
             <p class="text-xs font-medium text-muted-foreground">Receitas que consomem</p>
@@ -1556,8 +1737,8 @@ onBeforeUnmount(stopInvoiceScanner);
               </p>
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(false)">Salvar</button>
-              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(true)">Salvar padrão</button>
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(false)">Salvar custo</button>
+              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="saveQuote(true)">Salvar como padrão</button>
             </div>
           </div>
         </aside>

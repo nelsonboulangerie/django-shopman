@@ -121,9 +121,17 @@ def orders_for_period(date_from: date, date_to: date) -> list:
     (``data__delivery_date``). O SQL é o filtro grosso — quem decide de verdade
     é :func:`commitment_of` em Python, porque a data combinada é uma leitura
     (chave ausente ⇒ vale a data da venda) e não uma coluna.
+
+    ⚠️ **Venda de Balcão fica de fora** — a mesma régua do Gestor
+    (``order_queue.build_two_zone_queue``). Ela não tem ``delivery_date`` e por
+    isso entrava pelo ramo "feito na janela": o lote de hoje imprimia um papel
+    para cada café vendido no balcão, compromisso que a casa não tem com
+    ninguém, porque a mercadoria já saiu na mão do cliente.
     """
     from django.db.models import Q
     from shopman.orderman.models import Order
+
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
     # ⚠️ UM filtro com dois ``Q``, não a união de dois querysets: `|` entre
     # querysets pede `.distinct()`, e `.distinct()` num model com ordenação
@@ -141,7 +149,10 @@ def orders_for_period(date_from: date, date_to: date) -> list:
         .prefetch_related("items")
     )
 
-    dentro = [o for o in candidatos if date_from <= commitment_of(o) <= date_to]
+    dentro = [
+        o for o in candidatos
+        if date_from <= commitment_of(o) <= date_to and not is_pos_counter_order(o)
+    ]
     return sorted(dentro, key=_window_sort_key)
 
 
@@ -174,6 +185,25 @@ def ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         tracking_url=tracking_url,
         reprint=reprint,
     )
+
+
+def courier_ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
+    """Os bytes da VIA DO ENTREGADOR — o papel que sai pela porta.
+
+    Irmã de :func:`ticket_bytes`, e a diferença está no destinatário: a ficha é
+    da casa (painel de parede, cozinha, balcão) e a via é de quem leva. Por isso
+    ela não carrega o QR de acompanhamento — esse endereço é da página do
+    CLIENTE, e a via é o único papel do trio que sai da casa na mão de um
+    terceiro.
+
+    Qual das duas vias sai (Identificada ou Anônima) é decisão de configuração
+    do canal, resolvida por ``order_helpers.courier_ticket_variant``; o leiaute
+    tem dono em ``receipt_escpos.courier_ticket``. Aqui só se resolve o nome da
+    loja, como em :func:`ticket_bytes`.
+    """
+    from shopman.backstage.services.receipt_escpos import courier_ticket
+
+    return courier_ticket(order, shop_name=shop_name or shop_display_name(), reprint=reprint)
 
 
 def preview_rows(orders: list) -> list[dict]:

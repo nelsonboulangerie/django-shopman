@@ -9,8 +9,6 @@ Helper functions accept raw data so they are testable without a request object.
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.utils import timezone
 
 from shopman.shop.projections import checkout_context
@@ -442,21 +440,14 @@ def _validate_preorder(
     except ValueError:
         return errors
 
-    if chosen_date < today:
-        errors["delivery_date"] = "Não é possível encomendar para uma data passada."
-        return errors
+    # Passada, além do máximo e dia fechado: a mesma régua do reagendamento do
+    # operador (``shop.services.preorder_dates``). O lead time fica aqui porque
+    # depende do carrinho.
+    from shopman.shop.services.preorder_dates import date_refusal
 
-    max_preorder_days, closed_dates = checkout_context.preorder_config()
-
-    max_date = today + timedelta(days=max_preorder_days)
-    if chosen_date > max_date:
-        errors["delivery_date"] = f"Data máxima permitida: {max_date.strftime('%d/%m/%Y')}"
-        return errors
-
-    is_closed, closed_label = _is_closed_date(chosen_date, closed_dates)
-    if is_closed:
-        suffix = f": {closed_label}" if closed_label else ""
-        errors["delivery_date"] = f"Fechado{suffix} — escolha outra data."
+    refusal = date_refusal(chosen_date, today=today)
+    if refusal:
+        errors["delivery_date"] = refusal
         return errors
 
     lead_time_error = _validate_lead_time(
@@ -559,22 +550,3 @@ def _validate_slot(
     if error:
         errors["delivery_time_slot"] = error
     return errors
-
-
-def _is_closed_date(date_obj, closed_dates: list) -> tuple[bool, str | None]:
-    from datetime import date as date_type
-    for entry in closed_dates:
-        label = entry.get("label", "")
-        if "date" in entry:
-            try:
-                if date_obj == date_type.fromisoformat(entry["date"]):
-                    return True, label
-            except ValueError:
-                pass
-        elif "from" in entry and "to" in entry:
-            try:
-                if date_type.fromisoformat(entry["from"]) <= date_obj <= date_type.fromisoformat(entry["to"]):
-                    return True, label
-            except ValueError:
-                pass
-    return False, None

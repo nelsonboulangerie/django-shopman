@@ -191,3 +191,97 @@ def test_cancel_after_fulfill_returns_stock_to_ledger(_=None):
     assert sum((m.delta for m in returns), Decimal("0")) == Decimal("2")
     quant = Quant.objects.get(sku=SKU, position__ref="vitrine")
     assert quant.quantity == Decimal("10")
+
+
+def _order_without_session(items_qty: int, ref: str = "ORD-FRESH-1") -> SimpleNamespace:
+    """Pedido sem sacola (PDV, iFood, sacola vencida): a reserva nasce no commit."""
+    return SimpleNamespace(
+        ref=ref,
+        session_key=None,
+        snapshot={"items": [{"sku": SKU, "qty": items_qty}]},
+        data={},
+        save=lambda update_fields=None: None,
+    )
+
+
+def test_fresh_order_hold_gets_the_same_long_backstop_ttl(_=None):
+    """A reserva criada no commit (não adotada) nascia com o TTL de carrinho.
+
+    30 min depois o sweep a soltava; ``fulfill`` falhava e, como ``hold_ids``
+    já existe, ``hold`` não re-reservava: pedido pago sem baixa, unidade
+    revendida. O dono é o pedido desde o nascimento — mesmo backstop do adotado.
+    """
+    _setup_world()
+    order = _order_without_session(2)
+    stock_service.hold(order)
+
+    [entry] = [e for e in order.data["hold_ids"] if e.get("hold_id")]
+    fresh = Hold.objects.get(pk=int(entry["hold_id"].split(":")[1]))
+    assert fresh.expires_at is not None
+    assert fresh.expires_at > timezone.now() + timedelta(hours=24)
+
+
+def test_soft_path_reserves_and_fulfills_what_is_free_not_zero(_=None):
+    """Caminho otimista (PDV/iFood): 3 pedidos com 2 livres baixa 2, não 0."""
+    _setup_world(stock_qty=3)
+    get_adapter("stock").create_hold(sku=SKU, qty=Decimal("1"), reference="sacola-alheia")
+
+    order = _order_without_session(3)
+    stock_service.hold(order)  # require_all=False: pedido já consumado fora
+
+    reserved = sum(e["qty"] for e in order.data["hold_ids"] if e.get("hold_id"))
+    assert reserved == 2
+    stock_service.fulfill(order)
+    assert _sell_moves_total() == Decimal("2")
+
+    alert = OperatorAlert.objects.get(type="stock_hold_gap", order_ref=order.ref)
+    assert "1×" in alert.message  # o alerta fala só do resto
+
+
+def test_soft_path_reserves_across_quants_when_none_covers_it_alone(_=None):
+    """Reserva é 1:1 por quant: 1 na vitrine + 1 no balcão cobrem um pedido de 2."""
+    _setup_world(stock_qty=1)
+    balcao, _ = Position.objects.get_or_create(
+        ref="balcao",
+        defaults={"name": "Balcão", "kind": PositionKind.PHYSICAL, "is_saleable": True},
+    )
+    Quant.objects.create(sku=SKU, position=balcao, _quantity=Decimal("1"))
+
+    order = _order_without_session(2)
+    stock_service.hold(order)
+
+    assert [e["qty"] for e in order.data["hold_ids"] if e.get("hold_id")] == [1, 1]
+    assert not OperatorAlert.objects.filter(type="stock_hold_gap").exists()
+    stock_service.fulfill(order)
+    assert _sell_moves_total() == Decimal("2")
+
+
+def test_partial_holds_stop_when_a_hold_does_not_consume_free_stock(monkeypatch):
+    """Guarda de progresso do ``create_holds_up_to``.
+
+    Se o Stockman aceitar a reserva sem tirá-la do livre (reserva de DEMANDA,
+    ``quant=None``, ou desencontro entre a leitura do livre e a escolha do
+    quant), o pedaço não garante baixa nenhuma. Antes ele era contado como
+    reservado — e o laço seguia pedindo pedaços que não seguravam nada.
+    """
+    from shopman.shop.adapters import stock as stock_adapter
+
+    _setup_world(stock_qty=2)
+    calls: list[Decimal] = []
+
+    def _demand_hold(sku, qty, ttl_minutes=30, **kwargs):
+        calls.append(qty)
+        hold = Hold.objects.create(
+            sku=sku, quant=None, quantity=qty, target_date=timezone.localdate(),
+            status=HoldStatus.PENDING, metadata={"reference": kwargs.get("reference")},
+        )
+        return {"success": True, "hold_id": hold.hold_id}
+
+    monkeypatch.setattr(stock_adapter, "create_hold", _demand_hold)
+
+    reserved = stock_adapter.create_holds_up_to(SKU, Decimal("5"), reference="order:X")
+
+    assert reserved == []
+    assert len(calls) == 1
+    # A reserva sem lastro foi desfeita, não abandonada ativa.
+    assert not Hold.objects.filter(quant__isnull=True).exclude(status=HoldStatus.RELEASED).exists()

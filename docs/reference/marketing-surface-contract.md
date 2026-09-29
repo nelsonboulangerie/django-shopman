@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-17
+- **Última verificação:** 2026-09-28
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -21,7 +21,7 @@ e sem navegação por membro, contato, outbox, destino ou tentativa.
 |---|---|---:|---|
 | Instagram | Story público por padrão; Feed só por escolha explícita | 1 por anúncio | mensagem direta ou fallback de Story para Feed |
 | Facebook | postagem pública na página | 1 por anúncio | mensagem por pessoa |
-| Google Meu Negócio | atualização pública padrão do estabelecimento | 1 por anúncio | mensagem por pessoa |
+| Google Meu Negócio | post público no perfil: Atualização, Evento ou Oferta | 1 por anúncio | mensagem por pessoa |
 | WhatsApp | mensagem direta | até 1 por pessoa elegível | postagem pública |
 
 Mensagem direta no Instagram está fora do contrato. Se for aprovada no futuro, exige
@@ -42,7 +42,9 @@ e a decisão completas estão em
 Para novas entregas, as três dimensões são obrigatórias desde o schema 4 e são
 persistidas no artefato, outbox e destino. A resposta de `/marketing/options/`
 projeta `delivery_capabilities` com modalidade, formatos, default, campos aceitos e
-exigência de mídia; o formulário consome essa projeção. Linhas e artefatos anteriores
+exigência de mídia; o composer de campanha consome essa projeção na etapa Destinos e
+na revisão das composições. Ele não consome `provider_capabilities`, que é inventário
+teórico e pode conter formatos planejados ou bloqueados. Linhas e artefatos anteriores
 continuam legíveis pela compatibilidade histórica, mas não podem originar uma nova
 identidade incompleta.
 
@@ -53,7 +55,104 @@ explicitamente escolhido. Artefato histórico sem formato continua legível, mas
 adapter real o recusa antes da rede — nunca adivinha um efeito novo. A prévia de Story
 mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automaticamente.
 
+`/marketing/preview/` tem dois modos. Sem `announcement`, é a prévia do formulário de
+campanha/modelo: ainda não existe anúncio, e um produto real da loja serve de exemplo
+(`sample: true`, "Exemplo com: …"). Com `announcement: <id>` (tela de revisão), a prévia
+sai do conteúdo GRAVADO do anúncio mais as edições do card (`body`, `hashtags`,
+`platforms`, `google_business`), montada como a aprovação monta — nunca com produto de exemplo. Se o
+anúncio não tem link, a prévia não mostra link, porque o post não terá
+(`campaign.preview_announcement`).
+
+### Post do Google Meu Negócio
+
+Três formatos (`publication_format`): `standard` (Atualização), `event` (Evento: título,
+início e fim em hora local da loja) e `offer` (Oferta). `ALERT` fica de fora. O botão é
+escolha explícita (`call_to_action`), no modelo e na revisão do anúncio, com o rótulo que o
+Google mostra em pt-BR: **Nenhum** (padrão), Ligar agora (`call`, sem URL: usa o telefone
+do perfil), Saiba mais (`learn_more`), Pedir on-line (`order`), Comprar (`shop`), Reservar
+(`book`), Inscrever-se (`sign_up`). **Link nunca vira botão sozinho**; sem botão, o link não
+aparece no post. Pedir on-line e Comprar só levam a `/produto/` ou `/oferta/`. "Como chegar"
+não existe na API. A Oferta não tem botão escolhível (o Google mostra "Ver oferta") e nasce
+da `Promotion` da campanha: título e validade são selados pelo servidor a partir dos fatos,
+o link de resgate é a página da oferta e o operador só escreve as condições. Chaves e donos
+em [data-schemas.md](data-schemas.md#google_business--post-do-google-meu-negócio).
+
+Travas na prévia e na aprovação, com a mensagem no campo (`field_errors`), a partir dos
+limites da documentação oficial do Google conferidos em 2026-09-25: texto + hashtags até
+1.500 caracteres (`google_summary_too_long`), sem telefone no texto
+(`google_summary_has_phone` — o Google remove post com contato que não consegue
+verificar; o botão "Ligar agora" é o caminho), foto JPEG ou PNG, de 10 KB a 5 MB e com ao
+menos 250 × 250 px (`google_media_*`). Formato, peso e dimensão da foto são lidos do
+arquivo (`marketing_media_probe`): `GET` com `Range` de 256 KB, só em host da lista de
+mídia, sem seguir redirecionamento, com cache de 10 min por URL — é a única leitura de
+mídia que o servidor faz. A prévia mostra a foto no recorte do cartão e desaconselha
+texto dentro da imagem (o Google corta as laterais conforme a tela). As mesmas travas
+puras voltam no adapter antes da rede.
+
+O editor de modelo mostra os três formatos com seus próprios campos; não existe um
+“tipo de publicação” genérico aplicado a destinos não-Google. Evento exige título,
+início e fim antes de salvar. Oferta recebe apenas condições editoriais no modelo; a
+promoção escolhida na campanha sela título, validade e link. Atualização e Evento
+oferecem somente os CTAs aceitos pelo contrato e desabilitam os que precisam de link
+quando o texto não usa `{{link}}`.
+
+A intenção editorial continua simples: um texto comum serve todos os destinos. O
+operador abre uma composição somente quando precisa adaptar o texto ou formato daquela
+plataforma. A tela lista exclusivamente `delivery_capabilities`, sela o formato
+escolhido em `platform_variants` e mantém a adaptação visível como “Adaptada”. Para
+WhatsApp, template, variáveis e botões aprovados continuam pertencendo à conexão; o
+editor não inventa controles genéricos para eles. Se a allow-list não carregar, o
+formulário falha fechado e não salva opções presumidas pelo navegador.
+
+Depois do aceite, a passada de entrega (`process_marketing_delivery --with-reconciliation`,
+no `maintenance-worker`) consulta `localPosts.get` dos posts do Google aceitos nas últimas
+48 h: `LIVE`/`RECURRING`/`SCHEDULED` → `confirmed`, `REJECTED` → `failed_final`
+(`google_post_rejected`), `PROCESSING` fica `accepted` para o ciclo seguinte (a foto
+aparece ~1–2 min depois do texto). A consulta só lê. Apagar um post é outra ação
+pública: não existe no cockpit, e quando existir será comando explícito, com
+confirmação, nunca automático.
+
 ## Rotas Nuxt
+
+`/v2` é a entrada autenticada e canônica do workspace Marketing V2. `/` redireciona
+para `/v2?area=today`. Ela organiza Hoje,
+Campanhas, Ofertas e Plataformas em uma experiência própria, mas não cria um segundo
+backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
+confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
+podem abrir uma campanha com oferta pré-selecionada e podem abrir a conexão de uma
+plataforma específica. Hoje, Campanhas, Ofertas e cupons e Plataformas ocupam a barra
+superior canônica do app na V2; não existe uma segunda barra de abas dentro do
+workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
+somente referência de design, sem capacidade operacional.
+
+Os fluxos densos de campanha, disparo manual, modelo e configuração de plataforma
+abrem em um workspace modal. No desktop ele usa a largura disponível para etapas,
+composições e prévias; no mobile ocupa a tela. Fechar um deep link devolve o operador
+à área correspondente e restaura o foco no acionador. `/platforms` sem uma plataforma
+específica redireciona para `/v2?area=platforms`, evitando alternância entre o catálogo
+novo e a lista anterior. As rotas secundárias `/campaigns`, `/templates`, `/history`,
+`/platforms?platform=...` e `/announcements/:id` continuam hospedando as capacidades
+operacionais existentes sob a mesma barra superior da V2.
+
+O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
+opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma
+plataforma desconectada ou bloqueada permanece visível com o motivo real; somente a
+allow-list do servidor decide se ela entra no composer. Na fixture hermética, Google
+faz parte da matriz normal e expõe Atualização, Evento e Oferta.
+
+Na lista de campanhas, editar e ligar/desligar exigem a Action `edit_campaign` exata
+para o recurso e a versão visíveis. A Action decide se o controle existe e está
+habilitado; o navegador não deduz permissão. O PATCH continua same-origin no recurso
+canônico e sempre leva `base_updated_at`. Action ausente/desatualizada ou relógio de
+leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeção e não
+aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
+bloqueado para não duplicar a intenção.
+
+“Preparar disparo” obedece separadamente à Action `fire_campaign`: recurso, versão,
+href, método, idempotência e exigência de token precisam coincidir. O primeiro POST
+apenas sela a intenção; o challenge `none` é consumido automaticamente porque a
+consequência é criar um anúncio para revisão. O receipt viaja para a tela desse anúncio
+e nenhuma plataforma recebe conteúdo no `fire`.
 
 <!-- marketing-ui-routes:start -->
 - `/`
@@ -62,6 +161,7 @@ mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automati
 - `/history`
 - `/platforms`
 - `/templates`
+- `/v2`
 <!-- marketing-ui-routes:end -->
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
@@ -200,12 +300,13 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_WHATSAPP_CANARY_CUSTOMER_REFS` | Platform Owner | vazio; `canary` sem lista fica bloqueado | esvaziar ao fim do ensaio |
 | `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` | Platform Owner | `120`; inválido volta ao padrão | revisar com a latência observada no ensaio |
 | `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
-| `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado. No alpha: `true` só no spec vivo desde 2026-09-25 (ensaio publicado) | desligar se o token da Página for anulado |
 | `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter experimental nem é registrado | somente após OAuth, revisão e gate TikTok |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` e versão | Segurança | vazio bloqueia materialização segura | rotação versionada |
 | `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | Platform Owner | `{}`; nenhum alvo de teste | remover alvo ao fim do teste |
 | `SHOPMAN_MARKETING_MEDIA_HOSTS` | Segurança/Marca | vazio; mídia externa bloqueada | revisão por host |
+| `SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED` | Platform Owner | `true`; a foto do Google é lida antes de aprovar. `false` só onde não há rede (testes, simulador) | — |
 | `SHOPMAN_MARKETING_AI_ASSIST_V2` | Produto | `false`; assistência invisível | MKT-054 |
 | `SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED` | Jurídico/Segurança | `false`; chave não basta | por política do fornecedor |
 
@@ -262,6 +363,21 @@ contínua exige decidir e validar seu ciclo de renovação. Credencial presente 
 publicação: a flag da plataforma e os consumidores duráveis — ou o canário unitário
 explicitamente armado — permanecem gates independentes. Em `DEBUG`, adapter externo
 também exige o opt-in geral de saída externa.
+
+O `META_PAGE_ACCESS_TOKEN` do alpha é token de **Página** derivado do usuário de
+sistema `shopman-api` do Business Manager (app "App Nelson"), com expiração **Nunca** e
+os escopos `pages_manage_posts`, `pages_read_engagement`, `pages_show_list`,
+`instagram_basic` e `instagram_content_publish`. Token de Página derivado de token de
+usuário pessoal vence junto com ele (o Graph API Explorer usa o token pessoal por
+padrão): confira no Access Token Debugger que o usuário é `shopman-api` e "Expira:
+Nunca" antes de colar no painel. Ensaio de 2026-09-25: anúncio 34 (campanha "Ensaio
+Facebook", só Facebook, revisão ligada) publicou foto + legenda na Página
+`764222643620409`, recibo `accepted` no ledger e post conferido na Página. O adapter
+chama a Graph API `v21.0` (`META_API_VERSION`), que expira em 2027-01-21.
+
+O app OAuth do Google é do tipo **Interno** no Google Cloud: o Google não pede página
+inicial pública nem verificação do app, então o Storefront não tem página própria para
+ele.
 
 TikTok ainda não integra o catálogo selecionável. O adapter Direct Post de foto é
 somente uma fronteira testável e inerte: token estático serve no máximo a canário

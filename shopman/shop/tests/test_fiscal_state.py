@@ -1,11 +1,11 @@
 """``fiscal_state``: em que pé está a NFC-e, num vocabulário só.
 
-A nota nasce em três pontos (fechamento do PDV, captura do pix/link, conclusão)
-e a tela chutava o terceiro para todo pedido — "Fiscal na conclusão" num pix
-que emite na captura. Estes testes prendem os cinco estados do contrato
-(``not_expected`` | ``queued`` | ``awaiting_payment`` | ``authorized`` |
-``failed``), a precedência entre evidência e regra, a leitura em lote, a
-pergunta "pedir papel emite?" e o grito da expedição sem nota.
+A nota da venda de balcão nasce no pagamento (fechamento do PDV ou captura do
+Pix); a da encomenda, na saída da mercadoria (decisão de 26/09/2026). Estes
+testes prendem os estados do contrato (``not_expected`` | ``queued`` |
+``awaiting_payment`` | ``awaiting_pickup`` | ``awaiting_delivery`` |
+``authorized`` | ``failed``), a precedência entre evidência e regra, a leitura
+em lote, a pergunta "pedir papel emite?" e o grito da expedição sem nota.
 """
 
 from __future__ import annotations
@@ -36,7 +36,9 @@ def _backend_present():
 
 
 def _order(ref: str, *, payment: dict | None = None, status: str = "accepted", **extra) -> Order:
-    data = {"fulfillment_type": "pickup", "payment": payment or {"method": "cash"}}
+    # Venda de balcão do PDV por padrão: ``origin_channel`` é o que separa o
+    # balcão (nota no fechamento) da encomenda (nota na saída da mercadoria).
+    data = {"origin_channel": "pos", "fulfillment_type": "pickup", "payment": payment or {"method": "cash"}}
     data.update(extra)
     return Order.objects.create(ref=ref, channel_ref="pdv", status=status, total_q=1500, data=data)
 
@@ -60,7 +62,7 @@ def test_authorized_quando_a_chave_existe():
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
 def test_awaiting_payment_para_pix_sem_captura():
-    """Pix/link emitem na CAPTURA (``lifecycle._on_paid``), não na conclusão."""
+    """Pix de balcão emite na CAPTURA (``lifecycle._on_paid``), não na conclusão."""
     order = _order("FS-PIX", payment={"method": "pix"})
 
     assert fiscal_service.fiscal_state(order) == "awaiting_payment"
@@ -76,9 +78,12 @@ def test_pix_capturado_sem_chave_ainda_esta_na_fila():
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
 def test_queued_para_quem_nao_exige_captura_e_ainda_nao_tem_chave():
-    """Dinheiro no balcão: a nota sai no fechamento; COD: na conclusão. Nas duas, 'na fila'."""
+    """Dinheiro no balcão: a nota sai no fechamento, 'na fila'. COD com a sacola
+    ainda na casa: a nota espera a saída ('sai na entrega'); despachado, 'na fila'."""
     assert fiscal_service.fiscal_state(_order("FS-CASH")) == "queued"
     cod = _order("FS-COD", payment={"method": "cash", "collection": "on_delivery"}, fulfillment_type="delivery")
+    assert fiscal_service.fiscal_state(cod) == "awaiting_delivery"
+    cod.status = "dispatched"
     assert fiscal_service.fiscal_state(cod) == "queued"
 
 
@@ -162,9 +167,13 @@ def test_a_evidencia_pre_lida_dispensa_a_consulta():
         (f"{ON_REQUEST},{ON_RECEIPT}", True),
         (ON_RECEIPT, True),
         (ALWAYS, True),
-        (ON_REQUEST, False),
+        # A base de toda configuração também lê o pedido de comprovante: papel e
+        # e-mail pedem a nota como o CPF pede, qualquer que seja a env.
+        (ON_REQUEST, True),
         ("shopman.shop.fiscal_resolvers.eletronic_payment", False),
-        ("", False),
+        ("shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement", False),
+        # Sem resolver, o fallback é o mesmo pedido do balcão.
+        ("", True),
     ],
 )
 def test_receipt_request_emits_le_a_env_e_nao_o_default(resolver, expected):
@@ -191,7 +200,7 @@ def test_despacho_com_a_nota_na_fila_cria_UM_alerta_por_pedido():
 
     alerts = list(_handoff_alerts(order.ref))
     assert len(alerts) == 1
-    assert "FS-HANDOFF saiu sem NFC-e autorizada" in alerts[0].message
+    assert "FS-HANDOFF foi despachado sem NFC-e autorizada" in alerts[0].message
     assert "despachado" in alerts[0].message
     assert warning.call_count == 2
     assert warning.call_args_list[0].args[0].startswith("fiscal.handoff_without_nfce")
@@ -206,7 +215,7 @@ def test_emissao_morta_tambem_grita_na_conclusao():
 
     alert = _handoff_alerts(order.ref).get()
     assert "concluído" in alert.message
-    assert "falha de emissão" in alert.message
+    assert "A emissão falhou" in alert.message
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)

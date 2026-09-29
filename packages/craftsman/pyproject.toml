@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Shopman Craftsman — Production Management (MRP)"
 requires-python = ">=3.12"
 dependencies = [
-    "Django>=6.0,<6.1",
+    "Django>=6.1,<6.2",
     "shopman-utils",
 ]
 
@@ -17,7 +17,7 @@ api = [
     "djangorestframework>=3.17,<4.0",
 ]
 unfold = [
-    "django-unfold>=0.92,<0.93",
+    "django-unfold>=0.107,<0.108",
 ]
 dev = [
     "pytest>=8.0",

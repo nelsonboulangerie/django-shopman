@@ -236,11 +236,11 @@ test("feed selection survives response loss and consults the same scoped receipt
     expect.soft(box?.height).toBeGreaterThanOrEqual(44);
   }
   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
-  await page.getByRole("button", { name: "Aplicar", exact: true }).click({ trial: true });
-  const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
-  expect.soft(applyBox?.height, "Aplicar: ação principal").toBeGreaterThanOrEqual(48);
+  await page.getByRole("button", { name: "Salvar coleções", exact: true }).click({ trial: true });
+  const applyBox = await page.getByRole("button", { name: "Salvar coleções", exact: true }).boundingBox();
+  expect.soft(applyBox?.height, "Salvar coleções: ação principal").toBeGreaterThanOrEqual(48);
   await page.getByLabel(new RegExp(lab.collection_name)).check();
-  await page.getByRole("button", { name: "Aplicar", exact: true }).click();
+  await page.getByRole("button", { name: "Salvar coleções", exact: true }).click();
   await expect(page.getByText("Coleções exibidas", { exact: true })).toHaveCount(0);
   await expect(feed.getByText(lab.collection_name, { exact: true })).toBeVisible();
   expect(posts).toBe(1);
@@ -309,7 +309,7 @@ test("product same-field dispute preserves draft until explicit reviewed save", 
   const concurrent = await page.request.patch(path, { headers: { "Idempotency-Key": crypto.randomUUID() }, data: { ...before.action.payload_schema, patch: { name: "Outra estação do catálogo" } } });
   expect(concurrent.status()).toBe(200);
   await page.getByRole("button", { name: "Salvar", exact: true }).click();
-  await expect(page.getByText("Nome — atual: Outra estação do catálogo")).toBeVisible();
+  await expect(page.getByText("Nome. Valor atual: Outra estação do catálogo")).toBeVisible();
   await expect(name).toHaveValue("Rascunho do catálogo");
   await expect(page.getByRole("button", { name: "Salvar", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Manter meu rascunho", exact: true }).click();
@@ -399,9 +399,9 @@ test("cell lost response keeps one price intent and one canonical write", async 
   });
   await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Preço em/ }).first().click();
   await page.locator('input[inputmode="decimal"]').fill("14,23");
-  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await page.getByRole("button", { name: "Salvar preço", exact: true }).click();
   await expect.poll(() => receipts).toBe(1);
-  await expect(page.getByRole("button", { name: "Salvar", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Salvar preço", exact: true })).toHaveCount(0);
   expect(posts).toBe(1);
   const matrix = await (await page.request.get("/api/v1/backstage/catalog/")).json();
   expect(matrix.matrix.rows.find((row: { sku: string }) => row.sku === lab.edit_sku).cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").price_q).toBe(1423);
@@ -674,7 +674,7 @@ test("queue rejection protects its reason on close and reload", async ({ page })
   await reason.fill("Recusa ainda em avaliação");
   let confirmations = 0;
   page.once("dialog", async prompt => { confirmations++; expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
-  await page.getByRole("dialog").getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Voltar", exact: true }).click();
   expect(confirmations).toBe(1);
   await expect(reason).toHaveValue("Recusa ainda em avaliação");
   const reload = page.waitForEvent("dialog");
@@ -742,7 +742,8 @@ test("identified machine dispatch recovers a lost response and return does not c
   const body = await (await page.request.get(`/api/v1/backstage/orders/${lab.device_order_ref}/`)).json();
   expect(body.order.can_settle_delivery_cash).toBe(true);
   await page.goto("/");
-  await expect(page.locator('[data-equipment-available]')).toContainText("Maquininha azul laboratório");
+  // Voltou: o quadro não fala mais da maquininha (nenhum indicador fixo).
+  await expect(page.locator('[data-equipment-label]')).toHaveCount(0);
 });
 
 test("device inventory uses the native Admin form", async ({ page }) => {

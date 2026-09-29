@@ -22,6 +22,7 @@ from unittest.mock import call, patch
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 from shopman.orderman.models import Order, Session
 from shopman.payman.models import PaymentIntent
@@ -33,6 +34,7 @@ from shopman.shop.management.commands.maintenance_worker import (
     MARKETING_DELIVERY_LEASE_SECONDS,
     MARKETING_DELIVERY_WORKER_ID,
 )
+from shopman.shop.management.commands.maintenance_worker import Command as WorkerCommand
 
 # ``transaction=True`` não é preferência de estilo: sem ele estes testes só
 # passam em SQLite, e passam pelo motivo errado.
@@ -317,6 +319,103 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
         assert any(nome in message for message in logged), f"faltou log de {nome}"
 
 
+# ── (b1) Divergência financeira repetida: o worker não grita ─────────────────
+#
+# O `reconcile_financial_day` re-reconcilia ontem a cada ciclo e, enquanto a
+# divergência estiver aberta, levanta o MESMO CommandError. Em 22/09 foram 178
+# eventos no Sentry para uma divergência que já era OperatorAlert com dedupe; a
+# memória em processo que veio depois esquecia a cada deploy. O grito agora é
+# do comando, uma vez por OperatorAlert aberto (ver
+# `shopman/backstage/tests/test_financial_reconciliation.py`); aqui é rastro.
+
+RECONCILE = "reconcile_financial_day"
+
+
+def _call_command_que_diverge(mensagens):
+    """`call_command` falso: só a reconciliação falha, com a próxima mensagem da fila."""
+
+    def fake(command, **kwargs):
+        if command == RECONCILE:
+            raise CommandError(mensagens.pop(0))
+
+    return fake
+
+
+def _gritos(caplog, command):
+    return [
+        r for r in caplog.records
+        if r.name == WORKER_LOGGER and command in r.getMessage() and r.levelno >= logging.ERROR
+    ]
+
+
+def _avisos(caplog, command):
+    return [
+        r for r in caplog.records
+        if r.name == WORKER_LOGGER and command in r.getMessage() and r.levelno == logging.WARNING
+    ]
+
+
+def test_divergencia_financeira_no_worker_e_rastro_mesmo_no_primeiro_ciclo(caplog):
+    """Nem o primeiro ciclo de um processo novo grita: restart/deploy não repete."""
+    ontem = "Reconciliação financeira de 2026-09-21 encontrou divergências."
+    hoje = "Reconciliação financeira de 2026-09-22 encontrou divergências."
+    mensagens = [ontem, ontem, hoje, hoje]
+    with (
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.call_command",
+            side_effect=_call_command_que_diverge(mensagens),
+        ),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        for _ in range(4):
+            # Um worker novo a cada ciclo = um deploy entre cada ciclo.
+            WorkerCommand()._run_cycle()
+
+    assert not _gritos(caplog, RECONCILE)
+    avisos = _avisos(caplog, RECONCILE)
+    assert len(avisos) == 4
+    assert all(r.exc_info is None for r in avisos)
+    assert "2026-09-22" in avisos[-1].getMessage()
+
+
+def test_excecao_inesperada_da_reconciliacao_grita_sempre(caplog):
+    """Só a divergência (CommandError) vira rastro; o defeito de verdade grita."""
+    worker = WorkerCommand()
+
+    def fake(command, **kwargs):
+        if command == RECONCILE:
+            raise RuntimeError("banco caiu")
+
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        worker._run_cycle()
+        worker._run_cycle()
+
+    gritos = _gritos(caplog, RECONCILE)
+    assert len(gritos) == 2
+    assert all(r.exc_info is not None for r in gritos)
+    assert not _avisos(caplog, RECONCILE)
+
+
+def test_command_error_de_outro_comando_segue_gritando_sempre(caplog):
+    worker = WorkerCommand()
+
+    def fake(command, **kwargs):
+        if command == "sweep_stuck_orders":
+            raise CommandError("configuração ausente")
+
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog, level=logging.WARNING),
+    ):
+        worker._run_cycle()
+        worker._run_cycle()
+
+    assert len(_gritos(caplog, "sweep_stuck_orders")) == 2
+
+
 # ── (b2) Entrega de Marketing: dentro do ciclo, sem componente próprio ───────
 #
 # A etapa final da entrega (destino `queued` → adapter → provedor) não tem worker
@@ -439,6 +538,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
 
     sleep.assert_not_called()
     assert cc.call_args_list == [
+        # Primeiro: o fim de um período do toggle de canal religa antes do resto.
+        call("apply_channel_switches"),
         call("release_expired_holds"),
         call("cleanup_stale_sessions"),
         call("sweep_orphan_holds"),
@@ -452,6 +553,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # A série diária materializada do B.I. acompanha o dia (P3 da fundação).
         call("refresh_bi_daily_series"),
         call("evaluate_bi_alerts"),
+        # O placar do de-para: semanal, com gabarito mínimo (cadência no comando).
+        call("run_alias_benchmark"),
         call("expire_stale_announcements"),
         call("process_marketing_outbox", quiet_disabled=True),
         call(
@@ -479,12 +582,21 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_waitlist_windows"),
         call("recover_concierge"),
         call("cleanup_concierge_observations"),
+        # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
+        call("run_intent_pilot"),
         call("check_directive_health"),
+        call("check_stock_alert_delivery_sla"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por
         # estado, não um por ciclo) é do comando, não do worker.
         call("check_catalog_visibility"),
         call("check_integration_drift"),
+        call("check_geoip_freshness"),
+        # A loja no iFood contra a casa: calado quando IFOOD_MERCHANT_SYNC está fora.
+        call("check_ifood_store"),
+        call("check_card_machines_out"),
+        call("sweep_danfe_print_jobs"),
+        call("sweep_kitchen_print_jobs"),
         # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
         # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
         # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio

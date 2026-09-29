@@ -57,14 +57,25 @@ def always(order) -> bool:
 
 
 def on_request_or_tax_id(order) -> bool:
-    """Emite quando houve PEDIDO: o operador marcou, ou um CPF foi pedido na nota.
+    """Emite quando houve PEDIDO da nota nesta venda — por qualquer das três portas.
 
-    Lê o bloco ``fiscal`` (o pedido desta venda), nunca ``customer.tax_id`` (o
-    cadastro): ter CPF no CRM não é pedir CPF na nota — sem essa distinção,
-    todo cliente identificado saía com o documento em toda nota, compulsório.
+    "CPF na nota?", "Impressa?" e "Por e-mail?" são o MESMO pedido: não existe
+    DANFE nem XML sem NFC-e autorizada, então pedir o papel ou o anexo é pedir a
+    nota, tanto quanto pedir o CPF nela. O pedido de comprovante mora aqui, e não
+    só no ``on_requested_receipt`` avulso, porque este resolver é a base de toda
+    configuração: um deployment cuja env esquecesse o resolver de comprovante
+    aceitava o CPF e ignorava o papel e o e-mail — a mesma pergunta respondida
+    de dois jeitos, conforme a env.
+
+    Lê o pedido desta venda (``fiscal`` e ``receipt.channels``), nunca
+    ``customer.tax_id`` (o cadastro): ter CPF no CRM não é pedir CPF na nota —
+    sem essa distinção, todo cliente identificado saía com o documento em toda
+    nota, compulsório.
     """
     fiscal = (order.data or {}).get("fiscal") or {}
-    return bool(fiscal.get("issue_document") or str(fiscal.get("tax_id") or "").strip())
+    if fiscal.get("issue_document") or str(fiscal.get("tax_id") or "").strip():
+        return True
+    return on_requested_receipt(order)
 
 
 def on_requested_receipt(order) -> bool:

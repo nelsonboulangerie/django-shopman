@@ -316,16 +316,29 @@ export interface WhatsAppTemplateResponse {
   catalog_as_of: string | null;
   catalog_fresh_until: string | null;
   catalog_hash: string;
+  notification_templates: WhatsAppNotificationTemplateBinding[];
   readiness_state: "ready" | "degraded" | "blocked" | "unknown";
   readiness_reason_code: string;
   can_send_test: boolean;
   test_targets: { ref: string; label: string; backend: string }[];
 }
 
+export interface WhatsAppNotificationTemplateBinding {
+  event: string;
+  label: string;
+  current: string;
+  current_name: string;
+  current_active: boolean;
+  version: number;
+  available: boolean;
+  configured: boolean;
+}
+
 export interface MarketingTestReceipt {
   ok: boolean;
   backend: string;
   target_ref: string;
+  event: string;
   fields: Record<string, string>;
   receipt_ref: string;
   state:
@@ -401,6 +414,8 @@ export interface AnnouncementEdits {
   platforms?: string[];
   image_url?: string;
   publish_at?: string;
+  /** Tipo e botão do post do Google; só vai quando o Google está entre as plataformas. */
+  google_business?: Record<string, string>;
   /** Trace only; publishing still requires the independent approval command. */
   ai_suggestion_ref?: string;
 }

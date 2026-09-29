@@ -19,7 +19,16 @@ from django.apps import apps
 # export do Yooga, que é registro de terceiro. Renomear ali seria reescrever o
 # que a outra casa emitiu — e, no sentido desta troca (inventado → real), ele já
 # está do lado certo desde sempre.
-FORA_POR_DECISAO = {("backstage.HistoricalSaleItem", "sku")}
+# `RetiredProduct` guarda o código de um produto que foi APAGADO — a lápide que
+# faz a loja responder "não existe mais" no endereço que o Google indexou. Ele
+# não é um ponteiro para o catálogo: é o endereço antigo, congelado. Renomear um
+# produto vivo não pode reescrevê-lo, senão o 410 deixa de responder justamente
+# na URL que ainda circula por aí. E o código não colide com o catálogo: a loja
+# ignora lápide de SKU que exista, publicado ou não.
+FORA_POR_DECISAO = {
+    ("backstage.HistoricalSaleItem", "sku"),
+    ("shop.RetiredProduct", "sku"),
+}
 
 NOMES_DE_CAMPO_SKU = {"sku", "output_sku", "input_sku"}
 

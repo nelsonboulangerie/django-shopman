@@ -44,6 +44,7 @@ GATE_FILES = [
     "shopman/backstage/admin_console/cash_receipt.py",
     "shopman/backstage/admin/navigation.py",
     "shopman/backstage/api/operations.py",
+    "shopman/backstage/api/ifood_store.py",
     "shopman/backstage/projections/production.py",
 ]
 

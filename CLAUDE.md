@@ -29,11 +29,20 @@ mutante quando a sessão está no principal, e pede confirmação em `Edit`/`Wri
 bloqueia até em modo bypass. Dentro do seu worktree nada é bloqueado. Se a trava te
 barrar, a saída é entrar no worktree, **nunca contornar**.
 
-### Quatro armadilhas do repositório compartilhado
+### Armadilhas do repositório (e do banco) compartilhado
 
 - **`git add` no principal só aceita ARQUIVO nomeado.** `git add -A`, `git add .`,
   `git add -u` e `git add <diretório>` varrem arquivo de outra frente para dentro do seu
   commit, sem aviso. Aconteceu em 12/08 e 19/08. Use `git add caminho/arquivo.py`.
+- **O diretório de scratchpad é do worktree PAI, não da sua sessão.** Todo agente
+  que nasce sob a mesma worktree divide o mesmo scratchpad, e `pr.md`, `msg.txt`,
+  `probe.py` são nomes que qualquer um escolhe. Medido em 19/09/2026: duas frentes
+  do iFood escreveram `pr.md` no mesmo caminho; a segunda só não publicou o texto
+  da primeira na PR errada porque releu o arquivo antes de rodar
+  `gh pr edit --body-file`. Use **nome único por frente**
+  (`pr888-nota-conformidade.md`, não `pr.md`) e **releia antes de publicar** —
+  arquivo de scratchpad tem a mesma confiabilidade de um arquivo em `/tmp` numa
+  máquina com outras pessoas.
 - **`git stash` é do repositório, não da sua worktree.** A sessão irmã dá `pop` na sua
   entrada e o trabalho some. Use `git diff > /tmp/meu-wip.patch` ou um branch de rascunho.
 - **Numeração de migração colide em silêncio.** Duas branches criam `0002` no mesmo app e
@@ -42,6 +51,12 @@ barrar, a saída é entrar no worktree, **nunca contornar**.
 - **PR em `CONFLICTING` não dispara workflow de `pull_request`.** A ausência de check
   parece "ainda não começou" e na verdade é "bloqueado", e você espera por algo que nunca
   vai rodar. A verdade sai em `gh pr view <N> --json mergeable`.
+- **`pg_dump`/`pg_restore` do alpha só pela conexão DIRETA (porta `25060`, banco
+  `shopman`), nunca pelo pool (`25061`, `shopman-staging-pool`).** O pool é PgBouncer em
+  modo transaction: o `pg_dump` deixa `search_path=''` grudado na conexão de servidor, e
+  o próximo cliente a herdá-la (o `directive-worker`) cai com `relation
+  "orderman_directive" does not exist`. Aconteceu três vezes (22/09, 23/09, 24/09), todas
+  logo depois de um agente copiar o banco pelo pool.
 
 E uma sobre testes: **a worktree não testa `packages/*` sozinha.** O `.venv` da raiz tem
 editable installs apontando para a árvore principal, então rodar teste no worktree exige
@@ -198,7 +213,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
+surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -206,13 +221,15 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as super
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
 ├── production-nuxt/   produção/fornadas (kiosk Solari, :3005)              → api./backstage
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
-├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento     → api./backstage
+├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
-└── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
-                       retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
-                       BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
-                       tw-helper/translucent, harness de teste (tests/support/composableEnv).
-                       Storefront fica de fora (superfície de cliente, branded, harness próprio).
+├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
+│                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
+│                      BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
+│                      tw-helper/translucent, harness de teste (tests/support/composableEnv).
+│                      Storefront fica de fora (superfície de cliente, branded, harness próprio).
+└── operator-router/   roteador por Host dos grupos de operador (ADR-030, zero dependências):
+                       `groups.json` diz qual app mora em `operator-floor`/`operator-office`.
     Cada app: BFF Nitro (proxy da layer; storefront mantém o próprio djangoProxy.ts, CSRF),
     composables + presentation/ pura (vitest).
 
@@ -269,7 +286,21 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
 - **Zero residuals em renames**: Ao renomear, zerar TUDO (variáveis, strings, comments, docstrings). Nada de `# formerly X`. ⚠️ **Vale até o go-live.** A partir do `git tag go-live-v1`, renames seguem expand-contract — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md) e [production-upgrades.md](docs/guides/production-upgrades.md).
 - **Zero backward-compat aliases**: Projeto novo, do zero. Não há consumidores externos. Nunca criar aliases tipo `OldName = NewName`. Apagar o nome antigo completamente. ⚠️ **Vale até o go-live.** Depois, aliases temporários são permitidos em janela explícita (1 sprint) com `# DEPRECATED(remove by YYYY-MM-DD)` — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md).
 - **Offerman = somente produtos vendáveis**: Insumos ficam em Stockman/Craftsman, nunca no Offerman.
-- **URL é em inglês. Ponto.** Vale para **toda** rota do sistema — apps Nuxt de operador, telas custom do Admin, SSE do backstage, APIs. Não há exceção por superfície: uma convenção que vale em metade do sistema não é convenção, é lembrança.
+- **Comprável e vendável são dois cadastros do MESMO SKU** (decisão do dono, 24/09/2026).
+  *Comprável* = ter cadastro de compra (`buyman.Material`), mesmo sem fornecedor ainda;
+  *vendável* = decisão estratégica explícita, um produto no catálogo (`offerman.Product`),
+  nunca inferida. A coisa comprada que também se vende (geleia, queijo, chá em lata) tem
+  os dois, com o mesmo SKU, a mesma unidade e **o mesmo estoque** (o ledger indexa por
+  SKU). O porteiro é de coerência, não de colisão: mesmo SKU nos dois lados só com a mesma
+  unidade (`shop/services/sku_namespace.py`, SHOPMAN_W015). O Compras recebe SEMPRE pelo
+  cadastro de compra; SKU com ficha ativa não entra pela compra (é produzido aqui). Não
+  existe marca de "revenda" no produto — `metadata.purchase.resale` morreu em `shop.0073`.
+  Os dois gestos têm nome fixo (dono, 24/09): **"Permitir revenda"** no item do Compras
+  (pede só o preço, > 0) e **"Permitir compra"** no produto do Catálogo. **"Vendido por
+  peso"** é `Product.unit == "kg"`: o mesmo campo de preço vira "Preço por kg" e o item
+  fica só no balcão (`sku_records.sells_remotely`).
+- **URL é em inglês nas superfícies de operador, no Admin, no SSE do backstage e nas APIs.** Dentro desse perímetro não há exceção por tela.
+  - ⚠️ **O Storefront fica de fora, e é decisão escrita do dono (24/09/2026)**: a loja fala português com o cliente, e as rotas dela são `/conta`, `/entrar`, `/sacola`, `/finalizar`, `/produto/<sku>`, `/pedido/<ref>`, `/privacidade`, `/termos`, `/documentos-legais/…`. Mesma lógica da exceção de *aparelho*: superfície de cliente final tem voz própria, e a exceção é da superfície inteira. A API que o Storefront consome (`/api/v1/storefront/…`) é API, e segue em inglês.
   - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.
   - Admin e backstage: `/admin/settings/copy/`, `/admin/pos/terminal/<ref>/agent/`, `/admin/operators/badge/`, `/admin/cash/receipt/<code>/`, `/events/*` — PR #169. Sem 301 aqui: são telas de gestor, não kiosk, e a regra pré-go-live é zerar o nome antigo.
   - ⚠️ O **texto** da tela continua em português. Isto é sobre o caminho na URL, não sobre a copy.
@@ -309,8 +340,12 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   onde não custe exatidão. Os oito defeitos com nome (rótulo que mente · verbo genérico ·
   frase incompleta · grandezas somadas · zero como código secreto · nota de rodapé do
   engenheiro · jargão e colisão · prolixo), com antes/depois reais e a ordem da varredura,
-  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md).
+  em [docs/reference/omotenashi-copy.md](docs/reference/omotenashi-copy.md). Os vocabulários
+  fechados — objeto, atos e grandezas do PDV, da Produção/KDS e da loja, mais os gestos que
+  têm um nome só nos nove apps e a lista do que já foi decidido e não se reabre — em
+  [docs/reference/suite-vocabulary.md](docs/reference/suite-vocabulary.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
+- **Copy sem travessão**: nenhum texto visível ao usuário usa travessão, especialmente o travessão longo (`—`). Reescreva com ponto, vírgula, dois-pontos ou parênteses, conforme o sentido. A regra vale para defaults, fallbacks, seeds, migrações de dados, notificações e textos configuráveis.
 - **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
   as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
   `scripts/check_surface_versions.py` (`make test-surface-versions`, job no
@@ -319,10 +354,19 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `@nuxt/test-utils` tinha faixa idêntica nos dez apps e três versões travadas diferentes.
   A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
   mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
-  decidido. ⚠️ Superfície nova entra em TRÊS lugares: `.github/dependabot.yml` (cadência),
-  `surfaces-gate.yml` (teste) e `SURFACES` no Makefile. Faltar no primeiro não acusa nada e
-  envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente desde que nasceu e
-  atrasado em 16 pacotes de uma vez. Exceção existe, mas é **declarada com motivo** no
+  decidido. ⚠️ Superfície nova entra PRIMEIRO em `surfaces/registry.json` (id, diretório,
+  tipo, porta, grupo, subdomínio, env da URL, tile do Shopman Apps) e depois em cada lugar
+  que enumera superfícies — medidos em 24/09/2026: `.github/dependabot.yml` (cadência),
+  `surfaces-gate.yml` (teste e PWA), `SURFACES` no Makefile, `operator-router/groups.json`,
+  `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`, env da
+  URL), `operator-kit/app-identity.json`, as portas de dev no `CSRF_TRUSTED_ORIGINS`, os
+  defaults de dev do `projections/hub.py` e `SHOPMAN_SURFACE_URLS`. Faltar em um não acusa
+  nada e envelhece em silêncio — foi o que houve com o `purchase-nuxt`, ausente do
+  Dependabot desde que nasceu e atrasado em 16 pacotes de uma vez; e com o Marketing e o
+  B.I., fora das origens de dev do CSRF até 24/09. **Nasce por `make new-surface`**, que
+  gera o app do molde (estende o `operator-kit`) e escreve em todos esses lugares; a
+  trava `scripts/check_surface_registry.py` (`make test-surface-registry`, no job de
+  versões do `surfaces-gate.yml`) reprova o que divergir, com o nome do arquivo. Exceção existe, mas é **declarada com motivo** no
   `EXCEPTIONS` do guard (hoje uma: o pino exato do `operator-kit`), e nunca autoriza ficar
   para trás.
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:

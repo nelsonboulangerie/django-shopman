@@ -31,7 +31,7 @@ def cfg(settings):
 
 @pytest.fixture
 def no_network():
-    with patch.object(adapter.ifood_auth, "authorized_headers") as auth, patch("requests.sessions.Session.request") as http:
+    with patch.object(adapter.ifood_auth, "headers_with_reason") as auth, patch("requests.sessions.Session.request") as http:
         yield auth, http
         auth.assert_not_called()
         http.assert_not_called()
@@ -68,7 +68,7 @@ def test_absent_policy_blocks_direct_helpers(settings, cfg, item, no_network):
 def test_authorized_test_merchant_can_write_with_mock_transport(settings, cfg, item):
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
     response = Mock(status_code=200)
-    with patch.object(adapter.ifood_auth, "authorized_headers", return_value={"Authorization": "fixture"}) as auth, patch("requests.sessions.Session.request", return_value=response) as http:
+    with patch.object(adapter.ifood_auth, "headers_with_reason", return_value=({"Authorization": "fixture"}, "")) as auth, patch("requests.sessions.Session.request", return_value=response) as http:
         assert adapter.IFoodCatalogProjection().project([item], channel="ifood").success
         assert adapter.IFoodCatalogProjection().retract([item.sku], channel="ifood").success
     assert auth.call_count == 2
@@ -110,11 +110,11 @@ def test_directive_records_guard_failure_without_remote_calls(settings, cfg, ite
 def test_revoked_policy_after_auth_still_blocks_http(settings, cfg, item):
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
 
-    def authorized_headers(*args):
+    def headers_with_reason(*args):
         settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = None
-        return {"Authorization": "fixture"}
+        return {"Authorization": "fixture"}, ""
 
-    with patch.object(adapter.ifood_auth, "authorized_headers", side_effect=authorized_headers), patch("requests.sessions.Session.request") as http:
+    with patch.object(adapter.ifood_auth, "headers_with_reason", side_effect=headers_with_reason), patch("requests.sessions.Session.request") as http:
         result = adapter.IFoodCatalogProjection().project([item], channel="ifood")
     assert not result.success
     assert "bloqueada" in result.errors[0]

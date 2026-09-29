@@ -27,7 +27,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def curated(django_user_model):
     curator = django_user_model.objects.create_user("curadora-da-casa")
-    # SKU deliberadamente DIFERENTE do que o seed cria ("CT"): é o cenário do
+    # SKU deliberadamente DIFERENTE do que o seed cria ("CRO"): é o cenário do
     # staging, onde o catálogo vivo tem SKUs editados à mão. O nome é a ponte.
     croissant = Product.objects.create(sku="CROISSANT", name="Croissant", base_price_q=1200)
     saudade = Product.objects.create(sku="PRODUTO-QUE-NAO-VOLTA", name="Só desta base", base_price_q=100)
@@ -60,9 +60,12 @@ def test_flush_survives_confirmed_aliases_and_relinks_them_by_sku(curated, monke
     assert kept.confirmed_at is not None
 
     # Religado ao catálogo NOVO. O SKU mudou junto com o catálogo (o seed cria
-    # "CT"); o que atravessa é o produto, encontrado pelo nome único "Croissant".
+    # "CRO"); o que atravessa é o produto, achado pelo nome único "Croissant" —
+    # e o `external_sku` segue "CT", que é como o Yooga escreveu e não se
+    # reescreve.
+    assert kept.external_sku == "CT"
     assert kept.product is not None
-    assert kept.product.sku == "CT"
+    assert kept.product.sku == "CRO"
     assert kept.product.name == "Croissant"
 
     # Produto que o seed não recria: FK vazia, alias vivo — produto extinto.

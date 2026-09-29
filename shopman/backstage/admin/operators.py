@@ -9,20 +9,33 @@ aparece uma vez na mensagem para o gerente repassar.
 
 Gateado por ``cashman.manage_operators``. Provisionar o PRIMEIRO PIN de um
 operador novo continua pela CLI (``set_operator_pin``) ou pelo próprio reset.
+
+"Criar ou trocar meu PIN" (ação do topo da lista, sem seleção) é a porta do
+DONO: o superusuário destrava o balcão por PIN, mas o reset recusa alvo
+superusuário e o app no ar não tem console. A ação age só sobre quem clicou —
+ver ``issue_own_temp_pin``.
 """
 
 from __future__ import annotations
 
 from django.contrib import admin, messages
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from shopman.doorman.models import PinCredential, PinCredentialError
 from shopman.utils import unfold_badge
 from unfold.admin import ModelAdmin
+from unfold.decorators import action
+from unfold.forms import BaseDialogForm
 
 from shopman.backstage.admin_console.operator_badge import BADGE_SESSION_KEY
-from shopman.backstage.services.operator import reset_operator_pin
+from shopman.backstage.services.operator import (
+    PinChangeError,
+    issue_own_temp_pin,
+    reset_operator_pin,
+)
 
 MANAGE_OPERATORS = "cashman.manage_operators"
 
@@ -58,6 +71,32 @@ def registrar_no_historico(request, operador, mensagem: str) -> None:
     )
 
 
+class OwnPinConfirmForm(BaseDialogForm):
+    """Confirmação do "Criar ou trocar meu PIN" — sem campo, só o POST.
+
+    ⚠️ O diálogo não é enfeite: é o que faz a ação exigir POST com CSRF. O Unfold
+    renderiza ação de ``actions_list`` como ``<a href>``; sem ``dialog`` o corpo
+    rodaria em GET, e um link clicado por quem está logado trocaria o PIN dela
+    sem ela pedir. Mesma lição do desfazer unificação (``merges.py``).
+    """
+
+
+def _de_volta_para_a_lista(request: HttpRequest) -> HttpResponse:
+    """Volta para a lista de um jeito que a MENSAGEM (com o PIN) chegue junto.
+
+    O diálogo envia por HTMX; um redirect comum seria seguido pelo próprio HTMX,
+    que não acharia ``#dialog-form`` na lista e esvaziaria o modal — e o PIN
+    temporário ficaria preso numa resposta que ninguém vê. ``HX-Redirect`` manda
+    o navegador navegar. Fora do HTMX (teste, POST direto) vale o redirect comum.
+    """
+    url = reverse("admin:doorman_pincredential_changelist")
+    if request.headers.get("HX-Request"):
+        resposta = HttpResponse(status=204)
+        resposta["HX-Redirect"] = url
+        return resposta
+    return HttpResponseRedirect(url)
+
+
 @admin.register(PinCredential)
 class PinCredentialAdmin(ModelAdmin):
     list_display = (
@@ -72,6 +111,7 @@ class PinCredentialAdmin(ModelAdmin):
     )
     ordering = ["user__first_name", "user__username"]
     actions = ["issue_badge", "revoke_badge", "reset_pin", "unlock_pin"]
+    actions_list = ["issue_own_pin"]
     compressed_fields = True
 
     list_select_related = ("user",)
@@ -122,7 +162,9 @@ class PinCredentialAdmin(ModelAdmin):
         for cred in queryset.select_related("user"):
             try:
                 temp = reset_operator_pin(cred.user)
-            except PinCredentialError as exc:
+            except (PinCredentialError, PinChangeError) as exc:
+                # `PinChangeError` é a recusa de alvo superusuário. Sem ela aqui, marcar
+                # a linha do dono e mandar resetar derrubava a página com erro 500.
                 self.message_user(request, f"{cred.user.get_username()}: {exc}", level=messages.ERROR)
                 continue
             temps.append(f"{cred.user.get_username()}: {temp}")
@@ -133,6 +175,53 @@ class PinCredentialAdmin(ModelAdmin):
                 + " · ".join(temps),
                 level=messages.WARNING,
             )
+
+    @action(
+        description="Criar ou trocar meu PIN",
+        url_path="my-pin",
+        icon="pin",
+        # Sem ponto de propósito: permissão pontuada faz o system check do Unfold
+        # consultar `auth_permission`, e num banco novo isso impede o `migrate`
+        # (ver `has_undo_permission` em `merges.py`). O portão é `has_view_permission`.
+        permissions=["own_pin"],
+        dialog={
+            "title": "Criar ou trocar o seu PIN?",
+            "description": (
+                "Vale só para a sua conta. Um PIN temporário aparece UMA vez na tela: "
+                "anote. No próximo destrave do PDV, a tela pede para você trocá-lo. "
+                "Se você já tinha PIN, ele deixa de valer agora."
+            ),
+            "form_class": OwnPinConfirmForm,
+            "form_submit_text": "Gerar PIN temporário",
+        },
+    )
+    def issue_own_pin(self, request, form):
+        """Gera o PIN temporário de QUEM CLICOU — nunca de outra pessoa.
+
+        Não lê seleção nem id da URL: o alvo é ``request.user`` e só ele. É o que
+        separa esta ação do reset (que o gerente faz sobre outra pessoa e que
+        recusa superusuário).
+        """
+        try:
+            temp = issue_own_temp_pin(request.user)
+        except PinChangeError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            return _de_volta_para_a_lista(request)
+        registrar_no_historico(
+            request,
+            request.user,
+            "PIN temporário gerado pela própria pessoa (troca obrigatória no próximo uso).",
+        )
+        self.message_user(
+            request,
+            f"Seu PIN temporário (anote — não será mostrado de novo): {temp}. "
+            "No próximo destrave do PDV, a tela pede para você trocá-lo.",
+            level=messages.WARNING,
+        )
+        return _de_volta_para_a_lista(request)
+
+    def has_own_pin_permission(self, request) -> bool:
+        return self.has_view_permission(request)
 
     @admin.action(description="Emitir crachá (mostra o código uma vez)")
     def issue_badge(self, request, queryset):
@@ -194,7 +283,8 @@ class PinCredentialAdmin(ModelAdmin):
         self.message_user(request, f"{count} credencial(is) desbloqueada(s).")
 
     def has_add_permission(self, request):
-        # Sem hash à mão: o primeiro PIN vem do reset (temporário) ou da CLI.
+        # Sem hash à mão: o primeiro PIN vem do reset (temporário), da CLI ou do
+        # "Criar ou trocar meu PIN" (só para si mesmo).
         return False
 
     def has_change_permission(self, request, obj=None):

@@ -32,12 +32,59 @@
 
 - [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no ambiente de destino e executar `make production-readiness` com evidência de QA. Remover `SHOPMAN_EXPOSE_MOCK_CAPTURE`, `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` e `SHOPMAN_STAGING_AUTOPILOT`.
 - [ ] Configurar `SENTRY_DSN` e comprovar o recebimento de um alerta sintético no procedimento autorizado de cutover. A presença da variável sozinha não comprova entrega.
+- [ ] Configurar `SHOPMAN_ALERT_EMAIL` (o dono/gestor) e comprovar que um alerta crítico chega por e-mail. Sem ela, o alerta crítico termina num aviso de log: ninguém fora do app fica sabendo.
 
 - [ ] `DJANGO_SECRET_KEY` forte (não o default) · `DJANGO_DEBUG=false` · `DJANGO_ALLOWED_HOSTS` explícito (sem `*`).
 - [ ] Banco de produção (Postgres) + Redis/Valkey provisionados; `DATABASE_URL`/cache configurados.
 - [ ] **Gateways em modo PRODUÇÃO**: EFI (Pix) cert+creds de prod, Stripe live keys, iFood prod. (Hoje staging = sandbox/test.)
 - [ ] `ADMIN_PASSWORD` forte (≥12, não-trivial) p/ o bootstrap do superuser de prod (em prod NÃO usar `admin/admin`).
 - [ ] Notificação: ManyChat token de prod, EmailSender de prod.
+- [x] ✅ **RESOLVIDO em 24/09/2026 — chave da Comtele rotacionada.** O dono criou a
+      chave nova, trocou `COMTELE_API_KEY` na DO e apagou a antiga. Provas (sem SMS):
+      o deploy `f25973a7` ("app spec updated") ficou `ACTIVE` às 08:08Z com
+      `COMTELE_API_KEY` presente como SECRET; a chave **antiga** agora leva `401` em
+      `GET api.comtele.com.br/routes` (em 02/09 dava `200`), igual a uma chave
+      inventada. ⚠️ **Falta 1 login por SMS de prova** com a chave nova: até lá, nenhum
+      envio passou por ela (zero códigos e zero alertas "SMS de login (Comtele)" desde
+      a troca). O histórico do git **não** foi reescrito, por decisão: com a chave
+      revogada o ganho é nulo, e o force-push quebraria os branches e PRs abertos de
+      outras sessões.
+
+      Registro do bloqueio, mantido como histórico e roteiro para a próxima rotação:
+
+      🔴 **BLOQUEIO — rotacionar a chave de API da Comtele (vazou).** O repositório é
+      **público**. A chave (a única da conta, a que manda o SMS do login) foi publicada
+      em **30/06/2026** em dois commits: `cefff8f8e` (valor inteiro em
+      `docs/plans/GO-LIVE-SMS-WHATSAPP-STATUS.md`) e `4469773ab` (valor de fixture em
+      `shopman/shop/tests/test_otp_sms_comtele.py`, onde ficou até 23/09/2026). Tirar do
+      arquivo **não despublica o histórico**: a chave antiga tem de morrer na Comtele. A
+      trava `shopman/shop/tests/test_sem_segredo_no_repositorio.py` impede a volta dela
+      (por hash) e de qualquer UUID atribuído a nome de credencial.
+
+      Onde a chave mora (e só aqui): spec **live** do app `shopman-alpha`
+      (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`), variável app-level `COMTELE_API_KEY`,
+      `type: SECRET` (vale para `web` e workers). No GitHub **não** há segredo da
+      Comtele (o CI usa o valor falso `ci-comtele-api-key`). Localmente, os `.env`
+      de worktree antigos podem ter a chave velha: apague depois da troca.
+
+      ⚠️ **Com uma chave só, revogar antes de trocar derruba o SMS do login.** A ordem
+      certa encolhe essa janela para os minutos do deploy:
+
+      1. **Painel da Comtele** (portal.comtele.com.br → Configurações → Chaves de API):
+         se o painel deixar ter duas, **gere a nova sem revogar a antiga**. Se só
+         permitir uma, pule para o passo 1b.
+         1b. Sem duas chaves simultâneas: faça a troca fora do horário da loja. O
+         login pelo WhatsApp continua funcionando durante a janela, porque não
+         depende de SMS.
+      2. **DigitalOcean → shopman-alpha → Settings → App-Level Environment Variables**
+         → `COMTELE_API_KEY` → cole a nova → **Encrypt** ligado → Save. Isso dispara
+         o redeploy. ⛔ Não use `doctl apps update --spec` com o arquivo do repo: ele
+         apaga os segredos (ver [conferir-spec-digitalocean](conferir-spec-digitalocean.md)).
+      3. Espere o deploy ficar `ACTIVE` e prove: um login por SMS no seu número. No
+         Gestor não deve aparecer alerta "Integração SMS de login (Comtele) falhando".
+      4. **Só agora revogue a chave antiga** no painel da Comtele (no caso 1b, ela já
+         morreu no passo 1).
+      5. Troque a chave nos `.env` locais que ainda a tenham.
 
 ## 3. Hardening (Lote C — Pablo)
 
@@ -62,8 +109,26 @@
 
 ## 6. Cutover (dia D)
 
-- [ ] **Backup** do banco de prod (se já houver dado) ANTES de tudo.
+- [ ] **Ponto de restauração anotado ANTES de tudo** — o backup diário e o PITR
+      de 7 dias já existem na DO; o que falta é anotar o instante, conferir a
+      janela e declarar a referência. Procedimento, conferências e custo em
+      [backup-e-restore.md](backup-e-restore.md) §2.2.
+      ⚠️ **Pré-requisito**: o ensaio de restauração ([§3](backup-e-restore.md))
+      precisa ter sido feito ao menos uma vez — é o item aberto de
+      [security-readiness](security-readiness.md). Um backup nunca restaurado
+      não é uma rede; é uma esperança.
 - [ ] `git tag go-live-v1` no commit de release; a partir daqui valem as regras pós-prod do ADR-015 (migrations append-only, aliases só em janela explícita).
+- [ ] **`SHOPMAN_GO_LIVE=true`** no ambiente de prod (componente `release`) — a
+      imagem do app não carrega o `.git`, então a tag não é legível lá dentro.
+      É esta env que arma o `migration_safety`, a trava que recusa o deploy com
+      migração destrutiva pendente e nenhum ponto de restauração declarado em
+      `SHOPMAN_MIGRATION_BACKUP_REF`. Sem ela, a trava continua só relatando.
+      Setar pelo **console** (não aplicar o spec do repo — apaga segredos).
+- [ ] O `run_command` do job `release` no app de prod já inclui
+      `python manage.py migration_safety` antes do `migrate`. O spec versionado
+      inclui; o app vivo só passa a incluir depois de `doctl apps update` — ver
+      [conferir-spec-digitalocean.md](conferir-spec-digitalocean.md) antes de
+      aplicar.
 - [ ] Deploy de prod (mesmo padrão do staging, app/contexto de PROD): `doctl apps create-deployment <APP_ID_PROD> --wait`. O release job roda `check --deploy` + `migrate`; `SHOPMAN_E022` inclui os ambientes dos provedores. Isso não substitui o perfil completo `production-readiness` nem a QA externa.
    - ⚠️ Lembrar do gotcha: **todo pacote `packages/*` precisa estar no Dockerfile + pyproject** (mordeu com o buyman). Já corrigido; conferir se algum novo entrou.
 - [ ] Validar ao vivo: `/ready/` (db/cache/migrations ok), `/health/`, loja, login do operador (cookie na zona certa), um **pedido ponta-a-ponta** com pagamento real de teste.

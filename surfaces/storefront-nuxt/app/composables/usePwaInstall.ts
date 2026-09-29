@@ -1,7 +1,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { installPlan, readInstallEnvironment, type InstallEnvironment, type InstallPlan } from '../utils/installGuide'
 
 const DISMISS_STORAGE_KEY = 'storefront-pwa-install-dismissed-until'
 const DISMISS_DAYS = 7
+/** "Já adicionei" é resposta definitiva; o convite não volta a interromper por um ano. */
+const DONE_DISMISS_DAYS = 365
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -16,20 +19,25 @@ export function isPwaInviteRouteExcluded (path: string): boolean {
   return path === '/finalizar' || path.startsWith('/finalizar/') || path.startsWith('/pedido/')
 }
 
-export function usePwaInstall (options: { now?: () => number } = {}) {
+export function usePwaInstall (options: { now?: () => number, environment?: InstallEnvironment } = {}) {
   const now = options.now || Date.now
   const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
   const isStandalone = ref(false)
-  const isIos = ref(false)
   const dismissedUntil = ref<number | null>(null)
+  const environment = ref<InstallEnvironment | null>(options.environment || null)
 
   const isDismissed = computed(() => (dismissedUntil.value || 0) > now())
-  const canInstall = computed(() => Boolean(deferredPrompt.value) && !isStandalone.value)
+
+  // O caminho real DESTE navegador. Antes de o ambiente ser lido (servidor, antes do
+  // mount) o plano é `none`: nada de convite piscando com instrução provisória.
+  const plan = computed<InstallPlan>(() => {
+    const env = environment.value
+    if (!env) return { kind: 'none', invite: false, steps: [], os: 'unknown', browser: 'unknown' }
+    return installPlan({ ...env, canPrompt: Boolean(deferredPrompt.value) })
+  })
 
   function readEnvironment () {
-    const ua = navigator.userAgent
-    isIos.value = /iPad|iPhone|iPod/.test(ua)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    environment.value = options.environment || readInstallEnvironment(Boolean(deferredPrompt.value))
     isStandalone.value = window.matchMedia('(display-mode: standalone)').matches
       || Boolean((navigator as NavigatorWithStandalone).standalone)
     try {
@@ -42,8 +50,8 @@ export function usePwaInstall (options: { now?: () => number } = {}) {
     }
   }
 
-  function suppressForSevenDays () {
-    const until = now() + DISMISS_DAYS * 24 * 60 * 60 * 1000
+  function suppressFor (days: number) {
+    const until = now() + days * 24 * 60 * 60 * 1000
     dismissedUntil.value = until
     try {
       localStorage.setItem(DISMISS_STORAGE_KEY, String(until))
@@ -84,13 +92,13 @@ export function usePwaInstall (options: { now?: () => number } = {}) {
   })
 
   return {
-    canInstall,
+    plan,
     install,
     isStandalone,
-    isIos,
     dismissedUntil,
     isDismissed,
-    markShown: suppressForSevenDays,
-    dismiss: suppressForSevenDays
+    markShown: () => suppressFor(DISMISS_DAYS),
+    dismiss: () => suppressFor(DISMISS_DAYS),
+    dismissAsDone: () => suppressFor(DONE_DISMISS_DAYS)
   }
 }

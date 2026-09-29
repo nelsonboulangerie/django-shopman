@@ -12,12 +12,13 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from django.conf import settings
 from django.utils import timezone
 from shopman.offerman.models import Collection, Product
 from shopman.orderman.models import Session
-from shopman.utils.monetary import format_money
+from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.presentation.status import payment_method_label
@@ -32,6 +33,7 @@ from shopman.shop.projections.types import (
     AddressAutocompleteProjection,
     SavedAddressProjection,
 )
+from shopman.shop.services import weighed_sale
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
     POS_SALE_INTENT_RECEIPT_CHANNELS,
@@ -59,10 +61,23 @@ class POSProductProjection:
     collection_color: str = ""
     collection_icon: str = ""
     image_url: str = ""
+    # Código de barras da embalagem (``metadata['social']['gtin']``), para o
+    # leitor do balcão. O leitor DIGITA no campo de busca: sem o código no
+    # índice, bipar um pote de geleia não achava nada. Vazio no que a casa faz
+    # — pão não tem código de barras.
+    gtin: str = ""
     # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
     # da grade faria o operador procurar um botão que "sumiu".
     sold_out: bool = False
+    # Por que o tile está inerte, quando o motivo não é o genérico "Esgotado":
+    # "Sem caixa" = caixa presente cuja caixa física (componente de estoque
+    # limitado, ``metadata['kit_packaging']``) acabou. Vazio = "Esgotado".
+    sold_out_reason: str = ""
+    # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
+    # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
+    # uma unidade. Ver ``shop/services/weighed_sale.py``.
+    sold_by_weight: bool = False
 
 
 @dataclass(frozen=True)
@@ -194,6 +209,26 @@ class POSPendingCashRefundProjection:
     amount_display: str
     customer_name: str
     cancelled_at: str  # ISO datetime, "" quando o pedido não guarda
+    # "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda editada
+    # que ficou mais barata: devolve a diferença). A tela diz qual é.
+    reason: str = "cancelled"
+    reason_label: str = "Venda cancelada"
+
+
+@dataclass(frozen=True)
+class POSPendingCardMachineRefundProjection:
+    """Encomenda reduzida paga na maquininha: o estorno é feito NA maquininha.
+
+    O sistema não fala com a maquininha (o cartão do balcão é atestado), então o
+    estorno também é: o operador estorna nela e toca "Estornei na maquininha", e
+    só então o Payman registra. Até lá a pendência fica no *Precisa de você*.
+    """
+
+    order_ref: str
+    amount_q: int
+    amount_display: str
+    customer_name: str
+    method_label: str  # "Crédito" · "Débito" · "Cartão"
 
 
 @dataclass(frozen=True)
@@ -225,6 +260,9 @@ class POSCashRuntimeProjection:
     # turno aberto do canal (não são "deste turno": são do caixa), porque quem
     # estiver com a gaveta aberta é quem vai devolver.
     pending_cash_refunds: tuple[POSPendingCashRefundProjection, ...] = ()
+    # Estornos a fazer na maquininha (encomenda paga no cartão do balcão que
+    # ficou mais barata). Como o dinheiro: do caixa, não deste turno.
+    pending_card_machine_refunds: tuple[POSPendingCardMachineRefundProjection, ...] = ()
     # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
     # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
     account_balances: tuple[POSAccountBalanceProjection, ...] = ()
@@ -422,6 +460,10 @@ class POSProjection:
     # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
     # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
     shop_name: str = ""
+    # Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta?
+    # Desligado = só valor, e a tela nem mostra a opção. Ver
+    # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
+    weighed_weight_entry: bool = False
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -562,6 +604,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
         delivery_slots_canonical=tuple(_delivery_slots_canonical()),
@@ -612,6 +655,63 @@ def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
             current = out.get(line_id)
             if current is None or rank[status] < rank[current]:
                 out[line_id] = status
+    return out
+
+
+def _kitchen_tickets_by_line(session_key: str) -> dict[str, list[dict]]:
+    """Os tickets da cozinha de cada LINHA desta comanda, como o card do PDV os mostra.
+
+    Tocar numa linha que foi para a cozinha abre o card do ticket: estação,
+    itens, hora do disparo, estado — e, quando a estação não tem tela (recebe
+    a Via Cozinha impressa), o "Pronto" do balcão (decisão do dono,
+    26/09/2026). O ticket cancelado fica de fora: o selo da linha já diz
+    "Cancelado na cozinha", e não há o que concluir nele.
+    """
+    if not session_key:
+        return {}
+    from shopman.backstage.models import KDSTicket
+    from shopman.backstage.services import kitchen_ticket_print
+
+    tickets = list(
+        KDSTicket.objects.filter(session_key=session_key)
+        .exclude(status="cancelled")
+        .select_related("kds_instance")
+        .order_by("created_at", "pk")
+    )
+    if not tickets:
+        return {}
+    papers = kitchen_ticket_print.paper_states(
+        [ticket.pk for ticket in tickets if ticket.kds_instance.print_terminal_id and ticket.status != "done"]
+    )
+    labels = {"pending": "Na fila", "in_progress": "Em preparo", "done": "Pronto"}
+    out: dict[str, list[dict]] = {}
+    for ticket in tickets:
+        prints = bool(ticket.kds_instance.print_terminal_id)
+        is_open = ticket.status in ("pending", "in_progress")
+        paper = papers.get(ticket.pk)
+        payload = {
+            "pk": ticket.pk,
+            "station_name": str(ticket.kds_instance.name),
+            "prints": prints,
+            "status": ticket.status,
+            "status_label": labels.get(ticket.status, ticket.status),
+            "fired_at_display": timezone.localtime(ticket.created_at).strftime("%H:%M"),
+            "paper_label": paper.label if paper else "",
+            "paper_failed": bool(paper and paper.failed),
+            "items": [
+                {
+                    "name": str((entry or {}).get("name") or (entry or {}).get("sku") or ""),
+                    "qty": weighed_sale.qty_number((entry or {}).get("qty", 1)),
+                    "notes": str((entry or {}).get("notes") or ""),
+                }
+                for entry in ticket.items or []
+            ],
+            "can_mark_ready": prints and is_open,
+        }
+        for entry in ticket.items or []:
+            line_id = str((entry or {}).get("line_id") or "")
+            if line_id:
+                out.setdefault(line_id, []).append(payload)
     return out
 
 
@@ -986,9 +1086,15 @@ def _load_products() -> list[POSProductProjection]:
             .order_by("name")
         ]
 
-    sold_out = _sold_out_skus([p.sku for p, _ in entries])
+    skus = [p.sku for p, _ in entries]
+    sold_out = _sold_out_skus(skus)
+    without_box = _kits_without_box(skus)
     return [
-        _product_projection(p, price_q, sold_out=p.sku in sold_out)
+        _product_projection(
+            p, price_q,
+            sold_out=p.sku in sold_out or p.sku in without_box,
+            sold_out_reason="Sem caixa" if p.sku in without_box else "",
+        )
         for p, price_q in entries
     ]
 
@@ -1137,6 +1243,16 @@ def _pos_actions() -> tuple[Action, ...]:
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
+            idempotency="none",
+        ),
+        Action(
+            ref="emit_fiscal",
+            kind="mutation",
+            label="Estabelecer emissão da NFC-e",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
             idempotency="none",
         ),
         Action(
@@ -1948,6 +2064,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
+        pending_card_machine_refunds=_pending_card_machine_refunds(cash_shift),
         account_balances=account_balances(),
         default_float_q=default_float_q,
         default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
@@ -1996,8 +2113,28 @@ def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, .
             amount_display=f"R$ {format_money(item.amount_q)}",
             customer_name=item.customer_name,
             cancelled_at=item.cancelled_at,
+            reason=item.reason,
+            reason_label="Encomenda ficou mais barata" if item.reason == "reduced" else "Venda cancelada",
         )
         for item in payment_service.pending_cash_refunds(channel_ref=cash_shift.terminal.channel_ref)
+    )
+
+
+_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito"}
+
+
+def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefundProjection, ...]:
+    from shopman.shop.services import payment as payment_service
+
+    return tuple(
+        POSPendingCardMachineRefundProjection(
+            order_ref=item.order_ref,
+            amount_q=item.amount_q,
+            amount_display=f"R$ {format_money(item.amount_q)}",
+            customer_name=item.customer_name,
+            method_label=_CARD_MACHINE_METHOD_LABELS.get(item.method, "Cartão"),
+        )
+        for item in payment_service.pending_card_machine_refunds(channel_ref=cash_shift.terminal.channel_ref)
     )
 
 
@@ -2091,7 +2228,9 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
     )
 
 
-def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
+def _product_projection(
+    product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
+) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
         ci = (
@@ -2105,17 +2244,67 @@ def _product_projection(product: Product, price_q: int, *, sold_out: bool = Fals
     collection = ci.collection if ci else None
     meta = collection.metadata if collection and isinstance(collection.metadata, dict) else {}
 
+    sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
+    # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
+    if price_q <= 0:
+        price_display = "Sem preço"
+    else:
+        price_display = f"R$ {format_money(price_q)}" + ("/kg" if sold_by_weight else "")
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
         price_q=price_q,
-        price_display=f"R$ {format_money(price_q)}",
+        price_display=price_display,
         collection_ref=collection.ref if collection else "",
         collection_color=str(meta.get("color") or ""),
         collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
+        gtin=_product_gtin(product),
         sold_out=sold_out,
+        sold_out_reason=sold_out_reason,
+        sold_by_weight=sold_by_weight,
     )
+
+
+def _product_gtin(product: Product) -> str:
+    metadata = product.metadata if isinstance(product.metadata, dict) else {}
+    social = metadata.get("social")
+    return str(social.get("gtin") or "") if isinstance(social, dict) else ""
+
+
+def _kits_without_box(skus: list[str]) -> set[str]:
+    """Caixas presente da grade cuja caixa física acabou (dono, 24/09).
+
+    A caixa (componente com ``metadata['kit_packaging']``) é estoque limitado e
+    restringe a venda do kit. Sem ela, o tile fica inerte com "Sem caixa" — o
+    operador sabe o que falta, e não procura pão que está na vitrine. Só a
+    caixa RASTREADA conta (com saldo, mesmo zero); a mesma leitura em lote do
+    selo de esgotado. Silencioso quando o stockman não responde.
+    """
+    if not skus:
+        return set()
+    try:
+        from shopman.offerman.models import ProductComponent
+
+        from shopman.shop.projections.catalog_context import availability_for_skus
+
+        boxes = [
+            (pc.parent.sku, pc.component.sku, pc.qty)
+            for pc in ProductComponent.objects.filter(parent__sku__in=skus).select_related("parent", "component")
+            if isinstance(pc.component.metadata, dict) and pc.component.metadata.get("kit_packaging") is True
+        ]
+        if not boxes:
+            return set()
+        avail = availability_for_skus(sorted({box for _, box, _ in boxes}), channel_ref=POS_CHANNEL_REF)
+        without: set[str] = set()
+        for kit_sku, box_sku, qty in boxes:
+            raw = avail.get(box_sku)
+            if raw and raw.get("is_tracked") and (raw.get("total_promisable") or 0) < qty:
+                without.add(kit_sku)
+        return without
+    except Exception:
+        logger.exception("pos_kit_box_lookup_failed")
+        return set()
 
 
 def _sold_out_skus(skus: list[str]) -> set[str]:
@@ -2123,6 +2312,15 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
     grade do balcão nunca quebra por causa de um selo.
+
+    ⚠️ Este selo NÃO distingue "tem pão na prateleira" de "sai da próxima
+    fornada", e a diferença não está ao alcance daqui: para o stockman um quant
+    datado de HOJE já conta como pronto (``_planned_supply_for_target`` só
+    soma ``target_date > hoje``), então ``is_planned`` nunca responde por hoje.
+    Quem sabe a que HORA o pão fica pronto é a prontidão
+    (``fulfillment_window.annotate`` → ``product_readiness``), que é cara por
+    produto e que a grade do balcão deliberadamente não paga. Ver o comentário
+    em ``shop/services/pos.py`` sobre o custo dessa pergunta.
     """
     if not skus:
         return set()
@@ -2178,9 +2376,11 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
     customer = data.get("customer") or {}
     items = session.items or []
     last_touched = _parse_dt(data.get("last_touched_at"), fallback=session.opened_at)
-    item_count = sum(_qty_int(item.get("qty", 1)) for item in items)
+    # Uma peça pesada é UM item no contador (0,312 kg não é "0 itens"), e o
+    # valor dela é peso × preço do quilo sem truncar o peso.
+    item_count = sum(_qty_int(item.get("qty", 1)) or 1 for item in items)
     total_q = sum(
-        _qty_int(item.get("qty", 1)) * int(item.get("unit_price_q", 0))
+        monetary_mult(Decimal(str(weighed_sale.qty_number(item.get("qty", 1)))), int(item.get("unit_price_q", 0)))
         for item in items
     )
     discount_q = int((data.get("manual_discount") or {}).get("discount_q", 0))
@@ -2231,11 +2431,14 @@ def _qty_int(value) -> int:
 def _items_preview(items: list[dict]) -> str:
     preview = []
     for item in items[:2]:
-        qty = _qty_int(item.get("qty", 1))
         name = str(item.get("name") or item.get("sku") or "").strip()
         if not name:
             continue
-        preview.append(f"{qty}x {name}")
+        weighed = (item.get("meta") or {}).get("weighed")
+        if isinstance(weighed, dict) and weighed.get("weight_g"):
+            preview.append(f"{weighed_sale.kg_display(_int_q(weighed['weight_g']))} {name}")
+            continue
+        preview.append(f"{_qty_int(item.get('qty', 1))}x {name}")
     if len(items) > 2:
         preview.append(f"+{len(items) - 2}")
     return " · ".join(preview)
@@ -2477,6 +2680,16 @@ def _tab_line_list_price_q(item: dict, manual_originals: dict[str, int]) -> int:
     return pre_manual + _int_q(auto.get("amount_q"))
 
 
+def _tab_payload_weighed(item: dict) -> dict | None:
+    weighed = (item.get("meta") or {}).get("weighed")
+    if not isinstance(weighed, dict) or weighed.get("entry") not in ("label", "weight"):
+        return None
+    payload = {"entry": weighed["entry"], "weight_g": _int_q(weighed.get("weight_g"))}
+    if weighed.get("label_q") is not None:
+        payload["label_q"] = _int_q(weighed.get("label_q"))
+    return payload
+
+
 def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
     tenders = payment.get("tenders")
     if not isinstance(tenders, list) or not tenders:
@@ -2504,9 +2717,15 @@ def build_open_tab(session: Session) -> dict:
     discount = data.get("manual_discount") or {}
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
+    # A comanda virtual da edição de encomenda (``pos_edit_session``): a tela
+    # entra em modo edição por esta chave, e o nome dela é o do pedido.
+    edit_of = str(((data.get("pos_edit") or {}).get("order_ref")) or "")
+    if edit_of:
+        tab_display = f"Encomenda {edit_of}"
     fired_lines = set(data.get("fired_lines") or [])
-    fired_qty = {str(k): int(v) for k, v in (data.get("fired_qty") or {}).items()}
+    fired_qty = {str(k): weighed_sale.qty_number(v) for k, v in (data.get("fired_qty") or {}).items()}
     kitchen_by_line = _kitchen_status_by_line(session.session_key)
+    tickets_by_line = _kitchen_tickets_by_line(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
         {
@@ -2514,7 +2733,11 @@ def build_open_tab(session: Session) -> dict:
             "sku": item["sku"],
             "name": item.get("name", item["sku"]),
             "price_q": _tab_line_display_price_q(item, manual_originals),
-            "qty": int(item.get("qty", 1)),
+            "qty": weighed_sale.qty_number(item.get("qty", 1)),
+            # A linha pesada volta com o que o operador digitou (etiqueta ou
+            # peso): é isso que o PDV reenvia no próximo save, e o servidor
+            # recalcula o peso pelo catálogo. Ausente na venda por unidade.
+            "weighed": _tab_payload_weighed(item),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
             # QUANTAS unidades desta linha foram para a cozinha. O booleano acima
@@ -2524,6 +2747,8 @@ def build_open_tab(session: Session) -> dict:
             # sobra que o balcão precisa ver antes de fechar a venda.
             "fired_qty": fired_qty.get(item.get("line_id", ""), 0),
             "kitchen_status": kitchen_by_line.get(item.get("line_id", ""), ""),
+            # Os tickets desta linha, para o card da cozinha que o toque abre.
+            "kitchen_tickets": tickets_by_line.get(item.get("line_id", ""), []),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
@@ -2539,6 +2764,7 @@ def build_open_tab(session: Session) -> dict:
         "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
+        "edit_of": edit_of,
         "items": items,
         "customer_phone": customer.get("phone", ""),
         "customer_name": customer.get("name", ""),
@@ -2692,6 +2918,33 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
     }
 
 
+def _recent_moment_display(moment) -> str:
+    """``14:10`` hoje; ``27/09 14:10`` em outro dia (a lista alcança dias atrás)."""
+    local = timezone.localtime(moment)
+    if local.date() == timezone.localdate():
+        return local.strftime("%H:%M")
+    return local.strftime("%d/%m %H:%M")
+
+
+def _recent_handoff_display(order) -> str:
+    """A saída da encomenda registrada em outro dia: "Retirada hoje às 14:10".
+
+    Só quando a saída caiu em dia diferente do registro — na venda de balcão (ou
+    na encomenda do mesmo dia) o horário do registro já diz tudo.
+    """
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    left_at = order.dispatched_at or order.completed_at
+    if not left_at:
+        return ""
+    local = timezone.localtime(left_at)
+    if local.date() == timezone.localtime(order.created_at).date():
+        return ""
+    day = "hoje" if local.date() == timezone.localdate() else local.strftime("%d/%m")
+    verb = "Saiu para entrega" if get_fulfillment_type(order) == "delivery" else "Retirada"
+    return f"{verb} {day} às {local.strftime('%H:%M')}"
+
+
 def _preorder_days() -> tuple[int, list]:
     from shopman.shop.projections import checkout_context
 
@@ -2707,18 +2960,42 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     reprocessamento de falha, para qualquer venda recente, a qualquer hora.
     Reusa a MESMA projeção fiscal do gestor (``order_queue._fiscal_status``) —
     um estado, duas superfícies, zero divergência.
+
+    "Recente" é a venda FISCAL, não só o registro: a encomenda paga há dias e
+    retirada hoje é venda de hoje para a nota (``fiscal.fiscal_sale_day``, a
+    régua da ``emission_waits_for_handoff``/``late_emission_days``, #1173). Por
+    isso entra também o pedido cuja mercadoria SAIU dentro da janela (retirada
+    concluída ou entrega despachada), e a lista se ordena pelo último desses
+    momentos — senão a emissão avulsa da encomenda retirada hoje não teria onde
+    ser pedida.
     """
+    from django.db.models import Q
+    from django.db.models.functions import Coalesce, Greatest
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.order_queue import _fiscal_status
     from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
+    from shopman.shop.services import fiscal as fiscal_service
+    from shopman.shop.services import order_composition
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
+    # A emissão avulsa pode valer por mais dias que a lista (Admin → PDV e
+    # alertas): a lista alcança o prazo, senão a venda sumiria antes de vencer.
+    late_days = fiscal_service.late_emission_days()
+    if late_days:
+        first_day = timezone.localdate() - timezone.timedelta(days=late_days)
+        since = min(since, timezone.make_aware(timezone.datetime.combine(first_day, timezone.datetime.min.time())))
     orders = (
-        Order.objects.filter(channel_ref=POS_CHANNEL_REF, created_at__gte=since)
+        Order.objects.filter(channel_ref=POS_CHANNEL_REF)
+        .filter(Q(created_at__gte=since) | Q(dispatched_at__gte=since) | Q(completed_at__gte=since))
+        .annotate(last_moment=Greatest(
+            "created_at",
+            Coalesce("dispatched_at", "created_at"),
+            Coalesce("completed_at", "created_at"),
+        ))
         .prefetch_related("items")
-        .order_by("-created_at")[: max(1, min(int(limit), 50))]
+        .order_by("-last_moment", "-created_at")[: max(1, min(int(limit), 50))]
     )
 
     sales = []
@@ -2735,8 +3012,12 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
         sales.append({
             "order_ref": order.ref,
             "status": str(order.status),
-            "created_at_display": timezone.localtime(order.created_at).strftime("%H:%M"),
-            "total_display": format_money(int(order.total_q or 0)),
+            "created_at_display": _recent_moment_display(order.created_at),
+            # A saída da mercadoria da encomenda, quando é ela que traz o pedido
+            # para a lista ("Retirada hoje às 14:10"); vazio na venda de balcão.
+            "handoff_display": _recent_handoff_display(order),
+            # O total que VALE (a encomenda editada tem ajuste), o mesmo da nota.
+            "total_display": format_money(order_composition.effective_total_q(order)),
             "payment_label": " + ".join(payment_method_label(m) for m in methods if m),
             "customer_name": str((data.get("customer") or {}).get("name") or ""),
             "fiscal_status": fiscal_status,
@@ -2752,6 +3033,9 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             "can_print_danfe": bool(data.get("nfce_access_key")),
             "can_resend_email": bool(data.get("nfce_access_key")),
             "can_requeue_fiscal": fiscal_status == "failed",
+            # Emissão avulsa: a regra da casa não emitiu, e o gerente pode mandar
+            # emitir. O MESMO predicado que o endpoint impõe de novo, na trava.
+            "can_emit_fiscal": not fiscal_service.issue_override_refusal(order, state=fiscal_state),
             # A correção sobrevive à saída da tela de resultado: a lista anuncia
             # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
             # que o cancel impõe (`recent_sale_cancellable`).

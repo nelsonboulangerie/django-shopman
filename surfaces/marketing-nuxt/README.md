@@ -46,6 +46,7 @@ Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 - `/history`
 - `/platforms`
 - `/templates`
+- `/v2`
 <!-- marketing-ui-routes:end -->
 
 O histórico é um aprofundamento acessível por contexto, não uma aba primária. Links

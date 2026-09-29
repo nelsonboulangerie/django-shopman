@@ -204,7 +204,9 @@ def offer_action(promotion_ref: str) -> dict[str, Any]:
         "payload_schema": {
             "type": "object",
             "properties": {
-                "mode": {"type": "string", "enum": ["replace", "append"]},
+                # Sem `mode`, a oferta soma ao que já está na sacola. `replace` só
+                # quando o cliente escolheu ficar só com a oferta.
+                "mode": {"type": "string", "enum": ["replace"]},
                 "idempotency_key": {"type": "string"},
             },
         },

@@ -71,6 +71,7 @@ export function useProductionBoard(
   async function post(
     key: string,
     actionRef: string,
+    seenRev: number | null,
     action: (
       idempotencyKey: string,
       metadata: ProductionMutationMetadata,
@@ -78,9 +79,31 @@ export function useProductionBoard(
     ) => Promise<unknown>,
   ): Promise<BoardActResult> {
     if (busy.value.has(key)) return { ok: false };
-    const authorization = mutationGuard.authorizeMutation(actionRef);
-    if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
     busy.value = new Set(busy.value).add(key);
+    try {
+      return await authorizedPost(key, actionRef, seenRev, action);
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  async function authorizedPost(
+    key: string,
+    actionRef: string,
+    seenRev: number | null,
+    action: (
+      idempotencyKey: string,
+      metadata: ProductionMutationMetadata,
+      expectedRev: number | null,
+    ) => Promise<unknown>,
+  ): Promise<BoardActResult> {
+    const authorization = await mutationGuard.authorizeFreshMutation(
+      actionRef,
+      seenRev,
+    );
+    if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
     const attempt = attempts.get(key) ?? newProductionMutationKey();
     attempts.set(key, attempt);
     try {
@@ -98,10 +121,6 @@ export function useProductionBoard(
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
-    } finally {
-      const next = new Set(busy.value);
-      next.delete(key);
-      busy.value = next;
     }
   }
 
@@ -109,6 +128,11 @@ export function useProductionBoard(
   // de se sobrescreverem. A bancada A ajusta para 40 enquanto a B ajusta para 25 sobre
   // um quadro de sessenta segundos de idade: sem o número, o último POST vence, sem 409
   // e sem aviso. Com ele, a segunda recebe "a fornada mudou em outra tela".
+  //
+  // ⚠️ O POST manda a revisão da PROJEÇÃO atual (é ela que a prova assina), e o
+  // poll troca a projeção por baixo do diálogo aberto. Sem comparar com a revisão
+  // que o diálogo mostrou (`payload.expected_rev`), o poll "adotava" a mudança da
+  // outra bancada e o último POST voltava a vencer em silêncio.
   //
   // Nulo quando o card não é conhecido (planejar uma linha que ainda não tem
   // fornada): não há revisão anterior para comparar, e mandar zero afirmaria uma coisa
@@ -131,7 +155,10 @@ export function useProductionBoard(
     const actionRef = `${actionPrefix}:${actionTarget}${
       actionPrefix === "plan_suggested" ? `:${normalizedQuantity}` : ""
     }`;
-    return post(key, actionRef, (idempotencyKey, metadata, expectedRev) =>
+    // A revisão que o operador viu no diálogo; a do POST vem da projeção
+    // assinada, e as duas têm que bater (ver `authorizeFreshMutation`).
+    const seenRev = payload.work_order_id ? (payload.expected_rev ?? null) : null;
+    return post(key, actionRef, seenRev, (idempotencyKey, metadata, expectedRev) =>
       planProduction({
         ...payload,
         expected_rev: expectedRev,
@@ -147,7 +174,7 @@ export function useProductionBoard(
     rev: number,
     quantity: string,
   ): Promise<BoardActResult> {
-    return post(key, `start:${woPk}`, (idempotencyKey, metadata, expectedRev) =>
+    return post(key, `start:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
       startProductionWorkOrder(woPk, {
         quantity,
         expected_rev: expectedRev ?? rev,

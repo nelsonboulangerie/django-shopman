@@ -6,6 +6,7 @@
 // and only rendered here.
 
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
+import { lineUnits } from "~/presentation/weighed";
 
 /**
  * Quanto DESTE PRODUTO já entrou no pedido — o número do selo no card do grid.
@@ -17,7 +18,8 @@ import type { POSCartItem, POSCollectionProjection, POSProductProjection } from 
  * de identidade para agregado se vai sempre.
  */
 export function cartQtyForSku(items: POSCartItem[], sku: string): number {
-  return items.reduce((total, item) => (item.sku === sku ? total + item.qty : total), 0);
+  // Peça pesada conta como UMA no selo (duas peças de queijo = 2, não 0,6 kg).
+  return items.reduce((total, item) => (item.sku === sku ? total + lineUnits(item) : total), 0);
 }
 
 /** Favourites first (Projection-driven), then alphabetical (pt-BR). */
@@ -51,9 +53,15 @@ function matchesWordStart(normalizedText: string, normalizedQuery: string): bool
 }
 
 /**
- * Filter the grid by active collection and a free-text query (name or product
- * code), accent-insensitive. Matches at the START of a word rank first — typing
- * "pa" should surface "Pão…" before anything that merely contains "pa".
+ * Filter the grid by active collection and a free-text query (name, SKU or
+ * barcode), accent-insensitive. Matches at the START of a word rank first —
+ * typing "pa" should surface "Pão…" before anything that merely contains "pa".
+ *
+ * ⚠️ O leitor de código de barras do balcão DIGITA aqui: ele é um teclado que
+ * manda os dígitos e um Enter. Por isso o GTIN entra no índice, e casa
+ * INTEIRO — um código de barras não é prefixo de nada, e casar por pedaço
+ * faria a bipada cair no produto errado. O casamento exato vem na frente da
+ * fila, para o Enter que o leitor manda em seguida pegar o produto bipado.
  */
 export function filterProducts(
   products: POSProductProjection[],
@@ -61,6 +69,7 @@ export function filterProducts(
 ): POSProductProjection[] {
   const collectionRef = options.collectionRef || "";
   const normalized = normalizeSearchText((options.query || "").trim());
+  const exact: POSProductProjection[] = [];
   const wordStart: POSProductProjection[] = [];
   const contains: POSProductProjection[] = [];
   for (const product of products) {
@@ -71,13 +80,16 @@ export function filterProducts(
     }
     const name = normalizeSearchText(product.name);
     const sku = normalizeSearchText(product.sku);
-    if (matchesWordStart(name, normalized) || sku.startsWith(normalized)) {
+    const gtin = normalizeSearchText(product.gtin || "");
+    if (gtin && gtin === normalized) {
+      exact.push(product);
+    } else if (matchesWordStart(name, normalized) || sku.startsWith(normalized)) {
       wordStart.push(product);
     } else if (name.includes(normalized) || sku.includes(normalized)) {
       contains.push(product);
     }
   }
-  return wordStart.concat(contains);
+  return exact.concat(wordStart, contains);
 }
 
 /**
@@ -91,7 +103,7 @@ export function enterTargetProduct(
   query: string,
 ): POSProductProjection | null {
   if (!(query || "").trim()) return null;
-  return filtered.find((product) => !product.sold_out) ?? null;
+  return filtered.find((product) => !product.sold_out && product.price_q > 0) ?? null;
 }
 
 /**

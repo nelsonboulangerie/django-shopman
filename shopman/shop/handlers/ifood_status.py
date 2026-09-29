@@ -49,7 +49,7 @@ class IFoodStatusCallbackHandler:
         }
         if order is not None:
             context = ifood_callbacks.workflow_context(order)
-            if status in {"accepted", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
+            if status in {"accepted", "preparing", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
                 # A delayed progress callback cannot reopen a completed order.
                 # Keep legacy cancellation requests on their separate path.
                 return
@@ -84,19 +84,73 @@ class IFoodStatusCallbackHandler:
 
 
 def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
-    """Enqueue an iFood callback when an iFood-channel order changes status."""
+    """Pedido do iFood mudou de status: avisa o iFood e aplica o que ele já disse.
+
+    Duas coisas, nesta ordem. O aviso (se couber) sai primeiro; depois a
+    reconciliação leva o pedido até onde os fatos do iFood já autorizam — é ela
+    que fecha, por exemplo, o pedido cujo CON chegou com a cozinha ainda em
+    preparo, no momento em que ele finalmente sai.
+    """
     if event_type != "status_changed":
         return
     if getattr(order, "channel_ref", "") != ifood_ingest.IFOOD_CHANNEL_REF:
         return
+    try:
+        _enqueue_callback(order, actor)
+    finally:
+        from shopman.shop.services import ifood_events
+
+        ifood_events.reconcile_remote(order)
+
+
+def _enqueue_callback(order, actor) -> None:
     # Cancelamento que ORIGINOU no iFood (evento CAN refletido): não chamamos
-    # requestCancellation de volta para quem já cancelou.
+    # requestCancellation de volta para quem já cancelou. Decisão de negócio —
+    # o silêncio dela custou vinte minutos de diagnóstico em 19/09/2026.
     if (order.data or {}).get("ifood_cancelled"):
+        logger.info(
+            "ifood_status: no callback for order %s (status=%s) — cancellation originated at iFood (ifood_cancelled)",
+            order.ref,
+            order.status,
+        )
         return
-    if actor in {"system:ifood:CFM", "system:ifood:DSP"} or ifood_callbacks.remote_status_observed(order, order.status):
+    remote = (order.data or {}).get("ifood") or {}
+    remote_markers = ",".join(m for m in ("remote_confirmed", "remote_dispatched", "remote_concluded") if remote.get(m)) or "none"
+    # Transição que o PRÓPRIO iFood nos informou (ator remoto CFM/DSP): ecoar de
+    # volta seria devolver ao marketplace o que veio dele. Separado da evidência
+    # persistida logo abaixo porque saber QUAL dos dois fechou é o diagnóstico.
+    if actor in {"system:ifood:CFM", "system:ifood:DSP"}:
+        logger.info(
+            "ifood_status: no callback for order %s (status=%s) — remote actor=%s (remote markers: %s)",
+            order.ref,
+            order.status,
+            actor,
+            remote_markers,
+        )
+        return
+    # Mesma regra, evidência persistida em vez do ator: um evento remoto anterior
+    # já marcou esta transição em order.data["ifood"].
+    if ifood_callbacks.remote_status_observed(order, order.status):
+        logger.info(
+            "ifood_status: no callback for order %s (status=%s) — remote status already observed (remote markers: %s)",
+            order.ref,
+            order.status,
+            remote_markers,
+        )
         return
     context = ifood_callbacks.workflow_context(order)
+    # Não existe ação no iFood para este status NESTE fluxo (ex.: despacho de uma
+    # entrega que é do iFood, não da loja). Os três dados da decisão vão no log:
+    # sem eles não se distingue desenho da regra de dado que faltou chegar.
     if ifood_callbacks.action_for_status(order.status, **context) is None:
+        logger.info(
+            "ifood_status: no callback for order %s — no iFood action for status=%s "
+            "fulfillment_type=%s delivered_by=%s",
+            order.ref,
+            order.status,
+            context["fulfillment_type"] or "(empty)",
+            context["delivered_by"] or "(empty)",
+        )
         return
 
     ifood_order_id = order.external_ref or (order.data or {}).get("external_order_code", "")

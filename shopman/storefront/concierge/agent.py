@@ -255,6 +255,15 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     effort = str(cfg.get("effort") or "").strip()
     channel_ref = str(conversation.channel_ref or cfg.get("channel_ref") or "")
     binding = getattr(conversation, "_binding", None)
+    if channel_ref:
+        from shopman.shop.services.channel_switch import is_channel_active
+
+        if not is_channel_active(channel_ref):
+            # Canal desligado no Gestor: o concierge segue respondendo, mas só com
+            # as ferramentas de consulta — não oferece nem fecha pedido. O commit
+            # recusaria de qualquer jeito; aqui a conversa não chega a prometer.
+            conversation._channel_off = True
+            conversation._commercial_authority = False
 
     client = client or build_client()
     ctx = ToolContext(

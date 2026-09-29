@@ -8,7 +8,7 @@
 // inteiro para quem indexa.
 import { faqContactLinks, faqItems } from '~/presentation/faq'
 import { breadcrumbJsonLd, faqJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
-import type { HomeResponse } from '~/types/shopman'
+import type { ShellResponse } from '~/types/shopman'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const session = useShopSession()
@@ -18,7 +18,7 @@ await siteSeoReady
 
 // A home do shell (app.vue) já está no payload: é dela que vêm as perguntas
 // enquanto o cadastro do site não tiver as próprias.
-const { data: shellHome } = useNuxtData<HomeResponse>('shopman-shell-home')
+const { data: shellState } = useNuxtData<ShellResponse>('shopman-shell')
 
 const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBACK_SHOP.brand_name)
 const pageSeo = computed(() => sitePageSeo(siteSeo.value, 'faq'))
@@ -29,7 +29,7 @@ const description = computed(() => pageSeo.value.description || listingDescripti
   tagline: session.shop.value?.tagline,
   city: session.shop.value?.default_city
 }))
-const items = computed(() => faqItems(siteSeo.value?.faq, shellHome.value?.home?.faq))
+const items = computed(() => faqItems(siteSeo.value?.faq, shellState.value?.shell?.faq))
 const contactLinks = computed(() => faqContactLinks({
   business: siteSeo.value?.business,
   shop: session.shop.value,

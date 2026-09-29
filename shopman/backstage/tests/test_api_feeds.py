@@ -1,4 +1,4 @@
-"""Backstage: API dos canais de EXIBIÇÃO — board + ligar/pausar + coleções."""
+"""Backstage: API da aba Canais — board, toggle "Ativo" (com gerente) e coleções dos feeds."""
 
 from __future__ import annotations
 
@@ -49,9 +49,10 @@ def board(db):
 
 
 BOARD_URL = "/api/v1/backstage/feeds/"
-ACTIVE_URL = "/api/v1/backstage/feeds/active/"
+SWITCH_URL = "/api/v1/backstage/feeds/switch/"
 COLLS_URL = "/api/v1/backstage/feeds/collections/"
 ROTATION_URL = "/api/v1/backstage/feeds/rotation/"
+AUTOMATIC_URL = "/api/v1/backstage/feeds/automatic/"
 
 
 def _post(client, url, *, data, content_type):
@@ -74,6 +75,10 @@ def test_board_shape(client, operator, board):
     assert [c["ref"] for c in by_ref["tv"]["collections"]] == ["paes"]
     assert by_ref["google"]["output_path"] == "/feed/google.xml"
     assert by_ref["google"]["is_active"] is False
+    assert by_ref["tv"]["automatic"]["enabled"] is False
+    assert by_ref["tv"]["automatic"]["lead_minutes"] == 15
+    assert by_ref["google"]["automatic"] is None
+    assert next(a for a in by_ref["tv"]["actions"] if a["ref"] == "automatic")["enabled"] is True
     assert {c["ref"] for c in data["all_collections"]} == {"paes", "doces"}
 
 
@@ -82,13 +87,97 @@ def test_board_requires_manage_catalog(client, plain_staff, board):
     assert client.get(BOARD_URL).status_code == 403
 
 
-def test_toggle_active(client, operator, board):
+def _switch(client, *, ref, is_active, period="open", reason="Férias", **extra):
+    from shopman.shop.services import channel_switch
+
+    channel = Channel.objects.get(ref=ref)
+    body = {"ref": ref, "is_active": is_active, "period": period, "reason": reason,
+            "expected_actor_id": int(client.session["_auth_user_id"]),
+            "base_revision": channel_switch.revision(channel), "idempotency_key": str(uuid.uuid4()), **extra}
+    return client.post(SWITCH_URL, body, content_type="application/json")
+
+
+def _adjust_shift() -> Permission:
+    return Permission.objects.get(content_type__app_label="cashman", codename="adjust_shift")
+
+
+@pytest.fixture
+def manager(db, shop):
+    """Gerente logado: tem o catálogo E a régua de exceção do PDV — só confirma."""
+    u = User.objects.create_user("gerente", password="pw", is_staff=True, first_name="Joyce")
+    u.user_permissions.add(_perm(), _adjust_shift())
+    return User.objects.get(pk=u.pk)
+
+
+@pytest.fixture
+def other_manager(db, shop):
+    from shopman.doorman.models import PinCredential
+
+    u = User.objects.create_user("ana", password="pw", is_staff=True, first_name="Ana")
+    u.user_permissions.add(_adjust_shift())
+    PinCredential.set_for(u, "4321")
+    return User.objects.get(pk=u.pk)
+
+
+def test_gerente_logado_so_confirma(client, manager, board):
+    client.force_login(manager)
+    resp = _switch(client, ref="google", is_active=True)
+    assert resp.status_code == 200, resp.content
+    google = Channel.objects.get(ref="google")
+    assert google.is_active is True
+    assert google.config["activation"]["approved_by"] == "Joyce"
+
+
+def test_quem_nao_e_gerente_precisa_da_assinatura_de_um(client, operator, other_manager, board):
     client.force_login(operator)
-    resp = _post(client,
-        ACTIVE_URL, data={"ref": "google", "is_active": True}, content_type="application/json"
-    )
-    assert resp.status_code == 200
-    assert Channel.objects.get(ref="google").is_active is True
+    refused = _switch(client, ref="tv", is_active=False)
+    assert refused.status_code in (400, 403, 422)
+    assert refused.json()["error"]["code"] == "manager_approval_required"
+    assert Channel.objects.get(ref="tv").is_active is True
+
+    wrong = _switch(client, ref="tv", is_active=False, manager_approval={"username": "ana", "pin": "0000"})
+    assert wrong.json()["error"]["code"] == "manager_approval_invalid"
+
+    ok = _switch(client, ref="tv", is_active=False, manager_approval={"username": "ana", "pin": "4321"})
+    assert ok.status_code == 200, ok.content
+    tv = Channel.objects.get(ref="tv")
+    assert tv.is_active is False
+    assert (tv.config["activation"]["by"], tv.config["activation"]["approved_by"]) == ("sc-api", "Ana")
+
+
+def test_canal_de_venda_tem_o_mesmo_toggle(client, manager, board):
+    Channel.objects.create(ref="web", name="Loja online")
+    client.force_login(manager)
+    board_before = client.get(BOARD_URL).json()["board"]
+    web = next(c for c in board_before["catalog_channels"] if c["ref"] == "web")
+    assert web["switch"]["is_active"] is True
+    assert web["switch"]["title"] == "Desligar Loja online"
+    assert web["switch"]["requires_manager_approval"] is False
+    assert "Sem entregador" in web["switch"]["reasons"]
+    assert [p["key"] for p in web["switch"]["periods"]] == ["30m", "1h", "today", "open", "custom"]
+
+    resp = _switch(client, ref="web", is_active=False, period="1h", reason="Loja cheia")
+    assert resp.status_code == 200, resp.content
+    web = next(c for c in client.get(BOARD_URL).json()["board"]["catalog_channels"] if c["ref"] == "web")
+    assert web["is_active"] is False
+    assert web["switch"]["title"] == "Ligar Loja online"
+    assert web["switch"]["reasons"] == []
+    assert "Loja cheia" in web["switch"]["state_line"]
+
+
+def test_quem_nao_e_gerente_recebe_a_lista_de_quem_assina(client, operator, other_manager, board):
+    client.force_login(operator)
+    data = client.get(BOARD_URL).json()["board"]
+    assert data["managers"] == [{"username": "ana", "name": "Ana"}]
+    assert all(feed["switch"]["requires_manager_approval"] for feed in data["feeds"])
+
+
+def test_switch_unknown_channel(client, manager, board):
+    client.force_login(manager)
+    resp = client.post(SWITCH_URL, {"ref": "ghost", "is_active": True, "period": "open",
+        "expected_actor_id": manager.pk, "base_revision": "x", "idempotency_key": str(uuid.uuid4())},
+        content_type="application/json")
+    assert resp.status_code == 400
 
 
 def test_set_collections(client, operator, board):
@@ -108,14 +197,6 @@ def test_set_collections_unknown_rejected(client, operator, board):
         COLLS_URL,
         data={"ref": "tv", "collections": ["nope"]},
         content_type="application/json",
-    )
-    assert resp.status_code == 400
-
-
-def test_toggle_unknown_feed(client, operator, board):
-    client.force_login(operator)
-    resp = _post(client,
-        ACTIVE_URL, data={"ref": "ghost", "is_active": True}, content_type="application/json"
     )
     assert resp.status_code == 400
 
@@ -182,6 +263,54 @@ def test_set_rotation_rejects_platform_feed(client, operator, board):
     client.force_login(operator)
     resp = _rotate(client, {"ref": "google", "rotate_seconds": 10, "items_per_page": 12})
     assert resp.status_code == 400
+
+
+# ── Janela automática e descanso da TV ─────────────────────────────────────────
+
+
+def _automatic(client, body):
+    return _post(client, AUTOMATIC_URL, data=body, content_type="application/json")
+
+
+def test_set_automatic_writes_mode_and_normalized_messages(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {
+        "ref": "tv", "enabled": True,
+        "idle_messages": [
+            "  Atendimento de seg. a sáb., das 9h às 18h  ",
+            "  Nelson Boulangerie:   minha padaria favorita  ",
+        ],
+    })
+    assert resp.status_code == 200, resp.content
+    assert Channel.objects.get(ref="tv").config["display"]["automatic"] == {
+        "enabled": True,
+        "idle_messages": [
+            "Atendimento de seg. a sáb., das 9h às 18h",
+            "Nelson Boulangerie: minha padaria favorita",
+        ],
+    }
+
+
+def test_set_automatic_is_projected_back_to_the_manager(client, operator, board):
+    client.force_login(operator)
+    _automatic(client, {"ref": "tv", "enabled": True, "idle_messages": ["Voltamos às 9h", "Até logo"]})
+    tv = next(feed for feed in client.get(BOARD_URL).json()["board"]["feeds"] if feed["ref"] == "tv")
+    assert tv["automatic"]["enabled"] is True
+    assert tv["automatic"]["idle_messages"] == ["Voltamos às 9h", "Até logo"]
+
+
+def test_set_automatic_rejects_platform_feed(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {"ref": "google", "enabled": True, "idle_messages": ["Olá"]})
+    assert resp.status_code == 400
+    assert "apenas no menuboard" in resp.json()["detail"]
+
+
+def test_set_automatic_rejects_long_message(client, operator, board):
+    client.force_login(operator)
+    resp = _automatic(client, {"ref": "tv", "enabled": True, "idle_messages": ["x" * 241]})
+    assert resp.status_code == 400
+    assert "240" in resp.json()["detail"]
 
 
 def test_set_rotation_requires_manage_catalog(client, plain_staff, board):

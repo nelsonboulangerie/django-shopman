@@ -45,16 +45,26 @@ export function authErrorView (input: AuthErrorInput, fallback: string): AuthErr
   return { kind, title: ERROR_TITLES[kind], message }
 }
 
-export const RESEND_COOLDOWN_MS = 30_000
+// A espera do "Reenviar" é a do SERVIDOR (`resend_after_seconds`, o gate G11 do
+// doorman). Eram 30 s cravados aqui contra 60 s cobrados lá: o botão liberava e
+// o servidor recusava. Este número é só o fallback, igual ao default do doorman,
+// para resposta antiga sem o campo.
+export const RESEND_COOLDOWN_MS = 60_000
+
+export function resendWindowMs (resendAfterSeconds: number | null | undefined): number {
+  return typeof resendAfterSeconds === 'number' && Number.isFinite(resendAfterSeconds) && resendAfterSeconds >= 0
+    ? resendAfterSeconds * 1000
+    : RESEND_COOLDOWN_MS
+}
 
 export interface ResendState {
   ready: boolean
   remainingSeconds: number
 }
 
-export function resendCooldown (lastSentAtMs: number | null, nowMs: number): ResendState {
+export function resendCooldown (lastSentAtMs: number | null, nowMs: number, windowMs: number = RESEND_COOLDOWN_MS): ResendState {
   if (lastSentAtMs == null) return { ready: true, remainingSeconds: 0 }
-  const remainingMs = lastSentAtMs + RESEND_COOLDOWN_MS - nowMs
+  const remainingMs = lastSentAtMs + windowMs - nowMs
   if (remainingMs <= 0) return { ready: true, remainingSeconds: 0 }
   return { ready: false, remainingSeconds: Math.ceil(remainingMs / 1000) }
 }

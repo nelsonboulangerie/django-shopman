@@ -5,11 +5,15 @@ import { compactUnitWeightLabel } from '~/utils/display'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
+  // O quadro estrutural já pode mostrar produto/foto antes de preço e estoque.
+  // Enquanto o overlay canônico chega, nenhum gesto de compra fica disponível.
+  pending?: boolean
   // Moldura vintage na miniatura. Chamadores podem desligar explicitamente quando
   // a foto não for tratada como foto de produto.
   framed?: boolean
 }>(), {
-  framed: true
+  framed: true,
+  pending: false
 })
 
 const { qtyForSku } = useCartState()
@@ -37,9 +41,12 @@ const badge = computed(() => tileBadge(props.item))
       <p v-if="item.short_description" class="mt-2 line-clamp-2 shop-meta">
         {{ item.short_description }}
       </p>
-      <UiBadge v-if="badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
-      <DietaryWarningBadges :warnings="item.dietary_warnings" class="mt-2" />
-      <p class="mt-2 flex flex-wrap items-baseline gap-x-2">
+      <UiBadge v-if="!pending && badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
+      <DietaryWarningBadges v-if="!pending" :warnings="item.dietary_warnings" class="mt-2" />
+      <div v-if="pending" class="mt-2" aria-label="Confirmando preço e disponibilidade">
+        <UiSkeleton class="h-5 w-24" />
+      </div>
+      <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
         <span v-if="item.original_price_display" class="shop-meta">antes <span class="line-through">{{ item.original_price_display }}</span></span>
         <span class="shop-price">{{ item.price_display }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
@@ -80,7 +87,7 @@ const badge = computed(() => tileBadge(props.item))
       <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream + marrom),
            harmonizando com a foto em sépia. Centralizada no topo, descolada da borda. -->
       <div
-        v-if="item.availability === 'unavailable'"
+        v-if="!pending && item.availability === 'unavailable'"
         class="absolute z-10 flex justify-center"
         :class="framed ? 'shop-photo-control-top-sm' : 'inset-x-0 top-3'"
       >
@@ -89,7 +96,7 @@ const badge = computed(() => tileBadge(props.item))
       <!-- Notificável: pill "Me avise"/"Anotado" ocupa TODA a largura da foto (centrado),
            no rodapé — sem extravasar. -->
       <div
-        v-if="item.is_notifiable"
+        v-if="!pending && item.is_notifiable"
         class="pointer-events-auto absolute z-10"
         :class="framed ? 'shop-photo-control-pill-sm' : 'inset-x-1 bottom-1'"
       >
@@ -102,7 +109,7 @@ const badge = computed(() => tileBadge(props.item))
       </div>
       <!-- Disponível: "+"/pílula de quantidade na quina. -->
       <div
-        v-else-if="item.availability !== 'unavailable'"
+        v-else-if="!pending && item.availability !== 'unavailable'"
         class="pointer-events-auto absolute z-10"
         :class="framed ? 'shop-photo-control-bottom-sm' : 'bottom-1 right-1'"
       >

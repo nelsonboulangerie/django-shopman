@@ -15,7 +15,7 @@ REMOTE_RUNBOOK = REPO_ROOT / "docs" / "runbooks" / "pedido-remoto-preso.md"
 NUXT_TYPES = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "types" / "shopman.ts"
 NUXT_TRACKING_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "pedido" / "[ref]" / "index.vue"
 NUXT_CHECKOUT_FLOW = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "utils" / "checkoutFlow.ts"
-NUXT_TERMS_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "terms.vue"
+NUXT_TERMS_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "termos.vue"
 NUXT_PAYMENT_BLOCK = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "components" / "PaymentBlock.vue"
 
 ORDER_STATUSES = {
@@ -293,7 +293,7 @@ def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillme
         "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
         "Finalize no ambiente seguro para seguir com o pedido aceito.",
         "Finalize no ambiente seguro para garantir sua encomenda para {when}.",
-        "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+        "Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
         "Pague ao receber",
         "Acompanhe o status do pedido em tempo real.",
         "Assim que a confirmação chegar, atualizamos esta tela.",

@@ -90,6 +90,20 @@ describe("useKdsBoard — read derivations", () => {
     expect(b.value).toBeNull();
     expect(view.value).toBeNull();
   });
+
+  it("404 é estação que não existe mais, não queda de conexão", () => {
+    // Depois de um reseed o kiosk seguia pedindo /kds/lanches/ e mostrava
+    // "Tentando de novo" para sempre (SHOPMAN-7).
+    env.fetchError.value = { status: 404, data: { detail: "Estação de KDS não encontrada." } };
+    const { stationMissing } = useKdsBoard("lanches");
+    expect(stationMissing.value).toBe(true);
+  });
+
+  it("falha transitória não vira estação inexistente", () => {
+    env.fetchError.value = { status: 502, data: null };
+    const { stationMissing } = useKdsBoard("bancada");
+    expect(stationMissing.value).toBe(false);
+  });
 });
 
 describe("useKdsBoard — start (optimistic + rollback)", () => {
@@ -352,6 +366,169 @@ describe("KDS_ALERT — a fanfarra escolhida pelo dono", () => {
     // o Gestor quando a voz da casa mudar. A figura é do KDS; a voz não é.
     for (const chave of ["partials", "filters", "space", "wave", "shape", "attack"]) {
       expect(KDS_ALERT).not.toHaveProperty(chave);
+    }
+  });
+});
+
+/** EventSource de mentira: `failForGood` é a reconexão que recebeu 502 (CLOSED). */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  listeners = new Map<string, Array<() => void>>();
+  close = vi.fn(() => { this.readyState = 2; });
+  constructor(public url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+  emit(name: string) { for (const handler of this.listeners.get(name) ?? []) handler(); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  failForGood() { this.readyState = 2; this.onerror?.(); }
+}
+
+/** Monta o composable com lifecycle e browser mínimos, e devolve o desmontar. */
+async function withMountedBrowser<T>(build: () => T): Promise<{ value: T; unmount: () => void }> {
+  const mounts: Array<() => void> = [];
+  const unmounts: Array<() => void> = [];
+  FakeEventSource.instances = [];
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounts.push(callback); });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmounts.push(callback); });
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  const value = build();
+  mounts.forEach((callback) => callback());
+  return { value, unmount: () => unmounts.forEach((callback) => callback()) };
+}
+
+describe("useKdsBoard — SSE da estação", () => {
+  beforeEach(() => { env.reset(); vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("recria o stream depois do 502 de deploy e refaz a leitura na reabertura", async () => {
+    const { unmount } = await withMountedBrowser(() => useKdsBoard("forno"));
+    try {
+      expect(FakeEventSource.instances[0]!.url).toBe("/sse/kds/forno");
+      FakeEventSource.instances[0]!.open();
+      FakeEventSource.instances[0]!.failForGood();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      env.refresh.mockClear();
+      FakeEventSource.instances[1]!.open();
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+});
+
+// ── A Saída: "Pronto" da estação sem tela e o canal de todas as estações ────
+
+function exitBoard(over: Record<string, unknown> = {}) {
+  return board({
+    instance_ref: "saida",
+    instance_name: "Saída",
+    instance_type: "expedition",
+    is_expedition: true,
+    tickets: [],
+    preparing: [
+      {
+        pk: 42,
+        order_ref: "WEB-20260926-1234",
+        channel_icon: "language",
+        customer_name: "Ana",
+        fulfillment_icon: "storefront",
+        fulfillment_label: "Retirada",
+        is_delivery: false,
+        fired_at_display: "10:40",
+        elapsed_seconds: 120,
+        is_scheduled: false,
+        test_order_label: "",
+        stations: [
+          {
+            station_ref: "lanches",
+            station_name: "Lanches",
+            prints: true,
+            state: "pending",
+            state_label: "na fila",
+            paper_label: "impresso às 10:42",
+            paper_failed: false,
+            cancelled_items: 0,
+            can_mark_ready: true,
+          },
+        ],
+      },
+    ],
+    ...over,
+  });
+}
+
+describe("useKdsBoard — Saída: Pronto pela estação sem tela", () => {
+  beforeEach(() => env.reset());
+
+  it("o chip vira pronto na hora e o POST vai para o pedido e a estação do card", async () => {
+    env.fetchData.value = exitBoard();
+    const { markStationReady } = useKdsBoard("saida");
+    markStationReady(42, "lanches");
+    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
+    expect(chip.state).toBe("done");
+    expect(chip.can_mark_ready).toBe(false);
+    await flushPromises();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/kds/expedition/42/printed-stations/lanches/done/",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("recusa do servidor devolve o chip e diz o porquê", async () => {
+    env.fetchData.value = exitBoard();
+    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Lanches tem tela: o pronto é dado lá." } });
+    const { markStationReady } = useKdsBoard("saida");
+    markStationReady(42, "lanches");
+    await flushPromises();
+    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
+    expect(chip.state).toBe("pending");
+    expect(chip.can_mark_ready).toBe(true);
+    expect(env.sonner.error).toHaveBeenCalled();
+  });
+
+  it("chip sem Pronto não manda nada", async () => {
+    env.fetchData.value = exitBoard();
+    (env.fetchData.value as any).board.preparing[0].stations[0].can_mark_ready = false;
+    const { markStationReady } = useKdsBoard("saida");
+    markStationReady(42, "lanches");
+    await flushPromises();
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a Saída assina o canal de todas as estações e o dos pedidos", async () => {
+    vi.useFakeTimers();
+    env.fetchData.value = exitBoard();
+    const { unmount } = await withMountedBrowser(() => useKdsBoard("saida"));
+    try {
+      await flushPromises();
+      const urls = FakeEventSource.instances.map((source) => source.url);
+      expect(urls).toEqual(expect.arrayContaining(["/sse/kds/saida", "/sse/kds/main", "/sse/orders"]));
+      env.refresh.mockClear();
+      FakeEventSource.instances.find((s) => s.url === "/sse/kds/main")!.emit("backstage-kds-status-changed");
+      expect(env.refresh).toHaveBeenCalled();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("estação de preparo não assina o canal geral", async () => {
+    vi.useFakeTimers();
+    env.fetchData.value = board();
+    const { unmount } = await withMountedBrowser(() => useKdsBoard("bancada"));
+    try {
+      await flushPromises();
+      expect(FakeEventSource.instances.map((s) => s.url)).toEqual(["/sse/kds/bancada"]);
+    } finally {
+      unmount();
+      vi.useRealTimers();
     }
   });
 });

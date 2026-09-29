@@ -47,6 +47,24 @@ def with_flow(db):
     )
 
 
+@pytest.fixture
+def with_stock_flow(db):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="stock_arrived", subject="x", body="y",
+        whatsapp_flow_ns="content20260101120000_stock",
+    )
+
+
+def _stock_probe(context: dict) -> dict:
+    from shopman.shop.services import manychat_marketing_safety as safety
+
+    # Só atravessa o gate de rollout; campos e flow continuam resolvidos pelo
+    # mesmo contrato produtivo do adapter.
+    return safety.sandbox_probe_context(context)
+
+
 def _endpoints(calls) -> list[str]:
     return [endpoint for endpoint, _payload in calls]
 
@@ -61,19 +79,21 @@ def _field_payloads(calls) -> dict[str, str]:
 
 def test_the_fields_go_before_the_flow(calls, with_flow, monkeypatch):
     """⚠️ Ordem importa: gravar depois do envio preencheria a mensagem SEGUINTE."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints[-1].endswith("sendFlow")
     assert any(e.endswith("setCustomFieldByName") for e in endpoints[:-1])
 
 
-def test_the_product_name_reaches_the_template(calls, with_flow):
+def test_the_product_name_reaches_the_template(calls, with_stock_flow):
     """O caso concreto: sem isto, "O ___ que você pediu chegou"."""
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {"product_name": "Croissant", "cta": "Garanta o seu:", "action_url": "/p/cro"},
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe(
+            {"product_name": "Croissant", "cta": "Garanta o seu:", "action_url": "/p/cro"}
+        ),
     )
 
     fields = _field_payloads(calls)
@@ -81,12 +101,14 @@ def test_the_product_name_reaches_the_template(calls, with_flow):
     assert fields["action_url"] == "/p/cro"
 
 
-def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
+def test_internal_state_never_becomes_a_customer_field(calls, with_stock_flow):
     """⚠️ Contexto inteiro no perfil do cliente vazaria estado interno para o marketing."""
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {"product_name": "Croissant", "session_key": "abc123", "sku": "CRO-001"},
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe(
+            {"product_name": "Croissant", "session_key": "abc123", "sku": "CRO-001"}
+        ),
     )
 
     fields = _field_payloads(calls)
@@ -95,15 +117,17 @@ def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
     assert "product_name" in fields
 
 
-def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(calls, with_flow):
+def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(
+    calls, with_stock_flow
+):
     capability = "https://shop.example/gerenciar-aviso#opaque-capability"
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe({
             "management_url": capability,
             "management_note": f"Gerenciar este aviso: {capability}",
-        },
+        }),
     )
 
     fields = _field_payloads(calls)
@@ -111,21 +135,26 @@ def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(ca
     assert fields["management_note"] == f"Gerenciar este aviso: {capability}"
 
 
-def test_empty_values_are_not_written(calls, with_flow):
-    """`deadline_note` vazio é o caso normal do "me avise": não sobrescreve com nada."""
+def test_empty_values_are_written_to_clear_persistent_profile_state(
+    calls, with_stock_flow
+):
+    """Ausente precisa limpar o valor anterior no perfil persistente do ManyChat."""
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {"product_name": "Croissant", "deadline_note": "", "reserve_note": "   "},
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe(
+            {"product_name": "Croissant", "deadline_note": "", "reserve_note": "   "}
+        ),
     )
 
     fields = _field_payloads(calls)
-    assert "deadline_note" not in fields
-    assert "reserve_note" not in fields
+    assert fields["deadline_note"] == ""
+    assert fields["reserve_note"] == ""
 
 
-def test_a_field_that_does_not_exist_does_not_block_the_alert(with_flow, monkeypatch):
-    """Alerta de fornada é tempo-sensível: mensagem com pedaço faltando ainda avisa."""
+def test_a_field_failure_blocks_the_flow_before_it_can_reuse_stale_state(
+    with_flow, monkeypatch
+):
     seen: list[str] = []
 
     def _fake(endpoint, payload, config):
@@ -138,13 +167,13 @@ def test_a_field_that_does_not_exist_does_not_block_the_alert(with_flow, monkeyp
     monkeypatch.setattr(mc, "_get_config", lambda: {"api_token": "tok", "flow_map": {}})
     monkeypatch.setattr(mc, "_resolve_subscriber", lambda *a, **k: "sub-1")
 
-    assert mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"}) is True
-    assert any(e.endswith("sendFlow") for e in seen)
+    assert mc.send("+5543981234567", "order_accepted", {"order_ref": "A47"}) is False
+    assert not any(e.endswith("sendFlow") for e in seen)
 
 
 def test_without_a_flow_nothing_is_pushed(calls, db):
     """Sem template aprovado o texto é nosso (`sendContent`): campo não tem função."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
+    mc.send("+5543981234567", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints == ["/sending/sendContent"]
@@ -153,22 +182,30 @@ def test_without_a_flow_nothing_is_pushed(calls, db):
 # ── A quantidade que a mensagem promete ──────────────────────────────
 
 
-def test_the_quantity_is_the_real_one(calls, with_flow):
+def test_the_quantity_is_the_real_one(calls, with_stock_flow):
     """⚠️ FOMO com número só vale se o número for verdade.
 
     A quantidade sai da MESMA checagem de disponibilidade que libera o alerta, então o
     "ainda tenho X unidades" é o que a loja pode honrar naquele instante.
     """
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": "12"})
+    mc.send(
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe({"product_name": "Baguete", "available_qty": "12"}),
+    )
 
     assert _field_payloads(calls)["available_qty"] == "12"
 
 
-def test_an_unknown_quantity_says_nothing(calls, with_flow):
-    """Canal que não sabe contar não inventa número: o campo não é gravado."""
-    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": ""})
+def test_an_unknown_quantity_says_nothing(calls, with_stock_flow):
+    """Canal que não sabe contar não inventa nem conserva o número anterior."""
+    mc.send(
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe({"product_name": "Baguete", "available_qty": ""}),
+    )
 
-    assert "available_qty" not in _field_payloads(calls)
+    assert _field_payloads(calls)["available_qty"] == ""
 
 
 # ── Um template, dois caminhos ───────────────────────────────────────
@@ -208,12 +245,12 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         lambda **kw: seen.append(kw.get("context") or {}) or type("R", (), {"success": True})(),
     )
 
-    recipient = type("R", (), {"phone": "+5543984049009", "first_name": "Pablo"})()
+    recipient = type("R", (), {"phone": "+5543981234567", "first_name": "Pablo"})()
     content = {
         "body": "Saiu do forno",
         "variables": {
             "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
-            "availability_phrase": "Neste momento ainda temos 12 unidades.",
+            "availability_phrase": "No momento temos 12 un. disponíveis.",
             "product_image_url": "https://cdn.example/baguete.jpg",
         },
     }
@@ -227,7 +264,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
     assert SHARED_FIELDS <= set(seen[0]), SHARED_FIELDS - set(seen[0])
     assert seen[0]["customer_name"] == "Pablo"
     assert seen[0]["available_qty"] == "12"
-    assert seen[0]["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+    assert seen[0]["availability_phrase"] == "No momento temos 12 un. disponíveis."
 
 
 def test_the_photo_url_must_be_absolute(db, settings):
@@ -319,7 +356,9 @@ def test_no_two_variables_carry_the_same_value(db):
     assert not repeated, f"variáveis diferentes com o mesmo valor: {repeated}"
 
 
-def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_flow):
+def test_the_personal_access_link_is_never_written_into_the_profile(
+    calls, with_stock_flow
+):
     """⚠️ O link pessoal é a CHAVE DE LOGIN do cliente, com validade de horas.
 
     Como campo personalizado, ele passava a viver em texto claro dentro do perfil dele
@@ -328,12 +367,12 @@ def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_
     ele que sai: a CTA continua resolvendo, sem a chave junto.
     """
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe({
             "action_url": "https://loja.example.com/a?t=segredo-de-login",
             "action_url_public": "/p/cro",
-        },
+        }),
     )
 
     fields = _field_payloads(calls)
@@ -341,57 +380,85 @@ def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_
     assert "segredo-de-login" not in str(calls)
 
 
-def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_flow):
+def test_a_caller_that_forgets_the_common_link_still_does_not_leak(
+    calls, with_stock_flow
+):
     """A recusa é estrutural: token na query não sai, com ou sem link comum informado.
 
     Botão em branco é o lado seguro de "gravar a chave de login do cliente num SaaS".
     """
     mc.send(
-        "+5543984049009",
-        "order_accepted",
-        {"action_url": "https://loja.example.com/a?t=segredo-de-login"},
+        "+5543981234567",
+        "stock_arrived",
+        _stock_probe({"action_url": "https://loja.example.com/a?t=segredo-de-login"}),
     )
 
-    assert "action_url" not in _field_payloads(calls)
+    assert _field_payloads(calls)["action_url"] == ""
     assert "segredo-de-login" not in str(calls)
 
 
 @pytest.fixture
 def with_order_flow(db):
-    """Flow no evento de PEDIDO — o `with_flow` acima só cobre a chegada de estoque."""
+    """Flows dos três links pessoais, cada um com seu contrato mínimo."""
     from shopman.shop.models import NotificationTemplate
 
-    NotificationTemplate.objects.create(
-        event="order_accepted", subject="x", body="y",
-        whatsapp_flow_ns="content20260101120000_2",
-    )
+    for event in ("order_accepted", "payment_requested", "payment_expired"):
+        NotificationTemplate.objects.create(
+            event=event, subject="x", body="y",
+            whatsapp_flow_ns=f"content20260101120000_{event}",
+        )
 
 
-def test_the_order_links_do_not_leak_either(calls, with_order_flow):
-    """⚠️ A recusa nasceu vendo só o `action_url`, e TODO aviso de pedido carrega três.
-
-    `tracking_url`, `payment_url` e `reorder_url` saíam com o token inteiro — inerte
-    apenas porque nenhum flow estava mapeado, e mapear o primeiro é justamente o que
-    liga o canal. A regra é do VALOR, não do nome da chave.
-    """
-    mc.send(
-        "+5543984049009",
+def test_order_buttons_use_the_safe_raw_ref_never_personal_access_links(
+    calls, with_order_flow
+):
+    """Botão aprovado usa prefixo fixo + `order_ref`, nunca um link de sessão."""
+    assert mc.send(
+        "+5543981234567",
         "order_accepted",
         {
             "order_ref": "NB-1042",
             "tracking_url": "https://menu.example.com/a?t=segredo-de-login",
             "tracking_url_public": "https://menu.example.com/pedido/NB-1042",
+        },
+    ) is True
+    fields = _field_payloads(calls)
+    assert fields["order_ref"] == "NB-1042"
+    assert "tracking_url" not in fields
+
+    from django.core.cache import cache
+
+    cache.clear()
+    calls.clear()
+    assert mc.send(
+        "+5543981234567",
+        "payment_requested",
+        {
+            "order_ref": "NB-1042",
+            "customer_name": "Cliente",
             "payment_url": "https://menu.example.com/a?t=outro-segredo",
             "payment_url_public": "https://menu.example.com/pedido/NB-1042",
+        },
+    ) is True
+    fields = _field_payloads(calls)
+    assert fields["order_ref"] == "NB-1042"
+    assert "payment_url" not in fields
+
+    cache.clear()
+    calls.clear()
+    assert mc.send(
+        "+5543981234567",
+        "payment_expired",
+        {
+            "order_ref": "NB-1042",
+            "customer_name": "Cliente",
             "reorder_url": "https://menu.example.com/a?t=terceiro-segredo",
             "reorder_url_public": "https://menu.example.com/conta/pedidos",
         },
-    )
-
+    ) is True
     fields = _field_payloads(calls)
-    assert fields["tracking_url"] == "https://menu.example.com/pedido/NB-1042"
-    assert fields["payment_url"] == "https://menu.example.com/pedido/NB-1042"
-    assert fields["reorder_url"] == "https://menu.example.com/conta/pedidos"
+    assert fields["order_ref_short"] == "1042"
+    assert "reorder_url" not in fields
     assert "segredo" not in str(calls)
 
 
@@ -402,7 +469,7 @@ def test_the_public_twin_never_travels_on_its_own(calls, with_order_flow):
     um dia mapearia o errado no ManyChat.
     """
     mc.send(
-        "+5543984049009",
+        "+5543981234567",
         "order_accepted",
         {
             "order_ref": "NB-1042",

@@ -52,6 +52,9 @@ const props = defineProps<{
    *  a tela abrir mais um aviso: o lugar de identificar o cliente já está na
    *  barra, visível o tempo todo — o que faltava era ele CHAMAR. */
   customerRequired?: boolean;
+  /** O cliente não troca aqui (edição de encomenda): o chip só LÊ, e esta é a
+   *  frase do porquê, que sobe no toque em vez de abrir o modal. */
+  customerLockedReason?: string;
   loading: boolean;
 }>();
 
@@ -85,6 +88,8 @@ const emit = defineEmits<{
    *  tela seria a duplicação que esta barra veio justamente desfazer. */
   openCustomer: [];
   customerClosed: [];
+  /** Toque no chip com o cliente travado (`customerLockedReason`). */
+  customerLocked: [reason: string];
 }>();
 
 const SALES_MODES = [
@@ -119,7 +124,14 @@ function onRenameKeydown(event: KeyboardEvent) {
 // The customer picker is the shared PosCustomerModal (full-screen, picker-first).
 const customerSheetOpen = ref(false);
 // F6 no shell abre o mesmo modal que o chip de cliente abre.
-defineExpose({ openCustomer: () => { customerSheetOpen.value = true; } });
+function openCustomerSheet() {
+  if (props.customerLockedReason) {
+    emit("customerLocked", props.customerLockedReason);
+    return;
+  }
+  customerSheetOpen.value = true;
+}
+defineExpose({ openCustomer: openCustomerSheet });
 // Foco devolvido ao CONTEXTO quando o modal fecha: o diálogo é controlado (sem
 // trigger do reka), então sem isto o foco morria no body.
 const customerChipRef = ref<HTMLButtonElement | null>(null);
@@ -188,7 +200,7 @@ function runClear() {
       <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="truncate text-lg font-semibold">Venda rápida</h1>
+    <h1 v-else class="whitespace-nowrap text-lg font-semibold">Venda rápida</h1>
 
     <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
@@ -214,16 +226,16 @@ function runClear() {
         ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
-      :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
-      @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
+      :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : undefined)"
+      @click="readOnly ? $emit('openCustomer') : openCustomerSheet()"
     >
       <Icon
         :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
         class="size-4 shrink-0"
         :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
-      <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-else class="whitespace-nowrap" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
       <OperatorKbd
         aria-hidden="true"
       >F6</OperatorKbd>
@@ -327,7 +339,7 @@ function runClear() {
           <UiDialogDescription>
             <template v-if="hasFiredItems">
               Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha
-              é cancelado — avise quem está lá dentro. Não dá para desfazer.
+              é cancelado: avise quem está lá dentro. Não dá para desfazer.
             </template>
             <template v-else>
               Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.

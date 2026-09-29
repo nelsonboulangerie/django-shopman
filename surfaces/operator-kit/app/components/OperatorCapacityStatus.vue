@@ -45,7 +45,7 @@ const sourceText = computed(() => capacitySourceText(reading.value));
         type="button"
         data-capacity-trigger
         :data-capacity-level="level"
-        class="flex h-11 items-center rounded-md text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
+        class="flex min-h-11 items-center rounded-md py-1 text-left text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
         :class="showLabels ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
         :aria-label="ariaLabel"
         :title="showLabels ? undefined : ariaLabel"
@@ -58,7 +58,7 @@ const sourceText = computed(() => capacitySourceText(reading.value));
             :class="meta.dot"
           />
         </span>
-        <span v-if="showLabels" class="min-w-0 truncate text-sm">Capacidade · {{ meta.label }}</span>
+        <span v-if="showLabels" class="min-w-0 text-sm leading-tight">Capacidade · {{ meta.label }}</span>
       </button>
     </PopoverTrigger>
     <PopoverPortal>

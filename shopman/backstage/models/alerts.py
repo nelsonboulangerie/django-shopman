@@ -43,7 +43,31 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        # A prontidão só acusava o certificado DEPOIS de vencido, com o Pix já
+        # parado. Este tipo avisa antes: 30, 15, 7 e 3 dias, e no vencimento.
+        ("certificate_expiring", "Vencimento de certificado digital"),
+        # A base de cidade dos dispositivos entra na imagem no build e não se atualiza
+        # sozinha. Base velha não erra alto: ela responde errado em SILÊNCIO — bloco de IP
+        # que mudou de operadora nomeia a cidade antiga com a mesma confiança de uma
+        # leitura correta. Nenhum tipo existente serve: `integration_config_drift` é
+        # configuração degradada e esta base está configurada certo; `certificate_expiring`
+        # é uma data que vence sozinha e esta só avança quando alguém faz deploy.
+        ("geoip_database_stale", "Base de cidade dos dispositivos desatualizada"),
+        # A regra de horário não conseguiu ler a grade ou as datas de fechamento
+        # da loja: os pedidos seguem, mas SEM a conferência de horário.
+        ("shop_calendar_unreadable", "Horário da loja ilegível"),
         ("ifood_schedule_invalid", "Agendamento iFood inválido"),
+        # O cliente mexeu no pedido DEPOIS de confirmado (evento ORDER_PATCHED).
+        # O pedido local continua com os itens originais: divergem os itens, o
+        # total, o que a cozinha prepara, o estoque que sai e a nota. Até aqui
+        # o evento era reconhecido e descartado em silêncio — dizíamos ao iFood
+        # que tratamos e não tratávamos. Reconciliar é trabalho de gente
+        # enquanto a Etapa 2 não existe, e por isso o alerta é `error`.
+        ("ifood_order_patched", "Cliente alterou o pedido no iFood"),
+        # Código de evento do iFood que chega sem tratamento nesta casa. O ACK
+        # sai (senão o iFood reentrega para sempre), mas nunca calado: é assim
+        # que um evento novo do marketplace aparece antes de virar prejuízo.
+        ("ifood_event_unhandled", "Evento do iFood sem tratamento"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
@@ -89,6 +113,11 @@ class OperatorAlert(models.Model):
         # Exclusão de conta que não terminou. Dado de titular que continua no
         # banco é obrigação legal em aberto, não um 500 qualquer.
         ("account_deletion_incomplete", "Exclusão de conta incompleta"),
+        # A exclusão apaga tudo que é nosso e limpa os campos que empurramos
+        # para o perfil do assinante — mas a API pública do ManyChat não tem
+        # verbo para apagar o contato de lá. Essa última parte é na mão, tem
+        # prazo de 15 dias, e sem uma tarefa datada ninguém lembraria dela.
+        ("manychat_contact_erasure_due", "Contato no ManyChat esperando exclusão manual"),
         # Item que a cozinha NUNCA vai ver: sem estação casada, o pedido chega a
         # pronto com o item nunca preparado.
         ("kds_unrouted_item", "Item sem estação no KDS"),
@@ -99,6 +128,9 @@ class OperatorAlert(models.Model):
         ("courier_dispatch_failed", "Corrida não abriu na central"),
         ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
         ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # A maquininha não aparece na tela enquanto está na rua (o card da saída
+        # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
+        ("card_machine_overdue", "Maquininha fora há muito tempo"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
@@ -110,10 +142,37 @@ class OperatorAlert(models.Model):
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
         ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        # Venda por marketplace indo para a nota sem identificar quem intermediou
+        # (Ajuste SINIEF 22/20). A nota sai VÁLIDA e fora da regra — defeito que
+        # não reclama sozinho —, e o que falta é configuração, não retry.
+        ("fiscal_intermediary_not_declared", "NFC-e sem o intermediador da venda"),
+        # Irmão do de cima, e a outra metade da mesma omissão: o canal é
+        # marketplace, mas a casa não sabe ler o detalhamento financeiro dele,
+        # então a nota sai pelo total CHEIO — com a receita da plataforma
+        # dentro da base tributável.
+        ("fiscal_intermediary_base_unknown", "NFC-e de marketplace com base não corrigida"),
+        # Terceiro da mesma família: o cupom existe, mas não dá para saber quem
+        # o patrocinou. Cupom da LOJA é desconto e derruba a base; cupom da
+        # plataforma é repasse e COMPÕE a base. Sem saber, a nota sai pela base
+        # cheia — declara a mais, nunca a menos — e alguém precisa conferir.
+        ("fiscal_intermediary_benefit_unattributed", "NFC-e de marketplace com cupom sem patrocinador"),
         # A mercadoria SAIU (despacho ou conclusão) com a nota ainda na fila ou
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.
         ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
+        # A SEFAZ recusou o GTIN de um produto: a nota já foi reemitida "SEM
+        # GTIN" (a venda não espera) e o produto ficou marcado
+        # (``metadata.gtin_nf_rejected``). O que sobra é gente conferir o
+        # código na embalagem, no Catálogo do Gestor (corrigir ou manter sem GTIN).
+        ("fiscal_gtin_rejected", "GTIN recusado pela SEFAZ; nota saiu SEM GTIN"),
+        # A DANFE da entrega não saiu na impressora do despacho (sem impressora,
+        # agente parado, recusa). Não é fiscal: a nota está autorizada. O que
+        # falta é o papel na sacola, e o botão de imprimir está no card.
+        ("danfe_print_failed", "DANFE da entrega não impressa"),
+        # A Via Cozinha do posto sem tela não saiu (agente sem par, terminal
+        # desativado, recusa, impressora que não buscou). O posto não tem tela
+        # para descobrir sozinho: sem papel, o lanche não é feito.
+        ("kitchen_print_failed", "Via Cozinha não impressa na estação"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
@@ -134,7 +193,7 @@ class OperatorAlert(models.Model):
         ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
         (
             "production_quality_communication",
-            "Qualidade corrigida após comunicação da fornada",
+            "Qualidade corrigida após comunicação do lote",
         ),
         (
             "production_quality_hold_risk",
@@ -208,6 +267,19 @@ class OperatorAlert(models.Model):
         # programa; a obrigação de cumprir a norma é de quem opera — então o
         # vencimento de um parâmetro legal precisa aparecer na tela dele.
         ("legal_parameter_stale", "Parâmetro de lei sem conferência"),
+        # A loja no iFood discorda da casa (``ifood_merchant.check_store``): o
+        # fechado-com-a-casa-aberta é pedido que não entra (polling caído, pausa
+        # esquecida no Portal); o aberto-com-a-casa-fechada é pedido que entra sem
+        # ninguém para fazer. E a pausa/horário que o iFood recusou gravar.
+        ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
+        ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
+        ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
+        # A NF-e de compra discorda do cadastro fiscal do produto que ela
+        # abastece: NCM, CEST, ou ST na nota × perfil sem ST (e o inverso). O
+        # recebimento nunca corrige o cadastro sozinho — fornecedor também erra
+        # NCM —, então a divergência precisa chegar a alguém (decisão do dono,
+        # 24/09/2026: "pendências que sobrarem confirmamos nas próximas NFs").
+        ("purchase_invoice_fiscal_divergence", "Compras: NF-e diverge do cadastro fiscal"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -251,6 +323,12 @@ class OperatorAlert(models.Model):
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
         "order_production_quality_risk",
+        "ifood_store_closed_while_open",
+        "ifood_store_open_while_closed",
+        "ifood_store_sync_failed",
+        "card_machine_overdue",
+        "danfe_print_failed",
+        "kitchen_print_failed",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

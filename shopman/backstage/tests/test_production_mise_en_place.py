@@ -30,7 +30,7 @@ def pao(db):
         ref="pao-frances", name="Pão Francês", output_sku="PAO-FRANCES", batch_size=10
     )
     RecipeItem.objects.create(recipe=recipe, input_sku="FARINHA", quantity="5", unit="kg")
-    RecipeItem.objects.create(recipe=recipe, input_sku="SAL", quantity="0.1", unit="kg")
+    RecipeItem.objects.create(recipe=recipe, input_sku="SAL-REFINADO", quantity="0.1", unit="kg")
     return recipe
 
 
@@ -55,7 +55,7 @@ class TestMiseEnPlaceAggregation:
         assert projection.has_lines
         assert projection.work_order_count == 2
         assert by_sku["FARINHA"].quantity_display == "14000 g"
-        assert by_sku["SAL"].quantity_display == "200 g"
+        assert by_sku["SAL-REFINADO"].quantity_display == "200 g"
         assert by_sku["OVOS"].quantity_display == "20 un"
 
     def test_breakdown_per_recipe(self, pao, brioche):
@@ -104,7 +104,7 @@ class TestMiseEnPlaceAggregation:
         by_sku = {line.sku: line for line in projection.lines}
 
         assert by_sku["FARINHA"].quantity_display == "2500 g"
-        assert by_sku["SAL"].quantity_display == "50 g"
+        assert by_sku["SAL-REFINADO"].quantity_display == "50 g"
 
     def test_yield_margin_uses_started_quantity_over_the_frozen_bom(self):
         """A margem da massa preserva a verdade do start e da ficha congelada."""
@@ -232,7 +232,7 @@ class TestMiseEnPlaceAvailability:
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
         assert farinha.available_display == "3000 g"
         assert farinha.is_short
-        sal = next(line for line in projection.lines if line.sku == "SAL")
+        sal = next(line for line in projection.lines if line.sku == "SAL-REFINADO")
         assert not sal.available_display or sal.available_display == "0 g"
 
     def test_known_zero_is_a_reading_and_remains_visible(self, pao):

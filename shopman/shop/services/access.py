@@ -129,3 +129,94 @@ def resolve_origin(result) -> str:
         logger.exception("access_link_resolve_origin_failed")
 
     return SOURCE_TO_ORIGIN.get(source, "web")
+
+
+# ── Login do site pelo WhatsApp: a aba de origem entra sozinha ──────────────────
+
+
+def site_origin(request) -> str:
+    """Impressão digital da sessão deste navegador, criando a sessão se preciso.
+
+    Visitante anônimo pode ainda não ter sessão gravada — e sem chave não há o que
+    amarrar. Gravar agora faz o cookie sair nesta mesma resposta.
+    """
+    from shopman.doorman.services.link_state import origin_fingerprint
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    if not session.session_key:
+        session.save()
+    return origin_fingerprint(session.session_key or "")
+
+
+def site_origin_label(request) -> str:
+    """"Safari / iPhone": o nome que a mensagem usa para dizer onde a pessoa entrou."""
+    from shopman.doorman.services.device_trust import describe_user_agent
+
+    return describe_user_agent(str(request.META.get("HTTP_USER_AGENT", "") or ""))[:60]
+
+
+def pop_site_release(request) -> dict | None:
+    """A liberação pendente para ESTE navegador (uso único), se a mensagem já chegou."""
+    from shopman.doorman.services.link_state import origin_fingerprint, pop_release
+
+    session = getattr(request, "session", None)
+    if session is None or not session.session_key:
+        return None
+    return pop_release(origin_fingerprint(session.session_key))
+
+
+def record_site_release_login(revoke_ref: str, *, request, response) -> None:
+    """Depois da troca: guarda a sessão e o dispositivo nascidos dela, para o
+    "Não foi você?" da mensagem poder derrubar os dois."""
+    from shopman.doorman.conf import get_doorman_settings
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.services.link_state import get_revocation, store_revocation
+
+    record = get_revocation(revoke_ref)
+    if record is None:
+        return
+    record["session_key"] = getattr(getattr(request, "session", None), "session_key", "") or ""
+    cookie = response.cookies.get(get_doorman_settings().DEVICE_TRUST_COOKIE_NAME)
+    if cookie is not None and cookie.value:
+        device = TrustedDevice.verify_token(cookie.value)
+        if device is not None:
+            record["device_id"] = str(device.id)
+    store_revocation(revoke_ref, record)
+
+
+def revoke_site_release(ref: str) -> bool:
+    """"Não foi você?": cancela a liberação pendente ou derruba o acesso que ela abriu.
+
+    Quem tem a referência é quem recebeu a mensagem — o dono do número. Idempotente
+    do ponto de vista dele: a segunda vez só não encontra mais nada.
+    """
+    from importlib import import_module
+
+    from django.conf import settings
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.services.link_state import pop_release, pop_revocation
+
+    record = pop_revocation(ref)
+    if record is None:
+        return False
+
+    pop_release(str(record.get("origin") or ""))
+
+    session_key = str(record.get("session_key") or "")
+    if session_key:
+        store = import_module(settings.SESSION_ENGINE).SessionStore
+        store(session_key=session_key).delete()
+
+    device_id = str(record.get("device_id") or "")
+    if device_id:
+        device = TrustedDevice.objects.filter(id=device_id).first()
+        if device is not None:
+            device.revoke()
+
+    logger.warning(
+        "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s",
+        bool(session_key), bool(device_id),
+    )
+    return True

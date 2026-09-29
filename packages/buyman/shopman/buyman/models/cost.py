@@ -4,6 +4,13 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils.translation import gettext_lazy as _
 
+# O dinheiro de insumo miúdo se lê por quilo (ou litro): "R$ 4,00 / kg", nunca
+# "R$ 0,00 / g". Fator = quantas unidades-base cabem na unidade de leitura.
+DISPLAY_UNIT_FOR_BASE: dict[str, tuple[Decimal, str]] = {
+    "g": (Decimal(1000), "kg"),
+    "mg": (Decimal(1_000_000), "kg"),
+    "ml": (Decimal(1000), "l"),
+}
 
 class SupplierMaterialCost(models.Model):
     """Custo de um insumo por fornecedor, em centavos **da unidade de compra**.
@@ -112,8 +119,25 @@ class SupplierMaterialCost(models.Model):
 
     @property
     def cost_per_base_unit_q(self) -> int:
-        """Centavos por unidade-base, inteiro. É aqui, e só aqui, que arredonda."""
+        """Centavos por unidade-base, inteiro. É aqui, e só aqui, que arredonda.
+
+        ⚠️ Com base em GRAMA (ADR-024, emenda de 24/09/2026) este inteiro é quase
+        sempre zero: farinha a R$ 4/kg vale 0,4 centavo/g. Conta usa
+        :attr:`cost_per_base_unit`; tela de insumo pesado usa
+        :meth:`cost_per_display_unit_q`, que fala em R$/kg.
+        """
         return int(self.cost_per_base_unit.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    def cost_per_display_unit_q(self) -> tuple[int, str]:
+        """``(centavos, unidade)`` na unidade em que o dinheiro se lê.
+
+        Grama e miligrama viram quilo; mililitro vira litro; o resto fica na
+        própria base. Só exibição: nada é gravado nesta unidade.
+        """
+        unit = getattr(self.material, "unit", "") if self.material_id else ""
+        scale, shown = DISPLAY_UNIT_FOR_BASE.get(unit, (Decimal(1), unit))
+        value = (self.cost_per_base_unit * scale).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        return int(value), shown
 
     @property
     def is_approximate(self) -> bool:

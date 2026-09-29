@@ -26,9 +26,13 @@ const activeCollection = ref("");
 // hydration stays stable, then the stored choice is applied after mount.
 type Density = "compact" | "cozy" | "roomy";
 const DENSITIES: { key: Density; label: string; icon: string; cols: string }[] = [
-  { key: "compact", label: "Compacta", icon: "lucide:grid-3x3", cols: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8" },
-  { key: "cozy", label: "Padrão", icon: "lucide:layout-grid", cols: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" },
-  { key: "roomy", label: "Ampla", icon: "lucide:square", cols: "grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4" },
+  // As colunas seguem a largura da GRADE (container query), não a da tela: com a
+  // barra lateral estendida e a comanda ao lado, 1024px de tela davam quatro
+  // tiles de 77px, e "Cappuccino" não cabia numa linha. Cada densidade garante
+  // um tile mínimo (~120px compacta, ~135px padrão, ~185px ampla).
+  { key: "compact", label: "Compacta", icon: "lucide:grid-3x3", cols: "grid-cols-3 @lg:grid-cols-4 @2xl:grid-cols-5 @3xl:grid-cols-6 @4xl:grid-cols-7 @5xl:grid-cols-8" },
+  { key: "cozy", label: "Padrão", icon: "lucide:layout-grid", cols: "grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 @3xl:grid-cols-5 @5xl:grid-cols-6" },
+  { key: "roomy", label: "Ampla", icon: "lucide:square", cols: "grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4" },
 ];
 const DENSITY_STORAGE_KEY = "pos.productDensity";
 const density = ref<Density>("cozy");
@@ -141,7 +145,7 @@ function onSearchEscape() {
       </button>
     </div>
 
-    <div class="-mx-1 px-1 md:min-h-0 md:flex-1 md:overflow-y-auto">
+    <div class="@container -mx-1 px-1 md:min-h-0 md:flex-1 md:overflow-y-auto">
       <!-- Skeleton só no PRIMEIRO carregamento: um refresh de fundo com a grade
            já populada não pisca 12 tiles pulsando em cima do catálogo. -->
       <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">

@@ -39,6 +39,7 @@ import hashlib
 import json
 import logging
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import login, logout
@@ -591,6 +592,8 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
+        # Entrega com nota exige CPF/CNPJ: a tela trava o fechamento sem ele.
+        "delivery_tax_id_required": review.delivery_tax_id_required,
     }
 
 
@@ -1657,7 +1660,25 @@ class OrderQueueView(OperationalObservationMixin, APIView):
 
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
-        return Response(read_data(queue=projection_data(queue)))
+        return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
+
+
+def _station_device_agent(request) -> dict:
+    """A impressora DESTA estação, para o Gestor mandar a DANFE da sacola.
+
+    O mesmo bloco que o PDV recebe (``DeviceAgentConfig.surface_payload``):
+    quem alcança a loopback do balcão é a página. Sem estação confiável, ou
+    estação sem agente, a resposta diz que não imprime — e o card oferece o
+    botão assim mesmo, para o operador saber que a DANFE existe.
+    """
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage import station_trust
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
+
+    station_ref = station_trust.station_ref(request)
+    terminal = Terminal.objects.filter(ref=station_ref, is_active=True).first() if station_ref else None
+    return DeviceAgentConfig.from_terminal(terminal).surface_payload()
 
 
 # ── Order action endpoints ────────────────────────────────────────────
@@ -1684,7 +1705,7 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
         key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
         base = str(request.data.get("base_revision") or "")
         if not key or len(key) > 128 or not base:
-            return Response({"detail": "Atualize o pedido: a gravação exige intenção e revisão.", "code": "intention_required"}, status=400)
+            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
         scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
         fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
 
@@ -1696,7 +1717,19 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
             except notification_service.NotificationResendRefused as exc:
                 return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
             except OrderError as exc:
-                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
+                body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+                # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
+                # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
+                field = getattr(exc, "field", "")
+                if field:
+                    body.update({"field": field, "errors": {field: [str(exc)]}})
+                code = getattr(exc, "code", "")
+                if code:
+                    body["code"] = code
+                    # O mesmo código onde as telas de operador o procuram
+                    # (``httpErrorCode`` lê ``error.code``).
+                    body["error"] = {"code": code, "message": str(exc)}
+                return body, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
         try:
@@ -1707,6 +1740,15 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
                 if prepare is not None:
                     refusal = prepare()
                     if refusal is not None:
+                        # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
+                        # aplicou nada, e a tela precisa saber disso para liberar a
+                        # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
+                        # motivos) parecia "talvez gravou", o recibo dizia
+                        # "desconhecido" e a tela prendia a intenção até o F5 — foi
+                        # assim que um cancelamento travou na homologação de 21/09.
+                        if isinstance(refusal.data, dict):
+                            refusal.data.setdefault("outcome", "not_applied")
+                            refusal.data.setdefault("intention", key)
                         return refusal
                 result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
         except RemoteMutationConflict as exc:
@@ -1788,11 +1830,14 @@ class OrderAdvanceView(_OrderActionBase):
         base = str(body.get("base_revision") or request.headers.get("If-Match") or "").strip('"')
         target = body.get("target_status")
         if not key or len(key) > 128 or not base or not isinstance(target, str) or not target or body.get("expected_actor_id") != request.user.pk:
-            return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
+            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
             return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
         equipment = sorted(set(equipment))
+        trip_ref = body.get("trip_ref") or ""
+        if not isinstance(trip_ref, str):
+            return Response({"detail": "A saída deve ser a referência de um pedido."}, status=400)
         change_out = body.get("change_out")
         if change_out is not None:
             from shopman.backstage.services.exceptions import POSError
@@ -1804,14 +1849,14 @@ class OrderAdvanceView(_OrderActionBase):
                 return Response({"detail": str(exc)}, status=400)
         else:
             change_q = None
-        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q})
+        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q, **({"trip_ref": trip_ref} if trip_ref else {})})
 
         def execute():
             try:
                 orders_service.advance_order(
                     order, actor=_actor(request), operator=request.user,
                     change_out_raw=None if change_out is None else str(change_out),
-                    equipment=equipment, expected_revision=base, target_status=target,
+                    equipment=equipment, expected_revision=base, target_status=target, trip_ref=trip_ref,
                 )
             except orders_service.OrderChangeOutRequired as exc:
                 return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
@@ -2100,6 +2145,27 @@ class OrderEquipmentBackView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Courier came back: close the whole trip (delivery, cash, change and card machine)",
+        responses={200: OpenApiResponse(description="Trip closed.")},
+    ),
+)
+class OrderCourierBackView(_OrderActionBase):
+    intention_operation = "courier-back"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def execute(base):
+            return {"closed": orders_service.courier_returned(order, actor=_actor(request), expected_revision=base)}
+
+        return self._context_response(request, order, "courier-back", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Requeue fiscal (NFC-e) emission for an order",
         responses={200: OpenApiResponse(description="Fiscal emission requeued.")},
     ),
@@ -2117,6 +2183,221 @@ class OrderRequeueFiscalView(_OrderActionBase):
             return {"effect_status": "queued", "directive_id": directive.pk}
 
         return self._context_response(request, order, "requeue-fiscal", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reschedule the agreed date/window of an order (moves alarm, reminder, stock and production)",
+        responses={
+            200: OpenApiResponse(description="Order rescheduled (or already on that date/window)."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors} — date/slot rule, no stock, already in preparation."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class OrderRescheduleView(_OrderActionBase):
+    """Trocar a data combinada da encomenda — ``shop.services.reschedule``."""
+
+    intention_operation = "reschedule"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        day = str(request.data.get("date") or "").strip()
+        slot = str(request.data.get("slot") or "").strip()
+        reason = str(request.data.get("reason") or "").strip()
+        if not day:
+            return Response({"detail": "Escolha a nova data.", "field": "date", "errors": {"date": ["Escolha a nova data."]}}, status=400)
+        if len(reason) > 500:
+            return Response({"detail": "Motivo longo demais (máximo 500 caracteres).", "field": "reason",
+                "errors": {"reason": ["Motivo longo demais (máximo 500 caracteres)."]}}, status=400)
+
+        def execute(base):
+            result = orders_service.reschedule_order(order, date=day, slot=slot, reason=reason,
+                actor=_actor(request), expected_revision=base)
+            return {"changed": result.changed, "from_date": result.from_date, "from_slot": result.from_slot,
+                "to_date": result.to_date, "to_slot": result.to_slot, "activated_now": result.activated_now}
+
+        return self._context_response(request, order, "reschedule", {"date": day, "slot": slot, "reason": reason}, execute)
+
+
+def _order_edit_inputs(request) -> tuple[dict | None, Response | None]:
+    """O corpo da edição: só o que veio muda; o que não veio fica como está."""
+    data = request.data
+    inputs: dict = {"lines": None, "notes": None, "fulfillment": None, "schedule": None}
+    if "items" in data:
+        if not isinstance(data.get("items"), list):
+            return None, Response({"detail": "Lista de itens inválida.", "field": "items",
+                "errors": {"items": ["Lista de itens inválida."]}}, status=400)
+        inputs["lines"] = data.get("items")
+    if "notes" in data:
+        if data.get("notes") is not None and not isinstance(data.get("notes"), str):
+            return None, Response({"detail": "Observação inválida.", "field": "notes",
+                "errors": {"notes": ["Observação inválida."]}}, status=400)
+        inputs["notes"] = data.get("notes") or ""
+    if data.get("fulfillment") is not None:
+        if not isinstance(data.get("fulfillment"), dict):
+            return None, Response({"detail": "Recebimento inválido.", "field": "fulfillment",
+                "errors": {"fulfillment": ["Recebimento inválido."]}}, status=400)
+        inputs["fulfillment"] = data.get("fulfillment")
+    if "date" in data or "slot" in data:
+        inputs["schedule"] = {"date": data.get("date"), "slot": data.get("slot")}
+    return inputs, None
+
+
+def _order_edit_preview_data(order, result) -> dict:
+    """A prévia no formato da tela: novo total, diferença e o que acontece com ela."""
+    new_lines = set(result.new_line_ids)
+    return {
+        "changed": result.changed,
+        "items_changed": result.items_changed,
+        "items": [
+            {
+                "line_id": item["line_id"],
+                "sku": item["sku"],
+                "name": item["name"],
+                "qty": item["qty"],
+                "unit_price_q": item["unit_price_q"],
+                "line_total_q": item["line_total_q"],
+                "is_new": item["line_id"] in new_lines,
+                "is_delivery_fee": (item.get("meta") or {}).get("type") == "delivery_fee",
+            }
+            for item in result.items
+        ],
+        "previous_total_q": result.previous_total_q,
+        "total_q": result.total_q,
+        "difference_q": result.difference_q,
+        "diff": result.diff,
+        "notes": {"before": result.notes_before, "after": result.notes_after, "changed": result.notes_changed},
+        "fulfillment": {
+            "before": result.fulfillment_before,
+            "after": result.fulfillment_after,
+            "changed": result.fulfillment_changed,
+            "delivery_address": result.delivery_address_after,
+            "delivery_fee_before_q": result.delivery_fee_before_q,
+            "delivery_fee_after_q": result.delivery_fee_after_q,
+        },
+        "schedule": {"changed": result.schedule_changed, "date": result.date_after, "slot": result.slot_after},
+        "settlement": {
+            "kind": result.settlement.kind,
+            "amount_q": result.settlement.amount_q,
+            "method": result.settlement.method,
+        },
+        "balance_before_q": result.balance_before_q,
+        "balance_after_q": result.balance_after_q,
+        "requires_manager_approval": result.requires_manager_approval,
+        "customer_note": result.customer_note,
+    }
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Preview an order edit (items, notes, receiving, date): new total, difference and what happens to it",
+        responses={
+            200: OpenApiResponse(description="Preview — nothing is written."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+        },
+    ),
+)
+class OrderEditPreviewView(APIView):
+    """A prévia de ``OrderEditView``: o que muda, o total novo e o destino da diferença.
+
+    Mesmo corpo da edição, nada gravado. Devolve também a ``base_revision``
+    que a gravação deve mandar (a revisão ``edit`` do pedido lido agora).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        inputs, err = _order_edit_inputs(request)
+        if err:
+            return err
+        try:
+            result = orders_service.preview_order_edit(order, **inputs)
+        except OrderError as exc:
+            code = getattr(exc, "code", "")
+            field = getattr(exc, "field", "")
+            body = {"detail": str(exc), "code": code, "error": {"code": code, "message": str(exc)}}
+            if field:
+                body.update({"field": field, "errors": {field: [str(exc)]}})
+            return Response(body, status=400)
+        return Response({
+            "ok": True,
+            "ref": order.ref,
+            "base_revision": operator_orders.operational_revision(order, field="edit"),
+            "preview": _order_edit_preview_data(order, result),
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Edit an order in place: final item list, notes, receiving and date — the difference goes back by the same payment method",
+        responses={
+            200: OpenApiResponse(description="Order edited (or nothing to change)."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code} — nothing changed."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class OrderEditView(_OrderActionBase):
+    """Editar a encomenda no próprio pedido — ``shop.services.order_edit``.
+
+    ``POST {items?, notes?, fulfillment?, date?, slot?, manager_approval?,
+    base_revision, expected_actor_id, idempotency_key}``. ``base_revision`` é a
+    revisão ``edit`` (da prévia ou do detalhe). Redução com dinheiro recebido
+    exige o PIN de um gerente (a régua do cancelamento de pedido pago): sem ele,
+    ``manager_approval_required``.
+    """
+
+    intention_operation = "edit"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs, err = _order_edit_inputs(request)
+        if err:
+            return err
+        prepared: dict = {}
+
+        def prepare():
+            try:
+                result = orders_service.preview_order_edit(order, **inputs)
+            except OrderError:
+                return None  # a recusa sai no dialeto da gravação, logo abaixo
+            if not result.requires_manager_approval:
+                return None
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_edit_refund",
+                    message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            return None
+
+        def execute(base):
+            result = orders_service.edit_order(
+                order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
+                expected_revision=base,
+            )
+            return {
+                "changed": result.plan.changed,
+                "revision": result.revision,
+                "preview": _order_edit_preview_data(order, result.plan),
+            }
+
+        return self._context_response(request, order, "edit", inputs, execute, prepare=prepare)
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -2219,6 +2500,262 @@ class POSRecentSalesView(APIView):
         from shopman.backstage.projections.pos import build_pos_recent_sales
 
         return Response({"ok": True, **build_pos_recent_sales()})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorders: every order with pickup/delivery by committed date",
+        responses={200: OpenApiResponse(description="Preorders grouped by committed date.")},
+    ),
+)
+class POSPreorderListView(APIView):
+    """A seção Encomendas do PDV: busca, o dia e a grade semanal numa rota só.
+
+    ``GET ?date_from=&date_to=&q=`` — a janela na régua canônica da casa
+    (``order_ticket.parse_period``: padrão hoje + 6, ilegível cai no padrão,
+    invertido é trocado) com o teto de ``preorders.MAX_SPAN_DAYS``. O corte e o
+    saldo moram em ``projections.preorders``.
+
+    Duas permissões: a do balcão (é tela do PDV) e a do pedido (o documento é
+    do pedido, como na Via Pedido — o grupo Caixa tem as duas).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        date_from, date_to = preorders.parse_range(request.GET.get("date_from"), request.GET.get("date_to"))
+        projection = preorders.build_preorder_list(
+            date_from=date_from, date_to=date_to, query=str(request.GET.get("q") or ""),
+        )
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder detail (read-only)",
+        responses={200: OpenApiResponse(description="One preorder."), 404: OpenApiResponse(description="Not a preorder.")},
+    ),
+)
+class POSPreorderDetailView(APIView):
+    """Uma encomenda: cliente, recebimento, itens, total, saldo e situação.
+
+    404 para pedido que não existe E para pedido fora do corte (venda de
+    Balcão, cancelado, devolvido): o detalhe da seção não lê qualquer pedido.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def get(self, request, ref: str):
+        from dataclasses import asdict
+
+        from shopman.backstage.projections import preorders
+
+        projection = preorders.build_preorder_detail(ref, user=request.user)
+        if projection is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return Response({"ok": True, **asdict(projection)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="POS preorder hand-over: receive the balance (if any) and deliver at the counter",
+        responses={200: OpenApiResponse(description="Delivered."), 409: OpenApiResponse(description="Changed or blocked.")},
+    ),
+)
+class POSPreorderHandOverView(APIView):
+    """Receber o saldo e entregar a encomenda no balcão — um gesto, uma transação.
+
+    ``POST {base_revision, tenders?: [{method, amount_q}], cash_tendered_q?,
+    client_request_id, terminal_ref?}``. O dinheiro entra no turno ABERTO da
+    gaveta DESTA estação (``_terminal_do_pedido``); encomenda já paga só é
+    entregue. A régua e a transação moram em
+    ``operator_orders.hand_over_at_counter`` (acerto canônico + avanço canônico,
+    ``payment_gate`` valendo). Idempotente pela tentativa (``client_request_id``),
+    como toda mutação de caixa do PDV.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.cashman.exceptions import CashError
+        from shopman.orderman.exceptions import InvalidTransition
+
+        from shopman.shop.services import operator_orders
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        base = str(request.data.get("base_revision") or "").strip()
+        if not base:
+            return Response({"detail": "Esta tela está desatualizada. Atualize a encomenda e tente de novo.",
+                "error": {"code": "base_revision_required"}}, status=400)
+        raw_tenders = request.data.get("tenders")
+        if raw_tenders is not None and not isinstance(raw_tenders, list):
+            return Response({"detail": "Forma de pagamento inválida.", "field": "tenders"}, status=400)
+        raw_tendered = request.data.get("cash_tendered_q")
+        try:
+            cash_tendered_q = int(raw_tendered) if raw_tendered not in (None, "") else None
+        except (TypeError, ValueError):
+            return Response({"detail": "Valor recebido inválido.", "field": "cash_tendered_q"}, status=400)
+
+        def executar():
+            try:
+                terminal_ref = _terminal_do_pedido(request)
+                shift = pos_service.current_shift(terminal_ref, strict=True)
+                received_q = operator_orders.hand_over_at_counter(
+                    order, cash_shift=shift, actor=_actor(request),
+                    tenders=raw_tenders, cash_tendered_q=cash_tendered_q, expected_revision=base,
+                )
+            except operator_orders.OrderStateConflict as exc:
+                return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
+            except CashError as exc:
+                return Response({"detail": exc.message}, status=400)
+            except (ValueError, InvalidTransition) as exc:
+                return Response({"detail": str(exc)}, status=400)
+            except Exception as exc:
+                logger.warning("pos_preorder_hand_over_failed order=%s", order.ref, exc_info=True)
+                return _falha_do_caixa(exc, "Não deu para entregar a encomenda.")
+            order.refresh_from_db()
+            return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status})
+
+        def executar_com_takeover():
+            # O claim remoto durável abaixo nasce ANTES desta primeira chamada ao
+            # provedor. O acerto local conserva seu claim transacional próprio:
+            # se o processo cair entre o acerto e o recibo externo, o retry
+            # recupera exatamente a resposta já commitada, sem cobrar de novo.
+            nonlocal base
+            from shopman.shop.services import counter_takeover
+
+            if counter_takeover.pending_digital_method(order):
+                try:
+                    shift = pos_service.current_shift(_terminal_do_pedido(request), strict=True)
+                    revised = operator_orders.take_over_before_hand_over(
+                        order, cash_shift=shift, actor=_actor(request), tenders=raw_tenders,
+                        expected_revision=base,
+                        takeover_attempt_id=str(request.data.get("client_request_id") or "").strip(),
+                    )
+                except counter_takeover.PaidOnline as exc:
+                    return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
+                except counter_takeover.TakeoverFailed as exc:
+                    return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+                except operator_orders.OrderStateConflict as exc:
+                    return Response({"detail": str(exc), "error": {"code": "preorder_changed"}}, status=409)
+                except CashError as exc:
+                    return Response({"detail": exc.message}, status=400)
+                except ValueError as exc:
+                    return Response({"detail": str(exc)}, status=400)
+                except Exception:
+                    logger.warning("pos_preorder_counter_takeover_failed order=%s", order.ref, exc_info=True)
+                    return Response({"detail": counter_takeover.CANCEL_FAILED_MESSAGE,
+                        "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+                if revised is not None:
+                    base = revised
+            return _cash_idempotent(request, acao="preorder-hand-over", executar=executar)
+
+        return _cash_remote_idempotent(
+            request, acao="preorder-hand-over", executar=executar_com_takeover,
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Open (or resume) the virtual tab that edits a preorder in the POS sale screen",
+        responses={200: OpenApiResponse(description="Virtual tab + edit context."), 409: OpenApiResponse(description="Not editable.")},
+    ),
+)
+class POSPreorderEditSessionView(APIView):
+    """A tela de venda em modo edição: a comanda virtual pré-montada com a encomenda.
+
+    ``POST`` abre (ou retoma, se o pedido não mudou) a sessão de
+    ``shop.services.pos_edit_session`` e devolve a comanda no formato de
+    sempre (``tab``) mais o contexto da edição (``edit``): o pedido, a revisão
+    ``edit`` que a gravação vai conferir, quem está identificado e o
+    ``original`` — a encomenda como estava, para a tela mandar só o que mudou.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections.pos import build_open_tab
+        from shopman.shop.services import operator_orders, pos_edit_session
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        try:
+            session = pos_edit_session.open_edit_session(
+                order, channel_ref=POS_CHANNEL_REF, actor=_actor_pos(request), operator_username=_username(request),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=409)
+        info = pos_edit_session.edit_info(session)
+        return Response({
+            "ok": True,
+            "tab": build_open_tab(session),
+            "edit": {
+                "order_ref": order.ref,
+                "base_revision": info.get("base_revision", ""),
+                "actor_id": request.user.pk,
+                "original": pos_edit_session.cart_payload(order),
+            },
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Open the sale tab pre-filled with a cancelled preorder (cancel and redo)",
+        responses={200: OpenApiResponse(description="Sale tab + redo context."), 409: OpenApiResponse(description="Not redoable.")},
+    ),
+)
+class POSPreorderRedoTabView(APIView):
+    """"Cancelar e refazer": a comanda de venda comum pré-montada com a encomenda cancelada.
+
+    ``POST`` abre (ou retoma) a comanda ``Refazer <ref>`` de
+    ``shop.services.pos_edit_session.open_redo_tab`` e a devolve no formato de
+    sempre (``tab``), com o contexto (``redo``): de qual encomenda ela veio, se
+    foi retomada e, quando a data antiga não vale mais, a razão.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections.pos import build_open_tab
+        from shopman.shop.services import operator_orders, pos_edit_session
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        try:
+            redo = pos_edit_session.open_redo_tab(
+                order, channel_ref=POS_CHANNEL_REF, actor=_actor_pos(request), operator_username=_username(request),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=409)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({
+            "ok": True,
+            "tab": build_open_tab(redo.session),
+            "redo": {
+                "order_ref": order.ref,
+                "resumed": redo.resumed,
+                "schedule_dropped": redo.schedule_dropped,
+            },
+        })
 
 
 @extend_schema_view(
@@ -2368,6 +2905,110 @@ class OrderTicketEscposView(APIView):
                 "ok": True,
                 "payload_b64": base64.b64encode(payload).decode("ascii"),
                 "title": f"filipeta:{ref}",
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Print the delivery DANFE on the dispatch printer (relay), or return bytes for the station agent",
+        responses={200: OpenApiResponse(description="DANFE payload.")},
+    ),
+)
+class OrderDanfeEscposView(APIView):
+    """O botão "Imprimir DANFE" do card do Gestor.
+
+    A DANFE vai pela impressora do despacho, pelo relay do servidor, e não pela
+    tela que está aberta (``services/order_danfe.print_on_demand``). Só quando a
+    loja não tem impressora de despacho a resposta volta com os bytes, para a
+    página relaiar ao agente local desta estação (``local_agent: true`` diz que
+    ela tem um). A automática não passa por aqui: quem a dispara é o servidor,
+    quando a nota autoriza ou o pedido sai. POST porque grava o carimbo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.backstage import station_trust
+        from shopman.backstage.services import order_danfe
+
+        try:
+            printed = order_danfe.print_on_demand(
+                ref,
+                actor=request.user,
+                station_ref=station_trust.station_ref(request) or "",
+                local_agent=request.data.get("local_agent") is True,
+            )
+        except order_danfe.DanfeRefused as refused:
+            return Response({"detail": refused.message, "code": refused.code}, status=refused.status)
+        body = {"ok": True, "via": printed.via, "reprint": printed.reprint}
+        if printed.via == "relay":
+            body["target_label"] = printed.target_label
+        else:
+            body["payload_b64"] = base64.b64encode(printed.payload).decode("ascii")
+            body["title"] = f"danfe:{ref}"
+        return Response(body)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Courier ticket bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Courier ticket payload.")},
+    ),
+)
+class CourierTicketEscposView(APIView):
+    """A via do ENTREGADOR de um pedido — o único papel do trio que sai da casa.
+
+    Rota separada da filipeta de propósito: são dois papéis com destinatários
+    diferentes, e quem imprime escolhe qual. O carimbo de 2ª via também é
+    próprio (``courier_ticket_printed_at``) — a ficha já ter ido para o painel
+    não faz da primeira via do entregador uma segunda.
+
+    ⚠️ **Qual via sai não é escolha de quem chama.** Identificada ou Anônima é
+    decisão da configuração do canal, com um piso que ela não fura quando a
+    entrega é de terceiro (``order_helpers.courier_ticket_variant``). Um
+    parâmetro de rota aqui seria exatamente a porta pela qual o endereço do
+    cliente sairia num papel de parceiro de entrega. A resposta DIZ qual via
+    saiu (``variant``), para a tela poder nomear o papel que o operador pegou.
+
+    Mesma permissão da filipeta (``shop.manage_orders``): quem despacha é quem
+    cuida da fila.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services import order_ticket as tickets
+        from shopman.shop.services.order_helpers import courier_ticket_variant
+
+        order = Order.objects.filter(ref=ref).prefetch_related("items").first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        reprint = _stamp_first_print(ref, "courier_ticket_printed_at")
+        payload = tickets.courier_ticket_bytes(order, reprint=reprint)
+        variant = courier_ticket_variant(order)
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"via-do-entregador:{ref}",
+                "variant": variant,
+                "variant_label": (
+                    "Via do entregador — Identificada"
+                    if variant == "identified"
+                    else "Via do entregador — Anônima"
+                ),
                 "reprint": reprint,
             }
         )
@@ -2552,6 +3193,58 @@ class POSResendFiscalEmailView(APIView):
         if not ok:
             return Response({"detail": message}, status=502)
         return Response({"ok": True, "detail": message})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Issue the NFC-e the emission rule skipped (manager-approved, from the POS recent sales)",
+        responses={
+            200: OpenApiResponse(description="Emission queued."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="Refused: already issued, cancelled, too old, payment pending or fiscal not configured."),
+            422: OpenApiResponse(description="Manager approval missing or invalid."),
+        },
+    ),
+)
+class POSEmitFiscalView(APIView):
+    """Emissão avulsa da NFC-e — a venda que a regra da casa não emitiu.
+
+    A regra padrão emite só a pedido; quando o cliente volta pedindo a nota, o
+    balcão emite por aqui. Sempre sob o desafio gerencial (crachá ou PIN, o
+    MESMO ``validate_manager_override`` do cancelamento), e quem assina é o
+    aprovador que o validador devolveu, nunca o nome do corpo.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref, channel_ref=POS_CHANNEL_REF).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                request.data.get("manager_approval"),
+                operator_username=_username(request),
+                action="emit_fiscal",
+                message="A emissão avulsa da NFC-e exige a autorização de um gerente.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        try:
+            orders_service.emit_fiscal_on_demand(
+                order, actor=_actor_pos(request), approved_by_username=approver.get_username(),
+            )
+        except OrderError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({
+            "ok": True,
+            "order_ref": order.ref,
+            "detail": f"NFC-e de {order.ref} em emissão. A nota sai com a data e a hora de agora.",
+        })
 
 
 @extend_schema_view(
@@ -2966,7 +3659,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda da fornada. "
+                                "A quantidade total deve incluir toda perda do lote. "
                                 "Classifique o déficit em partition com um motivo de qualidade."
                             )
                         }
@@ -3402,6 +4095,57 @@ def _cash_idempotent(request, *, acao: str, executar):
             },
             status=409,
         )
+
+    corpo = resultado.response_body or {}
+    return Response(corpo.get("data"), status=int(corpo.get("status") or 200))
+
+
+def _cash_remote_idempotent(request, *, acao: str, executar):
+    """Reserva uma tentativa antes de I/O e mantém rede fora de transação longa.
+
+    A mutação local chamada por ``executar`` ainda usa ``_cash_idempotent``;
+    este recibo externo é o orquestrador recuperável do trecho com provedor.
+    """
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
+    )
+
+    terminal_ref = _terminal_do_pedido(request)
+    chave = str(request.data.get("client_request_id") or "").strip()
+    if not chave or len(chave) > 128:
+        return Response({"detail": "Identifique a tentativa antes de registrar.",
+            "error": {"code": "client_request_id_required"}}, status=422)
+    payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
+    intention = {"actor": request.user.pk, "terminal": terminal_ref, "path": request.path, "payload": payload}
+
+    class CashMutationRejected(Exception):
+        def __init__(self, response):
+            self.response = response
+
+    def _executar_para_o_claim():
+        resposta = executar()
+        if resposta.status_code >= 300:
+            raise CashMutationRejected(resposta)
+        return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
+
+    try:
+        resultado = run_idempotent_mutation(
+            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}.remote",
+            key=chave,
+            payload=intention,
+            in_progress_ttl=timedelta(minutes=15),
+            execute=_executar_para_o_claim,
+        )
+    except CashMutationRejected as exc:
+        return exc.response
+    except RemoteMutationConflict:
+        return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
+            "error": {"code": "idempotency_conflict"}}, status=409)
+    except RemoteMutationInProgress:
+        return Response({"detail": "Este lançamento já está sendo registrado. Aguarde um instante.",
+            "error": {"code": "cash_mutation_in_progress"}}, status=409)
 
     corpo = resultado.response_body or {}
     return Response(corpo.get("data"), status=int(corpo.get("status") or 200))
@@ -3947,6 +4691,41 @@ class POSChangeRequestCancelView(APIView):
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="cancel_change_request", executar=lambda: _executar(request_ref))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Record the refund made on the counter card machine for an order that got cheaper",
+        responses={200: OpenApiResponse(description="Card machine refund recorded.")},
+    ),
+)
+class POSCardMachineRefundView(APIView):
+    """O operador estornou na maquininha: registrar (encomenda que ficou mais barata).
+
+    O sistema não fala com a maquininha; a captura foi atestada e o estorno
+    também é. PIN de gerente, como a devolução em dinheiro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, order_ref: str):
+        def _executar(order_ref):
+            try:
+                recorded_q = pos_service.record_card_machine_refund(
+                    operator=request.user,
+                    order_ref=order_ref,
+                    manager_approval=request.data.get("manager_approval"),
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_card_machine_refund_failed user=%s", _actor(request), exc_info=True)
+                return _falha_do_caixa(exc, "Falha ao registrar o estorno.")
+            return Response({"ok": True, "refunded_q": recorded_q})
+
+        return _cash_idempotent(request, acao="card_machine_refund", executar=lambda: _executar(order_ref))
 
 
 @extend_schema_view(

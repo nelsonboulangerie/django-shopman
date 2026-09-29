@@ -16,7 +16,8 @@ const { setStockNotifyState, clearStockNotifyState } = useStockNotifyTransientSt
 
 const { data: summary, pending, refresh: refreshSummary } = await useFetch<AccountSummary>(apiPath('/api/v1/account/summary/'), {
   credentials: 'include',
-  headers: requestHeaders
+  headers: requestHeaders,
+  lazy: true
 })
 
 async function toggleFood (pref: { key: string, is_active: boolean }) {
@@ -282,7 +283,8 @@ useSeoMeta({ title: 'Preferências' })
           <UiAlertDialogHeader>
             <UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>
             <UiAlertDialogDescription>
-              O cancelamento é definitivo para este aviso. Mensagens já aceitas pelo provedor não podem ser retiradas.
+              O cancelamento é definitivo para este aviso, e o seu número é apagado junto. Mensagens já
+              aceitas pelo provedor não podem ser retiradas.
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>

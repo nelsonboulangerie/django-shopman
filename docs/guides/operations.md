@@ -129,6 +129,16 @@ divergências em `DayClosing.data["financial_reconciliation_errors"]`. Em
 divergência `error` ou `critical`, cria `OperatorAlert` do tipo
 `payment_reconciliation_failed`.
 
+O `maintenance_worker` reroda "ontem" a cada ciclo. O alerta deduplica por
+`financial-day:<data>:<críticas>:<erros>` até alguém resolver, e o comando só
+registra ERROR (evento no Sentry) no ciclo que ABRE o alerta: nem ciclo, nem
+restart, nem deploy repetem o aviso. Resolver o alerta com a divergência ainda
+presente abre alerta novo, e ele avisa de novo.
+
+`operator_alert.created` é sempre WARNING (rastro). Quem avisa o humano é o
+alerta: na tela sempre, e o crítico também por e-mail ao `SHOPMAN_ALERT_EMAIL`
+(`critical_alerts`). Alerta crítico sem esse destinatário registra ERROR.
+
 Dinheiro em espécie deixou de ser invisível: o check `cash_ledger_mismatch`
 exige que o que o Payman capturou (− estornou) em `cash` no dia seja o que
 entrou (− saiu) na gaveta segundo o livro-caixa (`sale`, `cod_settled`,

@@ -17,6 +17,10 @@ Nelson em 2026-08-15.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 ESC = 0x1B
 GS = 0x1D
 
@@ -286,6 +290,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     from shopman.utils.monetary import format_money
 
     from shopman.backstage.presentation.status import payment_method_label
+    from shopman.shop.services import order_composition
 
     data = order.data or {}
     out = bytearray()
@@ -309,7 +314,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         out += _line(f"Cliente: {customer_name}"[:COLUMNS])
     out += _rule()
 
-    for item in order.items.all():
+    for item in order_composition.effective_items(order):
         for pedaco in _wrap(item.name, COLUMNS):
             out += _line(pedaco)
         qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
@@ -320,7 +325,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += _rule()
 
     out += _line("")
-    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
 
     payment = data.get("payment") or {}
@@ -341,7 +346,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     elif payment.get("method"):
         out += _pair(
             payment_method_label(str(payment.get("method")))[: COLUMNS // 2],
-            f"R$ {format_money(int(payment.get('amount_q') or order.total_q or 0))}",
+            f"R$ {format_money(int(payment.get('amount_q') or order_composition.effective_total_q(order)))}",
         )
     tendered_q = payment.get("tendered_q")
     change_q = payment.get("change_q")
@@ -351,6 +356,13 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         if isinstance(change_q, int) and change_q > 0:
             out += _pair("Troco", f"R$ {format_money(change_q)}")
     out += _rule()
+
+    # Encomenda paga antes: este recibo é o papel do pagamento, e a NFC-e sai
+    # na saída da mercadoria (decisão de 26/09/2026). Sem a frase, o cliente
+    # sai do balcão esperando uma nota que ninguém entregou.
+    handoff_line = _fiscal_handoff_line(order)
+    if handoff_line:
+        out += _centered(handoff_line)
 
     if cod_pending:
         from shopman.shop.services.order_helpers import get_fulfillment_type
@@ -363,6 +375,27 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
     return bytes(out)
+
+
+def _fiscal_handoff_line(order) -> str:
+    """"A nota fiscal sai na retirada." enquanto a NFC-e espera a saída; senão "".
+
+    Pergunta ao estado fiscal (``fiscal.fiscal_state``), não ao modo da venda:
+    a reimpressão depois da saída não repete uma promessa já cumprida. Nunca
+    derruba o recibo.
+    """
+    try:
+        from shopman.shop.services import fiscal as fiscal_service
+
+        state = fiscal_service.fiscal_state(order)
+    except Exception:
+        logger.warning("receipt_escpos.fiscal_state_failed order=%s", getattr(order, "ref", "?"), exc_info=True)
+        return ""
+    if state == fiscal_service.FISCAL_STATE_AWAITING_PICKUP:
+        return "A nota fiscal sai na retirada."
+    if state == fiscal_service.FISCAL_STATE_AWAITING_DELIVERY:
+        return "A nota fiscal sai na entrega."
+    return ""
 
 
 def _cod_pending(payment: dict, tenders: list[dict]) -> bool:
@@ -455,6 +488,15 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     duas coisas: não é documento fiscal e não comprova pagamento. Quando o
     pedido está em aberto, ele grita isso mais uma vez, emoldurado.
 
+    ⚠️ **Ela viaja com a sacola, e por isso obedece ao filtro de
+    identificação.** É a Via Pedido (``order_documents.ORDER``): um papel só,
+    pregado no painel enquanto o pedido espera e grampeado na sacola quando ele
+    parte. Quando o PEDIDO diz que quem segura o papel na porta não é da casa
+    (marketplace, ou responsável não informado — ``order_helpers.
+    courier_ticket_variant``), nome, telefone, endereço e observação do cliente
+    não saem; o número do iFood ocupa a posição do nome, e o localizador do relé
+    de voz sobrevive, porque não identifica ninguém. Quem imprime não opina.
+
     ``tracking_url`` é o acompanhamento do pedido na loja — e, no pedido de
     link em aberto, é a MESMA página onde se paga. Vazio quando o deployment
     não configurou a base da loja: o papel sai sem QR em vez de com um QR mudo.
@@ -462,10 +504,21 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     from shopman.utils.monetary import format_money
 
     from shopman.backstage.presentation.status import payment_method_label, payment_status_label
+    from shopman.backstage.services.order_documents import (
+        FILTER_CUSTOMER_IDENTITY,
+        FILTERS_BY_KEY,
+        anonymous_contact,
+    )
+    from shopman.shop.services import order_composition
     from shopman.shop.services import payment as payment_svc
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
     data = order.data or {}
+    # O filtro é perguntado ao registro das vias, que pergunta ao pedido — um
+    # dono só para a resposta, a mesma que a via do entregador obedece.
+    sem_identificacao = FILTERS_BY_KEY[FILTER_CUSTOMER_IDENTITY].resolve(order)
+    ifood = data.get("ifood") if isinstance(data.get("ifood"), dict) else {}
+    display_id = str(ifood.get("display_id") or "").strip()
     out = bytearray()
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
@@ -491,9 +544,13 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     is_delivery = get_fulfillment_type(order) == "delivery"
     out += _double("ENTREGA" if is_delivery else "RETIRADA")
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
-    nome = str(customer.get("name") or "").strip()
+    nome = "" if sem_identificacao else str(customer.get("name") or "").strip()
     if nome:
         out += _double(_headline_name(nome, COLUMNS // 2))
+    elif sem_identificacao:
+        # Sem nome, o número do iFood ocupa a posição do nome (decisão do dono):
+        # identifica o pedido para a casa sem revelar ninguém.
+        out += _double(f"iFood #{display_id}" if display_id else f"Pedido {order.ref}")
     out += _line("")
     out += _rule()
 
@@ -502,12 +559,21 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     if nome:
         for pedaco in _wrap(f"Cliente: {nome}", COLUMNS):
             out += _line(pedaco)
-    telefone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
+    telefone = "" if sem_identificacao else str(customer.get("phone") or data.get("customer_phone") or "").strip()
     if telefone:
         out += _line(f"Telefone: {telefone}"[:COLUMNS])
+    # O localizador do relé de voz sai SEMPRE que existe: o número que o iFood
+    # manda já vem mascarado, e sem o localizador ninguém completa a ligação —
+    # nem a casa, nem quem entrega.
+    contato = anonymous_contact(order)
+    if contato:
+        out += _line(f"{contato.label}: {contato.value}"[:COLUMNS])
     out += _rule()
 
-    if is_delivery:
+    if is_delivery and sem_identificacao:
+        out += _identity_withheld_lines(order)
+        out += _rule()
+    elif is_delivery:
         endereco, instrucoes = _delivery_lines(data)
         out += _line("ENTREGAR EM:")
         for pedaco in _wrap(endereco or "-", COLUMNS):
@@ -517,7 +583,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
                 out += _line(pedaco)
         out += _rule()
 
-    itens = list(order.items.all())
+    itens = list(order_composition.effective_items(order))
     out += _line(f"ITENS ({len(itens)})")
     for item in itens:
         qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
@@ -536,7 +602,10 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     # As duas notas são de DONOS diferentes (data-schemas) e por isso saem com
     # nome: ``order_notes`` é a voz do cliente no checkout, ``kitchen_note`` é o
     # recado do operador para dentro. Fundi-las apagaria quem pediu o quê.
-    nota_cliente = str(data.get("order_notes") or "").strip()
+    # A observação do cliente segue a mesma regra do endereço: é voz dele, e é
+    # onde mora "portaria" e "interfone 2". Sem identificação, não sai; o
+    # preparo já a tem no KDS, e quem entrega, no app.
+    nota_cliente = "" if sem_identificacao else str(data.get("order_notes") or "").strip()
     nota_cozinha = str(data.get("kitchen_note") or "").strip()
     if nota_cliente or nota_cozinha:
         if nota_cliente:
@@ -550,7 +619,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _rule()
 
     out += _line("")
-    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
 
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
@@ -565,33 +634,22 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _line("")
         out += _centered("*** PAGAMENTO PENDENTE ***")
         out += _line("")
-    if is_delivery and payment.get("collection") == "on_delivery" and not pago and not payment.get("cod_settled_at"):
-        from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
-
-        out += _centered("COBRAR NA ENTREGA")
-        tenders = payment.get("tenders") or [{"method": metodo, "amount_q": order.total_q}]
-        for tender in tenders:
-            if tender.get("status") in {"received", "captured", "paid"}:
-                continue
-            if tender.get("collection", "on_delivery") != "on_delivery":
-                continue
-            out += _pair(
-                payment_method_label(str(tender.get("method") or "")),
-                f"R$ {format_money(int(tender.get('amount_q') or 0))}",
-            )
-        change_for_q = _change_for_q(order)
-        if metodo in {"cash", "mixed"}:
-            if change_for_q:
-                out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
-                out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
-            else:
-                out += _line("Troco: não informado; confirmar com cliente")
+    if _charging_at_the_door(order, payment, paid=pago):
+        out += _charge_at_the_door_lines(order, payment)
     out += _rule()
 
     # ⚠️ O que este papel NÃO é. Ele nasce antes do pagamento e traz um total
-    # impresso — sem estas duas linhas, é indistinguível de um comprovante.
-    out += _centered("Este papel não é documento fiscal")
-    out += _centered("e não comprova pagamento.")
+    # impresso — sem estas linhas, é indistinguível de um comprovante.
+    #
+    # E o "não fiscal" é em DESTAQUE por exigência legal, não por leiaute: a
+    # ficha viaja com a sacola (é a Via Pedido), e documento não fiscal
+    # relacionado à NFC-e entregue ao consumidor final tem de trazer "NÃO É
+    # DOCUMENTO FISCAL" destacado — Ajuste SINIEF 19/16, cláusula décima, § 4º
+    # (Ajuste SINIEF 32/24). Mesma forma da via do entregador.
+    out += _line("")
+    out += _double("NÃO É DOCUMENTO FISCAL")
+    out += _line("")
+    out += _centered("Este papel também não comprova pagamento.")
 
     if tracking_url:
         out += _centered("Pague e acompanhe pelo QR" if not pago else "Acompanhe o pedido pelo QR")
@@ -599,6 +657,39 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial — a filipeta seguinte começa limpa
+    return bytes(out)
+
+
+def _identity_withheld_lines(order) -> bytes:
+    """O que o papel diz no lugar do endereço quando a identificação não sai.
+
+    ⚠️ A ausência é DITA. Espaço em branco onde deveria estar o endereço faz o
+    leitor adivinhar se a impressora falhou — e adivinhar é justamente o que a
+    copy desta casa não admite. Dois papéis dizem isto (a ficha e a via do
+    entregador), e dizem com as mesmas palavras.
+    """
+    from shopman.shop.services.order_helpers import delivery_ownership
+
+    ownership = delivery_ownership(order)
+    out = bytearray()
+    if ownership == "marketplace":
+        out += _line("QUEM ENTREGA É O IFOOD.")
+    elif ownership == "unknown":
+        # Mesmo vocabulário do Gestor (``projections.ifood``), que já recusa o
+        # despacho deste pedido (``AdvanceBlock`` — ``IFOOD_DELIVERY_UNKNOWN``).
+        # O papel não contradiz a tela.
+        for pedaco in _wrap(
+            "O RESPONSÁVEL PELA ENTREGA NÃO FOI INFORMADO PELO IFOOD. "
+            "Confirme com a loja antes de sair.",
+            COLUMNS,
+        ):
+            out += _line(pedaco)
+    for pedaco in _wrap(
+        "Endereço, telefone e nome do cliente estão no app do entregador. "
+        "Por privacidade, não saem neste papel.",
+        COLUMNS,
+    ):
+        out += _line(pedaco)
     return bytes(out)
 
 
@@ -616,6 +707,267 @@ def _delivery_lines(data: dict) -> tuple[str, str]:
     if complemento and complemento.lower() not in endereco.lower():
         endereco = f"{endereco} - {complemento}" if endereco else complemento
     return endereco, str(estruturado.get("delivery_instructions") or "").strip()
+
+
+def _charging_at_the_door(order, payment: dict, *, paid: bool) -> bool:
+    """Esta entrega ainda tem dinheiro para entrar NA PORTA?
+
+    A marca canônica é ``payment.collection == "on_delivery"``
+    (``docs/reference/data-schemas.md``), e o carimbo que a encerra é
+    ``payment.cod_settled_at`` (``operator_orders.settle_delivery_cash``).
+    """
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    if get_fulfillment_type(order) != "delivery":
+        return False
+    return (
+        payment.get("collection") == "on_delivery"
+        and not paid
+        and not payment.get("cod_settled_at")
+    )
+
+
+def _charge_at_the_door_lines(order, payment: dict) -> bytes:
+    """Quanto receber na porta e quanto de troco levar — um dono só para o bloco.
+
+    Dois papéis imprimem estas linhas: a ficha que vai para o painel
+    (:func:`order_ticket`) e a via que sai na mão de quem entrega
+    (:func:`courier_ticket`). Um valor diferente em cada um é o entregador
+    cobrando errado na porta do cliente, então a conta se faz aqui, uma vez.
+    """
+    from shopman.utils.monetary import format_money
+
+    from shopman.backstage.presentation.status import payment_method_label
+    from shopman.shop.services import order_composition
+    from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
+
+    out = bytearray()
+    out += _centered("COBRAR NA ENTREGA")
+    tenders = payment.get("tenders") or [
+        {"method": payment.get("method") or "", "amount_q": order_composition.effective_total_q(order)}
+    ]
+    a_receber = [
+        tender for tender in tenders
+        if tender.get("status") not in {"received", "captured", "paid"}
+        and tender.get("collection", "on_delivery") == "on_delivery"
+    ]
+    for tender in a_receber:
+        out += _pair(
+            payment_method_label(str(tender.get("method") or "")),
+            f"R$ {format_money(int(tender.get('amount_q') or 0))}",
+        )
+    change_for_q = _change_for_q(order)
+    # Quem decide se há troco é a LINHA em espécie, não o método do topo. No
+    # pedido do marketplace o método do topo é `external` (o iFood é que
+    # precifica e concilia) e a parcela em dinheiro só aparece na linha —
+    # perguntar ao topo deixava a comanda do iFood sem "Troco para".
+    if any(str(tender.get("method") or "").lower() in {"cash", "mixed"} for tender in a_receber):
+        if change_for_q:
+            out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
+            out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
+        else:
+            out += _line("Troco: não informado; confirmar com cliente")
+    return bytes(out)
+
+
+def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
+    """A VIA DO ENTREGADOR — o papel que sai da casa na mão de quem leva.
+
+    Terceira do trio: o recibo é do cliente, a ficha (:func:`order_ticket`) é
+    do painel de parede e depois vai grampeada na sacola, e esta sai PELA PORTA
+    na mão de quem leva. A ficha e esta via obedecem ao MESMO filtro de
+    identificação — a ficha também viaja, e um papel com o endereço do cliente
+    grampeado na sacola do iFood seria o vazamento que esta via existe para
+    evitar.
+
+    **São duas vias com NOME, não uma via com um ``if`` escondendo o endereço.**
+    O nome sai impresso no alto do papel, porque quem confere precisa saber qual
+    dos dois documentos está na mão:
+
+    - **Via do entregador — Identificada.** Endereço completo (com complemento e
+      referência), telefone, nome do cliente, a observação dele e, quando há
+      cobrança na porta, o valor e o troco. É o papel de quem entrega pela casa:
+      a transportadora contratada por ela (Taon Delivery/Taxi Machine) não tem
+      app nenhum, e o endereço só existe para ela se estiver aqui.
+    - **Via do entregador — Anônima.** Só o que identifica o pedido (``ref``,
+      ``display_id`` do iFood, código de retirada) e o que confere a sacola. Sem
+      endereço, sem telefone, sem nome. É o papel do marketplace: o iFood
+      determina, na seção de Impressão do portal do desenvolvedor, que documento
+      destinado a parceiro de entrega não traga CPF nem endereço, e o entregador
+      dele já tem tudo na tela do app.
+
+    **Quem escolhe é a configuração do canal**, não um ramo cravado aqui:
+    ``ChannelConfig.fulfillment.courier_ticket``. A resolução (e o piso que a
+    configuração não fura, quando a entrega é de terceiro) tem um dono só,
+    ``order_helpers.courier_ticket_variant`` — esta função pergunta e compõe.
+
+    O desenho não é invenção da casa: o guia de impressão do iFood diz que a
+    comanda "é essencial para que o entregador (entrega própria) localize o
+    endereço do cliente" e, na frase seguinte, proíbe CPF e endereço em
+    documento destinado a PARCEIRO de entrega. A regra é sobre o destinatário do
+    papel — que é exatamente o que separa a Identificada da Anônima.
+
+    **CPF não sai em nenhuma das duas.** Não há ramo que o imprima; o documento
+    do cliente é assunto da NFC-e (:func:`danfe_nfce`), que é papel dele, não de
+    quem entrega.
+
+    ⚠️ **Esta via é documento OPERACIONAL, e não um DANFE estendido — e isso é
+    fronteira, não preferência.** O Manual de Especificações Técnicas do DANFE
+    NFC-e v6.0 proíbe inserir no DANFE informação que não conste do XML, e
+    endereço de entrega, código de retirada e conferência de sacola não constam.
+    São dois documentos com destinatários diferentes: o DANFE é do cliente e
+    acompanha a mercadoria; a via é de quem leva. Por isso ela também estampa,
+    em destaque, que não é documento fiscal (ver o rodapé desta função).
+
+    O dinheiro segue a régua da ficha, pelo mesmo
+    :func:`_charge_at_the_door_lines`: quando há cobrança na porta, o valor e o
+    troco saem; quando não há, o papel afirma que não há — "não cobre nada" é
+    informação, e o silêncio no lugar dela é o entregador pedindo dinheiro de um
+    pedido já pago.
+    """
+    from shopman.shop.services import order_composition
+    from shopman.shop.services import payment as payment_svc
+    from shopman.shop.services.order_helpers import (
+        COURIER_TICKET_IDENTIFIED,
+        courier_ticket_variant,
+        get_fulfillment_type,
+        is_test_order,
+    )
+
+    data = order.data or {}
+    ifood = data.get("ifood") if isinstance(data.get("ifood"), dict) else {}
+    is_delivery = get_fulfillment_type(order) == "delivery"
+    variant = courier_ticket_variant(order)
+    identificada = variant == COURIER_TICKET_IDENTIFIED
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    # O nome da via no alto, e não só no rodapé de quem programou: duas pessoas
+    # segurando papéis diferentes precisam saber qual é qual antes de comparar.
+    out += _centered("Via do entregador — Identificada" if identificada else "Via do entregador — Anônima")
+    if reprint:
+        # Mesma regra do recibo e da ficha: sem a marca, dois papéis idênticos
+        # circulam e a segunda via passa por original — aqui, duas pessoas
+        # saindo para entregar o mesmo pedido.
+        out += _centered("*** 2a VIA ***")
+    out += _rule()
+
+    # ⚠️ A homologação do iFood roda contra o ambiente VIVO, e o pedido de teste
+    # percorre as mesmas telas e o mesmo papel. Se ele pode sair impresso, ele
+    # tem de dizer o que é ANTES de qualquer outra coisa: uma via de entregador
+    # sem esta moldura é alguém saindo de moto para entregar nada.
+    if is_test_order(order):
+        out += _centered("*** PEDIDO DE TESTE DO IFOOD ***")
+        out += _centered("Não entregue nada.")
+        out += _rule()
+
+    # ── Que pedido é este ─────────────────────────────────────────────
+    out += _line("")
+    out += _double("ENTREGA" if is_delivery else "RETIRADA")
+    display_id = str(ifood.get("display_id") or "").strip()
+    if display_id:
+        # O número curto do iFood é como o entregador e o atendente chamam o
+        # pedido entre si; o ``ref`` da casa não aparece na tela dele.
+        out += _double(f"iFood #{display_id}")
+    out += _line("")
+    out += _pair(f"Pedido {order.ref}", f"feito {_local(order.created_at)}")
+    pickup_code = str(ifood.get("pickup_code") or "").strip()
+    if pickup_code:
+        out += _line("Código de retirada no balcão:")
+        out += _double(pickup_code)
+    out += _rule()
+
+    # ── Para onde vai, e para quem ────────────────────────────────────
+    if is_delivery:
+        if identificada:
+            endereco, instrucoes = _delivery_lines(data)
+            out += _line("ENTREGAR EM:")
+            for pedaco in _wrap(endereco or "-", COLUMNS):
+                out += _line(pedaco)
+            if instrucoes:
+                for pedaco in _wrap(f"Referência: {instrucoes}", COLUMNS):
+                    out += _line(pedaco)
+            customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+            nome = str(customer.get("name") or "").strip()
+            if nome:
+                for pedaco in _wrap(f"Cliente: {nome}", COLUMNS):
+                    out += _line(pedaco)
+            telefone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
+            if telefone:
+                out += _line(f"Telefone: {telefone}"[:COLUMNS])
+        else:
+            out += _identity_withheld_lines(order)
+        out += _rule()
+
+    # ── O que vai na sacola ───────────────────────────────────────────
+    itens = list(order_composition.effective_items(order))
+    # "produtos", não "itens": a contagem é de LINHAS, e a linha de baixo diz
+    # "2 x Pão". "1 item" ao lado de "2 x" faz o entregador conferir errado —
+    # rótulo que mente é rótulo pior do que rótulo ausente.
+    out += _line(f"CONFIRA A SACOLA - {len(itens)} {'produto' if len(itens) == 1 else 'produtos'}")
+    for item in itens:
+        qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
+        # Sem preço: quem entrega confere quantidade e produto. O que ele
+        # precisa saber de dinheiro é só o que vai COBRAR, e isso sai abaixo.
+        for pedaco in _wrap(f"{qty} x {item.name}", COLUMNS):
+            out += _line(pedaco)
+    out += _rule()
+
+    # A observação do cliente é onde mora "deixar na portaria" e "chamar no
+    # interfone 2" — informação de entrega. Ela só sai na Identificada, pela
+    # mesma razão que o endereço: na Anônima já está no app do entregador, e é
+    # voz do cliente.
+    if identificada:
+        nota_cliente = str(data.get("order_notes") or "").strip()
+        if nota_cliente:
+            out += _line("Observação do cliente:")
+            for pedaco in _wrap(nota_cliente, COLUMNS):
+                out += _line(pedaco)
+            out += _rule()
+
+    # ── O dinheiro ────────────────────────────────────────────────────
+    payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
+    pago = (payment_svc.get_payment_status(order) or "") in {"captured", "paid"}
+    if _charging_at_the_door(order, payment, paid=pago):
+        out += _charge_at_the_door_lines(order, payment)
+    elif pago or payment.get("cod_settled_at"):
+        out += _centered("Pedido pago. Não cobre nada na entrega.")
+    else:
+        for pedaco in _wrap(
+            "Pagamento pendente e sem cobrança combinada na porta. "
+            "Confirme com a loja antes de entregar.",
+            COLUMNS,
+        ):
+            out += _line(pedaco)
+    out += _rule()
+
+    # ⚠️ Exigência LEGAL, não escolha de leiaute: Ajuste SINIEF 19/16, cláusula
+    # décima, § 4º (acrescido pelo Ajuste SINIEF 32/24, efeitos desde
+    # 01/02/2025; replicado no RICMS/PR art. 31, § 4º — Decreto 9.904 de
+    # 12.5.2025). Documento NÃO fiscal relacionado à NFC-e entregue ao
+    # consumidor final tem de trazer "NÃO É DOCUMENTO FISCAL" de forma
+    # DESTACADA e legível.
+    #
+    # As DUAS vias estampam, sempre. A via viaja com a sacola, e não existe
+    # jeito de garantir que ela não acabe na mão do cliente — condicionar o
+    # carimbo a "se chegar ao consumidor" seria apostar no que não se controla.
+    #
+    # Destaque é o corpo duplo (`_double`), que é como esta casa destaca desde o
+    # comprovante de gaveta; não se inventa inversão de vídeo para isto. A frase
+    # sai com os acentos da norma porque a CP860 os imprime — 22 caracteres
+    # cabem nas 24 colunas do corpo duplo, então não é preciso recorrer à
+    # "expressão similar" que a cláusula admite.
+    out += _line("")
+    out += _double("NÃO É DOCUMENTO FISCAL")
+    out += _line("")
+    out += _centered("Este papel também não comprova pagamento.")
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial
+    return bytes(out)
 
 
 def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
@@ -649,7 +1001,9 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += _centered("Documento Auxiliar da Nota Fiscal")
     out += _centered("de Consumidor Eletronica")
     if reprint:
-        out += _centered("*** 2a VIA ***")
+        # "REIMPRESSÃO", não "2a VIA": decisão do dono — "via" nomeia a
+        # audiência de um papel (order_documents.py), e a DANFE é uma só.
+        out += _centered("*** REIMPRESSÃO ***")
     if doc.is_homolog:
         # Exigência da SEFAZ em homologação: o papel diz que não vale.
         out += _rule()
@@ -700,4 +1054,127 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])
+    return bytes(out)
+
+
+def _tall(text: str) -> bytes:
+    """Uma linha em altura dupla, largura normal — as 48 colunas continuam.
+
+    Irmã de :func:`_double`: o item da cozinha precisa ser lido de longe, mas
+    em corpo duplo o nome do lanche caberia em 24 colunas e quebraria em três
+    linhas. Só a altura dobra (`GS ! 0x01`), e volta a `0x00` na mesma função.
+    """
+    return bytes([GS, ord("!"), 0x01]) + _line(text[:COLUMNS]) + bytes([GS, ord("!"), 0x00])
+
+
+def _bold(text: str) -> bytes:
+    """Uma linha em negrito (`ESC E 1`), desligado na mesma função."""
+    return bytes([ESC, ord("E"), 1]) + _line(text[:COLUMNS]) + bytes([ESC, ord("E"), 0])
+
+
+def kitchen_ticket(ticket, *, reprint: bool = False) -> bytes:
+    """A VIA COZINHA — o card do KDS, impresso no posto que não tem tela.
+
+    Decisão do dono (26/09/2026): o posto de Lanches tem só uma impressora
+    térmica de rede, e os itens dele saem impressos. O papel é o card da tela,
+    e por isso nasce da mesma projeção (``projections.kds.build_kitchen_paper``,
+    que reaproveita o ``_build_ticket`` do board): o pedido tem o mesmo nome no
+    papel e na tela.
+
+    - **O posto no topo.** Com uma impressora por posto, é o que diz a quem
+      pertence o papel que caiu na bancada errada.
+    - **O pedido em corpo duplo**, e o nome de chamada logo abaixo: é por eles
+      que a cozinha chama quem espera.
+    - **Quantidade na FRENTE**, em altura dupla: "2 x" antes do nome, e o nome
+      longo quebra sem empurrar o número para a linha de baixo. A observação de
+      cada item vem colada nele, em negrito — é ela que muda o preparo.
+    - **Nenhum preço.** Valor na cozinha não decide nada e atravanca a leitura
+      (a Via Cozinha não é sujeita ao filtro de valores porque nunca os teve —
+      ``order_documents.py``).
+    - **CANCELADO grita.** O ticket cancelado (itens retirados do pedido, ou o
+      pedido inteiro cancelado) sai como papel próprio, emoldurado, com os itens
+      que NÃO devem ser feitos. A cozinha que só tem papel não descobre por
+      adivinhação que parou de fazer alguma coisa.
+    - **"REIMPRESSÃO"**, nunca "2a VIA": decisão do dono — "via" nomeia a
+      audiência do papel, e "segunda via da Via Cozinha" é ambíguo.
+    - **O QR do pronto** no pé do papel vivo: o leitor de código do PDV o lê e
+      conclui o ticket (``kitchen_ticket_print.ticket_code``, assinado).
+    """
+    from shopman.backstage.projections.kds import build_kitchen_paper
+
+    paper = build_kitchen_paper(ticket)
+    card = paper.card
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered(paper.station_name.upper())
+    out += _centered("Via Cozinha")
+    if reprint:
+        out += _centered("*** REIMPRESSÃO ***")
+    if card.test_order_label:
+        out += _centered(f"*** {card.test_order_label.upper()} ***")
+    if card.is_cancelled:
+        # Moldura de branco e régua em volta, como o valor da sangria: o olho
+        # acha antes de procurar. Um CANCELADO discreto é lido como mais um
+        # pedido, e o lanche sai.
+        out += _rule()
+        out += _line("")
+        out += _double("CANCELADO")
+        out += _centered("NÃO PREPARE os itens abaixo")
+        if card.cancelled_at_display:
+            out += _centered(f"cancelado às {card.cancelled_at_display}")
+        out += _line("")
+    out += _rule()
+
+    # ── Quem é o pedido ───────────────────────────────────────────────
+    out += _line("")
+    out += _double(card.order_ref or "-")
+    if card.customer_name:
+        out += _double(_headline_name(card.customer_name, COLUMNS // 2))
+    out += _line("")
+    if card.previous_tab_ref:
+        out += _centered(f"comanda {card.previous_tab_ref}")
+    canal = " · ".join(part for part in (paper.channel_label, paper.fulfillment_label) if part)
+    out += _pair(canal[: COLUMNS - 14], f"disparo {paper.fired_at_display}")
+    out += _rule()
+
+    # ── Os itens ──────────────────────────────────────────────────────
+    for item in card.items:
+        pedacos = _wrap(f"{item.qty} x {item.name}", COLUMNS)
+        out += _tall(pedacos[0])
+        for pedaco in pedacos[1:]:
+            out += _tall(f"    {pedaco}")
+        if item.notes:
+            for pedaco in _wrap(f">> {item.notes}", COLUMNS - 4):
+                out += _bold(f"    {pedaco}")
+    out += _rule()
+
+    # As duas notas são de DONOS diferentes (data-schemas), e saem com nome,
+    # como na ficha do pedido: fundi-las apagaria quem pediu o quê.
+    if card.kitchen_note or card.customer_note:
+        if card.kitchen_note:
+            out += _line("Nota da cozinha:")
+            for pedaco in _wrap(card.kitchen_note, COLUMNS):
+                out += _bold(pedaco)
+        if card.customer_note:
+            out += _line("Observação do cliente:")
+            for pedaco in _wrap(card.customer_note, COLUMNS):
+                out += _bold(pedaco)
+        out += _rule()
+
+    if not card.is_cancelled:
+        # O leitor de código no PC do PDV lê este QR e dá o pronto do ticket
+        # (decisão do dono, 26/09/2026): a estação sem tela não tem botão, e
+        # imprimir não conclui nada. O papel CANCELADO não leva QR — não há o
+        # que concluir nele.
+        from shopman.backstage.services.kitchen_ticket_print import ticket_code
+
+        out += _line("")
+        out += _qr(ticket_code(ticket.pk), module=5)
+        out += _centered("Pronto? Leia o código no PDV.")
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial — o próximo papel começa limpo
     return bytes(out)

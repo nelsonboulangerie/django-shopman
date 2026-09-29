@@ -12,7 +12,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def paging(settings, monkeypatch):
-    settings.SHOPMAN_OPERATOR_EMAIL = "owner@example.com"
+    settings.SHOPMAN_ALERT_EMAIL = "owner@example.com"
     monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
     monkeypatch.setattr("shopman.shop.adapters.notification_email.is_available", lambda *args: True)
 

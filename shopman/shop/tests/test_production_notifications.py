@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
+from django.contrib.auth.models import Permission, User
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
@@ -25,8 +26,9 @@ from shopman.shop.handlers.production_alerts import (
     create_stock_short_alert,
     create_stock_shortfall_alert,
     maybe_create_low_yield_alert,
+    on_production_changed,
 )
-from shopman.shop.models import Shop
+from shopman.shop.models import NotificationLifecycle, Shop, UserNotification
 
 pytestmark = pytest.mark.django_db
 
@@ -168,6 +170,77 @@ class TestNotificationGating:
             assert alert.resolved_by == "system:production-lifecycle"
 
 
+class TestQualityReviewManagerNotification:
+    def test_finished_batch_notifies_manager_once_and_review_resolves_it(self, recipe):
+        manager = User.objects.create_user("quality-manager", password="pw", is_staff=True)
+        manager.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="correct_production_qc",
+            )
+        )
+        floor = User.objects.create_user("quality-floor", password="pw", is_staff=True)
+        floor.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="operate_production",
+            )
+        )
+        work_order = craft.plan(recipe, 10, date=date.today())
+        craft.start(work_order, quantity=10)
+        craft.finish(order=work_order, finished=10)
+        work_order.refresh_from_db()
+
+        notification = UserNotification.objects.get(user=manager)
+        assert notification.category == "production"
+        assert notification.lifecycle == NotificationLifecycle.UNSEEN
+        assert notification.source_condition == "production_quality_review"
+        assert notification.source_ref == f"work_order:{work_order.pk}"
+        assert notification.action_url == "/expedite#quality"
+        assert notification.action_data == {"work_order_id": work_order.pk, "tab": "quality"}
+        assert notification.is_actionable is True
+        assert not UserNotification.objects.filter(user=floor).exists()
+
+        # Signal replay cannot create a second personal alert.
+        on_production_changed(
+            sender=None,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="finished",
+            work_order=work_order,
+        )
+        assert UserNotification.objects.filter(user=manager).count() == 1
+
+        on_production_changed(
+            sender=None,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="quality_reviewed",
+            work_order=work_order,
+        )
+        notification.refresh_from_db()
+        assert notification.lifecycle == NotificationLifecycle.RESOLVED
+        assert notification.is_actionable is False
+
+    def test_reconciliation_keeps_finished_unreviewed_batch_open(self, recipe):
+        from shopman.shop.services.user_notifications import reconcile_user_notifications
+
+        manager = User.objects.create_user("quality-manager-reconcile", password="pw", is_staff=True)
+        manager.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="backstage",
+                codename="correct_production_qc",
+            )
+        )
+        work_order = craft.plan(recipe, 4, date=date.today())
+        craft.start(work_order, quantity=4)
+        craft.finish(order=work_order, finished=4)
+
+        assert reconcile_user_notifications(user=manager) == 0
+        notification = UserNotification.objects.get(user=manager)
+        assert notification.lifecycle == NotificationLifecycle.UNSEEN
+
+
 class TestStockShortfallAlert:
     """A sub-baixa REAL de insumo (já commitada na ponte) vira OperatorAlert.
 
@@ -298,8 +371,12 @@ class TestSystemNotificationDelivery:
         # fornecedor, não a configuração do SMTP). O default da suíte é o backend
         # de console, que passou a se declarar indisponível de propósito: ele
         # imprime em stdout e devolvia sucesso, curto-circuitando SMS e WhatsApp.
-        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-        settings.EMAIL_HOST = "smtp.exemplo.test"
+        settings.MAILERS = {
+            "default": {
+                "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+                "OPTIONS": {"host": "smtp.exemplo.test"},
+            }
+        }
         # ...e um REMETENTE entregável. `is_available` também recusa domínio
         # reservado (`.local`, `example.*`), que é o default de `settings.py`:
         # SMTP de pé com remetente que não existe no DNS é o mesmo fail-open,

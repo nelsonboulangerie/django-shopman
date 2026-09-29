@@ -421,6 +421,12 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if not failed_ride:
+        # Uma corrida viva (a de agora, ou a nova depois da que falhou): os
+        # avisos de corrida que não abriu, não foi aceita ou foi cancelada
+        # deixam de ser verdade.
+        from shopman.shop.handlers.alert_resolution import COURIER_TYPES, resolve_on_commit
+
+        resolve_on_commit(order.ref, COURIER_TYPES, actor=f"courier:{status}")
         recover_local_status(order, ride_id=ride_id)
 
 
@@ -493,13 +499,13 @@ def _alert_ride_failed(order, status: str) -> None:
         alert_type, message = (
             "courier_not_attended",
             f"Nenhum entregador aceitou a corrida do pedido {order.ref}. "
-            "Re-despache ou combine entrega própria.",
+            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
         )
     else:
         alert_type, message = (
             "courier_ride_cancelled",
             f"A central cancelou a corrida do pedido {order.ref}. "
-            "Re-despache ou combine entrega própria.",
+            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
         )
     try:
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)

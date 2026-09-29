@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { phoneDisplay } from '~/utils/authPhone'
 import type { WhatsappStartStatus } from '~/composables/useWhatsappVerify'
+import type { WhatsappReturnState } from '~/composables/useWhatsappReturn'
 
-// Painel APRESENTACIONAL do login por WhatsApp (fluxo access-link), em uma tela só: o
-// start leve vive no pai (entrar.vue) e pré-aquece o deep link. Dois blocos: (1) abrir e
-// enviar num toque; "OU"; (2) envio manual da mensagem, caso o WhatsApp não abra sozinho.
-// O login em si acontece pelo access link que o ManyChat devolve — a aba só instrui.
+// Painel APRESENTACIONAL do login pelo WhatsApp. Duas fases, e cada uma responde a
+// uma queixa dos testadores:
+//
+// 1. ANTES do toque — "pra que eu tenho que fazer isso?" e "o que eu tenho que
+//    fazer?". O porquê vem primeiro (é por lá que a casa avisa do pedido), depois os
+//    três passos, depois UM botão. Não há nada competindo com ele.
+// 2. DEPOIS do toque — a tela espera a mensagem. Quando ela chega, a aba entra sozinha
+//    (useWhatsappReturn), então o terceiro passo é só voltar. O envio manual mora aqui,
+//    como plano B de quem viu o WhatsApp não abrir — não na primeira tela, onde era
+//    uma segunda coisa a entender antes da primeira.
+//
 // Copy vem por props (configurável no Admin via OMOTENASHI_DEFAULTS).
 const props = withDefaults(defineProps<{
   deepLink?: string
@@ -13,37 +21,73 @@ const props = withDefaults(defineProps<{
   message?: string
   waNumber?: string
   status?: WhatsappStartStatus
-  glimpse?: string
-  noPasswordNote?: string
+  waiting?: boolean
+  returnState?: WhatsappReturnState
+  checking?: boolean
+  helpHref?: string
+  why?: string
+  steps?: string[]
+  ctaLabel?: string
+  waitingTitle?: string
+  waitingMessage?: string
   manualTitle?: string
   manualIntro?: string
-  ctaLabel?: string
 }>(), {
   deepLink: '',
   code: '',
   message: '',
   waNumber: '',
   status: 'idle',
-  glimpse: '',
-  noPasswordNote: '',
-  manualTitle: 'Quer fazer você mesmo?',
-  manualIntro: 'Envie esta mensagem diretamente para o nosso WhatsApp',
-  ctaLabel: 'Entrar pelo WhatsApp'
+  waiting: false,
+  returnState: 'idle',
+  checking: false,
+  helpHref: '/faq',
+  why: '',
+  steps: () => [],
+  ctaLabel: 'Abrir o WhatsApp',
+  waitingTitle: 'Mensagem enviada?',
+  waitingMessage: 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.',
+  manualTitle: 'O WhatsApp não abriu?',
+  manualIntro: 'Mande a mensagem abaixo para {phone} no WhatsApp.'
 })
 
-// `used`: o código do deep link é de USO ÚNICO. Quem toca o botão gasta o que
-// está no `href`, então a tela precisa saber para preparar o próximo — senão o
-// segundo toque manda um código já consumido e a sacola fica para trás.
-const emit = defineEmits<{ regenerate: [], used: [] }>()
+// `used`: a tela começa a esperar quando a pessoa sai para o WhatsApp. Mantém o mesmo
+// código/mensagem: ele só é consumido quando o backend recebe a mensagem, não no toque.
+const emit = defineEmits<{ regenerate: [], used: [], check: [], useSms: [] }>()
 
 const codeCopied = ref(false)
 const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
 const canOpenWhatsApp = computed(() => !!props.deepLink)
 const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Gerando link')
+const isWaiting = computed(() => props.waiting || ['waiting', 'slow', 'offline-or-error'].includes(props.returnState))
+const waitingView = computed(() => {
+  if (props.returnState === 'slow') {
+    return {
+      icon: 'lucide:clock-3',
+      title: 'Está demorando mais que o normal',
+      message: 'Não precisa enviar outra mensagem. Vamos continuar conferindo por aqui.'
+    }
+  }
+  if (props.returnState === 'offline-or-error') {
+    return {
+      icon: 'lucide:wifi-off',
+      title: 'Não consegui conferir agora',
+      message: 'Confira sua internet. Sua mensagem e sua sacola continuam guardadas.'
+    }
+  }
+  return { icon: 'lucide:loader-circle', title: props.waitingTitle, message: props.waitingMessage }
+})
 const manualMessage = computed(() => props.message || (props.code ? `#menu ${props.code}` : ''))
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
 const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber}` : '')
+// `{phone}` marca onde o número entra na frase (a copy é editável no Admin).
+// Sem o marcador, o número vai para o fim — nunca some da instrução.
+const manualIntroParts = computed(() => {
+  const [before = '', ...rest] = props.manualIntro.split('{phone}')
+  if (rest.length) return { before, after: rest.join('') }
+  return { before: `${before.trimEnd()} `, after: '.' }
+})
 
 async function copyMessage () {
   if (!import.meta.client || !manualMessage.value) return
@@ -62,8 +106,21 @@ async function copyMessage () {
 
 <template>
   <section class="shop-stack-block" data-login-whatsapp aria-live="polite">
-    <template v-if="status === 'error'">
-      <div class="rounded-lg border bg-bottomnav p-4 shop-stack-block">
+    <div v-if="status === 'unavailable'" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-unavailable>
+      <UiAlert variant="warning" icon="lucide:message-circle-off">
+        <UiAlertTitle>O WhatsApp da loja não está disponível agora</UiAlertTitle>
+        <UiAlertDescription>Você ainda pode entrar por SMS. Se precisar, a gente mostra como falar com a loja.</UiAlertDescription>
+      </UiAlert>
+      <UiButton type="button" size="lg" icon="lucide:smartphone" class="w-full justify-center" @click="emit('useSms')">
+        Receber código por SMS
+      </UiButton>
+      <UiButton :to="helpHref" variant="link" size="sm" icon="lucide:circle-help" class="mx-auto">
+        Preciso de ajuda
+      </UiButton>
+    </div>
+
+    <template v-else-if="status === 'error'">
+      <div class="rounded-lg border bg-card p-4 shop-stack-block">
         <UiAlert variant="destructive">
           <UiAlertTitle>Não consegui gerar seu link agora</UiAlertTitle>
           <UiAlertDescription>Tente novamente ou use o SMS.</UiAlertDescription>
@@ -74,68 +131,111 @@ async function copyMessage () {
       </div>
     </template>
 
-    <template v-else>
-      <!-- Bloco 1 — a ação: abrir o WhatsApp com a mensagem pronta e enviar. O lampejo
-           lidera (o que vai acontecer); o rodapé reassegura (prático, seguro, sem senha). -->
-      <div
-        class="rounded-lg border bg-bottomnav p-4 shop-stack-block"
-        data-login-whatsapp-open
-        :aria-busy="isStarting && !canOpenWhatsApp"
+    <div v-else-if="returnState === 'expired'" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-expired>
+      <UiAlert variant="warning" icon="lucide:clock-alert">
+        <UiAlertTitle>Essa tentativa expirou</UiAlertTitle>
+        <UiAlertDescription>Por segurança, a mensagem vale por 10 minutos. Gere uma nova ou entre por SMS.</UiAlertDescription>
+      </UiAlert>
+      <UiButton type="button" size="lg" icon="lucide:rotate-cw" class="w-full justify-center" @click="emit('regenerate')">
+        Gerar nova mensagem
+      </UiButton>
+      <UiButton type="button" variant="link" size="sm" icon="lucide:smartphone" class="mx-auto" @click="emit('useSms')">
+        Receber código por SMS
+      </UiButton>
+    </div>
+
+    <!-- Fase 1: o porquê, os passos, um botão. -->
+    <div
+      v-else-if="!isWaiting"
+      class="rounded-lg border bg-card p-4 shop-stack-block"
+      data-login-whatsapp-open
+      :aria-busy="isStarting && !canOpenWhatsApp"
+    >
+      <p v-if="why" class="shop-body text-balance" data-login-whatsapp-why>{{ why }}</p>
+      <ol v-if="steps.length" class="shop-stack-micro" data-login-whatsapp-steps>
+        <li v-for="(step, index) in steps" :key="index" class="flex items-start gap-3">
+          <span
+            class="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background tabular-nums"
+            aria-hidden="true"
+          >{{ index + 1 }}</span>
+          <span class="shop-body pt-0.5">{{ step }}</span>
+        </li>
+      </ol>
+      <UiButton
+        :href="deepLink || undefined"
+        target="_blank"
+        rel="noopener"
+        size="lg"
+        icon="lucide:message-circle"
+        class="w-full justify-center"
+        :loading="isStarting && !canOpenWhatsApp"
+        :disabled="!canOpenWhatsApp"
+        @click="emit('used')"
       >
-        <p v-if="glimpse" class="shop-item-title text-center text-balance" data-login-whatsapp-glimpse>{{ glimpse }}</p>
-        <UiButton
-          :href="deepLink || undefined"
-          target="_blank"
-          rel="noopener"
-          @click="emit('used')"
-          size="lg"
-          icon="lucide:message-circle"
-          class="w-full justify-center"
-          :loading="isStarting && !canOpenWhatsApp"
-          :disabled="!canOpenWhatsApp"
-        >
-          {{ ctaText }}
-        </UiButton>
-        <p v-if="noPasswordNote" class="shop-meta text-center" data-login-whatsapp-note>{{ noPasswordNote }}</p>
+        {{ ctaText }}
+      </UiButton>
+    </div>
 
-        <!-- RODAPÉ MANUAL — para quem desconfia de link e prefere mandar a
-             mensagem com as próprias mãos.
+    <!-- Fase 2: esperando a mensagem. O plano B aparece só aqui. -->
+    <div v-else class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-waiting>
+      <div class="flex items-start gap-3">
+        <Icon
+          :name="waitingView.icon"
+          :size="22"
+          :class="['mt-0.5 shrink-0 text-muted-foreground', returnState === 'waiting' ? 'animate-spin' : '']"
+          aria-hidden="true"
+        />
+        <div class="min-w-0">
+          <p class="shop-item-title font-semibold">{{ waitingView.title }}</p>
+          <p class="mt-1 shop-muted">{{ waitingView.message }}</p>
+        </div>
+      </div>
 
-             Ele morava num CARTÃO IRMÃO, depois de um divisor "ou", com dois
-             botões sólidos na mesma cor do CTA principal. Somados, ocupavam mais
-             área sólida que o próprio CTA — três sólidos na tela, e o olho sem
-             saber onde pousar. O erro era de modelagem, não de estilo: este não
-             é um caminho irmão, é o MESMO caminho feito à mão. Por isso agora é
-             rodapé deste cartão, atrás de uma linha fina. O irmão do WhatsApp é
-             o SMS, e é lá que o "ou" foi morar.
+      <UiButton
+        type="button"
+        variant="outline"
+        size="lg"
+        icon="lucide:refresh-cw"
+        class="w-full justify-center"
+        :loading="checking"
+        data-login-whatsapp-check
+        @click="emit('check')"
+      >
+        Já enviei. Conferir agora
+      </UiButton>
 
-             E os dois botões não eram duas escolhas: "Abrir WhatsApp" leva ao
-             chat SEM texto nenhum, então é o segundo passo de uma sequência —
-             copie, depois abra e cole. Apresentar sequência como escolha é o que
-             mais pesava aqui. Copiar vira ÍCONE sobre o próprio código (é uma
-             micro-ação sobre um texto que está ali, não um destino) e abrir vira
-             link.
-
-             A mensagem continua VISÍVEL, e não escondida atrás de um "mostrar
-             mais": quem desconfia de botão precisa ver o que vai enviar na hora
-             de decidir. O peso cai pela cor e pelo tamanho, nunca pela ausência. -->
-        <div v-if="manualMessage" class="-mx-4 border-t px-4 pt-4 shop-stack-micro" data-login-whatsapp-manual>
-          <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
-          <p class="shop-meta">
-            {{ manualIntro }}
-            <span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>.
-          </p>
-          <div class="flex items-center gap-2 rounded-md bg-background py-1 pr-1 pl-3">
-            <span class="min-w-0 flex-1 truncate font-mono text-base tracking-wider text-muted-foreground">{{ manualMessage }}</span>
-            <UiButton
-              type="button"
-              variant="ghost"
-              size="icon-lg"
-              :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
-              :aria-label="codeCopied ? 'Mensagem copiada' : 'Copiar mensagem'"
-              @click="copyMessage"
-            />
-          </div>
+      <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
+        <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
+        <p class="shop-meta" data-login-whatsapp-manual-intro>
+          {{ manualIntroParts.before }}<span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>{{ manualIntroParts.after }}
+        </p>
+        <!-- `bg-card`, não `bg-background`: sobre o Faubourg o canvas creme some. -->
+        <div class="flex items-center gap-2 rounded-md border bg-card py-1 pr-1 pl-3">
+          <span class="min-w-0 flex-1 truncate font-mono text-base tracking-wider text-muted-foreground">{{ manualMessage }}</span>
+          <UiButton
+            type="button"
+            variant="ghost"
+            size="icon-lg"
+            :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
+            :aria-label="codeCopied ? 'Mensagem copiada' : 'Copiar mensagem'"
+            @click="copyMessage"
+          />
+        </div>
+        <div class="flex flex-wrap items-center gap-x-4">
+          <UiButton
+            :href="deepLink || undefined"
+            target="_blank"
+            rel="noopener"
+            variant="link"
+            size="sm"
+            icon="lucide:message-circle"
+            class="justify-start px-0"
+            :disabled="!canOpenWhatsApp"
+            data-login-whatsapp-reopen
+            @click="emit('used')"
+          >
+            Abrir de novo
+          </UiButton>
           <UiButton
             :href="chatLink || undefined"
             target="_blank"
@@ -143,12 +243,13 @@ async function copyMessage () {
             variant="link"
             size="sm"
             icon="lucide:external-link"
+            class="justify-start px-0"
             :disabled="!chatLink"
           >
-            Abrir WhatsApp
+            Abrir a conversa vazia
           </UiButton>
         </div>
       </div>
-    </template>
+    </div>
   </section>
 </template>

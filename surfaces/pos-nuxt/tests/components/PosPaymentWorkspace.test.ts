@@ -749,7 +749,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
         receiptChannels: ["print"],
         fulfillmentType: "delivery",
         paymentCollection: "on_delivery",
@@ -757,7 +757,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         paymentTotalQ: 1000,
       }),
     });
-    expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+    expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.");
     expect(avisos(wrapper).text()).toContain("Dinheiro pendente. O troco calculado será separado no despacho.");
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
@@ -780,7 +780,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const explicitoFalso = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: false },
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: false }, receipt_channels: [] },
         receiptChannels: ["print"],
       }),
     });
@@ -789,12 +789,50 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
 
     const comPalavra = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota: ela imprime sozinha assim que for autorizada.");
+    comPalavra.unmount();
+  });
+
+  // A palavra do servidor mora em `capabilities`, ao lado de
+  // `supports_fiscal_document`. A tela a lia no TOPO do contrato, onde ela
+  // nunca vem: a faixa dizia ao operador que o papel NÃO pedia a nota, com a
+  // regra do servidor emitindo. No topo, ela não conta.
+  it("a promessa lê `capabilities.receipt_requests_emission`, não o topo do contrato", async () => {
+    const noTopo = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
         checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
         receiptChannels: ["print"],
       }),
     });
-    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
-    comPalavra.unmount();
+    expect(avisos(noTopo).text()).not.toContain("imprime sozinha");
+    noTopo.unmount();
+  });
+
+  // "Por e-mail?" pede a nota como "Impressa?" e "CPF na nota?": a faixa diz.
+  it("pedir por e-mail também promete a nota", async () => {
+    const soEmail = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(soEmail).text()).toContain("Pedir por e-mail já pede a nota: o e-mail sai assim que ela for autorizada.");
+    soEmail.unmount();
+
+    const osDois = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true, receipt_requests_emission: true }, receipt_channels: [] },
+        receiptChannels: ["print", "email"],
+        receiptEmail: "cliente@example.org",
+      }),
+    });
+    expect(avisos(osDois).text()).toContain("Papel e e-mail já pedem a nota");
+    osDois.unmount();
   });
 
   it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
@@ -1042,7 +1080,7 @@ describe("PosPaymentWorkspace — a tela não promete o que não confere", () =>
     // Onze dígitos quaisquer viravam um check verde. O operador lia de volta com
     // confiança e a rejeição da NFC-e chegava com o cliente já na rua.
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: fiscal("11111111111") });
-    expect(wrapper.text()).toContain("Documento inválido — confira com o cliente.");
+    expect(wrapper.text()).toContain("Documento inválido. Confira com o cliente.");
     expect(wrapper.text()).not.toContain("Sai na nota");
   });
 

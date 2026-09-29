@@ -9,7 +9,7 @@ export type CheckoutStep = 'fulfillment' | 'address' | 'when' | 'payment'
 export const CHECKOUT_FIELD_ORDER = [
   'name', 'phone',
   'fulfillment_type',
-  'delivery_address',
+  'delivery_address', 'fiscal_tax_id',
   'delivery_date', 'delivery_time_slot',
   'payment_method', 'recipient_name', 'recipient_phone'
 ] as const
@@ -301,7 +301,7 @@ export function isCheckoutStepUpcoming (steps: CheckoutStep[], activeStep: Check
 
 export function checkoutStepErrorKeys (step: CheckoutStep): string[] {
   if (step === 'fulfillment') return ['fulfillment_type']
-  if (step === 'address') return ['delivery_address', 'street_number', 'saved_address_id']
+  if (step === 'address') return ['delivery_address', 'street_number', 'saved_address_id', 'fiscal_tax_id']
   if (step === 'when') return ['delivery_date', 'delivery_time_slot']
   return ['payment_method', 'recipient_name', 'recipient_phone']
 }

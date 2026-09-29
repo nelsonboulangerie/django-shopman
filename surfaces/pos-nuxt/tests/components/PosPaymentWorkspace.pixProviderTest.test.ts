@@ -34,8 +34,31 @@ describe("PosPaymentWorkspace — limite Pix do provedor", () => {
       }),
     });
 
-    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain(paymentConstraints.pix.message)
-    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("está dentro do limite")
+    const notices = wrapper.find('[aria-label="Avisos"]').text();
+    expect(notices).toContain("a Efí simula a confirmação de Pix de até R$ 10,00");
+    expect(notices).toContain("está dentro do limite");
+    // Dentro do limite o aviso não manda trocar nada: instrução que a venda não
+    // precisa seguir, ao lado de "está dentro do limite", obriga a escolher.
+    expect(notices).not.toContain("troque a forma de pagamento");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("Trocar forma de pagamento"))).toBe(false);
+    expect(cta(wrapper)?.attributes("disabled")).toBeUndefined();
+  });
+
+  it("sem a constraint (produção ou Pix simulado) nada aparece, mesmo acima de R$ 10,00", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: workspaceProps({
+        review: review({ total_q: 1500, total_display: "R$ 15,00" }),
+        paymentTotalQ: 1500,
+        paymentTenders: [pix(1500)],
+        selectedTenderIndex: 0,
+        selectedTenderMethod: "pix",
+        paymentCovered: true,
+        paymentRemainingQ: 0,
+      }),
+    });
+
+    expect(wrapper.text()).not.toContain("Efí");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("Trocar forma de pagamento"))).toBe(false);
     expect(cta(wrapper)?.attributes("disabled")).toBeUndefined();
   });
 
@@ -99,9 +122,18 @@ describe("PosPaymentWorkspace — limite Pix do provedor", () => {
       }),
     });
 
-    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("Pix não pode ser combinado nem dividido")
+    const mixedNotice = wrapper.find('[aria-label="Avisos"]').text();
+    expect(mixedNotice).toContain("Pix não pode ser combinado nem dividido");
+    // Sem divisão armada, "esta divisão" não existe; e ajustar itens não desfaz a combinação.
+    expect(mixedNotice).not.toContain("divisão.");
+    expect(mixedNotice).toContain("Use Pix sozinho no total");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("Ajustar itens"))).toBe(false);
     expect(cta(wrapper)?.attributes("disabled")).toBeDefined();
     expect(wrapper.find('[data-payment-method="cash"]').attributes("disabled")).toBeDefined();
+
+    const switchMethod = wrapper.findAll("button").find((button) => button.text().includes("Trocar forma de pagamento"));
+    await switchMethod!.trigger("click");
+    expect(wrapper.emitted("removeTender")?.[0]).toEqual([0]);
 
     const splitFirst = await mountSuspended(PosPaymentWorkspace, {
       props: workspaceProps({ paymentConstraints, splitCount: 2 }),

@@ -18,12 +18,20 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
+  check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
+  check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
+  check_card_machines_out   — maquininha na rua além do limite vira alerta
+  sweep_danfe_print_jobs    — DANFE da entrega que a impressora não buscou vira alerta
+  sweep_kitchen_print_jobs  — Via Cozinha que a impressora do posto não buscou vira alerta
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
+  run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -40,7 +48,7 @@ import logging
 import time
 
 from django.core.management import call_command
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
@@ -62,6 +70,9 @@ MARKETING_DELIVERY_BATCH = 20
 MARKETING_DELIVERY_LEASE_SECONDS = 300
 
 MAINTENANCE_COMMANDS = (
+    # Primeiro: o fim de "desligar por 1 hora" religa o canal antes de o resto do
+    # ciclo (envio de catálogo, conferência do iFood) ler o estado dele.
+    "apply_channel_switches",
     "release_expired_holds",
     "cleanup_stale_sessions",
     # Depois do cleanup (que já libera ao deletar) e antes do planning: holds
@@ -86,6 +97,10 @@ MAINTENANCE_COMMANDS = (
     # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
     # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
     "evaluate_bi_alerts",
+    # O placar do de-para de produto: mede os concorrentes contra os de-paras
+    # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
+    # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
+    "run_alias_benchmark",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
@@ -121,9 +136,9 @@ MAINTENANCE_COMMANDS = (
     # (pedidos × intents × transações × DayClosing) e divergência vira
     # OperatorAlert com dedupe/debounce próprios. Re-rodar a cada ciclo é
     # deliberado: webhook tardio de pagamento muda o retrato do dia, e o
-    # DayClosing guarda sempre o último. Divergência aberta loga o
-    # CommandError do comando a cada ciclo — barulho honesto, some quando
-    # o operador resolve.
+    # DayClosing guarda sempre o último. A divergência aberta volta como o
+    # MESMO CommandError a cada ciclo; o grito é do comando, uma vez por
+    # alerta aberto (ver `DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO`).
     "reconcile_financial_day",
     "sweep_stuck_orders",
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
@@ -144,7 +159,15 @@ MAINTENANCE_COMMANDS = (
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",
+    # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
+    # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
+    # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios
+    # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
+    "run_intent_pilot",
     "check_directive_health",
+    # Resultado incerto no provedor não pode depender do callback original: o
+    # comando recupera incidentes antigos/órfãos e nunca reenvia ao cliente.
+    "check_stock_alert_delivery_sla",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que
     # alguém desmarcou a categoria, é o produto que já está invisível hoje. O
@@ -157,6 +180,27 @@ MAINTENANCE_COMMANDS = (
     # cadência (diária, ou semanal quando o estado é decisão registrada) e a
     # severidade moram no comando — o worker não sabe régua.
     "check_integration_drift",
+    # Irmão do de cima, aplicado a um ARQUIVO em vez de um provedor: a base de
+    # cidade dos dispositivos entra na imagem no build e só troca por bump manual.
+    # Entra aqui porque velha ela não falha — ela RESPONDE ERRADO em silêncio, com
+    # raio de precisão bom e a confiança de sempre, e era a única forma de erro
+    # que aquele módulo não enxergava. Os dois limiares (avisar, e parar de
+    # mostrar a cidade) moram nos settings; a cadência, no comando.
+    "check_geoip_freshness",
+    # A loja no iFood diz o mesmo que a casa? Lê o status do módulo Merchant e
+    # alerta quando o iFood fecha com a casa aberta (polling caído, pausa
+    # esquecida no Portal) ou abre com ela fechada. É o vigia que o
+    # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
+    "check_ifood_store",
+    # A maquininha não tem indicador fixo no Gestor: o card da saída basta. Só
+    # quando passa do limite (default 2 h, em Shop.defaults) vira alerta.
+    "check_card_machines_out",
+    # A DANFE da entrega que a impressora do despacho não buscou: o card já
+    # diz na hora; aqui vira alerta para quem não está olhando o card.
+    "sweep_danfe_print_jobs",
+    # A Via Cozinha do posto sem tela: sem papel o lanche não é feito, e o
+    # posto não tem tela para descobrir. O alerta vai para quem tem.
+    "sweep_kitchen_print_jobs",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.
@@ -186,6 +230,21 @@ MAINTENANCE_COMMANDS = (
 )
 
 MAINTENANCE_WORKER = "maintenance_worker"
+
+#: Comandos cuja divergência volta IGUAL a cada ciclo até alguém resolver, e que
+#: gritam SOZINHOS, uma vez, quando a divergência nasce. O
+#: `reconcile_financial_day` re-reconcilia ontem a cada 5 min e, enquanto a
+#: divergência estiver aberta, levanta o mesmo `CommandError`. Em 22/09 isso
+#: virou 178 eventos no Sentry para UMA divergência; a memória em processo que
+#: veio depois (#1088) esquecia a cada deploy, e cada deploy do dia gritava de
+#: novo (201 eventos em SHOPMAN-2 até 25/09). O grito agora mora no próprio
+#: comando e é durável: um `logger.error` quando o `OperatorAlert`
+#: (`payment_reconciliation_failed`, dedupe `financial-day:<data>:<crit>:<err>`)
+#: NASCE — nem restart nem deploy o repetem, e uma divergência diferente abre
+#: alerta novo e grita de novo. Aqui o `CommandError` desses comandos é só
+#: rastro (aviso, sem traceback). Exceção que NÃO é `CommandError` segue
+#: gritando sempre.
+DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO = frozenset({"reconcile_financial_day"})
 
 
 class Command(BaseCommand):
@@ -248,5 +307,14 @@ class Command(BaseCommand):
                     call_command(command, quiet_disabled=True, **kwargs)
                 else:
                     call_command(command, **kwargs)
+            except CommandError as exc:
+                if command in DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO:
+                    logger.warning(
+                        "maintenance_worker: %s segue com a divergência (%s); "
+                        "o OperatorAlert aberto é o aviso, até alguém resolver",
+                        command, exc,
+                    )
+                else:
+                    logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)
             except Exception:
                 logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)

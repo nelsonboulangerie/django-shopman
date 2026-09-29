@@ -14,7 +14,7 @@ function mockBrowser ({
 }: { ios?: boolean, standalone?: boolean } = {}) {
   Object.defineProperty(navigator, 'userAgent', {
     configurable: true,
-    value: ios ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit Safari' : 'Mozilla/5.0 (Linux; Android 15) Chrome'
+    value: ios ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' : 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
   })
   Object.defineProperty(navigator, 'platform', {
     configurable: true,
@@ -64,7 +64,7 @@ describe('usePwaInstall', () => {
 
     window.dispatchEvent(event)
     await nextTick()
-    expect(state.canInstall.value).toBe(true)
+    expect(state.plan.value.kind).toBe('prompt')
     expect(prompt).not.toHaveBeenCalled()
 
     await expect(state.install()).resolves.toBe(true)
@@ -77,9 +77,9 @@ describe('usePwaInstall', () => {
     mockBrowser({ ios: true })
     const { state, wrapper } = await mountInstall()
 
-    expect(state.isIos.value).toBe(true)
+    expect(state.plan.value.os).toBe('ios')
+    expect(state.plan.value.kind).toBe('steps')
     expect(state.isStandalone.value).toBe(false)
-    expect(state.canInstall.value).toBe(false)
     wrapper.unmount()
   })
 
@@ -88,7 +88,15 @@ describe('usePwaInstall', () => {
     const { state, wrapper } = await mountInstall()
 
     expect(state.isStandalone.value).toBe(true)
-    expect(state.canInstall.value).toBe(false)
+    expect(state.plan.value.kind).not.toBe('prompt')
+    wrapper.unmount()
+  })
+
+  it('keeps the manual answer for a year: whoever added it is not asked again next week', async () => {
+    const { state, wrapper } = await mountInstall()
+    state.dismissAsDone()
+
+    expect(state.dismissedUntil.value).toBe(NOW + 365 * 24 * 60 * 60 * 1000)
     wrapper.unmount()
   })
 

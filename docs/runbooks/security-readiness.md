@@ -167,7 +167,7 @@ rg 'print\\(|logger\\.(debug|info|warning|error).*token|logger\\.(debug|info|war
 
 Ainda fora do escopo desta fase, mas precisa estar decidido antes de produção:
 
-- Backup e restore testado para PostgreSQL (camadas e comandos: [backup-and-restore.md](../guides/backup-and-restore.md); o teste de restore do cluster segue pendente).
+- Backup e restore testado para PostgreSQL (camadas e comandos: [backup-and-restore.md](../guides/backup-and-restore.md); o ensaio de restore do cluster tem procedimento, custo e conferências em [backup-e-restore.md §3](backup-e-restore.md) — falta executá-lo, e ele exige credencial do dono).
 - Redis provisionado e validado para cache, rate limit e SSE multi-worker.
 - `make test-runtime` executado em PostgreSQL + Redis, sem skips.
 - `make deploy-release` executado com `.env` real do ambiente.

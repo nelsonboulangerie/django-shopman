@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Guardrail de PROPRIEDADE: o que o kit já possui não volta a nascer copiado no app.
 //
@@ -19,16 +20,6 @@ import { describe, expect, it } from "vitest";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const OPERATOR_APPS = [
-  "bi-nuxt",
-  "hub-nuxt",
-  "kds-nuxt",
-  "marketing-nuxt",
-  "orders-nuxt",
-  "pos-nuxt",
-  "production-nuxt",
-  "purchase-nuxt",
-] as const;
 
 /** Declarações que pertencem ao kit e não podem reaparecer no app — inclusive com
  * outro nome, que foi exatamente como as sete cópias de `apiPath` se esconderam.

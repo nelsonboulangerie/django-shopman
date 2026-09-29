@@ -5,6 +5,7 @@ import logging
 from django.db import transaction
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.models import Customer
+from shopman.guestman.models.erasure_tombstone import ProviderErasureTombstone
 
 logger = logging.getLogger("guestman.manychat")
 
@@ -18,6 +19,45 @@ UNIDENTIFIED_SUBSCRIBER = (
     "Assinante sem telefone (ex.: contato que chegou pelo Instagram) precisa "
     "entrar pelo site, com o proprio numero."
 )
+
+# Recusa de ressurreicao. Este assinante pertenceu a uma conta que o titular
+# mandou apagar: aceitar o sync recriaria, sozinho, o cadastro que ele pediu
+# para sumir. Quem quiser voltar comeca de novo pelo site, por ato proprio.
+ERASED_SUBSCRIBER = (
+    "Este contato pertenceu a uma conta excluida a pedido do titular e nao e "
+    "sincronizado de novo. Para voltar a comprar, e so entrar pelo site."
+)
+
+
+# Campos de identidade que o ManyChat manda ora como texto, ora como NÚMERO. O
+# `getInfo` devolve `ig_id` numérico, e um `{{Subscriber ID}}` sem aspas no corpo do
+# External Request chega como int. Tudo aqui dentro trata identificador como texto
+# (`.strip()`, `.encode()`, `.lower()`), então a conversão acontece na porta: em
+# 25/09/2026 um `ig_id` numérico derrubou o "Entrar pelo WhatsApp" de um cliente novo
+# com `'int' object has no attribute 'strip'`, e o link nunca saiu.
+_TEXT_FIELDS = (
+    "id",
+    "whatsapp_id",
+    "whatsapp_phone",
+    "phone",
+    "email",
+    "first_name",
+    "last_name",
+    "ig_id",
+    "ig_username",
+    "fb_id",
+    "tg_id",
+)
+
+
+def _as_text_fields(subscriber_data: dict) -> dict:
+    """Cópia do payload com os identificadores numéricos convertidos em texto."""
+    data = dict(subscriber_data)
+    for key in _TEXT_FIELDS:
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            data[key] = str(int(value)) if float(value).is_integer() else str(value)
+    return data
 
 
 class ManychatService:
@@ -54,9 +94,20 @@ class ManychatService:
         """
         if not isinstance(subscriber_data, dict):
             raise ValueError("Subscriber data must be an object")
+        subscriber_data = _as_text_fields(subscriber_data)
         manychat_id = subscriber_data.get("id")
         if not manychat_id:
             raise ValueError("Subscriber data must contain 'id' field")
+        # A conta excluída não volta pela porta do provedor. Sem esta recusa, o
+        # próximo webhook deste assinante não acharia ninguém (o identificador
+        # foi apagado junto com a conta) e criaria um cadastro NOVO com os dados
+        # que o titular mandou apagar.
+        if ProviderErasureTombstone.matches(
+            provider=ProviderErasureTombstone.Provider.MANYCHAT,
+            handle_type=ProviderErasureTombstone.HandleType.SUBSCRIBER_ID,
+            value=manychat_id,
+        ):
+            raise ValueError(ERASED_SUBSCRIBER)
         incoming_phone = cls._preferred_phone(subscriber_data)
 
         with transaction.atomic():
@@ -157,6 +208,7 @@ class ManychatService:
         source_system: str = "manychat",
     ) -> Customer:
         """Bind trusted ManyChat/access-link identity data to a known customer."""
+        subscriber_data = _as_text_fields(subscriber_data or {})
         with transaction.atomic():
             customer = cls._lock_active_customer(customer.pk)
             cls._add_manychat_identifiers(customer, subscriber_data, source_system)

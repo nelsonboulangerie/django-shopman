@@ -75,6 +75,12 @@ DEFAULTS = {
     # beyond the Craftsman aggregate (orders, stock and oven facts). Kernel
     # code resolves this dotted path at runtime and never imports a host layer.
     "PRODUCTION_COMMAND_BACKEND": None,
+    # A ficha consome insumo da VITRINE (posição ``is_saleable``)? Não, por
+    # padrão: o pote de geleia exposto para venda não é o pote da massa, mesmo
+    # que os dois tenham o mesmo SKU (a coisa comprada que também se vende). O
+    # consumo sai das posições de produção e estoque; a vitrine só com esta
+    # chave ligada, e mesmo assim por último.
+    "CONSUME_FROM_SALEABLE_POSITIONS": False,
 }
 
 

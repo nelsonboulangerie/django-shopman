@@ -8,9 +8,14 @@ import type {
   AnnouncementTemplate,
   MarketingPlatformCapability,
 } from "~/types/campaign";
+import PlatformCompositionEditor from "~/components/PlatformCompositionEditor.vue";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import { marketingVariableLabel } from "~/presentation/marketingVariables";
+import {
+  googleBusinessEdits,
+  googleBusinessOptions,
+} from "~/presentation/googleBusinessPost";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -34,47 +39,17 @@ const useAi = ref(false);
 const aiPrompt = ref("");
 const isActive = ref(true);
 const platformVariants = ref<Record<string, Record<string, unknown>>>({});
-const instagramFormat = ref("story");
 const customImageUrl = ref("");
 
 const platformCapabilities = computed(() => props.deliveryCapabilities ?? []);
 const knownPlatforms = computed(() =>
-  platformCapabilities.value.length
-    ? platformCapabilities.value.map((capability) => capability.platform)
-    : ["instagram", "facebook", "google_business", "whatsapp"],
+  platformCapabilities.value.map((capability) => capability.platform),
 );
 const publicationCapabilities = computed(() =>
   platformCapabilities.value.filter(
     (capability) => capability.delivery_kind === "publication",
   ),
 );
-const instagramFormats = computed(
-  () =>
-    platformCapabilities.value.find(
-      (capability) => capability.platform === "instagram",
-    )?.formats ?? [
-      { ref: "story", label: "Stories" },
-      { ref: "feed", label: "Feed" },
-    ],
-);
-
-// O detalhe de cada formato é da CASA, não do servidor: a capacidade que vem da
-// plataforma diz quais formatos existem, e a recomendação diz qual é o nosso
-// padrão e por quê.
-const FORMAT_HINTS: Record<string, string> = {
-  story:
-    "Efêmero e urgente: é o padrão para fornadas e oportunidades do momento.",
-  feed: "Permanente. Só será usado quando você escolher esta opção.",
-};
-
-const instagramFormatOptions = computed(() =>
-  instagramFormats.value.map((format) => ({
-    value: format.ref,
-    label: `${format.label}${format.ref === "story" ? " — recomendado" : ""}`,
-    hint: FORMAT_HINTS[format.ref],
-  })),
-);
-
 const IMAGE_SOURCES = [
   { value: "product", label: "Foto do produto" },
   { value: "gallery", label: "Galeria do produto" },
@@ -89,7 +64,7 @@ const DRAFT_LABELS = {
   use_ai_generation: "Uso de IA",
   ai_prompt: "Instrução para IA",
   is_active: "Modelo ativo",
-  platform_variants: "Formato e imagem por plataforma",
+  platform_variants: "Composição por plataforma",
 };
 
 function cloneVariants(
@@ -114,38 +89,77 @@ function imageFromVariants(
   return "";
 }
 
+function compositionFor(platform: string): Record<string, unknown> {
+  return platformVariants.value[platform] || {};
+}
+
+function updateComposition(
+  platform: string,
+  composition: Record<string, unknown>,
+) {
+  platformVariants.value = {
+    ...platformVariants.value,
+    [platform]: composition,
+  };
+}
+
+function selectedFormat(capability: MarketingPlatformCapability): string {
+  const variant = compositionFor(capability.platform);
+  const legacy = String(variant.post_type || "").toLowerCase();
+  const requested = String(
+    variant.publication_format ||
+      ({ stories: "story", story: "story" }[legacy] ?? legacy) ||
+      capability.default_format,
+  ).toLowerCase();
+  return capability.formats.some((format) => format.ref === requested)
+    ? requested
+    : capability.default_format;
+}
+
+const instagramNeedsMedia = computed(() => {
+  const capability = platformCapabilities.value.find(
+    (item) => item.platform === "instagram",
+  );
+  if (!capability) return false;
+  return Boolean(
+    capability.formats.find(
+      (format) => format.ref === selectedFormat(capability),
+    )?.media_required,
+  );
+});
+
 function publicationVariants(): Record<string, Record<string, unknown>> {
   const variants = cloneVariants(platformVariants.value);
   Reflect.deleteProperty(variants as Record<string, unknown>, "image_url");
-  // Compatibilidade durante rollout: o endpoint novo é a autoridade assim que
-  // chega; uma resposta antiga ainda preserva exatamente os quatro formatos já
-  // existentes, sem inventar uma plataforma nova no navegador.
-  if (!publicationCapabilities.value.length) {
-    variants.instagram = {
-      ...(variants.instagram || {}),
-      publication_format: instagramFormat.value,
-    };
-    variants.facebook = {
-      ...(variants.facebook || {}),
-      publication_format: "feed",
-    };
-    variants.google_business = {
-      ...(variants.google_business || {}),
-      publication_format: "standard",
-    };
-  }
   for (const capability of publicationCapabilities.value) {
     const variant = { ...(variants[capability.platform] || {}) };
     const acceptsFormat = capability.formats.some((format) =>
       format.provider_fields.includes("publication_format"),
     );
-    if (acceptsFormat) {
-      variant.publication_format =
-        capability.platform === "instagram"
-          ? instagramFormat.value
-          : capability.default_format;
-    }
+    if (acceptsFormat)
+      variant.publication_format = selectedFormat(capability);
+    Reflect.deleteProperty(variant, "post_type");
     variants[capability.platform] = variant;
+  }
+  if (knownPlatforms.value.includes("google_business")) {
+    const google = { ...(variants.google_business || {}) };
+    for (const key of [
+      "publication_format",
+      "call_to_action",
+      "event_title",
+      "event_start",
+      "event_end",
+      "offer_terms",
+    ]) {
+      Reflect.deleteProperty(google, key);
+    }
+    Object.assign(
+      google,
+      googleBusinessEdits(
+        googleBusinessOptions(variants.google_business || undefined),
+      ),
+    );
+    variants.google_business = google;
   }
   for (const platform of knownPlatforms.value) {
     const variant = { ...(variants[platform] || {}) };
@@ -169,22 +183,31 @@ watch(
     aiPrompt.value = t?.ai_prompt ?? "";
     isActive.value = t?.is_active ?? true;
     platformVariants.value = cloneVariants(t?.platform_variants);
-    const storedFormat = String(
-      t?.platform_variants?.instagram?.publication_format ||
-        t?.platform_variants?.instagram?.post_type ||
-        "story",
-    ).toLowerCase();
-    instagramFormat.value = storedFormat === "feed" ? "feed" : "story";
     customImageUrl.value = imageFromVariants(platformVariants.value);
   },
   { immediate: true },
 );
 
+const googleReady = computed(() => {
+  if (!knownPlatforms.value.includes("google_business")) return true;
+  const options = googleBusinessOptions(
+    platformVariants.value.google_business,
+  );
+  if (options.publication_format !== "event") return true;
+  return Boolean(
+    options.event_title.trim() &&
+    options.event_start &&
+    options.event_end &&
+    options.event_end > options.event_start,
+  );
+});
 const canSubmit = computed(
   () =>
     !props.busy &&
     name.value.trim().length > 0 &&
     body.value.trim().length > 0 &&
+    platformCapabilities.value.length > 0 &&
+    googleReady.value &&
     (imageSource.value !== "custom" || customImageUrl.value.trim().length > 0),
 );
 
@@ -232,12 +255,6 @@ function applyTemplateDraft(payload: MarketingDraftPayload) {
     typeof payload.ai_prompt === "string" ? payload.ai_prompt : "";
   isActive.value = payload.is_active !== false;
   platformVariants.value = cloneVariants(payload.platform_variants);
-  const restoredFormat = String(
-    platformVariants.value.instagram?.publication_format ||
-      platformVariants.value.instagram?.post_type ||
-      "story",
-  ).toLowerCase();
-  instagramFormat.value = restoredFormat === "feed" ? "feed" : "story";
   customImageUrl.value = imageFromVariants(platformVariants.value);
 }
 
@@ -369,34 +386,48 @@ function submit() {
         </p>
       </div>
       <p
-        v-else-if="imageSource === 'none' && instagramFormat === 'story'"
+        v-else-if="imageSource === 'none' && instagramNeedsMedia"
         class="mt-2 text-xs text-warning"
       >
-        Campanhas que incluírem Instagram ficarão bloqueadas: Stories exigem uma
-        imagem.
+        Campanhas que incluírem Instagram ficarão bloqueadas: o formato
+        escolhido exige uma imagem.
       </p>
       <p
-        v-else-if="imageSource === 'product' && instagramFormat === 'story'"
+        v-else-if="imageSource === 'product' && instagramNeedsMedia"
         class="mt-2 text-xs text-muted-foreground"
       >
         Usa a foto do produto, em JPEG. Produto sem foto não dá para aprovar.
       </p>
     </div>
 
-    <fieldset class="rounded-lg border border-border bg-card p-4">
-      <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Formato no Instagram
-      </legend>
-      <UiRadioGroup
-        v-model="instagramFormat"
-        label="Formato no Instagram"
-        :options="instagramFormatOptions"
-        class="sm:grid-flow-col sm:auto-cols-fr"
-      />
-      <p class="mt-2 text-xs text-muted-foreground">
-        Facebook publica na página; Google, uma atualização do estabelecimento.
+    <section class="space-y-3" aria-labelledby="template-compositions-title">
+      <div>
+        <h3 id="template-compositions-title" class="text-sm font-semibold">
+          Composição por destino
+        </h3>
+        <p class="mt-1 text-xs text-muted-foreground">
+          O texto acima é comum. Abra exceções somente quando a plataforma
+          realmente precisar; formatos e opções vêm da capacidade executável.
+        </p>
+      </div>
+      <p
+        v-if="!platformCapabilities.length"
+        class="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        role="alert"
+      >
+        Não foi possível carregar os formatos que o Shopman consegue publicar.
+        Atualize a tela; este modelo não será salvo no escuro.
       </p>
-    </fieldset>
+      <PlatformCompositionEditor
+        v-for="capability in platformCapabilities"
+        :key="capability.platform"
+        :model-value="compositionFor(capability.platform)"
+        :capability="capability"
+        :base-body="body"
+        :id-prefix="`tpl-${capability.platform}`"
+        @update:model-value="updateComposition(capability.platform, $event)"
+      />
+    </section>
 
     <!-- Two server-side gates plus the credential decide availability. -->
     <fieldset

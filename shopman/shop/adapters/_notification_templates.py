@@ -6,7 +6,7 @@ ManyChat, SMS, e-mail) leem o mesmo template. Placeholder ausente vai literal
 cliente sem aviso.
 
 ⚠️ E é exatamente por isso que as chaves AUXILIARES (``customer_name_greeting``,
-``tracking_suffix``, ``reorder_suffix``) moram aqui, em ``derive_context``, e não
+``order_ref_short``, ``payment_deadline_note``) moram aqui, em ``derive_context``, e não
 dentro de um canal. Elas eram derivadas só no adapter do ManyChat; SMS e e-mail
 liam o MESMO template do Admin e mandavam ``{customer_name_greeting}`` cru para o
 cliente. A política de não quebrar o envio transforma chave faltante em texto
@@ -69,14 +69,21 @@ def derive_context(context: dict | None) -> dict:
     """
     ctx = dict(context or {})
 
+    # O nome do pedido NA MENSAGEM é o final do ref ("A47"): é o que o balcão fala e o
+    # que o card mostra em destaque, e é único no dia entre os canais
+    # (`orderman.ids.generate_order_ref`). O ref completo segue no link.
+    order_ref = str(ctx.get("order_ref") or "").strip()
+    from shopman.shop.services.operator_orders import short_ref
+
+    ctx["order_ref_short"] = short_ref(order_ref) if order_ref else ""
+
     name = str(ctx.get("customer_name") or "").strip()
     ctx["customer_name_greeting"] = f", {name}" if name else ""
 
-    tracking_url = str(ctx.get("tracking_url") or "").strip()
-    ctx["tracking_suffix"] = f"\nAcompanhe: {tracking_url}" if tracking_url else ""
-
-    reorder_url = str(ctx.get("reorder_url") or "").strip()
-    ctx["reorder_suffix"] = f"\nPeca de novo: {reorder_url}" if reorder_url else ""
+    # Link ausente sai vazio, nunca como "None" no texto do cliente.
+    for link in ("tracking_url", "payment_url", "reorder_url"):
+        if link in ctx and ctx[link] is None:
+            ctx[link] = ""
 
     # Compras: do outro lado do pedido tem uma pessoa, e ela tem nome. Quando
     # ninguém foi cadastrado, cumprimenta-se a casa pelo nome fantasia — nunca
@@ -98,10 +105,15 @@ def derive_context(context: dict | None) -> dict:
     )
 
     total_q = ctx.get("total_q")
-    if total_q and not ctx.get("total"):
+    if total_q and not ctx.get("order_total_display"):
         from shopman.utils.monetary import format_money
 
-        ctx["total"] = f"R$ {format_money(int(total_q))}"
+        ctx["order_total_display"] = f"R$ {format_money(int(total_q))}"
+    # O contrato Meta padronizado chama o campo de `total`; flows mais antigos
+    # já foram criados com `order_total_display`. Ambos recebem o mesmo valor
+    # formatado durante a transição, sem duplicar cálculo monetário.
+    if ctx.get("order_total_display") and not ctx.get("total"):
+        ctx["total"] = ctx["order_total_display"]
 
     # Prazo do pagamento ("hoje às 18h", "amanhã às 9h"), lido do `expires_at` que
     # `payment.initiate()` grava em `order.data["payment"]`. Duas chaves de
@@ -115,7 +127,7 @@ def derive_context(context: dict | None) -> dict:
         ctx["payment_deadline"] = _payment_deadline(ctx.get("payment"))
     deadline = ctx["payment_deadline"]
     ctx["payment_deadline_note"] = (
-        f"\nPara garantir o pedido, é só pagar até {deadline}. Depois disso a reserva é liberada."
+        f"\nAté {deadline}. Depois disso liberamos a reserva."
         if deadline
         else ""
     )
@@ -125,10 +137,17 @@ def derive_context(context: dict | None) -> dict:
     # que não passa por lá e deixaria o rótulo cru na mensagem.
     ctx.setdefault("courier_tracking_suffix", "")
     ctx.setdefault("pix_suffix", "")
+    ctx.setdefault("status_note", "")
+    if "availability_note" not in ctx:
+        from shopman.shop.services.availability_copy import availability_note
+
+        ctx["availability_note"] = availability_note(ctx.get("available_qty"))
     ctx.setdefault("management_url", "")
     ctx.setdefault("management_note", "")
-    reason = ctx.get("reason")
-    ctx.setdefault("reason_note", f"\n\nMotivo: {reason}" if reason else "")
+    # O link da nota fiscal que ESTA mensagem de status leva (loja online;
+    # `services/notification._fiscal_note_carriage`). Vazio em todas as outras.
+    ctx.setdefault("fiscal_note_url", "")
+    ctx.setdefault("fiscal_note_suffix", "")
 
     return ctx
 
@@ -156,11 +175,11 @@ def render_message(event: str, context: dict, fallback_templates: dict[str, str]
     ctx = derive_context(context)
     _, body = db_template(event)
     if body:
-        return _with_stock_alert_management(event, render_template(body, ctx), ctx)
+        return _with_fiscal_note(_with_stock_alert_management(event, render_template(body, ctx), ctx), ctx)
 
     tpl = fallback_templates.get(event)
     if tpl:
-        return _with_stock_alert_management(event, render_template(tpl, ctx), ctx)
+        return _with_fiscal_note(_with_stock_alert_management(event, render_template(tpl, ctx), ctx), ctx)
 
     order_ref = ctx.get("order_ref", "")
     return f"Notificação: {event} — Pedido {order_ref}" if order_ref else f"Notificação: {event}"
@@ -175,3 +194,18 @@ def _with_stock_alert_management(event: str, rendered: str, context: dict) -> st
         return rendered
     note = str(context.get("management_note") or "").strip()
     return f"{rendered.rstrip()}\n{note}" if note else rendered
+
+
+def _with_fiscal_note(rendered: str, context: dict) -> str:
+    """A mensagem que leva a nota não pode perdê-la por causa do texto do Admin.
+
+    O texto editado no Admin (``NotificationTemplate``) é anterior à decisão de
+    pôr a nota dentro da mensagem de status (25/09/2026) e não tem
+    ``{fiscal_note_suffix}``. Reservada a menção, o link tem de sair: se o texto
+    não o trouxe, ele entra no fim. Com o marcador no texto, nada muda.
+    """
+    url = str(context.get("fiscal_note_url") or "").strip()
+    suffix = str(context.get("fiscal_note_suffix") or "")
+    if not url or not suffix or url in rendered:
+        return rendered
+    return f"{rendered.rstrip()}{suffix}"

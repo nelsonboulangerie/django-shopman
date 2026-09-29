@@ -806,6 +806,12 @@ redirect, nenhum passo de compatibilidade. Uma TV com bookmark velho se resolve 
 o endereço novo uma vez, e depois do pareamento (§9) ela nem tem mais bookmark de
 conteúdo: tem `/tv`. ✅ **Decidido.**
 
+**Confirmação de 24/09/2026, sobre a consequência do item 12b.** A decisão alcançava três
+aliases 301 que já existiam antes deste WP, e isso foi levado de volta a ele porque não
+estava no pedido original. Resposta: *"SIM — os três aliases de quiosque morrem junto com o
+endereço único (pré-go-live não há legado)."* ✅ **Decidido, com a ordem que a própria frase
+dele impõe** — *junto com*, não antes: ver 12b.
+
 **3. O endereço único: `boulangerie.com.br/tv`.** Regra de ingress, não domínio novo —
 o apex nu hoje só faz 301 para `www.nelsonboulangerie.com.br`. 21 caracteres contra 46 da
 URL de menuboard de hoje. **Encurtador de URL recusado** (§9.2). A execução do ponteiro é
@@ -1022,11 +1028,21 @@ passo de compatibilidade (§10, decisão 2).
 
 12. De-para da §5.3 — inclusive `/board` → `/marquee` e `/display` → `/customer`, que na
     versão anterior deste WP tinham ressalva de bookmark e **não têm mais**.
-12b. ⚠️ **Consequência que o inventário revela e a decisão 2 alcança:** já existem hoje
-    aliases 301 de kiosk do PR #68 — `/cliente` e `/retirada` → `/pickup`, `/painel` →
-    `/board`. Pela mesma regra ("não devemos legado a nada ainda"), eles **também são
-    resíduo** e saem junto. Registrado aqui porque não estava no pedido original: é
-    consequência da decisão, não escopo novo inventado.
+12b. ✅ **Os três aliases 301 de kiosk do PR #68 saem** — `/cliente` e `/retirada` →
+    `/pickup`, `/painel` → `/board`. Era consequência da decisão 2 e não do pedido original,
+    então foi confirmado com o dono em 24/09: *"os três aliases de quiosque morrem junto com
+    o endereço único"*.
+    ⚠️ **"Junto com" é condição de ordem, e ela não é decorativa.** Estes três são diferentes
+    dos renomes do item 12: eles são, para pelo menos uma tela, **o único caminho que
+    existe** — o inventário da §4 registra que ao `/pickup` "não há link nenhum na UI" e
+    chega-se por URL digitada. Tirá-los num deploy anterior ao do endereço novo deixa uma TV
+    na parede sem caminho nenhum, e ninguém está olhando aquela tela para perceber. O custo
+    que o dono aceitou é *digitar o endereço novo uma vez*; não é *a parede apagada até
+    alguém notar*.
+    **Então:** a remoção destes três vai no MESMO deploy que entrega o endereço novo
+    alcançável. Se o endereço único (§10, decisão 3) ainda depender do ponteiro de DNS, o
+    "endereço novo" desta condição é a rota renomeada do item 12, que já está no ar no mesmo
+    push — e aí a condição está satisfeita sem esperar o DNS.
 13. De-para do Core da §10.2: `SubjectType.DISPLAY` com rótulo `_("tela")` (**valor
     `"display"` inalterado**), docstrings e `help_text` do `device_trust.py`.
     ⚠️ **Migração nova, nunca editar a `0004`** — o precedente de forma é a

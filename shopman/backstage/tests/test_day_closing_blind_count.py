@@ -8,6 +8,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from shopman.craftsman.models import Recipe
 from shopman.offerman.models import Product
 from shopman.stockman import Position, Quant
 from shopman.stockman.models import Batch, Move
@@ -78,6 +79,13 @@ class DayClosingBlindCountTests(TestCase):
             position=self.loja,
             reason="fornada de hoje",
         )
+        # Os dois pães são PRODUZIDOS NA CASA: ficha ativa é o que os põe na
+        # contagem do fechamento.
+        for product in (self.keeper, self.day_bread):
+            Recipe.objects.create(ref=f"ficha-{product.sku}", name=product.name, output_sku=product.sku, batch_size=10)
+        # Revenda: vende no balcão, tem estoque, e NÃO se conta todo dia.
+        self.resale = Product.objects.create(sku="GELEIA-POTE", name="Geleia em pote", shelf_life_days=180)
+        StockMovements.receive(quantity=6, sku=self.resale.sku, position=self.loja, reason="recebimento")
 
     def test_closing_projection_classifies_by_lot(self) -> None:
         resp = self.client.get("/api/v1/backstage/closing/")
@@ -94,6 +102,23 @@ class DayClosingBlindCountTests(TestCase):
         day = by_sku[self.day_bread.sku]
         self.assertEqual(day["classification"], "expired")
         self.assertEqual(day["qty_expiring"], 2)
+
+    def test_closing_counts_only_what_the_house_produces(self) -> None:
+        """Revenda não entra na contagem do dia; o estoque dela fica intacto."""
+        closing = self.client.get("/api/v1/backstage/closing/").json()["closing"]
+
+        skus = {it["sku"] for it in closing["items"]}
+        self.assertEqual(skus, {self.keeper.sku, self.day_bread.sku})
+
+        resp = self.client.post(
+            "/api/v1/backstage/closing/",
+            {"quantities": {self.keeper.sku: "3", self.day_bread.sku: "2"}},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        rows = {row["sku"] for row in DayClosing.objects.get().data["items"]}
+        self.assertNotIn(self.resale.sku, rows)
+        self.assertEqual(Quant.objects.get(sku=self.resale.sku, position=self.loja).quantity, 6)
 
     def test_closing_api_requires_perform_closing_permission(self) -> None:
         User = get_user_model()

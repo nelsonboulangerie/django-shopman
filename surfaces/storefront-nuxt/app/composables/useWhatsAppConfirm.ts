@@ -11,11 +11,22 @@
 // vale para sempre naquele celular.
 //
 // Por isso a sacola não se perde: ela viaja no código, e o resgate a adota.
+//
+// E a tela onde ela tocou termina o serviço: a mensagem libera ESTE navegador, e ao
+// voltar do WhatsApp a página se confirma sozinha (useWhatsappReturn) — a mensagem
+// diz "pode voltar ao site", e isso tem de ser verdade aqui também. `onConfirmed`
+// recarrega o que a página mostra; sem ele, a página recarrega inteira.
 
-export function useWhatsAppConfirm() {
+export function useWhatsAppConfirm(onConfirmed?: () => void | Promise<void>) {
   const apiPath = useShopmanApiPath()
   const csrfHeaders = useShopmanCsrfHeaders()
   const { settleCart } = useCartState()
+  const session = useShopSession()
+  const { arm } = useWhatsappReturn(async (response) => {
+    session.setFromAuthSession(response)
+    if (onConfirmed) await onConfirmed()
+    else window.location.reload()
+  })
 
   const starting = ref(false)
   const failed = ref(false)
@@ -49,6 +60,7 @@ export function useWhatsAppConfirm() {
         failed.value = true
         return
       }
+      arm()
       // `window.location` e não `<a target=_blank>`: dentro do navegador embutido do
       // WhatsApp, abrir aba nova costuma virar tela em branco — e aqui o destino é o próprio
       // WhatsApp, então trocar de tela é o comportamento certo.

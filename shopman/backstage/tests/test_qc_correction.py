@@ -560,7 +560,7 @@ def test_loss_correction_never_consumes_units_promised_to_a_customer(qc_recipe, 
     )
     assert production_alert.audience == "production"
     assert order_alert.audience == "orders"
-    assert "substituição, próxima fornada ou reembolso" in order_alert.message
+    assert "substituição, próximo lote ou reembolso" in order_alert.message
 
 
 @pytest.mark.django_db

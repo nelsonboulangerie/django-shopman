@@ -151,6 +151,12 @@ export interface ProductDetailProjection {
   components: ComponentProjection[]
   unit_weight_label: string | null
   approx_dimensions_label: string | null
+  // Preparado na hora: promessa DECLARADA da casa
+  // (`Product.metadata.made_to_order`), não dedução de availability_policy.
+  // Mora no bloco de atributos da ficha — e NÃO no selo do card do cardápio,
+  // que é slot de exceção ("Últimas unidades", "Lista de espera", "Pausado").
+  is_made_to_order: boolean
+  made_to_order_label: string
   allergen: ProductAllergenProjection | null
   conservation: ProductConservationProjection | null
   ingredients_text: string | null
@@ -158,6 +164,12 @@ export interface ProductDetailProjection {
   nutrition: ProductNutritionProjection | null
   seo_description: string
   seo_keywords: string[]
+  // Identidade comercial do Catálogo do Gestor — a mesma do feed Google/Meta.
+  // '' = não informado (a PDP não completa com a marca da loja).
+  brand: string
+  gtin: string
+  mpn: string
+  item_condition: string
   breadcrumb_category: CategoryProjection | null
   cross_sell: CatalogItemProjection[]
   cross_sell_heading: string
@@ -440,11 +452,8 @@ export interface PwaCopyProjection {
   install_message: CopyEntryProjection
   install_cta: CopyEntryProjection
   install_dismiss_cta: CopyEntryProjection
-  ios_title: CopyEntryProjection
-  ios_message: CopyEntryProjection
-  ios_share_step: CopyEntryProjection
-  ios_add_step: CopyEntryProjection
-  ios_done_cta: CopyEntryProjection
+  manual_title: CopyEntryProjection
+  manual_done_cta: CopyEntryProjection
   update_title: CopyEntryProjection
   update_cta: CopyEntryProjection
 }
@@ -532,8 +541,9 @@ export interface AuthCopyProjection {
   phone_heading: CopyEntryProjection
   phone_subtitle: CopyEntryProjection
   wa_cart_kept: CopyEntryProjection
-  wa_glimpse: CopyEntryProjection
-  wa_glimpse_with_cart: CopyEntryProjection
+  wa_why: CopyEntryProjection
+  wa_steps: CopyEntryProjection
+  wa_waiting: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection
@@ -542,7 +552,6 @@ export interface AuthCopyProjection {
   trusted_device_message: CopyEntryProjection
   trusted_device_cta: CopyEntryProjection
   trusted_other_phone: CopyEntryProjection
-  no_password_note: CopyEntryProjection
   terms_note: CopyEntryProjection
   code_heading: CopyEntryProjection
   code_help: CopyEntryProjection
@@ -597,6 +606,24 @@ export interface HomeProjection {
   public_config: PublicConfigProjection
 }
 
+export interface StorefrontShellProjection {
+  omotenashi: OmotenashiProjection
+  auth_copy: AuthCopyProjection
+  pwa_copy: PwaCopyProjection
+  shop: ShopProjection
+  shop_status: ShopStatusProjection
+  notices: HomeNoticeProjection[]
+  opening_hours: OpeningHoursEntry[]
+  faq: FAQItemProjection[]
+  origin_channel: string | null
+  public_config: PublicConfigProjection
+}
+
+export interface ShellResponse {
+  shell: StorefrontShellProjection
+  cart: CartProjection
+}
+
 export interface HomeResponse {
   home: HomeProjection
   cart: CartProjection
@@ -618,6 +645,10 @@ export interface AuthSessionResponse {
 export interface MenuResponse {
   catalog: CatalogProjection
   cart: CartProjection
+}
+
+export interface CatalogResponse {
+  catalog: CatalogProjection
 }
 
 export interface ProductResponse {
@@ -804,6 +835,7 @@ export interface CheckoutProjection {
   default_payment_method: string
   actions: Action[]
   fulfillment_options: Array<'pickup' | 'delivery' | string>
+  default_fulfillment_type: 'pickup' | 'delivery'
   has_pickup: boolean
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
@@ -823,6 +855,14 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+  // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
+  // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
+  // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
+  prefill_tax_id?: string
+  prefill_tax_id_source?: '' | 'document' | 'last_delivery'
+  // A pessoa é conhecida e o cadastro dela ainda não tem documento: a tela pode
+  // PERGUNTAR "guardar no seu cadastro?" (desmarcada).
+  offer_save_tax_id?: boolean
 }
 
 export interface StripeTestCard {
@@ -973,6 +1013,18 @@ export interface TrackingCopyProjection {
   waitlist_released_message: string
 }
 
+export interface FiscalNote {
+  title: string
+  number_display: string
+  // A chave de acesso em grupos de 4, como no papel.
+  access_key_display: string
+  // Vazio quando a nota foi cancelada.
+  url: string
+  link_label: string
+  // "Nota de teste, sem valor fiscal." / "Esta nota foi cancelada…" / vazio.
+  note: string
+}
+
 export interface TrackingResponse {
   convenience_pending?: string[]
   ref: string
@@ -1019,6 +1071,9 @@ export interface TrackingResponse {
     title: string
     message: string
   } | null
+  // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
+  // pede e-mail). Ausente/`null` enquanto não há nota.
+  fiscal_note?: FiscalNote | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string
@@ -1197,7 +1252,12 @@ export interface AccountDeviceProjection {
   created_at_display: string
   last_used_at: string | null
   last_used_at_display: string
-  location: string
+  /**
+   * "Londrina, PR · Brasil", ou "" quando a leitura do IP não foi confiável o bastante
+   * para nomear a cidade. Vazio é comum e legítimo — não trate como erro nem preencha
+   * com "Local desconhecido". Derivado no servidor a partir de base LOCAL, nunca gravado.
+   */
+  approximate_city: string
   is_current: boolean
 }
 
@@ -1206,6 +1266,8 @@ export interface AccountDeviceCopy {
   empty_title: string
   empty_message: string
   current_badge: string
+  last_used_prefix: string
+  near_prefix: string
   registered_prefix: string
   revoke_cta: string
   revoke_all_cta: string
@@ -1234,4 +1296,21 @@ export interface FavoritesResponse {
   items: CatalogItemProjection[]
   // Copy de empty-state (backend); opcional + fallback na própria tela.
   copy?: { empty?: EmptyStateCtaCopy | null }
+}
+
+/** Projeção das páginas legais — ver `shopman/storefront/presentation/legal.py`.
+ *
+ * A lista de operadores e a data vêm do servidor de propósito: texto que copia a
+ * verdade envelhece em silêncio, e foi exatamente o que aconteceu com a lista antiga.
+ */
+export interface LegalProcessorProjection {
+  name: string
+  role: string
+  shares: string
+}
+
+export interface LegalProjection {
+  version: string
+  updated_at: string
+  processors: LegalProcessorProjection[]
 }

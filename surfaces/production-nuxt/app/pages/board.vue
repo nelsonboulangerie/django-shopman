@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// FORNADAS — o painel Solari em modo KIOSK (refino Pablo):
+// LOTES — o painel Solari em modo KIOSK (refino Pablo):
 // · página à parte, sem o chrome do backstage (o link de entrada vive na
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
@@ -36,7 +36,7 @@ function setBoardList(el: unknown) {
 
 // ── Data: seletor discreto (a TV vive em Hoje; o vendedor consulta Amanhã) ──
 // Reativo: à meia-noite a TV precisa VIRAR o dia sozinha (senão amanhece nas
-// fornadas de ontem). O tick do relógio (abaixo) chama rollDay() a cada segundo.
+// lotes de ontem). O tick do relógio (abaixo) chama rollDay() a cada segundo.
 const todayISO = ref(isoForOffset(0));
 const tomorrowISO = ref(isoForOffset(1));
 function rollDay(): void {
@@ -194,7 +194,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
       </div>
 
       <div class="flex items-baseline justify-between gap-6">
-        <h1 class="board-title">Fornadas</h1>
+        <h1 class="board-title">Lotes</h1>
         <ClientOnly>
           <SplitFlap :value="clock" :chars="5" class="board-display" />
         </ClientOnly>
@@ -216,7 +216,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
         class="board-labels grid place-items-center gap-2 py-24 text-center"
       >
         <Icon name="lucide:tower-control" class="size-9" />
-        <p>Nenhuma fornada programada para esta data.</p>
+        <p>Nenhum lote programado para esta data.</p>
       </div>
 
       <template v-else>
@@ -418,7 +418,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
   color: var(--board-text);
 }
 
-/* Entrada/saída de fornadas (lote novo; confirmado expirou o TTL). */
+/* Entrada/saída de lotes (lote novo; confirmado expirou o TTL). */
 .board-row-enter-active,
 .board-row-leave-active {
   transition:

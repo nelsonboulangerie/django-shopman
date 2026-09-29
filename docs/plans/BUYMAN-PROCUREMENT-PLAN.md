@@ -76,6 +76,18 @@ Estudo dos pacotes maduros para o Buyman nascer no mesmo nível:
 - **Fase 4 — Reposição**: ponto de reposição/estoque mínimo → sugestão de compra
   (espelha o `suggest_production` do Craftsman).
 
+> ⚠️ **"Fase 2 do Buyman" virou nome de duas coisas, e uma delas não é daqui.**
+> Neste plano, Fase 2 é o **Pedido de Compra**. Em outros lugares do repositório
+> o nome era usado para o **consumo de insumo na venda de item feito na hora** —
+> que é outro problema, tem outro gatilho e ganhou WP próprio:
+> [`WP-BAIXA-DE-INSUMO-NA-VENDA.md`](WP-BAIXA-DE-INSUMO-NA-VENDA.md).
+>
+> E vale registrar o que mudou por fora: **o recebimento de mercadoria já
+> funciona** pelo Compras do Gestor (`surfaces/purchase-nuxt` +
+> `shopman/backstage/services/purchase.py`, que escreve `Move(kind=BUY)`), sem o
+> model formal de `PurchaseOrder`. As Fases 2 e 3 daqui precisam ser relidas
+> contra isso antes de começarem.
+
 ## WP-B0 — `Move.kind` no Stockman (fundacional, aprovado) ✅ infra / 🟡 callers
 
 Ledger categorizado por evento econômico: **MAKE/BUY/SELL/ADJUST/TRANSFER/RETURN/

@@ -247,18 +247,24 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(danfeOffer("authorized")).toEqual({ kind: "print", label: "Imprimir DANFE" });
   });
   it("na fila: botão desabilitado com a espera nomeada", () => {
-    expect(danfeOffer("queued")).toEqual({ kind: "queued", label: "NFC-e na fila…" });
+    expect(danfeOffer("queued")).toEqual({ kind: "queued", label: "NFC-e em emissão…" });
   });
   it("aguardando pagamento e falha dizem o próximo passo; sem nota, nada", () => {
     expect(danfeOffer("awaiting_payment")).toEqual({ kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" });
-    expect(danfeOffer("failed")).toEqual({ kind: "failed", label: "NFC-e falhou — veja Últimas vendas" });
+    expect(danfeOffer("failed")).toEqual({ kind: "failed", label: "NFC-e não autorizada. Em Últimas vendas, toque em Reprocessar NFC-e." });
     expect(danfeOffer("not_expected")).toBeNull();
   });
   it("o chip das Últimas vendas fala os mesmos estados", () => {
     expect(fiscalStateLabel("authorized")).toBe("NFC-e autorizada");
-    expect(fiscalStateLabel("queued")).toBe("NFC-e na fila");
-    expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e aguarda o pagamento");
-    expect(fiscalStateLabel("failed")).toBe("NFC-e falhou");
-    expect(fiscalStateLabel("not_expected")).toBe("Sem NFC-e");
+    expect(fiscalStateLabel("queued")).toBe("NFC-e em emissão");
+    expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e sai quando o pagamento confirmar");
+    expect(fiscalStateLabel("failed")).toBe("NFC-e não autorizada");
+    expect(fiscalStateLabel("not_expected")).toBe("Emissão não estabelecida");
+  });
+  it("encomenda paga antes: a nota sai na saída da mercadoria, e a tela diz qual", () => {
+    expect(danfeOffer("awaiting_pickup")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na retirada" });
+    expect(danfeOffer("awaiting_delivery")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na entrega" });
+    expect(fiscalStateLabel("awaiting_pickup")).toBe("NFC-e sai na retirada");
+    expect(fiscalStateLabel("awaiting_delivery")).toBe("NFC-e sai na entrega");
   });
 });

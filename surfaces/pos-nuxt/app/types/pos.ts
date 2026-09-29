@@ -25,8 +25,24 @@ export interface POSProductProjection {
   collection_color: string
   collection_icon: string;
   image_url: string;
+  /** Código de barras da embalagem, para o leitor do balcão. Vazio no que a
+   *  casa faz — pão não tem código de barras. */
+  gtin?: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
+  /** Motivo do bloqueio quando não é o genérico "Esgotado" (ex.: "Sem caixa"). */
+  sold_out_reason?: string;
+  /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
+   *  da etiqueta (ou o peso) em vez de somar uma unidade. */
+  sold_by_weight?: boolean;
+}
+
+/** O que o operador digitou numa linha vendida por peso. `weight_g` é sempre o
+ *  peso resolvido (a quantidade da linha é `weight_g / 1000` kg). */
+export interface POSWeighedEntry {
+  entry: "label" | "weight";
+  label_q?: number;
+  weight_g: number;
 }
 
 export interface POSCollectionProjection {
@@ -65,7 +81,16 @@ export interface POSFulfillmentOptionProjection {
  * durante TODA a espera. Opcional porque o backend pode chegar depois: sem ele a
  * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
  */
-export type PosFiscalState = "not_expected" | "queued" | "awaiting_payment" | "authorized" | "failed";
+/** O vocabulário de `fiscal_service.FISCAL_STATES`. `awaiting_pickup`/`awaiting_delivery`:
+ *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026). */
+export type PosFiscalState =
+  | "not_expected"
+  | "queued"
+  | "awaiting_payment"
+  | "awaiting_pickup"
+  | "awaiting_delivery"
+  | "authorized"
+  | "failed";
 
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;
@@ -147,6 +172,14 @@ export interface POSCheckoutCapabilities {
   kitchen_handoff?: POSKitchenHandoffCapability | null;
   tab_manipulation?: POSTabManipulationCapability | null;
   sale_correction?: POSSaleCorrectionCapability | null;
+  /** Pedir o comprovante ("Impressa?" / "Por e-mail?") é pedir a NOTA? Quando a
+   *  regra fiscal lê esses canais e emite, a tela promete que o papel e o e-mail
+   *  saem; sem isso eles só saem quando outra regra (CPF, cartão, Pix) emitir.
+   *  ⚠️ Mora em `capabilities`, ao lado de `supports_fiscal_document` — é onde
+   *  o servidor publica. Lida no topo do contrato, ela vinha sempre `undefined`
+   *  e a tela dizia ao operador que o papel NÃO pedia a nota. Ausente é "não
+   *  promete". */
+  receipt_requests_emission?: boolean;
   [key: string]: unknown;
 }
 
@@ -166,11 +199,6 @@ export interface POSCheckoutContractProjection {
   // antesala ("sem turno aberto não há venda") lia daí — se o contrato mudasse a
   // chave, ele receberia `undefined` em silêncio e a antesala nunca dispararia.
   capabilities: POSCheckoutCapabilities;
-  /** Pedir papel ("Impressa?") é pedir a NOTA? Quando a regra fiscal lê o canal
-   *  de impressão e emite, a tela promete "imprime sozinha"; sem isso a bobina
-   *  só sai quando outra regra (CPF, cartão, Pix) emitir. Opcional: backend
-   *  pode chegar depois — ausente é "não promete". */
-  receipt_requests_emission?: boolean;
 }
 
 /**
@@ -204,6 +232,18 @@ export interface POSPendingCashRefundProjection {
   amount_display: string;
   customer_name: string;
   cancelled_at: string;
+  /** "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda que ficou mais barata: a diferença). */
+  reason?: "cancelled" | "reduced";
+  reason_label?: string;
+}
+
+/** Encomenda paga na maquininha que ficou mais barata: estornar NA maquininha e registrar. */
+export interface POSPendingCardMachineRefundProjection {
+  order_ref: string;
+  amount_q: number;
+  amount_display: string;
+  customer_name: string;
+  method_label: string;
 }
 
 /**
@@ -238,6 +278,7 @@ export interface POSCashRuntimeProjection {
   pending_change_requests?: POSChangeRequestProjection[];
   /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
   pending_cash_refunds?: POSPendingCashRefundProjection[];
+  pending_card_machine_refunds?: POSPendingCardMachineRefundProjection[];
   /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
   account_balances?: POSAccountBalanceProjection[];
   /**
@@ -486,6 +527,9 @@ export interface POSProjection {
   // Nome fantasia da loja (Shop singleton): a tela do cliente dá as boas-vindas
   // em nome da LOJA, não do terminal.
   shop_name: string;
+  /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
+   *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
+  weighed_weight_entry?: boolean;
 }
 
 export interface POSShiftSummaryProjection {
@@ -550,7 +594,11 @@ export interface POSCartItem {
   sku: string;
   name: string;
   price_q: number;
+  /** Unidades; na linha pesada, quilos (`weight_g / 1000`) — ver `weighed`. */
   qty: number;
+  /** Venda por peso: o que o operador digitou (etiqueta ou peso). A linha
+   *  pesada é sempre UMA peça, e o valor é `peso × preço do quilo`. */
+  weighed?: POSWeighedEntry | null;
   notes: string;
   fired?: boolean;
   /** QUANTAS unidades desta linha foram à cozinha. A linha vai INTEIRA (não
@@ -562,6 +610,9 @@ export interface POSCartItem {
    *  KDS e chega por push (canal SSE `tabs`) — o selo da linha segue o ticket em
    *  vez de congelar no estado do minuto do disparo. */
   kitchen_status?: string;
+  /** Os tickets da cozinha que levam esta linha — o card que o toque no selo
+   *  abre (estação, itens, disparo, estado, e o "Pronto" da estação sem tela). */
+  kitchen_tickets?: POSKitchenTicket[];
   /** Desconto MANUAL desta linha. `value` é percentual em `percent` e REAIS em
    *  `fixed` — a mesma convenção do desconto do pedido. O R$ é POR UNIDADE:
    *  é assim que ele compete com o automático no "maior desconto ganha", que é
@@ -578,6 +629,34 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
+}
+
+/** Um ticket da cozinha, como o PDV o mostra (``projections/pos._kitchen_tickets_by_line``). */
+export interface POSKitchenTicket {
+  pk: number;
+  station_name: string;
+  /** A estação recebe o pedido impresso (não tem tela). */
+  prints: boolean;
+  status: "pending" | "in_progress" | "done" | string;
+  status_label: string;
+  fired_at_display: string;
+  paper_label: string;
+  paper_failed: boolean;
+  items: { name: string; qty: number; notes: string }[];
+  /** O balcão pode dar o "Pronto" desta estação (sem tela, ticket aberto). */
+  can_mark_ready: boolean;
+}
+
+/** O aviso do "Pronto" dado pelo balcão ou pelo leitor (``KDSPrintedTicketReceiptProjection``). */
+export interface POSKitchenTicketReceipt {
+  ticket_pk: number;
+  station_name: string;
+  order_ref: string;
+  order_code: string;
+  customer_name: string;
+  status: string;
+  completed_now: boolean;
+  message: string;
 }
 
 export interface POSPaymentTenderDraft {
@@ -597,6 +676,8 @@ export interface POSTabPayload {
   tab_session_key: string;
   tab_ref: string;
   tab_display: string;
+  /** Ref da encomenda quando esta é a comanda virtual da EDIÇÃO dela; "" numa comanda comum. */
+  edit_of?: string;
   items: POSCartItem[];
   customer_phone: string;
   customer_name: string;
@@ -795,6 +876,10 @@ export interface POSSaleReviewProjection {
   delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** A primeira janela oferecível deste dia para este carrinho, ou "". */
   delivery_earliest_slot?: string;
+  /** ENTREGA COM NOTA: esta entrega vai ter NFC-e mesmo sem CPF, e a nota de
+   * entrega não sai sem ele (SEFAZ 787/788). A tela trava o Validar enquanto
+   * "CPF na nota" estiver vazio; a review não é refeita quando o CPF muda. */
+  delivery_tax_id_required?: boolean;
 }
 
 export interface POSSaleReviewResponse {

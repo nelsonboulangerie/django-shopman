@@ -195,15 +195,34 @@ _ROLE_RULES = tuple(
 
 
 def role_for(name: str, sku: str = "", metadata: dict | None = None) -> str:
-    """Papel do insumo na massa. ``metadata["role"]`` manda quando existe; senão, palavra-chave."""
+    """Papel do insumo na massa. ``metadata["role"]`` manda quando existe; senão, palavra-chave.
+
+    Vence a palavra que aparece **primeiro no texto**, não a primeira regra da
+    tabela: em português o substantivo vem antes do qualificador — *manteiga* sem
+    sal, *chocolate* ao leite, *farinha* de centeio —, e o SKU desta casa põe a
+    família na frente pela mesma razão.
+
+    ⚠️ Este é o GÊMEO do `classify_ingredient` do Craftsman, e os dois tinham o
+    mesmo defeito: `MANTEIGA-PRESIDENT-SEM-SAL` virava `salt`, porque `salt`
+    está listada antes de `fat`. Consertar só um dos dois deixaria a mesma
+    manteiga com dois papéis diferentes dependendo de quem perguntasse.
+    """
     declared = str((metadata or {}).get("role") or "").strip().lower()
     if declared in ROLES:
         return declared
     haystack = f"{normalize_name(name)} {normalize_name(sku.replace('-', ' '))}".strip()
+    if not haystack:
+        return "other"
+
+    melhor, posicao = "other", len(haystack) + 1
     for role, patterns in _ROLE_RULES:
-        if any(pattern.search(haystack) for pattern in patterns):
-            return role
-    return "other"
+        onde = min(
+            (m.start() for pattern in patterns if (m := pattern.search(haystack))),
+            default=None,
+        )
+        if onde is not None and onde < posicao:
+            melhor, posicao = role, onde
+    return melhor
 
 
 # ── Ranking ─────────────────────────────────────────────────────────────────

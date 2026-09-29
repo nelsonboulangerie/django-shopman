@@ -202,6 +202,11 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
             return None
         address_codes = {"delivery_zone_not_covered", "delivery_zone_unverified"}
         field = "delivery_address" if exc.code in address_codes else "checkout"
+        # A trava da nota de entrega diz QUAL campo consertar (CPF ou endereço).
+        from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
+
+        if exc.code in REFUSAL_CODES:
+            field = str((exc.context or {}).get("field") or field)
         return {field: exc.message}
     if isinstance(exc, DjangoValidationError):
         msgs = exc.messages if hasattr(exc, "messages") else [str(exc)]
@@ -499,7 +504,11 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
         except Exception:
             pending.append(effect)
             logger.warning("checkout.convenience_pending effect=%s", effect, exc_info=True)
-            create_operator_alert(type="checkout_convenience_pending", severity="warning", message="Pedido confirmado; recuperação das escolhas salvas pendente.", order_ref=order_ref, dedupe_key=key)
+            create_operator_alert(type="checkout_convenience_pending", severity="warning", message=(
+                    f"O pedido {order_ref} entrou, mas o cadastro do cliente (vínculo, endereço ou "
+                    "preferências que ele pediu para guardar) ainda não foi atualizado. O pedido segue "
+                    "normal."
+                ), order_ref=order_ref, dedupe_key=key)
     return pending
 
 
@@ -579,6 +588,8 @@ def _build_ops_from_data(data: dict) -> list[dict]:
         "delivery_time_slot",
         "order_notes",
         "payment",
+        # CPF/CNPJ PEDIDO para a nota (``{tax_id}``) — a loja o manda na entrega.
+        "fiscal",
         "loyalty",
         "manual_discount",
         "stock_check_unavailable",
@@ -586,6 +597,10 @@ def _build_ops_from_data(data: dict) -> list[dict]:
         "recipient",
         "gift_message",
         "gift_hide_values",
+        # Versão dos documentos legais vigente no checkout. Fica em `session.data`,
+        # que o commit copia inteira para `Order.snapshot["data"]` (selado). Não
+        # entra na lista de `order.data` do CommitService: evidência não se edita.
+        "legal",
     ]
     for field in data_fields:
         if field in data:

@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { toast } from "vue-sonner";
 
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
+import { redoTabLabel } from "~/presentation/preorderActions";
+import type { PreorderRedoResponse } from "~/types/preorders";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
@@ -26,18 +30,35 @@ const runtimeConfig = useRuntimeConfig();
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
+// Link de um app de operador para OUTRO: instalado, o destino tem janela
+// própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
 const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
+
+// MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
+// encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
+// pagamento. Editar não mexe na gaveta: não pede turno aberto.
+const editRef = String(useRoute().query.edit || "").trim();
+// CANCELAR E REFAZER (WP-E6): `/?redo=<ref>` abre a venda na comanda comum
+// "Refazer <ref>", que o detalhe da encomenda já montou no servidor depois do
+// cancelamento. Sem caixa aberto a antesala manda abrir o caixa antes, como em
+// qualquer venda — a comanda espera no quadro.
+const redoRef = String(useRoute().query.redo || "").trim();
+const router = useRouter();
 
 // ANTESALA (benchmark Odoo): sem turno aberto não há venda — o operador cai no
 // lobby de sessão para abrir o caixa. O gate lê o contrato da Projection.
 if (
   pos.value
+  && !editRef
   && requiresOpenShiftForSale(pos.value.checkout?.capabilities?.cash_management)
   && !pos.value.has_open_cash_session
 ) {
-  await navigateTo("/session", { replace: true });
+  // `open=1`: quem veio vender cai direto no diálogo de abertura, com o
+  // campo do fundo de troco focado — um toque a menos no começo do dia.
+  await navigateTo({ path: "/session", query: { open: "1" } }, { replace: true });
 }
 
 // Identidade do operador — mesmo estado compartilhado do shell (useFetch deduplicado).
@@ -46,11 +67,6 @@ const { operator: activeOperator, locked, lock } = useOperatorLock(OPERATOR_PERM
 
 async function goToCashSession() {
   await navigateTo("/session");
-}
-
-// Fichas de pedido: o lote da semana para o painel físico da padaria.
-async function goToOrderTickets() {
-  await navigateTo("/tickets");
 }
 
 // Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
@@ -85,8 +101,7 @@ const {
   managerApprovalError,
   customerFocusNonce,
   result,
-  closeOutcomeUncertain,
-  closeGuardPending,
+  closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
   pendingPixOrderRef,
@@ -120,6 +135,7 @@ const {
   paymentCovered,
   deliveryFeeQ,
   deliveryFeeSource,
+  deliveryFeeStatus,
   deliveryDistanceKm,
   deliverySlots,
   deliverySlotsPending,
@@ -155,6 +171,9 @@ const {
   tenderExact,
   lineQty,
   addProduct,
+  weighedPrompt,
+  addWeighedProduct,
+  cancelWeighedPrompt,
   setQty,
   restoreItem,
   setLineNotes,
@@ -193,6 +212,8 @@ const {
   sendPaymentNotice,
   onExternalSaleCancelled,
   clearCurrentTab,
+  loadPreparedTab,
+  editIntent,
   openMoveDialog,
   submitMove,
   fireTab,
@@ -204,6 +225,91 @@ const {
   cancelRecentSaleWithBadge,
   drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
+
+// ── Editar a encomenda (WP-E6) ────────────────────────────────────────────
+const orderEdit = usePosOrderEdit();
+const {
+  editing,
+  orderRef: editOrderRef,
+  preview: editPreview,
+  reviewOpen: editReviewOpen,
+  busy: editBusy,
+  error: editError,
+  needsPaymentMethod: editNeedsMethod,
+  deliveryPaymentMethod: editPaymentMethod,
+  needsTaxId: editNeedsTaxId,
+  deliveryTaxId: editTaxId,
+  managerChallenge: editChallenge,
+} = orderEdit;
+const editManagerOpen = ref(false);
+
+async function startOrderEdit(ref: string) {
+  const tab = await orderEdit.start(ref);
+  if (!tab) {
+    toast.error(editError.value);
+    await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+    return;
+  }
+  await loadPreparedTab(tab);
+}
+
+/** Abre a comanda do refazer (idempotente: o servidor retoma a mesma) e limpa a URL. */
+async function openRedoTab(ref: string) {
+  try {
+    const response = await action.call<PreorderRedoResponse>(
+      `/api/v1/backstage/pos/preorders/${encodeURIComponent(ref)}/redo-tab/`,
+      { body: {} },
+    );
+    // Abrir a venda nova é INICIAR uma venda: a trava da gaveta vale aqui.
+    await drawerLock.guard(() => loadPreparedTab(response.tab));
+    await refresh();
+  } catch (err) {
+    toast.error(`${httpErrorMessage(err, "Não deu para abrir a venda nova.")} Busque a comanda "${redoTabLabel(ref)}" no quadro.`);
+  } finally {
+    // Recarregar a página não pode montar a venda de novo.
+    void router.replace({ path: "/", query: {} });
+  }
+}
+
+/** F4 / "Salvar alterações": a prévia do servidor, antes de gravar. */
+function saveOrderEdit() {
+  if (!editing.value || !cart.items.length) return;
+  void orderEdit.review(editIntent());
+}
+
+async function confirmOrderEdit(managerApproval: ManagerApproval | null = null) {
+  // Encomenda paga que fica mais barata: o PIN sobe antes da ida ao servidor.
+  if (editPreview.value?.requires_manager_approval && !managerApproval) {
+    editManagerOpen.value = true;
+    return;
+  }
+  const response = await orderEdit.confirm(editIntent(), managerApproval);
+  if (!response) {
+    editManagerOpen.value = Boolean(editChallenge.value);
+    return;
+  }
+  editManagerOpen.value = false;
+  const ref = editOrderRef.value;
+  toast.success(response.changed ? `Encomenda ${ref} atualizada. O cliente foi avisado.` : "Nada mudou na encomenda.");
+  await leaveOrderEdit(ref);
+}
+
+async function leaveOrderEdit(ref: string) {
+  // A comanda virtual some; o pedido fica como o servidor gravou (ou como
+  // estava, no descarte).
+  await clearCurrentTab();
+  orderEdit.reset();
+  await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+}
+
+function discardOrderEdit() {
+  void leaveOrderEdit(editOrderRef.value);
+}
+
+function clearOrDiscard() {
+  if (editing.value) discardOrderEdit();
+  else void clearCurrentTab();
+}
 
 const confirmCounterMode = ref(false);
 const uncertainCloseRecoveryOpen = ref(false);
@@ -225,6 +331,10 @@ async function confirmUncertainCloseRecovery() {
 }
 function requestSalesMode(mode: "counter" | "order") {
   if (mode === (cart.salesMode || "counter")) return;
+  if (editing.value) {
+    toast.info("Na edição, a encomenda continua encomenda. Para vender no balcão, descarte as alterações.");
+    return;
+  }
   if (mode === "counter") { confirmCounterMode.value = true; return; }
   void setSalesMode(mode);
 }
@@ -271,7 +381,9 @@ onBeforeUnmount(() => {
 
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
-const fireAction = computed(() => resolveAffordance(actions.value, "fire_tab"));
+// Na edição de encomenda não há cozinha a disparar: o pedido já existe e a
+// cozinha acompanha a edição pelo servidor.
+const fireAction = computed(() => resolveAffordance(editing.value ? [] : actions.value, "fire_tab"));
 const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab"));
 
 // Top context bar title (unified layout language, Arc 5): one band names the
@@ -287,6 +399,7 @@ const screenTitle = computed(() => {
     return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
   }
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
+  if (editing.value) return orderEditTitle(editOrderRef.value);
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
 });
@@ -324,7 +437,7 @@ async function printReceipt() {
       if (outcome.status === "printed") return;
       toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
     } catch (error) {
-      toast.warning(`${httpErrorMessage(error, "Falha ao compor o recibo no servidor.")} O recibo saiu pelo diálogo do navegador.`);
+      toast.warning(`${httpErrorMessage(error, "O servidor não montou o recibo para a bobina.")} O recibo saiu pelo diálogo do navegador.`);
     } finally {
       printingReceipt.value = false;
     }
@@ -421,7 +534,9 @@ async function printDanfe() {
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+    // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
+    // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"));
   } finally {
     printingDanfe.value = false;
   }
@@ -745,6 +860,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     case "F2":
       event.preventDefault();
+      if (editing.value) return; // a edição sai por Salvar ou Descartar, nunca pelo quadro
       gotoTabInput();
       return;
     case "F3":
@@ -753,7 +869,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     case "F4":
       event.preventDefault();
-      if (checkoutMode.value) reviewCheckout();
+      if (editing.value) saveOrderEdit();
+      else if (checkoutMode.value) reviewCheckout();
       else if (cart.items.length) prepareCheckout();
       return;
     case "F6":
@@ -795,12 +912,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F9":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
-      else if (inSaleView.value && cart.items.length) fireTab();
+      else if (inSaleView.value && cart.items.length && !editing.value) fireTab();
       return;
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length) openMoveDialog();
+      else if (inSaleView.value && cart.items.length && !editing.value) openMoveDialog();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -826,10 +943,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 function restoreUncertainCloseFromStorage() {
-  restoreUncertainClose();
+  void restoreUncertainClose();
 }
 onMounted(() => {
-  restoreUncertainClose();
+  if (editRef) void startOrderEdit(editRef);
+  else if (redoRef) void openRedoTab(redoRef);
+  void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
 });
@@ -850,7 +969,6 @@ onBeforeUnmount(() => {
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
       @board="goToTabs"
       @cash="goToCashSession"
-      @tickets="goToOrderTickets"
       @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
@@ -862,7 +980,7 @@ onBeforeUnmount(() => {
              para que o rail suma por inteiro quando colapsado. -->
         <RailToggle />
         <UiButton
-          v-if="inSaleView"
+          v-if="inSaleView && !editing"
           variant="ghost"
           size="icon-sm"
           class="-ml-1 shrink-0"
@@ -876,7 +994,7 @@ onBeforeUnmount(() => {
           v-if="inSaleView && !checkoutMode && unsaved"
           class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
           role="status"
-          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não pôde ser salva — tentando de novo'"
+          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
         >
           <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
         </span>
@@ -887,6 +1005,25 @@ onBeforeUnmount(() => {
              carregando durante o checkout. Antes ela sumia ali, e a informação
              tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
              agora ela acompanha a venda inteira, do primeiro item ao troco. -->
+        <!-- MODO EDIÇÃO: o que está sendo mexido é a encomenda, não uma venda nova. -->
+        <div
+          v-if="inSaleView && editing"
+          class="flex shrink-0 items-center gap-2 rounded-md border border-info/40 bg-info/10 py-1 pl-2 pr-1 text-sm font-medium text-info"
+          role="status"
+          data-order-edit-banner
+        >
+          <Icon name="lucide:pencil" class="size-4" />
+          {{ orderEditTitle(editOrderRef) }}
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :disabled="busy || editBusy"
+            data-order-edit-discard
+            @click="discardOrderEdit"
+          >
+            Descartar alterações
+          </UiButton>
+        </div>
         <PosTabHeader
           v-if="inSaleView"
           ref="tabHeaderRef"
@@ -915,13 +1052,15 @@ onBeforeUnmount(() => {
           :scheduled="scheduleChipActive"
           :has-fired-items="cart.items.some((item) => item.fired)"
           :customer-required="customerRequiredForSchedule"
+          :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
           @sales-mode-change="requestSalesMode"
           @customer-closed="focusOrderEntry"
-          @rename="renameTab"
-          @clear="clearCurrentTab"
+          @customer-locked="(reason: string) => toast.info(reason)"
+          @rename="(ref: string) => { if (!editing) void renameTab(ref); }"
+          @clear="clearOrDiscard"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
           @resolve-customer="(done) => { void resolveCustomer().then(done) }"
@@ -974,18 +1113,33 @@ onBeforeUnmount(() => {
       </header>
 
       <UiAlert
-        v-if="closeOutcomeUncertain"
+        v-if="closeGuardNotice"
         variant="destructive"
         icon="lucide:triangle-alert"
         class="mx-4 mt-3 shrink-0"
         role="alert"
       >
-        <UiAlertTitle>{{ closeGuardPending ? 'Cobrança em processamento ou interrompida' : 'Resultado da cobrança não confirmado' }}</UiAlertTitle>
+        <UiAlertTitle>{{ closeGuardNotice.title }}</UiAlertTitle>
         <UiAlertDescription class="gap-3">
-          <p>{{ closeGuardPending ? 'Não libere enquanto a cobrança estiver processando. Se a aba anterior caiu, confira pedido e pagamento antes de reconciliar.' : 'Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados.' }} Este bloqueio permanece mesmo se a página for recarregada.</p>
+          <p>{{ closeGuardNotice.body }}</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
-            <UiButton size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
+            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
+                 fila, porque o que está em dúvida é se o pedido nasceu — não há
+                 `ref` para apontar. -->
+            <UiButton
+              v-if="closeGuardNotice.link"
+              variant="outline"
+              size="sm"
+              class="gap-1.5"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            >
+              <Icon name="lucide:external-link" class="size-4" />
+              {{ closeGuardNotice.link.label }}
+            </UiButton>
+            <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
           </div>
         </UiAlertDescription>
       </UiAlert>
@@ -1211,6 +1365,10 @@ onBeforeUnmount(() => {
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
+            :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
+            :primary-label="editing ? 'Salvar alterações' : undefined"
+            :primary-icon="editing ? 'lucide:save' : undefined"
+            :hide-move="editing"
             @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
             @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
             @remove="(lineId) => setQty(lineId, 0)"
@@ -1218,7 +1376,7 @@ onBeforeUnmount(() => {
             @set-qty="(lineId, qty) => setQty(lineId, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
-            @prepare="prepareCheckout"
+            @prepare="editing ? saveOrderEdit() : prepareCheckout()"
             @move="openMoveDialog"
             @fire="fireTab"
             @unfire="unfireTab"
@@ -1252,6 +1410,7 @@ onBeforeUnmount(() => {
       :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
       :delivery-fee-source="deliveryFeeSource"
+      :delivery-fee-status="deliveryFeeStatus"
       :delivery-distance-km="deliveryDistanceKm"
       @pick-saved-address="applySavedAddress"
       @open-schedule="openScheduleHere"
@@ -1359,6 +1518,14 @@ onBeforeUnmount(() => {
       @confirm-badge="cancelRecentSaleWithBadge"
     />
 
+    <!-- Venda por peso: o tile do queijo fracionado pede a etiqueta. -->
+    <PosWeighedEntryDialog
+      :product="weighedPrompt"
+      :weight-entry-enabled="Boolean(pos?.weighed_weight_entry)"
+      @confirm="addWeighedProduct"
+      @cancel="cancelWeighedPrompt"
+    />
+
     <PosMoveLinesDialog
       v-model:open="moveDialogOpen"
       :tab-display="cart.tabDisplay"
@@ -1386,6 +1553,35 @@ onBeforeUnmount(() => {
       </div>
     </Teleport>
     <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" @cancelled="onExternalSaleCancelled" />
+    <!-- EDIÇÃO DA ENCOMENDA: a prévia do servidor antes de gravar, e o PIN do
+         gerente quando a encomenda paga fica mais barata. -->
+    <PosOrderEditReview
+      v-if="editing"
+      v-model:delivery-payment-method="editPaymentMethod"
+      v-model:delivery-tax-id="editTaxId"
+      :open="editReviewOpen"
+      :order-ref="editOrderRef"
+      :preview="editPreview"
+      :busy="editBusy"
+      :error="editError"
+      :needs-payment-method="editNeedsMethod"
+      :needs-tax-id="editNeedsTaxId"
+      @update:open="(isOpen: boolean) => { if (!isOpen) orderEdit.closeReview(); }"
+      @retry="saveOrderEdit"
+      @confirm="confirmOrderEdit()"
+    />
+    <OperatorManagerAuth
+      v-if="editing"
+      :open="editManagerOpen"
+      action="order_edit_refund"
+      :operator-name="activeOperator?.name || ''"
+      :managers="pos?.managers || []"
+      :busy="editBusy"
+      :error="editChallenge?.code === 'manager_approval_invalid' ? editChallenge.message : ''"
+      @update:open="(isOpen: boolean) => { editManagerOpen = isOpen; }"
+      @authorize="(username: string, pin: string) => confirmOrderEdit({ username, pin })"
+      @authorize-badge="(badge: string) => confirmOrderEdit({ badge })"
+    />
     <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
     <PosDisplayPublisher :sources="displaySources" />
   </main>

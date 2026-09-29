@@ -26,6 +26,7 @@ from django.utils.module_loading import import_string
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
+from shopman.shop.services.receiving_position import receiving_position
 from shopman.shop.services.remote_mutations import (
     RemoteMutationInProgress,
     run_idempotent_mutation,
@@ -57,6 +58,15 @@ class PurchaseError(Exception):
 
 @dataclass(frozen=True)
 class ResolvedReceiptLine:
+    """Uma linha conferida do recebimento — sempre de um cadastro de compra.
+
+    Tudo que a casa compra tem ``buyman.Material``: o insumo da massa e também
+    a mercadoria que ela revende (chá, geleia, queijo). Quando a coisa comprada
+    também se vende, o produto do catálogo tem **o mesmo SKU** e o mesmo
+    estoque, então creditar o SKU do Material é creditar a prateleira da venda
+    (ver shopman/shop/services/sku_namespace.py).
+    """
+
     line_id: str
     material: Any
     conversion: Any | None
@@ -69,6 +79,33 @@ class ResolvedReceiptLine:
     invoice_product_code: str
     invoice_lot: str
     checked: bool
+    #: O que a NF-e declarou sobre o item (GTIN da unidade, o outro GTIN, NCM,
+    #: CEST, unidade). Só a revenda (SKU que também se vende) usa: vira a
+    #: primeira fonte da sugestão de catálogo do produto
+    #: (``shop.services.product_enrichment``).
+    invoice_ean: str = ""
+    invoice_package_ean: str = ""
+    invoice_ncm: str = ""
+    invoice_cest: str = ""
+    invoice_unit: str = ""
+    #: Grupo ICMS do item na nota (CST do regime normal ou CSOSN do Simples) e
+    #: o valor de ST em centavos — o que diz se o item chegou com ST. O
+    #: recebimento confere isso contra o perfil fiscal do produto.
+    invoice_icms_cst: str = ""
+    invoice_icms_csosn: str = ""
+    invoice_st_value_q: int = 0
+
+    @property
+    def sku(self) -> str:
+        return str(self.material.sku)
+
+    @property
+    def name(self) -> str:
+        return str(self.material.name or self.sku)
+
+    @property
+    def shelf_life_days(self) -> int | None:
+        return self.material.shelf_life_days
 
 
 #: Escopo da trava de recibo na `IdempotencyKey` do orderman.
@@ -166,7 +203,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
     note = str(payload.get("note") or "").strip()
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
-    position = _default_receive_position()
 
     def _receber() -> tuple[dict[str, Any], int]:
         _write_receipt(
@@ -176,7 +212,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
             lines=lines,
             note=note,
             source_ref=source_ref,
-            position=position,
             user=user,
         )
         return (
@@ -248,7 +283,7 @@ def _format_receipt_moment(raw: str) -> str:
     return momento.strftime("%d/%m às %H:%M")
 
 
-def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, position, user) -> None:
+def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user) -> None:
     """O corpo do recebimento — o que era o `with transaction.atomic()` de sempre."""
     Batch = apps.get_model("stockman", "Batch")
     Move = apps.get_model("stockman", "Move")
@@ -257,12 +292,12 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
     with transaction.atomic():
         for line in lines:
             batch_ref = ""
-            if line.expiry_date or line.material.shelf_life_days is not None:
+            if line.expiry_date or line.shelf_life_days is not None:
                 batch_ref = _batch_ref(source_ref=source_ref, line=line)
                 Batch.objects.get_or_create(
                     ref=batch_ref,
                     defaults={
-                        "sku": line.material.sku,
+                        "sku": line.sku,
                         "production_date": timezone.localdate(),
                         "expiry_date": line.expiry_date,
                         "supplier": supplier.name or supplier.ref,
@@ -272,8 +307,10 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
 
             stock.receive(
                 quantity=line.base_qty,
-                sku=line.material.sku,
-                position=position,
+                sku=line.sku,
+                # Revenda entra onde se vende; insumo, no estoque de insumos
+                # (``shop/services/receiving_position.py``).
+                position=receiving_position(line.sku),
                 batch=batch_ref,
                 user=user,
                 reason=_receipt_reason(mode=mode, source_ref=source_ref),
@@ -285,7 +322,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
                 purchase_receipt_note=note,
                 purchase_line_note=line.note,
                 purchase_line_id=line.line_id,
-                purchase_material_sku=line.material.sku,
+                purchase_material_sku=line.sku,
                 purchase_qty=str(line.purchase_qty),
                 purchase_base_qty=str(line.base_qty),
                 purchase_total_cost_q=line.total_cost_q,
@@ -303,6 +340,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, posi
                 )
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
+            _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
@@ -773,6 +811,72 @@ def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str,
     return build_purchase(), message, str(conversion.pk)
 
 
+def set_opening(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[Any, str]:
+    """"Quando aberto, vira": declara (ou desfaz) em que insumo a embalagem se abre.
+
+    A produção abre sozinha no fechamento da fornada
+    (``shop/services/package_opening.py``); aqui só se diz o que vem dentro.
+    """
+    from shopman.shop.services.package_opening import clear_opening, declare_opening
+
+    Material = apps.get_model("buyman", "Material")
+    package = Material.objects.filter(sku=material_sku).first()
+    if package is None:
+        raise PurchaseError("Item não encontrado no Compras.", code="material_not_found", field="sku", status_code=404)
+    if not _as_flag(payload, "enabled", field="enabled"):
+        clear_opening(package)
+        return build_purchase(), f"{package.name} não se abre mais na produção."
+    try:
+        with transaction.atomic():
+            opened = declare_opening(
+                package,
+                opened_sku=str(payload.get("openedSku") or ""),
+                create_opened=_as_flag(payload, "createOpened", field="createOpened"),
+                opened_unit=str(payload.get("openedUnit") or "kg"),
+                quantity=payload.get("quantity"),
+                shelf_life_days=payload.get("shelfLifeDays"),
+            )
+    except ValidationError as exc:
+        messages = getattr(exc, "message_dict", None) or {}
+        key, texts = next(iter(messages.items())) if messages else ("sku", exc.messages)
+        field = {"quantity": "quantity", "shelf_life_days": "shelfLifeDays", "opened_sku": "openedSku"}.get(key, key)
+        raise PurchaseError(texts[0], code="opening_refused", field=field) from exc
+    return build_purchase(), f"Quando aberto, {package.name} vira {opened.name}."
+
+
+def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[Any, str]:
+    """"Permitir revenda": liga ou desliga a venda do item do Compras, num gesto só.
+
+    Ligar pede só o preço e cria (ou religa) o cadastro de venda do MESMO SKU,
+    que entra no PDV — ver ``shop/services/sku_records.start_selling``. Desligar
+    pausa e deslista, sem apagar. Devolve ``(projeção, mensagem)``.
+    """
+    from shopman.shop.services.sku_records import start_selling, stop_selling
+    from shopman.shop.services.weighed_sale import is_sold_by_weight
+
+    Material = apps.get_model("buyman", "Material")
+    material = Material.objects.filter(sku=material_sku).first()
+    if material is None:
+        raise PurchaseError("Item não encontrado no Compras.", code="material_not_found", field="sku", status_code=404)
+    enabled = _as_flag(payload, "enabled", field="enabled")
+    try:
+        with transaction.atomic():
+            if not enabled:
+                stop_selling(material.sku)
+                return build_purchase(), f"{material.name} saiu da venda. O cadastro e o histórico ficam."
+            price_raw = payload.get("priceInput", payload.get("price_input"))
+            price_q = parse_money_input(str(price_raw or ""), field="priceInput") if price_raw not in (None, "") else None
+            product = start_selling(material, price_q=price_q)
+    except ValidationError as exc:
+        messages = getattr(exc, "message_dict", None) or {}
+        field = "priceInput" if "price_q" in messages else "sku"
+        text = next(iter(messages.values()), exc.messages)[0] if messages else exc.messages[0]
+        raise PurchaseError(text, code="sale_refused", field=field) from exc
+    if is_sold_by_weight(product.unit):
+        return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
+    return build_purchase(), f"{material.name} está à venda no PDV."
+
+
 def set_purchase_request_status(material_sku: str, status: str, *, user=None) -> dict[str, Any]:
     """Persist the operator-side status for a replenishment decision."""
     if status not in {"approved", "sent"}:
@@ -1200,8 +1304,6 @@ def parse_money_input(value: str, *, field: str = "costInput") -> int:
 
 
 def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> ResolvedReceiptLine:
-    Material = apps.get_model("buyman", "Material")
-
     if not isinstance(raw, dict):
         raise PurchaseError("Item de recebimento inválido.", code="receipt_line_invalid", field=f"lines.{index}")
     if not raw.get("checked"):
@@ -1211,12 +1313,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
             field=f"lines.{index}.checked",
         )
 
-    material_sku = str(raw.get("materialSku") or raw.get("material_sku") or "").strip()
-    material = Material.objects.filter(sku=material_sku).first()
-    if not material:
-        raise PurchaseError("Insumo não encontrado.", code="material_not_found", field=f"lines.{index}.materialSku")
-    if not material.is_active:
-        raise PurchaseError("Insumo inativo não pode receber entrada.", code="material_inactive", field=f"lines.{index}.materialSku")
+    material = _resolve_receipt_material(raw, index=index)
 
     purchase_qty = _decimal(raw.get("purchaseQty", raw.get("purchase_qty")))
     if purchase_qty <= 0:
@@ -1247,7 +1344,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         raise PurchaseError("Validade inválida.", code="expiry_invalid", field=f"lines.{index}.expiryDate")
     if material.shelf_life_days is not None and expiry_date is None:
         raise PurchaseError(
-            "Insumo perecível precisa de validade para rastrear lote.",
+            "Item perecível precisa de validade para rastrear lote.",
             code="expiry_required",
             field=f"lines.{index}.expiryDate",
         )
@@ -1271,7 +1368,72 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
         invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
         checked=True,
+        invoice_ean=_raw_text(raw, "invoiceEan", "invoice_ean"),
+        invoice_package_ean=_raw_text(raw, "invoicePackageEan", "invoice_package_ean"),
+        invoice_ncm=_raw_text(raw, "invoiceNcm", "invoice_ncm"),
+        invoice_cest=_raw_text(raw, "invoiceCest", "invoice_cest"),
+        # O eixo tributável só vem quando diz algo diferente do comercial.
+        invoice_unit=_raw_text(raw, "invoiceTaxUnit", "invoice_tax_unit")
+        or _raw_text(raw, "invoiceUnit", "invoice_unit"),
+        invoice_icms_cst=_raw_text(raw, "invoiceIcmsCst", "invoice_icms_cst"),
+        invoice_icms_csosn=_raw_text(raw, "invoiceIcmsCsosn", "invoice_icms_csosn"),
+        invoice_st_value_q=_raw_int(raw, "invoiceStValueQ", "invoice_st_value_q"),
     )
+
+
+def _raw_int(raw: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        try:
+            value = int(Decimal(str(raw.get(key) or 0)))
+        except (InvalidOperation, ValueError):
+            continue
+        if value:
+            return max(value, 0)
+    return 0
+
+
+def _raw_text(raw: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = str(raw.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _resolve_receipt_material(raw: dict[str, Any], *, index: int):
+    """O cadastro de compra da linha.
+
+    O que o forno produz não entra por aqui: o estoque dele é creditado pela
+    Produção, e aceitar a mesma peça pelas duas portas dobraria o estoque sem
+    ninguém perceber. O sinal de "a casa faz" é a ficha ativa com aquele SKU
+    de saída — vale para qualquer SKU, tenha ou não cadastro de venda.
+    """
+    Material = apps.get_model("buyman", "Material")
+    Recipe = apps.get_model("craftsman", "Recipe")
+
+    material_sku = str(raw.get("materialSku") or raw.get("material_sku") or "").strip()
+    if not material_sku:
+        raise PurchaseError(
+            "Escolha o item do Compras desta linha.",
+            code="receipt_item_required",
+            field=f"lines.{index}.materialSku",
+        )
+    material = Material.objects.filter(sku=material_sku).first()
+    if not material:
+        raise PurchaseError("Item não encontrado no Compras.", code="material_not_found", field=f"lines.{index}.materialSku")
+    if not material.is_active:
+        raise PurchaseError(
+            f"{material.name} está inativo no Compras e não pode receber entrada.",
+            code="material_inactive",
+            field=f"lines.{index}.materialSku",
+        )
+    if Recipe.objects.filter(output_sku=material.sku, is_active=True).exists():
+        raise PurchaseError(
+            f"{material.name} é produzido aqui: o estoque dele entra pela Produção, não pela compra.",
+            code="material_is_produced_here",
+            field=f"lines.{index}.materialSku",
+        )
+    return material
 
 
 def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
@@ -1368,6 +1530,102 @@ def _upsert_supplier_cost(*, material, supplier, conversion, cost_q: int, make_p
         raise PurchaseError(str(exc), code="cost_validation_failed", field="costInput") from exc
 
 
+#: O aviso de que a NF-e de compra discorda do cadastro fiscal do produto.
+FISCAL_DIVERGENCE_ALERT_TYPE = "purchase_invoice_fiscal_divergence"
+
+
+def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_key: str) -> None:
+    """A NF-e é a PRIMEIRA fonte da sugestão de catálogo da mercadoria de revenda.
+
+    Revenda é o cadastro de compra cujo SKU também existe no catálogo de venda
+    (ver ``shop/services/sku_namespace.py``). GTIN, NCM, CEST e unidade entram
+    no RASCUNHO desse produto (``metadata['enrichment']``), nunca no produto:
+    quem aceita é gente, campo a campo, no Admin. Insumo sem produto de venda
+    fica de fora até o WP de insumos decidir se o GTIN é do material ou da
+    oferta do fornecedor.
+
+    A mesma nota CONFERE o cadastro fiscal (``shop/services/invoice_fiscal_check``):
+    NCM ou CEST diferentes vão para o rascunho com o porquê em ``detail``, e
+    qualquer divergência — inclusive ST na nota × perfil sem ST, e o inverso —
+    levanta um ``OperatorAlert``. O cadastro não muda sozinho: decisão do dono
+    (24/09/2026), "pendências que sobrarem confirmamos nas próximas NFs".
+
+    Sugestão é conveniência: se falhar, a entrada de estoque não cai — mas
+    grita no log, porque rascunho que some calado é pergunta que ninguém faz.
+    """
+    from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal
+    from shopman.shop.services.product_enrichment import suggest_from_invoice
+
+    Product = apps.get_model("offerman", "Product")
+    for line in lines:
+        if not (
+            line.invoice_ean
+            or line.invoice_ncm
+            or line.invoice_cest
+            or line.invoice_icms_cst
+            or line.invoice_icms_csosn
+            or line.invoice_st_value_q
+        ):
+            continue
+        product = Product.objects.filter(sku=line.sku).first()
+        if product is None:
+            continue
+        try:
+            with transaction.atomic():
+                divergences = check_invoice_fiscal(
+                    metadata=product.metadata,
+                    ncm=line.invoice_ncm,
+                    cest=line.invoice_cest,
+                    icms_cst=line.invoice_icms_cst,
+                    icms_csosn=line.invoice_icms_csosn,
+                    st_value_q=line.invoice_st_value_q,
+                )
+                suggest_from_invoice(
+                    product,
+                    gtin=line.invoice_ean,
+                    other_gtin=line.invoice_package_ean,
+                    ncm=line.invoice_ncm,
+                    cest=line.invoice_cest,
+                    unit=line.invoice_unit,
+                    access_key=invoice_key,
+                    details={d.field: d.message for d in divergences},
+                )
+                if divergences:
+                    _alert_fiscal_divergence(product=product, divergences=divergences, invoice_key=invoice_key)
+        except Exception:
+            logger.exception(
+                "purchase.catalog_suggestion_failed",
+                extra={"product": line.sku, "invoice_key_suffix": invoice_key[-8:]},
+            )
+
+
+def _alert_fiscal_divergence(*, product, divergences, invoice_key: str) -> None:
+    """Um aviso por produto e por conjunto de divergências — a próxima NF igual não repete.
+
+    A chave da nota vai no FIM da mensagem: o começo (produto + divergências) é
+    o que identifica o aviso, e uma segunda nota que diz a mesma coisa enquanto
+    o primeiro aviso segue aberto não levanta outro.
+    """
+    from shopman.backstage.models import OperatorAlert
+    from shopman.backstage.services.alerts import create_alert
+
+    core = (
+        f"NF-e de compra diverge do cadastro fiscal de {product.name} ({product.sku}): "
+        + " ".join(d.message for d in divergences)
+    )
+    if OperatorAlert.objects.filter(
+        type=FISCAL_DIVERGENCE_ALERT_TYPE, resolved_at__isnull=True, message__startswith=core
+    ).exists():
+        return
+    tail = " Nada mudou no cadastro."
+    if any(d.field in ("ncm", "cest") for d in divergences):
+        tail += " NCM/CEST da nota ficaram como sugestão na ficha do produto (Revisar sugestão do GTIN)."
+    if any(d.field == "st" for d in divergences):
+        tail += " O perfil fiscal se troca na aba Fiscal do produto."
+    suffix = f" (NF-e …{invoice_key[-9:]})" if invoice_key else ""
+    create_alert(type=FISCAL_DIVERGENCE_ALERT_TYPE, message=core + tail + suffix)
+
+
 def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) -> None:
     """Persist operator-confirmed NF line → material pairs on the supplier.
 
@@ -1379,7 +1637,7 @@ def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) ->
     """
     learned = {
         line.invoice_product_code: {
-            "materialSku": line.material.sku,
+            "materialSku": line.sku,
             "conversionLabel": line.conversion.label if line.conversion else "",
         }
         for line in lines
@@ -1397,14 +1655,15 @@ def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) ->
         if current == entry:
             continue
         current_sku = _mapped_material_sku(current)
-        if current_sku and current_sku != entry["materialSku"]:
+        new_sku = entry["materialSku"]
+        if current_sku and current_sku != new_sku:
             logger.warning(
                 "purchase.invoice_product_map_overwrite",
                 extra={
                     "supplier": supplier.ref,
                     "invoice_product_code": code,
                     "old_material": current_sku,
-                    "new_material": entry["materialSku"],
+                    "new_material": new_sku,
                 },
             )
         mapping[code] = entry
@@ -1438,15 +1697,6 @@ def _mapped_material_sku(entry: Any) -> str:
             if entry.get(key):
                 return str(entry[key]).strip()
     return ""
-
-
-def _default_receive_position():
-    Position = apps.get_model("stockman", "Position")
-    return (
-        Position.objects.filter(is_default=True).first()
-        or Position.objects.filter(kind="physical").order_by("ref").first()
-        or Position.objects.order_by("ref").first()
-    )
 
 
 def _invoice_reader_draft(*, access_key: str, qr_payload: str) -> dict[str, Any]:
@@ -1701,7 +1951,7 @@ def _manual_source_ref(*, supplier_ref: str, note: str, lines: list | None = Non
     corpo = ""
     if lines:
         corpo = "|".join(
-            f"{line.material.sku}:{line.purchase_qty}:{line.total_cost_q}" for line in lines
+            f"{line.sku}:{line.purchase_qty}:{line.total_cost_q}" for line in lines
         )
     seed = f"{supplier_ref}:{note}:{corpo}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10].upper()
@@ -1720,13 +1970,13 @@ def _batch_ref(*, source_ref: str, line: ResolvedReceiptLine) -> str:
     dia, e o lote é chave global no Stockman. Sem lote na nota — o caso comum,
     porque ``rastro`` é opcional — vale o código derivado de sempre.
     """
-    sku = re.sub(r"[^A-Z0-9]+", "", line.material.sku.upper())[:18] or "SKU"
+    sku = re.sub(r"[^A-Z0-9]+", "", line.sku.upper())[:18] or "SKU"
     if line.invoice_lot:
         lot = re.sub(r"[^A-Z0-9]+", "", line.invoice_lot.upper())[:20]
         if lot:
             return f"{sku}-L{lot}"[:50]
     source = re.sub(r"[^A-Z0-9]+", "", source_ref.upper())[-10:] or "REC"
-    seed = f"{source_ref}:{line.line_id}:{line.material.sku}:{line.expiry_date}"
+    seed = f"{source_ref}:{line.line_id}:{line.sku}:{line.expiry_date}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8].upper()
     return f"BUY-{source}-{sku}-{digest}"[:50]
 

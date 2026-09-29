@@ -13,14 +13,19 @@
 | [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
+| [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
+| [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
+| [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
+| [`issue_menuboard_player_credential`](#issue_menuboard_player_credential) | shop | Operação | Emite credenciais escopadas e o JSON do player Raspberry Pi dos menuboards |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
@@ -40,6 +45,12 @@
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
+| [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
+| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
+| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
+| [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
+| [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
+| [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
@@ -53,10 +64,34 @@
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
+| [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
+| [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia e as caixas presente (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
+| [`apply_catalog_decisions`](#apply_catalog_decisions) | config | Dados | Executa o que o dono decidiu que sai do catálogo (apaga, com lápide) ou sai da loja (despublica) — ensaio por padrão |
+| [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
+| [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
 ---
 
 ## Detalhes
+
+### issue_menuboard_player_credential
+
+Emite uma credencial independente por menuboard e imprime a configuração pronta
+do player Raspberry Pi. Os segredos aparecem **uma única vez**; no banco ficam
+somente os digests HMAC. A ordem das refs define HDMI/CEC e posição horizontal.
+
+```bash
+python manage.py issue_menuboard_player_credential tv-cafe tv-salao \
+  --server-url https://gestor.example \
+  --label 'Raspberry Pi 4 · Menuboards'
+```
+
+Por padrão, o marquee permanece 30 minutos antes do standby e as credenciais
+expiram em 365 dias. Ajustes disponíveis: `--standby-delay-minutes`,
+`--ttl-days`, `--width` e `--height`. O Bearer emitido abre apenas
+`/menuboard/<ref>/control/`; página, dados, preços e SSE continuam dependendo da
+autorização própria do perfil do Chromium. Instalação completa em
+[`tools/menuboard-player/README.md`](../../tools/menuboard-player/README.md).
 
 ### Gate PWA das surfaces opt-in
 
@@ -110,6 +145,147 @@ python manage.py release_expired_holds
 ```
 
 **Recomendação:** Executar via cron a cada 5–15 minutos.
+
+---
+
+
+### apply_product_brands
+
+Declara a Marca que o feed Google/Meta (`g:brand`) e a página de produto
+(JSON-LD `brand`) publicam, em `Product.metadata['social']`. Produto feito ou
+montado na casa leva `Shop.brand_name`; revenda leva a marca do fabricante e,
+quando conferido pelo dígito verificador GS1, o GTIN. É a MESMA tabela que o
+`seed` aplica num banco novo.
+
+```bash
+python manage.py apply_product_brands            # só mostra o que faria
+python manage.py apply_product_brands --apply    # grava
+python manage.py apply_product_brands --sku QC   # um SKU só
+```
+
+Só preenche campo **vazio**: marca ou GTIN que o Gestor já curou fica como
+está e sai no relatório como divergência. Revenda nunca recebe a marca da loja,
+e SKU sem fabricante confirmado fica fora da tabela. Idempotente.
+
+---
+
+
+### apply_grocery_catalog
+
+Traz a Mercearia real da planilha consolidada do dono: cria a revenda que tem
+nome, marca, embalagem, preço > 0, NCM e GTIN válido pelo dígito verificador
+GS1, e troca nome/preço dos placeholders que já viraram produto real (RTAT,
+TPND, Camembert). É a MESMA tabela que o `seed` aplica num banco novo.
+
+```bash
+python manage.py apply_grocery_catalog            # ensaio: executa e desfaz
+python manage.py apply_grocery_catalog --apply    # grava
+```
+
+Cada item nasce vendável e despublicado (ficha da embalagem por preencher),
+perfil fiscal por item (`standard` 102/5102 ou `tax_substitution` 500/5405) com
+o CEST do Anexo do Conv. ICMS 142/2018, marca e GTIN em `metadata.social`,
+o cadastro de compra do mesmo SKU (`buyman.Material`) e coleção `mercearia`. **Listagem: PDV
+sempre; loja online, WhatsApp e iFood só com foto** — sem foto, o item sai do
+canal remoto. Quem não tem dado suficiente fica em `LEFT_OUT`, com o motivo.
+Item a quilo (`unit="kg"`, o Queijo Vale do Testo) nasce sem GTIN e nunca vai a
+canal remoto; sem preço, fica cadastrado e fora da venda (preço zero não vende). GTIN que veio de pesquisa na web leva
+`metadata.gtin_source`. Também cria as quatro caixas presente da casa
+(DIJON, LILLE, MIMO, NICE), sem GTIN.
+Nome/preço que o Gestor já mexeu fica e sai como divergência. Idempotente.
+
+---
+
+
+### apply_catalog_decisions
+
+Executa as decisões do dono sobre o catálogo, listadas no próprio comando
+(`DELETE` e `UNPUBLISH`, cada SKU com o motivo e a data). Excluir **apaga** o
+produto; despublicar tira da loja e deixa o cadastro.
+
+```bash
+python manage.py apply_catalog_decisions            # ensaio: executa e desfaz
+python manage.py apply_catalog_decisions --apply    # grava
+```
+
+Antes do delete, grava a lápide com as coleções de origem (a URL vira 410),
+esvazia a FK do de-para (o alias fica) e desfaz o vínculo de canal. Peça de
+bundle vivo é recusada. Pedido antigo não impede: o item guarda o SKU como
+texto. Idempotente — SKU que já saiu aparece como "já não está no catálogo".
+
+---
+
+
+### apply_material_skus
+
+Aplica a curadoria da lista de insumos (`WP-INSUMOS-DA-VIDA-REAL`) num banco que
+já roda: renomeia insumo arrastando a ficha técnica e o ledger, cria o insumo que
+falta, e reaponta a linha de ficha que citava um SKU de **produto**. Espelha, do
+lado do Buyman, o que o `apply_product_skus` faz no catálogo.
+
+```bash
+python manage.py apply_material_skus                    # ensaio: executa e desfaz
+python manage.py apply_material_skus --apply            # grava
+python manage.py apply_material_skus --sku MANTEIGA-FR  # um só, pelo SKU de hoje
+```
+
+Não mexe em unidade-base, custo, conversão de compra nem GTIN — esses são outros
+WPs, e todos assumem que a lista está certa. Idempotente.
+
+**Duas ordens de problema, e elas não param igual.** *Recusa* diz que a tabela
+está errada (dois insumos no mesmo endereço, alvo que já é produto vendável) e aí
+**nada** é gravado. *Impedimento* diz que o mundo trava uma frente: ela para
+nomeada e o resto segue.
+
+⚠️ **O ledger é o impedimento vivo.** `Move` recusa `delete()`/`update()` e a FK
+para o quant é `PROTECT`, então o quant de um insumo que teve qualquer movimento
+— nem que seja o saldo de abertura do seed — **não sai do banco**. É o que segura
+o insumo órfão `AGUA`: para ele sair de verdade o caminho é o `seed --flush`, e
+reseed pede a palavra do dono.
+
+A varredura de colisão olha `unique_together` e `UniqueConstraint`, e não só
+`unique=True`, porque `unique_quant_coordinate` é
+`(sku, position, target_date, batch)` com `NULLS NOT DISTINCT`: dois insumos no
+mesmo depósito com `target_date` nulo colidem de verdade. Foi isso que travou o
+`AGUA-FILTRADA → AGUA` enquanto esse par existiu — ele saiu da tabela em 23/09,
+por decisão do dono.
+
+⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
+próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
+cobra; quem as troca é o commit.
+
+---
+
+
+### calibrate_conversions
+
+Lista as equivalências **aproximadas** que ninguém pesou, e grava a pesagem da
+casa. Pedido dele em 24/09/2026, ao perguntar o peso da folha de louro fresca —
+que fonte nenhuma sabe dizer.
+
+```bash
+python manage.py calibrate_conversions                          # o que falta
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058  # ensaio
+python manage.py calibrate_conversions --weigh OVOS:ovos=0.058 --apply
+```
+
+**O buraco que ele fecha.** A ADR-024 separa três tipos de conversão, e só a
+aproximada carrega incerteza — "1 ovo ≈ 50 g", "1 limão ≈ 100 g". O `kind` diz
+que a incerteza existe; não diz **quanto** dela. Até aqui, o ovo a 50 g estava no
+banco exatamente como estaria um número que a casa tivesse pesado, e ninguém
+sabia qual calibrar primeiro. A procedência da salsicha estava escrita — em
+comentário do `seed`, onde tela nenhuma lê.
+
+`MaterialConversion.source` passa a dizer de onde veio o número: lida na nota ·
+declarada pelo dono · **pesada na casa** · estimativa. Vazio conta como pendente
+de propósito, porque o silêncio de hoje é de fator que ninguém sabe de onde veio.
+
+⚠️ **Conversão convencionada não entra**: "1 saco = 25 kg" é contrato do
+fornecedor, não equivalência física — calibrar ali seria duvidar da nota, e o
+conserto de uma embalagem que mudou é corrigir a embalagem.
+
+O gesto: **pesar dez e dividir por dez**. A média de dez erra menos que a de um,
+e é o que o fator representa.
 
 ---
 
@@ -214,6 +390,28 @@ Roda no ciclo do `maintenance_worker`, entre `cleanup_stale_sessions` e `cleanup
 ```bash
 python manage.py sweep_orphan_holds --dry-run
 python manage.py sweep_orphan_holds
+```
+
+---
+
+### relocate_resale_stock
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/relocate_resale_stock.py`
+
+Para cada SKU de revenda (à venda e não produzido aqui), transfere o saldo PRESENTE e livre que
+está numa posição que não vende para a posição de recebimento da revenda
+(`shop/services/receiving_position.py`, padrão `vitrine`), com `Move.kind=TRANSFER`. Conserta o
+que o recebimento antigo (posição padrão `massa`) e o saldo de abertura do seed (`deposito`)
+deixaram fora da venda. Estoque planejado e reservado não é mexido. Idempotente.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Transfere. Sem isto, só mostra o que moveria |
+
+```bash
+python manage.py relocate_resale_stock
+python manage.py relocate_resale_stock --apply
 ```
 
 ---
@@ -412,6 +610,72 @@ python manage.py bootstrap_whatsapp_channel
 
 ---
 
+### efi_webhook
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/efi_webhook.py`
+
+O webhook do Pix é cadastrado **por chave** na Efí, fora do banco e fora do spec. Este comando
+consulta o cadastrado (`GET /v2/webhook/:chave`) e, se divergir da URL canônica, cadastra
+(`PUT`, com `x-skip-mtls-checking: true`, porque a DO não faz mTLS) e relê para confirmar.
+Só age quando o adapter efetivo do Pix é a Efí. URL canônica:
+`https://<SHOPMAN_OPERATOR_API_HOST>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>&ignorar=`
+— o `&ignorar=` absorve o `/pix` que a Efí acrescenta ao fim da URL (sem ele o acréscimo cairia
+dentro do token e todo webhook voltaria 401). O token nunca sai inteiro na saída.
+
+Roda no job `release` do alpha com `--soft`: falha aparece no log do release e no Sentry, sem
+derrubar o deploy. Rotacionar o `EFI_WEBHOOK_TOKEN` basta: o próximo release recadastra.
+
+```bash
+python manage.py efi_webhook            # confere e cadastra se divergir
+python manage.py efi_webhook --check    # só confere (sai com erro se divergir)
+python manage.py efi_webhook --soft     # erro visível sem código de saída
+```
+
+---
+
+### migration_safety
+
+A trava entre o deploy e o `migrate`. Roda no job `release` (PRE_DEPLOY),
+**antes** do `migrate --noinput`, e lê o mesmo plano que o `migrate` vai
+executar: quantas migrações estão pendentes neste banco e quais delas contêm
+operação destrutiva (`RemoveField`, `DeleteModel`, `RenameField`,
+`RenameModel`, `AlterField` — a lista do ADR-015).
+
+```bash
+python manage.py migration_safety            # trava (sai != 0 quando recusa)
+python manage.py migration_safety --report   # só relata; nunca recusa
+python manage.py migration_safety --json     # saída legível por máquina
+python manage.py migration_safety --database <alias>
+```
+
+Recusa o deploy em duas situações, ambas fechadas:
+
+- política do ADR-015 armada **e** migração destrutiva pendente **e**
+  `SHOPMAN_MIGRATION_BACKUP_REF` vazia — migração destrutiva não tem rollback
+  barato, e o ponto de restauração precisa estar anotado antes, não depois;
+- não foi possível ler o plano de migração — um portão que não enxerga recusa,
+  em vez de dizer "pode passar".
+
+A política é armada por `SHOPMAN_GO_LIVE` (o ambiente de deploy; a imagem não
+carrega o `.git`), pela tag `go-live-v1` no repositório local (dev/CI) ou à
+força por `SHOPMAN_ADR015_FORCE=1`/`0`. **Antes do go-live a trava só relata**,
+marcando cada destrutiva no log do release.
+
+Não roda system checks de propósito: ele executa antes do `migrate`, quando uma
+tabela nova ainda não existe, e vários checks do Shopman consultam o banco. O
+`check --deploy` do release job continua rodando, logo antes, no comando dele.
+
+Atalhos de leitura, contra o banco de `DATABASE_URL`:
+
+```bash
+DATABASE_URL='postgresql://…' make migrations-pending   # o que o próximo deploy vai migrar
+DATABASE_URL='postgresql://…' make migrations-plan      # o plano inteiro (showmigrations --plan)
+```
+
+Procedimento humano — como anotar o ponto de restauração, como ensaiar um
+restore e quanto custa: [`docs/runbooks/backup-e-restore.md`](../runbooks/backup-e-restore.md).
+
 ### cleanup_idempotency_keys
 
 **App:** `shopman.orderman`
@@ -488,6 +752,40 @@ python manage.py auth_cleanup --days 7
 ```
 
 **Recomendação:** Executar via cron diariamente.
+
+---
+
+### purge_consent_ip
+
+**App:** `shopman.guestman` (app label: `guestman`)
+**Arquivo:** `packages/guestman/shopman/guestman/management/commands/purge_consent_ip.py`
+
+Aplica o prazo R11 da [matriz de retenção](../governance/data-retention-schedule.md)
+à prova de consentimento: apaga só o IP bruto coletado há mais do que o prazo.
+Finalidade, versão e texto apresentados, hashes, decisão, origem e instante
+continuam — a prova segue demonstrando a escolha, só sem o IP.
+
+O prazo conta da **coleta**: na trilha, o `occurred_at` do evento; na situação
+atual, o do evento que ela aponta (`last_event_ref`), com `updated_at` como
+segunda porta para linha legada sem evento. O `data_retention` conta R11 pelo
+mesmo serviço, então o inventário e o comando dão o mesmo número.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--days` | `SHOPMAN_CONSENT_IP_RETENTION_DAYS` (`90`) | Prazo do IP; sempre entre 1 e 90 (acima de 90 vira 90) |
+| `--apply` | — | Apaga de fato. Sem ela o comando só conta e não altera nada |
+
+```bash
+# Simulação (padrão): só contagens, sem dado pessoal na saída
+python manage.py purge_consent_ip
+
+# Apagar — em produção, só com a palavra do dono (gate humano de R11)
+python manage.py purge_consent_ip --apply
+```
+
+**Não é agendado.** Fica fora do `maintenance_worker` de propósito: a página
+pública de privacidade diz que hoje nada é apagado sozinho. Agendar pede
+decisão do dono e, antes, a nova versão da página.
 
 ---
 
@@ -673,6 +971,23 @@ decisão de hoje é a surpresa de daqui a três meses.
 O dedupe é `(provider, lista de pendências)`, com `active_only=False`: consertar uma
 pendência de três é fato novo e merece aviso novo; o mesmo conjunto de novo na janela, não —
 nem depois de reconhecido.
+
+O mesmo ciclo lê Compras (`purchase_nfe`) quando ela está ligada — leitor de NF-e ou
+certificado configurado (`build_monitored_readiness`). O PDV e a guarda de deploy
+(`SHOPMAN_E022`) continuam só com a prontidão do balcão.
+
+**Alerta:** `certificate_expiring`, o vencimento dos certificados digitais que a casa guarda
+(Efí e o e-CNPJ A1 de Compras). A prontidão só acusa o certificado depois de vencido; este
+aviso vem antes:
+
+| faltam | severidade |
+| --- | --- |
+| 30, 15 e 7 dias | `warning` |
+| 3 dias ou menos, ou vencido | `critical` (sai por e-mail) |
+
+Cada marco é um alerta só na vida do certificado — dedupe `(provedor, data de vencimento,
+marco)`, sem janela. Certificado renovado tem outra data e recomeça os marcos. A NFC-e fica de
+fora: o e-CNPJ dela mora no painel da Focus, e a API de emissão não informa a validade.
 
 ---
 
@@ -957,6 +1272,81 @@ python manage.py suggest_aliases --source yooga --kind product --min-score 80
 
 As regras **padrão** de categoria (23 trechos) e de forma de pagamento (15) não vêm daqui: vêm
 do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
+
+### benchmark_alias_matchers
+
+**Propósito:** Piloto do de-para de produto ([BI-JEV-PILOT](../plans/BI-JEV-PILOT.md)). Mede três
+concorrentes contra os `ProductAlias` **confirmados**: `fuzzy` (o `suggest_aliases` de hoje), `jev`
+(TypeSafe Jev, `JEV_API_KEY`), `llm:<modelo>` (um por `--llm-model`, com a credencial de
+`AI_ASSIST_*`; preço da tabela `LLM_PRICES`, em `shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
+está na imagem: `pip install fastembed` no console antes). Não grava alias.
+
+**Uso:**
+```bash
+python manage.py benchmark_alias_matchers --matcher fuzzy
+python manage.py benchmark_alias_matchers --limit 200 --llm-model claude-haiku-4-5 --llm-model claude-opus-5 --csv /tmp/piloto.csv
+```
+
+**Placar:** acerto; quantos aceitaria sozinho (confiança ≥ `--accept-at`, default 0.9) e quantos
+desses errados; latência p50/p95; tokens; custo total e por 1.000 itens; falhas. Jev e LLM veem os
+mesmos `--shortlist` candidatos do fuzzy mais a opção "nenhum destes"; a cobertura dessa lista é o
+teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `--min-similarity`). Concorrente sem credencial fica de fora (ou falha, se pedido por
+`--matcher`). Gabarito vazio falha com o caminho para confirmar no Admin.
+
+### run_intent_pilot
+
+**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)),
+e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
+por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
+`AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
+`--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
+### run_alias_benchmark
+
+**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. Roda no
+`maintenance_worker`: com pelo menos 20 `ProductAlias` confirmados e o último placar com mais de 7
+dias, mede `fuzzy`, `llm:claude-haiku-4-5`, `llm:claude-opus-5` e, quando disponíveis, `embed` e
+`jev`, e grava `AliasBenchmarkReport` (Admin → B.I. → Placar do de-para, só leitura, só agregado).
+Concorrente sem credencial ou pacote fica de fora e o placar diz por quê. `--now` força.
+
+### setup_intent_categories
+
+**Propósito:** Cria as doze intenções do piloto (pedido, dúvida de produto, horário/endereço/entrega,
+status do pedido, encomenda especial, como funciona a casa, reclamação, alergia, falar com uma
+pessoa, vaga de emprego, parceria ou divulgação, proposta de fornecedor). Idempotente; cria só as
+referências que faltam e nunca sobrescreve o que foi editado no Admin (Clientes → Intenções). O
+ciclo automático já faz isto; o comando é para ambiente novo.
+
+### sample_intent_messages
+
+**Propósito:** Sorteia mensagens de clientes (`ConversationMessage` de entrada, com texto) para o
+gabarito do piloto. Cria `MessageIntentSample` "a rotular"; não copia texto e nunca repete uma
+mensagem já sorteada.
+
+**Uso:**
+```bash
+python manage.py sample_intent_messages --limit 200 [--days 90] [--min-chars 3]
+```
+
+### benchmark_intent_classifiers
+
+**Propósito:** Mede `regex` (a transferência de hoje), `embed` (embeddings locais, `fastembed`),
+`llm:<modelo>` e `jev` contra as mensagens conferidas. Placar de conjunto (uma mensagem pode ter
+várias intenções): conjunto exato, exato nas mensagens com 2+ intenções, precisão, cobertura, F1,
+cobertura das sensíveis, cobertura por intenção, latência, custo por 1.000 mensagens. Não grava.
+
+**Uso:**
+```bash
+python manage.py benchmark_intent_classifiers --csv /tmp/intencoes.csv
+python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --llm-model claude-sonnet-5
+```
+
+**Comportamento:** todos recebem o texto **redigido** (`redact_observation_text`). `llm` e `jev`
+mandam esse texto para fora e só entram se o provedor estiver em
+`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (default `anthropic`, decisão do dono em 23/09; `typesafe`
+fora); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
+texto de cliente, só o número da amostra.
 
 ### refresh_bi_daily_series
 

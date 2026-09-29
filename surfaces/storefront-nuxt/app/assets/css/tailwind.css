@@ -506,6 +506,25 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
+  /* Régua exata do checkout. Em `scroll-margin-top`, aumentar o valor traz o
+   * alvo para BAIXO. A navbar ocupa 4rem e o fio Brass externo, 6px: alinhar a
+   * hairline da etapa nesse limite a faz desaparecer sem engolir conteúdo. */
+  .shop-focus-ruler {
+    scroll-margin-top: calc(4rem + 6px);
+  }
+
+  /* ── Superfície Faubourg: card rosé DENTRO de um card claro ────────────────
+   * Primeiro consumidor: o login (envio manual do WhatsApp e o formulário do SMS).
+   * O texto secundário não pode herdar o `--muted-foreground` do corpo: no tema
+   * neutro ele dá 3,97:1 sobre o Faubourg-200 (reprova AA). Aqui ele é o próprio
+   * texto misturado ao fundo — 6,0:1 na marca Nelson, 9,2:1 no neutro, 7,9:1 no
+   * escuro (onde o Faubourg vira o fundo da página, um card rebaixado). */
+  .shop-surface-faubourg {
+    background-color: var(--shop-bottomnav);
+    color: var(--foreground);
+    --muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));
+  }
+
   /* ── Dock: o card de ação que fica preso acima da navegação ─────────────────
    * `sticky bottom-20` NÃO cumpre isso, e a diferença só aparece rolando. Um
    * elemento sticky gruda na base da tela apenas enquanto o CONTAINER dele
@@ -534,6 +553,14 @@
    * decide sozinha (a coluna do desktop leva a ação no fluxo).
    */
   @media (max-width: 767px) {
+    /* Ao digitar, a prioridade é enxergar o campo e o que ele explica. Dock,
+     * navegação e dica de rolagem disputariam a pequena visual viewport com o
+     * teclado. Eles voltam no blur — nenhuma ação ou estado é perdido. */
+    html.shop-form-keyboard-open .shop-bottomnav-bar,
+    html.shop-form-keyboard-open [data-more-below] {
+      display: none;
+    }
+
     .shop-action-dock {
       position: fixed;
       left: 1rem;
@@ -699,6 +726,63 @@
   .dark .shop-category-tint {
     background-color: color-mix(in srgb, var(--category-color) 28%, var(--background));
     color: color-mix(in srgb, var(--category-color) 52%, var(--foreground));
+  }
+
+  /* Documento legal (privacidade, termos) — `LegalDocument` + `LegalSection`.
+     A página escreve só o TEXTO; a tipografia inteira mora aqui, uma vez.
+     Medida de leitura ~65ch; corpo maior e mais aberto que o `.shop-body`,
+     porque aqui se lê de ponta a ponta. A numeração das seções é um contador
+     de CSS: o número acompanha a ordem sozinho e não entra no texto do
+     documento (que a trava de versão em tests/legalVersion confere). */
+  .shop-legal {
+    counter-reset: legal-section;
+  }
+  .shop-legal-section {
+    counter-increment: legal-section;
+    /* A linha de foco: o salto do índice para ABAIXO do cabeçalho sticky. */
+    scroll-margin-top: 5rem;
+    @apply border-t border-border pt-8 outline-none;
+  }
+  .shop-legal-section + .shop-legal-section {
+    @apply mt-8;
+  }
+  .shop-legal-section:first-child {
+    @apply border-t-0 pt-0;
+  }
+  .shop-legal-heading {
+    @apply flex items-baseline gap-2 text-xl font-semibold tracking-tight;
+    line-height: 1.3;
+  }
+  .shop-legal-heading::before {
+    content: counter(legal-section) ".";
+    @apply min-w-6 shrink-0 text-base font-semibold tabular-nums text-primary;
+  }
+  .shop-legal-body {
+    @apply mt-3 space-y-4 text-base;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .shop-legal-body ul {
+    @apply list-disc space-y-2 pl-6 marker:text-muted-foreground;
+  }
+  .shop-legal-body strong {
+    @apply font-semibold;
+  }
+  .shop-legal-body a {
+    @apply underline underline-offset-2 hover:text-primary;
+  }
+  .shop-legal-toc {
+    counter-reset: legal-toc;
+  }
+  .shop-legal-toc li {
+    counter-increment: legal-toc;
+  }
+  .shop-legal-toc a {
+    @apply flex gap-2 rounded-md px-2 py-2 text-sm leading-5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+  }
+  .shop-legal-toc a::before {
+    content: counter(legal-toc) ".";
+    @apply min-w-5 shrink-0 tabular-nums;
   }
 }
 

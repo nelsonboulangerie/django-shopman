@@ -143,12 +143,15 @@ if (!profile.storefront) {
 if (profile.storefront) {
   await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
   const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
-  check(splashFiles.length === 40, '40 splash screens iOS estão no precache')
+  // O navegador escolhe uma única splash pela media query do <link>. Manter as
+  // 40 no precache obrigava toda instalação/atualização a baixar ~5 MB que nunca
+  // seriam usados; elas devem existir e ter dimensões corretas, mas ficar fora do SW.
+  check(splashFiles.length === 0, 'splash screens iOS ficam fora do precache')
   for (const [width, height] of splashScreens) {
     const name = `apple-splash-${width}-${height}.png`
     const actual = await pngSize(join(surface, 'public/pwa', name))
     check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
-    check(splashFiles.includes(`pwa/${name}`), `${name} está no precache`)
+    check(!precache.includes(`pwa/${name}`), `${name} não está no precache`)
   }
 }
 
@@ -223,7 +226,13 @@ try {
   check(swResponse.ok, 'service worker responde 200')
   check(swResponse.headers.get('cache-control') === 'no-cache, no-store, must-revalidate', 'service worker nunca fica imutável')
 
-  const documentResponse = await fetch(`${baseUrl}/`, { headers: { 'x-forwarded-proto': 'https' } })
+  // Accept de navegador, porque o que se mede aqui e o DOCUMENTO. Sem ele o
+  // Nitro responde JSON quando a home nao renderiza (a previa sobe sem backend,
+  // e desde `useContentGuard` isso e um 503), e o JSON vem com a CSP dura do
+  // framework -- o gate acusava a loja por uma pagina que nenhum navegador pede.
+  const documentResponse = await fetch(`${baseUrl}/`, {
+    headers: { 'x-forwarded-proto': 'https', accept: 'text/html,application/xhtml+xml' }
+  })
   const document = await documentResponse.text()
   const csp = documentResponse.headers.get('content-security-policy') || ''
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')

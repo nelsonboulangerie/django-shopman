@@ -264,6 +264,92 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
+  it("venda comum não acende o aviso de trava enquanto espera o servidor", async () => {
+    // O defeito relatado: a faixa "Cobrança em processamento ou interrompida"
+    // aparecia em TODA venda, durante o POST do fechamento — o marcador
+    // "pending" é gravado antes da chamada e a tela o lia como alarme.
+    const noticesDuringClose: unknown[] = [];
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) {
+        return { review: { total_q: 1000, total_display: "R$ 10,00", subtotal_q: 1000 } };
+      }
+      if (String(path).includes("/sale/close/")) {
+        expect(storageValues.size).toBe(1); // a proteção continua gravada
+        noticesDuringClose.push(h.sale.closeGuardNotice.value);
+        return { ok: true, order_ref: "PED-OK", payment: null };
+      }
+      return {};
+    });
+    // `h` é lido só quando o close roda, depois desta linha.
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(noticesDuringClose).toEqual([null]);
+    expect(h.sale.closeGuardNotice.value).toBeNull();
+    expect(h.sale.result.value?.orderRef).toBe("PED-OK");
+    h.handles.dispose();
+  });
+
+  it("recusa 4xx comum também não deixa aviso de trava", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) {
+        throw { status: 400, data: { detail: "Estoque insuficiente." } };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(h.sale.closeGuardNotice.value).toBeNull();
+    expect(storageValues.size).toBe(0);
+    h.handles.dispose();
+  });
+
+  it("marcador 'pending' sem ninguém segurando a trava vira 'venda interrompida', com liberação", async () => {
+    storageValues.set("shopman:pos:close-outcome-uncertain", JSON.stringify({
+      client_request_id: "req-caida", owner_id: "aba-que-fechou", state: "pending", recorded_at: "2026-09-21T10:00:00Z",
+    }));
+    const h = saleReadyForCheckout(saleRouter());
+    await h.sale.restoreUncertainClose();
+    expect(h.sale.closeGuardNotice.value).toMatchObject({
+      situation: "interrupted",
+      title: "A última venda foi interrompida antes da resposta",
+      canRelease: true,
+    });
+    h.handles.dispose();
+  });
+
+  it("outra aba cobrando agora: o aviso manda esperar e não oferece liberar", async () => {
+    let resolveFirstClose!: (value: unknown) => void;
+    const firstAction = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) return new Promise((resolve) => { resolveFirstClose = resolve; });
+      return {};
+    });
+    const first = saleReadyForCheckout(firstAction);
+    const second = saleReadyForCheckout(saleRouter());
+    await first.sale.submitSale();
+    const firstClose = first.sale.submitSale();
+    await vi.waitFor(() => expect(resolveFirstClose).toBeTypeOf("function"));
+
+    // A segunda aba recebe o evento `storage` e relê a trava.
+    await second.sale.restoreUncertainClose();
+    expect(first.sale.closeGuardNotice.value).toBeNull();
+    expect(second.sale.closeGuardNotice.value).toMatchObject({
+      situation: "other_tab_charging",
+      canRelease: false,
+    });
+
+    resolveFirstClose({ ok: true, order_ref: "PED-ABA-1", payment: null });
+    await firstClose;
+    await second.sale.restoreUncertainClose();
+    expect(second.sale.closeGuardNotice.value).toBeNull();
+    first.handles.dispose();
+    second.handles.dispose();
+  });
+
   it("não inicia cobrança quando não consegue persistir e verificar a trava", async () => {
     vi.stubGlobal("localStorage", {
       getItem: () => null,
@@ -615,7 +701,12 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
     await h.sale.submitSale();
 
     expect(h.sale.checkoutMode.value).toBe(false);
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Sem preço");
+    // A causa do SERVIDOR sobrevive — ela é o que explica a recusa — e a saída
+    // vem junto, porque `httpErrorMessage` troca o fallback pelo `detail` e
+    // engoliria um gesto escrito lá dentro. Ver `tests/falhaComSaida.test.ts`.
+    const aviso = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+    expect(aviso).toContain("Sem preço");
+    expect(aviso).toContain("Tente de novo.");
     h.handles.dispose();
   });
 

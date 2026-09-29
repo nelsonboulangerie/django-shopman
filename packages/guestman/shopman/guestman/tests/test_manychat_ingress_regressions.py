@@ -70,3 +70,29 @@ def test_consent_boolean_has_explicit_meaning(monkeypatch, value, expected):
     assert result == ({} if expected is None else {"whatsapp": expected})
     assert grant.call_count == (1 if expected is True else 0)
     assert revoke.call_count == (1 if expected is False else 0)
+
+
+def test_identificadores_numericos_do_manychat_viram_texto():
+    """25/09/2026: o `getInfo` devolve `ig_id` NÚMERO, e o login pelo WhatsApp de um
+    cliente novo morria com `'int' object has no attribute 'strip'` antes do link sair."""
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+
+    customer, created = ManychatService.sync_subscriber(
+        {
+            "id": 1962036908,
+            "whatsapp_id": 5543984035793,
+            "ig_id": 17841400000000000,
+            "first_name": "Joyce",
+        }
+    )
+
+    assert created
+    assert customer.phone == "+5543984035793"
+    values = dict(
+        CustomerIdentifier.objects.filter(customer=customer).values_list("identifier_type", "identifier_value")
+    )
+    assert values[IdentifierType.MANYCHAT] == "1962036908"
+    assert values[IdentifierType.INSTAGRAM] == "17841400000000000"
+
+    again, created_again = ManychatService.sync_subscriber({"id": "1962036908", "ig_id": 17841400000000000})
+    assert (again.pk, created_again) == (customer.pk, False)

@@ -79,7 +79,7 @@ def test_recall_then_rebump_works(order):
     ticket.refresh_from_db()
     assert kds_core.reopen_ticket(ticket, actor="kds:op") is True
     order.refresh_from_db()
-    # Recall puxa o pedido de volta ao preparo — expedição não o vê mais.
+    # Recall puxa o pedido de volta ao preparo — sai dos prontos da Saída.
     assert order.status == Order.Status.PREPARING
 
     ticket.refresh_from_db()
@@ -177,7 +177,7 @@ def test_stale_bump_does_not_resurrect_cancelled_ticket(order):
     assert ticket.completed_at is None
 
 
-# ── Expedição por order_id: lock + replay idempotente + not-found ──────────
+# ── Saída por order_id: lock + replay idempotente + not-found ──────────
 
 
 def test_expedition_by_order_id_completes_ready_pickup(db):

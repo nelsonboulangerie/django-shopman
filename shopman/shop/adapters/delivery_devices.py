@@ -29,3 +29,9 @@ def release(order):
     from shopman.backstage.services.delivery_devices import release as implementation
 
     return implementation(order)
+
+
+def holds_device(order):
+    from shopman.backstage.services.delivery_devices import holds_device as implementation
+
+    return implementation(order)

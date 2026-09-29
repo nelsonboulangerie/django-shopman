@@ -841,7 +841,8 @@ class TestC12PartialQtyHold(TransactionTestCase):
         mock_adapter = MagicMock()
         mock_adapter.find_holds_by_reference.return_value = []
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
 
         def _create_hold(sku, qty, reference=None, **kwargs):
             if sku == "RARE-SKU":
@@ -904,7 +905,8 @@ class TestC13BundleHoldExpansion(TransactionTestCase):
         mock_adapter = MagicMock()
         mock_adapter.find_holds_by_reference.return_value = []
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         held = {}
 
         def _create_hold(sku, qty, reference=None, **kwargs):

@@ -6,8 +6,8 @@ Generated from the installed `django-unfold` package. Do not hand-edit; run:
 python scripts/snapshot_unfold_reference.py
 ```
 
-- Version: `0.92.0`
-- Package root: `/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/unfold`
+- Version: `0.107.0`
+- Package root: `.venv/lib/python3.12/site-packages/unfold`
 
 ## Official References
 
@@ -119,15 +119,21 @@ python scripts/snapshot_unfold_reference.py
 - `unfold/helpers/app_list_default.html`
 - `unfold/helpers/attrs.html`
 - `unfold/helpers/avatar.html`
+- `unfold/helpers/badge.html`
 - `unfold/helpers/boolean.html`
 - `unfold/helpers/breadcrumb_item.html`
 - `unfold/helpers/change_list_actions.html`
-- `unfold/helpers/change_list_filter.html`
 - `unfold/helpers/change_list_filter_actions.html`
+- `unfold/helpers/change_list_filter_button.html`
+- `unfold/helpers/change_list_filter_horizontal.html`
+- `unfold/helpers/change_list_filter_vertical.html`
 - `unfold/helpers/change_list_headers.html`
 - `unfold/helpers/command.html`
+- `unfold/helpers/command_empty.html`
+- `unfold/helpers/command_help.html`
 - `unfold/helpers/command_history.html`
 - `unfold/helpers/command_results.html`
+- `unfold/helpers/dashboard_default.html`
 - `unfold/helpers/dataset.html`
 - `unfold/helpers/delete_submit_line.html`
 - `unfold/helpers/dialog.html`
@@ -193,8 +199,8 @@ python scripts/snapshot_unfold_reference.py
 - `unfold/helpers/pagination_infinite.html`
 - `unfold/helpers/pagination_inline.html`
 - `unfold/helpers/search.html`
-- `unfold/helpers/search_results.html`
 - `unfold/helpers/shortcut.html`
+- `unfold/helpers/shortcuts.html`
 - `unfold/helpers/site_branding.html`
 - `unfold/helpers/site_dropdown.html`
 - `unfold/helpers/site_icon.html`
@@ -275,7 +281,6 @@ python scripts/snapshot_unfold_reference.py
 - `unfold.widgets.UnfoldAdminAutocompleteModelChoiceFieldWidget`
 - `unfold.widgets.UnfoldAdminAutocompleteWidget`
 - `unfold.widgets.UnfoldAdminBigIntegerFieldWidget`
-- `unfold.widgets.UnfoldAdminCheckboxSelectMultiple`
 - `unfold.widgets.UnfoldAdminCheckboxSelectMultipleWidget`
 - `unfold.widgets.UnfoldAdminColorInputWidget`
 - `unfold.widgets.UnfoldAdminDateWidget`
@@ -288,6 +293,7 @@ python scripts/snapshot_unfold_reference.py
 - `unfold.widgets.UnfoldAdminIntegerFieldWidget`
 - `unfold.widgets.UnfoldAdminIntegerRangeWidget`
 - `unfold.widgets.UnfoldAdminLocationWidget`
+- `unfold.widgets.UnfoldAdminMoneyWidget`
 - `unfold.widgets.UnfoldAdminMoneyWidget`
 - `unfold.widgets.UnfoldAdminMultipleAutocompleteModelChoiceFieldWidget`
 - `unfold.widgets.UnfoldAdminMultipleAutocompleteWidget`
@@ -355,6 +361,7 @@ python scripts/snapshot_unfold_reference.py
 - `unfold.admin.BaseInlineMixin`
 - `unfold.admin.GenericStackedInline`
 - `unfold.admin.GenericTabularInline`
+- `unfold.admin.ListFilterOptionsItem`
 - `unfold.admin.ModelAdmin`
 - `unfold.admin.StackedInline`
 - `unfold.admin.TabularInline`
@@ -416,6 +423,8 @@ python scripts/snapshot_unfold_reference.py
 - `unfold/contrib/guardian/templates/admin/guardian/model/obj_perms_manage_user.html`
 - `unfold/contrib/guardian/templates/unfold/guardian/group_form.html`
 - `unfold/contrib/guardian/templates/unfold/guardian/user_form.html`
+- `unfold/contrib/hijack/templates/hijack/contrib/admin/button.html`
+- `unfold/contrib/hijack/templates/hijack/notification.html`
 - `unfold/contrib/import_export/templates/admin/import_export/base.html`
 - `unfold/contrib/import_export/templates/admin/import_export/change_form.html`
 - `unfold/contrib/import_export/templates/admin/import_export/change_list_export.html`

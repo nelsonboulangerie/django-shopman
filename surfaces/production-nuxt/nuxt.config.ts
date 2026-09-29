@@ -53,7 +53,7 @@ export default defineNuxtConfig({
       push: { surfaceRef: "production", categories: ["production", "system"] },
       shortcuts: [
         { name: "Plano", shortName: "Plano", url: "/plan" },
-        { name: "Fornadas", shortName: "Fornadas", url: "/board" },
+        { name: "Lotes", shortName: "Lotes", url: "/board" },
       ],
     }),
     "@nuxtjs/color-mode",

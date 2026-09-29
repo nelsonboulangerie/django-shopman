@@ -97,7 +97,7 @@ const itemCountLabel = computed(() => {
           :key="`${index}-${item.name}`"
           class="flex items-baseline gap-4 py-2"
         >
-          <span class="w-16 shrink-0 text-right text-3xl text-muted-foreground tabular-nums md:text-4xl">{{ item.qty }}×</span>
+          <span class="w-16 shrink-0 text-right text-3xl text-muted-foreground tabular-nums md:text-4xl">{{ item.qtyLabel || `${item.qty}×` }}</span>
           <span class="min-w-0 flex-1">
             <span class="block truncate text-3xl md:text-4xl">{{ item.name }}</span>
             <!-- O rótulo do desconto viaja com a linha: o preço nunca muda calado. -->

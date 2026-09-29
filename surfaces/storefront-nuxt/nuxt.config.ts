@@ -43,7 +43,12 @@ export default defineNuxtConfig({
     // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o
     // IP do cliente um salto mais fundo no X-Forwarded-For. Só no servidor (nunca
     // em `public`); em runtime vem de NUXT_DJANGO_PROXY_SECRET. Vazio = desligado.
-    djangoProxySecret: ''
+    djangoProxySecret: '',
+    public: {
+      // O runtime já contém o fallback monolítico. A flag abre o consumidor
+      // Continuum sem novo build e permite rollback junto da flag do Django.
+      continuumCatalogEnabled: false
+    }
   },
 
   // Foto de catálogo é imutável por convenção: trocar a foto = trocar o NOME do
@@ -72,7 +77,7 @@ export default defineNuxtConfig({
       // titleTemplate vive no app.vue (useHead): lá é função com a marca dinâmica do
       // tenant — e nuxt.config só aceita string, então aqui ele não tem vez.
       meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
         // Primeiro paint e overscroll nativo antes da hidratação: Dark Burgundy/ink.
         { name: 'theme-color', content: '#531D22' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
@@ -118,7 +123,12 @@ export default defineNuxtConfig({
       clientsClaim: false,
       skipWaiting: false,
       globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-      globIgnores: ['pwa/screenshots/**'],
+      // `documentos-legais/` é o arquivo permanente de Termos/Privacidade citado pelos pedidos:
+      // abre por link, uma versão cresce a cada revisão e nenhuma precisa estar offline.
+      // Cada iPhone usa só o splash que casa com sua tela. Precachear as 40
+      // variantes fazia toda instalação/atualização baixar ~5 MB que nunca seriam
+      // vistos; elas continuam públicas e o <link media> escolhe a necessária.
+      globIgnores: ['pwa/screenshots/**', 'pwa/apple-splash-*.png', 'documentos-legais/**'],
       manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
       runtimeCaching: [
         {

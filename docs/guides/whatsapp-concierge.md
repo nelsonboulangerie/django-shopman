@@ -57,6 +57,44 @@ Cada propriedade deve continuar ligada ao seletor dinâmico correspondente:
 | `first_name`, `last_name` | Contexto de perfil opcional. Não promovem identidade nem autorizam compra. |
 | `provider_timestamp` | Última interação do usuário no WhatsApp. Serve somente como evidência da janela de resposta. |
 
+### Localização (pin) — campos opcionais, ainda NÃO mapeados no flow
+
+Desde 25/09/2026 o endereço da entrega se completa na conversa, e a
+localização do WhatsApp é a porta mais curta. O backend aceita:
+
+```json
+{
+  "subscriber_id": "<subscriber_id dinâmico>",
+  "message_type": "location",
+  "latitude": "<latitude dinâmica>",
+  "longitude": "<longitude dinâmica>",
+  "provider_timestamp": "<última interação WhatsApp dinâmica>"
+}
+```
+
+`latitude`/`longitude` aceitam número ou texto numérico (vírgula ou ponto) e
+são recusados com `400 invalid_location` fora da faixa. Com `message_type:
+"location"` o `text` do disparo é ignorado (o flow pode mandar a última entrada
+de TEXTO, que não é esta mensagem); o turno lê `[localização enviada pelo
+WhatsApp]` e a coordenada fica só no envelope, de onde a ferramenta de entrega
+a lê. **Falta configuração no ManyChat** (do dono, não do código): um ramo do
+flow que receba a mensagem de localização e chame o mesmo External Request com
+esses campos. Sem isso, o cliente escreve o endereço e o concierge pergunta as
+partes que faltarem.
+
+### Endereço do cadastro — oferecido antes de perguntar
+
+Quem escolhe entrega e já tem endereço cadastrado (`guestman.CustomerAddress`
+do próprio cliente identificado da conversa) ouve primeiro esse endereço, o
+padrão na frente: *"Entregamos no endereço do seu cadastro, Rua Pará, 120 -
+Centro?"*. Com mais de um endereço, a frase diz que dá para escolher outro, e
+`list_saved_addresses` mostra os rótulos. Aceito (`use_saved_address` ou
+`saved_address_label`), o endereço entra estruturado, com a coordenada do
+cadastro, e passa pela mesma régua da nota (`recipient_gaps`): o que faltar no
+cadastro é perguntado. Recusado, segue a localização ou o texto. A oferta mora
+no resultado da ferramenta (`saved_address_offer`), porque só ele chega ao
+cliente. Conversa sem `customer_ref` verificado não lê cadastro nenhum.
+
 `provider_timestamp` não é instante da mensagem atual, ID de evento, prova de
 confirmação comercial ou chave de deduplicação. O adapter interpreta o valor no
 fuso configurado e preserva no envelope apenas a evidência normalizada da janela.

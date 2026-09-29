@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -239,7 +240,11 @@ def test_unknown_or_inactive_connection_is_404(settings, intake):
         (event(subscriber_id=True), "subscriber_id"),
         (event(text=[]), "text"),
         (event(event_id=[]), "event_id"),
-        (event(message_type="location"), "message_type"),
+        (event(message_type="sticker"), "message_type"),
+        (event(message_type="location"), "latitude"),
+        (event(message_type="location", latitude="-23.3", longitude="abc"), "longitude"),
+        (event(message_type="location", latitude=-123.0, longitude=-51.1), "latitude"),
+        (event(message_type="location", latitude=True, longitude=-51.1), "latitude"),
     ],
 )
 def test_invalid_payload_never_reaches_service(url, intake, body, field):
@@ -247,6 +252,24 @@ def test_invalid_payload_never_reaches_service(url, intake, body, field):
     assert response.status_code == 400
     assert response.json().get("field", "") == field
     assert intake == []
+
+
+def test_location_pin_arrives_as_marked_text_with_coordinates_in_the_envelope(url, intake):
+    """O pin do WhatsApp: a coordenada é dado do envelope; o texto do disparo não vale."""
+    from shopman.storefront.concierge.contracts import LOCATION_TEXT
+
+    response = post(url, event(message_type="location", text="{{last_text_input}}", latitude="-23,3045", longitude=-51.1696))
+    assert response.status_code == 200
+    [normalized] = intake
+    assert normalized.text == LOCATION_TEXT
+    assert normalized.location == {"latitude": -23.3045, "longitude": -51.1696}
+    envelope = normalized.as_envelope()
+    assert envelope["message_type"] == "location"
+    assert envelope["location"] == {"latitude": -23.3045, "longitude": -51.1696}
+
+    other = post(url, event(message_type="location", latitude=-23.31, longitude=-51.1696))
+    assert other.status_code == 200
+    assert intake[1].payload_hash != normalized.payload_hash
 
 
 def test_content_type_size_depth_and_rate_limits(url, intake, monkeypatch):
@@ -267,6 +290,61 @@ def test_disabled_still_authenticates_before_ack(url, intake, settings):
     response = post(url, event())
     assert response.json() == {"status": "disabled", "reason": "switch_off"}
     assert intake == []
+
+
+def _webhook_errors(url, caplog):
+    """Posta uma mensagem e devolve os ERROR do logger do webhook (``shopman`` não propaga)."""
+    webhook_logger = logging.getLogger(webhook.__name__)
+    webhook_logger.addHandler(caplog.handler)
+    previous = (webhook_logger.level, webhook_logger.propagate)
+    webhook_logger.setLevel(logging.DEBUG)
+    # Captura única: com propagação ligada (varia por ambiente; na CI está), o
+    # handler-raiz do caplog pegaria o MESMO record de novo.
+    webhook_logger.propagate = False
+    try:
+        response = post(url, event())
+    finally:
+        webhook_logger.removeHandler(caplog.handler)
+        webhook_logger.setLevel(previous[0])
+        webhook_logger.propagate = previous[1]
+    # Mensagens distintas: a asserção não depende de quantas vezes um mesmo
+    # record foi capturado.
+    errors = sorted({
+        r.getMessage() for r in caplog.records
+        if r.name == webhook.__name__ and r.levelno >= logging.ERROR
+    })
+    return response, errors
+
+
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [({"enabled": False}, "switch_off"), ({"operation_mode": "observe"}, "observation_only")],
+)
+def test_deliberate_standby_does_not_raise_an_error_per_message(url, intake, settings, caplog, override, reason):
+    """SHOPMAN-E: com o modo observação ligado de propósito, cada mensagem do
+    fluxo antigo (sem ``X-Concierge-Mode: observe``) virava um evento no Sentry."""
+    settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
+    response, errors = _webhook_errors(url, caplog)
+    assert response.json() == {"status": "disabled", "reason": reason}
+    assert errors == []
+    assert intake == []
+
+
+@pytest.mark.parametrize(
+    ("override", "api_key", "reason"),
+    [
+        ({"contract_version": 2}, "fake", "contract_gate"),
+        ({"operation_mode": "whatever"}, "fake", "operation_mode_gate"),
+        ({}, "", "ai_key_missing"),
+    ],
+)
+def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, override, api_key, reason):
+    settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
+    settings.AI_ASSIST_API_KEY = api_key
+    response, errors = _webhook_errors(url, caplog)
+    assert response.json() == {"status": "disabled", "reason": reason}
+    assert len(errors) == 1
+    assert reason in errors[0]
 
 
 def test_no_network_lookup_in_ack(url, intake, monkeypatch):

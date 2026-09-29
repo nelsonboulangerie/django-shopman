@@ -125,9 +125,8 @@ salsicha artesanal".
 Chausson é Finos *e* aparece em "Folhado do dia". Por isso o teste de coerência
 fala em uma categoria por produto, não uma coleção.
 
-`CV` (Cream Soda do dia) **fica como produto**: não há produto real por baixo
-dele. Ali o sabor rotaciona dentro de um preparo só, que é diferente de um
-folhado ser outro produto a cada dia.
+`CV` (Cream Soda do dia) **saiu do catálogo** em 24/09/2026: "era só uma ideia"
+(dono). Ver `apply_catalog_decisions`.
 
 As duas receitas que produziam "do dia" passam a produzir o real — `FD` → `FOA`,
 `FL` → `CN`. Era o argumento nº 2 da recomendação, e virou código.

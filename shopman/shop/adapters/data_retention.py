@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from django.apps import apps
 from django.db.models import Q
+from shopman.guestman.contrib.consent.service import ConsentService
 
 
 def _years_ago(now: datetime, years: int) -> datetime:
@@ -38,6 +39,7 @@ def external_retention_counts(*, now: datetime) -> dict[str, dict[str, int]]:
     stock_alert_delivery = apps.get_model("storefront", "StockAlertDelivery")
 
     five_years_ago = _years_ago(now, 5)
+    consent_ip = ConsentService.count_expired_ip(now=now)
     ninety_days_ago = now - timedelta(days=90)
     one_hundred_eighty_days_ago = now - timedelta(days=180)
     seven_days_ago = now - timedelta(days=7)
@@ -99,15 +101,11 @@ def external_retention_counts(*, now: datetime) -> dict[str, dict[str, int]]:
                 expires_at__lte=seven_days_ago,
             ).count(),
         },
+        # Mesmo corte do `purge_consent_ip`: a contagem vem do serviço que
+        # apaga, para que o inventário nunca diga um número e o comando outro.
         "R11": {
-            "projecoes_com_ip_vencido": consent.objects.filter(
-                ip_address__isnull=False,
-                updated_at__lt=ninety_days_ago,
-            ).count(),
-            "eventos_com_ip_vencido": consent_event.objects.filter(
-                ip_address__isnull=False,
-                occurred_at__lt=ninety_days_ago,
-            ).count(),
+            "projecoes_com_ip_vencido": consent_ip["current"],
+            "eventos_com_ip_vencido": consent_ip["events"],
         },
         "R13": {
             "perfis_de_contas_inativas": insight.objects.filter(

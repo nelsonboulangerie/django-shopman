@@ -18,7 +18,7 @@ from shopman.guestman.models import Customer
 
 pytestmark = pytest.mark.django_db
 
-PHONE = "+5543984049009"
+PHONE = "+5543981234567"
 
 
 def _subscriber(**over) -> dict:

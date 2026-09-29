@@ -16,20 +16,45 @@ import { compactUnitWeightLabel } from '~/utils/display'
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
-const session = useShopSession()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
 
 const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
-  { credentials: 'include' }
+  { credentials: 'include', lazy: true }
 )
 
-// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
-// não uma página-fantasma 200 indexável. Falhas de rede seguem no retry inline.
-if (error.value?.statusCode === 404) {
-  throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
+async function missingProductError (missingSku: string) {
+  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), missingSku)
+  if (retired) {
+    return createError({
+      statusCode: 410,
+      statusMessage: 'Este item saiu do cardápio',
+      fatal: true,
+      data: retired
+    })
+  }
+  return createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
+
+// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
+// não uma página-fantasma 200 indexável. No cliente a busca é lazy para montar
+// a rota imediatamente; o watcher preserva a mesma semântica quando ela termina.
+// Antes do 404, verificamos se este código já foi um produto nosso (410).
+if (import.meta.server && error.value?.statusCode === 404) {
+  throw await missingProductError(sku.value)
+}
+
+if (import.meta.client) {
+  watch(error, async (failure) => {
+    if (failure?.statusCode !== 404) return
+    const missingSku = sku.value
+    const pageError = await missingProductError(missingSku)
+    if (sku.value === missingSku) showError(pageError)
+  })
+}
+// Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
+requireContentOnSsr(error.value, !!data.value?.product, 'Produto')
 
 watch(() => data.value?.cart, cart => {
   setFromServer(cart)
@@ -122,8 +147,7 @@ useHead({
           innerHTML: jsonLdText(productJsonLd({
             product: product.value,
             origin: requestUrl.origin,
-            url: canonicalUrl.value,
-            brandName: session.shop.value?.brand_name || ''
+            url: canonicalUrl.value
           }))
         },
         {
@@ -290,6 +314,18 @@ useHead({
             <p class="mt-2 line-clamp-2 shop-muted">{{ product.short_description }}</p>
             <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
             <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
+
+            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
+                 constantes da ficha. Não vai para o selo do card do cardápio: lá
+                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
+                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
+                 parar de ler justamente o aviso que o faz agir. -->
+            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
+              <UiBadge variant="outline">
+                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
+                {{ product.made_to_order_label }}
+              </UiBadge>
+            </div>
 
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>

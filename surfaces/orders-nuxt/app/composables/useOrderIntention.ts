@@ -67,6 +67,15 @@ export function useOrderIntention() {
     } catch (error) {
       if (!samePerson()) throw error;
       const status = httpError(error).status;
+      // O servidor declarou que nada foi aplicado (recusa na fase de preparo, ex.:
+      // iFood fora do ar ao ler os motivos). Vale mesmo em 5xx: sem isto a tela
+      // tratava o 503 como "talvez gravou", prendia a intenção e toda tentativa
+      // seguinte caía em "há uma gravação anterior" até o F5.
+      const refusedBody = httpError(error).data as { outcome?: unknown } | null;
+      if (status && status >= 500 && refusedBody?.outcome === "not_applied") {
+        Reflect.deleteProperty(pending.value, resource);
+        throw error;
+      }
       if (status && status >= 400 && status < 500) {
         const directCode = (httpError(error).data as { code?: unknown } | null)?.code;
         const code = httpErrorCode(error) || (typeof directCode === "string" ? directCode : "");

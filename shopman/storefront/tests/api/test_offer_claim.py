@@ -5,7 +5,9 @@ O que este arquivo protege:
 1. **Sem login.** O link dorme horas numa conversa de WhatsApp. Se o endpoint exigisse
    sessão autenticada, o anúncio só funcionaria para quem já estava logado, e a alternativa
    (magic link) morre em 5 minutos. Este é o teste que mais importa aqui.
-2. **Sacola do cliente não é apagada sem perguntar.** 409 quando ela já tem itens.
+2. **A oferta sempre soma, e a sacola do cliente só é esvaziada a pedido dele.** Sem
+   `mode`, o que já estava lá fica e a resposta diz `kept_existing_items`; `replace`
+   é a resposta explícita "só a oferta".
 3. **Oferta morta responde 404 com o motivo**, porque "não deu" não ajuda quem clicou.
 """
 
@@ -93,6 +95,7 @@ def test_an_anonymous_visitor_can_claim_the_offer(client, croissant):
     assert body["ok"] is True
     assert body["added"] == ["CRO-001"]
     assert body["offer"]["name"] == "Relâmpago das 17h30"
+    assert body["kept_existing_items"] is False
 
 
 def test_the_claim_is_idempotent_under_the_same_key(client, croissant):
@@ -140,42 +143,71 @@ def _browse_and_add(client: Client, qty: int = 2) -> None:
     )
 
 
-def test_a_cart_with_items_is_never_replaced_without_asking(client, croissant):
-    """⚠️ Trocar sem perguntar apagaria uma sacola que o cliente montou.
+def _browse_and_add_other(client: Client) -> None:
+    """Outro produto na sacola, escolhido navegando — não está na oferta."""
+    product = Product.objects.create(
+        sku="PAO-001", name="Pão", base_price_q=800, is_published=True, is_sellable=True,
+    )
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref="web"), product=product, price_q=800,
+        is_published=True, is_sellable=True,
+    )
+    _seed_stock(product.sku)
+    client.put("/api/v1/cart/skus/PAO-001/", data=json.dumps({"qty": 1}), content_type="application/json")
 
-    O caso real é este: a pessoa estava navegando, tem sacola, e **então** toca no link
-    do anúncio. Não é o toque duplo no mesmo link — esse a idempotência resolve
-    repetindo a resposta, e é o que `test_the_claim_is_idempotent_under_the_same_key`
-    protege.
+
+def test_opening_the_offer_on_a_bag_with_items_adds_and_keeps_everything(client, croissant):
+    """⚠️ A oferta SEMPRE soma (decisão do dono, 24/09/2026) — nunca troca sem pedido.
+
+    O caso real: a pessoa estava navegando, tem sacola, e **então** toca no link do
+    anúncio. O que ela escolheu fica, a oferta entra, e `kept_existing_items` avisa a
+    tela para perguntar se ela quer manter tudo.
     """
     _promotion()
-    _browse_and_add(client)
+    _browse_and_add_other(client)
 
     response = _claim(client)
 
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "cart_not_empty"
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["kept_existing_items"] is True
+    assert body["added"] == ["CRO-001"]
+    assert sorted(item["sku"] for item in body["cart"]["items"]) == ["CRO-001", "PAO-001"]
 
 
-def test_append_adds_to_what_was_already_there(client, croissant):
+def test_the_same_sku_already_in_the_bag_is_summed(client, croissant):
     _promotion()
     _browse_and_add(client, qty=2)
 
-    response = _claim(client, mode="append")
+    response = _claim(client)
 
     assert response.status_code == 200
+    assert response.json()["kept_existing_items"] is True
     assert sum(item["qty"] for item in response.json()["cart"]["items"]) == 3
 
 
-def test_replace_starts_a_fresh_bag(client, croissant):
-    """Só depois de o cliente escolher trocar. A escolha é dele, e é explícita."""
+def test_only_the_offer_removes_what_was_there_before(client, croissant):
+    """A resposta "Não, só a oferta": esvazia a sacola e deixa a oferta sozinha."""
     _promotion()
-    _browse_and_add(client, qty=2)
+    _browse_and_add_other(client)
+    assert _claim(client, idempotency_key="merge").json()["kept_existing_items"] is True
 
-    response = _claim(client, mode="replace")
+    response = _claim(client, mode="replace", idempotency_key="only-offer")
 
     assert response.status_code == 200
-    assert sum(item["qty"] for item in response.json()["cart"]["items"]) == 1
+    body = response.json()
+    assert body["kept_existing_items"] is False
+    assert [(item["sku"], item["qty"]) for item in body["cart"]["items"]] == [("CRO-001", 1)]
+
+
+def test_an_unknown_mode_is_refused_instead_of_guessed(client, croissant):
+    """Modo que o servidor não conhece não vira soma nem troca por palpite."""
+    _promotion()
+
+    response = _claim(client, mode="append")
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "invalid_mode"
 
 
 def test_what_could_not_be_added_comes_back_to_be_explained(client, croissant):
@@ -199,13 +231,13 @@ def test_what_could_not_be_added_comes_back_to_be_explained(client, croissant):
 
 def test_confirmed_claim_replays_after_offer_expires_without_adding_again(client, croissant):
     promotion = _promotion()
-    first = _claim(client, mode="append", idempotency_key="lost-offer-response")
+    first = _claim(client, idempotency_key="lost-offer-response")
     assert first.status_code == 200
     promotion.is_active = False
     promotion.save(update_fields=["is_active"])
-    second = _claim(client, mode="append", idempotency_key="lost-offer-response")
+    second = _claim(client, idempotency_key="lost-offer-response")
     assert second.status_code == 200
     assert second.json()["replayed"] is True
     assert second.json()["cart"] == first.json()["cart"]
-    new_intention = _claim(client, mode="append", idempotency_key="new-offer-intention")
+    new_intention = _claim(client, idempotency_key="new-offer-intention")
     assert new_intention.status_code == 404

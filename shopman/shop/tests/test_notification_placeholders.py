@@ -19,13 +19,10 @@ canal, e falha se algum evento de pedido usar chave que o contexto não produz.
 
 from __future__ import annotations
 
-import ast
 import re
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings
 from django.test import override_settings
 
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
@@ -36,8 +33,9 @@ COMTELE_SETTINGS = {"api_key": "key-1", "route": "17", "timeout": 5}
 
 #: O corpo semeado de `order_received` — o texto que a Joyce recebeu.
 SEEDED_ORDER_RECEIVED = (
-    "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. "
-    "O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"
+    "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*.\n"
+    "Estamos conferindo a disponibilidade e avisamos em seguida.\n"
+    "Acompanhe por aqui: {tracking_url}"
 )
 
 _PLACEHOLDER = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
@@ -108,7 +106,14 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
         return 1
 
     with patch("shopman.shop.adapters.notification_email.send_mail", side_effect=fake_send_mail):
-        with override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"):
+        with override_settings(
+            MAILERS={
+                "default": {
+                    "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+                    "OPTIONS": {"host": "smtp.exemplo.test"},
+                }
+            }
+        ):
             assert notification_email.send("joyce@example.com", "order_received", context) is True
 
     assert "Joyce" in sent["subject"]
@@ -165,17 +170,15 @@ def test_derive_context_e_idempotente():
     twice = derive_context(once)
     assert once == twice
     assert once["customer_name_greeting"] == ", Joyce"
-    assert once["tracking_suffix"] == "\nAcompanhe: https://loja.test/pedido/ORD-1"
+    assert once["tracking_url"] == "https://loja.test/pedido/ORD-1"
 
 
 def test_derive_context_suprime_sufixo_sem_dado():
     ctx = derive_context({})
     assert ctx["customer_name_greeting"] == ""
-    assert ctx["tracking_suffix"] == ""
-    assert ctx["reorder_suffix"] == ""
     assert ctx["courier_tracking_suffix"] == ""
     assert ctx["pix_suffix"] == ""
-    assert ctx["reason_note"] == ""
+    assert ctx["status_note"] == ""
 
 
 def test_derive_context_names_stock_product_and_keeps_sku_visible():
@@ -201,22 +204,14 @@ def _is_order_event(event: str) -> bool:
 
 
 def _seeded_bodies() -> dict[str, str]:
-    """Os textos que o lojista recebe no Admin, lidos do seed por AST.
+    """Os textos que o lojista recebe no Admin: o que o seed grava.
 
     Lidos da FONTE, não do banco: o guardrail tem de rodar sem seed e falhar no PR
     que introduz a chave, não no dia em que o cliente recebe a mensagem.
     """
-    source = Path(settings.BASE_DIR) / "config" / "management" / "commands" / "seed.py"
-    tree = ast.parse(source.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-        if "FALLBACK_TEMPLATES" not in targets:
-            continue
-        templates = ast.literal_eval(node.value)
-        return {event: tpl["subject"] + "\n" + tpl["body"] for event, tpl in templates.items()}
-    raise AssertionError("FALLBACK_TEMPLATES não encontrado em config/management/commands/seed.py")
+    from config.management.commands.seed import NOTIFICATION_TEMPLATES
+
+    return {event: tpl["subject"] + "\n" + tpl["body"] for event, tpl in NOTIFICATION_TEMPLATES.items()}
 
 
 def _produced_keys() -> set[str]:

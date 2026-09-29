@@ -1,8 +1,8 @@
-"""A gêmea na tela do gate de pagamento, no board de expedição.
+"""A gêmea na tela do gate de pagamento, no board da Saída.
 
 Régua de servidor mais apertada do que a da tela inventa bloqueio invisível: o
 operador toca em "Despachar", leva recusa seca e o cliente está esperando. O
-card da expedição precisa dizer ANTES do toque, com o mesmo rótulo curto e o
+card da Saída precisa dizer ANTES do toque, com o mesmo rótulo curto e o
 mesmo motivo que o Gestor mostra — e não pode dizer nada quando o pagamento é
 na porta, que é venda legítima.
 """
@@ -25,7 +25,7 @@ def expedition_board(db):
         name="Loja online",
         config={"payment": {"method": ["pix", "link"], "timing": "post_commit"}},
     )
-    return KDSInstance.objects.create(ref="exp-twin", name="Expedição", type="expedition")
+    return KDSInstance.objects.create(ref="exp-twin", name="Saída", type="expedition")
 
 
 def _ready_order(ref, payment):

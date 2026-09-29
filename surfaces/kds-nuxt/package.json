@@ -14,6 +14,7 @@
     "test:unit": "vitest run --project unit",
     "test:component": "vitest run --project component",
     "test:e2e": "playwright test",
+    "preview:cards": "node tests/preview/serve.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=kds --out=public/pwa",

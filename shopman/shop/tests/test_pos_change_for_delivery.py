@@ -132,7 +132,7 @@ def test_review_avisa_troco_para_menor_que_o_total_sem_bloquear(counter):
     assert "change_for_below_total" not in [w["code"] for w in ok.warnings]
 
 
-def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
+def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch, django_capture_on_commit_callbacks):
     from unittest.mock import Mock
 
     from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -149,13 +149,23 @@ def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
     backend.emit.return_value = FiscalDocumentResult(success=True, access_key="1" * 44, status="authorized")
     monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: backend)
     monkeypatch.setattr(fiscal, "emission_resolver", lambda order: True)
-    address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state": "PR"}
+    address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state_code": "PR"}
     result = _close(operator, _delivery_payload(shift, client_request_id="cpf-delivery", fiscal_tax_id="52998224725", receipt_identity_choices=[{
         "field": "tax_id", "value": "52998224725", "customer_ref": "", "owner_ref": "",
         "choice": "receipt_only", "client_request_id": "cpf-delivery",
     }], delivery_address_structured=address, payment_collection="terminal", tendered_q=1800))
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q == 1800
+    # Entrega paga no balcão: o fechamento dá só a Via Recibo; a nota nasce com
+    # a sacola pronta, antes de o entregador sair (decisão de 26/09/2026).
+    assert not Directive.objects.filter(topic="fiscal.emit_nfce", payload__order_ref=order.ref).exists()
+    for status in ("accepted", "preparing", "ready"):
+        order.refresh_from_db()
+        if order.status != status and order.can_transition_to(status):
+            with django_capture_on_commit_callbacks(execute=True):
+                order.transition_status(status, actor="test")
+    order.refresh_from_db()
+    assert order.status == "ready"
     message = Directive.objects.get(topic="fiscal.emit_nfce", payload__order_ref=order.ref)
     NFCeEmitHandler(backend).handle(message=message, ctx={})
     sent = backend.emit.call_args.kwargs

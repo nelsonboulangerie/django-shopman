@@ -54,7 +54,7 @@ const STEP_CLASSES: Record<StepState, string> = {
       </li>
       <li class="flex items-center gap-3 rounded-lg border p-4 transition-colors" :class="STEP_CLASSES[steps[2]!]" :aria-current="steps[2] === 'current' ? 'step' : undefined">
         <Icon :name="!issue ? 'lucide:check-circle' : 'lucide:calendar-clock'" class="size-5 shrink-0" :class="!issue ? 'text-success' : steps[2] === 'current' ? 'text-primary' : 'text-muted-foreground'" />
-        <div class="min-w-0 flex-1"><h2 class="font-medium">3. Data e horário</h2><p class="text-sm text-muted-foreground">{{ !issue ? scheduleLabel : 'Combine o dia e o horário — é o que a casa promete.' }}</p></div>
+        <div class="min-w-0 flex-1"><h2 class="font-medium">3. Data e horário</h2><p class="text-sm text-muted-foreground">{{ !issue ? scheduleLabel : 'Combine o dia e o horário: é o que a casa promete ao cliente.' }}</p></div>
         <UiButton :variant="!issue || steps[2] === 'locked' ? 'outline' : 'default'" :disabled="loading || !fulfillmentReady" @click="emit('schedule')">{{ !issue ? 'Alterar' : 'Escolher data e horário' }}</UiButton>
       </li>
     </ol>

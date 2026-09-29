@@ -24,6 +24,7 @@ from shopman.offerman.protocols.projection import ProjectedItem, ProjectionResul
 from shopman.orderman.models import Directive
 
 from shopman.shop.directives import CATALOG_PROJECT_SKU
+from shopman.shop.services import ifood_auth
 
 # ── Canonical projection registry (OFFERMAN["PROJECTION_BACKENDS"]) ─────────────
 # Mirrors config/settings.py OFFERMAN so override_settings preserves the other
@@ -76,10 +77,10 @@ def ifood_settings():
 
 @pytest.fixture
 def fake_oauth():
-    """Patch ifood_auth so authorized_headers() yields a real Bearer header."""
+    """Patch ifood_auth so the adapter gets a real Bearer header."""
     with patch(
-        "shopman.shop.services.ifood_auth.get_access_token",
-        return_value="fake-token-xyz",
+        "shopman.shop.services.ifood_auth.token_with_reason",
+        return_value=("fake-token-xyz", ""),
     ):
         yield
 
@@ -240,11 +241,14 @@ def test_adapter_project_errors_when_no_category(fake_oauth):
 
 
 def test_adapter_project_returns_failure_without_oauth(ifood_item, settings):
-    """No OAuth credentials → authorized_headers() is None → loud failure, no PUT."""
+    """No OAuth credentials → no header → loud failure naming the real cause, no PUT."""
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 
     settings.SHOPMAN_IFOOD = {"merchant_id": "00000000-0000-4000-8000-000000000001"}
-    with patch("shopman.shop.services.ifood_auth.get_access_token", return_value=None):
+    with patch(
+        "shopman.shop.services.ifood_auth.token_with_reason",
+        return_value=(None, ifood_auth.NOT_CONFIGURED),
+    ):
         with patch("requests.put") as mock_put:
             result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
 

@@ -69,7 +69,7 @@ onBeforeUnmount(() => {
 const draftName = ref("");
 const draftKind = ref("other");
 const draftYieldQuantity = ref("");
-const draftYieldUnit = ref("kg");
+const draftYieldUnit = ref("g");
 const draftItems = ref<CaptureItemProjection[]>([]);
 const draftSource = ref<"note" | "photo">("note");
 
@@ -78,7 +78,7 @@ function seedDraft(items: CaptureItemProjection[], source: "note" | "photo") {
   draftName.value = draft?.name ?? "";
   draftKind.value = draft?.kind && KIND_OPTIONS.some((option) => option.value === draft.kind) ? draft.kind : "other";
   draftYieldQuantity.value = draft?.yield_quantity ?? "";
-  draftYieldUnit.value = draft?.yield_unit || "kg";
+  draftYieldUnit.value = draft?.yield_unit || "g";
   draftItems.value = items.map((item) => ({ ...item, candidates: [...(item.candidates ?? [])] }));
   draftSource.value = source;
 }
@@ -150,7 +150,7 @@ async function continueToEditor() {
 const manualName = ref("");
 const manualKind = ref("bread");
 const manualYieldQuantity = ref("1");
-const manualYieldUnit = ref("kg");
+const manualYieldUnit = ref("g");
 const manualError = ref("");
 
 async function startManual() {

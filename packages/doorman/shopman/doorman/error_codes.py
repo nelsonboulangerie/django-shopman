@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     CODE_EXPIRED = "code_expired"
     CODE_INVALID = "code_invalid"
     CODE_MAX_ATTEMPTS = "code_max_attempts"
+    TOO_MANY_FAILURES = "too_many_failures"
 
     # Access link / token errors
     TOKEN_INVALID = "token_invalid"

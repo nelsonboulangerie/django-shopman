@@ -1,5 +1,9 @@
 # Storefront — SPEC (engenharia reversa do estado atual)
 
+> **Vocabulário fechado da loja:** em [`suite-vocabulary.md`](suite-vocabulary.md) §5. A loja
+> tem voz própria — diz **sacola** (nunca carrinho), **fornada** e **aparelho**, e nenhum
+> desses três é o que as superfícies de operador dizem.
+
 > **Como ler.** Esta spec foi escrita **a partir do código** (não do desejado): descreve o que o
 > storefront **de fato entrega hoje**, no estado headless (Django sem páginas de cliente; loja Nuxt
 > no apex). A revisão às avessas que a originou já foi **executada**: a seção final
@@ -200,7 +204,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   Preferências.
 - **Declaração de maioridade no login:** a nota ao lado do botão de entrar — "Ao continuar, você confirma
   que é maior de idade e aceita os Termos de uso." (frase fixa em `presentation/auth.ts`, link para
-  `/terms`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
+  `/termos`; nunca "18"/"anos"/"adulto") — aparece em todo caminho de entrada com tela (telefone/código,
   aparelho reconhecido, access link `/a`). Toda autenticação bem-sucedida (`verify-code`, `device-check`,
   `auth/access`, `passkey/login`) carimba `Customer.metadata.adult_declaration`
   (`account.record_adult_declaration`, versão `login-terms-pt-BR-v1`, idempotente: a primeira fica). É a

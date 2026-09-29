@@ -12,6 +12,8 @@ import logging
 
 from shopman.orderman.models import Directive
 
+from shopman.shop.services.order_helpers import is_test_order
+
 logger = logging.getLogger(__name__)
 
 TOPIC = "loyalty.earn"
@@ -30,6 +32,12 @@ def redeem(order) -> None:
 
     ASYNC — dispatched on on_commit so points are deducted immediately after order creation.
     """
+    # Pedido de teste de marketplace: saldo de fidelidade é dinheiro do cliente.
+    # Nem debitar nem creditar por uma venda que não aconteceu.
+    if is_test_order(order):
+        logger.info("loyalty.redeem: pedido de teste order=%s — resgate suprimido", order.ref)
+        return
+
     applied_q = int((order.data or {}).get("loyalty", {}).get("applied_discount_q") or 0)
     if applied_q <= 0:
         return
@@ -55,6 +63,12 @@ def earn(order) -> None:
 
     ASYNC — non-critical, can fail without impacting the order.
     """
+    # Pedido de teste de marketplace: creditar pontos por ele daria ao cliente
+    # ``IF-*`` da homologação um saldo resgatável no balcão.
+    if is_test_order(order):
+        logger.info("loyalty.earn: pedido de teste order=%s — crédito suprimido", order.ref)
+        return
+
     if not order.total_q or order.total_q <= 0:
         return
 

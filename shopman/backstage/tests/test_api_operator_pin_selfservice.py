@@ -150,7 +150,7 @@ class PinResetTests(TestCase):
         temporário EM CLARO, e `OperatorUnlockView` fazia `login()` com ele —
         `_eligible` deixa passar porque `has_perm` de superusuário é sempre True.
         O cookie de sessão sai com `Domain=.<dominio>`, então a aba ao lado abria
-        o /admin/ como dono. É o mesmo buraco que `station_trust.autonomous_account`
+        o /admin/ como dono. É o mesmo buraco que `station_trust.autonomous_operator_for`
         já recusa para o totem autônomo; faltava a recusa no caminho do PIN.
         """
         dono = User.objects.create_superuser("dono", password="x")

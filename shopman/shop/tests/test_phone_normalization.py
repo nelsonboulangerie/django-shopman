@@ -1,7 +1,7 @@
 """
 Tests for P1: Phone normalization — iOS autofill zero in DDD.
 
-Regression tests ensuring that (043) 98404-9009 and (43) 98404-9009
+Regression tests ensuring that (043) 98123-4567 and (43) 98123-4567
 resolve to the SAME customer across all flows:
 - Web checkout
 - Manychat access webhook
@@ -29,15 +29,15 @@ pytestmark = pytest.mark.django_db
 class TestZeroPrefixDDDNormalization(TestCase):
     """All zero-prefix DDD variants must normalize identically."""
 
-    EXPECTED = "+5543984049009"
+    EXPECTED = "+5543981234567"
 
     VARIANTS = [
-        "(043) 98404-9009",   # iOS autofill with zero
-        "(43) 98404-9009",    # Standard formatted
-        "43984049009",        # Bare digits
-        "043984049009",       # Bare digits with zero
-        "+5543984049009",     # E.164
-        "5543984049009",      # With country code, no plus
+        "(043) 98123-4567",   # iOS autofill with zero
+        "(43) 98123-4567",    # Standard formatted
+        "43981234567",        # Bare digits
+        "043981234567",       # Bare digits with zero
+        "+5543981234567",     # E.164
+        "5543981234567",      # With country code, no plus
     ]
 
     def test_all_variants_normalize_to_same_e164(self):
@@ -59,24 +59,24 @@ class TestCustomerPhoneDedup(TestCase):
         self.customer = Customer.objects.create(
             ref="TEST-001",
             first_name="Maria",
-            phone="+5543984049009",
+            phone="+5543981234567",
         )
 
     def test_get_by_phone_with_zero_ddd(self):
         """get_by_phone with (043) format finds the same customer."""
-        found = customer_service.get_by_phone("(043) 98404-9009")
+        found = customer_service.get_by_phone("(043) 98123-4567")
         self.assertIsNotNone(found)
         self.assertEqual(found.pk, self.customer.pk)
 
     def test_get_by_phone_without_zero_ddd(self):
         """get_by_phone with (43) format finds the same customer."""
-        found = customer_service.get_by_phone("(43) 98404-9009")
+        found = customer_service.get_by_phone("(43) 98123-4567")
         self.assertIsNotNone(found)
         self.assertEqual(found.pk, self.customer.pk)
 
     def test_get_by_phone_bare_digits_with_zero(self):
         """get_by_phone with bare digits including zero finds the same customer."""
-        found = customer_service.get_by_phone("043984049009")
+        found = customer_service.get_by_phone("043981234567")
         self.assertIsNotNone(found)
         self.assertEqual(found.pk, self.customer.pk)
 
@@ -101,18 +101,18 @@ class TestContactPointPhoneDedup(TestCase):
         self.customer = Customer.objects.create(
             ref="TEST-CP-001",
             first_name="Ana",
-            phone="+5543984049009",
+            phone="+5543981234567",
         )
         ContactPoint.objects.create(
             customer=self.customer,
             type=ContactPoint.Type.WHATSAPP,
-            value_normalized="+5543984049009",
+            value_normalized="+5543981234567",
             is_verified=True,
         )
 
     def test_contact_point_found_by_normalized_zero_ddd(self):
         """ContactPoint lookup with (043) format works."""
-        phone = normalize_phone("(043) 98404-9009")
+        phone = normalize_phone("(043) 98123-4567")
         cp = ContactPoint.objects.filter(
             type=ContactPoint.Type.WHATSAPP,
             value_normalized=phone,
@@ -122,7 +122,7 @@ class TestContactPointPhoneDedup(TestCase):
 
     def test_contact_point_found_by_normalized_standard(self):
         """ContactPoint lookup with (43) format works."""
-        phone = normalize_phone("(43) 98404-9009")
+        phone = normalize_phone("(43) 98123-4567")
         cp = ContactPoint.objects.filter(
             type=ContactPoint.Type.WHATSAPP,
             value_normalized=phone,
@@ -147,13 +147,13 @@ class TestOrderHandleRefPhoneLookup(TestCase):
             status="new",
             total_q=1000,
             handle_type="phone",
-            handle_ref="+5543984049009",
+            handle_ref="+5543981234567",
             data={},
         )
 
     def test_order_found_by_zero_ddd_phone(self):
         """Order lookup by handle_ref matches (043) variant."""
-        phone = normalize_phone("(043) 98404-9009")
+        phone = normalize_phone("(043) 98123-4567")
         order = Order.objects.filter(
             handle_type="phone",
             handle_ref=phone,
@@ -163,7 +163,7 @@ class TestOrderHandleRefPhoneLookup(TestCase):
 
     def test_order_found_by_standard_phone(self):
         """Order lookup by handle_ref matches (43) variant."""
-        phone = normalize_phone("(43) 98404-9009")
+        phone = normalize_phone("(43) 98123-4567")
         order = Order.objects.filter(
             handle_type="phone",
             handle_ref=phone,

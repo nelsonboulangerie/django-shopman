@@ -158,7 +158,7 @@ class IFoodCancellationPendingTests(TestCase):
 
     def test_http_failures_have_safe_retry_classification(self):
         for status, retryable in ((400, False), (403, False), (408, True), (429, True), (500, True)):
-            with self.subTest(status=status), patch("shopman.shop.services.ifood_auth.authorized_headers", return_value={"Authorization": "token"}), patch("requests.post", return_value=MagicMock(status_code=status, text="secret response", headers={"Content-Type": "application/json"}, json=lambda: {"error": "forbidden"})):
+            with self.subTest(status=status), patch("shopman.shop.services.ifood_auth.headers_with_reason", return_value=({"Authorization": "token"}, "")), patch("requests.post", return_value=MagicMock(status_code=status, text="secret response", headers={"Content-Type": "application/json"}, json=lambda: {"error": "forbidden"})):
                 with self.assertRaises(ifood_callbacks.IFoodCallbackError) as raised:
                     ifood_callbacks.send_action("order", "requestCancellation")
                 self.assertEqual(raised.exception.retryable, retryable)
@@ -173,7 +173,7 @@ class IFoodCancellationPendingTests(TestCase):
         denied._content = b"<html><h1>Access Denied</h1>private edge details</html>"
         accepted = Response()
         accepted.status_code = 202
-        with patch("shopman.shop.services.ifood_auth.authorized_headers", return_value={"Authorization": "token"}), patch("requests.post", side_effect=[denied, accepted]) as post:
+        with patch("shopman.shop.services.ifood_auth.headers_with_reason", return_value=({"Authorization": "token"}, "")), patch("requests.post", side_effect=[denied, accepted]) as post:
             with self.assertRaises(DirectiveTransientError) as raised:
                 IFoodStatusCallbackHandler().handle(message=self.directive(), ctx={})
             self.order.refresh_from_db()
@@ -194,7 +194,7 @@ class IFoodCancellationPendingTests(TestCase):
         denied.status_code = 403
         denied.headers["Content-Type"] = "application/json"
         denied._content = b'{"code":"FORBIDDEN","message":"private auth details"}'
-        with patch("shopman.shop.services.ifood_auth.authorized_headers", return_value={"Authorization": "token"}), patch("requests.post", return_value=denied):
+        with patch("shopman.shop.services.ifood_auth.headers_with_reason", return_value=({"Authorization": "token"}, "")), patch("requests.post", return_value=denied):
             with self.assertRaises(DirectiveTerminalError) as raised:
                 IFoodStatusCallbackHandler().handle(message=self.directive(), ctx={})
         self.order.refresh_from_db()
@@ -211,7 +211,7 @@ class IFoodCancellationPendingTests(TestCase):
                 denied.status_code = 403
                 denied.headers["Content-Type"] = content_type
                 denied._content = b"Access Denied"
-                with patch("shopman.shop.services.ifood_auth.authorized_headers", return_value={"Authorization": "token"}), patch("requests.post", return_value=denied):
+                with patch("shopman.shop.services.ifood_auth.headers_with_reason", return_value=({"Authorization": "token"}, "")), patch("requests.post", return_value=denied):
                     with self.assertRaises(ifood_callbacks.IFoodCallbackError) as raised:
                         ifood_callbacks.send_action("order", "requestCancellation")
                 self.assertTrue(raised.exception.retryable)

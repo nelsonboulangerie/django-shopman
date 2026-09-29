@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote, urlencode
@@ -46,7 +47,19 @@ class OperatorAlertsProjection:
     contract_version: int = 1
 
 
-def build_operator_alerts_projection(*, alerts, counts) -> OperatorAlertsProjection:
+#: O marcador técnico de dedupe que ``create_operator_alert`` pendura no fim da
+#: mensagem quando a chave não aparece no texto. Ele continua no banco (o
+#: dedupe e ``fiscal.emit_failed_alert_open`` procuram por ele), mas não é
+#: frase para o operador.
+_DEDUPE_SUFFIX = re.compile(r"\s*\n\s*\nDedupe: [^\n]*\s*$")
+
+
+def readable_message(message: str) -> str:
+    """A mensagem como o operador lê: sem o marcador técnico de dedupe."""
+    return _DEDUPE_SUFFIX.sub("", str(message or "")).strip()
+
+
+def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> OperatorAlertsProjection:
     alert_rows = tuple(alerts)
     production_refs = {alert.order_ref for alert in alert_rows if alert.order_ref and alert.audience == "production"}
     target_dates: dict[str, str] = {}
@@ -69,12 +82,13 @@ def build_operator_alerts_projection(*, alerts, counts) -> OperatorAlertsProject
             severity=alert.severity,
             severity_label=alert.get_severity_display(),
             audience=alert.audience,
-            message=alert.message,
+            message=readable_message(alert.message),
             order_ref=alert.order_ref,
             created_at_display=timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
             actions=_alert_actions(
                 alert,
                 target_date=target_dates.get(alert.order_ref, ""),
+                surface=surface,
             ),
         )
         for alert in alert_rows
@@ -105,14 +119,43 @@ _PRODUCTION_CONTEXT_PATHS = {
 _ORDER_CONTEXT_PATHS = {
     "order_production_quality_risk": "/",
     "customer_cancellation_requested": "/",
+    # O card do pedido, filtrado no quadro: é lá que está "Imprimir DANFE".
+    "danfe_print_failed": "/",
+}
+
+#: O rótulo do botão, no Gestor de pedidos: diz aonde leva, não "resolver".
+_ORDERS_SURFACE_LABELS = {
+    "danfe_print_failed": "Imprimir a DANFE no card",
+    "order_production_quality_risk": "Abrir o pedido no quadro",
 }
 
 
-def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionProjection, ...]:
+def _catalog_product_href(alert) -> str:
+    """GTIN recusado: o produto aberto no Catálogo do Gestor, na aba do GTIN."""
+    from shopman.shop.services.fiscal import GTIN_REJECTED_ALERT_TYPE, gtin_rejected_alert_sku
+
+    if alert.type != GTIN_REJECTED_ALERT_TYPE:
+        return ""
+    sku = gtin_rejected_alert_sku(alert.message)
+    return f"/catalog?{urlencode({'sku': sku, 'tab': 'social'})}" if sku else ""
+
+
+def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[ProductionActionProjection, ...]:
     actions = []
     path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
-    if path is not None:
-        exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
+    label = "Resolver no contexto"
+    exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
+    catalog_href = _catalog_product_href(alert) if surface == "orders" else ""
+    if catalog_href:
+        actions.append(_open_context_action(alert, label="Conferir o GTIN no Catálogo", href=catalog_href))
+    elif surface == "orders" and alert.order_ref and alert.type not in _PRODUCTION_CONTEXT_PATHS:
+        # No Gestor de pedidos, todo alerta de pedido leva ao pedido: é lá que
+        # estão o contato do cliente, a nota, a corrida e o cancelamento.
+        label = _ORDERS_SURFACE_LABELS.get(alert.type, "Abrir o pedido")
+        if path is None:
+            path = "/"
+            exact_order_path = True
+    if path is not None and not catalog_href:
         if exact_order_path:
             path = f"/{quote(alert.order_ref, safe='')}"
         query_params = {}
@@ -122,34 +165,7 @@ def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionPro
             query_params["date"] = target_date
         query = urlencode(query_params)
         href = f"{path}?{query}" if query else path
-        actions.append(
-            ProductionActionProjection(
-                ref=f"open-context:{alert.pk}",
-                kind="open_alert_context",
-                label="Resolver no contexto",
-                priority=10,
-                enabled=True,
-                reason="",
-                method="GET",
-                href=href,
-                payload_schema="",
-                expected_rev=None,
-                idempotency=ProductionActionIdempotencyProjection(
-                    required=False,
-                    key_scope="",
-                ),
-                confirmation=ProductionActionConfirmationProjection(
-                    required=False,
-                    reason_required=False,
-                    title="",
-                    confirm_label="Abrir",
-                ),
-                approval_requirement=None,
-                source_alert_ref=str(alert.pk),
-                source_alert_effect="keeps_open",
-                proof="",
-            )
-        )
+        actions.append(_open_context_action(alert, label=label, href=href))
     if not alert.acknowledged:
         actions.append(
             ProductionActionProjection(
@@ -180,3 +196,32 @@ def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionPro
             )
         )
     return tuple(actions)
+
+
+def _open_context_action(alert, *, label: str, href: str) -> ProductionActionProjection:
+    return ProductionActionProjection(
+        ref=f"open-context:{alert.pk}",
+        kind="open_alert_context",
+        label=label,
+        priority=10,
+        enabled=True,
+        reason="",
+        method="GET",
+        href=href,
+        payload_schema="",
+        expected_rev=None,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=False,
+            key_scope="",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=False,
+            reason_required=False,
+            title="",
+            confirm_label="Abrir",
+        ),
+        approval_requirement=None,
+        source_alert_ref=str(alert.pk),
+        source_alert_effect="keeps_open",
+        proof="",
+    )

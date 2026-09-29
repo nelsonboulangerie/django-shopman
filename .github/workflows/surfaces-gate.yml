@@ -55,6 +55,15 @@ jobs:
       - name: Gate de versões
         run: python scripts/check_surface_versions.py
 
+      # Mesma natureza de pergunta (RELAÇÃO entre os apps, não um app só) e mesmo
+      # custo: leitura de arquivo. Superfície nova que falte em qualquer lugar
+      # inventariado reprova aqui com o nome do arquivo. Os specs da DO e os
+      # workflows são YAML, daí o único pacote instalado.
+      - name: Gate do registro de superfícies
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/check_surface_registry.py
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest

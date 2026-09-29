@@ -4,16 +4,19 @@
 // frozen record of what was sold — never recomputed from live state. Formatting
 // only; no policy. The print transport (kiosk window.print → ESC-POS / network
 // ePOS on real hardware) is validated separately on a device.
-import type { POSCartItem, POSPaymentMethodProjection } from "~/types/pos";
+import type { POSCartItem, POSPaymentMethodProjection, PosFiscalState } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { lineTotalQ } from "~/presentation/lineDiscounts";
 import { methodLabel } from "~/presentation/payment";
+import { kgDisplay, lineAmountQ } from "~/presentation/weighed";
 
 export interface PosReceiptItem {
   name: string;
   qty: number;
   price_q: number;
   discountPct: number;
+  /** Peça pesada: o peso, em gramas. `price_q` é então o preço do quilo. */
+  weightG?: number;
 }
 
 export interface PosReceiptPayment {
@@ -41,11 +44,16 @@ export interface PosReceiptSnapshot {
   changeQ?: number;
   /** Cobrança na entrega/retirada: o papel sai ANTES do dinheiro. */
   paymentPending?: boolean;
+  /** Encomenda paga antes: "A nota fiscal sai na retirada." — a mesma frase
+   *  do servidor (`receipt_escpos._fiscal_handoff_line`). */
+  fiscalHandoffLine?: string;
 }
 
 export interface ReceiptLineView {
   name: string;
   qty: number;
+  /** "2×" ou "0,312 kg". */
+  qtyLabel: string;
   unitDisplay: string;
   totalDisplay: string;
   discountPct: number;
@@ -68,10 +76,11 @@ export function cashLandedInDrawer(payments: readonly PosReceiptPayment[]): bool
 
 /** Net line total in cents, applying the per-line percentage discount. */
 export function receiptLineTotalQ(item: PosReceiptItem): number {
-  const gross = item.price_q * item.qty;
+  const line = { qty: item.qty, weighed: item.weightG ? { entry: "weight" as const, weight_g: item.weightG } : null };
+  const gross = lineAmountQ(item.price_q, line);
   if (!item.discountPct) return gross;
   const perUnit = Math.min(item.price_q, Math.round((item.price_q * item.discountPct) / 100));
-  return Math.max(0, gross - perUnit * item.qty);
+  return Math.max(0, lineAmountQ(item.price_q - perUnit, line));
 }
 
 /**
@@ -99,7 +108,8 @@ export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {
   return snap.items.map((item) => ({
     name: item.name,
     qty: item.qty,
-    unitDisplay: formatBRL(item.price_q),
+    qtyLabel: item.weightG ? kgDisplay(item.weightG) : `${item.qty}×`,
+    unitDisplay: formatBRL(item.price_q) + (item.weightG ? "/kg" : ""),
     totalDisplay: formatBRL(receiptLineTotalQ(item)),
     discountPct: item.discountPct,
   }));
@@ -135,6 +145,17 @@ export function receiptPayments(
  * "PAGAMENTO PENDENTE", como o servidor — sem a marca, um recibo com total
  * impresso é indistinguível de um comprovante.
  */
+/**
+ * A frase do recibo quando a NFC-e espera a saída da mercadoria (encomenda
+ * paga antes — decisão de 26/09/2026); "" nos outros estados. O recibo é o
+ * papel do pagamento, e sem a frase o cliente sai esperando uma nota.
+ */
+export function receiptFiscalHandoffLine(state: PosFiscalState): string {
+  if (state === "awaiting_pickup") return "A nota fiscal sai na retirada.";
+  if (state === "awaiting_delivery") return "A nota fiscal sai na entrega.";
+  return "";
+}
+
 export function receiptPaymentPending(snap: PosReceiptSnapshot): boolean {
   if (snap.paymentPending) return true;
   return snap.payments.length > 0 && snap.payments.every((payment) => payment.collection === "on_delivery");

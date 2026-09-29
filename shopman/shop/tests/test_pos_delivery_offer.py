@@ -55,6 +55,11 @@ def loja():
             "stock": {"check_on_commit": False},
         },
     )
+    # O pão vendido existe no catálogo, com preço: item sem preço não vende em
+    # canal nenhum (``PricedItemsRule``), e o PDV recusa já na review.
+    from shopman.offerman.models import Product
+
+    Product.objects.create(sku="PAO", name="Pão", base_price_q=1200, is_published=True, is_sellable=True)
     return shop
 
 

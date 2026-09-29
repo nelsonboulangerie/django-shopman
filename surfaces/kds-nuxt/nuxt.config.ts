@@ -16,7 +16,12 @@ export default defineNuxtConfig({
   // 301 das rotas antigas → enxutas: estação direta em /<ref> (era /estacao/<ref>);
   // board do cliente em /pickup (era /cliente, depois /retirada) — cada rota antiga
   // aponta DIRETO ao destino final, sem cadeia de redirects. Splat preservado pelo Nitro.
+  // A estação "expedicao" do seed virou "saida" (26/09/2026 — "Expedição" é o
+  // fechamento de lote da Produção; migração backstage.0076): o quiosque que
+  // ficou com o endereço antigo cai na estação nova, não em "estação não existe".
   routeRules: {
+    "/estacao/expedicao": { redirect: { to: "/saida", statusCode: 301 } },
+    "/expedicao": { redirect: { to: "/saida", statusCode: 301 } },
     "/estacao/**": { redirect: { to: "/**", statusCode: 301 } },
     "/cliente": { redirect: { to: "/pickup", statusCode: 301 } },
     "/retirada": { redirect: { to: "/pickup", statusCode: 301 } },

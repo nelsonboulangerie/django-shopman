@@ -55,6 +55,22 @@ class TestPendingProductionProjection:
         closing = build_day_closing()
         assert closing.pending_production[0].is_overdue
 
+    def test_target_date_travels_in_iso(self, recipe):
+        """O link do PDV para a Produção precisa da DATA, não do rótulo.
+
+        A grade da Produção recorta por `target_date` exato e abre em hoje por
+        padrão; o fechamento lista ordens com `target_date <= hoje`, ou seja, a
+        atrasada é de ontem. Sem a data em ISO, "Resolver na produção" levaria a
+        uma grade onde a ordem prometida não aparece. O `target_date_display`
+        ("21/09") não serve: não é o que a query string aceita.
+        """
+        ontem = date.today() - timedelta(days=1)
+        craft.plan(recipe, 10, date=ontem)
+
+        row = build_day_closing().pending_production[0]
+        assert row.target_date == ontem.isoformat()
+        assert row.target_date_display == ontem.strftime("%d/%m")
+
     def test_finished_and_voided_are_excluded(self, recipe):
         done = craft.plan(recipe, 10, date=date.today())
         craft.finish(order=done, finished=10)

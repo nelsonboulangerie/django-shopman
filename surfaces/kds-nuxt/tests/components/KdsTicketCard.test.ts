@@ -50,6 +50,7 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     completed_at_display: "",
     kitchen_note: "",
     customer_note: "",
+    test_order_label: "",
     ...over,
   };
 }
@@ -265,5 +266,62 @@ describe("KdsTicketCard — o canon do kit", () => {
     const classes = w.get("article").classes();
     expect(classes.some((c) => c.startsWith("ring"))).toBe(false);
     expect(classes).toContain("border-primary");
+  });
+
+  // A trava do servidor não cria ticket para pedido de teste; este card só
+  // existe para o que já estava no painel. O aviso vem antes do código.
+  it("avisa antes do código quando o ticket é de um pedido de teste", () => {
+    const w = mountCard({ ticket: ticket({ test_order_label: "Pedido de teste do iFood" }) });
+    expect(w.get("[data-kds-test-order]").text()).toContain("Pedido de teste do iFood");
+    expect(w.get("[data-kds-test-order]").text()).toContain("não produzir");
+  });
+
+  it("não avisa nada num ticket de pedido de verdade", () => {
+    expect(mountCard({ ticket: ticket() }).find("[data-kds-test-order]").exists()).toBe(false);
+  });
+});
+
+describe("KdsTicketCard — a anatomia da Saída", () => {
+  it("a linha de chamada diz Entrega ou Retirada, como na Saída", () => {
+    const entrega = mountCard({ ticket: ticket({ fulfillment_icon: "local_shipping" }) });
+    const retirada = mountCard({ ticket: ticket({ fulfillment_icon: "storefront" }) });
+    expect(entrega.text()).toContain("Entrega");
+    expect(retirada.text()).toContain("Retirada");
+  });
+
+  it("o cliente mora embaixo do código, fora da linha do relógio", () => {
+    const w = mountCard({ ticket: ticket({ customer_name: "Mariana" }) });
+    const html = w.html();
+    expect(html.indexOf("0007")).toBeLessThan(html.indexOf("Mariana"));
+    expect(html.indexOf("Mariana")).toBeLessThan(html.indexOf("1m"));
+  });
+
+  it("o botão fica DENTRO da moldura, arredondado, e não uma laje colada na borda", () => {
+    const w = mountCard({ ticket: ticket({ status: "pending" }) });
+    const action = w.get("button[data-kds-action]");
+    expect(action.classes()).toContain("rounded-md");
+    expect(action.element.parentElement?.className).toContain("px-4");
+  });
+
+  it("Iniciar e Finalizar têm a mesma cor: um contornado, o outro sólido (decisão de 21/09)", () => {
+    const iniciar = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
+    expect(iniciar.classes()).toContain("border-foreground");
+    expect(iniciar.classes()).toContain("text-foreground");
+    expect(iniciar.classes().some((c) => c === "bg-foreground" || c.includes("primary"))).toBe(false);
+    const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(finalizar.classes()).toContain("bg-foreground");
+  });
+
+  it("à direita do código há UM chip (o relógio); a marca do detalhe não tem moldura", () => {
+    const w = mountCard({ ticket: ticket() });
+    const header = w.get("article").element.querySelector("[class*='justify-between']")!;
+    expect(header.querySelectorAll(".border").length).toBe(1);
+  });
+
+  it("prévia agendada ocupa o lugar do botão como TEXTO, não como controle", () => {
+    const w = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }), serviceDate: "2026-09-19" });
+    const inert = w.get("[data-kds-action]");
+    expect(inert.element.tagName).toBe("P");
+    expect(inert.text()).toContain("Prévia · começa em 19/09");
   });
 });

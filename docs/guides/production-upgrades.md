@@ -103,7 +103,10 @@ por isso o fallback de leitura é obrigatório na fase expand.
 - [ ] `Runtime Gate` verde (PostgreSQL + Redis).
 - [ ] `make release-readiness-strict` verde.
 - [ ] `python manage.py check --deploy` verde com secrets/hosts reais.
-- [ ] **Backup do banco de produção** tirado e localização registrada.
+- [ ] **Ponto de restauração anotado e declarado** em
+      `SHOPMAN_MIGRATION_BACKUP_REF` — [backup-e-restore §2.2](../runbooks/backup-e-restore.md).
+      O job `release` roda `migration_safety` antes do `migrate` e recusa o
+      deploy destrutivo sem essa declaração.
 - [ ] Migration testada em **staging com dado representativo** (duração medida).
 - [ ] Plano de rollback escrito para **esta** mudança (ver abaixo).
 - [ ] Janela de deploy e responsável definidos.

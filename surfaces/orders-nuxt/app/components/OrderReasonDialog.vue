@@ -71,9 +71,9 @@ function submit() {
 const title = computed(() => (props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido"));
 const description = computed(() =>
   isMarketplace.value
-    ? "Escolha o motivo exigido pelo iFood — ele é enviado ao marketplace."
+    ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
     : props.mode === "reject"
-      ? "Informe o motivo — o cliente é avisado."
+      ? "Informe o motivo. O cliente recebe o aviso com ele."
       : "O motivo é enviado ao cliente na notificação de cancelamento.",
 );
 </script>

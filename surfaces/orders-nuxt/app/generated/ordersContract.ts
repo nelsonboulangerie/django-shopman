@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -153,7 +153,49 @@ export interface FeedCollectionRef {
   exists: boolean;
 }
 
-/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = ()) */
+/** ChannelPeriodOption(key: 'str', label: 'str', enabled: 'bool', reason: 'str' = '') */
+export interface ChannelPeriodOption {
+  key: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
+}
+
+/** O toggle "Ativo" de um card — o mesmo em canal de venda e de exibição. */
+export interface ChannelSwitchProjection {
+  is_active: boolean;
+  state_line: string;
+  closed_by_shop: string;
+  scheduled_line: string;
+  title: string;
+  consequence: string;
+  periods: ChannelPeriodOption[];
+  reasons: string[];
+  reason_required: boolean;
+  enabled: boolean;
+  disabled_reason: string;
+  base_revision: string;
+  expected_actor_id: number | null;
+  requires_manager_approval: boolean;
+}
+
+/** ManagerOptionProjection(username: 'str', name: 'str') */
+export interface ManagerOptionProjection {
+  username: string;
+  name: string;
+}
+
+/** MenuboardAutomaticProjection(enabled: 'bool', is_sleeping: 'bool', idle_messages: 'tuple[str, ...]', state_line: 'str', lead_minutes: 'int', lag_minutes: 'int') */
+export interface MenuboardAutomaticProjection {
+  enabled: boolean;
+  is_sleeping: boolean;
+  idle_messages: string[];
+  state_line: string;
+  lead_minutes: number;
+  lag_minutes: number;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', automatic: 'MenuboardAutomaticProjection | None', actions: 'tuple[Action, ...]' = (), switch: 'ChannelSwitchProjection | None' = None) */
 export interface FeedProjection {
   ref: string;
   name: string;
@@ -166,10 +208,12 @@ export interface FeedProjection {
   collections: FeedCollectionRef[];
   rotate_seconds: number;
   items_per_page: number;
+  automatic: MenuboardAutomaticProjection | null;
   actions: Action[];
+  switch: ChannelSwitchProjection | null;
 }
 
-/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog') */
+/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog', is_active: 'bool' = True, switch: 'ChannelSwitchProjection | None' = None) */
 export interface CatalogChannelProjection {
   ref: string;
   name: string;
@@ -182,6 +226,8 @@ export interface CatalogChannelProjection {
   skipped: number;
   observed: number;
   catalog_path: string;
+  is_active: boolean;
+  switch: ChannelSwitchProjection | null;
 }
 
 /** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
@@ -191,11 +237,45 @@ export interface CollectionOptionProjection {
   product_count: number;
 }
 
-/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = ()) */
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = (), managers: 'tuple[ManagerOptionProjection, ...]' = (), viewer_name: 'str' = '') */
 export interface FeedBoardProjection {
   feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
   catalog_channels: CatalogChannelProjection[];
+  managers: ManagerOptionProjection[];
+  viewer_name: string;
+}
+
+/** ChannelHealthItem(key: 'str', state: 'str', label: 'str', hint: 'str' = '', action_label: 'str' = '', action_target: 'str' = '', action_path: 'str' = '') */
+export interface ChannelHealthItem {
+  key: string;
+  state: string;
+  label: string;
+  hint: string;
+  action_label: string;
+  action_target: string;
+  action_path: string;
+}
+
+/** ChannelHealthLink(label: 'str', target: 'str', path: 'str') */
+export interface ChannelHealthLink {
+  label: string;
+  target: string;
+  path: string;
+}
+
+/** ChannelHealthProjection(ref: 'str', ready: 'bool', summary: 'str', items: 'tuple[ChannelHealthItem, ...]', preview: 'tuple[ChannelHealthLink, ...]' = ()) */
+export interface ChannelHealthProjection {
+  ref: string;
+  ready: boolean;
+  summary: string;
+  items: ChannelHealthItem[];
+  preview: ChannelHealthLink[];
+}
+
+/** ChannelHealthBoardProjection(channels: 'tuple[ChannelHealthProjection, ...]') */
+export interface ChannelHealthBoardProjection {
+  channels: ChannelHealthProjection[];
 }
 
 /** One line item as displayed on order tracking or confirmation. */
@@ -233,6 +313,7 @@ export interface EquipmentOptionProjection {
   label: string;
   enabled: boolean;
   reason: string;
+  order_ref: string;
 }
 
 /** Onde está a maquininha agora: saiu com o entregador deste pedido e não voltou. */
@@ -311,6 +392,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
   is_preorder: boolean;
@@ -326,13 +408,24 @@ export interface OrderCardProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   waitlist_state: string;
   waitlist_deadline_iso: string;
   waitlist_label: string;
   ifood_cancellation_notice: string;
-  ifood_payment_summary: string[];
-  ifood_operation_summary: string[];
+  ifood_pickup_code: string;
+  ifood_schedule_label: string;
+  ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
+  danfe_printable: boolean;
+  danfe_printed: boolean;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -347,6 +440,9 @@ export interface OperatorOrderProjection {
   customer_phone: string;
   customer_phone_uri: string;
   customer_whatsapp_url: string;
+  customer_relay_phone: string;
+  customer_relay_code: string;
+  customer_relay_expires_at: string;
   customer_email: string;
   customer_ref: string;
   channel_ref: string;
@@ -397,12 +493,19 @@ export interface OperatorOrderProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  dispatch_needs_machine: boolean;
+  trip_with: string[];
+  courier_return_orders: string[];
+  courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  managers: Record<string, string>[];
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  test_order_label: string;
+  test_order_notice: string;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -430,4 +533,144 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
+}
+
+/** CustomerFilterOption(ref: 'str', label: 'str', active: 'bool') */
+export interface CustomerFilterOption {
+  ref: string;
+  label: string;
+  active: boolean;
+}
+
+/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
+export interface CustomerRowProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  email: string;
+  document_display: string;
+  source_label: string;
+  is_ifood: boolean;
+  orders_label: string;
+  last_order_display: string;
+  duplicate_hint: string;
+}
+
+/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+export interface CustomerListProjection {
+  query: string;
+  filter: string;
+  filters: CustomerFilterOption[];
+  items: CustomerRowProjection[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  total_label: string;
+}
+
+/** CustomerIdentifierProjection(type_label: 'str', value: 'str') */
+export interface CustomerIdentifierProjection {
+  type_label: string;
+  value: string;
+}
+
+/** CustomerOrderRowProjection(ref: 'str', channel_label: 'str', status_label: 'str', ordered_at_display: 'str', total_display: 'str') */
+export interface CustomerOrderRowProjection {
+  ref: string;
+  channel_label: string;
+  status_label: string;
+  ordered_at_display: string;
+  total_display: string;
+}
+
+/** CustomerCandidateProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str', reason_label: 'str') */
+export interface CustomerCandidateProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  document_display: string;
+  source_label: string;
+  orders_label: string;
+  reason_label: string;
+}
+
+/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', addresses: 'tuple[str, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]') */
+export interface CustomerDetailProjection {
+  ref: string;
+  name: string;
+  is_active: boolean;
+  merged_into_ref: string;
+  phone_display: string;
+  email: string;
+  document_display: string;
+  birthday_display: string;
+  source_label: string;
+  is_ifood: boolean;
+  created_display: string;
+  notes: string;
+  orders_label: string;
+  total_spent_display: string;
+  last_order_display: string;
+  identifiers: CustomerIdentifierProjection[];
+  addresses: string[];
+  recent_orders: CustomerOrderRowProjection[];
+  candidates: CustomerCandidateProjection[];
+  actions: Action[];
+}
+
+/** MergeSideProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str') */
+export interface MergeSideProjection {
+  ref: string;
+  name: string;
+  phone_display: string;
+  document_display: string;
+  source_label: string;
+  orders_label: string;
+}
+
+/** MergeMoveProjection(ref: 'str', count: 'int', label: 'str') */
+export interface MergeMoveProjection {
+  ref: string;
+  count: number;
+  label: string;
+}
+
+/** MergeFillProjection(field_label: 'str', value: 'str') */
+export interface MergeFillProjection {
+  field_label: string;
+  value: string;
+}
+
+/** MergePreviewProjection(source: 'MergeSideProjection', target: 'MergeSideProjection', moves: 'tuple[MergeMoveProjection, ...]', fills: 'tuple[MergeFillProjection, ...]', loyalty_label: 'str', summary: 'str', undo_notice: 'str', actions: 'tuple[Action, ...]') */
+export interface MergePreviewProjection {
+  source: MergeSideProjection;
+  target: MergeSideProjection;
+  moves: MergeMoveProjection[];
+  fills: MergeFillProjection[];
+  loyalty_label: string;
+  summary: string;
+  undo_notice: string;
+  actions: Action[];
+}
+
+/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', can_undo: 'bool', undo_label: 'str') */
+export interface MergeAuditRowProjection {
+  id: string;
+  source_ref: string;
+  target_ref: string;
+  target_name: string;
+  actor: string;
+  merged_at_display: string;
+  status: string;
+  status_label: string;
+  moved_label: string;
+  can_undo: boolean;
+  undo_label: string;
+}
+
+/** MergeAuditListProjection(items: 'tuple[MergeAuditRowProjection, ...]', undo_window_hours: 'int') */
+export interface MergeAuditListProjection {
+  items: MergeAuditRowProjection[];
+  undo_window_hours: number;
 }

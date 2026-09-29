@@ -16,9 +16,19 @@ def test_http_rejection_differs_from_unknown_acceptance(settings, monkeypatch, c
     settings.SHOPMAN_SMS = {"api_key": "test", "route": "17"}
     error = HTTPError("https://provider.invalid", code, "private provider message", {}, None)
     monkeypatch.setattr(notification_manychat, "urlopen", Mock(side_effect=error))
+    warning = Mock()
+    monkeypatch.setattr(notification_manychat.logger, "warning", warning)
     result = notification_manychat._api_call("/sending/sendFlow", {}, {"api_token": "test"})
     assert bool(result.get("outcome_unknown")) is unknown
     assert not result["success"]
+    if unknown:
+        warning.assert_called_once_with(
+            "manychat acceptance unconfirmed endpoint=%s transport=http status=%s",
+            "/sending/sendFlow",
+            code,
+        )
+        assert "private provider message" not in repr(warning.call_args)
+        assert "api_token" not in repr(warning.call_args)
     monkeypatch.setattr(notification_sms, "urlopen", Mock(side_effect=error))
     if unknown:
         with pytest.raises(RuntimeError, match="acceptance_unconfirmed"):

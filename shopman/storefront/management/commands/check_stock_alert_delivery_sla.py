@@ -15,6 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from shopman.shop.services.observability import create_operator_alert
         from shopman.storefront.models import StockAlertDelivery
+        from shopman.storefront.stock_alert_delivery import _alert_indeterminate
 
         minutes = max(1, int(options["minutes"]))
         cutoff = timezone.now() - timedelta(minutes=minutes)
@@ -29,6 +30,13 @@ class Command(BaseCommand):
         )
         counts = {status: stuck.filter(status=status).count() for status, _ in StockAlertDelivery.Status.choices}
         total = sum(counts.values())
+        # Rede de recuperação: o callback imediato pode ter caído depois do
+        # commit. Também promove para o tratamento novo incidentes incertos que
+        # já existiam antes do deploy, sem reenviar a mensagem ao cliente.
+        for delivery_id in stuck.filter(
+            status=StockAlertDelivery.Status.INDETERMINATE,
+        ).values_list("pk", flat=True):
+            _alert_indeterminate(delivery_id)
         if total:
             create_operator_alert(
                 type="stock_alert_delivery_stuck",

@@ -174,7 +174,8 @@ class CourierDispatchHandler:
             alert_adapter.create(
                 "courier_dispatch_failed",
                 "critical",
-                f"Falha ao abrir corrida do pedido {order.ref}: {message[:200]}",
+                f"A corrida do pedido {order.ref} não abriu na central ({message[:200]}). "
+                "Abra o pedido e chame o entregador de novo, ou leve com um entregador da casa.",
                 order_ref=order.ref,
             )
         except Exception:

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
 from django.conf import settings
+from django.utils import timezone
 
 from shopman.shop.environment import is_production
 
@@ -34,6 +36,9 @@ class ProviderReadiness:
     status: str
     message: str
     missing: tuple[str, ...] = ()
+    #: Último dia de validade do certificado digital do provedor, na hora local.
+    #: Só existe para quem tem certificado (Efí, Compras) e quando ele abre.
+    certificate_expires_on: date | None = None
 
     @property
     def ready(self) -> bool:
@@ -50,7 +55,92 @@ class ProviderReadiness:
         }
         if self.missing:
             data["missing"] = list(self.missing)
+        if self.certificate_expires_on:
+            data["certificate_expires_on"] = self.certificate_expires_on.isoformat()
         return data
+
+
+@dataclass(frozen=True)
+class KnownCertificate:
+    """Um certificado digital que a casa guarda, e o que fazer quando ele vence.
+
+    Não carrega o certificado nem a senha — só a data, e as frases que o gestor
+    precisa para agir sem ter que descobrir sozinho de onde o arquivo veio.
+    """
+
+    provider: str
+    label: str
+    expires_at: datetime
+    #: O que deixa de funcionar quando vence — dito no presente ("o Pix para…").
+    consequence: str
+    #: Onde renovar e o que trocar no deploy.
+    remedy: str
+
+    @property
+    def expires_on(self) -> date:
+        return timezone.localtime(self.expires_at).date()
+
+
+def known_certificates() -> tuple[KnownCertificate, ...]:
+    """Os certificados configurados neste deployment que abrem e têm data.
+
+    A NFC-e fica de fora de propósito: o e-CNPJ dela mora no painel da Focus, e
+    a API de emissão que a casa usa não informa a validade do certificado.
+    """
+    from shopman.backstage.services.certificate_readiness import certificate_expires_at
+
+    found: list[KnownCertificate] = []
+    efi_path = str(dict(getattr(settings, "SHOPMAN_EFI", {}) or {}).get("certificate_path") or "").strip()
+    if efi_path and Path(efi_path).exists():
+        expires_at = certificate_expires_at(path=efi_path)
+        if expires_at:
+            found.append(KnownCertificate(
+                provider="efi_pix",
+                label="O certificado da Efí (Pix)",
+                expires_at=expires_at,
+                consequence="Sem ele, o Pix não gera cobrança nem confirma pagamento.",
+                remedy=(
+                    "Gere um certificado novo no painel da Efí (API > Meus Certificados) "
+                    "e troque EFI_CERTIFICATE_PEM_BASE64 no deploy."
+                ),
+            ))
+    purchase = dict(getattr(settings, "SHOPMAN_PURCHASE_NFE", {}) or {})
+    purchase_path = str(purchase.get("certificate_path") or "").strip()
+    purchase_pfx = str(purchase.get("certificate_pfx_base64") or "").strip()
+    if purchase_pfx or (purchase_path and Path(purchase_path).exists()):
+        expires_at = certificate_expires_at(
+            path=purchase_path,
+            pfx_base64=purchase_pfx,
+            password=str(purchase.get("certificate_password") or ""),
+            pfx=True,
+        )
+        if expires_at:
+            found.append(KnownCertificate(
+                provider="purchase_nfe",
+                label="O e-CNPJ A1 de Compras",
+                expires_at=expires_at,
+                consequence="Sem ele, as notas de compra deixam de chegar da SEFAZ.",
+                remedy=(
+                    "Renove o e-CNPJ A1 com a certificadora e troque "
+                    "PURCHASE_NFE_CERTIFICATE_PFX_BASE64 e PURCHASE_NFE_CERTIFICATE_PASSWORD "
+                    "no deploy. Se o mesmo e-CNPJ emite a NFC-e, envie o novo também no painel da Focus."
+                ),
+            ))
+    return tuple(found)
+
+
+def _with_certificate_expiry(readiness: ProviderReadiness) -> ProviderReadiness:
+    """Acrescenta à prontidão a data em que o certificado dela vence."""
+    for certificate in known_certificates():
+        if certificate.provider == readiness.provider:
+            expires_on = certificate.expires_on
+            head = readiness.message.rstrip(".")
+            return replace(
+                readiness,
+                certificate_expires_on=expires_on,
+                message=f"{head}. Certificado válido até {expires_on:%d/%m/%Y}.",
+            )
+    return readiness
 
 
 def build_provider_readiness(*, mode: ReadinessMode = "runtime") -> tuple[ProviderReadiness, ...]:
@@ -66,6 +156,33 @@ def build_provider_readiness(*, mode: ReadinessMode = "runtime") -> tuple[Provid
         # cara: a tela de prontidão dizia tudo verde enquanto nenhum código de
         # login saía. Pagamento e fiscal sem login é uma loja que ninguém usa.
         otp_delivery_readiness(mode=mode),
+    )
+
+
+def build_monitored_readiness(*, mode: ReadinessMode = "runtime") -> tuple[ProviderReadiness, ...]:
+    """A prontidão que a casa VIGIA: a do balcão, mais Compras quando está em uso.
+
+    Compras não entra em ``build_provider_readiness`` porque não é pagamento nem
+    emissão do balcão — o PDV e a guarda de deploy de produção não têm nada a
+    decidir sobre ela. Mas o e-CNPJ A1 dela vence como qualquer outro, e o
+    ``check_integration_drift`` e a tela de diagnóstico precisam olhar para ele.
+    Só entra onde Compras está ligada: num deployment sem o leitor de NF-e, a
+    falta de configuração de Compras é o desenho, não pendência.
+    """
+    readiness = build_provider_readiness(mode=mode)
+    if purchase_nfe_in_use():
+        readiness = (*readiness, purchase_nfe_readiness(mode=mode))
+    return readiness
+
+
+def purchase_nfe_in_use() -> bool:
+    """Compras está ligada: o leitor de NF-e ou o certificado estão configurados."""
+    config = dict(getattr(settings, "SHOPMAN_PURCHASE_NFE", {}) or {})
+    reader_path = getattr(settings, "SHOPMAN_PURCHASE_INVOICE_READER", "")
+    return bool(
+        str(reader_path or "").strip()
+        or str(config.get("certificate_path") or "").strip()
+        or str(config.get("certificate_pfx_base64") or "").strip()
     )
 
 
@@ -273,7 +390,7 @@ def efi_pix_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
 
     issues = tuple(missing + unsafe)
     status = _status(missing=missing, unsafe=unsafe)
-    return ProviderReadiness(
+    return _with_certificate_expiry(ProviderReadiness(
         provider="efi_pix",
         label="Efí PIX",
         kind="payment_pix",
@@ -286,7 +403,7 @@ def efi_pix_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
             missing=issues,
         ),
         missing=issues,
-    )
+    ))
 
 
 def stripe_card_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
@@ -442,7 +559,7 @@ def purchase_nfe_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadin
             unsafe.append(f"PURCHASE_NFE_CERTIFICATE_{issue}")
     issues = tuple(missing + unsafe)
     status = _status(missing=missing, unsafe=unsafe)
-    return ProviderReadiness(
+    return _with_certificate_expiry(ProviderReadiness(
         provider="purchase_nfe",
         label="Compra NF-e / Distribuição DF-e",
         kind="fiscal_purchase_nfe",
@@ -455,7 +572,7 @@ def purchase_nfe_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadin
             missing=issues,
         ),
         missing=issues,
-    )
+    ))
 
 
 def staging_missing(provider: str) -> list[str]:

@@ -58,6 +58,11 @@ export interface OperatorPwaCapabilityOptions {
   display: "standalone" | "fullscreen";
   orientation?: "any" | "natural" | "landscape" | "portrait";
   shortcuts?: OperatorPwaShortcut[];
+  /**
+   * Assets públicos que não pertencem ao casco offline do operador. Útil para
+   * documentos e prévias navegáveis: HTML nunca deve congelar no precache.
+   */
+  precacheIgnores?: string[];
   wakeLock?: boolean;
   kiosk?: boolean;
   /**
@@ -155,6 +160,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     wakeLock: false,
     kiosk: false,
     idleReloadPaths: [],
+    precacheIgnores: [],
     push: undefined,
   },
   async setup(options, nuxt) {
@@ -263,6 +269,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
         clientsClaim: false,
         skipWaiting: false,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globIgnores: options.precacheIgnores,
         // Preserve the real public filenames. Nuxt's default transform turns
         // `offline.html` into `offline`, while the navigation fallback must
         // address the committed static shell by its exact URL.

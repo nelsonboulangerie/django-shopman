@@ -513,6 +513,8 @@ def _adapter_configuration_lines() -> list[CheckLine]:
     ifood_token = getattr(settings, "SHOPMAN_IFOOD", {}).get("webhook_token", "")
     lines.append(_secret_presence_line("ifood webhook token", ifood_token, settings.DEBUG))
 
+    lines.append(_geoip_freshness_line())
+
     stripe_configured = any("payment_stripe" in str(adapter) for adapter in payment_adapters.values())
     if stripe_configured:
         stripe_secret = getattr(settings, "SHOPMAN_STRIPE", {}).get("webhook_secret", "")
@@ -521,6 +523,36 @@ def _adapter_configuration_lines() -> list[CheckLine]:
         lines.append(CheckLine("INFO", "stripe webhook secret", "stripe adapter not active"))
 
     return lines
+
+
+def _geoip_freshness_line() -> CheckLine:
+    """A idade da base de cidade dos dispositivos — o diagnóstico é onde se PERGUNTA.
+
+    O empurrão mora no ``check_geoip_freshness`` (vira ``OperatorAlert`` no ciclo do
+    ``maintenance_worker``). Esta linha existe para a pergunta que o runbook faz, e cobre
+    o caso que o alerta deliberadamente cala: a base AUSENTE. Ausente não é velha — é o
+    estado previsto em dev, na CI e em imagem construída sem ``MAXMIND_LICENSE_KEY`` —, e
+    alertar sobre ela todo dia ensinaria o operador a ignorar o tipo inteiro. Aqui ela é
+    ``INFO``, que é exatamente o peso certo para quem veio perguntar.
+    """
+    from shopman.shop.services.ip_location import database_freshness
+
+    try:
+        freshness = database_freshness()
+    except Exception as exc:  # noqa: BLE001 — diagnóstico nunca derruba o runbook
+        return CheckLine("WARN", "geoip city database", f"unreadable: {_exception_summary(exc)}")
+
+    if not freshness.present:
+        return CheckLine("INFO", "geoip city database", "absent — device screen shows browser and date only")
+    if freshness.age_days is None:
+        return CheckLine("FAIL", "geoip city database", "present but build date unreadable — city hidden")
+
+    detail = f"built {freshness.built_at:%Y-%m-%d}, {freshness.age_days}d old"
+    if freshness.too_old_to_show:
+        return CheckLine("FAIL", "geoip city database", f"{detail} — city hidden; bump GEOLITE2_SNAPSHOT")
+    if freshness.stale:
+        return CheckLine("WARN", "geoip city database", f"{detail} — still shown; bump GEOLITE2_SNAPSHOT")
+    return CheckLine("OK", "geoip city database", detail)
 
 
 def _call_command_line(name: str, call_command, *args, **kwargs) -> CheckLine:

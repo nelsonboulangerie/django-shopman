@@ -69,6 +69,7 @@ from shopman.shop.operator_capacity_policy import (
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
+from shopman.shop.resale_markup import DEFAULT_RESALE_MARKUP_PCT, MAX_RESALE_MARKUP_PCT, ResaleMarkup
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,32 @@ DEFAULTS_RULE_Q_FIELDS = (
     ("defaults_rules_delivery_minimum_q", "delivery_minimum_q"),
     ("defaults_rules_free_delivery_above_q", "free_delivery_above_q"),
 )
+
+
+def _parse_markup_by_collection(raw: str) -> dict[str, int]:
+    """``"mercearia: 60; frios: 80"`` → ``{"mercearia": 60, "frios": 80}``, conferindo cada código."""
+    from shopman.offerman.models import Collection
+
+    result: dict[str, int] = {}
+    errors: list[str] = []
+    for chunk in (part.strip() for part in raw.replace("\n", ";").split(";")):
+        if not chunk:
+            continue
+        ref, sep, value = (piece.strip() for piece in chunk.partition(":"))
+        try:
+            pct = int(value) if sep else None
+        except ValueError:
+            pct = None
+        if not ref or pct is None or pct < 0 or pct > MAX_RESALE_MARKUP_PCT:
+            errors.append(f"\"{chunk}\": escreva código: markup, como mercearia: 60.")
+            continue
+        result[ref] = pct
+    unknown = sorted(set(result) - set(Collection.objects.filter(ref__in=result).values_list("ref", flat=True)))
+    if unknown:
+        errors.append(f"Categoria desconhecida: {', '.join(unknown)}. Use o código da coleção.")
+    if errors:
+        raise forms.ValidationError(errors)
+    return result
 
 
 def _defaults_form_fields() -> dict[str, forms.Field]:
@@ -479,6 +506,18 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "Também depende do adapter fiscal estar pronto."
         ),
     )
+    fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
+        label="Emissão avulsa de NFC-e: dias depois da venda",
+        required=False,
+        min_value=0,
+        max_value=30,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text=(
+            "Até quando o gerente pode mandar emitir, pelas Últimas vendas do PDV, a nota de uma "
+            "venda que não a pediu. 0 = só no mesmo dia da venda; 1 = até o dia seguinte; e assim "
+            "por diante. Em branco = mesmo dia. A nota sai com a data e a hora da emissão."
+        ),
+    )
     tier_help = {
         "silver": "Pontos acumulados (na vida toda) para o cliente chegar ao nível Prata.",
         "gold": "Pontos acumulados para chegar ao nível Ouro.",
@@ -528,6 +567,41 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
+    fields["defaults_purchase_receive_position_resale"] = forms.ChoiceField(
+        label="Onde a revenda é recebida",
+        required=False,
+        choices=[("", "Padrão: a loja (vitrine)")],
+        widget=UnfoldAdminSelectWidget,
+        help_text="Posição que conta para a venda. A geleia recebida já aparece na loja e no PDV.",
+    )
+    fields["defaults_purchase_receive_position_material"] = forms.ChoiceField(
+        label="Onde o insumo é recebido",
+        required=False,
+        choices=[("", "Padrão: o depósito")],
+        widget=UnfoldAdminSelectWidget,
+        help_text="Posição de estoque que não vende, de onde a Produção consome.",
+    )
+    fields["defaults_purchase_resale_markup_pct"] = forms.IntegerField(
+        label="Markup padrão da revenda (%)",
+        required=False,
+        min_value=0,
+        max_value=MAX_RESALE_MARKUP_PCT,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_RESALE_MARKUP_PCT)}),
+        help_text=(
+            "Sugere o preço ao ligar \"Permitir revenda\" no Compras: preço = custo × (1 + markup). "
+            "50% vira custo × 1,5; 150% vira custo × 2,5. A sugestão sobe até o real inteiro "
+            f"e o operador pode mudar. Em branco = {DEFAULT_RESALE_MARKUP_PCT}%."
+        ),
+    )
+    fields["defaults_purchase_resale_markup_by_collection"] = forms.CharField(
+        label="Markup por categoria (%)",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "mercearia: 60; frios: 80"}),
+        help_text=(
+            "Categoria é a coleção principal do produto (use o código da coleção). "
+            "Separe por ponto e vírgula. Categoria fora da lista usa o markup padrão."
+        ),
+    )
     fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
         label="Mínimo de pessoas elegíveis numa campanha de WhatsApp",
         required=False,
@@ -1079,6 +1153,11 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
 
+        if self._has("defaults_pos_late_fiscal_emission_days"):
+            pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (= mesmo dia, dito na ajuda).
+            self.fields["defaults_pos_late_fiscal_emission_days"].initial = pos_cfg.get("late_fiscal_emission_days")
+
         if self._has("defaults_marketing_whatsapp_minimum_audience"):
             marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
             # Mostra o que está GRAVADO; ausente fica em branco com o padrão no
@@ -1132,6 +1211,25 @@ class ShopForm(forms.ModelForm):
             purchase_policy = PurchasePolicy.from_defaults(defaults)
             for field_name, key in DEFAULTS_PURCHASE_FIELDS:
                 self.fields[field_name].initial = getattr(purchase_policy, key)
+
+        if self._has("defaults_purchase_receive_position_resale"):
+            from shopman.stockman import Position
+
+            purchase_block = defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {}
+            for key, saleable in (("resale", True), ("material", False)):
+                field = self.fields[f"defaults_purchase_receive_position_{key}"]
+                field.choices = [field.choices[0], *(
+                    (position.ref, position.name)
+                    for position in Position.objects.filter(kind="physical", is_saleable=saleable).order_by("name")
+                )]
+                field.initial = str(purchase_block.get(f"receive_position_{key}") or "")
+
+        if self._has("defaults_purchase_resale_markup_pct"):
+            markup = ResaleMarkup.from_defaults(defaults)
+            self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
+            self.fields["defaults_purchase_resale_markup_by_collection"].initial = "; ".join(
+                f"{ref}: {pct}" for ref, pct in sorted(markup.by_collection.items())
+            )
 
         pickup_slots = defaults.get("pickup_slots") if isinstance(defaults.get("pickup_slots"), list) else []
         for index, slot in enumerate(pickup_slots[:DEFAULTS_PICKUP_SLOT_ROWS], start=1):
@@ -1236,6 +1334,14 @@ class ShopForm(forms.ModelForm):
                 else:
                     previous_threshold = threshold
                     previous_label = TIER_LABELS[name]
+
+        if self._has("defaults_purchase_resale_markup_by_collection"):
+            try:
+                cleaned_data["defaults_purchase_resale_markup_by_collection"] = _parse_markup_by_collection(
+                    cleaned_data.get("defaults_purchase_resale_markup_by_collection") or ""
+                )
+            except forms.ValidationError as exc:
+                self.add_error("defaults_purchase_resale_markup_by_collection", exc)
 
         if self._has("defaults_purchase_lead_time_max_days"):
             floor = cleaned_data.get("defaults_purchase_min_lead_time_days")
@@ -1539,7 +1645,11 @@ class ShopForm(forms.ModelForm):
                 rules[key] = _reais_to_q(self.cleaned_data.get(field_name))
             defaults["rules"] = rules
 
-        if self._has("defaults_pos_discount_approval_threshold_q") or self._has("defaults_pos_fiscal_toggle"):
+        if (
+            self._has("defaults_pos_discount_approval_threshold_q")
+            or self._has("defaults_pos_fiscal_toggle")
+            or self._has("defaults_pos_late_fiscal_emission_days")
+        ):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             pos_cfg = dict(pos_cfg)
             if self._has("defaults_pos_discount_approval_threshold_q"):
@@ -1555,6 +1665,12 @@ class ShopForm(forms.ModelForm):
                     # Desligado = ausente (mesma semântica de _pos_fiscal_toggle_enabled,
                     # que trata a chave faltando como False) — mantém defaults compactos.
                     pos_cfg.pop("fiscal_toggle", None)
+            if self._has("defaults_pos_late_fiscal_emission_days"):
+                late_days = self.cleaned_data.get("defaults_pos_late_fiscal_emission_days")
+                if late_days is None:
+                    pos_cfg.pop("late_fiscal_emission_days", None)
+                else:
+                    pos_cfg["late_fiscal_emission_days"] = int(late_days)
             if pos_cfg:
                 defaults["pos"] = pos_cfg
             else:
@@ -1652,6 +1768,25 @@ class ShopForm(forms.ModelForm):
             for field_name, key in DEFAULTS_PURCHASE_FIELDS:
                 value = self.cleaned_data.get(field_name)
                 purchase_cfg[key] = int(value) if value is not None else getattr(fallback, key)
+            defaults["purchase"] = purchase_cfg
+
+        if self._has("defaults_purchase_receive_position_resale"):
+            purchase_cfg = dict(defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {})
+            for key in ("resale", "material"):
+                ref = (self.cleaned_data.get(f"defaults_purchase_receive_position_{key}") or "").strip()
+                if ref:
+                    purchase_cfg[f"receive_position_{key}"] = ref
+                else:
+                    purchase_cfg.pop(f"receive_position_{key}", None)
+            defaults["purchase"] = purchase_cfg
+
+        if self._has("defaults_purchase_resale_markup_pct"):
+            purchase_cfg = dict(defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {})
+            pct = self.cleaned_data.get("defaults_purchase_resale_markup_pct")
+            purchase_cfg["resale_markup_pct"] = int(pct) if pct is not None else DEFAULT_RESALE_MARKUP_PCT
+            purchase_cfg["resale_markup_by_collection"] = self.cleaned_data.get(
+                "defaults_purchase_resale_markup_by_collection"
+            ) or {}
             defaults["purchase"] = purchase_cfg
 
         return defaults
@@ -2020,6 +2155,8 @@ _PURCHASE_FIELDSETS = (
                 ("defaults_purchase_consumption_window_days", "defaults_purchase_review_period_days"),
                 ("defaults_purchase_safety_days", "defaults_purchase_min_lead_time_days"),
                 ("defaults_purchase_lead_time_history_days", "defaults_purchase_lead_time_max_days"),
+                ("defaults_purchase_resale_markup_pct", "defaults_purchase_resale_markup_by_collection"),
+                ("defaults_purchase_receive_position_resale", "defaults_purchase_receive_position_material"),
             ),
             "description": (
                 "Política de reposição do app Compras. A sugestão de compra cobre o "
@@ -2036,11 +2173,16 @@ _POS_FIELDSETS = (
     (
         "Ponto de venda (PDV)",
         {
-            "fields": ("defaults_pos_discount_approval_threshold_q", "defaults_pos_fiscal_toggle"),
+            "fields": (
+                "defaults_pos_discount_approval_threshold_q",
+                "defaults_pos_fiscal_toggle",
+                "defaults_pos_late_fiscal_emission_days",
+            ),
             "description": (
                 "Políticas do balcão. O limite de aprovação vale para descontos "
                 "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
-                "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado."
+                "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado. "
+                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente."
             ),
         },
     ),

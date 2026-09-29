@@ -40,20 +40,30 @@ from shopman.backstage.services.consumption import HYBRID, beverage_rate, sku_si
 # gêmeos = média simples dos que tiverem sinal. Curadoria pequena e visível:
 # se um nome enganar, o lugar de corrigir é aqui.
 TWINS: dict[str, tuple[str, ...]] = {
-    "CROISSANT": ("CT",),
-    "PAIN-CHOCOLAT": ("PC",),
-    "MADELEINE": ("MD",),
+    "CROISSANT": ("CRO",),
+    "PAIN-CHOCOLAT": ("PCHOC",),
+    "MADELEINE": ("MDLN",),
     "CORNET": ("CO", "COC"),
-    "MELON-PAN": ("ME",),
-    "FENDU": ("FE",),
-    "TABATIERE": ("TB",),
+    "MELON-PAN": ("MELON",),
+    # O FENDU saiu daqui em 22/09: a curadoria do catálogo devolveu ao fendu da
+    # casa o código `FENDU`, que era justamente o do cardápio 2027 — chave e
+    # gêmeo viraram a mesma etiqueta, e o `apply_product_skus` funde as duas.
+    # Um gêmeo de si mesmo não mede nada.
+    "TABATIERE": ("TABAT",),
     "CIABATTA": ("CI",),
     "MINI-BAGUETE": ("MIB",),
-    "FOLHADO-DIA": ("FF",),
-    "ANIMALZINHO": ("ANC", "JO", "ANU", "ANP"),
+    "FOLHADO-DIA": ("FFGO",),
+    "ANIMALZINHO": ("COE", "JO", "URS", "PORQ"),
 }
 
 FLOOR, CEILING = 5, 95
+
+
+def _pai_de_hoje(sku: str, measured) -> str:
+    """O código do pai como ele se chama HOJE, seguindo os renames do catálogo."""
+    from config.management.commands.apply_product_skus import codigo_de_hoje
+
+    return codigo_de_hoje(sku, measured)
 
 
 class Command(BaseCommand):
@@ -101,8 +111,16 @@ class Command(BaseCommand):
             candidates = list(TWINS.get(tag.sku, ()))
             # Convenção do Yooga: "M" + SKU é a variante (metade do preço) do
             # mesmo produto — sem base própria, herda do pai.
-            if not candidates and tag.sku.startswith("M") and tag.sku[1:] in measured:
-                candidates = [tag.sku[1:]]
+            #
+            # ⚠️ O pai é escrito com o código que o Yooga usava (`MCT` → `CT`), e
+            # o catálogo já trocou de código duas vezes. Sem traduzir, `CT` não
+            # está mais em `measured`, a herança some e as 41 variantes caem no
+            # piso do papel — sem erro nenhum, que é como este mesmo mapa já
+            # enganou uma sessão em 19/08/2026.
+            if not candidates and tag.sku.startswith("M"):
+                pai = _pai_de_hoje(tag.sku[1:], measured)
+                if pai in measured:
+                    candidates = [pai]
             twins = [t for t in candidates if t in measured]
             if not twins:
                 continue

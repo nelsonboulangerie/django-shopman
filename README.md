@@ -8,7 +8,7 @@
 
 Django Shopman é um framework de commerce operations para pequenos negócios com operação física e remota — padarias, confeitarias, cafés, food service. Não é um e-commerce genérico; é uma base opinativa e modular para casos operacionais densos: catálogo com produção própria, estoque vivo, múltiplos canais (balcão, web, WhatsApp, marketplace), KDS, e gestão integrada.
 
-Construído com Django 6.0, backend headless (API JSON + projections) e superfícies Nuxt 4 SSR.
+Construído com Django 6.1, backend headless (API JSON + projections) e superfícies Nuxt 4 SSR.
 
 ## Ecossistema
 
@@ -147,7 +147,7 @@ O framework conecta os core apps para cenários de negócio concretos:
 - **Storefront mobile-first** — Nuxt 4 SSR no apex, PWA-ready, SEO técnico
 - **Checkout com PIX** — QR code, polling + SSE, auto-confirmação
 - **Gestor de pedidos** — painel operador com timer, confirmação otimista, despacho KDS
-- **KDS** — Kitchen Display System com múltiplas instâncias (prep, picking, expedição)
+- **KDS** — Kitchen Display System com múltiplas instâncias (preparo, separação e a Saída, por onde o pedido pronto sai)
 - **POS** — Ponto de venda desktop-first com tabs, turno e caixa
 - **Produção** — receitas, work orders, BOM, sugestão automática, kiosk de fornadas
 - **Marketing** — campanhas e anúncios com aprovação, público consentido, entrega durável e resultado por plataforma

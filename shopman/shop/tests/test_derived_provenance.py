@@ -60,9 +60,11 @@ def _recipe(sku: str = "PAO", *, version_ref: str | None = "pao@1", batch_size="
     )
     RecipeItem.objects.create(
         recipe=recipe, input_sku="FARINHA", quantity=Decimal("1.000"), meta=dict(FLOUR_PROFILE),
+        unit="kg",
     )
     RecipeItem.objects.create(
         recipe=recipe, input_sku="AGUA", quantity=Decimal("0.650"), meta=dict(WATER_PROFILE),
+        unit="kg",
     )
     return recipe
 

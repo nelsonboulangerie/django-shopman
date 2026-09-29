@@ -16,7 +16,7 @@ from shopman.shop.services import kds, operator_orders
 def expedition(db):
     Shop.objects.create(name="Loja")
     Channel.objects.create(ref="ifood", name="iFood", config={"payment": {"method": "external", "timing": "external"}})
-    return KDSInstance.objects.create(ref="ifood-expedition", name="Expedição", type="expedition")
+    return KDSInstance.objects.create(ref="ifood-expedition", name="Saída", type="expedition")
 
 
 def order_with(facts, *, data=None, external_ref="official-order"):

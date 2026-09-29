@@ -13,6 +13,26 @@
 
 ---
 
+## Storefront — Continuum 0.2
+
+**Arquivo:** `config/settings.py`
+**Dict:** `SHOPMAN_CONTINUUM`
+
+| Variável de ambiente | Tipo | Default | Descrição |
+|---|---:|---:|---|
+| `SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED` | bool | `false` | Compara a projeção estrutural com o menu canônico sem mudar a resposta visível. |
+| `SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED` | bool | `false` | Expõe o endpoint público versionado do snapshot. Só é promovido depois do shadow. |
+| `SHOPMAN_CONTINUUM_KILL_SWITCH` | bool | `false` | Domina os dois switches e interrompe shadow/snapshot. |
+| `SHOPMAN_CONTINUUM_FRESH_FOR_MS` | int | `30000` | Horizonte declarado de frescor do snapshot. |
+| `SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS` | int | `30000` | Idade máxima antes de revalidar a read model contra o construtor canônico, mesmo sem signal. O runtime limita o valor efetivo a `FRESH_FOR_MS`. |
+| `SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS` | int | `120000` | Janela HTTP de `stale-if-error`. |
+| `SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS` | int | `300` | TTL dos bytes imutáveis de cada tuple versionada no cache. |
+
+As specs de alpha e produção declaram explicitamente shadow e snapshot desligados. A promoção é
+uma mudança separada e o kill switch não depende de publicar outro cliente.
+
+---
+
 ## Offerman (Catálogo)
 
 **Arquivo:** `packages/offerman/shopman/offerman/conf.py`
@@ -140,7 +160,7 @@ de compra todo dia, em silêncio.
 | Setting | Tipo | Default | Descrição |
 |---------|------|---------|-----------|
 | `ACCESS_LINK_EXCHANGE_TTL_MINUTES` | int | `5` | TTL do access link (Manychat/API) |
-| `ACCESS_LINK_API_KEY` | str | `""` | **Obrigatório em produção.** Shared secret para `POST /auth/access/create/` |
+| `ACCESS_LINK_API_KEY` | str | `""` | **Obrigatório em produção.** Shared secret para `POST /api/auth/access/create/` (a ponte do ManyChat; o deployment não monta `/auth/access/create/`) |
 
 ### Access Link (email login)
 
@@ -160,6 +180,8 @@ de compra todo dia, em silêncio.
 | `ACCESS_CODE_COOLDOWN_SECONDS` | int | `60` | Cooldown entre pedidos de código |
 | `ACCESS_CODE_RATE_LIMIT_MAX` | int | `5` | Máx. códigos por janela |
 | `ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES` | int | `15` | Janela de rate limit |
+| `ACCESS_CODE_MAX_FAILURES_PER_TARGET` | int | `15` | Máx. códigos errados por telefone/e-mail na janela, somados entre códigos — o reenvio não zera (G13) |
+| `ACCESS_CODE_FAILURE_WINDOW_HOURS` | int | `24` | Janela do teto de códigos errados |
 
 ### Device Trust
 
@@ -277,6 +299,9 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q` | int | `500` | Padrão do deploy para o teto de aprovação de desconto no PDV, em centavos. `0` **desativa** o teto (nenhum desconto passa a exigir gerente por valor; D-1 e preço alterado seguem exigindo). A loja sobrepõe em `Shop.defaults["pos"]["discount_approval_threshold_q"]` pelo Admin; quem lê os dois é `shop.services.pos.discount_approval_threshold_q` |
 | `SHOPMAN_ACCOUNTING_BACKEND` | str | *(sem default)* | Backend de contabilidade. Se ausente, handler de accounting não é registrado |
 | `SHOPMAN_NOTIFICATIONS` | str | `"console"` | Backend padrão de notificações |
+| `SHOPMAN_CONSENT_IP_RETENTION_DAYS` | int | `90` | Prazo do IP bruto nas provas de consentimento (R11). Aceita 1–90 dias; acima de 90 vira 90, abaixo de 1 vira 1. Quem aplica é o `purge_consent_ip --apply`, manual: nada roda sozinho. Finalidade, texto, hashes, estado e instante da prova ficam |
+| `SHOPMAN_COSMOS_TOKEN` | env str | `""` | Token da API **Cosmos (Bluesoft)** para a sugestão de catálogo por GTIN (`shop.services.product_enrichment`, `manage.py fetch_product_enrichment`): nome, marca, NCM, CEST, peso e foto de referência. **Vazio = Cosmos inerte**: a sugestão segue com a NF-e de compra e o Open Food Facts, e o rascunho registra que a Cosmos "ficou de fora (sem SHOPMAN_COSMOS_TOKEN)" — a ausência sai com o escopo colado. Plano Basic grátis: 25 consultas/dia (o comando já limita a 25). É segredo: vai no ambiente, nunca no repositório |
+| `SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG` | env bool | `false` | Opt-in para a sugestão por GTIN consultar Cosmos/Open Food Facts em `DEBUG` (dev não gasta a cota sem pedir). Fora de `DEBUG` não tem efeito |
 
 Para staging/homologação de POS, `make smoke-gateways-sandbox` exige Focus NFe
 em homologação, Efí sandbox e Stripe test. Configurações live/producao nesses

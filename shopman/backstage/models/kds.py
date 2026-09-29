@@ -6,12 +6,21 @@ from django.db import models
 
 
 class KDSInstance(models.Model):
-    """Estação KDS: Prep (preparo), Picking (separação) ou Expedition (despacho)."""
+    """Estação KDS: Prep (preparo), Picking (separação) ou Saída (``expedition``).
+
+    A estação por onde o pedido pronto sai (entregar no balcão, despachar a
+    entrega) se chama **Saída** na tela desde 26/09/2026 (decisão do dono):
+    "Expedição" é o fechamento de lote da Produção, e as duas palavras iguais
+    mandavam gente para o app errado. O valor gravado continua ``expedition``:
+    é o identificador em inglês da função (a expedição do pedido), e trocá-lo
+    migraria um valor de banco, o contrato gerado do kds-nuxt e o canal de SSE
+    sem mudar uma letra do que o operador lê.
+    """
 
     TYPE_CHOICES = [
         ("prep", "Preparo"),
         ("picking", "Separação"),
-        ("expedition", "Expedição"),
+        ("expedition", "Saída"),
     ]
 
     ref = models.SlugField("ref", max_length=50, unique=True)
@@ -29,9 +38,27 @@ class KDSInstance(models.Model):
     )
     sound_enabled = models.BooleanField("som ativo", default=True)
     is_active = models.BooleanField("ativa", default=True)
+    # Posto sem tela (decisão do dono, 26/09/2026): o posto de Lanches tem só
+    # uma impressora térmica de rede. Com um terminal aqui, cada ticket que cai
+    # no posto sai impresso nele — a "Via Cozinha" de
+    # ``services/order_documents.py``, composta por
+    # ``receipt_escpos.kitchen_ticket`` e enviada pelo relay
+    # (``services/kitchen_ticket_print.py``). Vazio = o posto lê a tela do KDS.
+    print_terminal = models.ForeignKey(
+        "cashman.Terminal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kds_print_stations",
+        verbose_name="impressora da estação",
+        help_text=(
+            "Estação sem tela: os pedidos desta estação saem impressos nesta impressora. "
+            "Deixe vazio quando a estação acompanha os pedidos pela tela do KDS."
+        ),
+    )
     config = models.JSONField(
         "configurações", default=dict, blank=True,
-        help_text="text_size, dark_mode, refresh_interval, etc.",
+        help_text="text_size, dark_mode, refresh_interval, on_print, etc.",
     )
 
     class Meta:
@@ -60,6 +87,24 @@ class KDSTicket(models.Model):
         ("cancelled", "Cancelado"),
     ]
 
+    # Por onde o ticket foi concluído. A estação de tela conclui o próprio
+    # ticket; a estação SEM tela (``KDSInstance.print_terminal``) recebe o
+    # papel e quem dá baixa é outra porta (decisão do dono, 26/09/2026): a
+    # Saída, o PDV ou o leitor de código da bancada. E o pedido que o Gestor
+    # marca pronto por fora do KDS fecha os tickets que ficaram abertos.
+    COMPLETED_VIA_STATION = "station"
+    COMPLETED_VIA_EXIT = "exit"
+    COMPLETED_VIA_POS = "pos"
+    COMPLETED_VIA_SCANNER = "scanner"
+    COMPLETED_VIA_ORDER_ADVANCED = "order_advanced"
+    COMPLETED_VIA_CHOICES = [
+        (COMPLETED_VIA_STATION, "Tela da estação"),
+        (COMPLETED_VIA_EXIT, "Saída"),
+        (COMPLETED_VIA_POS, "PDV"),
+        (COMPLETED_VIA_SCANNER, "Leitor de código"),
+        (COMPLETED_VIA_ORDER_ADVANCED, "Pedido avançado fora do KDS"),
+    ]
+
     session_key = models.CharField(
         "chave da venda", max_length=64, db_index=True,
         help_text="Resolve para a Session aberta (comanda) ou o Order selado.",
@@ -79,6 +124,14 @@ class KDSTicket(models.Model):
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
     completed_at = models.DateTimeField("concluído em", null=True, blank=True)
+    completed_by = models.CharField(
+        "concluído por", max_length=150, blank=True, default="",
+        help_text="Quem deu a baixa (usuário do operador, ou o ator do sistema).",
+    )
+    completed_via = models.CharField(
+        "concluído pela", max_length=20, blank=True, default="",
+        choices=COMPLETED_VIA_CHOICES,
+    )
     cancelled_at = models.DateTimeField("cancelado em", null=True, blank=True)
     acknowledged_at = models.DateTimeField(
         "ciente em", null=True, blank=True,

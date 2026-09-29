@@ -44,7 +44,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W012  Display channel has no valid display.prices_from pointer
   SHOPMAN_W013  Publicly tracked channel takes price from a non-public channel
   SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
-  SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
+  SHOPMAN_W015  SKU com cadastro de venda e de compra em unidades diferentes
   SHOPMAN_W016  Captura simulada exposta em staging técnico
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
@@ -1078,35 +1078,36 @@ def check_marketing_media_hosts(app_configs, **kwargs):
 
 
 @register()
-def check_sku_namespace_collision(app_configs, **kwargs):
-    """Warn when the same SKU exists as sellable Product and as Material (insumo).
+def check_sku_namespace_coherence(app_configs, **kwargs):
+    """Warn when a SKU's sale and purchase records disagree on the unit.
 
-    As duas tabelas são únicas cada uma na sua, e o namespace é um só: estoque,
-    ficha técnica e adapters compostos indexam por SKU. Colidiu, o produto ganha
-    e o insumo some em silêncio (ver shopman/shop/services/sku_namespace.py).
+    Product (cadastro de venda) e Material (cadastro de compra) podem dividir um
+    SKU — é a coisa comprada que também se vende — e aí contam o mesmo estoque,
+    na mesma unidade. Unidade divergente faz "3" valer 3 kg num lado e 3 potes
+    no outro (ver shopman/shop/services/sku_namespace.py).
 
-    Warning, não Error: colisão preexistente não pode trancar o dono para fora do
-    Admin, que é onde ele conserta. A criação de novas colisões é recusada no
-    pre_save dos dois modelos.
+    Warning, não Error: dado preexistente não pode trancar o dono para fora do
+    Admin, que é onde ele conserta. A incoerência nova é recusada no pre_save.
     """
     from django.db.utils import OperationalError, ProgrammingError
 
     warnings = []
     try:
-        from shopman.shop.services.sku_namespace import find_sku_collisions
+        from shopman.shop.services.sku_namespace import find_sku_incoherences
 
-        collisions = find_sku_collisions()
+        incoherences = find_sku_incoherences()
     except (OperationalError, ProgrammingError, ImportError):
         return warnings  # tables not ready (initial migration) or app absent
 
-    if collisions:
+    if incoherences:
         warnings.append(
             Warning(
-                f"SKU duplicado entre produto vendável (Offerman) e insumo (Buyman): {', '.join(collisions)}.",
+                "SKU com cadastro de venda e de compra em unidades diferentes: "
+                + "; ".join(str(item) for item in incoherences)
+                + ".",
                 hint=(
-                    "Os caminhos compostos resolvem o produto primeiro e o insumo "
-                    "homônimo é ignorado; o ledger de estoque mistura venda e consumo "
-                    "no mesmo SKU. Renomeie um dos dois lados."
+                    "Os dois cadastros do mesmo SKU contam o mesmo estoque. Acerte a "
+                    "unidade de um dos lados para que venda e compra falem a mesma."
                 ),
                 id="SHOPMAN_W015",
             )

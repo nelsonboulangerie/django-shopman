@@ -22,6 +22,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 EVENT = "access_link"
+EVENT_SITE = "access_link_site"
 
 
 def connect() -> None:
@@ -57,20 +58,41 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
 
     from shopman.shop.notifications import notify
 
+    event = EVENT
+    context_extra: dict = {}
+    revoke_ref = str(metadata.get("revoke_ref") or "")
+    if metadata.get("released") and revoke_ref:
+        # O login começou no site e a aba de lá já está liberada: a mensagem manda
+        # voltar, e não tocar no link. Ver `AccessLinkCreateView._release_origin`.
+        from shopman.shop.services import storefront_links
+
+        event = EVENT_SITE
+        context_extra = {
+            "revoke_url": storefront_links.login_revoke_url(revoke_ref),
+        }
+
     context = {
         "access_url": url,
         "customer_name": getattr(customer, "name", "") or "",
+        "has_cart_context": bool(metadata.get("cart_session_key")),
         # Sufixo auto-suprimível (padrão da casa). Aqui ele divide a LINHA com o
         # aviso de prazo, então termina em espaço e não em quebra: sem sacola, a
         # frase do prazo assume a linha inteira sem deixar buraco. Foi por isso
         # que os dois não viraram um texto só — o prazo vale sempre, a sacola não.
         "cart_note": (
-            "Seus itens continuam na sacola. " if metadata.get("cart_session_key") else ""
+            "Sua sacola está guardada. "
+            if metadata.get("cart_session_key")
+            else (
+                "Sua sacola não veio desta vez. "
+                if metadata.get("handoff_expired")
+                else ""
+            )
         ),
+        **context_extra,
     }
 
     try:
-        result = notify(event=EVENT, recipient=recipient, context=context, backend="manychat")
+        result = notify(event=event, recipient=recipient, context=context, backend="manychat")
     except Exception:
         logger.exception("access_link.delivery_failed recipient=%s", recipient[:6])
         return

@@ -84,7 +84,11 @@ class ItemPricingModifier:
             # lugar onde preço é política.
             if session.pricing_policy == "internal":
                 # Always re-resolve price from backend
-                qty_val = int(item.get("qty", 1))
+                # A faixa de preço por quantidade (``min_qty``) compara contra a
+                # quantidade REAL. ``int()`` zerava a linha pesada (0,312 kg → 0)
+                # e nenhuma faixa casava: o listing do canal era pulado e o
+                # queijo saía pelo preço base. Menos de uma unidade é a 1ª faixa.
+                qty_val = max(Decimal("1"), Decimal(str(item.get("qty", 1) or 1)))
                 kwargs = {"qty": qty_val}
                 if customer is not None:
                     kwargs["customer"] = customer

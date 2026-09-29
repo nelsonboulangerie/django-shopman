@@ -315,7 +315,8 @@ a explicação do mecanismo, não o que decide.
 Estas quatro regras já estão no [`CLAUDE.md`](../../CLAUDE.md). Este documento aponta para
 elas; reescrevê-las criaria uma segunda fonte que envelhece sozinha.
 
-- **URL em inglês, texto em português.** A convenção é sobre o caminho, não sobre a copy.
+- **URL em inglês, texto em português** — nas superfícies de operador, no Admin e nas APIs.
+  O Storefront fala português também no caminho (`/sacola`, `/privacidade`).
 - **`cpf`, `cnpj`, `cep` em português.** Nome próprio de documento brasileiro.
 - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.**
   O `valor` da Efí é o contrato deles; para dentro vira `amount`.
@@ -348,6 +349,13 @@ do resultado — ainda vive em **cinco arquivos** do app (`useCampaignBoard.ts`,
 **Onde mora:** no contrato da superfície do domínio (como o
 [contrato do Marketing](marketing-surface-contract.md)), não aqui. Este documento diz como
 fechar um vocabulário; qual é o de cada domínio é do domínio.
+
+Os do **PDV**, da **Produção/KDS** e do **Storefront** estão fechados em
+[`suite-vocabulary.md`](suite-vocabulary.md) — num arquivo só, e não um por contrato, porque
+a colisão **entre** domínios não tem dono num contrato de domínio: "Tela do cliente" nomeava
+dois objetos em dois apps, e o gesto de silenciar um aviso tinha duas palavras, uma por app.
+Lá também está a terceira lei que a medição obrigou a escrever — **quem lê é quem manda na
+palavra** —, que é a que decide os casos em que duas audiências moram no mesmo arquivo.
 
 ---
 

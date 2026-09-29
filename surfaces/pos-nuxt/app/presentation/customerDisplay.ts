@@ -21,6 +21,7 @@ import type {
 import { lineDiscountBadge, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
 import { formatBRL } from "~/utils/posIntent";
+import { isWeighedLine, lineAmountQ, lineQtyLabel, lineUnits } from "~/presentation/weighed";
 
 export interface CustomerDisplayInputs {
   shopName: string;
@@ -50,7 +51,8 @@ export function displayItemView(
   return {
     name: item.name,
     qty: item.qty,
-    unitDisplay: formatBRL(unitChargedQ(item)),
+    qtyLabel: lineQtyLabel(item),
+    unitDisplay: formatBRL(unitChargedQ(item)) + (isWeighedLine(item) ? "/kg" : ""),
     totalDisplay: formatBRL(lineTotalQ(item)),
     discountLabel: lineDiscountBadge(item, reasons),
   };
@@ -86,7 +88,7 @@ export function displayPhase(inputs: {
  * do desconto manual — as duas fontes riscam o MESMO número na parede.
  */
 export function cartGrossTotalQ(items: POSCartItem[]): number {
-  return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);
+  return items.reduce((sum, item) => sum + lineAmountQ(item.price_q, item), 0);
 }
 
 /** Os três números do rodapé da venda: total, desconto e o total riscado. */
@@ -146,7 +148,7 @@ export function buildCustomerDisplaySnapshot(
 
   if (phase === "sale" || (phase === "payment" && !inputs.result)) {
     snapshot.items = inputs.items.map((item) => displayItemView(item, inputs.discountReasons));
-    snapshot.itemCount = inputs.items.reduce((sum, item) => sum + item.qty, 0);
+    snapshot.itemCount = inputs.items.reduce((sum, item) => sum + lineUnits(item), 0);
     // A MESMA soma da tela de venda (`cartNetTotalQ`). O review, quando existe,
     // prevalece. Com desconto, o total ANTES dele viaja junto, para ser riscado.
     Object.assign(snapshot, saleTotalsView(inputs.items, inputs.review));

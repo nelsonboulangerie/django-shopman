@@ -73,35 +73,53 @@ export function truncateClean (text: string, max: number): string {
 }
 
 // ── JSON-LD: Product + Offer ─────────────────────────────────────────────────
+// Marca, GTIN e código do fabricante vêm do Catálogo do Gestor — a MESMA fonte do
+// feed do Google/Meta (Product.metadata.social). Aqui já se carimbava a marca da
+// loja em todo produto, e a PDP afirmava "Nelson Boulangerie" até para a geleia
+// St. Dalfour, enquanto o feed (corretamente) não afirmava nada: a loja também
+// revende. Campo vazio fica de fora — não informado não é o mesmo que "não tem".
+const ITEM_CONDITION: Record<string, string> = {
+  new: 'https://schema.org/NewCondition',
+  used: 'https://schema.org/UsedCondition',
+  refurbished: 'https://schema.org/RefurbishedCondition'
+}
+
 export function productJsonLd (params: {
   product: ProductDetailProjection
   origin: string
   url: string
-  brandName: string
 }): Record<string, unknown> {
-  const { product, origin, url, brandName } = params
+  const { product, origin, url } = params
   // Rich results favorecem múltiplas imagens: principal + galeria (absolutas, deduped).
   const images = [...new Set(
     [product.image_url, ...(product.gallery || [])]
       .map(candidate => absoluteImage(origin, candidate))
       .filter((candidate): candidate is string => !!candidate)
   )]
+  const offer: Record<string, unknown> = {
+    '@type': 'Offer',
+    price: priceFromQ(product.base_price_q),
+    priceCurrency: CURRENCY,
+    availability: availabilitySchemaUrl(product.availability),
+    url
+  }
+  const condition = ITEM_CONDITION[cleanText(product.item_condition)]
+  if (condition) offer.itemCondition = condition
   const ld: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     sku: product.sku,
     description: metaDescription(product, 320),
-    offers: {
-      '@type': 'Offer',
-      price: priceFromQ(product.base_price_q),
-      priceCurrency: CURRENCY,
-      availability: availabilitySchemaUrl(product.availability),
-      url
-    }
+    offers: offer
   }
   if (images.length) ld.image = images.length === 1 ? images[0] : images
-  if (brandName) ld.brand = { '@type': 'Brand', name: brandName }
+  const brand = cleanText(product.brand)
+  if (brand) ld.brand = { '@type': 'Brand', name: brand }
+  const gtin = cleanText(product.gtin)
+  if (gtin) ld.gtin = gtin
+  const mpn = cleanText(product.mpn)
+  if (mpn) ld.mpn = mpn
   if (Array.isArray(product.seo_keywords) && product.seo_keywords.length) {
     ld.keywords = product.seo_keywords.join(', ')
   }
@@ -123,14 +141,21 @@ export function breadcrumbJsonLd (items: Array<{ name: string, url: string }>): 
 }
 
 // ── JSON-LD: CollectionPage + ItemList ───────────────────────────────────────
-// Cardápio = uma página de coleção com a lista de produtos. Cada item aponta para
-// a própria PDP (/produto/<sku>) com Offer mínima — ajuda o Google a entender a
-// vitrine sem duplicar o Product completo (que vive na PDP).
+// Cardápio e coleções são páginas de RESUMO: a lista só aponta para as PDPs
+// (/produto/<sku>), que carregam o Product completo. É o padrão "summary page"
+// do Google para listas.
+//
+// Aqui já morou um Product mínimo por item (nome, sku, preço, imagem). O Google
+// lê cada um como uma listagem de comerciante e cobra o que ele não tem: em
+// 20 e 22/09/2026 o Search Console acusou "O campo description não foi
+// encontrado" e "Nenhum identificador global fornecido (GTIN, marca)" — os 42
+// itens do /menu e os de cada /colecao, todos incompletos por construção. Repetir
+// descrição e marca em cada item só duplicaria a PDP; a PDP é a dona do Product.
 export function collectionJsonLd (params: {
   name: string
   url: string
   origin: string
-  items: Array<Pick<CatalogItemProjection, 'sku' | 'name' | 'base_price_q' | 'availability' | 'image_url'>>
+  items: Array<Pick<CatalogItemProjection, 'sku' | 'name'>>
 }): Record<string, unknown> {
   const { name, url, origin, items } = params
   return {
@@ -141,27 +166,12 @@ export function collectionJsonLd (params: {
     mainEntity: {
       '@type': 'ItemList',
       numberOfItems: items.length,
-      itemListElement: items.map((item, index) => {
-        const product: Record<string, unknown> = {
-          '@type': 'Product',
-          name: item.name,
-          sku: item.sku,
-          url: absoluteUrl(origin, `/produto/${encodeURIComponent(item.sku)}`),
-          offers: {
-            '@type': 'Offer',
-            price: priceFromQ(item.base_price_q),
-            priceCurrency: CURRENCY,
-            availability: availabilitySchemaUrl(item.availability)
-          }
-        }
-        const image = absoluteImage(origin, item.image_url)
-        if (image) product.image = image
-        return {
-          '@type': 'ListItem',
-          position: index + 1,
-          item: product
-        }
-      })
+      itemListElement: items.map((item, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: item.name,
+        url: absoluteUrl(origin, `/produto/${encodeURIComponent(item.sku)}`)
+      }))
     }
   }
 }

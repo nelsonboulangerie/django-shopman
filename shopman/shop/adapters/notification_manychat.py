@@ -14,110 +14,11 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from shopman.shop import notification_copy
+
 logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
-    "order_received": (
-        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref}. "
-        "O estabelecimento vai conferir a disponibilidade. Acompanhe: {tracking_url}"
-    ),
-    "order_accepted": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} foi confirmado."
-        " Total: {total}. Obrigado pela preferência! \U0001f950{tracking_suffix}"
-    ),
-    "order_preparing": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está em preparo."
-        "{tracking_suffix}"
-    ),
-    "order_ready_pickup": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
-        " para retirada! \U0001f389\n\nVenha buscar. Obrigado!{tracking_suffix}"
-    ),
-    "order_ready_delivery": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
-        " e será enviado em breve! \U0001f4e6{tracking_suffix}"
-    ),
-    "order_dispatched": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
-        " entrega! \U0001f697{courier_tracking_suffix}"
-        "\nQuando receber, é só confirmar por aqui: {tracking_url}"
-    ),
-    "order_delivered": (
-        "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
-    ),
-    "order_cancelled": (
-        "Seu pedido {order_ref} foi cancelado.{reason_note}"
-        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
-    ),
-    "order_rejected": (
-        "Seu pedido {order_ref} não pôde ser confirmado pelo estabelecimento.{reason_note}"
-        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
-    ),
-    # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
-    # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
-    # Entrada na loja pelo WhatsApp: a pessoa mandou a palavra e recebe o acesso.
-    # Uso único e vida curta — dizer isso evita o link guardado que não abre depois.
-    "access_link": (
-        "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:"
-        "\n{access_url}"
-        "\n{cart_note}O link vale por 5 min."
-    ),
-    "waitlist_available": (
-        "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
-        "Confirme o pedido {order_ref} para garantir o seu: {tracking_url}"
-    ),
-    "waitlist_released": (
-        "O prazo de confirmação do pedido {order_ref} passou e liberamos a sua vaga. "
-        "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
-    ),
-    # Pagar não é o mesmo que ser aceito: enquanto o pedido está `new`, a tela diz
-    # "estamos conferindo a disponibilidade". Prometer preparo aqui era prometer o
-    # que a tela não cumpre.
-    "payment_confirmed": (
-        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido."
-        "\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"
-    ),
-    "payment_requested": (
-        "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
-        "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
-    ),
-    # Pedido remoto anotado no PDV: a venda já fechou, falta o cliente pagar pelo
-    # link. "Anotamos", não "conferimos a disponibilidade" — o pão já está separado.
-    "payment_link_sent": (
-        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref} — total {total}."
-        "\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}"
-        "\nQualquer coisa, é só responder esta mensagem. \U0001f956"
-    ),
-    "payment_reminder": (
-        "Olá{customer_name_greeting}! Seu pedido {order_ref} aguarda"
-        " pagamento PIX. Use o código: {copy_paste}"
-    ),
-    "payment_expired": (
-        "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido {order_ref}"
-        " dentro do prazo, então liberamos a reserva."
-        "\nSe ainda quiser, é só falar com a gente que refazemos o pedido. \U0001f956"
-    ),
-    "payment_failed": (
-        "Não conseguimos preparar o pagamento do pedido {order_ref}. "
-        "Abra o link do pedido para tentar novamente: {payment_url}"
-    ),
-    "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref} está agendado para amanhã. "
-        "Já estamos preparando tudo!"
-    ),
-    # Chegada de estoque (AVAILABILITY-PLAN §8.3 + "Me avise"): os pedaços
-    # reserve_note/deadline_note/cta/action_url vem prontos do emissor —
-    # reserva de sacola materializada traz prazo + link do carrinho; o
-    # "Me avise" (sem reserva) traz o link do produto.
-    "stock_arrived": (
-        "Boa notícia! {product_name} chegou.{reserve_note}{deadline_note} "
-        "{cta} {action_url}{management_note}"
-    ),
-    # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
-    # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
-    "production_ready": (
-        "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}"
-    ),
     "purchase_request": (
         "Olá, {supplier_greeting}! Aqui é da {shop_name}. "
         "Precisamos repor {material_name}: {purchase_qty_display}. "
@@ -131,6 +32,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # Campanha: o corpo ja vem pronto do AnnouncementTemplate (com as variaveis
     # resolvidas), entao o template daqui e so o envelope.
     "announcement_published": "{body}\n\n{cta} {action_url}",
+    # Avisos ao cliente: fonte única em `shopman/shop/notification_copy.py`.
+    **{event: copy["body"] for event, copy in notification_copy.CUSTOMER_COPY.items()},
 }
 
 
@@ -178,19 +81,59 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
             if resp_data.get("status") == "success":
                 # Subscriber identity is not a delivery receipt.
                 return {"success": True}
-            return {"success": False, "error": "provider_rejected"}
+            return {
+                "success": False,
+                "error": "provider_rejected",
+                "provider_code": _provider_error_code(resp_data),
+            }
     except HTTPError as exc:
         # Explicit request rejection: no acceptance to reconcile. 408/5xx and
         # transport failures remain uncertain, so the chain must stop there.
         if exc.code in {400, 401, 403, 404, 405, 413, 415, 422, 429}:
-            return {"success": False, "error": "provider_rejected"}
+            try:
+                provider_payload = json.loads(exc.read(4096).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                provider_payload = {}
+            return {
+                "success": False,
+                "error": "provider_rejected",
+                "provider_code": _provider_error_code(provider_payload),
+                "provider_http_status": exc.code,
+            }
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=http status=%s",
+            endpoint,
+            exc.code,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
-    except URLError:
+    except URLError as exc:
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=urlerror reason_type=%s",
+            endpoint,
+            type(exc.reason).__name__,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
-    except Exception:
-        logger.warning("manychat acceptance unconfirmed; response unavailable")
+    except Exception as exc:
+        logger.warning(
+            "manychat acceptance unconfirmed endpoint=%s transport=unexpected exception_type=%s",
+            endpoint,
+            type(exc).__name__,
+        )
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
 
+
+def _provider_error_code(payload) -> str:
+    """Keep a bounded provider code without logging bodies or customer data."""
+    if not isinstance(payload, dict):
+        return "unspecified"
+    candidates = [payload.get("code"), payload.get("error_code")]
+    details = payload.get("details")
+    if isinstance(details, dict):
+        candidates.extend([details.get("code"), details.get("error_code")])
+    for candidate in candidates:
+        if isinstance(candidate, (str, int)) and str(candidate).strip():
+            return str(candidate).strip()[:64]
+    return "unspecified"
 
 
 def _build_message(template: str, context: dict) -> str:
@@ -201,13 +144,79 @@ def _build_message(template: str, context: dict) -> str:
     2. MESSAGE_TEMPLATES hardcoded fallback
     3. Generic fallback with order_ref
 
-    As chaves auxiliares (``customer_name_greeting``, ``tracking_suffix``, …) são
+    As chaves auxiliares (``customer_name_greeting``, ``order_ref_short``, …) são
     derivadas por ``_notification_templates.derive_context``, dentro do
     ``render_message`` — ponto único para WhatsApp, SMS e e-mail.
     """
     from shopman.shop.adapters._notification_templates import render_message
 
     return render_message(template, context, MESSAGE_TEMPLATES)
+
+
+def _message_buttons(template: str, context: dict) -> list[dict[str, str]]:
+    """Build native WhatsApp URL buttons for access messages.
+
+    Access URLs are credentials. Keeping them behind named actions makes the
+    next step legible and prevents the recovery link from dominating the copy.
+    Other notifications keep their existing plain text contract.
+    """
+    if template not in {"access_link", "access_link_site"}:
+        return []
+
+    access_url = str(context.get("access_url") or "").strip()
+    if not access_url:
+        return []
+
+    primary_caption = "Continuar pedido" if context.get("has_cart_context") else "Entrar na loja"
+    buttons = [{"type": "url", "caption": primary_caption, "url": access_url}]
+
+    revoke_url = str(context.get("revoke_url") or "").strip()
+    if template == "access_link_site" and revoke_url:
+        buttons.append({"type": "url", "caption": "Encerrar acesso", "url": revoke_url})
+    return buttons
+
+
+def _message_contents(
+    template: str,
+    message: str,
+    buttons: list[dict[str, str]],
+) -> list[dict]:
+    """Build WhatsApp messages within the one URL button per bubble contract.
+
+    The site initiated login needs a primary access action and a defensive revoke
+    action. ManyChat allows one URL button in a WhatsApp text bubble, so the
+    security action goes first and the primary action remains the final, visually
+    dominant bubble. Both are still sent atomically in one SendContent call.
+    """
+    if template == "access_link_site" and len(buttons) == 2:
+        primary, revoke = buttons
+        return [
+            {
+                "type": "text",
+                "text": "Não reconhece este acesso?",
+                "buttons": [revoke],
+            },
+            {
+                "type": "text",
+                "text": message,
+                "buttons": [primary],
+            },
+        ]
+
+    message_content: dict = {"type": "text", "text": message}
+    if buttons:
+        message_content["buttons"] = buttons
+    return [message_content]
+
+
+def _plain_text_button_fallback(message: str, buttons: list[dict[str, str]]) -> str:
+    """Restore the URLs only when the provider rejects native buttons."""
+    lines = [message.rstrip()]
+    for button in buttons:
+        url = button["url"]
+        if url not in message:
+            lines.append(f'{button["caption"]}: {url}')
+    return "\n".join(lines)
 
 
 def _load_db_flow_ns(event: str) -> str | None:
@@ -222,6 +231,26 @@ def _load_db_flow_ns(event: str) -> str | None:
         logger.warning("manychat template flow lookup failed")
 
     return None
+
+
+def sends_as_flow(template: str) -> bool:
+    """Este evento sai por FLOW (template aprovado), e não por texto livre?
+
+    O texto do flow mora no ManyChat e é fixo: nada que o código acrescente ao
+    corpo (o link da nota, por exemplo) chega ao cliente por ele. Quem quer
+    pegar carona numa mensagem pergunta isto antes. Mesma ordem do ``send``.
+    """
+    return bool(_load_db_flow_ns(template) or _get_config().get("flow_map", {}).get(template))
+
+
+def _flow_lacks_name(template: str, ctx: dict) -> bool:
+    """Aviso de pedido cujo template cumprimenta pelo nome, sem nome no despacho."""
+    copy = notification_copy.CUSTOMER_COPY.get(template)
+    if copy is None or "{order_ref_short}" not in copy["body"]:
+        return False
+    if "{customer_name_greeting}" not in copy["body"]:
+        return False
+    return not str(ctx.get("customer_name") or "").strip()
 
 
 def send(recipient: str, template: str, context: dict | None = None, **config) -> bool | dict:
@@ -249,6 +278,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     from shopman.shop.services import manychat_marketing_safety
 
     sandbox_probe = manychat_marketing_safety.consume_sandbox_probe(ctx)
+    sandbox_declared_fields, sandbox_flow_ns, sandbox_flow_override = (
+        manychat_marketing_safety.consume_sandbox_probe_contract(ctx)
+    )
+    if not sandbox_probe:
+        # Metadata without the in-process sentinel is untrusted and has already
+        # been discarded; callers cannot choose an arbitrary provider flow.
+        sandbox_declared_fields = ()
+        sandbox_flow_ns = ""
+        sandbox_flow_override = False
     if template in manychat_marketing_safety.MARKETING_FLOW_EVENTS and not sandbox_probe:
         # Última porta antes do provedor. O modo (blocked/canary/open) decide antes
         # de resolver o assinante: recusa aqui é zero chamada e zero PII saindo.
@@ -277,7 +315,21 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     # Flow configurado no Admin (NotificationTemplate.whatsapp_flow_ns) tem precedência;
     # cai no settings flow_map como fallback de bootstrap.
-    flow_ns = _load_db_flow_ns(template) or mc_config.get("flow_map", {}).get(template)
+    flow_ns = (
+        sandbox_flow_ns
+        if sandbox_flow_override
+        else (
+            _load_db_flow_ns(template)
+            or mc_config.get("flow_map", {}).get(template)
+        )
+    )
+
+    if flow_ns and _flow_lacks_name(template, ctx):
+        # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
+        # do ManyChat, sem valor novo, guardaria o nome de um envio anterior. Pedido
+        # sem nome (raro: o checkout exige) passa a vez para o SMS/e-mail da cadeia.
+        logger.info("manychat.flow_sem_nome template=%s", template)
+        return False
 
     if flow_ns:
         # ⚠️ UMA mensagem com flow por assinante por vez. Os campos personalizados são
@@ -293,7 +345,22 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         # template aprovado que diga "O {{product_name}} que você pediu chegou" sai com o
         # nome do produto em branco — e é exatamente o que acontecia, em silêncio, nos
         # dois caminhos que usam flow (alerta de estoque e anúncio de campanha).
-        _push_custom_fields(subscriber_id, ctx, mc_config, template=template)
+        fields_ready = _push_custom_fields(
+            subscriber_id,
+            ctx,
+            mc_config,
+            template=template,
+            declared_fields=sandbox_declared_fields or None,
+        )
+        if not fields_ready:
+            # Flow lê estado persistente de forma assíncrona. Dispará-lo depois
+            # de uma escrita/limpeza parcial pode reutilizar dado da mensagem
+            # anterior; falhar fechado é a única saída honesta.
+            logger.warning(
+                "ManyChat flow não disparado: contrato de campos incompleto template=%s",
+                template,
+            )
+            return False
         payload = {
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
@@ -305,6 +372,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         result = _api_call("/sending/sendFlow", payload, mc_config)
     else:
         message = _build_message(template, ctx)
+        buttons = _message_buttons(template, ctx)
         payload = {
             "subscriber_id": subscriber_id,
             "data": {
@@ -319,11 +387,38 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
                     # que é conceito do Messenger — o WhatsApp tem template e
                     # janela, não tag.
                     "type": "whatsapp",
-                    "messages": [{"type": "text", "text": message}],
+                    "messages": _message_contents(template, message, buttons),
                 },
             },
         }
         result = _api_call("/sending/sendContent", payload, mc_config)
+        if buttons and result.get("error") == "provider_rejected":
+            # A rejeição explícita significa que nada foi aceito. Tentar uma vez
+            # como texto mantém o acesso recuperável sem risco de mensagem dupla.
+            logger.warning(
+                "manychat.buttons_rejected template=%s provider_code=%s http_status=%s fallback=plain_text",
+                template,
+                result.get("provider_code", "unspecified"),
+                result.get("provider_http_status", "unspecified"),
+            )
+            fallback_payload = {
+                "subscriber_id": subscriber_id,
+                "data": {
+                    "version": "v2",
+                    "content": {
+                        "type": "whatsapp",
+                        "messages": [
+                            {
+                                "type": "text",
+                                "text": _plain_text_button_fallback(message, buttons),
+                            }
+                        ],
+                    },
+                },
+            }
+            result = _api_call("/sending/sendContent", fallback_payload, mc_config)
+            if result.get("success"):
+                logger.info("manychat.buttons_fallback_accepted template=%s", template)
 
     if result.get("outcome_unknown"):
         raise RuntimeError("acceptance_unconfirmed")
@@ -456,34 +551,44 @@ def _shareable_context(ctx: dict) -> dict:
 
 
 def _declared_marketing_fields(template: str, ctx: dict) -> dict[str, str] | None:
-    """O conjunto completo de um evento de Marketing, com vazio para o que faltar.
+    """O conjunto completo de um flow conhecido, com vazio para o que faltar.
 
-    ``None`` para os demais eventos (pedido etc.), que seguem gravando só o que têm. Um
-    link com token pessoal que não tem gêmeo público sai VAZIO aqui, e não omitido:
-    omitir deixaria no perfil o link da mensagem anterior.
+    ``None`` só para eventos sem contrato canônico. Um link com token pessoal que não
+    tem gêmeo público sai VAZIO aqui, e não omitido: omitir deixaria no perfil o link
+    da mensagem anterior.
     """
-    from shopman.shop.services.manychat_marketing_safety import MARKETING_FLOW_FIELDS
+    from shopman.shop.services.manychat_marketing_safety import flow_fields_for_event
 
-    declared = MARKETING_FLOW_FIELDS.get(template)
+    declared = flow_fields_for_event(template)
     if declared is None:
         return None
     shareable = _shareable_context(ctx)
     return {name: shareable.get(name, "") for name in declared}
 
 
-def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict, *, template: str = "") -> int:
+def _push_custom_fields(
+    subscriber_id: str,
+    ctx: dict,
+    config: dict,
+    *,
+    template: str = "",
+    declared_fields: tuple[str, ...] | None = None,
+) -> bool:
     """Gravar os valores do contexto como campos personalizados do assinante.
 
-    É o que faz a variável do template aprovado resolver. Falha de um campo **não**
-    interrompe o envio: um alerta de fornada é tempo-sensível, e mensagem com um pedaço
-    faltando ainda avisa o cliente — mensagem nenhuma não avisa. Mas cada falha vai para
-    o log, porque campo que não existe no ManyChat é configuração pendente, não ruído.
+    É o que faz a variável do template aprovado resolver. Falha de qualquer campo
+    interrompe o flow: o perfil é persistente e uma escrita parcial pode deixar o valor
+    da mensagem anterior. Cada falha vai para o log porque campo inexistente no ManyChat
+    é configuração pendente, não ruído.
 
     O campo tem de existir no ManyChat com o MESMO nome. Nomes em inglês, como o resto
     do vocabulário de integração.
     """
-    pushed = 0
-    declared = _declared_marketing_fields(template, ctx)
+    if declared_fields is not None:
+        shareable = _shareable_context(ctx)
+        declared = {name: shareable.get(name, "") for name in declared_fields}
+    else:
+        declared = _declared_marketing_fields(template, ctx)
     fields = declared if declared is not None else _shareable_context(ctx)
     for name, text in fields.items():
         result = _api_call(
@@ -492,14 +597,14 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict, *, template
             config,
         )
         if result.get("success"):
-            pushed += 1
-        else:
-            logger.warning(
-                "ManyChat custom field não gravado: %s. O template vai renderizar "
-                "sem ele — crie o campo com este nome no ManyChat.",
-                name,
-            )
-    return pushed
+            continue
+        logger.warning(
+            "ManyChat custom field não gravado: %s. O flow não será disparado — "
+            "crie o campo com este nome no ManyChat.",
+            name,
+        )
+        return False
+    return True
 
 
 def is_available(recipient: str | None = None, **config) -> bool:

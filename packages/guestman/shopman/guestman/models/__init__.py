@@ -9,6 +9,10 @@ CORE models are exported here. Contrib models are in their respective modules:
 from shopman.guestman.models.address import AddressLabel, CustomerAddress
 from shopman.guestman.models.contact_point import ContactPoint
 from shopman.guestman.models.customer import Customer, CustomerType
+from shopman.guestman.models.erasure_tombstone import (
+    ProviderErasureTombstone,
+    erasure_digest,
+)
 from shopman.guestman.models.external_identity import ExternalIdentity
 from shopman.guestman.models.price_tier import PriceTier
 from shopman.guestman.models.processed_event import ProcessedEvent
@@ -29,4 +33,7 @@ __all__ = [
     "ExternalIdentity",
     # Replay protection (G5)
     "ProcessedEvent",
+    # A conta excluída não volta pela porta do provedor
+    "ProviderErasureTombstone",
+    "erasure_digest",
 ]

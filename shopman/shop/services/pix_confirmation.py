@@ -130,6 +130,17 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
         )
         return
 
+    # A confirmação chegou depois da intenção durável, mas antes da baixa
+    # local: o online vence sob o mesmo lock de Order usado pelo balcão. Se o
+    # balcão venceu enquanto esperávamos, releia o intent e caia no ramo morto,
+    # que registra e estorna em vez de perder o Pix na janela.
+    if db_intent.status not in _DEAD_CHARGE_STATUSES:
+        from shopman.shop.services import counter_takeover
+
+        if not counter_takeover.arbitrate_pending_takeover_for_online_payment(order, db_intent.ref):
+            db_intent.refresh_from_db()
+            order.refresh_from_db()
+
     if db_intent.status in _DEAD_CHARGE_STATUSES:
         _confirm_pix_on_dead_charge(
             order,
@@ -230,8 +241,11 @@ def _confirm_pix_on_live_charge(
         )
         return
 
+    from shopman.shop.services import order_composition
+
     captured_q = _captured_balance_q(order, db_intent)
-    if captured_q is None or captured_q < int(getattr(order, "total_q", 0) or 0):
+    # O total EFETIVO: o pedido ajustado depois do QR vale pelo total novo.
+    if captured_q is None or captured_q < order_composition.effective_total_q(order):
         # Capturamos, mas o livro não cobre o pedido (cobrança menor que o
         # total, pedido alterado depois do QR). A prova de suficiência é
         # SEMPRE o Payman, nunca o valor que o webhook declarou.
@@ -378,6 +392,22 @@ def _confirm_pix_on_dead_charge(
         # ``payment_after_cancel``. Um dono só para "pagamento chegou depois do
         # cancelamento".
         dispatch(order, "on_paid")
+        return
+
+    from shopman.shop.services import counter_takeover
+
+    if counter_takeover.cancelled_by_takeover(order, db_intent.ref):
+        # O balcão recebeu e cancelou esta cobrança; o Pix chegou depois (pago no
+        # último segundo, ou webhook atrasado). Não é caso para gente decidir: o
+        # cliente pagou duas vezes, e o Pix volta para o Pix dele.
+        from shopman.shop.services import payment as payment_service
+
+        counter_takeover.refund_late_payment(
+            order,
+            booked_ref=booked_ref,
+            adapter=payment_service._adapter_for_persisted_intent(booked_ref, method="pix"),
+            method="pix",
+        )
         return
 
     if already_booked:

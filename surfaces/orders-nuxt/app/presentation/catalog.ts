@@ -86,7 +86,7 @@ export function rowStatus(row: CatalogRowProjection): RowStatus {
   if (!row.is_sellable) return { off: true, label: "Pausado", tone: "amber", hint: "" };
   // Depois das duas chaves DELIBERADAS e antes de Esgotado, de propósito: aqui
   // ninguém escondeu nada — o produto caiu fora do cardápio como efeito colateral
-  // de desativar a categoria. Esgotado se resolve sozinho na próxima fornada;
+  // de desativar a categoria. Esgotado se resolve sozinho no próximo lote;
   // este não se resolve nunca, porque não há quem perceba. Rótulo curto (a linha
   // é estreita) + a frase inteira no `hint`; "Oculto" NÃO serve, já quer dizer
   // "não publicado".
@@ -99,7 +99,7 @@ export function rowStatus(row: CatalogRowProjection): RowStatus {
     };
   }
   // Esgotado = fato de ESTOQUE, ortogonal à pausa. Danger pra saltar à vista (cliente
-  // não consegue comprar agora) e diferenciar do Pausado — mesmo repondo na fornada.
+  // não consegue comprar agora) e diferenciar do Pausado — mesmo repondo no lote.
   // Vem antes de "Indisponível" porque o gate de pausa das células não enxerga estoque.
   if (row.sold_out) return { off: true, label: "Esgotado", tone: "danger", hint: "" };
   const listed = row.cells.some((c) => c.in_listing);

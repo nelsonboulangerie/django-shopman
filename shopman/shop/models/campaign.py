@@ -37,7 +37,7 @@ class _AppendOnlyMarketingQuerySet(models.QuerySet):
 class Trigger(models.TextChoices):
     """Eventos operacionais que podem gerar campanha."""
 
-    PRODUCTION_FINISHED = "production_finished", "Fornada concluída"
+    PRODUCTION_FINISHED = "production_finished", "Lote concluído"
     LOW_STOCK = "low_stock", "Estoque baixo"
     STOCK_BACK = "stock_back", "Voltou ao estoque"
     PRODUCT_CREATED = "product_created", "Produto novo"
@@ -262,7 +262,7 @@ class Campaign(models.Model):
         "expira em (min)",
         default=0,
         help_text="Anúncio não aprovado caduca depois disso. 0 = não expira. "
-        "Frescor é efêmero: fornada merece prazo curto.",
+        "Frescor é efêmero: lote merece prazo curto.",
     )
     notify_users = models.JSONField(
         "avisar usuários",

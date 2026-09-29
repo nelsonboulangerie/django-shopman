@@ -19,10 +19,47 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
+from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
 
 logger = logging.getLogger(__name__)
 
 REQUEST_STATUSES = {"review", "approved", "sent"}
+
+
+@dataclass(frozen=True)
+class SkuRolesProjection:
+    """Os selos do SKU — derivados, nunca guardados (``sku_records.SkuRoles``)."""
+
+    purchasable: bool
+    sellable: bool
+    produced: bool
+    usedInRecipe: bool
+
+
+@dataclass(frozen=True)
+class SaleSuggestionProjection:
+    """O preço que "Permitir revenda" propõe: custo × (1 + markup), para cima até o real.
+
+    Só existe quando o custo é conhecido (``shop/resale_markup.py``). A tela
+    pré-preenche e mostra de onde veio; quem decide é o operador.
+    """
+
+    priceQ: int
+    costQ: int
+    markupPct: int
+    #: Nome da categoria cujo markup valeu; vazio = padrão da loja.
+    markupCategory: str
+
+
+@dataclass(frozen=True)
+class OpensIntoProjection:
+    """ "Quando aberto, vira": o insumo aberto, quanto vem numa embalagem e a validade depois de aberta."""
+
+    sku: str
+    name: str
+    unit: str
+    quantity: str
+    shelfLifeDays: int | None
 
 
 @dataclass(frozen=True)
@@ -44,6 +81,15 @@ class MaterialProjection:
     replenishAtDays: float
     suggestedQty: float
     stockIsApproximate: bool
+    roles: SkuRolesProjection
+    #: Preço de venda do cadastro de venda do mesmo SKU; ``None`` quando não se vende.
+    salePriceQ: int | None
+    #: Sugestão para "Permitir revenda"; ``None`` sem custo conhecido ou se já se vende.
+    saleSuggestion: SaleSuggestionProjection | None
+    #: Em que a embalagem se abre na produção; ``None`` quando não se abre.
+    opensInto: OpensIntoProjection | None
+    #: Conteúdo de uma embalagem em kg, pelo peso líquido declarado — pré-preenche o "Quando aberto, vira".
+    netContentKg: str
 
 
 @dataclass(frozen=True)
@@ -120,11 +166,28 @@ class ReceiptConversionSuggestionProjection:
 
 
 @dataclass(frozen=True)
+class ReceiptFiscalDivergenceProjection:
+    """A nota discorda do cadastro fiscal do produto — aviso, nunca correção.
+
+    ``sku`` é o produto contra o qual a nota foi conferida: se o operador troca
+    o item da linha, a divergência não é mais dele e a tela para de mostrá-la.
+    """
+
+    sku: str
+    field: str
+    catalogValue: str
+    invoiceValue: str
+    message: str
+
+
+@dataclass(frozen=True)
 class ReceiptLineProjection:
     id: str
     materialSku: str
     suggestedMaterialSku: str
     suggestionScore: int
+    #: De onde veio a sugestão: ``gtin`` (código de barras) ou ``name``.
+    suggestionSource: str
     conversionId: str | None
     requiresConversion: bool
     conversionSuggestion: ReceiptConversionSuggestionProjection | None
@@ -142,6 +205,15 @@ class ReceiptLineProjection:
     invoiceTotal: str
     invoiceProductCode: str
     invoiceEan: str
+    invoicePackageEan: str
+    invoiceNcm: str
+    invoiceCest: str
+    #: Grupo ICMS do item na nota: CST (regime normal) ou CSOSN (Simples), e o
+    #: valor de ST em centavos. Voltam no confirmar para o servidor reconferir.
+    invoiceIcmsCst: str
+    invoiceIcmsCsosn: str
+    invoiceStValueQ: int
+    fiscalDivergences: tuple[ReceiptFiscalDivergenceProjection, ...]
     checked: bool
 
 
@@ -207,6 +279,13 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
     approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
+    roles = sku_roles_map(skus)
+    sale_prices = _sale_price_map(skus)
+    material_by_sku = {material.sku: material for material in material_rows}
+    net_contents = _net_contents_kg([material.sku for material in material_rows if material.unit == "un"])
+    sale_suggestions = _sale_suggestions(
+        [sku for sku in skus if not (roles.get(sku) and (roles[sku].sellable or roles[sku].produced))]
+    )
 
     suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
     materials = tuple(
@@ -218,6 +297,11 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             lead_time_days=lead_times.get(material.sku, Decimal(policy["min_lead_time_days"])),
             stock_is_approximate=material.sku in approximate_stock,
             policy=policy,
+            roles=roles.get(material.sku, SkuRoles()),
+            sale_price_q=sale_prices.get(material.sku),
+            sale_suggestion=sale_suggestions.get(material.sku),
+            opens_into=_opens_into(material, material_by_sku),
+            net_content_kg=net_contents.get(material.sku, ""),
         )
         for material in material_rows
     )
@@ -316,6 +400,11 @@ def _material_projection(
     lead_time_days: Decimal,
     stock_is_approximate: bool,
     policy: dict[str, int],
+    roles: SkuRoles,
+    sale_price_q: int | None,
+    sale_suggestion: SaleSuggestionProjection | None = None,
+    opens_into: OpensIntoProjection | None = None,
+    net_content_kg: str = "",
 ) -> MaterialProjection:
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
@@ -334,7 +423,7 @@ def _material_projection(
         replenish_at=replenish_at,
         shelf_life_days=material.shelf_life_days,
     )
-    category = _meta_str(meta, "category") or "Insumos"
+    category = _meta_str(meta, "category") or ("Revenda" if roles.sellable else "Insumos")
     return MaterialProjection(
         sku=material.sku,
         name=material.name,
@@ -351,6 +440,80 @@ def _material_projection(
         replenishAtDays=_number(replenish_at),
         suggestedQty=_number(suggested),
         stockIsApproximate=stock_is_approximate,
+        roles=SkuRolesProjection(
+            purchasable=roles.purchasable,
+            sellable=roles.sellable,
+            produced=roles.produced,
+            usedInRecipe=roles.used_in_recipe,
+        ),
+        salePriceQ=sale_price_q,
+        saleSuggestion=sale_suggestion,
+        opensInto=opens_into,
+        netContentKg=net_content_kg,
+    )
+
+
+def _opens_into(material, material_by_sku: dict) -> OpensIntoProjection | None:
+    spec = (material.metadata or {}).get("opens_into") if isinstance(material.metadata, dict) else None
+    if not isinstance(spec, dict) or not spec.get("sku"):
+        return None
+    opened = material_by_sku.get(str(spec["sku"]))
+    days = spec.get("shelf_life_days")
+    return OpensIntoProjection(
+        sku=str(spec["sku"]),
+        name=opened.name if opened else str(spec["sku"]),
+        unit=opened.unit if opened else "",
+        quantity=str(spec.get("quantity") or ""),
+        shelfLifeDays=days if isinstance(days, int) and not isinstance(days, bool) else None,
+    )
+
+
+def _net_contents_kg(skus: list[str]) -> dict[str, str]:
+    """Peso líquido declarado (``Product.unit_weight_g``) em kg, para os SKUs contados por unidade."""
+    if not skus:
+        return {}
+    Product = apps.get_model("offerman", "Product")
+    return {
+        sku: str((Decimal(grams) / Decimal(1000)).normalize())
+        for sku, grams in Product.objects.filter(sku__in=skus, unit_weight_g__gt=0).values_list("sku", "unit_weight_g")
+    }
+
+
+def _sale_suggestions(skus: list[str]) -> dict[str, SaleSuggestionProjection]:
+    """Sugestão de preço para cada SKU que ainda não se vende e tem custo."""
+    from shopman.shop.resale_markup import (
+        RESALE_COLLECTION_REF,
+        primary_collections_map,
+        resolve_resale_markup,
+        suggested_price_q,
+        unit_costs_map,
+    )
+
+    costs = unit_costs_map(skus)
+    if not costs:
+        return {}
+    markup = resolve_resale_markup()
+    collections = primary_collections_map(costs)
+    Collection = apps.get_model("offerman", "Collection")
+    names = dict(Collection.objects.values_list("ref", "name"))
+    suggestions = {}
+    for sku, cost_q in costs.items():
+        ref = collections.get(sku, (RESALE_COLLECTION_REF, ""))[0]
+        pct, source_ref = markup.pct_for(ref)
+        suggestions[sku] = SaleSuggestionProjection(
+            priceQ=suggested_price_q(cost_q, pct),
+            costQ=cost_q,
+            markupPct=pct,
+            markupCategory=names.get(source_ref, source_ref) if source_ref else "",
+        )
+    return suggestions
+
+
+def _sale_price_map(skus: list[str]) -> dict[str, int]:
+    """Preço de venda dos SKUs que a casa decidiu vender."""
+    Product = apps.get_model("offerman", "Product")
+    return dict(
+        Product.objects.filter(sku__in=skus, is_sellable=True).values_list("sku", "base_price_q")
     )
 
 
@@ -484,6 +647,7 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         materialSku=str(line.get("materialSku") or line.get("material_sku") or ""),
         suggestedMaterialSku=str(line.get("suggestedMaterialSku") or line.get("suggested_material_sku") or ""),
         suggestionScore=int(_decimal(line.get("suggestionScore", line.get("suggestion_score", 0)) or 0)),
+        suggestionSource=str(line.get("suggestionSource") or ""),
         conversionId=(
             str(line.get("conversionId") or line.get("conversion_id"))
             if line.get("conversionId") or line.get("conversion_id")
@@ -507,6 +671,23 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         invoiceTotal=str(line.get("invoiceTotal") or line.get("invoice_total") or ""),
         invoiceProductCode=str(line.get("invoiceProductCode") or line.get("invoice_product_code") or ""),
         invoiceEan=str(line.get("invoiceEan") or line.get("invoice_ean") or ""),
+        invoicePackageEan=str(line.get("invoicePackageEan") or line.get("invoice_package_ean") or ""),
+        invoiceNcm=str(line.get("invoiceNcm") or line.get("invoice_ncm") or ""),
+        invoiceCest=str(line.get("invoiceCest") or line.get("invoice_cest") or ""),
+        invoiceIcmsCst=str(line.get("invoiceIcmsCst") or ""),
+        invoiceIcmsCsosn=str(line.get("invoiceIcmsCsosn") or ""),
+        invoiceStValueQ=int(_decimal(line.get("invoiceStValueQ") or 0)),
+        fiscalDivergences=tuple(
+            ReceiptFiscalDivergenceProjection(
+                sku=str(raw.get("sku") or ""),
+                field=str(raw.get("field") or ""),
+                catalogValue=str(raw.get("catalogValue") or ""),
+                invoiceValue=str(raw.get("invoiceValue") or ""),
+                message=str(raw.get("message") or ""),
+            )
+            for raw in line.get("fiscalDivergences") or ()
+            if isinstance(raw, dict) and raw.get("message")
+        ),
         checked=bool(line.get("checked")),
     )
 

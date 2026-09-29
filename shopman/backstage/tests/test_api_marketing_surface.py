@@ -1078,6 +1078,23 @@ class TestOptions:
             item["ref"] for item in capabilities["instagram"]["formats"]
         ] == ["story", "feed"]
         assert capabilities["instagram"]["formats"][0]["media_required"] is True
+        assert options["provider_capability_schema_version"] == 2
+        provider_capabilities = {
+            item["platform"]: item for item in options["provider_capabilities"]
+        }
+        assert provider_capabilities["instagram"]["connector_state"] == "active"
+        instagram_formats = {
+            item["ref"]: item
+            for item in provider_capabilities["instagram"]["formats"]
+        }
+        assert instagram_formats["carousel"]["implementation_state"] == "planned"
+        assert instagram_formats["carousel"]["media"]["max_items"] == 10
+        assert provider_capabilities["tiktok"]["connector_state"] == "dormant"
+        tiktok_formats = {
+            item["ref"]: item
+            for item in provider_capabilities["tiktok"]["formats"]
+        }
+        assert tiktok_formats["video_draft"]["delivery_kind"] == "creator_handoff"
         assert template.pk in {t["pk"] for t in options["templates"]}
         projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
         assert projected_template["requires_product"] is True
@@ -1206,6 +1223,108 @@ class TestOptions:
         assert response["Retry-After"] == "30"
         assert response.json()["code"] == "whatsapp_flow_verification_unavailable"
         assert response.json()["retryable"] is True
+
+
+class TestAnnouncementReviewPreview:
+    """A prévia da revisão é o conteúdo GRAVADO do anúncio, não o produto de exemplo.
+
+    Medido em 25/09/2026 (anúncio 31, disparo manual só no Google, modelo sem ``[Link]``):
+    o conteúdo gravado não tinha link e a aprovação publicou sem link, mas a prévia
+    mostrava o link e o nome de um produto de exemplo da loja.
+    """
+
+    @pytest.fixture(autouse=True)
+    def sample_product(self):
+        from shopman.offerman.models import Product
+
+        # O produto que a prévia do formulário escolheria como exemplo.
+        return Product.objects.create(
+            sku="AGUA-EXEMPLO",
+            name="Água de exemplo",
+            base_price_q=500,
+            is_published=True,
+            is_sellable=True,
+            image_url="/media/agua.jpg",
+        )
+
+    def test_announcement_without_product_previews_without_link(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(
+            rule,
+            template,
+            content={"body": "Ensaio do Google", "hashtags": [], "link": "", "image_url": ""},
+            platforms=["google_business"],
+            trigger_context={},
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Ensaio do Google revisado",
+                "hashtags": [],
+                "platforms": ["google_business"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["sample"] is False
+        assert payload["sku"] == ""
+        assert payload["product_name"] == ""
+        artifact = payload["previews"]["google_business"]["artifact"]
+        assert artifact["body"] == "Ensaio do Google revisado"
+        assert artifact["link"] == ""
+        assert "AGUA-EXEMPLO" not in json.dumps(payload)
+
+    def test_preview_matches_what_approval_seals(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["instagram"])
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Texto revisado",
+                "hashtags": ["paes"],
+                "platforms": ["instagram"],
+            },
+            content_type="application/json",
+        ).json()["previews"]["instagram"]
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": announcement.version,
+                "publish_mode": "now",
+                "body": "Texto revisado",
+                "hashtags": ["paes"],
+                "platforms": ["instagram"],
+            },
+            key="review-preview-equals-approval",
+        )
+        assert response.status_code == 200, response.content
+        sealed = MarketingContentArtifact.objects.get(
+            announcement=announcement
+        ).payload["resolved_artifacts"]["instagram"]
+        for key in ("body", "link", "hashtags", "image_url"):
+            assert preview["artifact"][key] == sealed[key], key
+        assert sealed["link"] == "/produto/cro"
+
+    def test_unknown_announcement_is_404(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"announcement": 999999, "body": "x", "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 404
 
 
 class TestScheduledPublishing:
@@ -2149,11 +2268,13 @@ class TestWhatsAppTestSend:
         assert body["sandbox"] is True
         assert body["max_targets"] == 1
         assert body["target_ref"] == "owner-sandbox"
+        assert body["event"] == "announcement_published"
         assert body["fields"]["customer_name"] == "Cliente teste"
         assert body["fields"]["product_name"] == "Baguete"
         assert body["fields"]["product_sku"] == "BAGUETE-TEST"
         assert len(adapter.calls) == 1
         assert adapter.calls[0]["recipient"] == recipient
+        assert adapter.calls[0]["template"] == "announcement_published"
         assert recipient not in json.dumps(body)
         receipt = MarketingTestReceipt.objects.get(ref=body["receipt_ref"])
         assert receipt.sandbox is True
@@ -2163,6 +2284,121 @@ class TestWhatsAppTestSend:
         assert "recipient" not in stored_fields
         assert "body" not in stored_fields
         assert "idempotency_key" not in stored_fields
+
+    def test_transactional_test_sends_the_selected_configured_flow_event(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import NotificationTemplate
+
+        adapter, recipient = test_lane
+        NotificationTemplate.objects.update_or_create(
+            event="order_rescheduled",
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "content_order_rescheduled",
+                "is_active": True,
+            },
+        )
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": "order_rescheduled",
+            },
+            key="test-send-transactional-0001",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["event"] == "order_rescheduled"
+        assert body["fields"]["order_ref_short"] == "A47"
+        assert body["fields"]["order_ref"] == "TESTE-20260926-A47"
+        assert body["fields"]["customer_name"] == "Cliente teste"
+        assert body["fields"]["status_note"]
+        assert len(adapter.calls) == 1
+        assert adapter.calls[0]["recipient"] == recipient
+        assert adapter.calls[0]["template"] == "order_rescheduled"
+
+    def test_transactional_test_never_falls_back_to_free_text(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import NotificationTemplate
+
+        adapter, _recipient = test_lane
+        NotificationTemplate.objects.update_or_create(
+            event="order_rescheduled",
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "",
+                "is_active": True,
+            },
+        )
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": "order_rescheduled",
+            },
+            key="test-send-transactional-0002",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_test_send"
+        assert "modelo aprovado" in response.json()["detail"]
+        assert adapter.calls == []
+
+    @pytest.mark.parametrize("event", ("announcement_published", "order_rescheduled"))
+    def test_binding_change_after_receipt_is_denied_before_provider_effect(
+        self, client, gestor, test_lane, monkeypatch, event
+    ):
+        from shopman.shop.models import MarketingTestReceipt, NotificationTemplate
+        from shopman.shop.services import campaign
+
+        adapter, _recipient = test_lane
+        template, _created = NotificationTemplate.objects.update_or_create(
+            event=event,
+            defaults={
+                "subject": "Nova data",
+                "body": "Pedido {order_ref_short}",
+                "whatsapp_flow_ns": "content_flow_a",
+                "is_active": True,
+                "version": 7,
+            },
+        )
+        reserve = campaign._reserve_test_receipt
+
+        def reserve_then_change(**kwargs):
+            result = reserve(**kwargs)
+            NotificationTemplate.objects.filter(pk=template.pk).update(
+                whatsapp_flow_ns="content_flow_b",
+                version=8,
+            )
+            return result
+
+        monkeypatch.setattr(campaign, "_reserve_test_receipt", reserve_then_change)
+        client.force_login(gestor)
+
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "event": event,
+            },
+            key=f"test-send-binding-race-{event}",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "template_binding_changed"
+        receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
+        assert receipt.state == MarketingTestReceipt.State.DENIED
+        assert receipt.failure_code == "template_binding_changed"
+        assert adapter.calls == []
 
     def test_target_options_expose_safe_refs_never_recipient(
         self, client, gestor, test_lane, monkeypatch
@@ -2609,3 +2845,210 @@ class TestAudienceCount:
         )
         assert response.status_code == 200
         assert response.json()["total"] == 0
+
+
+# ── Post do Google Meu Negócio ──────────────────────────────────────
+
+
+def _approve_google(client, announcement, *, key, **edits):
+    return _confirmed_post(
+        client,
+        f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+        {
+            "base_version": announcement.version,
+            "publish_mode": "now",
+            "platforms": ["google_business"],
+            **edits,
+        },
+        key=key,
+    )
+
+
+def _sealed_google(announcement) -> dict:
+    artifact = MarketingContentArtifact.objects.get(announcement=announcement)
+    return artifact.payload["resolved_artifacts"]["google_business"]["provider_fields"]
+
+
+class TestGoogleBusinessPost:
+    """O post do Google escolhido na revisão chega selado, e as travas voltam no campo.
+
+    O card manda ``google_business`` (tipo e botão) junto da aprovação — um request só,
+    como o resto das edições. A prévia confere as mesmas travas antes.
+    """
+
+    def test_review_button_choice_is_sealed(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-button-call-0001",
+            google_business={"publication_format": "standard", "call_to_action": "call"},
+        )
+
+        assert response.status_code == 200, response.content
+        assert _sealed_google(announcement) == {
+            "call_to_action": "call",
+            "publication_format": "standard",
+        }
+
+    def test_approval_without_choice_seals_no_button(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(client, announcement, key="gbp-no-button-0001")
+
+        assert response.status_code == 200, response.content
+        assert _sealed_google(announcement) == {"publication_format": "standard"}
+
+    def test_event_from_the_review_is_sealed(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-event-review-0001",
+            google_business={
+                "publication_format": "event",
+                "call_to_action": "learn_more",
+                "event_title": "Semana do Pão",
+                "event_start": "2099-10-05T08:00",
+                "event_end": "2099-10-11T19:00",
+            },
+        )
+
+        assert response.status_code == 200, response.content
+        sealed = _sealed_google(announcement)
+        assert sealed["publication_format"] == "event"
+        assert sealed["event_title"] == "Semana do Pão"
+        assert sealed["call_to_action"] == "learn_more"
+
+    def test_link_button_without_link_comes_back_on_the_field(self, client, gestor, rule, template):
+        announcement = _post(
+            rule,
+            template,
+            platforms=["google_business"],
+            content={"body": "Um lugar onde o tempo é bem-vindo", "hashtags": [], "link": "", "image_url": ""},
+        )
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-link-button-0001",
+            google_business={"publication_format": "standard", "call_to_action": "learn_more"},
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "google_call_to_action_link_required"
+        assert "platform_content.google_business.call_to_action" in body["field_errors"]
+        assert MarketingContentArtifact.objects.count() == 0
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_phone_in_text_is_refused_before_approval(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-phone-in-text-0001",
+            body="Encomende pelo (43) 3322-1100",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"
+        assert "content.body" in response.json()["field_errors"]
+
+    def test_offer_without_campaign_promotion_is_refused(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-offer-no-promo-0001",
+            google_business={"publication_format": "offer"},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_offer_promotion_required"
+
+    def test_review_cannot_write_the_sealed_offer_fields(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = _approve_google(
+            client,
+            announcement,
+            key="gbp-offer-title-0001",
+            google_business={"publication_format": "offer", "offer_title": "Inventada"},
+        )
+
+        assert response.status_code == 422
+        assert "google_business.offer_title" in response.json()["field_errors"]
+
+    def test_preview_shows_the_google_refusal_before_approving(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "body": "Ligue 43 99988-7766",
+                "platforms": ["google_business"],
+                "platform_content": {
+                    "google_business": {"publication_format": "standard", "call_to_action": "call"}
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"
+
+    def test_review_preview_shows_the_button_chosen_in_the_card(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Croissant saiu do forno",
+                "platforms": ["google_business"],
+                "google_business": {
+                    "publication_format": "standard",
+                    "call_to_action": "call",
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        fields = response.json()["previews"]["google_business"]["artifact"]["provider_fields"]
+        assert fields == {"call_to_action": "call", "publication_format": "standard"}
+
+    def test_review_preview_refuses_what_the_approval_would_refuse(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template, platforms=["google_business"])
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Encomendas: (43) 3322-1100",
+                "platforms": ["google_business"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "google_summary_has_phone"

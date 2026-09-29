@@ -30,7 +30,11 @@ def _nfe_xml(
     tax_quantity: str = "50.0000",
     tax_unit_value: str = "7.2000000000",
     ean: str = "SEM GTIN",
+    tax_ean: str | None = None,
+    cest: str | None = None,
     rastro: str = "",
+    icms: str = "",
+    ncm: str = "11010010",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
 
@@ -41,6 +45,7 @@ def _nfe_xml(
         ""
         if tax_unit is None
         else f"""
+          <cEANTrib>{tax_ean if tax_ean is not None else ean}</cEANTrib>
           <uTrib>{tax_unit}</uTrib>
           <qTrib>{tax_quantity}</qTrib>
           <vUnTrib>{tax_unit_value}</vUnTrib>"""
@@ -69,13 +74,13 @@ def _nfe_xml(
           <cProd>{product_code}</cProd>
           <cEAN>{ean}</cEAN>
           <xProd>{product_name}</xProd>
-          <NCM>11010010</NCM>
+          <NCM>{ncm}</NCM>{f"<CEST>{cest}</CEST>" if cest else ""}
           <CFOP>5102</CFOP>
           <uCom>{unit}</uCom>
           <qCom>{quantity}</qCom>
           <vUnCom>{unit_value}</vUnCom>{tax_block}
           <vProd>{total}</vProd>{rastro}
-        </prod>
+        </prod>{f"<imposto><ICMS>{icms}</ICMS></imposto>" if icms else ""}
       </det>
       <total>
         <ICMSTot>
@@ -104,7 +109,7 @@ def supplier(db):
             "purchase": {
                 "invoice_product_map": {
                     "FAR-25": {
-                        "materialSku": "FARINHA-T65",
+                        "materialSku": "FARINHA-NOVARA-T55",
                         "conversionLabel": "saco 25 kg",
                     }
                 }
@@ -116,7 +121,7 @@ def supplier(db):
 @pytest.fixture
 def material(db):
     return Material.objects.create(
-        sku="FARINHA-T65",
+        sku="FARINHA-NOVARA-T55",
         name="Farinha T65",
         unit="kg",
         shelf_life_days=180,
@@ -146,6 +151,7 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "materialSku": material.sku,
             "suggestedMaterialSku": "",
             "suggestionScore": 0,
+            "suggestionSource": "",
             "conversionId": str(conversion.pk),
             "requiresConversion": False,
             "conversionSuggestion": None,
@@ -164,6 +170,13 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "invoiceTotal": "360,00",
             "invoiceProductCode": "FAR-25",
             "invoiceEan": "",
+            "invoicePackageEan": "",
+            "invoiceNcm": "11010010",
+            "invoiceCest": "",
+            "invoiceIcmsCst": "",
+            "invoiceIcmsCsosn": "",
+            "invoiceStValueQ": 0,
+            "fiscalDivergences": [],
             "checked": False,
         }
     ]
@@ -214,7 +227,7 @@ def test_material_name_inside_long_distributor_description_is_suggested(supplier
     virgem" pontua 85,5 no WRatio (redutor de comprimento) — abaixo de 87.
     A cobertura de tokens reconhece o insumo contido na descrição.
     """
-    Material.objects.create(sku="AZEITE", name="Azeite extra virgem", unit="l")
+    Material.objects.create(sku="AZEITE-EXTRAVIRGEM", name="Azeite extra virgem", unit="l")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML", unit="UN"),
@@ -223,13 +236,13 @@ def test_material_name_inside_long_distributor_description_is_suggested(supplier
 
     line = draft["lines"][0]
     assert line["materialSku"] == ""
-    assert line["suggestedMaterialSku"] == "AZEITE"
+    assert line["suggestedMaterialSku"] == "AZEITE-EXTRAVIRGEM"
     assert line["suggestionScore"] == 100
 
 
 @pytest.mark.django_db
 def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
-    Material.objects.create(sku="FERMENTO-BIO", name="Fermento biológico", unit="g")
+    Material.objects.create(sku="FERMENTO-BIOLOGICO-FRESCO", name="Fermento biológico", unit="g")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="FERM-500", product_name="FERM BIOL SECO INST FLEISCHMANN 500G", unit="UN"),
@@ -238,13 +251,13 @@ def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
 
     line = draft["lines"][0]
     assert line["materialSku"] == ""
-    assert line["suggestedMaterialSku"] == "FERMENTO-BIO"
+    assert line["suggestedMaterialSku"] == "FERMENTO-BIOLOGICO-FRESCO"
     assert line["suggestionScore"] == 100
 
 
 @pytest.mark.django_db
 def test_single_token_material_never_matches_by_character_overlap(supplier):
-    Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    Material.objects.create(sku="SAL-REFINADO", name="Sal", unit="kg")
 
     draft = parse_nfe_xml_to_purchase_draft(
         _nfe_xml(product_code="SGD-50", product_name="SALGADINHO DE MILHO 50G", unit="UN"),
@@ -263,7 +276,7 @@ def test_tie_between_generic_and_specific_material_prefers_the_specific(supplier
     Material.objects.create(sku="AZEITE-EV", name="Azeite extra virgem", unit="l")
 
     draft = parse_nfe_xml_to_purchase_draft(
-        _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM 500ML", unit="UN"),
+        _nfe_xml(product_code="AZ-500", product_name="AZEITE-EXTRAVIRGEM DE OLIVA EXTRA VIRGEM 500ML", unit="UN"),
         access_key=VALID_ACCESS_KEY,
     )
 
@@ -423,7 +436,7 @@ def test_doczip_within_the_cap_still_decodes():
 def fermento(db):
     """Insumo pesado em kg — e comprado em pacote. E onde os dois eixos brigam."""
     return Material.objects.create(
-        sku="FERMENTO-BIO",
+        sku="FERMENTO-BIOLOGICO-FRESCO",
         name="Fermento biologico",
         unit="kg",
         metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
@@ -627,7 +640,7 @@ def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
     """O mesmo item, agora com insumo: o par da nota vira "Caixa 5 kg"."""
     from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
 
-    manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
+    manteiga = Material.objects.create(sku="MANTEIGA-PRESIDENT-SEM-SAL", name="Manteiga francesa", unit="kg")
 
     suggestion = conversion_from_invoice_axes(
         material=manteiga,
@@ -709,3 +722,137 @@ def test_note_without_rastro_leaves_expiry_to_the_operator(supplier, material):
     assert line["expiryDate"] == ""
     assert line["expiryFromInvoice"] is False
     assert line["invoiceLot"] == ""
+
+
+# ── GTIN, CEST e a NF-e como primeira fonte da sugestão de catálogo ──────
+
+
+@pytest.mark.django_db
+def test_gtin_com_digito_verificador_errado_nao_entra(supplier):
+    """Código interno que caiu no campo de GTIN parece GTIN e não é."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="QJO", unit="PC", ean="7898708850300", tax_unit=None),
+        access_key=VALID_ACCESS_KEY,
+    )
+    assert draft["lines"][0]["invoiceEan"] == ""
+
+
+@pytest.mark.django_db
+def test_sem_gtin_continua_vazio(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(ean="SEM GTIN"), access_key=VALID_ACCESS_KEY)
+    assert draft["lines"][0]["invoiceEan"] == ""
+    assert draft["lines"][0]["invoicePackageEan"] == ""
+
+
+@pytest.mark.django_db
+def test_caixa_de_unidades_prefere_o_gtin_tributavel_da_unidade(supplier):
+    """Vendido em CX, tributado em UN: o cEANTrib é o do pote, o cEAN o da caixa."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="ACON-CX",
+            unit="CX",
+            quantity="1.0000",
+            tax_unit="UN",
+            tax_quantity="12.0000",
+            ean="17898708850306",
+            tax_ean="7898708850309",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert line["invoiceEan"] == "7898708850309"
+    assert line["invoicePackageEan"] == "17898708850306"
+
+
+@pytest.mark.django_db
+def test_gtins_divergentes_sem_eixo_contavel_nao_decidem_pela_nota(supplier):
+    """Sem a caixa→unidade clara, fica o comercial — e o outro não some."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            unit="UN",
+            quantity="4.0000",
+            tax_unit="KG",
+            tax_quantity="2.0000",
+            ean="7898708850309",
+            tax_ean="7891234567895",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert line["invoiceEan"] == "7898708850309"
+    assert line["invoicePackageEan"] == "7891234567895"
+
+
+@pytest.mark.django_db
+def test_cest_e_ncm_da_nota_chegam_a_linha(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(ean="7898708850309", cest="17.046.00"), access_key=VALID_ACCESS_KEY
+    )
+    line = draft["lines"][0]
+    assert line["invoiceNcm"] == "11010010"
+    assert line["invoiceCest"] == "1704600"
+
+
+# ── O grupo ICMS do item e a conferência do cadastro fiscal ──────────────
+
+
+@pytest.mark.django_db
+def test_grupo_icms_do_simples_com_st_retida_chega_a_linha(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            icms="<ICMSSN500><orig>0</orig><CSOSN>500</CSOSN><vBCSTRet>100.00</vBCSTRet>"
+            "<vICMSSTRet>12.34</vICMSSTRet></ICMSSN500>"
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("", "500", 1234)
+
+
+@pytest.mark.django_db
+def test_grupo_icms_do_regime_normal_com_st_cobrada(supplier):
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(icms="<ICMS10><orig>0</orig><CST>10</CST><vICMSST>7.50</vICMSST></ICMS10>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("10", "", 750)
+
+
+@pytest.mark.django_db
+def test_nota_sem_grupo_icms_deixa_os_campos_vazios(supplier):
+    line = parse_nfe_xml_to_purchase_draft(_nfe_xml(), access_key=VALID_ACCESS_KEY)["lines"][0]
+    assert (line["invoiceIcmsCst"], line["invoiceIcmsCsosn"], line["invoiceStValueQ"]) == ("", "", 0)
+    assert line["fiscalDivergences"] == []
+
+
+@pytest.mark.django_db
+def test_linha_de_revenda_traz_a_divergencia_com_o_cadastro_fiscal(supplier, material):
+    from shopman.fiscalman.classification import FISCAL_PROFILES
+    from shopman.offerman.models import Product
+
+    sem_st = next(k for k, p in FISCAL_PROFILES.items() if p.csosn != "500")
+    Product.objects.create(
+        sku=material.sku,
+        name=material.name,
+        unit="kg",
+        base_price_q=1000,
+        metadata={"fiscal": {"profile": sem_st, "ncm": "11010010", "unit": "KG"}},
+    )
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(ncm="11022000", icms="<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+    [divergence] = draft["lines"][0]["fiscalDivergences"]
+    assert divergence["sku"] == material.sku
+    assert (divergence["field"], divergence["catalogValue"], divergence["invoiceValue"]) == (
+        "ncm",
+        "11010010",
+        "11022000",
+    )
+
+
+@pytest.mark.django_db
+def test_insumo_sem_produto_de_venda_nao_tem_o_que_conferir(supplier, material):
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(ncm="11022000"), access_key=VALID_ACCESS_KEY)
+    assert draft["lines"][0]["fiscalDivergences"] == []

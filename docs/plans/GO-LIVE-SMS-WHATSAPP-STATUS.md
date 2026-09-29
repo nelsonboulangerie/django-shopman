@@ -21,7 +21,7 @@
 
 ### 1. SMS OTP — RESOLVIDO: migrado para a API nova da Comtele (x-api-key)
 - **Causa raiz (2026-06-30):** o 401 era esquema de auth. A chave do portal novo
-  (`1bf12b60-…`) é do esquema **`x-api-key`**, não do `auth-key` legado. Provado ao vivo:
+  (valor no segredo do ambiente, nunca no repositório) é do esquema **`x-api-key`**, não do `auth-key` legado. Provado ao vivo:
   - Legado `POST sms.comtele.com.br/api/v2/send` + `auth-key` → **401 "chave inválida"**.
   - Novo `POST api.comtele.com.br/messages/sms/send` + `x-api-key` → **autenticou** (400 só por
     falta de `route`); `GET api.comtele.com.br/routes` → **200** (rotas 16 Marketing, 17 Premium).
@@ -32,7 +32,7 @@
   `COMTELE_API_KEY` e adicionar `COMTELE_ROUTE=17`, senão o sender fica inerte.
 - **Teste end-to-end pendente** (envia SMS real, ~R$0,12): disparar pelo adapter —
   ```bash
-  .venv/bin/python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');django.setup();from shopman.shop.adapters.otp_sms_comtele import ComteleSMSSender;print(ComteleSMSSender().send_code('5543984049009','482913','sms'))"
+  .venv/bin/python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');django.setup();from shopman.shop.adapters.otp_sms_comtele import ComteleSMSSender;print(ComteleSMSSender().send_code('5543981234567','482913','sms'))"
   ```
 
 ### 2. WhatsApp — notificações de pedido (não bloqueado pela Comtele)

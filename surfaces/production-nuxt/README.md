@@ -32,7 +32,7 @@ production projection metadata.
   material-shortage override), void. The old HTMX production KDS, now Nuxt.
 - **Planejamento** (`/plan`) — the production matrix: per-SKU
   planned/started/finished totals + demand suggestion, inline plan + start.
-- **Fornadas** (`/board`) — full-screen operator forecast, still protected by the
+- **Lotes** (`/board`) — full-screen operator forecast, still protected by the
   production permission.
 
 `/menuboard` is deliberately absent. The only canonical menuboard is the Django

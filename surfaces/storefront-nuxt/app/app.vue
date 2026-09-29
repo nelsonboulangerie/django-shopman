@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import type { HomeResponse } from '~/types/shopman'
 import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
-const apiPath = useShopmanApiPath()
 const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
 const { watchConnectivity } = useConnectivity()
-const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 const route = useRoute()
 const requestUrl = useRequestURL()
 const AUTH_SHELL_ROUTES = new Set(['/entrar', '/a'])
@@ -22,27 +19,21 @@ function focusMainContent () {
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
 watchConnectivity(() => { void refreshCart().catch(() => null) })
 
-// Disparada ANTES da home do shell, para as duas buscas correrem juntas.
+// Disparada antes do estado do shell, para as duas buscas correrem juntas.
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 
-const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
-  credentials: 'include',
-  headers: requestHeaders,
-  key: 'shopman-shell-home',
-  immediate: true,
-  server: true
-})
+const { data: shellState, refresh: refreshShellState } = await useStorefrontShell()
 
 await siteSeoReady
 
-watch(() => shellHome.value, value => {
+watch(() => shellState.value, value => {
   const authRoute = authShellRoute.value
-  session.setFromHome(value?.home, { preserveAuthenticated: authRoute })
+  session.setFromHome(value?.shell, { preserveAuthenticated: authRoute })
   if (!authRoute) setFromServer(value?.cart)
 }, { immediate: true })
 
 watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
-  if (!isAuthRoute && wasAuthRoute) void refreshShellHome()
+  if (!isAuthRoute && wasAuthRoute) void refreshShellState()
 })
 
 // O Nuxt restaura a rolagem do document, mas no PWA iOS o viewport rolável é
@@ -110,7 +101,6 @@ const brandDescription = computed(
 const brandOgImage = computed(() => absoluteImage(
   requestUrl.origin,
   siteSeo.value?.share_image_url
-  || shellHome.value?.home?.featured_items?.[0]?.image_url
   || session.shop.value?.logo_url
 ))
 
@@ -132,6 +122,7 @@ useSeoMeta({
 
 <template>
   <div class="shop-shell flex min-h-dvh flex-col">
+    <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no
          WebKit/iOS 26. No navegador comum o wrapper continua transparente ao layout. -->
@@ -155,8 +146,8 @@ useSeoMeta({
       <SearchOverlay />
       <SubstituteSheet />
       <OfflineBanner />
-      <PwaInstallInvite :copy="shellHome?.home?.pwa_copy" />
-      <PwaUpdateToast :copy="shellHome?.home?.pwa_copy" />
+      <PwaInstallInvite :copy="shellState?.shell?.pwa_copy" />
+      <PwaUpdateToast :copy="shellState?.shell?.pwa_copy" />
       <!-- O convite de novidades: sobe na página em que a pessoa cai depois de
            entrar, uma vez, dirigido pela sessão (welcomeAsksMarketing). Nunca em
            /entrar, /a, no checkout ou no pedido. -->

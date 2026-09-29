@@ -19,6 +19,7 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
 from shopman.backstage.models import (
+    AliasBenchmarkReport,
     AliasStatus,
     CategoryAlias,
     PaymentMethodAlias,
@@ -122,3 +123,20 @@ class PaymentMethodAliasAdmin(_AliasAdmin):
     ordering = ("position", "id")
     fields = ("pattern", "position", "method_key", "status", "note", "confirmed_by", "confirmed_at")
     readonly_fields = ("confirmed_by", "confirmed_at")
+
+
+@admin.register(AliasBenchmarkReport)
+class AliasBenchmarkReportAdmin(ModelAdmin):
+    """O placar do de-para, só leitura: o que a medição semanal encontrou, sem nome de produto."""
+
+    list_display = ("created_at", "source", "cases", "contenders")
+    list_filter = ("source",)
+    ordering = ("-created_at",)
+    fields = ("created_at", "source", "cases", "contenders", "report", "skipped")
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

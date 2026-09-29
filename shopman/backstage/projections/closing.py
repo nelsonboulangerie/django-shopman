@@ -87,6 +87,7 @@ class PendingProductionProjection:
     status: str  # "planned" | "started"
     status_label: str  # "Planejada" | "Em produção"
     quantity: str  # display (planned qty ou started qty)
+    target_date: str  # ISO "2026-04-16" — a data que o link para a Produção precisa
     target_date_display: str  # "16/04"
     is_overdue: bool  # target_date < hoje
 
@@ -242,8 +243,18 @@ def _episode_options() -> tuple:
 
 
 def _build_items() -> list[ClosingItemProjection]:
-    """Build list of SKUs with saleable stock for closing."""
-    quants = (
+    """SKUs PRODUZIDOS NA CASA com estoque vendável — o que se conta no fechamento.
+
+    ⚠️ Só entra o que tem ficha ativa (``sku_roles_map(...).produced``). A
+    revenda (o pote de geleia, o chá em lata, a água) não se conta todo dia:
+    não vence de um dia para o outro, o estoque dela anda pela venda e pelo
+    recebimento, e contá-la toda noite era a lista que o operador pulava
+    digitando qualquer coisa — contagem cega que ninguém faz de verdade é
+    pior que contagem nenhuma. Decisão do dono, 25/09/2026.
+    """
+    from shopman.shop.services.sku_records import sku_roles_map
+
+    quants = list(
         Quant.objects.filter(
             position__is_saleable=True,
             _quantity__gt=0,
@@ -252,6 +263,8 @@ def _build_items() -> list[ClosingItemProjection]:
         .annotate(total_qty=Sum("_quantity"))
         .order_by("sku")
     )
+    roles = sku_roles_map(row["sku"] for row in quants)
+    quants = [row for row in quants if roles.get(row["sku"]) and roles[row["sku"]].produced]
 
     from shopman.backstage.services.closing import (
         day_product_expires_on_close,
@@ -347,6 +360,7 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
                     status=str(wo.status),
                     status_label=status_labels.get(wo.status, str(wo.status)),
                     quantity=str(qty or wo.quantity),
+                    target_date=wo.target_date.isoformat() if wo.target_date else "",
                     target_date_display=wo.target_date.strftime("%d/%m") if wo.target_date else "",
                     is_overdue=bool(wo.target_date and wo.target_date < today),
                 )
@@ -360,14 +374,19 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
 def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...]:
     """Encomendas vivas para datas futuras, agregadas por data combinada.
 
-    Vendido hoje ≠ sai hoje: o dinheiro conta no caixa do dia da venda e o
-    estoque na data da entrega. O fechamento informa para o operador saber o
-    que já está comprometido nos próximos dias.
+    ⚠️ Conta TODA encomenda a confirmar ou confirmada (``new``/``accepted``) com
+    data combinada depois de hoje, qualquer que seja o dia em que foi feita — e
+    não "as vendidas hoje", como a tela chegou a dizer. O fechamento informa
+    para o operador saber o que já está comprometido nos próximos dias.
+
+    O total é o EFETIVO (``order_composition.effective_total_q``): o pedido do
+    iFood ajustado depois de aceito vale o que a plataforma paga, não o selado.
     """
     try:
         from shopman.orderman.models import Order
         from shopman.utils.monetary import format_money
 
+        from shopman.shop.services import order_composition
         from shopman.shop.services.order_helpers import get_commitment_date
 
         by_date: dict[date, dict] = {}
@@ -383,7 +402,7 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
                 continue
             row = by_date.setdefault(commitment, {"orders_count": 0, "total_q": 0})
             row["orders_count"] += 1
-            row["total_q"] += int(order.total_q or 0)
+            row["total_q"] += order_composition.effective_total_q(order)
 
         rows = []
         for commitment in sorted(by_date):

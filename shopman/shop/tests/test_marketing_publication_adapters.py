@@ -329,25 +329,45 @@ def test_facebook_photo_publication_and_lookup(monkeypatch):
     assert confirmed.kind == ProviderOutcomeKind.CONFIRMED
 
 
+def google_artifact(*, link="https://loja.example.test/produto/mad", **fields):
+    return ResolvedDispatchArtifact(
+        platform="google_business",
+        delivery_kind="publication",
+        format=str(fields.get("publication_format", "standard")),
+        body="Madeleines quentinhas",
+        hashtags=("fornada",),
+        link=link,
+        image_url="https://cdn.example.test/post.jpg",
+        provider_fields=tuple(
+            sorted({"publication_format": "standard", **fields}.items())
+        ),
+    )
+
+
+def _google_send(monkeypatch, artifact_value, *, lookup_state="LIVE"):
+    request = Mock(
+        side_effect=[
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
+            {
+                "name": "accounts/account-1/locations/location-2/localPosts/post-3",
+                "state": lookup_state,
+            },
+        ]
+    )
+    monkeypatch.setattr(google, "request_json", request)
+    sent = google.send(
+        artifact=artifact_value, target_key="public", idempotency_token="idem"
+    )
+    return sent, request
+
+
 @override_settings(
     DEBUG=False,
     SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
     SHOPMAN_MARKETING_GOOGLE=GOOGLE,
 )
 def test_google_standard_post_and_lookup(monkeypatch):
-    request = Mock(
-        side_effect=[
-            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
-            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
-        ]
-    )
-    monkeypatch.setattr(google, "request_json", request)
-
-    sent = google.send(
-        artifact=artifact("google_business", "standard"),
-        target_key="public",
-        idempotency_token="idem",
-    )
+    sent, request = _google_send(monkeypatch, artifact("google_business", "standard"))
     confirmed = google.lookup(
         target_key="public",
         idempotency_token="idem",
@@ -356,10 +376,175 @@ def test_google_standard_post_and_lookup(monkeypatch):
 
     payload = request.call_args_list[0].kwargs["payload"]
     assert payload["topicType"] == "STANDARD"
-    assert payload["callToAction"]["actionType"] == "ORDER"
+    assert payload["summary"] == "Madeleines quentinhas\n\n#fornada"
+    # Link no conteúdo não vira botão: sem escolha, o post sai sem botão.
+    assert "callToAction" not in payload
     assert sent.provider_receipt_ref == "gbp:post-3"
+    assert sent.code == "google_standard_post_accepted"
     assert confirmed.kind == ProviderOutcomeKind.CONFIRMED
+    assert confirmed.code == "google_post_live"
     assert "secret-google-token" not in request.call_args_list[0].kwargs["url"]
+
+
+@pytest.mark.parametrize(
+    ("choice", "action_type"),
+    [
+        ("book", "BOOK"),
+        ("order", "ORDER"),
+        ("shop", "SHOP"),
+        ("learn_more", "LEARN_MORE"),
+        ("sign_up", "SIGN_UP"),
+    ],
+)
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_button_with_link_is_the_chosen_action(monkeypatch, choice, action_type):
+    _sent, request = _google_send(
+        monkeypatch, google_artifact(call_to_action=choice)
+    )
+
+    payload = request.call_args_list[0].kwargs["payload"]
+    assert payload["callToAction"] == {
+        "actionType": action_type,
+        "url": "https://loja.example.test/produto/mad",
+    }
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_call_button_has_no_url_even_without_link(monkeypatch):
+    _sent, request = _google_send(
+        monkeypatch, google_artifact(call_to_action="call", link="")
+    )
+
+    # "should be left unset for Call CTA": o Google liga para o telefone do perfil.
+    assert request.call_args_list[0].kwargs["payload"]["callToAction"] == {
+        "actionType": "CALL"
+    }
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_event_post_carries_title_and_local_schedule(monkeypatch):
+    sent, request = _google_send(
+        monkeypatch,
+        google_artifact(
+            publication_format="event",
+            call_to_action="call",
+            event_title="Semana do Pão",
+            event_start="2026-10-05T08:00",
+            event_end="2026-10-11T19:30",
+        ),
+    )
+
+    payload = request.call_args_list[0].kwargs["payload"]
+    assert payload["topicType"] == "EVENT"
+    assert payload["event"] == {
+        "title": "Semana do Pão",
+        "schedule": {
+            "startDate": {"year": 2026, "month": 10, "day": 5},
+            "startTime": {"hours": 8, "minutes": 0},
+            "endDate": {"year": 2026, "month": 10, "day": 11},
+            "endTime": {"hours": 19, "minutes": 30},
+        },
+    }
+    assert payload["callToAction"] == {"actionType": "CALL"}
+    assert sent.code == "google_event_post_accepted"
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_offer_post_redeems_on_the_offer_page(monkeypatch):
+    _sent, request = _google_send(
+        monkeypatch,
+        google_artifact(
+            link="https://loja.example.test/oferta/semana-do-pao",
+            publication_format="offer",
+            offer_title="Semana do Pão",
+            offer_start="2026-10-05T00:00",
+            offer_end="2026-10-11T23:59",
+            offer_terms="Só na loja on-line.",
+        ),
+    )
+
+    payload = request.call_args_list[0].kwargs["payload"]
+    assert payload["topicType"] == "OFFER"
+    assert payload["event"]["title"] == "Semana do Pão"
+    assert payload["offer"] == {
+        "redeemOnlineUrl": "https://loja.example.test/oferta/semana-do-pao",
+        "termsConditions": "Só na loja on-line.",
+    }
+    assert "couponCode" not in payload["offer"]
+    assert "callToAction" not in payload
+
+
+@pytest.mark.parametrize(
+    ("fields", "link", "code"),
+    [
+        ({"call_to_action": "learn_more"}, "/produto/mad", "google_link_not_public"),
+        ({"call_to_action": "teleport"}, "https://loja.example.test/produto/mad", "google_post_contract_invalid"),
+        ({"publication_format": "alert"}, "https://loja.example.test/produto/mad", "google_publication_format_missing_or_invalid"),
+    ],
+)
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_refuses_before_the_network(monkeypatch, fields, link, code):
+    request = Mock()
+    monkeypatch.setattr(google, "request_json", request)
+
+    with pytest.raises(ProviderCallFailure) as exc:
+        google.send(
+            artifact=google_artifact(link=link, **fields),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert exc.value.code == code
+    request.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("state", "kind", "code"),
+    [
+        ("LIVE", ProviderOutcomeKind.CONFIRMED, "google_post_live"),
+        ("REJECTED", ProviderOutcomeKind.FAILED_FINAL, "google_post_rejected"),
+        ("PROCESSING", ProviderOutcomeKind.ACCEPTED_UNCONFIRMED, "google_post_processing"),
+        ("", ProviderOutcomeKind.ACCEPTED_UNCONFIRMED, "google_post_processing"),
+    ],
+)
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_lookup_reports_the_real_post_state(monkeypatch, state, kind, code):
+    sent, _request = _google_send(
+        monkeypatch, google_artifact(), lookup_state=state
+    )
+
+    outcome = google.lookup(
+        target_key="public",
+        idempotency_token="idem",
+        provider_receipt_ref=sent.provider_receipt_ref,
+    )
+
+    assert (outcome.kind, outcome.code) == (kind, code)
+    assert outcome.provider_receipt_ref == "gbp:post-3"
 
 
 @override_settings(

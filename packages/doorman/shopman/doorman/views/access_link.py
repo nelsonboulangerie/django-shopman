@@ -127,6 +127,8 @@ class AccessLinkCreateView(View):
         # de sacola expirada. ``next`` passa por safe_redirect_url; o resto (ex.:
         # cart_session_key) viaja opaco.
         handoff_attempted = False
+        origin = ""
+        origin_label = ""
         access_code = self._access_code_from_payload(data)
         if not access_code or not self._contains_code(access_code):
             # O corpo não trouxe o código. Em vez de exigir que o fluxo saiba QUAL
@@ -144,6 +146,10 @@ class AccessLinkCreateView(View):
                 handoff_attempted = True
                 state = pop_state(str(access_code))
                 if isinstance(state, dict):
+                    # A sessão de origem não viaja na metadata: ela é o endereço da
+                    # liberação (abaixo), não contexto do login.
+                    origin = str(state.pop("origin", "") or "")
+                    origin_label = str(state.pop("origin_label", "") or "")
                     for key, value in state.items():
                         if key == "next":
                             if value:
@@ -187,6 +193,23 @@ class AccessLinkCreateView(View):
             if sender_subscriber_id:
                 metadata.setdefault("deliver_to", sender_subscriber_id)
 
+        # A ABA DE ORIGEM ENTRA SOZINHA. O código veio do botão de um navegador; a
+        # mensagem que o trouxe prova o número. Liberamos aquele navegador ANTES de
+        # criar o link da mensagem, porque a mensagem sai junto com ele e vai dizer
+        # "você já entrou" — ela não pode prometer o que ainda não aconteceu.
+        released = False
+        if origin:
+            revoke_ref = self._release_origin(
+                customer=customer, data=data, metadata=metadata,
+                origin=origin, origin_label=origin_label,
+            )
+            if revoke_ref:
+                released = True
+                metadata["released"] = True
+                metadata["revoke_ref"] = revoke_ref
+                if origin_label:
+                    metadata["origin_label"] = origin_label
+
         result = AccessLinkService.create_token(
             customer=customer,
             audience=data.get("audience", AccessLink.Audience.WEB_GENERAL),
@@ -207,6 +230,7 @@ class AccessLinkCreateView(View):
             "handoff_attempted": handoff_attempted,
             "handoff_expired": bool(metadata.get("handoff_expired")),
             "access_flow": "cart_handoff" if has_cart_context else "menu",
+            "released": released,
             "token": result.token,
             "expires_at": result.expires_at,
         }
@@ -216,6 +240,47 @@ class AccessLinkCreateView(View):
     @staticmethod
     def _next_url(data: dict) -> str | None:
         return data.get("next")
+
+    @staticmethod
+    def _release_origin(*, customer, data: dict, metadata: dict, origin: str, origin_label: str) -> str:
+        """Cria o token da aba de origem e o deixa esperando por ela.
+
+        É um access link como qualquer outro — a aba o troca pelo mesmo caminho do
+        link da mensagem, sem login paralelo. Ele não é entregue a ninguém (sem
+        ``deliver``): só a sessão cuja impressão digital é ``origin`` o encontra.
+        Devolve a referência de revogação, ou vazio se não deu para liberar.
+        """
+        from ..services.link_state import (
+            new_revoke_ref,
+            release_to_origin,
+            store_revocation,
+        )
+
+        settings = get_doorman_settings()
+        claim_metadata = {
+            key: value for key, value in metadata.items() if key not in ("deliver", "deliver_to")
+        }
+        claim_metadata["login_source"] = "site_release"
+        claim = AccessLinkService.create_token(
+            customer=customer,
+            audience=data.get("audience", AccessLink.Audience.WEB_GENERAL),
+            source=data.get("source", AccessLink.Source.MANYCHAT),
+            ttl_minutes=max(1, -(-settings.LINK_STATE_TTL_SECONDS // 60)),
+            metadata=claim_metadata,
+        )
+        if not claim.success or not claim.token:
+            logger.error("access_link.origin_release_failed error=%s", claim.error)
+            return ""
+
+        revoke_ref = new_revoke_ref()
+        release_to_origin(origin, token=claim.token, revoke_ref=revoke_ref)
+        store_revocation(revoke_ref, {
+            "origin": origin,
+            "customer_id": str(customer.uuid),
+            "origin_label": origin_label,
+        })
+        logger.info("access_link.origin_released")
+        return revoke_ref
 
     @staticmethod
     def _build_access_url(token: str | None) -> str:

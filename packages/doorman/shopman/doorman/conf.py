@@ -29,6 +29,10 @@ class DoormanSettings:
     ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES: int = 15
     ACCESS_CODE_RATE_LIMIT_MAX: int = 5
     ACCESS_CODE_COOLDOWN_SECONDS: int = 60
+    # Wrong codes per target, summed across codes (G13). ``MAX_ATTEMPTS`` is per
+    # code and a resend starts a fresh one; this budget is what a resend can't reset.
+    ACCESS_CODE_MAX_FAILURES_PER_TARGET: int = 15
+    ACCESS_CODE_FAILURE_WINDOW_HOURS: int = 24
 
     # PIN Credential (persistent short-secret for a principal; generic, surface-agnostic)
     PIN_MIN_LENGTH: int = 4
@@ -129,9 +133,12 @@ class DoormanSettings:
     # Link state — contexto efêmero passado de uma sessão web para a criação do
     # access link (ex.: sacola + destino, via código NB-XxXx). Ver services.link_state.
     LINK_STATE_CODE_PREFIX: str = "NB-"
-    # 30 min: janela folgada entre tocar o botão no site e enviar no WhatsApp,
-    # reduzindo a frequência de handoff expirado (sacola que não viaja).
-    LINK_STATE_TTL_SECONDS: int = 1800
+    # 10 min entre tocar o botão no site e enviar no WhatsApp. Eram 30 para a sacola
+    # não se perder no caminho — ela viajava no código. Com a aba de origem entrando
+    # sozinha, a sacola não sai do lugar, e o que sobra é o prazo de um login.
+    LINK_STATE_TTL_SECONDS: int = 600
+    # Quanto tempo o "Não foi você? Encerre este acesso" da mensagem continua valendo.
+    LINK_REVOKE_TTL_SECONDS: int = 24 * 60 * 60
 
     # Templates (override in your project)
     TEMPLATE_CODE_REQUEST: str = "auth/code_request.html"
@@ -165,6 +172,10 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.ACCESS_CODE_MAX_ATTEMPTS must be > 0")
     if s.ACCESS_CODE_RATE_LIMIT_MAX <= 0:
         errors.append("DOORMAN.ACCESS_CODE_RATE_LIMIT_MAX must be > 0")
+    if s.ACCESS_CODE_MAX_FAILURES_PER_TARGET <= 0:
+        errors.append("DOORMAN.ACCESS_CODE_MAX_FAILURES_PER_TARGET must be > 0")
+    if s.ACCESS_CODE_FAILURE_WINDOW_HOURS <= 0:
+        errors.append("DOORMAN.ACCESS_CODE_FAILURE_WINDOW_HOURS must be > 0")
     if s.ACCESS_LINK_TTL_MINUTES <= 0:
         errors.append("DOORMAN.ACCESS_LINK_TTL_MINUTES must be > 0")
     if s.DEVICE_TRUST_TTL_DAYS <= 0:

@@ -33,6 +33,10 @@ POS_TRANSITIONS = {
 
 
 class StubFiscalBackend:
+    # Dublê de homologação: o Pix destes testes é o simulador local, e a porta
+    # fiscal só recusa pagamento simulado quando a nota seria de PRODUÇÃO.
+    is_homologation = True
+
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 

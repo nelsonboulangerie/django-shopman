@@ -5,7 +5,7 @@
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
-import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
+import { catalogDimensions, filterByDimensions, filtersFromQuery } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -16,13 +16,14 @@ import type {
   CollectionProjection,
   ProductDetailPatch,
   ProductDetailProjection,
+  SkuRoles,
   SurfaceCellProjection,
 } from "~/types/catalog";
 
 const collectionRef = ref("");
 const {
   readMetadata, realtime, matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
-  resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
+  resync, fetchProductDetail, saveProductDetail, setPurchasable, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
@@ -62,7 +63,8 @@ const query = ref("");
 // Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
 // fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
 // servidor. Aqui é tudo client-side — a matriz já veio inteira.
-const filters = ref<ActiveFilters>({});
+// Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
+const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
 const searched = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
 // As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
 // senão marcar uma opção zeraria as contagens das outras.
@@ -383,6 +385,7 @@ function selectCollection(next: string) {
   collectionRef.value = next;
 }
 let detailRequest = 0;
+const detailRoles = ref<SkuRoles | null>(null);
 async function openDetail(row: CatalogRowProjection, tab = "geral") {
   const request = ++detailRequest;
   menuOpen.value = null;
@@ -392,13 +395,30 @@ async function openDetail(row: CatalogRowProjection, tab = "geral") {
   detailLoading.value = true;
   try {
     const result = await fetchProductDetail(row.sku);
-    if (request === detailRequest && detailSku.value === row.sku) detail.value = result;
+    if (request === detailRequest && detailSku.value === row.sku) {
+      detail.value = result;
+      detailRoles.value = result?.roles ?? null;
+    }
   } finally {
     if (request === detailRequest) detailLoading.value = false;
   }
 }
+// Chegando de um alerta (`?sku=AGUA-500&tab=social`, o GTIN que a SEFAZ recusou),
+// a tela abre aquele produto já na aba certa. Espera a matriz ter a linha.
+const route = useRoute();
+const queryText = (value: unknown) => (typeof value === "string" ? value : "");
+const skuFromLink = ref(queryText(route.query.sku));
+watch(() => route.query.sku, (value) => { skuFromLink.value = queryText(value); });
+watch([skuFromLink, () => matrix.value?.rows], ([sku, rows]) => {
+  if (import.meta.server || !sku || !rows) return;
+  const row = rows.find((candidate) => candidate.sku === sku);
+  if (!row) return;
+  skuFromLink.value = "";
+  void openDetail(row, queryText(route.query.tab) || "geral");
+}, { immediate: true });
 function closeDetail() {
   detailRequest++;
+  detailRoles.value = null;
   detailSku.value = null;
   detail.value = null;
   detailDirty.value = false;
@@ -409,6 +429,16 @@ async function saveDetail(patch: ProductDetailPatch) {
   const request = detailRequest;
   const ok = await saveProductDetail(sku, patch);
   if (ok && sku === detailSku.value && request === detailRequest) closeDetail();
+}
+
+async function togglePurchasable(enabled: boolean) {
+  if (!detailSku.value) return;
+  const sku = detailSku.value;
+  const request = detailRequest;
+  const product = await setPurchasable(sku, enabled);
+  // Só os selos mudam, e moram fora de `detail`: trocar o detalhe reidrataria o
+  // painel e apagaria o rascunho que o gestor ainda não salvou.
+  if (product && sku === detailSku.value && request === detailRequest) detailRoles.value = product.roles ?? null;
 }
 
 function reviewProductConflict(keepDraft: boolean) {
@@ -457,7 +487,7 @@ useHead({ title: "Catálogo" });
           @pointerdown="collPointerDown(c.ref, $event)"
           @keydown="collKeyDown(c.ref, $event)"
           aria-keyshortcuts="ArrowUp ArrowDown"
-          :title="`${c.name} — reordenar com as setas para cima ou para baixo`"
+          :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
         >
           <template v-if="c.is_smart" #icon>
             <Icon name="lucide:sparkles" class="size-3.5 opacity-70" title="Coleção por regra" />
@@ -528,7 +558,7 @@ useHead({ title: "Catálogo" });
       </div>
     </div>
 
-    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais — role horizontalmente para ver os canais" tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
+    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
@@ -560,8 +590,10 @@ useHead({ title: "Catálogo" });
               class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
               :class="firstFeedRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
-              <div class="flex flex-col gap-0.5" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
-                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
+              <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
+                   Canais o mostra, para religar. -->
+              <div class="flex flex-col gap-0.5">
+                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
                   <span class="truncate text-xs">{{ s.short_name }}</span>
                   <a
@@ -571,14 +603,13 @@ useHead({ title: "Catálogo" });
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
                 </span>
-                <!-- Linha 2 só quando há estado a dizer: sync da plataforma ou feed pausado.
-                     O papel da superfície (feed/menuboard) já é dito pelo ícone + title. -->
-                <span v-if="syncBadge(s.sync_status) || (!s.transactional && !s.is_active)" class="flex items-center gap-1">
+                <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
+                     superfície (feed/menuboard) já é dito pelo ícone + title. -->
+                <span v-if="syncBadge(s.sync_status)" class="flex items-center gap-1">
                   <span
-                    v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
+                    class="truncate text-xs font-medium leading-tight"
                     :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
                   >● {{ syncBadge(s.sync_status)!.label }}</span>
-                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">Pausado</span>
                 </span>
               </div>
             </th>
@@ -643,8 +674,8 @@ useHead({ title: "Catálogo" });
                           'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
                         }"
                       >{{ rowStatuses[row.sku]?.label }}</span>
-                      <!-- esgotado que repõe por produção: a próxima fornada reativa sozinha -->
-                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} na fornada</span>
+                      <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
+                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} no lote</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
                       <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
@@ -653,7 +684,7 @@ useHead({ title: "Catálogo" });
                         type="button"
                         class="min-h-control min-w-control inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
                         :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
-                        :title="`Erro de sync em ${rowSyncErrors(row)} plataforma(s) — reenviar tudo`"
+                        :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
                         @click.stop="resyncRow(row)"
                       >
                         <Icon name="lucide:triangle-alert" class="size-3" /> {{ rowSyncErrors(row) }}
@@ -755,8 +786,8 @@ useHead({ title: "Catálogo" });
                   :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
                   :model-value="cell.is_sellable"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
-                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
-                  :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
+                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Ativar neste ${surfaceWord(cell)}`"
+                  :title="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`"
                   @update:model-value="toggleCell(row, cell)"
                 />
 
@@ -776,7 +807,7 @@ useHead({ title: "Catálogo" });
                       class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
                       :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                       :title="priceTitle(row, cell)"
-                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display} — editar`"
+                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
                       @click="startEdit(row, cell)"
                     >
                       <span v-if="cellPrice(row, cell).differs" class="flex items-center gap-0.5">
@@ -806,7 +837,7 @@ useHead({ title: "Catálogo" });
                     </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
                       <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
-                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar</button>
+                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar preço</button>
                     </div>
                   </UiPopoverContent>
                 </UiPopover>
@@ -823,8 +854,8 @@ useHead({ title: "Catálogo" });
                     class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
                     :class="cellSync(cell).toneClass"
                     :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !row.resync_action?.enabled"
-                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
-                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)} — reenviar agora`"
+                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
                     @click="resyncCell(row, cell)"
                   >{{ cellSync(cell).dot }}</button>
                   <span
@@ -912,7 +943,7 @@ useHead({ title: "Catálogo" });
             </div>
             <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
               {{ priceOp === "set" ? "Define o preço de todos os selecionados." : priceOp === "pct" ? "Aumenta (+) ou reduz (−) por porcentagem." : "Soma (+) ou subtrai (−) do preço atual." }}
-              Permanente — para promo, use as regras.
+              A mudança é permanente. Para promoção, use as regras.
             </p>
             <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
               <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
@@ -946,6 +977,8 @@ useHead({ title: "Catálogo" });
       :detail="detail"
       :loading="detailLoading"
       :busy="detailSku !== null && isBusy(detailKey(detailSku))"
+      :roles="detailRoles"
+      :purchase-busy="detailSku !== null && isBusy(`purchase@${detailSku}`)"
       :assist="detailAssist.assist"
       :assist-busy="detailAssist.assistBusy"
       :initial-tab="detailTab"
@@ -955,6 +988,7 @@ useHead({ title: "Catálogo" });
       @dirty-change="detailDirty = $event"
       @update:open="(v) => { if (!v) closeDetail(); }"
       @save="saveDetail"
+      @set-purchasable="togglePurchasable"
     />
 
     <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->

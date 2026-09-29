@@ -206,6 +206,14 @@ envs:
   - key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
     scope: RUN_AND_BUILD_TIME
     type: SECRET
+  # A chave de licença da MaxMind, usada SÓ no build, para baixar a base GeoLite2-City
+  # que escreve "Próximo a Londrina, PR · Brasil" na tela "Segurança e dados" da loja.
+  # Sem ela a imagem sobe sem a base e a tela fica só com navegador e data — nada quebra.
+  # ⚠️ Como todo SECRET deste arquivo, o VALOR mora cifrado no painel, não aqui. Defina-o
+  # no painel ANTES de aplicar o spec. Ver docs/guides/geolite2-city.md.
+  - key: MAXMIND_LICENSE_KEY
+    scope: BUILD_TIME
+    type: SECRET
   - key: DJANGO_SETTINGS_MODULE
     value: config.settings
     scope: RUN_TIME
@@ -354,6 +362,24 @@ envs:
   # reais entrarem — comportamento desejado, não bug.
   - key: SHOPMAN_ENVIRONMENT
     value: production
+    scope: RUN_TIME
+    type: GENERAL
+  # Inerte no template Live. Promoção exige shadow aprovado e mudança explícita
+  # destes switches; o kill switch continua independente do deploy do cliente.
+  - key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_KILL_SWITCH
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
+    value: "300000"
     scope: RUN_TIME
     type: GENERAL
   # Concierge v3 nasce contida no template de produção. Ativação exige conta,
@@ -532,7 +558,8 @@ envs:
     type: GENERAL
 
   # ── Fiscal: NF-e de entrada (Compras) ─────────────────────────────────
-  # ⚠️ O certificado e-CNPJ A1 vence em 10/09/2026.
+  # O certificado e-CNPJ A1 foi RENOVADO (o anterior vencia em 10/09/2026); a
+  # validade nova está no próprio certificado.
   - key: PURCHASE_NFE_ENVIRONMENT
     scope: RUN_TIME
     value: 'producao'
@@ -668,6 +695,12 @@ services:
       # A loja vive na RAIZ do apex.
       - key: NUXT_APP_BASE_URL
         value: /
+        scope: RUN_TIME
+        type: GENERAL
+      # Template de produção nasce no fallback monolítico. O Live de teste usa
+      # a ativação explícita no spec alpha versionado.
+      - key: NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED
+        value: "false"
         scope: RUN_TIME
         type: GENERAL
       # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
@@ -986,7 +1019,11 @@ jobs:
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /
-    run_command: sh -c 'python manage.py check --deploy && python manage.py migrate --noinput && python manage.py setup_groups'
+    # `migration_safety` roda ANTES do `migrate` e é a única trava entre este
+    # deploy e o banco real: pós-`go-live-v1` ele RECUSA o deploy quando há
+    # migração destrutiva pendente e ninguém declarou o ponto de restauração em
+    # SHOPMAN_MIGRATION_BACKUP_REF. Procedimento: docs/runbooks/backup-e-restore.md.
+    run_command: sh -c 'python manage.py check --deploy && python manage.py migration_safety && python manage.py migrate --noinput && python manage.py setup_groups'
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
 

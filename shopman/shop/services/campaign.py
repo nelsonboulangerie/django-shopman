@@ -95,6 +95,14 @@ class MarketingTestForbidden(CampaignError):
         self.receipt_ref = receipt_ref
 
 
+class MarketingTestBindingChanged(CampaignError):
+    """O flow mudou entre a reserva do comprovante e o efeito externo."""
+
+    def __init__(self, message: str, *, receipt_ref: str):
+        super().__init__(message)
+        self.receipt_ref = receipt_ref
+
+
 class MarketingTestThrottled(CampaignError):
     """Quota conservadora do G-H04 atingida."""
 
@@ -638,6 +646,7 @@ class TestSend:
     accepted: bool
     backend: str
     target_ref: str
+    event: str
     fields: dict
     receipt_ref: str
     state: str
@@ -658,6 +667,46 @@ class _MarketingTestTarget:
 _TEST_TARGET_REF = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
 _TEST_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 _TEST_USER_HOURLY_LIMIT = 5
+
+_TRANSACTIONAL_TEST_VALUES = {
+    "access_url": "https://shopman.invalid/teste/acesso",
+    "account_url": "https://shopman.invalid/teste/conta",
+    "action_url": "https://shopman.invalid/teste/produto",
+    "availability_note": "Disponível para o teste controlado.",
+    "availability_phrase": "2 unidades disponíveis",
+    "available_qty": "2",
+    "cart_note": "Carrinho sintético de teste.",
+    "checkout_url": "https://shopman.invalid/teste/pagamento",
+    "contact_name": "Fornecedor teste",
+    "courier_tracking_suffix": " Acompanhe pelo link de teste.",
+    "cta": "Abra o link de teste:",
+    "customer_name": "Cliente teste",
+    "danfe_url": "https://shopman.invalid/teste/nota-fiscal",
+    "deadline_note": "Reserva sintética até amanhã às 10h.",
+    "fiscal_test_note": "Documento sintético, sem valor fiscal.",
+    "management_note": "Teste controlado do Shopman.",
+    "material_name": "Farinha teste",
+    "order_ref": "TESTE-20260926-A47",
+    "order_total_display": "R$ 42,00",
+    "origin_note": "Solicitação sintética do teste controlado.",
+    "payment_deadline": "amanhã às 10h",
+    "payment_deadline_note": " Até amanhã às 10h.",
+    "payment_url": "https://shopman.invalid/teste/pagamento",
+    "pix_suffix": " Use o PIX sintético exibido no teste.",
+    "product_image_url": "https://shopman.invalid/teste/produto.jpg",
+    "product_name": "Produto teste",
+    "product_sku": "TESTE-SKU",
+    "product_url": "https://shopman.invalid/teste/produto",
+    "purchase_qty_display": "2 kg",
+    "purchase_ref": "COMPRA-TESTE-A47",
+    "reorder_url": "https://shopman.invalid/teste/refazer",
+    "reserve_note": "Reserva sintética para validar o modelo.",
+    "revoke_url": "https://shopman.invalid/teste/revogar",
+    "shop_name": "Loja teste",
+    "status_note": " Nova data de teste: amanhã às 10h.",
+    "supplier_name": "Fornecedor teste",
+    "tracking_url": "https://shopman.invalid/teste/pedido",
+}
 _TEST_SHOP_DAILY_LIMIT = 20
 
 
@@ -777,11 +826,12 @@ def _reserve_test_receipt(
         ), False
 
 
-def _test_send_result(receipt, fields: dict, *, replayed: bool) -> TestSend:
+def _test_send_result(receipt, fields: dict, *, event: str, replayed: bool) -> TestSend:
     return TestSend(
         accepted=receipt.state == MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED,
         backend=receipt.backend,
         target_ref=receipt.target_ref,
+        event=event,
         fields=fields,
         receipt_ref=str(receipt.ref),
         state=receipt.state,
@@ -790,11 +840,70 @@ def _test_send_result(receipt, fields: dict, *, replayed: bool) -> TestSend:
     )
 
 
+def _transactional_test_contract(
+    event: str,
+    *,
+    sku: str,
+) -> tuple[dict, dict[str, str], tuple[str, ...]]:
+    """Build representative, non-customer data for exactly one approved flow.
+
+    The declared tuple is also a cleanup contract: the ManyChat sandbox writes
+    every field in it, including empty values, so an earlier test cannot make a
+    later one look healthy with stale persistent data.
+    """
+    from shopman.shop.adapters._notification_templates import derive_context
+    from shopman.shop.services.manychat_marketing_safety import flow_fields_for_event
+
+    declared = set(flow_fields_for_event(event) or ())
+    if not declared:
+        raise CampaignError(
+            "Este aviso ainda não possui campos declarados para teste externo."
+        )
+
+    product_fields = test_fields(sku=sku, name="Cliente teste")
+    raw_context = dict(_TRANSACTIONAL_TEST_VALUES)
+    raw_context.update({name: value for name, value in product_fields.items() if value})
+    raw_context["sku"] = str(sku or "").strip() or "TESTE-SKU"
+    resolved = derive_context(raw_context)
+    declared_fields = tuple(sorted(declared))
+    display_fields = {
+        name: str(resolved.get(name, "") or "") for name in declared_fields
+    }
+    return resolved, display_fields, declared_fields
+
+
+def _test_binding_snapshot(event: str, *, backend: str) -> dict:
+    """Effective flow binding that a sandbox receipt promises to exercise."""
+    from shopman.shop.models import NotificationTemplate
+
+    template = NotificationTemplate.objects.filter(event=event).first()
+    row_flow = (
+        (template.whatsapp_flow_ns or "").strip()
+        if template is not None and template.is_active
+        else ""
+    )
+    fallback_flow = ""
+    if backend == "manychat" and not row_flow:
+        fallback_flow = str(
+            (getattr(settings, "SHOPMAN_MANYCHAT", {}) or {})
+            .get("flow_map", {})
+            .get(event, "")
+            or ""
+        ).strip()
+    return {
+        "exists": template is not None,
+        "active": bool(template and template.is_active),
+        "version": template.version if template is not None else 0,
+        "flow_ns": row_flow or fallback_flow,
+    }
+
+
 def send_test(
     target_ref: str,
     *,
     actor,
     idempotency_key: str,
+    event: str = "announcement_published",
     sku: str = "",
     body: str = "",
 ) -> TestSend:
@@ -813,18 +922,71 @@ def send_test(
     if not _actor_has_test_capability(actor):
         raise CampaignError("A capacidade de teste não está mais disponível. Atualize a tela.")
 
-    fields = test_fields(sku=sku, name="Cliente teste")
+    from shopman.shop.services.marketing_platform_configuration import (
+        EVENT as ANNOUNCEMENT_EVENT,
+    )
+    from shopman.shop.services.marketing_platform_configuration import (
+        TRANSACTIONAL_WHATSAPP_EVENTS,
+        WHATSAPP_EVENT_LABELS,
+    )
+
+    safe_event = str(event or ANNOUNCEMENT_EVENT).strip()
+    if safe_event not in WHATSAPP_EVENT_LABELS:
+        raise CampaignError("Escolha uma mensagem do WhatsApp disponível para teste.")
+
+    # Campanha ainda pode testar o fallback de texto que já existia. Para avisos
+    # transacionais, porém, o propósito deste botão é provar o FLOW escolhido —
+    # cair silenciosamente em texto livre daria um falso verde operacional.
+    binding = _test_binding_snapshot(safe_event, backend=target.backend)
+    flow_ns = binding["flow_ns"]
+    if safe_event in TRANSACTIONAL_WHATSAPP_EVENTS:
+        if not binding["exists"]:
+            raise CampaignError(
+                "Este aviso ainda não existe neste ambiente. Aplique as migrações antes do teste."
+            )
+        if not binding["active"]:
+            raise CampaignError("Este aviso está inativo. Ative-o antes do teste.")
+        if not flow_ns:
+            raise CampaignError(
+                "Escolha um modelo aprovado para este aviso antes do teste."
+            )
+
     message = (body or "").strip() or (
         "Teste do Shopman: se você recebeu isto, o template está de pé."
     )
+    declared_fields: tuple[str, ...] = ()
+    if safe_event in TRANSACTIONAL_WHATSAPP_EVENTS:
+        test_context, fields, declared_fields = _transactional_test_contract(
+            safe_event,
+            sku=sku,
+        )
+    else:
+        fields = test_fields(sku=sku, name="Cliente teste")
+        test_context = {
+            "body": message,
+            "cta": "Garanta o seu:",
+            "action_url": fields.get("link", ""),
+            **fields,
+        }
     payload = json.dumps(
-        {"target_ref": target.ref, "sku": str(sku or "").strip(), "body": message},
+        {
+            "target_ref": target.ref,
+            "event": safe_event,
+            "sku": str(sku or "").strip(),
+            "body": message,
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
     artifact = json.dumps(
-        {"body": message, "fields": fields},
+        {
+            "event": safe_event,
+            "flow_ns": flow_ns,
+            "binding": binding,
+            "body": message,
+            "fields": fields,
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -837,7 +999,7 @@ def send_test(
         target=target,
     )
     if replayed:
-        return _test_send_result(receipt, fields, replayed=True)
+        return _test_send_result(receipt, fields, event=safe_event, replayed=True)
 
     transport = get_backend(target.backend)
     probe = getattr(transport, "is_available", None) if transport is not None else None
@@ -879,22 +1041,35 @@ def send_test(
             receipt_ref=str(receipt.ref),
         ) from exc
 
+    if target.backend == "manychat":
+        # Read once more at the last in-process point, then pass the exact sealed
+        # flow to the adapter.  The adapter must not re-read a different binding.
+        current_binding = _test_binding_snapshot(safe_event, backend=target.backend)
+        if current_binding != binding:
+            receipt.state = MarketingTestReceipt.State.DENIED
+            receipt.failure_code = "template_binding_changed"
+            receipt.finished_at = timezone.now()
+            receipt.save(update_fields=["state", "failure_code", "finished_at"])
+            raise MarketingTestBindingChanged(
+                "O modelo mudou durante o teste. Atualize a tela e tente novamente; "
+                "nenhuma mensagem saiu.",
+                receipt_ref=str(receipt.ref),
+            )
+
     try:
         from shopman.shop.services.manychat_marketing_safety import (
             sandbox_probe_context,
         )
 
-        test_context = {
-            "body": message,
-            "cta": "Garanta o seu:",
-            "action_url": fields.get("link", ""),
-            **fields,
-        }
         if target.backend == "manychat":
-            test_context = sandbox_probe_context(test_context)
+            test_context = sandbox_probe_context(
+                test_context,
+                declared_fields=declared_fields,
+                flow_ns=flow_ns,
+            )
         raw_result = transport.send(
             recipient=target.recipient,
-            template="announcement_published",
+            template=safe_event,
             context=test_context,
         )
         # ⚠️ `bool(dict)` é True: o adiamento do ManyChat ({"success": False, ...})
@@ -945,7 +1120,7 @@ def send_test(
         receipt.backend,
         receipt.state,
     )
-    return _test_send_result(receipt, fields, replayed=False)
+    return _test_send_result(receipt, fields, event=safe_event, replayed=False)
 
 
 def test_fields(*, sku: str = "", name: str = "") -> dict:
@@ -1097,6 +1272,16 @@ def preview_platforms(
         platforms=normalized_platforms,
         platform_content=rendered_variants,
     )
+    if "google_business" in normalized_platforms:
+        from shopman.shop.services import marketing_google_post, marketing_time
+
+        rendered_variants = marketing_google_post.prepare_platform_content(
+            rendered_variants,
+            facts=facts.as_payload(),
+            image_url=variables["product_image_url"],
+            timezone_name=marketing_time.configured_timezone_name(),
+            now=timezone.now(),
+        )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms
@@ -1140,6 +1325,113 @@ def preview_platforms(
         },
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
+        "previews": {
+            artifact.platform: {
+                "artifact": artifact.as_payload(),
+                "artifact_hash": artifact.artifact_hash,
+                **(
+                    {"flow": flow_binding.display_payload()}
+                    if artifact.platform == "whatsapp" and flow_binding is not None
+                    else {}
+                ),
+            }
+            for artifact in artifacts
+        },
+    }
+
+
+def preview_announcement(
+    announcement,
+    *,
+    platforms,
+    body: str | None = None,
+    hashtags: list[str] | None = None,
+    google_business: dict[str, str] | None = None,
+) -> dict:
+    """Prévia da REVISÃO: o conteúdo gravado do anúncio, montado como a aprovação monta.
+
+    ⚠️ Não passa por `preview_platforms`. Aquela é a prévia do formulário, onde ainda não
+    existe anúncio e um produto de exemplo explica o modelo; aqui o anúncio existe e o que
+    sai é `announcement.content` + as edições (texto, hashtags, plataformas), sem ler
+    catálogo de novo. Medido em 25/09/2026 (anúncio 31, só Google, sem ``[Link]``): o
+    conteúdo gravado não tinha link, a aprovação publicou sem link, e a prévia mostrava o
+    link de um produto de exemplo — "o que você conferir é o que será disparado", mentindo.
+    """
+    from shopman.shop.services import marketing_facts
+    from shopman.shop.services.marketing_artifacts import (
+        normalize_platform_content,
+        resolve_all_dispatch_artifacts,
+    )
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
+
+    normalized_platforms = tuple(dict.fromkeys(
+        str(value or "").strip() for value in platforms if str(value or "").strip()
+    ))
+    if not normalized_platforms:
+        raise MarketingContractError(
+            code="preview_platform_required",
+            detail="Escolha ao menos uma plataforma para a prévia.",
+            field_errors={"platforms": ("Escolha ao menos uma plataforma.",)},
+        )
+    # O mesmo recorte do approve (`backstage/api/marketing.py`, `_post_command`).
+    content = dict(announcement.content or {})
+    if body is not None:
+        content["body"] = body
+    if hashtags is not None:
+        content["hashtags"] = list(hashtags)
+    stored_platform_content = dict(announcement.platform_content or {})
+    if google_business is not None:
+        from shopman.shop.services.marketing_google_post import with_review_options
+
+        stored_platform_content = with_review_options(
+            stored_platform_content, google_business
+        )
+    platform_content = normalize_platform_content(
+        platforms=normalized_platforms,
+        platform_content=stored_platform_content,
+    )
+    raw_facts = content.get("facts")
+    facts = marketing_facts.from_payload(raw_facts) if raw_facts is not None else None
+    if "google_business" in normalized_platforms:
+        from shopman.shop.services import marketing_google_post, marketing_time
+
+        # As mesmas travas e o mesmo selo da oferta que a aprovação aplica.
+        platform_content = marketing_google_post.prepare_platform_content(
+            platform_content,
+            facts=facts.as_payload() if facts is not None else None,
+            image_url=str(content.get("image_url") or ""),
+            timezone_name=marketing_time.configured_timezone_name(),
+            now=timezone.now(),
+        )
+    flow_binding = (
+        verified_whatsapp_flow_binding()
+        if "whatsapp" in normalized_platforms
+        else None
+    )
+    artifacts = resolve_all_dispatch_artifacts(
+        platforms=normalized_platforms,
+        content=content,
+        platform_content=platform_content,
+        content_version=announcement.version + 1,
+        facts_as_of=facts.as_of.isoformat() if facts is not None else "",
+        facts_hash=facts.source_hash if facts is not None else "",
+        platform_bindings=(
+            {"whatsapp": flow_binding.artifact_payload()}
+            if flow_binding is not None
+            else {}
+        ),
+    )
+    sku = str((announcement.trigger_context or {}).get("sku") or "")
+    variables = facts.variable_values() if facts is not None else {}
+    return {
+        "sku": sku,
+        "sample": False,
+        "product_name": variables.get("product_name", ""),
+        "fields": {},
+        "ai_writes": False,
+        "facts": facts.as_payload() if facts is not None else None,
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),

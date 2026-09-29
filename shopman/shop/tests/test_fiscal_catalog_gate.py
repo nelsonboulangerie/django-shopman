@@ -20,7 +20,7 @@ from shopman.shop.services import fiscal_catalog
 pytestmark = pytest.mark.django_db
 
 GATE_ON = override_settings(SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH=True)
-COMPLETE = {"fiscal": {"profile": "own_production", "ncm": "19059010"}}
+COMPLETE = {"fiscal": {"profile": "standard", "ncm": "19059010"}}
 
 
 def _product(sku="PAO-1", *, metadata=None, published=True):
@@ -100,7 +100,7 @@ def test_publishing_classified_product_passes():
 @GATE_ON
 def test_resale_without_cest_is_refused_by_name():
     listing = _listing()
-    product = _product(metadata={"fiscal": {"profile": "resale", "ncm": "22021000"}})
+    product = _product(metadata={"fiscal": {"profile": "tax_substitution", "ncm": "22021000"}})
 
     with pytest.raises(ValidationError) as exc:
         _publish(listing, product)

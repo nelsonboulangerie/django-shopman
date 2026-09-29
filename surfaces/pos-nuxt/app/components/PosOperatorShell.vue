@@ -40,6 +40,12 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
 usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
 
+// Leitor de código da bancada (HID, modo teclado): lê o QR da Via Cozinha em
+// qualquer tela do PDV e dá o pronto do ticket da estação sem tela (decisão do
+// dono, 26/09/2026). Só com alguém identificado — com a tela travada, as teclas
+// são do PIN/crachá, e o pronto precisa de um operador para assinar.
+useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
+
 // Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
 // Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com
 // senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a

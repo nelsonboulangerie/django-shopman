@@ -28,7 +28,7 @@ describe("useOrderDetail", () => {
     expect(options.body.base_revision).toBe(action.payload_schema.base_revision);
     expect(options.headers["Idempotency-Key"]).toBeTruthy();
     expect((env.fetchMock.mock.calls[1]![1].method ?? "GET")).toBe("GET");
-    expect(env.sonner.success).toHaveBeenCalledWith("Solicitação de entregador enfileirada.");
+    expect(env.sonner.success).toHaveBeenCalledWith("Pedido de entregador enviado à central.");
   });
 
   it("deriva order da projection; null quando vazio", () => {

@@ -74,19 +74,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PWA_INSTALL_DISMISS_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
     },
-    "PWA_IOS_TITLE": {
+    # O passo a passo de instalação NÃO mora aqui, e a razão é de natureza: ele é fato
+    # de plataforma e muda com o navegador de quem está lendo. Chave de copy é uma só
+    # para todo mundo, então virava "no Safari, toque em Compartilhar" para quem estava
+    # no Chrome, no Firefox ou dentro do navegador do WhatsApp — não é voz da casa, é
+    # erro de fato. Quem escreve os passos é `installPlan()`, em
+    # `surfaces/*/app/utils/installGuide.ts`. Daqui sai só o convite: título e botões.
+    "PWA_MANUAL_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Coloque a loja na Tela de Início")},
     },
-    "PWA_IOS_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="No Safari, são só dois passos.")},
-    },
-    "PWA_IOS_SHARE_STEP": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Toque em Compartilhar na barra do Safari.")},
-    },
-    "PWA_IOS_ADD_STEP": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escolha Adicionar à Tela de Início.")},
-    },
-    "PWA_IOS_DONE_CTA": {
+    "PWA_MANUAL_DONE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já adicionei")},
     },
     "PWA_UPDATE_TITLE": {
@@ -566,7 +563,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
     },
     "TRACKING_PROMISE_PAYMENT_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento confirmado")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento recebido")},
     },
     "TRACKING_PROMISE_READY_PICKUP_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pronto para retirada")},
@@ -788,9 +785,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Atualizar")},
     },
     # Pago e conferindo é UM momento: a frase absorve o fato do pagamento em vez
-    # de empilhar um "Pagamento confirmado." solto (o histórico já registra o passo).
+    # de empilhar um "Pagamento recebido." solto (o histórico já registra o passo).
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento confirmado. Estamos conferindo a disponibilidade.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
@@ -821,7 +818,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
-                    "Pagamento confirmado. Sua reserva está na fila de espera da fornada "
+                    "Pagamento recebido. Sua reserva está na fila de espera da fornada "
                     "prevista para {when}. Avisamos quando sair."
                 ),
             ),
@@ -831,7 +828,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
-                    "Pagamento confirmado. Sua reserva está na fila de espera. "
+                    "Pagamento recebido. Sua reserva está na fila de espera. "
                     "Avisamos quando estiver pronto."
                 ),
             ),
@@ -854,14 +851,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                message="Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
             ),
         },
     },
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento confirmado. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+                message="Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
             ),
         },
     },
@@ -1102,7 +1099,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Até logo.")},
     },
     "LOGIN_PHONE_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Vamos entrar?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Entre pelo WhatsApp")},
     },
     "LOGIN_PHONE_SUBTITLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sem senha, rápido e seguro.")},
@@ -1111,27 +1108,38 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_WA_CART_KEPT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola está guardada.")},
     },
-    # Lampejo do fluxo: o que vai acontecer ao tocar (você envia, recebe um link, entra).
-    "LOGIN_WA_GLIMPSE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Envie a mensagem pronta e receba um link para entrar.")},
-    },
-    # Mesmo lampejo, quando a sacola VIAJA no código NB. Quem está no meio de um
-    # pedido não teme entrar por não saber entrar: teme perder o que montou. Só
-    # aparece com o servidor confirmando que a sacola foi guardada no código
-    # (``has_cart_context``) — prometer sacola sem ela ter viajado seria pior
-    # do que não prometer nada.
-    "LOGIN_WA_GLIMPSE_WITH_CART": {
+    # O PORQUÊ, antes do pedido. A mensagem explica a segurança sem transformar o
+    # login numa justificativa de marketing ou suporte.
+    "LOGIN_WA_WHY": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Envie a mensagem pronta: você entra e sua sacola vai junto.",
+            message="Sem senha e sem código. A mensagem pronta confirma que o número é seu.",
         )},
     },
-    # Fallback manual (bloco "OU"): título com peso de seção + subtítulo (o número do
-    # WhatsApp é anexado ao subtítulo na tela).
+    # O QUE FAZER, em três passos (um por linha). A outra queixa: "o que eu tenho que
+    # fazer?". O terceiro passo é a promessa que a tela cumpre: a aba entra sozinha.
+    "LOGIN_WA_STEPS": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message=(
+                "Toque em “Abrir o WhatsApp”\n"
+                "Envie a mensagem que já está pronta\n"
+                "Volte para esta tela. A entrada será automática"
+            ),
+        )},
+    },
+    # Depois do toque: a tela espera a mensagem chegar e entra sem mais nada.
+    "LOGIN_WA_WAITING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Mensagem enviada?",
+            message="Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.",
+        )},
+    },
+    # Envio manual (plano B da espera): título + instrução. ``{phone}`` vira o número
+    # do WhatsApp da casa, em destaque; sem o marcador, a tela anexa o número ao fim.
     "LOGIN_WA_MANUAL_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Quer fazer você mesmo?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="O WhatsApp não abriu?")},
     },
     "LOGIN_WA_MANUAL_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Envie esta mensagem diretamente para o nosso WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Mande a mensagem abaixo para {phone} no WhatsApp.")},
     },
     # Handoff do site expirou: entrou logado, mas a sacola não veio (link do WhatsApp venceu).
     # Aviso gentil, com caminho de volta, sem culpar o cliente.
@@ -1139,7 +1147,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Você entrou! Sua sacola não veio desta vez porque o link expirou. É só montar de novo.")},
     },
     "LOGIN_PHONE_CTA_WA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Entrar pelo WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Abrir o WhatsApp")},
     },
 
     # ── Concierge de WhatsApp ──────────────────────────────────────────
@@ -1191,9 +1199,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "LOGIN_TRUSTED_OTHER_PHONE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Ou confirme outro telefone abaixo.")},
-    },
-    "LOGIN_NO_PASSWORD_NOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="É prático e seguro, e não exige senha.")},
     },
     "LOGIN_TERMS_NOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.")},
@@ -1301,6 +1306,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "DEVICE_LIST_CURRENT": {
         WILDCARD: {WILDCARD: CopyEntry(title="Este aparelho")},
+    },
+    "DEVICE_LIST_LAST_USED_PREFIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Último uso em")},
+    },
+    # "Próximo a Londrina, PR · Brasil". O "Próximo a" é o que diz que a localização é
+    # aproximada, sem nota de rodapé — e é por isso que ele é prefixo e não legenda.
+    # ⚠️ Esta é copy da LOJA, onde a palavra é "aparelho": a exenção do Storefront na
+    # trava de vocabulário é decisão escrita do dono, não descuido.
+    "DEVICE_LIST_NEAR_PREFIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Próximo a")},
     },
     "DEVICE_LIST_REGISTERED_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Registrado em")},
@@ -1496,7 +1511,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # finalizados no momento de servir. Diz o que o item É, e o que é, é bom.
     # ⚠️ Não é dedução da política de estoque: um croque da vitrine tem o selo, e
     # um pão que vende sem saldo (``demand_ok``) não tem.
-    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
+    # Nasceu como ``CART_``, e o prefixo virou mentira quando a ficha do produto
+    # passou a dizer a mesma coisa: a frase é do PRODUTO, e a sacola é só uma das
+    # telas que a repete.
+    "PRODUCT_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
     "AVAILABILITY_UNAVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Indisponível")}},
 }
 

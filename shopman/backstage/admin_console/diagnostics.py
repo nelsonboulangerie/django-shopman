@@ -17,9 +17,9 @@ sair de dentro dele, e o gesto mais barato que existe é um botão.
 1. **O destino é o e-mail de quem está logado**, nunca um campo aberto. Um campo
    de destinatário num painel de gestor é um convite a mandar teste para o
    cliente errado. Quem quer testar outro endereço, entra com outro usuário.
-2. **Conexão com timeout curto e explícito.** A saída de rede de um PaaS pode
-   bloquear a porta 587, e a política não recusa — ela silencia. Sem timeout, o
-   clique pendura dois minutos segurando um worker.
+2. **Timeout curto e explícito**, pelo alias `diagnostics` do `MAILERS`. A saída
+   de rede de um PaaS pode bloquear a porta 587, e a política não recusa — ela
+   silencia. Sem timeout, o clique pendura dois minutos segurando um worker.
 3. **O erro aparece inteiro na tela.** Autenticação recusada, porta fechada e
    domínio sem SPF produzem sintomas diferentes, e esconder a mensagem
    transformaria os três no mesmo "não funcionou".
@@ -35,20 +35,16 @@ import logging
 import time
 
 from django.contrib import admin, messages
-from django.core.mail import EmailMessage, get_connection
+from django.core.mail import EmailMessage
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import TemplateView
 from unfold.views import UnfoldModelAdminViewMixin
 
 from shopman.backstage.projections.diagnostics import build_diagnostics
+from shopman.shop.mailers import DIAGNOSTICS_ALIAS
 
 logger = logging.getLogger(__name__)
-
-#: Teto de espera do teste. Independente de `EMAIL_TIMEOUT` porque aqui há
-#: alguém olhando a tela: um gestor não espera quinze segundos por um clique
-#: sem achar que travou.
-_TESTE_TIMEOUT_SEGUNDOS = 10
 
 
 class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
@@ -82,7 +78,11 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
 
         inicio = time.monotonic()
         try:
-            conexao = get_connection(timeout=_TESTE_TIMEOUT_SEGUNDOS)
+            # ⚠️ `using=<alias>`, e não uma conexão montada aqui: o
+            # `get_connection()` e o argumento `connection=` do `EmailMessage`
+            # são deprecados no Django 6.1 e somem no 7. O teto de espera curto
+            # que este botão precisa vem do próprio alias, declarado em
+            # `config/settings.py` ao lado do teto do worker.
             enviados = EmailMessage(
                 subject="Shopman — teste de envio",
                 body=(
@@ -92,8 +92,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
                     f"Ambiente: {projection.environment}\n"
                 ),
                 to=[destino],
-                connection=conexao,
-            ).send(fail_silently=False)
+            ).send(using=DIAGNOSTICS_ALIAS)
         except Exception as exc:  # o erro É o resultado do teste
             # Vai para a tela E para o log: quem clicou vê agora, e quem for
             # investigar amanhã encontra sem depender da memória de quem clicou.

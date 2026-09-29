@@ -30,7 +30,10 @@ Regras do padrão:
 3. **Canais nomeados + permissão explícita** no `ShopmanChannelManager`. Autorizar
    up front no view (Http404 para não-autorizado) para o `EventSource` falhar de
    vez (não reconecta) e cair no fallback. Defesa em profundidade no channel
-   manager.
+   manager. Nas superfícies de operador, "de vez" é do EventSource cru: o
+   cliente (`openResilientEventSource`, no `operator-kit`) recria o stream com
+   backoff de 2 s até 60 s, porque o mesmo fechamento acontece no 502 de todo
+   deploy, e sem a recriação o push morria até alguém recarregar.
 4. **Same-origin via BFF.** O EventSource conecta em `/sse/...` do Nitro, que faz
    streaming do Django repassando o cookie de sessão `.boulangerie`. Sem CORS.
 5. **Transporte genérico e reutilizável.** `server/utils/eventStream.ts`

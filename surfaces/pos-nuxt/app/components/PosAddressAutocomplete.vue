@@ -129,7 +129,9 @@ async function placesSuggestions(input: string): Promise<AddressSuggestion[]> {
         prediction,
       }));
   } catch {
-    error.value = "Busca automática indisponível.";
+    // Digitar à mão continua funcionando, e o CEP ainda busca pelo ViaCEP
+    // (`runSearch` tenta os dois caminhos): a saída é real, não consolo.
+    error.value = "Busca automática indisponível. Digite o endereço à mão, ou o CEP para buscar por ele.";
     return [];
   }
 }

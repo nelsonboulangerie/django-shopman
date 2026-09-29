@@ -140,6 +140,33 @@ def cancel_open_tickets_for_session(session_key: str) -> int:
         return len(tickets)
 
 
+def complete_open_tickets_for_session(session_key: str, *, actor: str, via: str) -> int:
+    """Conclui os tickets abertos, depois de o chamador travar a origem.
+
+    Salva um a um (não ``update``): o ``post_save`` é o que avisa as telas por
+    SSE e o que o balcão usa para tirar o selo "Na cozinha".
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.backstage.models import KDSTicket
+
+    with transaction.atomic():
+        tickets = list(
+            KDSTicket.objects
+            .select_for_update()
+            .filter(session_key=session_key, status__in=["pending", "in_progress"])
+        )
+        completed_at = timezone.now()
+        for ticket in tickets:
+            ticket.status = "done"
+            ticket.completed_at = completed_at
+            ticket.completed_by = str(actor or "")[:150]
+            ticket.completed_via = via
+            ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
+        return len(tickets)
+
+
 def get_tickets(order):
     from shopman.backstage.models import KDSTicket
 

@@ -31,8 +31,12 @@ type ClaimResponse = {
   offer: { ref: string; name: string }
   added: string[]
   skipped: SkippedOfferItem[]
+  /** A sacola já tinha itens e eles ficaram: a oferta foi somada a eles. */
+  kept_existing_items: boolean
   cart: CartProjection
 }
+
+type ClaimMode = 'merge' | 'replace'
 
 const pending = ref(true)
 const offerName = ref('')
@@ -41,30 +45,29 @@ const skipped = ref<SkippedOfferItem[]>([])
 const problem = ref('')
 const assembled = ref(false)
 const intention = ref('')
-/** Sacola já tinha itens: quem decide somar ou trocar é o cliente, não nós. */
-const conflict = ref(false)
 /**
- * Trocar chama `claim('replace')`, que executa `CartService.clear_items`: apaga uma
- * sacola montada à mão, e não se desfaz. A porta da recompra já nomeia a consequência
- * e pede aceite explícito (`REORDER_CONFLICT_REPLACE_*`); esta diz o mesmo, com as
- * mesmas palavras — um ato destrutivo não pode avisar por uma porta só.
+ * A oferta entrou numa sacola que já tinha itens, e o cliente ainda não disse se fica
+ * com tudo. O aviso está na tela e não sai sem escolha — ver `onBeforeRouteLeave`.
  */
-const replaceAcknowledged = ref(false)
+const decisionOpen = ref(false)
+const deciding = ref(false)
 
-async function claim (mode?: 'append' | 'replace') {
-  const resource = `offer:${offerRef.value}:${mode || 'default'}`
+function claimResource (mode: ClaimMode) {
+  return `offer:${offerRef.value}:${mode}`
+}
+
+async function claim (mode: ClaimMode = 'merge') {
+  const resource = claimResource(mode)
   intention.value = retainedRemoteMutationKey(resource, 'offer')
   pending.value = true
   problem.value = ''
-  conflict.value = false
-  replaceAcknowledged.value = false
   try {
     const response = await $fetch<ClaimResponse>(
       apiPath(`/api/v1/offers/${encodeURIComponent(offerRef.value)}/claim/`),
       {
         method: 'POST',
         headers: { ...(await csrfHeaders()), 'Idempotency-Key': intention.value },
-        body: mode ? { mode } : {},
+        body: mode === 'replace' ? { mode } : {},
         credentials: 'include'
       }
     )
@@ -73,6 +76,13 @@ async function claim (mode?: 'append' | 'replace') {
     addedNames.value = response.cart.items.filter(item => response.added.includes(item.sku)).map(item => item.name)
     setFromServer(response.cart)
     assembled.value = response.ok
+    // A oferta SEMPRE soma: quem decide é o servidor, e ele nunca troca sem pedido. A
+    // pergunta que sobra é sobre o que já estava na sacola, e só existe se havia algo lá
+    // e a oferta de fato entrou — sem item novo, não há nada a manter nem a dispensar.
+    if (response.kept_existing_items && response.added.length) {
+      decisionOpen.value = true
+      return
+    }
     if (response.ok && !skipped.value.length) {
       await navigateTo('/sacola')
       forgetRemoteMutationKey(resource)
@@ -81,18 +91,37 @@ async function claim (mode?: 'append' | 'replace') {
     // Nada entrou: a oferta existe, mas nenhum item dela está vendável agora.
     if (!skipped.value.length) problem.value = 'Nenhum item foi adicionado à sacola.'
   } catch (error: unknown) {
-    const status = (error as { statusCode?: number; status?: number })?.statusCode
-      ?? (error as { status?: number })?.status
-    const detail = (error as { data?: { detail?: string; error_code?: string } })?.data
-    if (status === 409 && detail?.error_code === 'cart_not_empty') {
-      conflict.value = true
-    } else {
-      problem.value = detail?.detail || 'Não foi possível abrir esta oferta.'
-    }
+    const detail = (error as { data?: { detail?: string } })?.data
+    problem.value = detail?.detail || 'Não foi possível abrir esta oferta.'
   } finally {
     pending.value = false
   }
 }
+
+async function keepEverything () {
+  deciding.value = true
+  decisionOpen.value = false
+  forgetRemoteMutationKey(claimResource('merge'))
+  if (!skipped.value.length) await navigateTo('/sacola')
+  deciding.value = false
+}
+
+async function keepOnlyTheOffer () {
+  deciding.value = true
+  decisionOpen.value = false
+  forgetRemoteMutationKey(claimResource('merge'))
+  // `replace` esvazia a sacola e remonta a oferta: sobra a oferta sozinha, que é o que
+  // o cliente escolheu. Preço e estoque se resolvem de novo, no mesmo caminho.
+  await claim('replace')
+  deciding.value = false
+}
+
+/**
+ * Intransigente, por decisão do dono: enquanto a escolha não acontece, não há saída —
+ * nem clique fora, nem ESC, nem navegar. Um aviso ignorável deixaria a sacola num
+ * estado que o cliente não escolheu, e ele só descobriria no checkout.
+ */
+onBeforeRouteLeave(() => !decisionOpen.value)
 
 onMounted(() => { claim() })
 
@@ -110,38 +139,11 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
           <p class="mt-4 shop-muted">Separando sua oferta…</p>
         </div>
 
-        <!-- Sacola com itens: perguntamos. Trocar sem perguntar apagaria uma sacola que
-             o cliente montou, e isso não se desfaz. -->
-        <section v-else-if="conflict" class="shop-stack-block text-center">
-          <header>
-            <h1 class="shop-title">Você já tem itens na sacola</h1>
-            <p class="mt-2 shop-muted">
-              Somar mantém o que você já escolheu. Trocar apaga os itens de agora e deixa só os da oferta.
-            </p>
-          </header>
-          <div class="shop-stack-tight">
-            <UiButton size="lg" class="w-full justify-center" @click="claim('append')">
-              Somar à minha sacola
-            </UiButton>
-            <UiField orientation="horizontal" class="text-left">
-              <UiFieldContent>
-                <UiFieldLabel for="offer-replace-ack">Entendo que os itens atuais serão removidos.</UiFieldLabel>
-              </UiFieldContent>
-              <UiCheckbox id="offer-replace-ack" v-model="replaceAcknowledged" />
-            </UiField>
-            <UiButton
-              size="lg"
-              variant="outline"
-              class="w-full justify-center"
-              :disabled="!replaceAcknowledged"
-              @click="claim('replace')"
-            >
-              Trocar: deixar só a oferta
-            </UiButton>
-            <UiButton variant="ghost" size="sm" class="w-full justify-center" to="/sacola">
-              Ver minha sacola
-            </UiButton>
-          </div>
+        <!-- A oferta entrou e a sacola já tinha itens: o fato fica na tela atrás do
+             aviso, para que a página nunca fique em branco. -->
+        <section v-else-if="decisionOpen" class="text-center">
+          <h1 class="shop-title">{{ offerName || 'Oferta' }} na sua sacola</h1>
+          <p v-if="addedNames.length" class="mt-4" role="status">Adicionados: {{ addedNames.join(', ') }}.</p>
         </section>
 
         <section v-else-if="problem" class="text-center">
@@ -188,5 +190,25 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
         </section>
       </div>
     </div>
+
+    <!-- ⚠️ Intransigente: não fecha por clique fora (o AlertDialog não fecha), nem por
+         ESC, não tem Cancelar e não deixa a rota sair. As duas saídas são as duas
+         escolhas. A copy é a do dono, palavra por palavra. -->
+    <UiAlertDialog :open="decisionOpen">
+      <UiAlertDialogContent @escape-key-down.prevent>
+        <UiAlertDialogHeader>
+          <UiAlertDialogTitle>Você já tinha itens na sacola e a oferta foi adicionada.</UiAlertDialogTitle>
+          <UiAlertDialogDescription>Deseja manter tudo na sacola?</UiAlertDialogDescription>
+        </UiAlertDialogHeader>
+        <UiAlertDialogFooter>
+          <UiAlertDialogAction :disabled="deciding" @click="keepEverything">
+            Sim, manter tudo
+          </UiAlertDialogAction>
+          <UiAlertDialogAction variant="outline" :disabled="deciding" @click="keepOnlyTheOffer">
+            Não, só a oferta
+          </UiAlertDialogAction>
+        </UiAlertDialogFooter>
+      </UiAlertDialogContent>
+    </UiAlertDialog>
   </main>
 </template>

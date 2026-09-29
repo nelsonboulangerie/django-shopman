@@ -166,22 +166,36 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
-  it("usa o produto da ocorrência na revisão, sem voltar para a amostra", async () => {
+  it("na revisão lê o anúncio gravado: sem produto de exemplo, sem link inventado", async () => {
+    // Medido em 25/09/2026 (anúncio 31): a revisão mandava `sku` vazio, o servidor
+    // escolhia um produto de exemplo e a prévia mostrava um link que o post não teria.
     const fetch = vi.fn().mockResolvedValue({
-      ...batch({ instagram: "Madeleine saiu do forno" }),
-      sku: "MD",
+      ...batch({ google_business: "Ensaio do Google" }),
+      sku: "",
       sample: false,
-      product_name: "Madeleine",
+      product_name: "",
+      facts: null,
     });
     vi.stubGlobal("$fetch", fetch);
-    const wrapper = mountPreview({ sku: "MD" });
+    const wrapper = mountPreview({
+      announcementId: 31,
+      body: "Ensaio do Google",
+      hashtags: ["padaria"],
+      platforms: ["google_business"],
+      platformLabels: { google_business: "Google" },
+    });
 
     await vi.advanceTimersByTimeAsync(400);
     await flushPromises();
 
-    expect(fetch.mock.calls[0]![1].body.sku).toBe("MD");
+    expect(fetch.mock.calls[0]![1].body).toEqual({
+      announcement: 31,
+      body: "Ensaio do Google",
+      hashtags: ["padaria"],
+      platforms: ["google_business"],
+    });
     expect(wrapper.text()).not.toContain("Exemplo com");
-    expect(wrapper.text()).toContain("Madeleine saiu do forno");
+    expect(wrapper.text()).toContain("Ensaio do Google");
     wrapper.unmount();
   });
 
@@ -303,5 +317,46 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.find(".aspect-\\[9\\/16\\]").exists()).toBe(true);
     expect(wrapper.text()).not.toContain("Texto guardado no comprovante");
     wrapper.unmount();
+  });
+});
+
+describe("AnnouncementPreview — post do Google", () => {
+  function googleBatch(providerFields: Record<string, unknown>) {
+    const value = batch({ google_business: "Pão quente saindo agora" });
+    value.previews.google_business!.artifact.provider_fields = providerFields;
+    value.previews.google_business!.artifact.image_url =
+      "https://img.example.test/home/facade2.jpg";
+    return value;
+  }
+
+  async function renderGoogle(providerFields: Record<string, unknown>) {
+    vi.stubGlobal("$fetch", vi.fn(async () => googleBatch(providerFields)));
+    const wrapper = mountPreview({
+      platforms: ["google_business"],
+      platformLabels: { google_business: "Google Meu Negócio" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("mostra o botão escolhido, e o link só existe atrás dele", async () => {
+    const wrapper = await renderGoogle({
+      publication_format: "standard",
+      call_to_action: "learn_more",
+    });
+    const post = wrapper.get("[data-testid=google-post-preview]");
+
+    expect(post.get("[data-testid=google-post-button]").text()).toBe("Saiba mais");
+    expect(post.text()).not.toContain("/produto/croissant");
+    expect(wrapper.text()).toContain("Google Meu Negócio · Atualização");
+    expect(wrapper.text()).toContain("Não ponha texto dentro da imagem");
+  });
+
+  it("sem botão, avisa que o link não aparece no post", async () => {
+    const wrapper = await renderGoogle({ publication_format: "standard" });
+
+    expect(wrapper.find("[data-testid=google-post-button]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Sem botão, o link não aparece no post.");
   });
 });

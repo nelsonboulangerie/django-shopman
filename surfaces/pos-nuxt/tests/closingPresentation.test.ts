@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  closingCountOrder,
+  countedItems,
   allQuantitiesFilled,
   buildQuantitiesPayload,
   closingBadge,
@@ -78,5 +80,19 @@ describe("presentation/closing — fechamento do dia (contagem cega)", () => {
   it("a dica prefere o nome do item e cai no SKU quando não há nome", () => {
     const semNome = { ...item("PAO"), name: "" };
     expect(firstUnfilledItemName([semNome], {})).toBe("PAO");
+  });
+});
+
+describe("closingCountOrder / countedItems", () => {
+  const item = (sku: string, name: string) => ({ sku, name, qty_available: 1, classification: "keep", qty_expiring: 0, qty_nonconforming: 0 });
+
+  it("ordena pelo nome da etiqueta, não pelo SKU", () => {
+    expect(closingCountOrder([item("A", "Éclair"), item("B", "Baguete"), item("C", "Croissant")]).map((i) => i.name))
+      .toEqual(["Baguete", "Croissant", "Éclair"]);
+  });
+
+  it("conta só o que tem número que vale", () => {
+    const items = [item("A", "a"), item("B", "b"), item("C", "c")];
+    expect(countedItems(items, { A: "0", B: "", C: "1,5" })).toBe(1);
   });
 });

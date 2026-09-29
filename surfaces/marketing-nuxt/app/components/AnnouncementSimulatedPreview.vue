@@ -53,7 +53,7 @@ const SCENE_NOTES: Record<SimulatedScene["kind"], string> = {
     "O Story publica a imagem vertical acima, e ela fica pública por 24 horas. O texto do rascunho acompanha o comprovante desta decisão; sobre a imagem aparece só o que já estiver na arte.",
   feed: "O Feed publica a foto, o texto e as hashtags, nesta ordem, no mural público.",
   google_update:
-    "A Atualização publica a foto e o texto no perfil do estabelecimento, para quem procurar a padaria no Google.",
+    "O post sai no perfil do estabelecimento, para quem procurar a padaria no Google. O Google recorta a foto para caber no cartão: o que estiver perto das bordas pode sumir, então não ponha texto dentro da imagem.",
   whatsapp_message:
     "A mensagem chega assim na conversa de cada pessoa elegível, uma por pessoa. Mensagem entregue fica com quem recebeu.",
 };
@@ -263,17 +263,27 @@ function step(delta: number) {
               </span>
               <div class="min-w-0">
                 <p class="truncate text-sm font-semibold">{{ shopName }}</p>
-                <p class="text-xs text-muted-foreground">Novidade · agora</p>
+                <p class="text-xs text-muted-foreground">
+                  {{ scene.google?.postTypeLabel || "Atualização" }} · agora
+                </p>
               </div>
             </div>
             <img
               v-if="scene.imageUrl"
               :src="scene.imageUrl"
               :alt="`Imagem da atualização do Google`"
-              class="mt-3 aspect-video w-full object-cover"
+              class="mt-3 aspect-[4/3] w-full object-cover"
             />
             <div class="px-4 pt-3 pb-4 text-sm">
-              <p class="whitespace-pre-line">{{ scene.body }}</p>
+              <p v-if="scene.google?.title" class="font-semibold">
+                {{ scene.google.title }}
+              </p>
+              <p v-if="scene.google?.period" class="text-xs text-muted-foreground">
+                {{ scene.google.period }}
+              </p>
+              <p class="whitespace-pre-line" :class="scene.google?.title ? 'mt-1' : ''">
+                {{ scene.body }}
+              </p>
               <p
                 v-if="scene.hashtags.length"
                 class="mt-1 break-words text-xs text-muted-foreground"
@@ -281,11 +291,14 @@ function step(delta: number) {
                 {{ scene.hashtags.join(" ") }}
               </p>
               <!-- Botão desenhado: é o que o Google mostra no cartão, e aqui é retrato,
-                   não controle. Por isso é um span. -->
+                   não controle. Por isso é um span. ⚠️ Só o botão ESCOLHIDO: até
+                   25/09/2026 este retrato mostrava "Saiba mais" em todo post, com ou
+                   sem botão. -->
               <span
+                v-if="scene.google?.buttonLabel"
                 class="mt-3 inline-flex min-h-9 items-center rounded-full border border-border px-4 text-sm font-medium text-primary"
               >
-                Saiba mais
+                {{ scene.google.buttonLabel }}
               </span>
             </div>
           </div>

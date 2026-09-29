@@ -251,13 +251,32 @@ class CommunicationConsentEvent(models.Model):
         """Desvincula PII por exercício do titular sem apagar a prova legal.
 
         Eventos continuam append-only para qualquer mutação de negócio. Esta é
-        a única exceção estreita: remove FK, IP e ator em texto, preservando
-        prova criptográfica, finalidade e datas.
+        uma das duas exceções estreitas (a outra é o prazo do IP, abaixo):
+        remove FK, IP e ator em texto, preservando prova criptográfica,
+        finalidade e datas.
         """
 
         database = customer._state.db or "default"
         queryset = models.QuerySet(model=cls, using=database).filter(customer=customer)
         return queryset.update(customer=None, ip_address=None, actor_ref="")
+
+    @classmethod
+    def redact_ip_collected_before(cls, cutoff, *, using: str = "default") -> int:
+        """Apaga o IP bruto coletado antes de ``cutoff``, e nada mais.
+
+        Segunda exceção estreita ao append-only, com finalidade única: o prazo
+        de retenção do IP (R11 da matriz de retenção). O QuerySet público segue
+        recusando ``update``; esta chamada usa a implementação base de propósito
+        e só escreve ``ip_address=None``. Finalidade, texto, hashes, estado,
+        ator e instante do evento continuam intactos. ``occurred_at`` é o
+        instante em que o IP foi coletado, então é ele que conta o prazo.
+        """
+
+        queryset = models.QuerySet(model=cls, using=using).filter(
+            ip_address__isnull=False,
+            occurred_at__lt=cutoff,
+        )
+        return queryset.update(ip_address=None)
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         return f"{self.channel}/{self.purpose}: {self.event_type} @ {self.occurred_at.isoformat()}"

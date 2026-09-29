@@ -197,6 +197,10 @@ envs:
 - key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
   scope: RUN_AND_BUILD_TIME
   type: SECRET
+# ⚠️ A MAXMIND_LICENSE_KEY (base GeoLite2-City, cidade aproximada na tela "Segurança e
+# dados" da loja) NÃO mora aqui: este app roda imagem pronta do DOCR, construída no GitHub
+# Actions. Env BUILD_TIME neste spec nunca chegaria ao build. A chave é segredo do
+# repositório no GitHub. Ver docs/guides/geolite2-city.md.
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
@@ -301,6 +305,11 @@ envs:
   scope: RUN_TIME
   value: '${cache.REDIS_URL}'
   type: GENERAL
+# Pix no SIMULADOR, de volta em 22/09/2026 (~17:20 UTC): a troca para a Efí de
+# testes (#951) subiu e a Efí recusou com 403 já no `release` (`efi_webhook`),
+# provavelmente na autenticação — com isso todo Pix novo falharia ao gerar o QR.
+# Voltar para a Efí só depois de o `efi_webhook` responder OK (credenciais,
+# certificado e escopos de webhook da aplicação conferidos com o Pablo).
 - key: SHOPMAN_PIX_ADAPTER
   scope: RUN_TIME
   value: 'shopman.shop.adapters.payment_mock'
@@ -350,6 +359,26 @@ envs:
 - key: SHOPMAN_ENVIRONMENT
   scope: RUN_TIME
   value: 'staging'
+  type: GENERAL
+# Piloto completo autorizado pelo owner em 28/09/2026: este ambiente ainda não
+# tem tráfego público capaz de produzir 500 observações antes do teste. O shadow
+# já cumpriu a amostragem e fica desligado para não onerar o menu canônico; o
+# endpoint estrutural e o consumidor Nuxt ficam ligados em todo o /menu.
+- key: SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_KILL_SWITCH
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS
+  scope: RUN_TIME
+  value: '300000'
   type: GENERAL
 - key: SHOPMAN_EXPOSE_DEBUG_OTP
   scope: RUN_TIME
@@ -413,7 +442,21 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# Publicação no Google: o spec versionado nunca pré-arma via pública
+# (test_deploy_templates_never_prearm_publication_canary). No app VIVO ela foi
+# ligada em 25/09/2026 pelo spec live (fila e destinos vazios); reaplicar este
+# arquivo DESLIGA, que é o lado seguro.
+- key: SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
 - key: SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+# Publicação na Página do Facebook: o spec versionado nunca pré-arma via pública;
+# liga só no app vivo, depois do ensaio aprovado pelo dono (WP-MKT-FACEBOOK-E-GOOGLE-FERRAMENTAL).
+- key: SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
@@ -442,6 +485,13 @@ envs:
 - key: IFOOD_MERCHANT_ID
   scope: RUN_TIME
   value: 'f36a17d0-e10b-4fdd-a16d-c8ffd866e59b'
+  type: GENERAL
+# Shopman é a fonte única de "loja aberta" no iFood (PR #945): horário,
+# calendário e pausa do gestor gravados no módulo Merchant; conferência de
+# status no maintenance-worker. Ligado pelo Pablo em 22/09/2026.
+- key: IFOOD_MERCHANT_SYNC
+  scope: RUN_TIME
+  value: '1'
   type: GENERAL
 - key: IFOOD_WEBHOOK_TOKEN
   scope: RUN_TIME
@@ -544,7 +594,36 @@ envs:
   scope: RUN_TIME
   value: '4605528796186498,4685528796186498,1962036908'
   type: GENERAL
+# Prazo da observação (captura passiva): 30 dias, o teto aceito, durante o
+# aprendizado (decisão do dono, 23/09/2026); depois encurta. O valor novo vale
+# também para o já guardado: cleanup_concierge_observations realinha o prazo.
+- key: CONCIERGE_OBSERVATION_RETENTION_DAYS
+  scope: RUN_TIME
+  value: '30'
+  type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+# Google Business Profile (posts do Marketing). API aprovada em 25/09/2026 para o
+# projeto 528240639893 (nelson-shopman-marketing, público Interno). Os dois IDs vêm de
+# accounts.list / locations.list; o cliente OAuth é o 'Nelson Shopman Marketing Server'.
+# A publicação liga pela SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED (só no vivo).
+- key: GOOGLE_BUSINESS_OAUTH_CLIENT_ID
+  scope: RUN_TIME
+  value: '528240639893-c6kvbdkda46n80k9s4rdb3kecfeucas2.apps.googleusercontent.com'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_ACCOUNT_ID
+  scope: RUN_TIME
+  value: '115642419325714529817'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_LOCATION_ID
+  scope: RUN_TIME
+  value: '16932843135625825567'
+  type: GENERAL
+- key: GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET
+  scope: RUN_TIME
+  type: SECRET
+- key: GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN
   scope: RUN_TIME
   type: SECRET
 - key: SHOPMAN_PREPROD_URL
@@ -576,6 +655,14 @@ envs:
 - key: SENTRY_DSN
   scope: RUN_TIME
   type: SECRET
+# Quem recebe os alertas críticos por e-mail (PR #943). É o grupo
+# ti@boulangerie.com.br do Google Workspace (24/09/2026): aceita remetente
+# externo e entrega a quem for membro — trocar quem recebe é mexer no grupo,
+# não no app.
+- key: SHOPMAN_ALERT_EMAIL
+  scope: RUN_TIME
+  value: 'ti@boulangerie.com.br'
+  type: GENERAL
 
 # ── E-mail (SMTP) ─────────────────────────────────────────────────────
 # Sem estas, o EMAIL_BACKEND cai no default `console` do settings.py: o
@@ -633,7 +720,8 @@ envs:
   type: GENERAL
 
 # ── Fiscal: NF-e de entrada (Compras) ─────────────────────────────────
-# ⚠️ O certificado e-CNPJ A1 vence em 10/09/2026.
+# O certificado e-CNPJ A1 foi RENOVADO (o anterior vencia em 10/09/2026); a
+# validade nova está no próprio certificado.
 - key: PURCHASE_NFE_ENVIRONMENT
   scope: RUN_TIME
   value: 'producao'
@@ -761,6 +849,12 @@ services:
   - key: NUXT_APP_BASE_URL
     scope: RUN_TIME
     value: '/'
+    type: GENERAL
+  # Runtime público do piloto: o /menu nasce do snapshot estrutural e converge
+  # preço/estoque/sessão pelo menu canônico. Desligar restaura o SSR monolítico.
+  - key: NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED
+    scope: RUN_TIME
+    value: 'true'
     type: GENERAL
   # MESMO valor do SHOPMAN_BFF_PROXY_SECRET do `web`: prova ao Django que o
   # pedido veio deste BFF, para o IP gravado ser o do cliente e não o do Nitro.
@@ -1087,8 +1181,17 @@ jobs:
   instance_size_slug: apps-s-1vcpu-0.5gb
   kind: PRE_DEPLOY
   name: release
-  run_command: sh -c 'python manage.py check --deploy && python manage.py migrate
-    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel'
+  # `efi_webhook --soft`: confere o webhook do Pix na Efí e recadastra se divergir
+  # da URL canônica. Falha APARECE no log do release (e no Sentry), mas não
+  # derruba o deploy: webhook fora não justifica segurar a versão inteira.
+  # `migration_safety` roda ANTES do `migrate`: pós-`go-live-v1` ele RECUSA o
+  # deploy quando há migração destrutiva pendente sem ponto de restauração
+  # declarado em SHOPMAN_MIGRATION_BACKUP_REF. Pré-tag ele só relata o plano no
+  # log — o alpha ganha a visibilidade sem ganhar o bloqueio.
+  # Procedimento: docs/runbooks/backup-e-restore.md.
+  run_command: sh -c 'python manage.py check --deploy && python manage.py migration_safety
+    && python manage.py migrate --noinput && python manage.py setup_groups && python
+    manage.py bootstrap_whatsapp_channel && python manage.py efi_webhook --soft'
   image:
     registry_type: DOCR
     repository: shopman

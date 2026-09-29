@@ -1,8 +1,12 @@
 import { computed, onBeforeUnmount, onMounted, readonly, ref } from "vue";
 
 import { isInstalledDisplay } from "../utils/displayMode";
+import { installPlan, readInstallEnvironment, type InstallEnvironment, type InstallPlan } from "../utils/installGuide";
 
+/** Quanto tempo o "Agora não" segura o convite. Uma semana é o intervalo de um turno. */
 const DEFAULT_DISMISS_DAYS = 7;
+/** "Já instalei" é resposta definitiva; o convite não volta a interromper por um ano. */
+const DONE_DISMISS_DAYS = 365;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -13,6 +17,8 @@ interface PwaInstallOptions {
   app?: string;
   dismissDays?: number;
   now?: () => number;
+  /** Ambiente cravado — existe para o teste cobrar um navegador sem ter um navegador. */
+  environment?: InstallEnvironment;
 }
 
 export function usePwaInstall(options: PwaInstallOptions = {}) {
@@ -21,16 +27,26 @@ export function usePwaInstall(options: PwaInstallOptions = {}) {
   const storageKey = `shopman-${options.app || "operator"}-pwa-install-dismissed-until`;
   const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null);
   const isStandalone = ref(false);
-  const isIos = ref(false);
   const dismissedUntil = ref<number | null>(null);
+  const environment = ref<InstallEnvironment | null>(options.environment || null);
 
   const isDismissed = computed(() => (dismissedUntil.value || 0) > now());
-  const canInstall = computed(() => Boolean(deferredPrompt.value) && !isStandalone.value);
+
+  /**
+   * O caminho real deste navegador. Enquanto o ambiente não foi lido (servidor, antes
+   * do mount) o plano é `none`: o convite não pisca com uma instrução provisória.
+   */
+  const plan = computed<InstallPlan>(() => {
+    const env = environment.value;
+    if (!env) return { kind: "none", invite: false, steps: [], os: "unknown", browser: "unknown" };
+    return installPlan({ ...env, canPrompt: Boolean(deferredPrompt.value) });
+  });
+
+  /** O convite sobe sozinho? Só com caminho acionável, fora do app já instalado. */
+  const canInvite = computed(() => plan.value.invite && !isStandalone.value && !isDismissed.value);
 
   function readEnvironment() {
-    const ua = navigator.userAgent;
-    isIos.value = /iPad|iPhone|iPod/.test(ua)
-      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    environment.value = options.environment || readInstallEnvironment(Boolean(deferredPrompt.value));
     isStandalone.value = isInstalledDisplay();
     try {
       const stored = Number.parseInt(localStorage.getItem(storageKey) || "", 10);
@@ -40,14 +56,19 @@ export function usePwaInstall(options: PwaInstallOptions = {}) {
     }
   }
 
-  function dismiss() {
-    const until = now() + dismissDays * 24 * 60 * 60 * 1_000;
+  function dismiss(days: number = dismissDays) {
+    const until = now() + Math.max(1, days) * 24 * 60 * 60 * 1_000;
     dismissedUntil.value = until;
     try {
       localStorage.setItem(storageKey, String(until));
     } catch {
       // A escolha permanece válida em memória quando a política bloqueia storage.
     }
+  }
+
+  /** "Já instalei" — quem seguiu os passos não é interrompido de novo na semana seguinte. */
+  function dismissAsDone() {
+    dismiss(DONE_DISMISS_DAYS);
   }
 
   function onBeforeInstallPrompt(event: Event) {
@@ -87,12 +108,13 @@ export function usePwaInstall(options: PwaInstallOptions = {}) {
   });
 
   return {
-    canInstall,
+    plan,
+    canInvite,
     install,
     isStandalone: readonly(isStandalone),
-    isIos: readonly(isIos),
     dismissedUntil: readonly(dismissedUntil),
     isDismissed,
     dismiss,
+    dismissAsDone,
   };
 }

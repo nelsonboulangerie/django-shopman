@@ -40,6 +40,60 @@ export interface Material {
   // O saldo atravessou uma ponte aproximada e carrega o "≈" ate a tela
   // (ADR-024, R3). Vem do carimbo `converted_via.approximate` no Move.
   stockIsApproximate?: boolean;
+  /** Selos do SKU, derivados no servidor — nunca guardados à parte. */
+  roles?: SkuRoles;
+  /** Preço de venda do mesmo SKU; `null` quando a casa não o vende. */
+  salePriceQ?: number | null;
+  /** O preço que "Permitir revenda" propõe; ausente sem custo conhecido. */
+  saleSuggestion?: SaleSuggestion | null;
+  /** "Quando aberto, vira": em que insumo a embalagem se abre na produção. */
+  opensInto?: OpensInto | null;
+  /** Conteúdo de uma embalagem em kg, pelo peso líquido declarado ("0.2"); vazio sem declaração. */
+  netContentKg?: string;
+}
+
+export interface OpensInto {
+  sku: string;
+  name: string;
+  unit: string;
+  quantity: string;
+  shelfLifeDays: number | null;
+}
+
+export interface PurchaseOpeningPayload {
+  enabled: boolean;
+  openedSku?: string;
+  createOpened?: boolean;
+  openedUnit?: string;
+  quantity?: string;
+  shelfLifeDays?: string;
+}
+
+/** custo × (1 + markup), para cima até o real inteiro — ver `shop/resale_markup.py`. */
+export interface SaleSuggestion {
+  priceQ: number;
+  costQ: number;
+  markupPct: number;
+  /** Categoria cujo markup valeu; vazio = padrão da loja. */
+  markupCategory: string;
+}
+
+/**
+ * O que o SKU é: Comprável · Vendável · Produzido · Usado em receita.
+ *
+ * Um item comprado pode ser insumo E revenda — os dois cadastros têm o mesmo
+ * SKU e o mesmo estoque. Vender é decisão explícita ("Permitir revenda").
+ */
+export interface SkuRoles {
+  purchasable: boolean;
+  sellable: boolean;
+  produced: boolean;
+  usedInRecipe: boolean;
+}
+
+export interface PurchaseSalePayload {
+  enabled: boolean;
+  priceInput?: string;
 }
 
 export interface SupplierContact {
@@ -198,6 +252,8 @@ export interface ReceiptLine {
   materialSku: string;
   suggestedMaterialSku?: string;
   suggestionScore?: number;
+  // "gtin": o código de barras da nota casou com o item; "name": parecença do nome.
+  suggestionSource?: "gtin" | "name" | "";
   conversionId: string | null;
   requiresConversion?: boolean;
   conversionSuggestion?: ReceiptConversionSuggestion | null;
@@ -218,14 +274,40 @@ export interface ReceiptLine {
   invoiceTaxUnit?: string;
   invoiceTotal?: string;
   invoiceProductCode?: string;
+  // GTIN da unidade (o que vai para a prateleira); o da caixa, quando a NF-e
+  // traz os dois, em invoicePackageEan. Com NCM e CEST, alimentam a sugestao
+  // de catalogo do produto de revenda no recebimento.
   invoiceEan?: string;
+  invoicePackageEan?: string;
+  invoiceNcm?: string;
+  invoiceCest?: string;
+  // Grupo ICMS do item na nota (CST ou CSOSN) e o valor de ST em centavos.
+  // Voltam no confirmar: o servidor reconfere a nota contra o cadastro fiscal.
+  invoiceIcmsCst?: string;
+  invoiceIcmsCsosn?: string;
+  invoiceStValueQ?: number;
+  // A nota discorda do cadastro fiscal do produto (NCM, CEST, ICMS-ST). Aviso,
+  // nunca correcao: o cadastro so muda quando alguem aceita no Admin.
+  fiscalDivergences?: ReceiptFiscalDivergence[];
   checked: boolean;
+}
+
+export interface ReceiptFiscalDivergence {
+  // O produto contra o qual a nota foi conferida. Se a linha passa a apontar
+  // para outro item, a divergencia deixa de ser dele e some da tela.
+  sku: string;
+  field: "ncm" | "cest" | "st";
+  catalogValue: string;
+  invoiceValue: string;
+  message: string;
 }
 
 export interface ReceiptLineSuggestion {
   sku: string;
   name: string;
   scorePercent: number;
+  /** O código de barras da nota é o mesmo do item — não é palpite pelo nome. */
+  byBarcode: boolean;
 }
 
 export interface ReceiptLinePreview {
@@ -261,6 +343,8 @@ export interface ReceiptLinePreview {
   // "usar o que a NF diz" mesmo sem o fator calculado aqui.
   invoiceAxes: string;
   conversionDiverges: boolean;
+  // O que a nota diz de diferente do cadastro fiscal do item desta linha.
+  fiscalDivergences: ReceiptFiscalDivergence[];
   warnings: ReceiptWarning[];
 }
 
@@ -270,6 +354,7 @@ export interface ReceiptWarning {
     | "confirm-suggestion"
     | "confirm-conversion"
     | "diverging-conversion"
+    | "fiscal-divergence"
     | "missing-conversion"
     | "missing-cost"
     | "missing-expiry"

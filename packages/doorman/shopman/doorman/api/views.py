@@ -19,7 +19,9 @@ from .serializers import (
     VerifyCodeSerializer,
 )
 
-_RATE_LIMIT_CODES = frozenset({ErrorCode.RATE_LIMIT, ErrorCode.COOLDOWN, ErrorCode.IP_RATE_LIMIT})
+_RATE_LIMIT_CODES = frozenset(
+    {ErrorCode.RATE_LIMIT, ErrorCode.COOLDOWN, ErrorCode.IP_RATE_LIMIT, ErrorCode.TOO_MANY_FAILURES}
+)
 
 
 class RequestCodeView(APIView):

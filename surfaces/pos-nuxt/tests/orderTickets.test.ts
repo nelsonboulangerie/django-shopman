@@ -1,8 +1,8 @@
-// A tela das fichas de pedido: o intervalo, a contagem e o AVISO antes do gesto.
+// A tela da Via Pedido – painel: o intervalo, a contagem e o AVISO antes do gesto.
 //
 // O que esta suíte prende é a promessa que o dono fez à parede da padaria:
 // "todos os pedidos da semana" tem de sair como uma semana, e ninguém pode
-// descobrir que pediu 200 fichas depois de a bobina começar a andar.
+// descobrir que pediu 200 vias depois de a bobina começar a andar.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -41,7 +41,7 @@ function row(partial: Partial<TicketRow> = {}): TicketRow {
 
 describe("o intervalo do lote", () => {
   it("a semana começa HOJE e tem sete dias", () => {
-    // ⚠️ Uma semana que começa na segunda imprimiria ficha de pedido já
+    // ⚠️ Uma semana que começa na segunda imprimiria via de pedido já
     // entregue. O painel olha para frente.
     expect(resolveRange("week", HOJE)).toEqual({ date_from: "2026-09-04", date_to: "2026-09-10" });
   });
@@ -76,7 +76,7 @@ describe("o intervalo do lote", () => {
 
 // ── ⚠️ O aviso antes do gesto ─────────────────────────────────────────────
 
-describe("quantas fichas vão sair", () => {
+describe("quantas vias vão sair", () => {
   it("intervalo vazio não é erro, é 'não há o que imprimir'", () => {
     expect(batchNotice(0, 200)).toEqual({
       tone: "neutral",
@@ -91,7 +91,7 @@ describe("quantas fichas vão sair", () => {
   it("a partir do limiar a tela avisa quanto papel vai andar", () => {
     const notice = batchNotice(BATCH_WARN_AT, 200);
     expect(notice?.tone).toBe("warning");
-    expect(notice?.message).toContain(`${BATCH_WARN_AT} fichas`);
+    expect(notice?.message).toContain(`${BATCH_WARN_AT} vias`);
   });
 
   it("passar do teto do servidor é RECUSA, não conselho", () => {
@@ -108,14 +108,14 @@ describe("quantas fichas vão sair", () => {
   });
 
   it("o número entra no CTA porque é o que ninguém quer errar", () => {
-    expect(printCtaLabel(1)).toBe("Imprimir 1 ficha");
-    expect(printCtaLabel(34)).toBe("Imprimir 34 fichas");
+    expect(printCtaLabel(1)).toBe("Imprimir 1 via");
+    expect(printCtaLabel(34)).toBe("Imprimir 34 vias");
   });
 
   it("a contagem fala português no singular e no zero", () => {
-    expect(ticketCountLabel(0)).toBe("nenhuma ficha");
-    expect(ticketCountLabel(1)).toBe("1 ficha");
-    expect(ticketCountLabel(2)).toBe("2 fichas");
+    expect(ticketCountLabel(0)).toBe("nenhuma via");
+    expect(ticketCountLabel(1)).toBe("1 via");
+    expect(ticketCountLabel(2)).toBe("2 vias");
   });
 });
 

@@ -92,10 +92,10 @@ class TestInterpretLoginPhone:
         assert result.intent.phone == "+5543999998888"
 
     def test_ios_autofill_zero_before_ddd_returns_intent(self):
-        req = _post({"step": "phone", "phone": "(043) 98404-9009"})
+        req = _post({"step": "phone", "phone": "(043) 98123-4567"})
         result = interpret_login(req)
         assert result.intent is not None
-        assert result.intent.phone == "+5543984049009"
+        assert result.intent.phone == "+5543981234567"
 
     def test_international_phone_returns_intent(self):
         req = _post({"step": "phone", "phone": "+12025551234", "phone_region": "INTL"})
@@ -169,10 +169,10 @@ class TestInterpretRequestCode:
         assert result.intent.phone.startswith("+")
 
     def test_ios_autofill_zero_before_ddd(self):
-        req = _post({"phone": "(043) 98404-9009"})
+        req = _post({"phone": "(043) 98123-4567"})
         result = interpret_request_code(req)
         assert result.intent is not None
-        assert result.intent.phone == "+5543984049009"
+        assert result.intent.phone == "+5543981234567"
 
     def test_international_phone(self):
         req = _post({"phone": "+351912345678", "phone_region": "INTL"})

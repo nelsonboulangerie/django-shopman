@@ -232,7 +232,7 @@ def test_o_painel_publico_nao_publica_digito_de_cliente(client, db):
 
     É a diferença entre provar a função e provar a TELA.
     """
-    KDSInstance.objects.create(ref="exp-pub", name="Expedição", type="expedition")
+    KDSInstance.objects.create(ref="exp-pub", name="Saída", type="expedition")
     # Comanda de PDV já enviada à cozinha e ainda não paga — é este caminho
     # (`state="open"` + `fired_lines`) que a projection publica pelo código público.
     Session.objects.create(

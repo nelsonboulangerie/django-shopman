@@ -23,6 +23,7 @@ from unfold.widgets import (
 )
 
 from shopman.backstage.projections.operator_badge import mask_badge
+from shopman.backstage.services.order_danfe import DESTINATION_FLAG as DANFE_DESTINATION_FLAG
 from shopman.backstage.services.pos_hardware import (
     ADAPTER_AGENT,
     ADAPTER_MANUAL,
@@ -197,6 +198,17 @@ class TerminalForm(forms.ModelForm):
             "desligar o painel sem ir até ele."
         ),
     )
+    prints_delivery_danfe = forms.BooleanField(
+        label="Imprime a DANFE das entregas",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Quando a nota de uma entrega é autorizada, a DANFE sai sozinha nesta impressora, "
+            "esteja o Gestor de pedidos aberto onde estiver. Precisa da credencial do agente de "
+            "impressão deste terminal. Só uma impressora fica marcada: marcar esta desmarca a "
+            "outra. Sem nenhuma marcada, a DANFE sai no PDV principal."
+        ),
+    )
     print_target_ref = forms.ChoiceField(
         label="Para onde vão as etiquetas desta estação",
         required=False,
@@ -246,6 +258,7 @@ class TerminalForm(forms.ModelForm):
         hardware = metadata.get("hardware") if isinstance(metadata.get("hardware"), dict) else {}
         printer = hardware.get("printer") if isinstance(hardware.get("printer"), dict) else {}
         self.fields["printer_enabled"].initial = bool(printer and printer.get("enabled") is not False)
+        self.fields["prints_delivery_danfe"].initial = self._station_config().get(DANFE_DESTINATION_FLAG) is True
         self.fields["printer_role"].initial = str(printer.get("role") or "preparation")
         self.fields["printer_roll_width_mm"].initial = str(printer.get("roll_width_mm") or "80")
         self.fields["printer_label_width_mm"].initial = int(printer.get("label_width_mm") or 60)
@@ -439,6 +452,19 @@ class TerminalForm(forms.ModelForm):
             station["print_target_ref"] = target
         else:
             station.pop("print_target_ref", None)
+        danfe_here = bool(self.cleaned_data.get("prints_delivery_danfe"))
+        if danfe_here:
+            station[DANFE_DESTINATION_FLAG] = True
+            # Uma impressora só para a DANFE: a marca sai das outras.
+            for other in Terminal.objects.exclude(pk=instance.pk):
+                other_meta = other.metadata if isinstance(other.metadata, dict) else {}
+                other_station = other_meta.get("station")
+                if isinstance(other_station, dict) and other_station.pop(DANFE_DESTINATION_FLAG, None) is not None:
+                    other_meta["station"] = other_station
+                    other.metadata = other_meta
+                    other.save(update_fields=["metadata"])
+        else:
+            station.pop(DANFE_DESTINATION_FLAG, None)
         modo = (self.cleaned_data.get("station_mode") or ATTENDED).strip()
         station["mode"] = modo
         if modo == AUTONOMOUS:
@@ -485,6 +511,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                     "counter_agent_url",
                     "drawer_rotate_token",
                     "drawer_install_display",
+                    "prints_delivery_danfe",
                 ),
                 "description": "Ponte privada deste computador com impressora e gaveta. Produção, PDV e os demais apps autorizados reutilizam o mesmo agente.",
             },

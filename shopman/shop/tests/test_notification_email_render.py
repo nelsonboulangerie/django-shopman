@@ -27,7 +27,9 @@ def test_render_template_fills_known_keys_and_keeps_missing():
     assert render_template("Oi {order_ref}, faltou {x}", {"order_ref": "ORD-9"}) == "Oi ORD-9, faltou {x}"
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}}
+)
 def test_malformed_admin_subject_still_sends_email():
     from django.core import mail
 
@@ -50,7 +52,9 @@ def test_malformed_admin_subject_still_sends_email():
     assert "ORD-9" in mail.outbox[0].body
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    MAILERS={"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}}
+)
 def test_stock_alert_uses_human_name_and_sku():
     from django.core import mail
 

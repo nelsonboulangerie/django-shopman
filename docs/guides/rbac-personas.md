@@ -19,11 +19,11 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | Permission | Modelo | Concede acesso a | Surface |
 |------------|--------|-----------------|---------|
 | `shop.manage_orders` | `Shop` | Confirmar, rejeitar, avançar, cancelar pedidos; adicionar notas internas | Gestor (orders-nuxt, `gestor.`) via `api/v1/backstage/orders/*` |
-| `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações de expedição | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
+| `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações da Saída | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
 | `cashman.operate_pos` | `cashman.Shift` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
 | `cashman.audit_shift` | `cashman.Shift` | **Ver a apuração**: esperado, contado e diferença dos turnos; faturamento do dia; conferir comprovante | Admin (Turnos de caixa) **e** PDV `/session/report` |
 | `cashman.adjust_shift` | `cashman.Shift` | Segunda assinatura das exceções do caixa: sangria, troco atendido, correção da contagem, desconto acima do teto (PIN de gerente) | PDV (diálogo de gerente) |
-| `cashman.manage_operators` | `cashman.Shift` | Resetar PIN, provisionar operador, crachá | Admin (Operadores) |
+| `cashman.manage_operators` | `cashman.Shift` | Resetar PIN, provisionar operador, crachá, "Criar ou trocar meu PIN" | Admin (Operadores) |
 | `shop.manage_production` | `Shop` | Criar WorkOrders, planejar e avançar produção | Produção (production-nuxt, `prod.`) via `api/v1/backstage/production/*` |
 | `backstage.perform_closing` | `DayClosing` | Executar fechamento do dia, registrar perdas, mover sobras p/ "Ontem" | PDV `/session/closing` (antesala) via `api/v1/backstage/closing/` |
 | `shop.manage_catalog` | `Shop` | Criar/editar Product, Listing, Collection | Admin |
@@ -161,10 +161,46 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 
 | Usuário | Grupo | Entra com |
 |---|---|---|
-| `admin` | **Dono** (+ superusuário) | senha `admin`, PIN `1234`, crachá emitido |
+| `admin` | **Dono** (+ superusuário) | senha `admin`; o comando não dá PIN nem crachá a ele (ver abaixo) |
 | `joyce` | **Gerente** | só PIN `1234` |
 | `fran` | **Caixa** (loja) | PIN `1234`, crachá emitido |
 | `diofer` | **Cozinha** (produção) | PIN `1234`, crachá emitido |
+
+**Superusuário e PIN.** O superusuário destrava os apps de operador por PIN e
+por crachá como qualquer operador, aparece na tela de bloqueio e assina "Quem
+autoriza?" — desde que tenha PIN cadastrado. O destrave é um `login()` real como
+a pessoa (a sessão cicla, nada do anterior atravessa), e o PIN é individual, em
+HMAC, com limite de tentativas e bloqueio. Três coisas continuam fechadas:
+
+- `setup_operators` **não** dá o PIN de dev (`1234`) nem crachá ao superusuário, e
+  também não apaga o que ele já tem: o dono cadastra o próprio PIN e ele sobrevive
+  a toda rodada do comando;
+- `reset_operator_pin` recusa alvo superusuário (`superuser_target`): gerente não
+  reseta o PIN do dono;
+- terminal autônomo nunca age como superusuário
+  (`station_trust.autonomous_operator_for` / `eligible_station_operators`).
+
+**Como o dono cadastra o próprio PIN.** O app no ar não tem console, então
+`set_operator_pin` não serve; o Admin não cria credencial à mão e o "Resetar PIN"
+recusa superusuário. A porta é uma ação do topo da lista, que age só sobre quem
+clicou:
+
+1. Admin → **Credenciais PIN** → botão **Criar ou trocar meu PIN** (no topo da
+   lista, sem marcar linha nenhuma) → confirmar em **Gerar PIN temporário**.
+2. Anotar o PIN temporário que aparece na mensagem — ele é mostrado **uma vez só**.
+3. Destravar o PDV com esse PIN.
+4. A tela de bloqueio pede a troca (`must_change`): escolher o PIN definitivo.
+
+A mesma ação serve a qualquer pessoa que vê essa tela (`cashman.manage_operators`)
+e fica no histórico do Admin. Serve também para trocar um PIN esquecido: o
+anterior deixa de valer na hora. (`issue_own_temp_pin` em
+`shopman/backstage/services/operator.py`.)
+
+**O `1234` do seed saiu do superusuário.** O seed antigo dava `1234` a todo
+mundo, o dono incluído, e o #1022 fez esse PIN voltar a abrir o PDV como dono. A
+migração `backstage.0073_superusuario_perde_pin_do_seed` apaga PIN e crachá de
+toda conta superusuária — nenhum deles pode ter sido escolhido pelo dono, porque
+até o #1022 não havia como. Depois do deploy, o dono segue os passos acima.
 
 Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
 catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.

@@ -222,8 +222,8 @@ def test_stock_arrived_template_also_renders_for_stock_alert_subscribers():
     body = render_message("stock_arrived", context, MESSAGE_TEMPLATES)
 
     assert body == (
-        "Boa notícia! Pão rústico chegou. Garanta o seu: "
-        "https://shop.example/produto/PAO-001"
+        "Oi! Você pediu pra avisar quando *Pão rústico* estivesse disponível e agora está! 💛✨\n"
+        "Garanta o seu: https://shop.example/produto/PAO-001"
     )
 
 

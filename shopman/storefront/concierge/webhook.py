@@ -21,6 +21,15 @@ RATE_LIMIT_GROUP = "concierge_inbound"
 RATE_LIMIT_RATE = "1200/m"
 MAX_BODY_BYTES = 32768
 
+#: Motivos de "não atendo" que são ESCOLHA de quem opera, não defeito: a chave
+#: desligada (``SHOPMAN_CONCIERGE_ENABLED=false``) e o modo observação
+#: (``CONCIERGE_OPERATION_MODE=observe``, docs/guides/concierge-supervised-improvement.md),
+#: em que uma automação antiga que ainda chama o atendimento é recusada de
+#: propósito. Cada mensagem de cliente passa por aqui: um ERROR por mensagem
+#: virava um evento no Sentry por mensagem (SHOPMAN-E). Os outros motivos
+#: (contrato, modo desconhecido, credencial do modelo vazia) seguem gritando.
+DELIBERATE_STANDBY = frozenset({"switch_off", "observation_only"})
+
 
 def _limited(request: HttpRequest, *, group: str, identity: str, rate: str) -> bool:
     digest = hashlib.sha256(identity.encode()).hexdigest()
@@ -104,7 +113,9 @@ class ConciergeEventView(View):
 
         reason = service.disabled_reason()
         if reason:
-            if reason != "switch_off":
+            if reason in DELIBERATE_STANDBY:
+                logger.info("concierge.webhook: atendimento em espera (%s)", reason)
+            else:
                 logger.error("concierge.webhook: concierge ligado mas inoperante (%s)", reason)
             return JsonResponse({"status": "disabled", "reason": reason}, status=200)
         try:

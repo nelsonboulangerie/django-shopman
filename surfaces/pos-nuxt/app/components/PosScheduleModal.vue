@@ -186,7 +186,7 @@ function pickDate(iso: string) {
 
       <UiDialogFooter class="gap-2 sm:justify-between">
         <UiButton v-if="fulfillmentType !== 'delivery'" variant="outline" @click="backToToday">{{ salesMode === "order" ? "Hoje" : "Sem agendamento · levar agora" }}</UiButton>
-        <UiButton class="sm:ml-auto" :disabled="salesMode === 'order' && !deliveryDate" @click="isOpen = false">Concluir</UiButton>
+        <UiButton class="sm:ml-auto" :disabled="salesMode === 'order' && !deliveryDate" @click="isOpen = false">Confirmar dia e horário</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

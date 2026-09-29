@@ -330,7 +330,16 @@ def revoke(
     sub.revoked_at = now
     sub.revoke_reason = (reason or "customer_request")[:100]
     sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
-    sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    _erase_contact_trace(sub)
+    sub.save(
+        update_fields=[
+            "revoked_at",
+            "revoke_reason",
+            "revocation_evidence_hash",
+            "contact_phone",
+            "target_key",
+        ]
+    )
     _suppress_pending_deliveries(sub, reason="subscription_cancelled")
     return True
 
@@ -517,7 +526,16 @@ def revoke_by_capability(capability: str):
     sub.revoked_at = now
     sub.revoke_reason = "customer_capability"
     sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
-    sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    _erase_contact_trace(sub)
+    sub.save(
+        update_fields=[
+            "revoked_at",
+            "revoke_reason",
+            "revocation_evidence_hash",
+            "contact_phone",
+            "target_key",
+        ]
+    )
     suppressed = _suppress_pending_deliveries(sub, reason="subscription_cancelled")
     return sub, suppressed
 
@@ -1029,7 +1047,12 @@ def _deliver(
                 "cta": "Garanta o seu:",
                 "action_url": storefront_links.product_url(sub.sku),
                 "management_url": alert_management_url,
-                "management_note": f"\nGerenciar este aviso: {alert_management_url}",
+                # "Gerenciar" sozinho não diz que dá para sair, e sair é o que a
+                # pessoa sem conta precisa: este link é o único lugar onde ela
+                # apaga o número que a loja guardou.
+                "management_note": (
+                    f"\nPara cancelar este aviso e apagar o seu número: {alert_management_url}"
+                ),
             },
             backend=backend,
         )
@@ -1111,3 +1134,33 @@ def _lock_channel_if_configured(channel_ref: str) -> bool:
 def _revocation_hash(subscription_ref, occurred_at, reason: str) -> str:
     value = f"{subscription_ref}:{occurred_at.isoformat()}:{reason}"
     return hmac.new(settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256).hexdigest()
+
+
+def _erased_target_key(subscription_ref) -> str:
+    """Pseudônimo estável da inscrição, sem o telefone que o gerou.
+
+    `target_key` é HMAC do telefone: deixá-lo de pé depois do cancelamento
+    manteria o fio que liga entre si todas as inscrições da mesma pessoa. O
+    gêmeo desta rotação vive em `account_privacy._settle_storefront_records`.
+    """
+    return hmac.new(
+        settings.SECRET_KEY.encode(),
+        f"stock-alert-target-erased:{subscription_ref}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _erase_contact_trace(sub) -> None:
+    """Apaga o contato da inscrição cancelada; só a prova técnica fica.
+
+    Quem se inscreveu SEM conta não tem outro lugar onde apagar o número: a
+    inscrição é o único registro que existe dele, e o link da própria mensagem
+    é o único caminho de volta. Cancelar precisa APAGAR, não só carimbar
+    `revoked_at` — senão a saída existe no papel e o telefone fica guardado
+    até os noventa dias da retenção (R07) passarem.
+
+    O que sobra é deliberado: `revocation_evidence_hash`, `disclosure_hash` e a
+    versão do texto provam QUE houve opt-in e cancelamento, sem dizer de quem.
+    """
+    sub.contact_phone = ""
+    sub.target_key = _erased_target_key(sub.ref)

@@ -94,7 +94,7 @@ def test_multichannel_variants_match_the_golden_and_inherit_only_absent_fields()
                 "hashtags": ["{{tag}}", "instacroissant"],
                 "publication_format": "feed",
             },
-            "google_business": {"publication_format": "standard"},
+            "google_business": {"publication_format": "standard", "call_to_action": "call"},
             "whatsapp": {
                 "body": "{{product_name}} quentinho. Peça agora: {{link}}",
                 "template_name": "fornada_v3",

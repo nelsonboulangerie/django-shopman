@@ -188,7 +188,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     assert response.status_code == 200
     card = _card(client, "DLV-M1")
     assert (card["equipment_out"], card["equipment_back_pending"], card["equipment_label"]) == (
-        ["card_machine"], True, "Entregador levou maquininha",
+        ["card_machine"], True, "Saiu com a maquininha",
     )
     board = client.get(reverse("api-backstage-orders")).json()["queue"]
     assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [(str(device.ref), "DLV-M1")]
@@ -203,7 +203,8 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     )
     assert response.status_code == 200
     card = _card(client, "DLV-M1")
-    assert (card["equipment_back_pending"], card["equipment_label"]) == (False, "Maquininha voltou")
+    # Voltou: o card não fala mais da maquininha (zero não é informação).
+    assert (card["equipment_back_pending"], card["equipment_label"]) == (False, "")
     assert client.get(reverse("api-backstage-orders")).json()["queue"]["equipment_out"] == []
 
     # Pedido em cartão (sem acerto em dinheiro): o botão "voltou" fecha a custódia.

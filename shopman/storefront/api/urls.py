@@ -49,6 +49,7 @@ from .availability import (
     StockAlertSubscribeView,
 )
 from .catalog import CollectionListView, ProductDetailView, ProductListView
+from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
 from .geocode import ReverseGeocodeView
@@ -61,11 +62,15 @@ from .surface import (
     OfferClaimView,
     OrderReorderView,
     StorefrontCartView,
+    StorefrontCatalogView,
     StorefrontCheckoutView,
     StorefrontHomeView,
+    StorefrontLegalView,
     StorefrontMenuView,
     StorefrontProductView,
+    StorefrontShellView,
     StorefrontSiteView,
+    StorefrontSkuRedirectsView,
 )
 from .telemetry import ClientErrorView
 from .tracking import (
@@ -77,15 +82,29 @@ from .tracking import (
     OrderWaitlistConfirmView,
     order_events_view,
 )
-from .whatsapp_verify import WhatsAppVerifyStartView
+from .whatsapp_verify import (
+    WhatsAppVerifyClaimView,
+    WhatsAppVerifyRevokeView,
+    WhatsAppVerifyStartView,
+)
 
 urlpatterns = [
+    path(
+        "storefront/continuum/v0.2/catalog-structure/",
+        CatalogStructureSnapshotView.as_view(),
+        name="api-storefront-continuum-catalog-structure",
+    ),
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
+    path("storefront/shell/", StorefrontShellView.as_view(), name="api-storefront-shell"),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
+    path("storefront/legal/", StorefrontLegalView.as_view(), name="api-storefront-legal"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
     path("storefront/menu/<slug:collection>/", StorefrontMenuView.as_view(), name="api-storefront-menu-collection"),
+    path("storefront/catalog/", StorefrontCatalogView.as_view(), name="api-storefront-catalog"),
+    path("storefront/catalog/<slug:collection>/", StorefrontCatalogView.as_view(), name="api-storefront-catalog-collection"),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),
+    path("storefront/sku-redirects/", StorefrontSkuRedirectsView.as_view(), name="api-storefront-sku-redirects"),
     path("storefront/cart/", StorefrontCartView.as_view(), name="api-storefront-cart"),
     path("storefront/client-error/", ClientErrorView.as_view(), name="api-storefront-client-error"),
     path("storefront/checkout/", StorefrontCheckoutView.as_view(), name="api-storefront-checkout"),
@@ -102,6 +121,8 @@ urlpatterns = [
     path("auth/passkey/login/options/", PasskeyLoginOptionsView.as_view(), name="api-auth-passkey-login-options"),
     path("auth/passkey/login/", PasskeyLoginView.as_view(), name="api-auth-passkey-login"),
     path("auth/whatsapp/start/", WhatsAppVerifyStartView.as_view(), name="api-auth-whatsapp-start"),
+    path("auth/whatsapp/claim/", WhatsAppVerifyClaimView.as_view(), name="api-auth-whatsapp-claim"),
+    path("auth/whatsapp/revoke/", WhatsAppVerifyRevokeView.as_view(), name="api-auth-whatsapp-revoke"),
     path("auth/logout/", LogoutView.as_view(), name="api-auth-logout"),
     # Cart
     path("cart/skus/<str:sku>/", CartSkuQtyView.as_view(), name="api-cart-sku-qty"),

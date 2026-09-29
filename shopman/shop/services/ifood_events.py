@@ -21,16 +21,36 @@ Robustness contract
 - An event is **acknowledged only after it is handled** (ingested, deduped, or
   an ignorable code). A processing failure leaves the event un-acked so iFood
   re-delivers it — the same at-least-once guarantee the webhook path has.
+
+O que "ignorable" quer dizer, desde 19/09/2026
+----------------------------------------------
+
+Até aqui, TODO código sem processador era ``ignored`` e entrava no lote de
+acknowledge: dizíamos ao iFood "tratamos" para qualquer coisa que não
+soubéssemos tratar. O ``ORDER_PATCHED`` — cliente altera itens depois do
+``CONFIRMED`` — caía nesse ramo, e o pedido local seguia com os itens
+originais, divergindo o que a cozinha prepara, o estoque, a cobrança e a nota.
+
+Agora há três destinos, e nenhum deles é silêncio:
+
+- **tratado** — tem processador (``PLC``, ``CFM``, ``DSP``, ``CAN``, ``CON``,
+  handshake e ``ORDER_PATCHED``);
+- **inerte** (``_INERT_CODES``) — ACK calado, mas por DECISÃO escrita e com
+  motivo ao lado de cada código;
+- **qualquer outro** — ACK (não ackar faria o iFood reentregar em laço) + log de
+  ``warning`` + alerta ``ifood_event_unhandled`` ao operador. Um código novo do
+  marketplace aparece antes de virar prejuízo, em vez de depois.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 
-import requests
 from django.conf import settings
 
-from shopman.shop.services import ifood_auth, ifood_ingest, ifood_orders, webhook_idempotency
+from shopman.shop.services import fiscal as fiscal_service
+from shopman.shop.services import ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +65,32 @@ _CONCLUSION_CODES = {"CON", "CONCLUDED"}
 _CONFIRMATION_CODES = {"CFM", "CONFIRMED"}
 _DISPATCH_CODES = {"DSP", "DISPATCHED"}
 _HANDSHAKE_CODES = {"HSD", "HANDSHAKE_DISPUTE", "HSS", "HANDSHAKE_SETTLEMENT"}
+# Cliente alterou o pedido DEPOIS do CONFIRMED. Só `ORDER_PATCHED`, e é
+# deliberado: na referência oficial de eventos este é um dos poucos códigos cujo
+# `code` e `fullCode` são a MESMA string — a tabela "Referência rápida" lista
+# `ORDER_PATCHED` e os três exemplos trazem `"code": "ORDER_PATCHED"`. Não há
+# sigla de três letras documentada, e inventar uma ("PTC") seria adivinhar. Se
+# uma sigla aparecer no vivo, ela cai no ramo de código não tratado logo abaixo,
+# que grita — em vez de ser engolida como era até 19/09/2026.
+_PATCH_CODES = {"ORDER_PATCHED"}
+# Códigos documentados que esta casa decidiu não tratar, COM motivo. Não é
+# silêncio: é decisão escrita, e o ACK calado é a resposta certa para eles.
+_INERT_CODES = {
+    # Eco das nossas próprias chamadas. A tabela oficial diz "Ação necessária:
+    # Nenhuma" para os quatro.
+    "SEPARATION_STARTED", "PREPARATION_STARTED", "SEPARATION_ENDED",
+    "PREPARATION_ENDED", "READY_TO_PICKUP",
+    # Rastreio do entregador do iFood. A loja não repassa rastreio ao cliente
+    # (é o app deles que mostra), então nenhum destes vira trabalho aqui.
+    "ASSIGN_DRIVER", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN", "COLLECTED",
+    "ARRIVED_AT_DESTINATION", "DELIVERY_GROUP_ASSIGNED",
+    # Sugestão de horário para pedido agendado, de loja com "Preparo
+    # Inteligente". A casa começa o preparo pelo `preparationStartDateTime` do
+    # próprio pedido, que a documentação chama de mais restritivo.
+    "RECOMMENDED_PREPARATION_START",
+    # Pedido de cancelamento em trânsito: quem fecha é o CAN, que é tratado.
+    "CANCELLATION_REQUESTED",
+}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -52,40 +98,32 @@ def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
 
 
-def _base_url() -> str:
-    return str(_cfg().get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
-
-
 def poll() -> list[dict]:
     """Poll the iFood event stream. Returns the events list (``[]`` on 204/idle)."""
-    headers = ifood_auth.authorized_headers()
-    if not headers:
-        logger.warning("ifood_events.poll: OAuth not configured — skipping")
+    merchant_id = str(_cfg().get("merchant_id") or "").strip()
+    extra = {"x-polling-merchants": merchant_id} if merchant_id else None
+
+    resp = ifood_http.request(
+        "GET", "/order/v1.0/events:polling", label="poll", extra_headers=extra, idempotent=True
+    )
+    if resp is None:
+        # Sem credencial, transporte caído ou recusa de edge que sobreviveu às
+        # retentativas — `ifood_http` já registrou a forense.
         return []
 
-    url = f"{_base_url()}/order/v1.0/events:polling"
-    timeout = int(_cfg().get("timeout") or 30)
-    merchant_id = str(_cfg().get("merchant_id") or "").strip()
-    poll_headers = {**headers, "x-polling-merchants": merchant_id} if merchant_id else headers
-
-    try:
-        resp = requests.get(url, headers=poll_headers, timeout=timeout)
-        # Never broaden merchant scope on a rejected filter: the same app may
-        # authorize other stores, including production stores during testing.
-        if resp.status_code == 400 and merchant_id:
-            logger.warning(
-                "ifood_events.poll: iFood rejeitou x-polling-merchants (400) — "
-                "IFOOD_MERCHANT_ID provavelmente errado. Filtro preservado; "
-                "confira o Merchant ID no portal iFood."
-            )
-    except requests.RequestException as exc:
-        logger.warning("ifood_events.poll: request failed: %s", exc)
+    # Never broaden merchant scope on a rejected filter: the same app may
+    # authorize other stores, including production stores during testing.
+    if resp.status_code == 400 and merchant_id:
+        logger.warning(
+            "ifood_events.poll: iFood rejeitou x-polling-merchants (400) — "
+            "IFOOD_MERCHANT_ID provavelmente errado. Filtro preservado; "
+            "confira o Merchant ID no portal iFood."
+        )
         return []
 
     if resp.status_code == 204:
         return []
     if resp.status_code != 200:
-        logger.warning("ifood_events.poll: HTTP %s: %s", resp.status_code, resp.text[:200])
         return []
     try:
         events = resp.json()
@@ -100,22 +138,22 @@ def acknowledge(event_ids: list[str]) -> bool:
     event_ids = [e for e in event_ids if e]
     if not event_ids:
         return True
-    headers = ifood_auth.authorized_headers({"Content-Type": "application/json"})
-    if not headers:
-        return False
-
     ok = True
-    url = f"{_base_url()}/order/v1.0/events/acknowledgment"
     for start in range(0, len(event_ids), _ACK_BATCH):
         batch = [{"id": eid} for eid in event_ids[start:start + _ACK_BATCH]]
-        try:
-            resp = requests.post(url, json=batch, headers=headers, timeout=int(_cfg().get("timeout") or 30))
-        except requests.RequestException as exc:
-            logger.warning("ifood_events.acknowledge: request failed: %s", exc)
-            ok = False
-            continue
-        if resp.status_code not in (200, 202):
-            logger.warning("ifood_events.acknowledge: HTTP %s: %s", resp.status_code, resp.text[:200])
+        # Idempotente por id de evento: reconhecer o mesmo id duas vezes é
+        # inócuo, então vale retentar também `5xx` e transporte. O risco aqui é
+        # o inverso — um ACK que não sai faz o iFood reentregar o evento, e a
+        # reentrega já é tratada pelo dedupe durável.
+        resp = ifood_http.request(
+            "POST",
+            "/order/v1.0/events/acknowledgment",
+            label="acknowledge",
+            extra_headers={"Content-Type": "application/json"},
+            json=batch,
+            idempotent=True,
+        )
+        if resp is None or resp.status_code not in (200, 202):
             ok = False
     return ok
 
@@ -129,7 +167,9 @@ def process_events(events: list[dict]) -> dict:
     handled_ids: list[str] = []
     merchant_id = str(_cfg().get("merchant_id") or "").strip()
 
-    for event in events:
+    # A API entrega fora de ordem; a doc manda ordenar por ``createdAt``. Sem isso
+    # um CON pode ser processado antes do DSP que o precede.
+    for event in sorted(events, key=lambda e: str(e.get("createdAt") or "")):
         event_id = str(event.get("id") or "").strip()
         code = str(event.get("fullCode") or event.get("code") or "").upper()
         order_id = str(event.get("orderId") or "").strip()
@@ -150,8 +190,13 @@ def process_events(events: list[dict]) -> dict:
             continue
 
         # Remote state changes reconcile only after the order exists.
-        if code in _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES | _DISPATCH_CODES | _HANDSHAKE_CODES:
-            if code in _HANDSHAKE_CODES:
+        if code in (
+            _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES
+            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES
+        ):
+            if code in _PATCH_CODES:
+                outcome = _process_patch(event, event_id, order_id)
+            elif code in _HANDSHAKE_CODES:
                 outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
             elif code in _CANCELLATION_CODES:
                 outcome = _process_cancellation(event_id, order_id)
@@ -169,8 +214,14 @@ def process_events(events: list[dict]) -> dict:
                 failed += 1
             continue
 
-        # Non-order-creating codes are acknowledged and ignored (WP-2 scope).
+        # Código sem processador. Continua sendo ackado — não ackar faria o
+        # iFood reentregar para sempre, e a reentrega infinita esconde tanto
+        # quanto o silêncio. O que muda é que ele deixa de ser INVISÍVEL: só os
+        # códigos de `_INERT_CODES` passam calados, porque para eles existe
+        # decisão escrita. Qualquer outro vira aviso ao operador.
         if code not in _PLACED_CODES:
+            if code not in _INERT_CODES:
+                _alert_unhandled_event(code, order_id)
             ignored += 1
             handled_ids.append(event_id)
             continue
@@ -239,6 +290,446 @@ def _process_placed(event_id: str, order_id: str) -> str:
     return "ingested"
 
 
+def _alert_unhandled_event(code: str, order_id: str) -> None:
+    """Um código do iFood chegou sem processador — o ACK sai, mas não calado."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    logger.warning(
+        "ifood_events: código %s sem tratamento (pedido %s); reconhecido para não "
+        "reentregar em laço, mas NADA foi aplicado ao pedido local",
+        code or "(vazio)", order_id or "(sem orderId)",
+    )
+    create_operator_alert(
+        type="ifood_event_unhandled",
+        severity="warning",
+        message=(
+            f"O iFood enviou o evento {code or '(sem código)'} e esta loja não sabe tratá-lo. "
+            "O pedido local não mudou. Confira o pedido no portal do iFood antes de continuar."
+        ),
+        order_ref="",
+        dedupe_key=f"ifood_event_unhandled:{code}",
+        debounce_minutes=60,
+    )
+
+
+#: Como a documentação nomeia cada alteração, em português de tela. A chave é o
+#: ``metadata.changeType``; os três valores são os documentados na referência de
+#: eventos (exemplos "Item removido", "Item adicionado" e "Quantidade
+#: modificada"). Valor fora desta tabela não vira "desconhecido" calado: cai no
+#: texto genérico e o changeType cru vai junto, porque o operador precisa saber
+#: o que o iFood disse, não o que nós conseguimos classificar.
+_CHANGE_TYPE_LABEL = {
+    "DELETE_ITEMS": "itens removidos",
+    "ADD_ITEMS": "itens adicionados",
+    "UPDATE_ITEMS": "quantidade de itens alterada",
+}
+
+
+def _money_q(value) -> int | None:
+    """Reais do iFood → centavos. ``None`` quando o campo não veio.
+
+    Distinguir ausente de zero importa: um total ausente não pode virar
+    "R$ 0,00" no aviso que o operador lê.
+    """
+    if value is None:
+        return None
+    try:
+        return int(round(float(value) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
+def _describe_patch(metadata: dict) -> str:
+    """Uma frase inequívoca sobre o que o cliente mexeu, para o operador."""
+    change_type = str(metadata.get("changeType") or "").upper()
+    label = _CHANGE_TYPE_LABEL.get(change_type)
+    items = metadata.get("items") if isinstance(metadata.get("items"), list) else []
+    named = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("id") or "").strip()
+        # UPDATE_ITEMS traz oldQuantity/newQuantity; os outros trazem quantity.
+        if item.get("newQuantity") is not None or item.get("oldQuantity") is not None:
+            named.append(f"{name} (de {item.get('oldQuantity')} para {item.get('newQuantity')})")
+        elif item.get("quantity") is not None:
+            named.append(f"{name} ({item['quantity']}x)")
+        elif name:
+            named.append(name)
+    detail = "; ".join(n for n in named if n)
+    if label is None:
+        head = f"alteração do tipo {change_type or '(sem tipo)'}"
+    else:
+        head = label
+    return f"{head}: {detail}" if detail else head
+
+
+def _brl(value_q: int | None) -> str:
+    if value_q is None:
+        return "(não informado)"
+    return f"R$ {value_q / 100:.2f}".replace(".", ",")
+
+
+def _patch_block_reason(order, *, fiscal_authorized: bool) -> str:
+    """Por que este pedido NÃO pode ser reconciliado; ``""`` quando pode.
+
+    Três portas fechadas, cada uma por um motivo diferente:
+
+    - ``test_order`` — pedido de homologação do marketplace. A supressão da #887
+      é sobre não fazer a padaria trabalhar por um pedido que não existe, e
+      reconciliar é trabalho: mexeria em reserva, em ticket e no que o Gestor
+      mostra. O fato continua sendo gravado e logado.
+    - ``fiscal_authorized`` — a NFC-e já saiu. Corrigir a nota é decisão fiscal
+      (devolução, cancelamento e reemissão, ou outra coisa) e a pergunta está com
+      o contador. Reconciliar os itens aqui faria o pedido e a nota divergirem em
+      silêncio, que é pior do que a divergência que o operador já foi avisado de
+      ter. Mantém-se o comportamento da Etapa 1: marca, avisa e para.
+    - ``terminal`` — cancelado, devolvido ou concluído. Não há pedido a ajustar:
+      as reservas já foram soltas ou o caixa já fechou em cima do que houve.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import is_test_order
+
+    if is_test_order(order):
+        return "test_order"
+    if fiscal_authorized:
+        return "fiscal_authorized"
+    if order.status in Order.TERMINAL_STATUSES:
+        return "terminal"
+    return ""
+
+
+def _process_patch(event: dict, event_id: str, order_id: str) -> str:
+    """Reconciliar o pedido que o cliente alterou — e gritar o que mudou.
+
+    O iFood emite ``ORDER_PATCHED`` quando o cliente adiciona, remove ou muda a
+    quantidade de itens depois do ``CONFIRMED``. A Etapa 1 (#897) parou de
+    mentir: o evento ganhou processador, o fato passou a ser gravado em
+    ``order.data["ifood"]["patches"]`` com ``reconciled: False`` e o operador
+    passou a ser avisado. Esta é a Etapa 2 — o pedido local passa a refletir a
+    alteração.
+
+    **Relê o pedido inteiro, não aplica o delta.** O ``metadata`` do evento traz
+    só os itens afetados mais ``oldTotal``/``newTotal``. Delta é frágil contra
+    reentrega e evento fora de ordem, que é exatamente o que este módulo já trata
+    com cuidado em ``_process_remote_progress`` e ``_process_conclusion``. A
+    reconciliação chama ``ifood_orders.fetch_order`` e usa o estado FINAL; assim
+    uma reentrega é no-op natural, e duas alterações fora de ordem convergem para
+    o mesmo lugar.
+
+    **O ajuste vive ao lado, nunca por cima.** ``Order.total_q`` e
+    ``Order.snapshot`` são ``SEALED_FIELDS`` do Core: qualquer ``save()`` que os
+    altere levanta ``ImmutabilityError``. O estado novo é gravado em
+    ``order.data["adjustment"]``, e quem lê item ou total de pedido lê a
+    composição das duas coisas por ``services.order_composition`` — uma leitura
+    só, para cozinha, separação, Gestor, vias e B.I. não somarem cada um por
+    conta própria e divergirem.
+
+    **Nada de cancelar e recriar.** No iFood, cancelar localmente PEDE ao iFood
+    que cancele o pedido do cliente (``STATUS_ACTION`` mapeia
+    ``"cancelled" → "requestCancellation"``) — o oposto do que o cliente quis ao
+    alterar, e irreversível do lado de lá.
+
+    A releitura acontece FORA da transação: segurar o lock do pedido durante um
+    ``GET`` no iFood é convite a prender a linha por segundos. Quando ela falha,
+    o caminho não some — cai de volta no comportamento da Etapa 1 (grava o fato,
+    avisa alto, dá ACK) em vez de deixar o evento em reentrega infinita.
+    """
+    if not order_id:
+        logger.warning("ifood_events: ORDER_PATCHED %s sem orderId", event_id)
+        return "failed"
+
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE, f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from django.db import transaction
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import is_test_order
+
+    order = Order.objects.filter(
+        channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+    ).first()
+    if order is None:
+        # Pode chegar antes do PLACED, inclusive no mesmo lote. Sem ACK: a
+        # reentrega aplica o registro depois de o pedido existir.
+        logger.warning(
+            "ifood_events: ORDER_PATCHED para pedido %s ainda inexistente; "
+            "deixando sem ACK para reentrega", order_id,
+        )
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    data = order.data or {}
+    fiscal_authorized = bool(data.get("nfce_access_key")) and not data.get("nfce_cancelled")
+    block = _patch_block_reason(order, fiscal_authorized=fiscal_authorized)
+
+    payload = None
+    if not block:
+        try:
+            payload = ifood_orders.map_order(ifood_orders.fetch_order(order_id))
+        except Exception:
+            logger.exception(
+                "ifood_events: releitura do pedido %s falhou; ORDER_PATCHED %s fica "
+                "registrado sem reconciliação", order_id, event_id,
+            )
+            block = "fetch_failed"
+
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(
+                channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+            ).first()
+            if order is None:
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+
+            patches = list(((order.data or {}).get("ifood") or {}).get("patches") or [])
+            if any(str(p.get("event_id")) == event_id for p in patches if isinstance(p, dict)):
+                webhook_idempotency.mark_done(claim, response_body={"status": "already_recorded"})
+                return "deduped"
+
+            # A decisão de reconciliar foi tomada com o pedido SEM lock, porque
+            # a releitura no iFood não pode segurar a linha. Entre as duas
+            # leituras o pedido pode ter sido cancelado, ou a nota pode ter
+            # saído — refazer a pergunta com o lock na mão é o que impede
+            # reconciliar um pedido que deixou de aceitar reconciliação.
+            data = order.data or {}
+            fiscal_authorized = bool(data.get("nfce_access_key")) and not data.get("nfce_cancelled")
+            late_block = _patch_block_reason(order, fiscal_authorized=fiscal_authorized)
+            if late_block:
+                payload, block = None, late_block
+
+            record = {
+                "event_id": event_id,
+                "change_type": str(metadata.get("changeType") or ""),
+                "items": metadata.get("items") if isinstance(metadata.get("items"), list) else [],
+                "old_total_q": _money_q(metadata.get("oldTotal")),
+                "new_total_q": _money_q(metadata.get("newTotal")),
+                "observed_at": timezone.now().isoformat(),
+                "order_status": order.status,
+                "local_total_q": order.total_q,
+                "fiscal_authorized": fiscal_authorized,
+            }
+            outcome = None
+            if payload is None:
+                # Porta fechada (ou releitura falhada): o comportamento da Etapa 1
+                # continua sendo a resposta certa — gravar, avisar e parar.
+                record["reconciled"] = False
+                record["reconciliation"] = f"blocked:{block}"
+            else:
+                outcome = _apply_patch(order, payload, event_id)
+                record["reconciled"] = True
+                record["reconciliation"] = outcome
+
+            patches.append(record)
+            # Relido DEPOIS de ``_apply_patch``, que gravou o ajuste no mesmo
+            # ``data`` — copiar antes apagaria o ajuste ao salvar aqui.
+            data = dict(order.data or {})
+            data["ifood"] = {**(data.get("ifood") or {}), "patches": patches}
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
+
+            _alert_patched(
+                order, record, outcome,
+                fiscal_authorized=fiscal_authorized,
+                block=block,
+                suppressed=is_test_order(order),
+            )
+            webhook_idempotency.mark_done(
+                claim,
+                response_body={
+                    "status": "reconciled" if outcome else "recorded",
+                    "order_ref": order.ref,
+                },
+            )
+    except Exception:
+        logger.exception(
+            "ifood_events: falha ao tratar ORDER_PATCHED do pedido %s (evento %s)", order_id, event_id,
+        )
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    return "ingested"
+
+
+def _apply_patch(order, payload: dict, event_id: str) -> dict:
+    """Grava o ajuste e traz estoque e cozinha para a lista nova.
+
+    Chamada com o pedido travado, dentro da transação do chamador: se o estoque
+    recusar no meio, nada fica meio feito e o evento segue sem ACK para o iFood
+    reentregar. O caminho (ajuste + estoque + cozinha) é o MESMO da edição pelo
+    balcão — ``order_edit.apply_final_items`` —, e aqui só mora o que é do iFood:
+    a lista e o total vêm do pedido relido na plataforma.
+    """
+    from shopman.shop.services import order_edit
+
+    items = ifood_ingest.normalize_items(payload["items"])
+    subtotal_q = sum(int(item["line_total_q"]) for item in items)
+    # Mesma régua da ingestão: o total que vale é o ``orderAmount`` do iFood
+    # (subtotal + entrega + taxas − benefícios), porque é o que a plataforma
+    # paga. Sem ele (simulação de dev), o subtotal das linhas.
+    total_q = int((payload.get("totals") or {}).get("order_amount_q") or 0) or subtotal_q
+    return order_edit.apply_final_items(
+        order,
+        items=items,
+        total_q=total_q,
+        source="ifood:ORDER_PATCHED",
+        event_id=event_id,
+        stock_reference=f"ifood_patch:{order.ref}",
+    )
+
+
+def _fiscal_authorized_explanation(order) -> str:
+    """Qual dos dois caminhos vale para a nota já autorizada deste pedido.
+
+    Até aqui esta frase dizia "fale com o contador", que é verdade e não ajuda:
+    o operador do iFood tem minutos, não um telefonema. Os dois caminhos são de
+    lei, e qual deles vale é uma conta de relógio que o sistema sabe fazer.
+
+    ⚠️ Nenhum dos dois é executado sozinho. Cancelar e reemitir mexe em
+    documento fiscal autorizado, e quem decide é gente — o que muda é que agora
+    ela decide sabendo se ainda dá tempo.
+    """
+    decision = fiscal_service.cancellation_path(order)
+    minutos = fiscal_service.cancellation_window_minutes()
+    abertura = (
+        "A NFC-e deste pedido já foi autorizada, então a loja NÃO acompanhou a alteração: "
+        "corrigir a nota é decisão fiscal e o sistema não faz isso sozinho. "
+    )
+    if decision["path"] == fiscal_service.CANCEL_AND_REISSUE:
+        # Arredonda, não trunca: cinco minutos depois da autorização restam
+        # 24,99, e dizer "24" faz o operador achar que perdeu um minuto.
+        restam = max(1, round(decision["minutes_left"]))
+        sobra = "resta cerca de 1 minuto" if restam == 1 else f"restam cerca de {restam} minutos"
+        return abertura + (
+            f"AINDA DÁ TEMPO DE CANCELAR: o prazo é de {minutos} minutos depois da autorização "
+            f"e {sobra}. Cancele a nota e emita de novo com os itens corretos."
+        )
+    if decision["path"] == fiscal_service.RETURN_NOTE:
+        # Cancelar exige as DUAS condições do art. 35 — dentro do prazo e sem
+        # saída da mercadoria. Dizer "o prazo passou" para um pedido que saiu
+        # com a nota recém-autorizada mandaria o operador conferir o relógio
+        # errado.
+        porta = (
+            "A MERCADORIA JÁ SAIU, e nota de venda entregue não se cancela"
+            if decision["reason"] == "goods_dispatched"
+            else f"O PRAZO DE CANCELAMENTO JÁ PASSOU (são {minutos} minutos depois da autorização)"
+        )
+        return abertura + (
+            f"{porta}. O caminho agora é nota de DEVOLUÇÃO/estorno, ainda dentro deste "
+            "mês — fale com o contador."
+        )
+    return abertura + (
+        "Não foi possível saber a que horas esta nota foi autorizada, então o prazo de "
+        f"cancelamento ({minutos} minutos) não pôde ser medido. Confira a hora da autorização "
+        "na nota: dentro do prazo, cancele e reemita; fora dele, é nota de devolução/estorno."
+    )
+
+
+_BLOCK_EXPLANATION = {
+    "terminal": (
+        "O pedido já está encerrado nesta loja, então a alteração NÃO foi aplicada: "
+        "confira no portal do iFood o que ficou diferente."
+    ),
+    "fetch_failed": (
+        "Não conseguimos reler o pedido no iFood para aplicar a alteração, então a loja segue "
+        "com os itens originais. Confira o pedido no portal do iFood e ajuste à mão."
+    ),
+}
+
+
+def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authorized: bool,
+                   block: str, suppressed: bool) -> None:
+    """Diz ao operador o que mudou — e se a loja acompanhou ou não.
+
+    O log sai SEMPRE, inclusive para pedido de teste: quem depura precisa ver o
+    evento. O alerta na tela do operador é que é suprimido no pedido de teste —
+    a supressão da #887 é sobre não fazer a padaria trabalhar por homologação, e
+    um alerta vermelho no Gestor é trabalho.
+
+    Duas mensagens diferentes, porque são dois fatos diferentes. Reconciliado, o
+    aviso é ``warning`` e diz o que a loja JÁ fez (a cozinha recebeu, o estoque
+    acompanhou) — o operador precisa conferir, não consertar. Bloqueado, é
+    ``error`` e diz por que a loja não acompanhou, que é a Etapa 1 continuando a
+    valer onde ela ainda é a resposta certa.
+    """
+    from shopman.shop.services import order_composition
+    from shopman.shop.services.observability import create_operator_alert
+
+    description = _describe_patch({
+        "changeType": record["change_type"], "items": record["items"],
+    })
+    if outcome is not None and not order_composition.is_empty(outcome["diff"]):
+        description = order_composition.describe(outcome["diff"])
+
+    logger.warning(
+        "ifood_events: pedido %s ALTERADO pelo cliente no iFood (%s). Total do iFood: %s → %s; "
+        "total local: %s. NFC-e autorizada: %s. Reconciliado: %s%s",
+        order.ref, description,
+        _brl(record["old_total_q"]), _brl(record["new_total_q"]),
+        _brl(record["local_total_q"]), "sim" if fiscal_authorized else "não",
+        "sim" if outcome else "NÃO", f" ({block})" if block else "",
+    )
+    if suppressed:
+        return
+
+    if outcome is None:
+        message = (
+            f"O cliente alterou o pedido {order.ref} no iFood depois de confirmado: {description}. "
+            f"O total no iFood foi de {_brl(record['old_total_q'])} para {_brl(record['new_total_q'])}; "
+            f"o pedido nesta loja continua em {_brl(record['local_total_q'])} e com os itens originais. "
+            + (
+                _fiscal_authorized_explanation(order) if block == "fiscal_authorized"
+                else _BLOCK_EXPLANATION.get(block, "Confira o pedido no portal do iFood antes de continuar.")
+            )
+        )
+        create_operator_alert(
+            type="ifood_order_patched",
+            severity="error",
+            message=message,
+            order_ref=order.ref,
+            dedupe_key=f"ifood_order_patched:{order.ref}:{record['event_id']}",
+        )
+        return
+
+    applied = []
+    stock_outcome = outcome.get("stock") or {}
+    kds_outcome = outcome.get("kds") or {}
+    if stock_outcome.get("skipped") == "goods_left":
+        applied.append(
+            "o pedido já saiu, então o estoque NÃO foi ajustado — confira o que foi na sacola"
+        )
+    elif any(stock_outcome.get(key) for key in ("released", "returned", "held", "fulfilled")):
+        applied.append("o estoque acompanhou")
+    if kds_outcome.get("unfired") or kds_outcome.get("refired"):
+        applied.append("a cozinha recebeu a comanda atualizada")
+    if stock_outcome.get("gaps"):
+        applied.append(
+            "FALTOU estoque para o que foi acrescentado — veja o alerta de reserva ao lado"
+        )
+    tail = f" A loja acompanhou: {'; '.join(applied)}." if applied else ""
+
+    create_operator_alert(
+        type="ifood_order_patched",
+        severity="warning",
+        message=(
+            f"O cliente alterou o pedido {order.ref} no iFood depois de confirmado: {description}. "
+            f"O pedido nesta loja foi atualizado: de {_brl(outcome['previous_total_q'])} "
+            f"para {_brl(outcome['total_q'])}." + tail
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"ifood_order_patched:{order.ref}:{record['event_id']}",
+    )
+
+
 def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) -> str:
     """Apply CFM/DSP only along a legal canonical transition.
 
@@ -257,10 +748,8 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
         return "failed"
 
     from django.db import transaction
-    from django.utils import timezone
     from shopman.orderman.models import Order
 
-    from shopman.shop.services import operator_orders
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
     code = "DSP" if dispatch else "CFM"
@@ -275,9 +764,12 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
                 webhook_idempotency.mark_failed(claim)
                 return "failed"
             if dispatch and get_fulfillment_type(order) != "delivery":
-                logger.warning("ifood_events: DSP for non-delivery order %s; leaving unacknowledged", order_id)
-                webhook_idempotency.mark_failed(claim)
-                return "failed"
+                # Fato sem transição possível: pedido de retirada não "sai". Gravar
+                # e dar ACK — deixar sem ACK só faz o iFood reentregar para sempre.
+                logger.warning("ifood_events: DSP for non-delivery order %s; recorded, nothing to apply", order_id)
+                _record_remote(order, marker, event_id)
+                webhook_idempotency.mark_done(claim, response_body={"status": "recorded", "order_ref": order.ref})
+                return "deduped"
 
             terminal = order.status in Order.TERMINAL_STATUSES
             already_applied = terminal or order.status in (
@@ -286,29 +778,26 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
                                   Order.Status.DISPATCHED, Order.Status.DELIVERED}
             )
             expected = Order.Status.READY if dispatch else Order.Status.NEW
+            # O fato é gravado ANTES de qualquer transição, para o aviso dela não
+            # ecoar ao iFood o que veio dele.
+            _record_remote(order, marker, event_id)
             if not already_applied and order.status != expected:
-                logger.warning(
-                    "ifood_events: %s awaiting legal local transition for order %s (status %s); "
-                    "leaving unacknowledged", code, order_id, order.status,
+                # ACK é "armazenei", não "apliquei" (doc do polling). O fato fica no
+                # pedido e a reconciliação o aplica quando o estado local chegar lá
+                # — antes, o evento ficava sem ACK e o iFood usava a fila de
+                # reentrega como fila de espera nossa, o que o Firefly pune.
+                logger.info(
+                    "ifood_events: %s recorded for order %s (status %s); applies when the local order catches up",
+                    code, order_id, order.status,
                 )
-                webhook_idempotency.mark_failed(claim)
-                return "failed"
-
-            data = dict(order.data or {})
-            facts = dict(data.get("ifood") or {})
-            if not facts.get(marker):
-                facts[marker] = {"event_id": event_id, "observed_at": timezone.now().isoformat()}
-                data["ifood"] = facts
-                order.data = data
-                order.save(update_fields=["data", "updated_at"])
+                webhook_idempotency.mark_done(
+                    claim, response_body={"status": "recorded_pending", "order_ref": order.ref},
+                )
+                return "ingested"
             if not already_applied:
-                actor = f"system:ifood:{code}"
-                if dispatch:
-                    operator_orders.advance_order(order, actor=actor)
-                else:
-                    operator_orders.confirm_order(order, actor=actor)
+                _reconcile_locked(order)
                 order.refresh_from_db()
-                if order.status != target:
+                if order.status == expected:
                     raise ValueError(f"iFood {code} did not reach its local target status")
             webhook_idempotency.mark_done(
                 claim, response_body={"status": "already_processed" if already_applied else target, "order_ref": order.ref},
@@ -410,11 +899,8 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
         return "failed"
 
     from django.db import transaction
-    from django.utils import timezone
     from shopman.orderman.models import Order
 
-    from shopman.shop.services import ifood_cancellation, operator_orders
-    from shopman.shop.services.order_helpers import get_fulfillment_type
 
     try:
         with transaction.atomic():
@@ -429,21 +915,91 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 webhook_idempotency.mark_done(claim, response_body={"status": "already_terminal"})
                 return "deduped"
 
-            fulfillment_type = get_fulfillment_type(order)
-            delivery = fulfillment_type == "delivery"
-            allowed = (
-                order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
-                if delivery else fulfillment_type == "pickup" and order.status == Order.Status.READY
-            )
-            if not allowed:
-                logger.warning("ifood_events: CON awaiting local handoff for order %s (status %s)", order_id, order.status)
-                webhook_idempotency.mark_failed(claim)
-                return "failed"
+            _record_remote(order, "remote_concluded", event_id)
+            if not _conclusion_allowed(order):
+                # O iFood já encerrou, mas aqui o pedido ainda não chegou à entrega
+                # (entrega própria parada em preparo, retirada ainda não pronta).
+                # A regra de NÃO pular a custódia do entregador continua de pé; o
+                # que muda é o ACK: o fato fica gravado, o card avisa que o iFood
+                # concluiu, e a reconciliação fecha quando o pedido chegar lá.
+                logger.info(
+                    "ifood_events: CON recorded for order %s (status %s); concludes when the local handoff happens",
+                    order_id, order.status,
+                )
+                webhook_idempotency.mark_done(
+                    claim, response_body={"status": "recorded_pending", "order_ref": order.ref},
+                )
+                return "ingested"
+            _reconcile_locked(order)
+            order.refresh_from_db()
+            if order.status != Order.Status.COMPLETED:
+                raise ValueError("iFood conclusion did not complete the local order")
+            webhook_idempotency.mark_done(claim, response_body={"status": "concluded", "order_ref": order.ref})
+    except Exception:
+        logger.exception("ifood_events: failed to conclude order %s (event %s)", order_id, event_id)
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    return "ingested"
 
+
+# ── Fatos do iFood × estado local ──────────────────────────────────────────────
+# Um evento de status do iFood (CFM, DSP, CON) é FATO sobre o pedido lá. Ele é
+# gravado em ``order.data["ifood"]`` e recebe ACK na mesma transação — a doc do
+# polling pede ACK "após armazenar", não após aplicar. A aplicação local segue as
+# regras de sempre (nunca inventa preparo nem saída, nunca pula a custódia do
+# entregador) e acontece em dois momentos: quando o fato chega, se o pedido já
+# está no ponto certo, e depois de cada transição local, pelo ``order_changed``.
+_RECONCILING = threading.local()
+
+
+def _record_remote(order, marker: str, event_id: str) -> None:
+    """Grava o fato do iFood no pedido, uma vez só (o primeiro evento é a prova)."""
+    from django.utils import timezone
+
+    data = dict(order.data or {})
+    facts = dict(data.get("ifood") or {})
+    if facts.get(marker):
+        return
+    facts[marker] = {"event_id": event_id, "observed_at": timezone.now().isoformat()}
+    data["ifood"] = facts
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+
+def _conclusion_allowed(order) -> bool:
+    """Onde o CON pode fechar o pedido: depois da entrega, ou na retirada pronta."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    fulfillment_type = get_fulfillment_type(order)
+    if fulfillment_type == "delivery":
+        return order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
+    return fulfillment_type == "pickup" and order.status == Order.Status.READY
+
+
+def _reconcile_locked(order) -> None:
+    """Aplica, pelo caminho legal, o que os fatos do iFood já autorizam.
+
+    Chamada com o pedido travado (``select_for_update``). Cada passo é uma das
+    transições que o processamento dos eventos sempre fez; o laço só encadeia
+    quando um fato destrava o seguinte (DSP leva a "saiu", e aí o CON conclui).
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_cancellation, operator_orders
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    for _ in range(4):
+        if order.status in Order.TERMINAL_STATUSES:
+            return
+        facts = (order.data or {}).get("ifood") or {}
+        if facts.get("remote_concluded") and _conclusion_allowed(order):
             if ifood_cancellation.is_pending(order):
-                # CON confirms fulfillment, not cancellation. Preserve the
-                # original request for audit but retire its operational guard
-                # in the same transaction as the canonical completion.
+                # CON confirma a entrega, não o cancelamento. Guarda o pedido
+                # original para auditoria e aposenta a trava operacional dele na
+                # mesma transação da conclusão.
                 data = dict(order.data or {})
                 request = dict(data[ifood_cancellation.KEY])
                 request.update(
@@ -453,21 +1009,55 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 data[ifood_cancellation.KEY] = request
                 order.data = data
                 order.save(update_fields=["data", "updated_at"])
-
-            if delivery and order.status == Order.Status.DISPATCHED:
+            if get_fulfillment_type(order) == "delivery" and order.status == Order.Status.DISPATCHED:
                 operator_orders.confirm_received(order, actor="system:ifood")
                 order.refresh_from_db()
             if order.status != Order.Status.COMPLETED:
                 operator_orders.advance_order(order, actor="system:ifood")
                 order.refresh_from_db()
-            if order.status != Order.Status.COMPLETED:
-                raise ValueError("iFood conclusion did not complete the local order")
-            webhook_idempotency.mark_done(claim, response_body={"status": "concluded", "order_ref": order.ref})
+            return
+        if (facts.get("remote_dispatched") and order.status == Order.Status.READY
+                and get_fulfillment_type(order) == "delivery"):
+            operator_orders.advance_order(order, actor="system:ifood:DSP")
+            order.refresh_from_db()
+            continue
+        if facts.get("remote_confirmed") and order.status == Order.Status.NEW:
+            operator_orders.confirm_order(order, actor="system:ifood:CFM")
+            order.refresh_from_db()
+            continue
+        return
+
+
+def reconcile_remote(order) -> None:
+    """Depois de uma transição local, aplica o que o iFood já tinha dito.
+
+    Ex.: o entregador do iFood retirou antes de a cozinha marcar "Pronto" (DSP
+    gravado com o pedido em preparo); quando a cozinha marca, o pedido sai e, se
+    o CON também já chegou, conclui — sem nenhum aviso ecoar ao iFood.
+    """
+    if getattr(order, "channel_ref", "") != ifood_ingest.IFOOD_CHANNEL_REF:
+        return
+    facts = (order.data or {}).get("ifood") or {}
+    if not any(facts.get(m) for m in ("remote_confirmed", "remote_dispatched", "remote_concluded")):
+        return
+    if getattr(_RECONCILING, "active", False):
+        return  # as transições da própria reconciliação disparam order_changed
+
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    _RECONCILING.active = True
+    try:
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().filter(pk=order.pk).first()
+            if locked is not None:
+                _reconcile_locked(locked)
     except Exception:
-        logger.exception("ifood_events: failed to conclude order %s (event %s)", order_id, event_id)
-        webhook_idempotency.mark_failed(claim)
-        return "failed"
-    return "ingested"
+        # A transição do operador já aconteceu e não pode ser desfeita por isto;
+        # o fato continua gravado e a próxima transição tenta de novo.
+        logger.exception("ifood_events: reconcile failed for order %s", getattr(order, "ref", "?"))
+    finally:
+        _RECONCILING.active = False
 
 
 def run_once() -> dict:

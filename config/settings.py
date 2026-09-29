@@ -160,6 +160,37 @@ SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED", False
 )
+
+# Continuum 0.2 — piloto conservador do cardápio. Tudo nasce desligado. O
+# consumidor Nuxt tem flag própria e, sem snapshot, volta ao fetch monolítico.
+# O kill switch domina as duas flags Django e fecha o endpoint imediatamente.
+SHOPMAN_CONTINUUM = {
+    "catalog_shadow_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SHADOW_ENABLED", False),
+    "catalog_snapshot_enabled": _env_bool("SHOPMAN_CONTINUUM_CATALOG_SNAPSHOT_ENABLED", False),
+    "kill_switch": _env_bool("SHOPMAN_CONTINUUM_KILL_SWITCH", False),
+    "fresh_for_ms": int(os.environ.get("SHOPMAN_CONTINUUM_FRESH_FOR_MS", "30000")),
+    # Mesmo que um callback on_commit/signal se perca, o primeiro request depois
+    # desta janela volta à fonte canônica. O default acompanha fresh_for_ms para
+    # que um snapshot nunca seja renovado como fresco sem revalidação do banco.
+    "reconcile_after_ms": int(os.environ.get("SHOPMAN_CONTINUUM_RECONCILE_AFTER_MS", "300000")),
+    "stale_if_error_ms": int(os.environ.get("SHOPMAN_CONTINUUM_STALE_IF_ERROR_MS", "120000")),
+    "snapshot_cache_seconds": int(os.environ.get("SHOPMAN_CONTINUUM_SNAPSHOT_CACHE_SECONDS", "300")),
+    "limits": {
+        "max_compressed_response_bytes": 262_144,
+        "max_decoded_response_bytes": 1_048_576,
+        "max_response_head_bytes": 65_536,
+        "max_request_head_bytes": 65_536,
+        "max_request_identifier_bytes": 16_384,
+        "max_json_nodes": 100_000,
+        "max_json_depth": 64,
+        "max_result_bytes": 1_048_576,
+        "max_resident_bytes": 4_194_304,
+        "max_decompression_ratio_milli": 20_000,
+        "max_decompression_ms": 1_000,
+        "max_repair_attempts": 3,
+        "max_retry_ms": 30_000,
+    },
+}
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -223,8 +254,10 @@ if DEBUG:
         "https://*.ngrok.io",
         "https://*.ngrok.app",
         "https://*.trycloudflare.com",
-        # Nuxt dev surfaces (contíguo): storefront :3000 · central :3001 · pos :3002
-        # · kds :3003 · gestor :3004 · Produção :3005 · Compras :3008.
+        # Portas de dev das superfícies Nuxt — a MESMA lista de `dev_port` em
+        # surfaces/registry.json (a trava de registro confere): loja :3000 ·
+        # Shopman Apps :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
+        # Produção :3005 · Marketing :3006 · B.I. :3007 · Compras :3008.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -237,6 +270,10 @@ if DEBUG:
         "http://127.0.0.1:3004",
         "http://localhost:3005",
         "http://127.0.0.1:3005",
+        "http://localhost:3006",
+        "http://127.0.0.1:3006",
+        "http://localhost:3007",
+        "http://127.0.0.1:3007",
         "http://localhost:3008",
         "http://127.0.0.1:3008",
     ]
@@ -417,7 +454,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "shopman.backstage.context_processors.operator",
             ],
         },
     },
@@ -544,6 +580,88 @@ WHITENOISE_MANIFEST_STRICT = os.environ.get(
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_URL = "/media/"
 
+# ── Cidade aproximada do dispositivo (base LOCAL, sem terceiro) ─────────
+# A tela "Segurança e dados" da loja escreve "Próximo a Londrina, PR · Brasil" ao lado do
+# dispositivo confiável, para a pessoa reconhecer o acesso. Até 23/09/2026 esse rótulo vinha
+# do `ip-api.com`, com o IP do titular saindo da casa em HTTP puro; a PR #991 removeu a
+# chamada e esta é a volta do rótulo SEM terceiro — base GeoLite2-City lida do disco.
+#
+# Vazio (o default fora da imagem) = desligado, e a tela simplesmente não mostra a linha.
+# Isso é de propósito: desenvolvimento e CI não baixam a base, e um rótulo de cidade não
+# vale uma dependência de build para quem só quer rodar a suíte.
+GEOIP_CITY_DATABASE_PATH = os.environ.get(
+    "GEOIP_CITY_DATABASE_PATH",
+    os.path.join(BASE_DIR, "data", "GeoLite2-City.mmdb"),
+)
+
+# O raio de precisão, em km, acima do qual a leitura NÃO vira rótulo. A base devolve o
+# raio junto com a resposta; acima do limiar a linha fica só com navegador e data.
+#
+# ⚠️ 50 não é preferência, é medição. Agrupando por ligação simples as 300 cidades
+# brasileiras com mais blocos de IP (base DB-IP Lite 2026-09, 14.345.887 redes lidas,
+# 9.901 cidades distintas), o grupo de Londrina — a cidade da frase escolhida pelo dono —
+# contém SÓ Londrina até 50 km. A 80 km ele passa a conter Maringá (80 km) e Sarandi
+# (74 km): a partir daí "Próximo a Londrina" pode estar nomeando a cidade errada. A 150 km
+# o país inteiro colapsa num grupo só de 187 âncoras e 1.580 km de diâmetro.
+#
+# O efeito colateral é o desejado: IP de saída de operadora de celular costuma vir com
+# raio de 100 km para cima e é descartado aqui, que é exatamente o caso em que o rótulo
+# mentiria. Em celular a linha fica só com navegador e data.
+GEOIP_CITY_MAX_ACCURACY_RADIUS_KM = _env_int("GEOIP_CITY_MAX_ACCURACY_RADIUS_KM", 50)
+
+# ── A base envelhece, e envelhecer CALADO é o defeito ────────────────────────
+#
+# A GeoLite2 não se atualiza sozinha: ela entra na imagem no build e só troca quando
+# alguém bumpa o `GEOLITE2_SNAPSHOT` do Dockerfile. O problema não é a base velha em si —
+# é que ela **responde errado em silêncio**. Um bloco de IP que mudou de operadora
+# continua nomeando a cidade antiga, com raio de precisão bom, e a tela escreve
+# "Próximo a X" com a mesma autoridade de uma leitura correta. Raio ruim a casa já
+# descarta; data ruim não tinha quem percebesse.
+#
+# Todo `.mmdb` carrega a data em que foi construído (`metadata().build_epoch`), e são
+# estes dois números que a transformam em sinal. Ver `shopman/shop/services/ip_location.py`
+# e `docs/guides/geolite2-city.md`.
+
+# Passando daqui, o operador é avisado (OperatorAlert `geoip_database_stale`), com o gesto
+# escrito. A tela continua mostrando a cidade.
+#
+# ⚠️ 21 dias = TRÊS publicações perdidas. A MaxMind republica a GeoLite2-City toda terça,
+# então 7 dias é o chão físico (abaixo disso não existe base mais nova) e avisar em 7 seria
+# gritar sobre uma semana corrida. A casa já aprendeu essa lição por escrito no
+# `check_integration_drift`: alerta que dispara sobre o normal "ensina a ignorar o
+# vermelho". Três publicações seguidas sem bump não é semana corrida — é ninguém cuidando.
+GEOIP_CITY_STALE_ALERT_DAYS = _env_int("GEOIP_CITY_STALE_ALERT_DAYS", 21)
+
+# Passando daqui, a cidade DEIXA DE APARECER. A linha volta a ser só navegador e data.
+#
+# ⚠️ 90 dias é o ponto em que o alerta comprovadamente não funcionou: entre 21 e 90 cabem
+# ~10 avisos semanais, e se nenhum virou bump, o deployment esqueceu que isto existe. A
+# diferença entre "atrasado" e "abandonado" é o que este número separa.
+#
+# É largo de propósito, e o custo de ser largo é real: a linha existe para a pessoa
+# responder "fui eu que entrei?", e calar cedo demais mataria o rótulo na prática — como o
+# bump é manual, um limiar curto deixaria a tela permanentemente muda. Mas depois de um
+# trimestre inteiro, "Próximo a X" errado é pior que ausência: a cidade errada faz o
+# titular responder "não fui eu" sobre o PRÓPRIO acesso, que é o oposto exato da função
+# da linha.
+#
+# ⚠️ O que NÃO foi medido, e por quê: a taxa de realocação de bloco entre operadoras
+# exigiria comparar DUAS edições da base, e a segunda é um download que não foi feito.
+# O que foi medido é a EXPOSIÇÃO — o tamanho do alvo. Nas 234.511 redes IPv4 brasileiras
+# da DB-IP Lite 2026-09 (14.345.887 redes lidas, 88.123.296 endereços brasileiros):
+#
+#     /24 ................ 49,71% das redes
+#     /23 ................ 10,34%
+#     /22 .................. 3,79%
+#     /22 ou menor ....... 97,87% das redes (62,04% dos endereços)
+#     /16 ou maior ........ 0,09% das redes (23,72% dos endereços)
+#
+# Ou seja: o espaço brasileiro é dominado por alocações PEQUENAS, que são exatamente as
+# que trocam de mão entre operadoras — metade das redes é um /24 sozinho. "Bloco de IP
+# muda de dono" não é hipótese remota aqui, é a forma do espaço. Isso justifica existir um
+# limiar; a largura dele continua sendo julgamento, e está escrito acima.
+GEOIP_CITY_MAX_AGE_DAYS = _env_int("GEOIP_CITY_MAX_AGE_DAYS", 90)
+
 # ── Google Maps ──────────────────────────────────────────────────────
 # A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
 # limitada por referer + APIs. A chave de servidor nunca é projetada para o
@@ -631,7 +749,8 @@ SHOPMAN_WHATSAPP = {
     "timeout": MANYCHAT_API_TIMEOUT,
     # event → Meta template config. Vazio = manda texto (só dentro da janela 24h).
     # Preencher com os templates Utility/Auth aprovados na Meta:
-    #   "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
+    #   "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref_short", "order_total_display"]},
+    # (no corpo o pedido é o FINAL do ref, `order_ref_short`; o ref completo vai no botão)
     "templates": {},
 }
 
@@ -644,8 +763,15 @@ SHOPMAN_WHATSAPP = {
 # cai para Shop.phone. Ver docs/guides/whatsapp-access-link.md.
 SHOPMAN_WA_VERIFY = {
     "number": os.environ.get("SHOPMAN_WHATSAPP_VERIFY_NUMBER", "").strip(),
-    # Mensagem pré-preenchida do botão do site ({code} = o NB-XxXx que o ManyChat casa).
-    "access_message_template": os.environ.get("SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "#menu {code}"),
+    # Mensagem pré-preenchida do botão do site. {shop} = nome da loja; {code} = o NB-XxXx
+    # que carrega o contexto. Frase humana: para quem nunca falou com a loja, "#menu
+    # NB-XxXx" parecia senha. ⚠️ O ManyChat dispara o flow por PALAVRA-CHAVE: o fluxo
+    # "Fluxo Login Cardápio" aceita "#menu" OU "quero entrar no site" (26/09/2026).
+    # Mudou a frase? Mude a palavra-chave lá antes, senão ninguém entra.
+    "access_message_template": os.environ.get(
+        "SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE",
+        "Olá! Quero entrar no site da {shop} (ref. {code})",
+    ),
 }
 
 # ── iFood (Marketplace F16) ────────────────────────────────────────
@@ -670,6 +796,13 @@ SHOPMAN_IFOOD = {
     "cancellation_default_code": os.environ.get("IFOOD_CANCELLATION_CODE", ""),
     # iFood requires a non-empty `reason` alongside the code (400 otherwise).
     "cancellation_default_reason": os.environ.get("IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"),
+    # Módulo Merchant: o Shopman como fonte única de "loja aberta" no iFood — grava
+    # o horário semanal (PUT opening-hours), vira feriado/fechamento do calendário
+    # em interrupção, deixa o gestor pausar a loja no iFood e confere o status do
+    # iFood contra o da casa (OperatorAlert quando divergem). DESLIGADO por padrão:
+    # enquanto estiver desligado, quem manda no horário do iFood é o Portal do
+    # Parceiro, como sempre foi. Ver shopman/shop/services/ifood_merchant.py.
+    "merchant_sync_enabled": _env_bool("IFOOD_MERCHANT_SYNC", False),
     # Webhook push (WP-5, optional): HMAC-SHA256 secret for X-IFood-Signature.
     # Defaults to client_secret (per plan). Set from the portal's webhook section
     # if iFood provisions a distinct signing secret.
@@ -844,6 +977,14 @@ SHOPMAN_SMS_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_SMS_ALLOW_IN_DEBUG", False)
 SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG", False)
 SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG", False)
 SHOPMAN_MACHINE_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MACHINE_ALLOW_IN_DEBUG", False)
+SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_ENRICHMENT_ALLOW_IN_DEBUG", False)
+
+# ── Sugestão de catálogo por GTIN (shop.services.product_enrichment) ──
+# Token da API Cosmos (Bluesoft): nome, marca, NCM, peso e foto de referência.
+# VAZIO = Cosmos inerte — a sugestão segue com a NF-e de compra e o Open Food
+# Facts, e a tela diz que a Cosmos ficou de fora. O plano grátis dá 25
+# consultas/dia; o token é segredo e mora no ambiente, nunca no repositório.
+SHOPMAN_COSMOS_TOKEN = os.environ.get("SHOPMAN_COSMOS_TOKEN", "").strip()
 
 # ── OTP Delivery Chain ───────────────────────────────────────────────
 # SMS primário (Twilio), email como fallback. WhatsApp fica mapeado mas FORA da cadeia
@@ -964,7 +1105,7 @@ UNFOLD = {
         {
             "models": ["shop.qualitydefect", "shop.qualitygrade"],
             "items": [
-                {"title": "Defeitos de fornada", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
+                {"title": "Defeitos de lote", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
                 {"title": "Graus de qualidade", "link": reverse_lazy("admin:shop_qualitygrade_changelist")},
             ],
         },
@@ -999,12 +1140,33 @@ UNFOLD = {
 
 # ── Email ──────────────────────────────────────────────────────────
 
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# ⚠️ O SETTING mudou de nome; a VARIÁVEL DE AMBIENTE não.
+#
+# O Django 6.1 deprecou todos os `EMAIL_*` e o Django 7 os remove — quem fica é
+# `MAILERS`. A migração é tudo-ou-nada, e o Django faz questão disso:
+#
+#   1. declarar `MAILERS` junto de qualquer `EMAIL_*` levanta
+#      `ImproperlyConfigured` já na carga do settings;
+#   2. com `MAILERS` definido, ler `settings.EMAIL_BACKEND` levanta
+#      `AttributeError` — e `getattr(settings, "EMAIL_BACKEND", "")` passa a
+#      devolver o default CALADO, que é fail-open no canal de e-mail;
+#   3. `override_settings(EMAIL_BACKEND=...)` deixa de valer.
+#
+# Por isso nenhum `EMAIL_*` sobra no código: quem lê a configuração resolvida é
+# `shopman.shop.mailers.default_mailer()`, o leitor único da casa.
+#
+# ⚠️ Os NOMES das variáveis de ambiente continuam `EMAIL_BACKEND`, `EMAIL_HOST`,
+# `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` e
+# `EMAIL_TIMEOUT`. Eles são o contrato do spec de deploy
+# (`.do/app.subdomains.yaml`, `.do/app.alpha-subdomains.yaml`) e do runbook
+# `conferir-spec-digitalocean.md` — ambiente vivo, não mecânica de repositório.
+# O que se renomeou aqui foi o setting do Django, e só.
+_EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+_EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+_EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+_EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
+_EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+_EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # ⚠️ O default é DELIBERADAMENTE não-entregável, e não deve ser "consertado"
 # para um domínio real. `.local` é TLD reservado a mDNS (RFC 6762): sem DNS
 # público, sem SPF, sem DMARC. `notification_email.is_available()` reconhece
@@ -1034,7 +1196,80 @@ VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
 # ocupa o worker de directives por dois minutos, e o que era "e-mail não saiu"
 # vira "a fila de directives parou". Quinze segundos são folgados para um SMTP
 # que funciona e curtos o bastante para um que não existe.
-EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+_EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+
+
+# Teto de espera do botão "testar envio" do Admin. É mais curto que o do worker
+# de propósito: ali há alguém olhando a tela, e um gestor não espera quinze
+# segundos por um clique sem achar que travou.
+_EMAIL_TIMEOUT_DIAGNOSTICO = 10
+
+
+def _mailer_options(backend: str, *, timeout: int | None = None) -> dict:
+    """As `OPTIONS` que ESTE backend aceita.
+
+    ⚠️ Não dá para mandar o mesmo bloco para todo backend. No mundo dos settings
+    antigos o backend de console simplesmente ignorava o host; em `MAILERS`, uma
+    option que o backend não conhece levanta `InvalidMailer` ("Unknown
+    options ...") — o `BaseEmailBackend` reporta em vez de engolir.
+
+    `host` vai como string mesmo quando vazia, e de propósito: `None` levantaria
+    `InvalidMailer` na construção do mailer, trocando o estado que a casa já
+    trata ("SMTP sem host não entrega, a cadeia segue para SMS") por uma exceção
+    em quem só queria perguntar se o canal está de pé.
+    """
+    if "smtp" not in backend.lower():
+        return {}
+    return {
+        "host": _EMAIL_HOST,
+        "port": _EMAIL_PORT,
+        "use_tls": _EMAIL_USE_TLS,
+        "username": _EMAIL_HOST_USER,
+        "password": _EMAIL_HOST_PASSWORD,
+        "timeout": _EMAIL_TIMEOUT if timeout is None else timeout,
+    }
+
+
+# Dois aliases, mesmo transporte, tetos de espera diferentes.
+#
+# O alias `diagnostics` existe porque a alternativa deixou de existir: o botão
+# de teste do Admin pedia a conexão com `get_connection(timeout=...)`, e tanto
+# o `get_connection()` quanto o argumento `connection=` do `EmailMessage` são
+# deprecados no Django 6.1. Em `MAILERS`, "o mesmo servidor com outro teto" é
+# um alias — e o efeito colateral é bom: os dois tetos passam a morar lado a
+# lado, num lugar só, em vez de um em settings e o outro numa constante de view.
+MAILERS = {
+    "default": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND),
+    },
+    "diagnostics": {
+        "BACKEND": _EMAIL_BACKEND,
+        "OPTIONS": _mailer_options(_EMAIL_BACKEND, timeout=_EMAIL_TIMEOUT_DIAGNOSTICO),
+    },
+}
+
+# `mail.E001` silenciado — a régua é do Django, a política é da casa.
+#
+# O check nasceu junto com `MAILERS` e reprova o `check --deploy` com ERRO
+# quando o backend `default` é de desenvolvimento (console/locmem/dummy/file).
+# A casa já responde a essa mesma pergunta, e responde melhor: a prontidão
+# `otp_delivery` distingue "e-mail inerte" de "nenhum canal entrega", e só o
+# segundo é erro. A decisão está escrita em
+# `backstage/services/integration_readiness.py`: o SMS é o canal de OTP por si,
+# o WhatsApp não faz OTP, e e-mail não configurado "não é pendência, é o
+# desenho". Deixar o `mail.E001` de pé colocaria o Django reprovando o deploy
+# por uma escolha deliberada — e um painel que fica vermelho por escolha da
+# casa ensina a ignorar o vermelho que importa.
+#
+# ⚠️ Silenciar aqui NÃO deixa o canal mudo. Quem grita continua gritando, e em
+# três lugares: `notification_email.is_available()` devolve `False` e a cadeia
+# segue para SMS/WhatsApp; a projeção de diagnóstico diz na tela POR QUE não
+# entrega; e a prontidão lista a perna que falta.
+SILENCED_SYSTEM_CHECKS = [
+    *globals().get("SILENCED_SYSTEM_CHECKS", []),
+    "mail.E001",
+]
 
 # ── REST Framework ─────────────────────────────────────────────────
 
@@ -1149,6 +1384,27 @@ AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
 
+# Piloto do de-para do B.I. (`benchmark_alias_matchers`): TypeSafe Jev contra o
+# fuzzy de hoje e o LLM acima. Só o comando de piloto lê isto; sem chave, o Jev
+# fica fora do placar e o resto roda.
+JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
+JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
+JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
+
+# Piloto de intenções da mensageria (INTENT-PILOT-PLAN). Texto de cliente, mesmo
+# redigido, só sai da casa para os provedores desta lista — credencial sozinha
+# nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
+# em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
+# é fornecedor novo e só entra quando ele decidir, pondo o nome aqui pelo ambiente.
+SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
+    value.strip().lower()
+    for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
+    if value.strip()
+)
+# O ciclo automático do piloto no `maintenance_worker` (sorteia, pré-rotula, mede).
+# Sem mensagem observada ele não faz nada; desligar é só pôr false.
+SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must
@@ -1161,6 +1417,14 @@ SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = os.environ.get(
 ).lower() in ("true", "1", "yes")
 SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
     os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
+)
+
+# IP bruto da prova de consentimento (R11): no máximo 90 dias. O teto é
+# irredutível por configuração; um prazo menor continua permitido. Só vale
+# quando alguém roda `purge_consent_ip --apply` à mão — nada o agenda.
+SHOPMAN_CONSENT_IP_RETENTION_DAYS = min(
+    90,
+    max(1, _env_int("SHOPMAN_CONSENT_IP_RETENTION_DAYS", 90)),
 )
 
 # ── Concierge multicanal (venda conversacional) ──────────────────────
@@ -1255,9 +1519,12 @@ SHOPMAN_CONCIERGE = {
                         "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
                     ),
                     # O service converte e valida. Preservar o valor cru faz um
-                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    # typo falhar fechado em vez de virar silenciosamente 30 dias.
+                    # 30 (o teto aceito) durante o aprendizado, por decisão do dono
+                    # em 23/09/2026; depois encurta. Mudar o valor vale também para
+                    # o que já foi guardado (``align_observation_retention``).
                     "retention_days": os.environ.get(
-                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "30"
                     ),
                     "allow_all_subjects": _env_bool(
                         "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False
@@ -1456,7 +1723,8 @@ SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(os.environ.get("SHOPMAN_UNHANDL
 
 # Integrações cujo estado degradado é DECISÃO REGISTRADA deste deployment, e
 # não desvio. Provedor listado aqui (pelo `provider` da prontidão: `focus_nfe`,
-# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery`) nunca passa de
+# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery` e, com Compras ligada,
+# `purchase_nfe`) nunca passa de
 # `warning` no check_integration_drift e usa a janela longa — lembrete semanal
 # em vez de crítico diário. Existe para a instância que se declara `production`
 # e mantém, de propósito, a NFC-e em homologação: um alerta que grita todo dia
@@ -1498,6 +1766,28 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
 # `manage.py fiscal_audit_catalog`.
 SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool("SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False)
 
+# Intermediador da transação (Ajuste SINIEF 22/20 — CONFAZ, efeitos desde abr/2021):
+# a NFC-e de venda feita em plataforma de terceiro tem que identificar QUEM intermediou
+# (indIntermed + grupo infIntermed: CNPJ do intermediador e o identificador do cadastro
+# da LOJA na plataforma). Mapa canal → dados do intermediador; canal ausente aqui é
+# venda direta da casa, e a nota dele não muda em nada.
+#
+# Declarar o canal aqui também corrige a BASE da nota: o total de um pedido de
+# marketplace carrega receita da plataforma (o iFood documenta que as `additionalFees`
+# "não devem ser adicionadas à nota fiscal") e uma taxa de entrega que só é da casa
+# quando foi a casa que entregou. Motor em shopman.shop.fiscal_intermediary.
+#
+# ⚠️ `id_cad_int_tran` NASCE VAZIO de propósito: o que o Paraná aceita ali é pergunta
+# em aberto para o contador, e sem ele o grupo não sai (a Focus exige os dois juntos).
+# Enquanto estiver vazio, toda NFC-e de venda intermediada gera alerta de operador.
+SHOPMAN_FISCAL_INTERMEDIARIES = {
+    "ifood": {
+        # iFood.com Agência de Restaurantes Online S.A.
+        "cnpj": os.environ.get("FISCAL_INTERMEDIARY_IFOOD_CNPJ", "14380200000121"),
+        "id_cad_int_tran": os.environ.get("FISCAL_INTERMEDIARY_IFOOD_ID_CAD", "").strip(),
+    },
+}
+
 SHOPMAN_FOCUS_NFE = {
     "environment": os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao",
     "token": os.environ.get("FOCUS_NFE_TOKEN", ""),
@@ -1506,15 +1796,58 @@ SHOPMAN_FOCUS_NFE = {
     "completa_nfce": os.environ.get("FOCUS_NFE_NFCE_COMPLETA", "1"),
     "local_destino_nfce": os.environ.get("FOCUS_NFE_NFCE_LOCAL_DESTINO", "1"),
     "presenca_comprador_nfce": os.environ.get("FOCUS_NFE_NFCE_PRESENCA_COMPRADOR", "1"),
+    # Modalidade do frete (X02) — tabela do MOC 7.00, Anexo I, item 357, criada
+    # pela NT 2016.002: 0=CIF remetente, 1=FOB destinatário, 2=por conta de
+    # Terceiros, 3=Transporte Próprio do remetente, 4=Transporte Próprio do
+    # destinatário, 9=Sem Ocorrência de Transporte.
+    #
+    # Três casos, três valores — ver `_delivery_freight_mode` no adapter:
+    # venda sem entrega = 9; entrega da CASA = 3 (transporte próprio);
+    # entrega de PLATAFORMA = 2 (o iFood contratou e bancou o frete; 9 seria
+    # afirmar que transporte não houve, e houve).
     "modalidade_frete_nfce": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE", "9"),
+    "modalidade_frete_delivery": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE_ENTREGA", "3"),
+    "modalidade_frete_third_party": os.environ.get(
+        "FOCUS_NFE_NFCE_MODALIDADE_FRETE_TERCEIRO", "2"
+    ),
     "natureza_operacao": os.environ.get("FOCUS_NFE_NATUREZA_OPERACAO", "VENDA AO CONSUMIDOR"),
     # CFOP de fabricação própria decidido pelo dono em 2026-08-19 (5102, não 5101:
-    # a Nelson não é registrada como indústria). Mesmo valor do perfil `own_production`
+    # a Nelson não é registrada como indústria). Mesmo valor do perfil `standard`
     # em shopman.fiscalman.classification — docs/reference/fiscal-cfop-5101-vs-5102.md.
     "default_cfop_nfce": os.environ.get("FOCUS_NFE_NFCE_DEFAULT_CFOP", "5102"),
     "timeout": int(os.environ.get("FOCUS_NFE_TIMEOUT", "30")),
     "base_url": os.environ.get("FOCUS_NFE_BASE_URL", ""),
 }
+#: Em quantos MINUTOS após a Autorização de Uso uma NFC-e ainda pode ser
+#: cancelada. É prazo de lei, não preferência da loja — por isso mora aqui, no
+#: deployment (que sabe em que UF está), e não em ``Shop.defaults``.
+#:
+#: **30 minutos no Paraná.** RICMS/PR (Decreto 7.871/2017), Anexo III, Subanexo
+#: I, art. 35, na redação do Decreto 10.858/2018 (alteração 194ª, efeitos desde
+#: 1º.10.2018): "O emitente poderá solicitar o cancelamento da NFC-e, desde que
+#: não tenha havido a saída da mercadoria, em prazo não superior a 30 (trinta)
+#: minutos, contado do momento em que foi concedida a Autorização de Uso da
+#: NFC-e". O nacional é o Ajuste SINIEF 19/16, cláusula décima quinta, na
+#: redação do Ajuste SINIEF 7/18, que fixa os 30 minutos como TETO que cada UF
+#: pode reduzir — o PR não reduziu.
+#:
+#: ⚠️ São DUAS condições cumulativas, e esta constante é só a primeira: a outra
+#: é "não ter havido a saída da mercadoria". Ver
+#: ``shopman.shop.services.fiscal.GOODS_NOT_DISPATCHED``.
+#:
+#: ⚠️ As 24 horas que circulam por aí são a redação ORIGINAL do art. 35, morta
+#: em 30.9.2018 — e as 168 horas são NF-e modelo 55 (Subanexo I, art. 11), mais
+#: a hipótese de contingência do art. 35-A. Nenhuma das duas vale para a NFC-e
+#: desta casa. **Não existe cancelamento extemporâneo de NFC-e no PR**: fora do
+#: prazo o caminho é documento fiscal de estorno (RICMS/2017, art. 298, VII),
+#: limpo dentro do mesmo período de apuração e, depois dele, com os acréscimos
+#: legais do § 2º do mesmo artigo.
+#:
+#: Só mexa daqui se a loja mudar de UF, e com a norma da UF nova na mão.
+SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES = int(
+    os.environ.get("NFCE_CANCELLATION_WINDOW_MINUTES", "30")
+)
+
 SHOPMAN_PURCHASE_INVOICE_READER = os.environ.get("SHOPMAN_PURCHASE_INVOICE_READER", "").strip()
 SHOPMAN_PURCHASE_NFE = {
     "environment": os.environ.get("PURCHASE_NFE_ENVIRONMENT", SHOPMAN_FOCUS_NFE["environment"]).strip().lower()
@@ -1540,9 +1873,11 @@ SHOPMAN_PURCHASE_NFE = {
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500"))
 SHOPMAN_ACCOUNTING_BACKEND = None
 
-# Operator email for backend notifications (order alerts, etc.).
-# Falls back to DEFAULT_FROM_EMAIL if None.
-SHOPMAN_OPERATOR_EMAIL = os.environ.get("SHOPMAN_OPERATOR_EMAIL", "").strip() or None
+# Endereço que recebe os alertas críticos e as notificações de sistema (sem
+# pedido): o dono/gestor, não o operador de balcão. Sem ele, o alerta crítico
+# por e-mail termina num aviso de log e a notificação de sistema cai no
+# DEFAULT_FROM_EMAIL.
+SHOPMAN_ALERT_EMAIL = os.environ.get("SHOPMAN_ALERT_EMAIL", "").strip() or None
 
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
@@ -1645,9 +1980,19 @@ SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
     if host.strip()
 )
 
+# A prévia e a aprovação do Google leem o começo da foto (formato, peso, dimensão)
+# num host da lista acima, sem seguir redirecionamento. Desligada só onde não há rede
+# (testes e simulador); aí vale apenas a conferência pela URL.
+SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED", True
+)
+
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL
+# A página de link inválido do doorman aponta para `doorman:code-request`, rota
+# que o deployment não monta (config/urls.py): a entrada de login é a da loja.
+DOORMAN["TEMPLATE_ACCESS_LINK_INVALID"] = "shop/access_link_invalid.html"
 
 # Ref of the Channel used for POS/counter orders.
 SHOPMAN_POS_CHANNEL_REF = os.environ.get("SHOPMAN_POS_CHANNEL_REF", "pdv")

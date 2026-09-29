@@ -16,7 +16,7 @@ import {
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
 // que controlamos. Os helpers de presentation (~/presentation) rodam de VERDADE
-// (resolvidos pelo alias). O finish saiu do grid: fechar a fornada é a Expedição
+// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é a Expedição
 // (quiosque de QC), que mira UMA WorkOrder por cartão — o bug do rendimento de 200%
 // (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
 // ação é uma só — Confirmar, o mesmo verbo do Planejamento (16/09/2026); a
@@ -412,7 +412,7 @@ describe("ProductionStageGrid — produce render", () => {
     const w = mountGrid();
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
-    expect(w.text()).toContain("Selecione a fornada");
+    expect(w.text()).toContain("Selecione o lote");
     expect(startSpy).not.toHaveBeenCalled();
 
     await byText(w, "button", "WO-008")!.trigger("click");

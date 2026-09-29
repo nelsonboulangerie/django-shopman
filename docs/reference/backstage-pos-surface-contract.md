@@ -1,5 +1,10 @@
 # Backstage POS Surface Contract
 
+> **Vocabulário fechado do PDV:** objeto, atos e grandezas estão em
+> [`suite-vocabulary.md`](suite-vocabulary.md) §3 — inclusive as decisões do dono que não se
+> reabrem (*validar* fica; comanda se **divide**, **transfere** e **junta**; **item é
+> unidade, nunca linha**).
+
 Status: canonical backend/projection/action contract  
 Date: 2026-05-23  
 Surface class: backstage operational POS surfaces (`/gestor/pos/`, `surfaces/pos-nuxt`, future POS clients)
@@ -35,6 +40,13 @@ surface depends on it.
 | Close cash shift | POST | `/api/v1/backstage/pos/cash/close/` | `close_cash_shift` |
 | Cash movement | POST | `/api/v1/backstage/pos/cash/movement/` | `register_cash_movement` |
 | Customer lookup | GET | `/api/v1/backstage/pos/customer/lookup/?phone={phone}` | `build_pos_customer_lookup` |
+| Preorders (search · day · week) | GET | `/api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` | `projections.preorders.build_preorder_list` |
+| Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
+| Preorder hand-over (receive balance + deliver) | POST | `/api/v1/backstage/pos/preorders/{ref}/hand-over/` | `operator_orders.hand_over_at_counter` (settle in this station's open shift + advance to completed, one transaction; idempotent by `client_request_id`) |
+| Preorder cancel | POST | `/api/v1/backstage/orders/{ref}/cancel/` (the Gestor route) | `operator_orders.cancel_order` + `operator_cancel_policy` + manager PIN |
+| Preorder edit (sale screen in edit mode) | POST | `/api/v1/backstage/pos/preorders/{ref}/edit-session/` | `pos_edit_session.open_edit_session` (virtual tab, no `tab_ref`; saved by `orders/{ref}/edit/preview/` + `orders/{ref}/edit/`) |
+| Preorder redo (after "Cancelar e refazer") | POST | `/api/v1/backstage/pos/preorders/{ref}/redo-tab/` | `pos_edit_session.open_redo_tab` (a regular sale tab `Refazer {ref}` pre-filled with the cancelled preorder; only after the cancel; resumed while open; refused once a sale closed on it) |
+| Preorders realtime (SSE) | GET | BFF `/sse/orders` → `/events/orders/` (`backstage-orders-main`) | push-only; the Encomendas screens refetch the list on each event (ADR-016) |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
 
 Surfaces must use action hrefs from `pos.actions[]` when present. Fallback paths
@@ -226,10 +238,13 @@ capture. Gateway/webhook/Payman status remains authoritative.
 - `fiscal_expected` (bool, kept for compatibility): the emission rule says a
   NFC-e will exist for this sale.
 - `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
-  `authorized` | `failed` (`shopman.shop.services.fiscal.fiscal_state`). The
-  note is born at three points — sale close for tenders that need no capture,
-  payment capture for `pix`/`link`, order completion as the safety net — so the
-  surface must read the state, never guess the point. The same field is
+  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed`
+  (`shopman.shop.services.fiscal.fiscal_state`). A counter sale (takes the
+  goods now) emits at sale close, or at capture for `pix`/card; an order with a
+  pickup/delivery ahead (encomenda) gets only the non-fiscal receipt at payment
+  and the note is born when the goods leave — at pickup (`awaiting_pickup`) or
+  with the delivery bag (`awaiting_delivery`); order completion is the safety
+  net. The surface must read the state, never guess the point. The same field is
   published per sale in `GET /api/v1/backstage/pos/recent-sales/` and as
   `fiscal_state` on every order card of the orders queue.
 
@@ -250,7 +265,7 @@ capture. Gateway/webhook/Payman status remains authoritative.
 | `supports_delivery_address_autocomplete` | address autocomplete may be enabled. |
 | `provider_readiness` | non-secret readiness rows for Focus NFe, Efí PIX and Stripe card. |
 | `fiscal_document` | fiscal runtime status: `ready`, `warning`, `error`. |
-| `receipt_requests_emission` | asking for the receipt (paper/e-mail) emits the NFC-e — true only when the deployment's `SHOPMAN_FISCAL_EMISSION_RESOLVER` carries `on_requested_receipt` (or `always`). Gates the "prints itself once authorized" copy. |
+| `receipt_requests_emission` | asking for the receipt (paper/e-mail) emits the NFC-e, exactly like "CPF na nota" — true when the deployment's `SHOPMAN_FISCAL_EMISSION_RESOLVER` carries `on_request_or_tax_id` (which reads the three counter requests), `on_requested_receipt` or `always`, and when it is empty (the fallback is the same request). Lives in `capabilities`, next to `supports_fiscal_document`. Gates the "prints itself / e-mail goes once authorized" copy. |
 | `delivery_minimum_q` | display/validation hint; backend remains authority. |
 | `requires_manager_approval_above_q` | threshold for approval credentials. |
 | `address_autocomplete` | provider/key/fields/bias/reverse action metadata. |
@@ -318,6 +333,7 @@ backend validation.
 | Open/close shift and movement | `cashman.operate_pos` |
 | Tab lifecycle and sale review/close | `cashman.operate_pos` |
 | Recent sale correction | `cashman.operate_pos` |
+| Preorders (Encomendas) | `cashman.operate_pos` + `shop.manage_orders` |
 | Manager approval | approving user must have `cashman.adjust_shift` |
 | Cash shift audit/admin | `cashman.audit_shift` / admin permissions |
 

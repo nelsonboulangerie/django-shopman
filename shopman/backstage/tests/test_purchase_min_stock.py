@@ -28,7 +28,7 @@ from shopman.backstage.services.purchase import PurchaseError
 @pytest.fixture
 def material(db):
     Material = apps.get_model("buyman", "Material")
-    return Material.objects.create(sku="ALECRIM", name="Alecrim", unit="g")
+    return Material.objects.create(sku="ALECRIM-FRESCO", name="Alecrim", unit="g")
 
 
 def _projected(sku: str):
@@ -38,7 +38,7 @@ def _projected(sku: str):
 @pytest.mark.django_db
 def test_sem_consumo_e_sem_minimo_o_insumo_nunca_e_sugerido(material):
     """O estado de 56 dos 57 insumos: inerte por construção."""
-    projected = _projected("ALECRIM")
+    projected = _projected("ALECRIM-FRESCO")
     assert projected.dailyUse == 0
     assert projected.minStock == 0
     assert projected.suggestedQty == 0
@@ -46,9 +46,9 @@ def test_sem_consumo_e_sem_minimo_o_insumo_nunca_e_sugerido(material):
 
 @pytest.mark.django_db
 def test_minimo_declarado_faz_o_insumo_virar_sugestao(material):
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]})
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}]})
 
-    projected = _projected("ALECRIM")
+    projected = _projected("ALECRIM-FRESCO")
     assert projected.minStock == 500
     # Sem estoque em mãos, a sugestão é o mínimo inteiro.
     assert projected.suggestedQty == 500
@@ -59,7 +59,7 @@ def test_grava_no_bloco_purchase_sem_pisar_no_resto_do_metadata(material):
     material.metadata = {"purchase": {"category": "Temperos"}, "outro": "fica"}
     material.save()
 
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]})
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}]})
 
     material.refresh_from_db()
     assert material.metadata["outro"] == "fica"
@@ -69,14 +69,14 @@ def test_grava_no_bloco_purchase_sem_pisar_no_resto_do_metadata(material):
 
 @pytest.mark.django_db
 def test_aceita_o_teclado_da_casa(material):
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "1.250,5"}]})
-    assert _projected("ALECRIM").minStock == pytest.approx(1250.5)
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "1.250,5"}]})
+    assert _projected("ALECRIM-FRESCO").minStock == pytest.approx(1250.5)
 
 
 @pytest.mark.django_db
 def test_zero_apaga_o_minimo_declarado(material):
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]})
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "0"}]})
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}]})
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "0"}]})
 
     material.refresh_from_db()
     # Apagar é remover a chave, não gravar zero: zero gravado e "sem mínimo"
@@ -88,7 +88,7 @@ def test_zero_apaga_o_minimo_declarado(material):
 @pytest.mark.django_db
 def test_linha_em_branco_e_ignorada(material):
     result = purchase_service.set_min_stock(
-        {"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}, {"materialSku": "ALECRIM", "minStock": ""}]}
+        {"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}, {"materialSku": "ALECRIM-FRESCO", "minStock": ""}]}
     )
     assert result["saved"] == 1
 
@@ -99,7 +99,7 @@ def test_insumo_desconhecido_derruba_o_lote_apontando_a_linha(material):
         purchase_service.set_min_stock(
             {
                 "minimums": [
-                    {"materialSku": "ALECRIM", "minStock": "500"},
+                    {"materialSku": "ALECRIM-FRESCO", "minStock": "500"},
                     {"materialSku": "NAO-EXISTE", "minStock": "10"},
                 ]
             }
@@ -115,17 +115,17 @@ def test_insumo_desconhecido_derruba_o_lote_apontando_a_linha(material):
 def test_a_projecao_distingue_minimo_declarado_de_derivado(material):
     """Sem a distinção, a tela oferece o derivado para o operador "confirmar" —
     e confirmar CONGELA um número que era para acompanhar o consumo."""
-    assert _projected("ALECRIM").minStockDeclared is False
+    assert _projected("ALECRIM-FRESCO").minStockDeclared is False
 
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]})
-    assert _projected("ALECRIM").minStockDeclared is True
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "500"}]})
+    assert _projected("ALECRIM-FRESCO").minStockDeclared is True
 
-    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "0"}]})
-    assert _projected("ALECRIM").minStockDeclared is False
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "0"}]})
+    assert _projected("ALECRIM-FRESCO").minStockDeclared is False
 
 
 @pytest.mark.django_db
 def test_minimo_negativo_e_recusado(material):
     with pytest.raises(PurchaseError) as excinfo:
-        purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "-5"}]})
+        purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM-FRESCO", "minStock": "-5"}]})
     assert excinfo.value.lines[0]["field"] == "minStock"

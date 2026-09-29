@@ -51,6 +51,8 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 
     ``perm`` filters to the surface's permission (default POS). Pass ``None`` for
     every credentialed staff operator (the per-action gate enforces the rest).
+
+    Superusuário entra na lista quando tem PIN cadastrado: ver ``_eligible``.
     """
     qs = User.objects.filter(is_staff=True, is_active=True, pin_credential__isnull=False)
     if perm:
@@ -67,6 +69,16 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 def _eligible(user, perm: str | None) -> bool:
     if user is None or not user.is_active or not user.is_staff:
         return False
+    # Superusuário destrava por PIN e por crachá como qualquer operador, e assina
+    # "Quem autoriza?". O destrave é ``login()`` de verdade como a pessoa: a sessão
+    # cicla e nada do operador anterior atravessa. O PIN é individual, guardado em
+    # HMAC, com limite de tentativas e bloqueio. O risco que sobra (alguém ver o
+    # dono digitar) é o mesmo de qualquer gerente. O risco concreto era o PIN
+    # compartilhado do seed, e esse continua fechado: ``setup_operators`` não dá
+    # PIN nem crachá ao superusuário, o dono cadastra o dele. Continuam recusando
+    # superusuário o ``reset_operator_pin`` (gerente não reseta o PIN do dono) e o
+    # ``station_trust.autonomous_operator_for`` (terminal autônomo nunca age como
+    # superusuário).
     if perm and not user.has_perm(perm):
         return False
     return True
@@ -198,7 +210,7 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
         # claro a quem pediu; sobre uma conta superusuária isso é a chave-mestra
         # entregue em mão — `_eligible` deixa passar porque `has_perm` de
         # superusuário é sempre True, e o cookie de sessão leva a aba ao lado para
-        # o /admin/. É o mesmo buraco que `station_trust.autonomous_account`
+        # o /admin/. É o mesmo buraco que `station_trust.autonomous_operator_for`
         # recusa para o totem; a recusa faltava no caminho do PIN.
         logger.error(
             "Reset de PIN pedido sobre conta SUPERUSUÁRIA — recusado.",
@@ -206,10 +218,35 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
         )
         raise PinChangeError(
             "superuser_target",
-            "Esta conta administra o sistema e não usa PIN de balcão. "
-            "Troque a senha dela pelo Admin.",
+            "Esta conta administra o sistema: o PIN dela só pode ser criado ou "
+            "trocado pela própria pessoa, em \"Criar ou trocar meu PIN\".",
         )
     temp = (temp_pin or "").strip() or _generate_temp_pin()
     PinCredential.validate_raw(temp)  # policy check before writing (raises PinCredentialError)
     PinCredential.set_for(target_user, temp, must_change=True)
+    return temp
+
+
+def issue_own_temp_pin(user) -> str:
+    """Gera um PIN temporário para QUEM PEDIU, e só para essa pessoa.
+
+    É a porta de entrada do dono no balcão. O superusuário destrava por PIN, mas
+    não tinha como ganhar um: o app no ar não tem console (``set_operator_pin``
+    não serve), o Admin não cria credencial à mão e ``reset_operator_pin`` recusa
+    alvo superusuário — de propósito, porque ali quem pede é o gerente e quem
+    recebe o PIN em claro é outra pessoa.
+
+    Aqui não existe "outra pessoa": o alvo é sempre o próprio ``user``, que já
+    provou a senha para chegar ao Admin. Por isso não há escalada, e a mesma
+    regra serve para superusuário e para qualquer staff. O PIN nasce com
+    ``must_change``: a tela de bloqueio obriga a troca no primeiro destrave, e o
+    número que apareceu na tela deixa de valer.
+
+    Levanta :class:`PinChangeError` (``not_operator``) para conta inativa ou sem
+    ``is_staff`` — quem não é operador não ganha PIN de balcão.
+    """
+    if user is None or not getattr(user, "is_active", False) or not getattr(user, "is_staff", False):
+        raise PinChangeError("not_operator", "Só uma conta ativa da equipe pode ter PIN.")
+    temp = _generate_temp_pin()
+    PinCredential.set_for(user, temp, must_change=True)
     return temp

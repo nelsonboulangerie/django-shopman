@@ -44,8 +44,8 @@ def test_rejuvenesce_um_banco_envelhecido_e_e_idempotente(monkeypatch):
     # passado (como no alpha entre 19 e 26/08).
     from shopman.stockman.models import Quant
 
-    farinha_antes = stock.available("FARINHA-T65", position=deposito)
-    quant_farinha = Quant.objects.get(sku="FARINHA-T65", position=deposito)
+    farinha_antes = stock.available("FARINHA-NOVARA-T55", position=deposito)
+    quant_farinha = Quant.objects.get(sku="FARINHA-NOVARA-T55", position=deposito)
     stock.issue(
         quantity=farinha_antes - Decimal("1"),
         quant=quant_farinha,
@@ -65,7 +65,7 @@ def test_rejuvenesce_um_banco_envelhecido_e_e_idempotente(monkeypatch):
     out = StringIO()
     call_command("refresh_seed_dates", stdout=out)
     assert "DRY-RUN" in out.getvalue()
-    assert stock.available("FARINHA-T65", position=deposito) == Decimal("1")
+    assert stock.available("FARINHA-NOVARA-T55", position=deposito) == Decimal("1")
     assert WorkOrder.objects.filter(
         status=WorkOrder.Status.PLANNED, target_date__lt=hoje
     ).count() == apodrecidas
@@ -74,8 +74,8 @@ def test_rejuvenesce_um_banco_envelhecido_e_e_idempotente(monkeypatch):
     # horizonte de hoje a +7 replantado ─────────────────────────────────────
     out = StringIO()
     call_command("refresh_seed_dates", "--apply", stdout=out)
-    alvo_farinha = material_opening_targets()["FARINHA-T65"]
-    assert stock.available("FARINHA-T65", position=deposito) == alvo_farinha
+    alvo_farinha = material_opening_targets()["FARINHA-NOVARA-T55"]
+    assert stock.available("FARINHA-NOVARA-T55", position=deposito) == alvo_farinha
     assert alvo_farinha % Decimal("25") == 0
     assert not WorkOrder.objects.filter(
         status=WorkOrder.Status.PLANNED,

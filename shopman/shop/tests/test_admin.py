@@ -548,6 +548,10 @@ class TestShopAdminPurchaseDefaults:
         assert b'name="defaults_purchase_min_lead_time_days"' in resp.content
         assert b'name="defaults_purchase_lead_time_history_days"' in resp.content
         assert b'name="defaults_purchase_lead_time_max_days"' in resp.content
+        assert b'name="defaults_purchase_resale_markup_pct"' in resp.content
+        assert b'name="defaults_purchase_resale_markup_by_collection"' in resp.content
+        assert b'name="defaults_purchase_receive_position_resale"' in resp.content
+        assert b'name="defaults_purchase_receive_position_material"' in resp.content
 
     def test_initial_reflects_existing_purchase_block(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -584,7 +588,63 @@ class TestShopAdminPurchaseDefaults:
             "min_lead_time_days": 2,
             "lead_time_history_days": 90,
             "lead_time_max_days": 30,
+            # Markup da revenda mora no mesmo bloco; em branco = padrão (50%).
+            "resale_markup_pct": 50,
+            "resale_markup_by_collection": {},
         }
+
+    def test_form_saves_resale_markup_by_category(self, shop):
+        from shopman.offerman.models import Collection
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Collection.objects.create(ref="mercearia", name="Mercearia")
+        Collection.objects.create(ref="frios", name="Frios")
+        data = _shop_form_data(shop)
+        data["defaults_purchase_resale_markup_pct"] = "60"
+        data["defaults_purchase_resale_markup_by_collection"] = "mercearia: 70; frios: 100"
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["purchase"]["resale_markup_pct"] == 60
+        assert saved.defaults["purchase"]["resale_markup_by_collection"] == {"mercearia": 70, "frios": 100}
+        again = ShopForm(instance=saved)
+        assert again.fields["defaults_purchase_resale_markup_by_collection"].initial == "frios: 100; mercearia: 70"
+
+    def test_form_saves_receive_positions_by_role(self, shop):
+        from shopman.stockman.models import Position, PositionKind
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Position.objects.create(ref="prateleira", name="Prateleira", kind=PositionKind.PHYSICAL, is_saleable=True)
+        Position.objects.create(ref="deposito", name="Depósito", kind=PositionKind.PHYSICAL, is_saleable=False)
+        data = _shop_form_data(shop)
+        data["defaults_purchase_receive_position_resale"] = "prateleira"
+        data["defaults_purchase_receive_position_material"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["purchase"]["receive_position_resale"] == "prateleira"
+        assert "receive_position_material" not in saved.defaults["purchase"]
+        # O insumo só oferece posição que não vende.
+        choices = dict(ShopForm(instance=saved).fields["defaults_purchase_receive_position_material"].choices)
+        assert "deposito" in choices and "prateleira" not in choices
+
+    def test_resale_markup_with_unknown_category_or_bad_value_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_purchase_resale_markup_by_collection"] = "nao-existe: 50; mercearia sessenta"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        errors = " ".join(form.errors["defaults_purchase_resale_markup_by_collection"])
+        assert "mercearia sessenta" in errors
+        assert "nao-existe" in errors
 
     def test_lead_time_ceiling_below_floor_rejected(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -1140,6 +1200,49 @@ class TestPosDiscountThresholdPolicy:
         cache.clear()
         # 0 é valor explícito (todo desconto exige aprovação), não "ausente".
         assert _discount_approval_threshold_q() == 0
+
+
+class TestPosLateFiscalEmissionPolicy:
+    """Até quando a emissão avulsa de NFC-e vale — política da loja, no Admin."""
+
+    def test_form_saves_days_to_pos_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import fiscal
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = "2"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["pos"]["late_fiscal_emission_days"] == 2
+        assert fiscal.late_emission_days() == 2
+
+    def test_blank_means_same_day(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import fiscal
+
+        shop.defaults = {"pos": {"late_fiscal_emission_days": 3}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "pos" not in saved.defaults
+        assert fiscal.late_emission_days() == 0
+
+    def test_negative_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_late_fiscal_emission_days"] = "-1"
+        assert not ShopForm(data=data, instance=shop).is_valid()
+
+    def test_field_lives_on_the_pos_page(self):
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
+        assert "defaults_pos_late_fiscal_emission_days" in fields
 
 
 class TestStockAlertCooldownPolicy:

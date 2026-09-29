@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand, CommandError
@@ -11,6 +12,8 @@ from shopman.backstage.services.financial_reconciliation import (
     build_financial_reconciliation,
     persist_financial_reconciliation,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -62,6 +65,21 @@ class Command(BaseCommand):
             self.stdout.write(json.dumps(report.as_dict(), ensure_ascii=False, sort_keys=True, indent=2))
         else:
             self._write_human(report, dry_run=dry_run)
+
+        if report.alert_created:
+            # O grito da divergência é UM por alerta aberto. O worker reroda
+            # "ontem" a cada 5 min e o `OperatorAlert` deduplica até alguém
+            # resolver (dedupe `financial-day:<data>:<crit>:<err>`): só o ciclo
+            # que ABRE o alerta chega aqui. Restart e deploy não repetem; uma
+            # divergência diferente (outras contagens) abre alerta novo e grita
+            # de novo. O `CommandError` abaixo continua para quem roda à mão
+            # (código de saída), e o worker o trata como rastro.
+            counts = report.issue_counts
+            logger.error(
+                "reconcile_financial_day: divergência financeira de %s "
+                "(%s crítica(s), %s erro(s)); OperatorAlert payment_reconciliation_failed aberto",
+                report.date.isoformat(), counts["critical"], counts["error"],
+            )
 
         if report.has_errors:
             raise CommandError(

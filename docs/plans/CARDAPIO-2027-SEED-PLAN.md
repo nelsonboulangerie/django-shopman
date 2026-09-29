@@ -23,7 +23,7 @@
 | Chá Gelado do dia | `CHA-GELADO-DIA` | 🆕 rotativo | 14,00 | |
 | Coffee Float | `COFFEE-FLOAT` | 🆕 | 18,00 | com sorvete |
 | Frappé | `FRAPPE` | 🆕 | 18,00 | café, chocolate ou frutas vermelhas |
-| Cream Soda do dia | `CREAM-SODA-DIA` | 🆕 rotativo | 21,00 | torneira |
+| ~~Cream Soda do dia~~ | `CREAM-SODA-DIA` | ❌ saiu | — | era só uma ideia (dono, 24/09/2026) |
 | Soda de Laranja | `SODA-LARANJA` | 🆕 | 14,00 | torneira |
 | Água | `AGUA` | 🆕 | 6,00 | decisão 25/07 |
 | Saem | `ESPRESSO-DUPLO` `LATTE` `CHOCOLATE-QUENTE` `CHA-EARL-GREY` `SUCO-LARANJA` | | | |

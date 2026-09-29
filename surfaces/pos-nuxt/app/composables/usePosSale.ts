@@ -13,6 +13,7 @@ import type {
   POSCustomerSearchResult,
   POSPaymentDeliveryProjection,
   POSProductProjection,
+  POSWeighedEntry,
   POSReceiptIdentityChoice,
   POSProjection,
   POSSaleReviewProjection,
@@ -35,6 +36,7 @@ import {
   resolvePayment,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
+import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
@@ -54,7 +56,7 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
-import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
@@ -71,6 +73,8 @@ import {
   decisionFieldLabel,
 } from "~/presentation/customerDecision";
 import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptContact";
+import { closeGuardNotice } from "~/presentation/closeGuard";
+import { orderUrl } from "~/presentation/crossAppLinks";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -255,18 +259,54 @@ export function usePosSale(deps: PosSaleDeps) {
   const closeOutcomeUncertain = ref(false);
   const closeGuardPending = ref(false);
   const closeGuardFailureMessage = ref("");
+  // A cobrança em voo é DESTA aba: ela segura a trava e espera o servidor. O
+  // marcador existe (é o que protege um reload no meio), mas não há o que
+  // avisar — é o caminho feliz de toda venda. Sem esta distinção a faixa
+  // vermelha "Cobrança em processamento ou interrompida" acendia em TODA
+  // venda, durante o POST, com um botão de liberar a trava no meio da própria
+  // cobrança.
+  const closeInFlight = ref(false);
+  // Outra aba deste navegador segura a trava agora (Web Locks). Distingue
+  // "outra aba está cobrando" (espere) de "a aba que cobrava caiu" (confira).
+  const closeGuardHeldElsewhere = ref(false);
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
   const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
   const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
-  const closeGuardActiveMessage = "Há uma cobrança sendo processada nesta estação. Aguarde o resultado antes de reconciliar ou tentar novamente.";
+  const closeGuardActiveMessage = "Outra aba deste PDV está finalizando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
   const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
 
-  function restoreUncertainClose() {
+  // Quem segura a trava agora? `navigator.locks.query()` responde sem pegá-la.
+  // Sem a consulta, o conservador é supor que alguém está cobrando: o aviso
+  // manda esperar, e liberar continua exigindo pegar a trava.
+  async function probeCloseLockHolder(): Promise<void> {
+    if (!closeGuardPending.value || closeInFlight.value) {
+      closeGuardHeldElsewhere.value = false;
+      return;
+    }
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.query) {
+      closeGuardHeldElsewhere.value = true;
+      return;
+    }
+    try {
+      const snapshot = await lockManager.query();
+      const held = Boolean(snapshot.held?.some((lock) => lock.name === CLOSE_GUARD_LOCK_NAME));
+      closeGuardHeldElsewhere.value = held && closeGuardPending.value && !closeInFlight.value;
+    } catch {
+      closeGuardHeldElsewhere.value = true;
+    }
+  }
+
+  function restoreUncertainClose(): Promise<void> {
+    // A aba que está cobrando não se corrige pelo que ela mesma gravou: o
+    // evento `storage` não chega a quem escreveu, mas o mount pode.
+    if (closeInFlight.value) return Promise.resolve();
     const guard = readCloseOutcomeUncertain();
     closeOutcomeUncertain.value = !guard.storageAvailable || Boolean(guard.marker);
     closeGuardPending.value = guard.marker?.state === "pending";
     closeGuardFailureMessage.value = guard.storageAvailable ? "" : closeGuardUnavailableMessage;
     if (!guard.storageAvailable) serverError.value = closeGuardUnavailableMessage;
+    return probeCloseLockHolder();
   }
 
   function establishCloseGuard(): CloseGuardMarker | null {
@@ -320,9 +360,11 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, (lock) => {
         if (!lock) {
+          closeGuardHeldElsewhere.value = true;
           serverError.value = closeGuardActiveMessage;
           return false;
         }
+        closeGuardHeldElsewhere.value = false;
         const current = readCloseOutcomeUncertain();
         if (!current.storageAvailable) {
           closeOutcomeUncertain.value = true;
@@ -715,7 +757,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return raw && typeof raw === "object" ? raw as POSAddressAutocompleteProjection : null;
   });
   const totalDisplay = computed(() => formatBRL(cartTotalQ(cart.items)));
-  const itemCount = computed(() => cart.items.reduce((sum, item) => sum + item.qty, 0));
+  const itemCount = computed(() => cart.items.reduce((sum, item) => sum + lineUnits(item), 0));
   const hasOpenTab = computed(() => Boolean(cart.tabSessionKey));
   const inSaleView = computed(() => !showTabs.value && hasOpenTab.value);
   function goToTabs() {
@@ -730,6 +772,13 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
   const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
+  // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
+  // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
+  const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
+    if (review.value) return "resolved";
+    if (!checkoutMode.value) return "at_payment";
+    return reviewFailed.value ? "failed" : "calculating";
+  });
   const deliveryDistanceKm = computed(() => review.value?.delivery_distance_km ?? null);
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo — a review só
@@ -1198,9 +1247,24 @@ export function usePosSale(deps: PosSaleDeps) {
    * trava ao INICIAR, nunca no meio: `setQty`, `restoreItem` e os itens
    * seguintes seguem livres, porque venda começada não vira refém.
    */
-  function addProduct(product: POSProductProjection) {
+  /**
+   * O produto vendido por peso que está pedindo a etiqueta (ou o peso). Tocar o
+   * tile de um queijo fracionado não soma "1": abre o diálogo, e só a confirmação
+   * lança a linha — pelo mesmo `addProduct`, com a trava da gaveta e tudo.
+   */
+  const weighedPrompt = ref<POSProductProjection | null>(null);
+
+  function addProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
     if (!canUseCart.value) {
       requestTabAssociation("cart");
+      return;
+    }
+    // Sem preço no catálogo não entra no pedido — nenhum canal vende preço zero.
+    // O tile já vem inerte; isto cobre o leitor e o "repetir pedido".
+    if (productBlockedLabel({ price_q: product.price_q, sold_out: false })) return;
+    if (product.sold_by_weight && !weighed) {
+      if (orderSetupPending.value) return;
+      weighedPrompt.value = product;
       return;
     }
     // Balcão sem agente não tem trava nenhuma (gaveta de chave): pular o
@@ -1208,10 +1272,20 @@ export function usePosSale(deps: PosSaleDeps) {
     // nunca trava — e evita atravessar um `await` no gesto mais quente do PDV.
     const startsNewSale = drawer.canKick.value && !hasOpenTab.value && !cart.items.length;
     if (startsNewSale) {
-      void drawerLock.guard(async () => pushProduct(product));
+      void drawerLock.guard(async () => pushProduct(product, weighed));
       return;
     }
-    pushProduct(product);
+    pushProduct(product, weighed);
+  }
+
+  /** A confirmação do diálogo de peso: a peça entra como linha própria. */
+  function addWeighedProduct(product: POSProductProjection, weighed: POSWeighedEntry) {
+    weighedPrompt.value = null;
+    addProduct(product, weighed);
+  }
+
+  function cancelWeighedPrompt() {
+    weighedPrompt.value = null;
   }
 
   /**
@@ -1224,13 +1298,28 @@ export function usePosSale(deps: PosSaleDeps) {
    * de uma linha marcada "enviada". A partir daí o toque cria uma linha NOVA,
    * com identidade nova — que é o que a cozinha precisa para receber um ticket.
    */
-  function pushProduct(product: POSProductProjection) {
+  function pushProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
     if (orderSetupPending.value) return;
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
     review.value = null;
     checkoutMode.value = false;
+    // Cada peça pesada é uma linha: duas etiquetas são duas peças, com pesos
+    // diferentes — somar "mais um" a uma linha de 0,312 kg não quer dizer nada.
+    if (weighed) {
+      cart.items.push({
+        line_id: newLineId(),
+        sku: product.sku,
+        name: product.name,
+        // Preço DO QUILO, o do catálogo. O servidor confirma no save/review.
+        price_q: product.price_q,
+        qty: weighed.weight_g / 1000,
+        weighed,
+        notes: "",
+      });
+      return;
+    }
     const openLine = cart.items.find((item) => item.sku === product.sku && !item.fired);
     if (openLine) {
       openLine.qty += 1;
@@ -1439,6 +1528,25 @@ export function usePosSale(deps: PosSaleDeps) {
     void nextTick(() => { tabLoading.value = false; });
   }
 
+  /**
+   * A comanda virtual da EDIÇÃO de uma encomenda (`usePosOrderEdit`): o servidor
+   * a monta com os itens (preço vendido), o cliente, o recebimento, a data e a
+   * observação do pedido. Carrega como qualquer comanda e vai direto à venda.
+   */
+  /**
+   * Carrega na venda uma comanda que o SERVIDOR montou: a comanda virtual da
+   * edição de encomenda e a comanda do "Cancelar e refazer".
+   */
+  async function loadPreparedTab(payload: POSTabPayload) {
+    await setFromTabPayload(payload);
+    showTabs.value = false;
+  }
+
+  /** A intenção da comanda aberta — o que "Salvar alterações" da edição lê. */
+  function editIntent(): Record<string, unknown> {
+    return buildCurrentIntent();
+  }
+
   async function reloadConflictingTab() {
     if (!tabConflict.value || !cart.tabRef || busy.value) return;
     busy.value = true;
@@ -1449,7 +1557,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (cart.tabSessionKey !== sessionKey || payload.session_key !== sessionKey) throw new Error("A comanda original foi encerrada.");
       await setFromTabPayload(payload);
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível carregar a comanda atual.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível carregar a comanda atual.")} Nada foi perdido: os itens seguem na tela. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -1667,7 +1775,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
     } catch (error) {
       if (requestId === customerLookupRequest && cart.customerRef.trim() === customerRef && cart.tabSessionKey === tabSessionKey) {
-        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+        serverError.value = `${httpErrorMessage(error, "Não deu para buscar o cadastro do cliente.")} A venda segue na tela. Tente de novo ou siga sem identificar o cliente.`;
       }
       return null;
     } finally {
@@ -1932,7 +2040,7 @@ export function usePosSale(deps: PosSaleDeps) {
           return false;
         }
       }
-      serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+      serverError.value = `${httpErrorMessage(error, "O cadastro do cliente não foi salvo.")} O que você digitou segue no formulário. Tente de novo.`;
       return false;
     } finally {
       lookupBusy.value = false;
@@ -2038,7 +2146,7 @@ export function usePosSale(deps: PosSaleDeps) {
       } catch (error) {
         if (customerDecision.value === decision && receiptDecisionMatches()) {
           if (handleReceiptIdentityFailure(error, pending.origin)) return;
-          serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+          serverError.value = `${httpErrorMessage(error, "O cadastro do cliente não foi salvo.")} O que você digitou segue no formulário. Tente de novo.`;
         }
       } finally {
         receiptDecisionBusy = false;
@@ -2110,7 +2218,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // unificados, sem o operador ter de buscar de novo.
       await lookupCustomer();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível unificar os cadastros.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível unificar os cadastros.")} Os dois seguem separados. Tente de novo.`;
     } finally {
       customerMergeBusy.value = false;
     }
@@ -2167,7 +2275,7 @@ export function usePosSale(deps: PosSaleDeps) {
         await submitSale();
       }
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Não foi possível liberar o contato.");
+      serverError.value = `${httpErrorMessage(error, "Não foi possível liberar o contato.")} A decisão segue pendente na tela. Tente de novo.`;
     } finally {
       customerReleaseBusy.value = false;
     }
@@ -2353,6 +2461,12 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function addProductQty(product: POSProductProjection, qty: number) {
+    // Produto por peso não se repete por quantidade: a peça de hoje tem outra
+    // etiqueta. Abre o diálogo uma vez.
+    if (product.sold_by_weight) {
+      addProduct(product);
+      return;
+    }
     for (let idx = 0; idx < Math.max(1, qty); idx += 1) addProduct(product);
   }
 
@@ -2539,7 +2653,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
       checkoutMode.value = false;
-      serverError.value = httpErrorMessage(error, "Falha ao revisar checkout.");
+      serverError.value = `${httpErrorMessage(error, "A cobrança não abriu.")} A venda voltou para a tela com os itens intactos. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2566,7 +2680,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
       // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
       reviewFailed.value = true;
-      serverError.value = httpErrorMessage(error, "Falha ao revisar venda.");
+      serverError.value = `${httpErrorMessage(error, "Não deu para recalcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2595,10 +2709,13 @@ export function usePosSale(deps: PosSaleDeps) {
           const current = readCloseOutcomeUncertain();
           closeOutcomeUncertain.value = true;
           closeGuardPending.value = current.marker?.state === "pending";
-          closeGuardFailureMessage.value = closeGuardActiveMessage;
+          closeGuardHeldElsewhere.value = true;
           serverError.value = closeGuardActiveMessage;
           return { kind: "blocked" };
         }
+        // Com a trava na mão, ninguém mais está cobrando: um marcador
+        // "pending" aqui é de uma aba que caiu antes da resposta.
+        closeGuardHeldElsewhere.value = false;
         const current = readCloseOutcomeUncertain();
         if (!current.storageAvailable || current.marker) {
           closeOutcomeUncertain.value = true;
@@ -2611,6 +2728,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }
         const marker = establishCloseGuard();
         if (!marker) return { kind: "blocked" };
+        closeInFlight.value = true;
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
@@ -2646,6 +2764,8 @@ export function usePosSale(deps: PosSaleDeps) {
             markOwnedCloseGuardUncertain(marker);
           }
           return { kind: "error", error };
+        } finally {
+          closeInFlight.value = false;
         }
       });
     } catch {
@@ -2663,7 +2783,9 @@ export function usePosSale(deps: PosSaleDeps) {
       // A primeira resposta não provou se o servidor concluiu a operação. O
       // botão pode voltar a ser acionado (mouse, toque ou Enter), mas nunca
       // dispara outro close até a venda ser explicitamente reiniciada.
-      serverError.value = closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
+      serverError.value = closeGuardHeldElsewhere.value
+        ? closeGuardActiveMessage
+        : closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
       return;
     }
     if (!cart.items.length || requireCustomerDraftDecision()) return;
@@ -2708,6 +2830,7 @@ export function usePosSale(deps: PosSaleDeps) {
             qty: item.qty,
             price_q: item.price_q,
             discountPct: item.discount?.value || 0,
+            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
           })),
           totalDisplay: review.value?.total_display || "",
           payments: cart.paymentTenders.map((tender) => ({
@@ -2726,6 +2849,7 @@ export function usePosSale(deps: PosSaleDeps) {
           tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
           changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
           paymentPending: paidOnDelivery,
+          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
         };
         // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
         // operador confere de relance e repete ao cliente.
@@ -2739,7 +2863,7 @@ export function usePosSale(deps: PosSaleDeps) {
         result.value = {
           salesMode: cart.salesMode,
           orderRef,
-          nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
+          nextUrl: orderUrl(ordersUrl.value, orderRef),
           payment: proof,
           paymentDelivery: response.payment_delivery || null,
           receipt,
@@ -2883,7 +3007,7 @@ export function usePosSale(deps: PosSaleDeps) {
       resetCart();
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao liberar comanda.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não foi liberada.")} Ela segue aberta, com os itens. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2909,7 +3033,7 @@ export function usePosSale(deps: PosSaleDeps) {
       await reloadCurrentTab();
     } catch (error) {
       moveDialogOpen.value = false;
-      serverError.value = httpErrorMessage(error, "Falha ao preparar a comanda para mover itens.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não ficou pronta para mover itens.")} Nada foi movido. Tente de novo.`;
     } finally {
       movePreparing.value = false;
       busy.value = false;
@@ -2958,7 +3082,7 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao mover itens.");
+      serverError.value = `${httpErrorMessage(error, "Os itens não foram movidos.")} Eles seguem na comanda de origem. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -3005,7 +3129,10 @@ export function usePosSale(deps: PosSaleDeps) {
       await refresh();
       return true;
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao enviar à cozinha.");
+      // "a comanda recusa o envio repetido" é fato, não conforto: o envio que deu
+      // certo muda a revisão da comanda, e o `expected_revision` desta chamada
+      // recusa a segunda com `tab_revision_conflict` (api/pos_concurrency.py).
+      serverError.value = `${httpErrorMessage(error, "Os itens não foram enviados à cozinha.")} Eles seguem na comanda. Tente de novo: a comanda recusa o envio repetido.`;
       return false;
     } finally {
       firing.value = false;
@@ -3029,7 +3156,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       await unfireLineIds([lineId]);
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao cancelar envio à cozinha.");
+      serverError.value = `${httpErrorMessage(error, "O envio à cozinha não foi cancelado.")} A cozinha segue com o pedido. Tente de novo ou avise a cozinha.`;
     } finally {
       firing.value = false;
     }
@@ -3047,7 +3174,7 @@ export function usePosSale(deps: PosSaleDeps) {
       await unfireLineIds(ids);
       return true;
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao cancelar envio à cozinha.");
+      serverError.value = `${httpErrorMessage(error, "O envio à cozinha não foi cancelado.")} A cozinha segue com o pedido. Tente de novo ou avise a cozinha.`;
       return false;
     } finally {
       firing.value = false;
@@ -3066,7 +3193,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao renomear comanda.");
+      serverError.value = `${httpErrorMessage(error, "A comanda não foi renomeada.")} Ela segue com o nome anterior. Tente de novo.`;
     } finally {
       renamingTab.value = false;
     }
@@ -3126,7 +3253,9 @@ export function usePosSale(deps: PosSaleDeps) {
       // que continuava vivo. O PIN é limpo pelo próprio diálogo quando há erro.
       const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
       cancelSaleError.value =
-        failure?.recovery || failure?.message || httpErrorMessage(error, "Falha ao cancelar venda.");
+        failure?.recovery
+        || failure?.message
+        || `${httpErrorMessage(error, "A venda não foi cancelada.")} Ela continua válida. Tente de novo; se a janela do operador já fechou, cancele pelo Gestor de pedidos.`;
     } finally {
       cancellingSale.value = false;
     }
@@ -3165,6 +3294,15 @@ export function usePosSale(deps: PosSaleDeps) {
     result,
     closeOutcomeUncertain,
     closeGuardPending,
+    closeGuardNotice: computed(() => closeGuardNotice({
+      blocked: closeOutcomeUncertain.value,
+      inFlightHere: closeInFlight.value,
+      pending: closeGuardPending.value,
+      heldElsewhere: closeGuardHeldElsewhere.value,
+      browserFailure: closeGuardFailureMessage.value,
+      // "Confira no Gestor" sem link é menção, não ação: o aviso leva à fila.
+      ordersUrl: ordersUrl.value,
+    })),
     restoreUncertainClose,
     acknowledgeUncertainClose,
     pendingPixOrderRef,
@@ -3206,6 +3344,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // entrega — o que o servidor respondeu, para a tela PERGUNTAR em vez de pedir
     deliveryFeeQ,
     deliveryFeeSource,
+    deliveryFeeStatus,
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
@@ -3243,6 +3382,9 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderAdd,
     tenderExact,
     productQty,
+    weighedPrompt,
+    addWeighedProduct,
+    cancelWeighedPrompt,
     lineQty,
     addProduct,
     setQty,
@@ -3287,6 +3429,8 @@ export function usePosSale(deps: PosSaleDeps) {
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
+    loadPreparedTab,
+    editIntent,
     openMoveDialog,
     submitMove,
     fireTab,

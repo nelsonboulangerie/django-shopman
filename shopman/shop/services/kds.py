@@ -25,7 +25,12 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import payment_gate
-from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
+from shopman.shop.services.order_helpers import (
+    get_commitment_date,
+    get_fulfillment_type,
+    is_test_order,
+    json_quantity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +43,7 @@ EXPEDITION_TRANSITIONS = {
 
 
 class ExpeditionOrderNotFound(ValueError):
-    """Pedido inexistente numa ação de expedição.
+    """Pedido inexistente numa ação da Saída do KDS.
 
     Mapeia por TIPO para 404 na camada HTTP (padrão ``PosRecentSaleNotFound``),
     nunca por comparação de string de mensagem.
@@ -58,6 +63,34 @@ class FutureWorkBlocked(ValueError):
     """Mutação recusada: a encomenda futura está disponível só para consulta."""
 
 
+class TicketRecallBlocked(ValueError):
+    """Desfazer finalização recusado: o pedido já saiu da cozinha."""
+
+
+# Enquanto o pedido está num destes, a cozinha ainda responde por ele e o
+# "desfazer finalização" tem o que desfazer. Depois (despachado, entregue,
+# concluído, cancelado, devolvido) reabrir o ticket poria trabalho morto de volta
+# na grade — e, num pedido pronto que já tinha saído, nada o traria de volta.
+RECALLABLE_ORDER_STATUSES = frozenset({
+    Order.Status.NEW,
+    Order.Status.ACCEPTED,
+    Order.Status.PREPARING,
+    Order.Status.READY,
+})
+
+
+def recall_block_reason(source) -> str:
+    """Por que o ticket desta origem não pode voltar à cozinha; "" quando pode.
+
+    ``source`` é o ``Order`` (ou a ``Session`` da comanda aberta, que ainda não
+    virou pedido e por isso sempre pode). A lista de concluídos recentes do KDS
+    lê a mesma régua que o servidor aplica, para não oferecer o que vai recusar.
+    """
+    if not isinstance(source, Order) or source.status in RECALLABLE_ORDER_STATUSES:
+        return ""
+    return f"O pedido já está {source.get_status_display()}: a finalização não pode mais ser desfeita."
+
+
 def dispatch(order) -> list:
     """
     Route an order's not-yet-fired lines to KDS, creating KDSTickets.
@@ -71,6 +104,15 @@ def dispatch(order) -> list:
 
     SYNC — tickets must be ready for the KDS display.
     """
+    # Pedido de teste de marketplace (homologação) não vira trabalho na
+    # cozinha: o ticket nasceria no MESMO painel da produção, com som e meta de
+    # tempo, e em horário de movimento ninguém lê o nome do item antes de
+    # fornar. A homologação é demonstrada no Gestor, onde o pedido continua
+    # visível e operável.
+    if is_test_order(order):
+        logger.info("kds.dispatch: pedido de teste order=%s — ticket suprimido", order.ref)
+        return []
+
     lines = _order_to_lines(order)
     if not lines:
         return []
@@ -337,9 +379,16 @@ def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
 
 
 def _order_to_lines(order) -> list[dict]:
-    """Normalize an Order's items to source-agnostic fire lines."""
+    """Normalize an Order's items to source-agnostic fire lines.
+
+    Pedido + ajustes: quando o cliente alterou o pedido depois de ele existir
+    (``ORDER_PATCHED`` do iFood), a cozinha tem de ver a lista que vale AGORA —
+    e ela vem da leitura composta, nunca das linhas originais.
+    """
+    from shopman.shop.services import order_composition
+
     lines = []
-    for item in order.items.all():
+    for item in order_composition.effective_items(order):
         meta = item.meta or {}
         lines.append({
             "line_id": item.line_id,
@@ -350,6 +399,16 @@ def _order_to_lines(order) -> list[dict]:
             "meta": meta,
         })
     return lines
+
+
+def order_lines(order) -> list[dict]:
+    """As linhas de cozinha do pedido como ele está AGORA (leitura composta).
+
+    Existe para quem precisa fotografar as linhas ANTES de gravar um ajuste,
+    para depois comparar — ``reconcile_to_lines`` só sabe o que mudou porque
+    alguém guardou o antes.
+    """
+    return _order_to_lines(order)
 
 
 def _match_instances(
@@ -465,6 +524,62 @@ def cancel_tickets(order) -> int:
     return count
 
 
+def reconcile_to_lines(order, *, previous_lines: list[dict]) -> dict:
+    """A cozinha passa a ver o pedido que o cliente alterou.
+
+    Chamada depois de o ajuste já estar gravado (``order.data["adjustment"]``),
+    então ``_order_to_lines(order)`` já devolve a lista nova. O trabalho aqui é
+    só a DIFERENÇA contra o que já foi disparado:
+
+    - linha que saiu, ou cuja quantidade mudou, é **desfirada**
+      (``unfire_session_lines``). Isso não apaga o fato: o adapter recorta a
+      linha do ticket vivo e cria um ticket ``cancelled`` só com ela, que é o
+      comprovante que o board mostra e que alguém precisa dar "Ciente". A
+      cozinha não descobre por adivinhação que parou de fazer alguma coisa.
+    - a lista nova é **firada** em seguida. ``fire_lines`` é idempotente por
+      ``line_id``, então o que não mudou não vira ticket de novo, e a linha
+      recém-desfirada volta com a quantidade certa (reimpressão = desfirar +
+      firar, que é o contrato do adapter).
+
+    Pedido sem ticket nenhum não entra aqui: o ``dispatch`` que vier depois já
+    lê a lista composta. Devolve ``{unfired, refired}``.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    if is_test_order(order):
+        logger.info("kds.reconcile_to_lines: pedido de teste order=%s — cozinha intocada", order.ref)
+        return {"unfired": 0, "refired": 0, "skipped": "test_order"}
+
+    fired = kds_adapter.fired_line_ids_for_session(order.session_key)
+    if not fired:
+        return {"unfired": 0, "refired": 0}
+
+    lines = _order_to_lines(order)
+    current_by_id = {line["line_id"]: line for line in lines}
+    stale = [
+        line["line_id"]
+        for line in previous_lines
+        if line["line_id"] in fired
+        and (
+            line["line_id"] not in current_by_id
+            or str(current_by_id[line["line_id"]]["qty"]) != str(line["qty"])
+        )
+    ]
+    if stale:
+        kds_adapter.unfire_session_lines(order.session_key, stale)
+
+    tickets = fire_lines(
+        session_key=order.session_key,
+        lines=lines,
+        prep_only=_customer_holds_the_goods(order),
+    )
+    logger.info(
+        "kds.reconcile_to_lines: order=%s %d linha(s) desfirada(s), %d ticket(s) novo(s)",
+        order.ref, len(stale), len(tickets),
+    )
+    return {"unfired": len(stale), "refired": len(tickets)}
+
+
 def cancel_tickets_for_session(session_key: str) -> int:
     """Cancel open tickets for a POS tab, always locking its source first."""
     from django.db import transaction
@@ -474,6 +589,39 @@ def cancel_tickets_for_session(session_key: str) -> int:
     with transaction.atomic():
         _lock_source_for_session(session_key)
         return kds_adapter.cancel_open_tickets_for_session(session_key)
+
+
+def close_open_tickets(order, *, actor: str) -> int:
+    """O pedido saiu da cozinha por fora do KDS: os tickets abertos fecham junto.
+
+    O "Marcar pronto" do Gestor (``operator_orders.advance_order``) leva o
+    pedido a READY sem passar pelos cards. Os tickets que ficavam abertos
+    penduravam o pedido na grade das estações — e, na Saída, como "em
+    preparo" — muito depois de a sacola ter saído. Quem avançou o pedido
+    afirmou que a cozinha terminou; os tickets abertos são concluídos com esse
+    ator e ``via = order_advanced``, para a trilha dizer que a baixa não veio
+    da estação.
+
+    Chamado com o pedido já travado (``advance_order``); a ordem de lock é a
+    de sempre, origem → ticket. Idempotente: sem ticket aberto, devolve 0.
+    """
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    with transaction.atomic():
+        _lock_source_for_session(order.session_key)
+        count = kds_adapter.complete_open_tickets_for_session(
+            order.session_key,
+            actor=actor,
+            via="order_advanced",
+        )
+    if count:
+        logger.info(
+            "kds.close_open_tickets: %d ticket(s) concluído(s) com o pedido order=%s status=%s actor=%s",
+            count, order.ref, order.status, actor,
+        )
+    return count
 
 
 def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
@@ -652,7 +800,7 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     return True
 
 
-def complete_ticket(ticket, *, actor: str) -> bool:
+def complete_ticket(ticket, *, actor: str, via: str = "station") -> bool:
     """Mark a KDS ticket done; advance the order as a best-effort side effect.
 
     Retorna True quando o BUMP aconteceu (ticket salvo como done) — nunca
@@ -665,15 +813,19 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     lifecycle (pedido não confirmado, pagamento não capturado) levanta
     ``TicketCompletionBlocked`` com a razão real — são estados distintos e a
     superfície precisa da mensagem certa para cada um.
+
+    ``via`` diz por qual porta a baixa veio (``KDSTicket.COMPLETED_VIA_*``): a
+    tela da própria estação, ou — na estação sem tela — a Saída, o PDV ou o
+    leitor de código. Fica gravado no ticket com o ``actor``.
     """
     from django.db import transaction
 
     with transaction.atomic():
         source, ticket = _lock_source_then_ticket(ticket)
-        return _complete_ticket_locked(ticket, source=source, actor=actor)
+        return _complete_ticket_locked(ticket, source=source, actor=actor, via=via)
 
 
-def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
+def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station") -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
@@ -698,9 +850,11 @@ def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
             raise TicketCompletionBlocked(blocked)
     ticket.status = "done"
     ticket.completed_at = timezone.now()
-    ticket.save(update_fields=["status", "completed_at"])
+    ticket.completed_by = str(actor or "")[:150]
+    ticket.completed_via = via
+    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
 
-    logger.info("kds_done ticket=%d session=%s", ticket.pk, ticket.session_key)
+    logger.info("kds_done ticket=%d session=%s via=%s", ticket.pk, ticket.session_key, via)
     if order is not None:
         on_all_tickets_done(order, actor=actor)
     return True
@@ -713,7 +867,9 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
     advanced to READY because this was its last open ticket, it is pulled back to
     PREPARING (it is no longer ready). Best-effort on the order side — the recall
     of the ticket always lands; the order back-transition only if the lifecycle
-    allows it. Returns False if the ticket was not ``done``.
+    allows it. Returns False if the ticket was not ``done``; raises
+    ``TicketRecallBlocked`` when the order already left the kitchen
+    (``RECALLABLE_ORDER_STATUSES``).
     """
     from django.db import transaction
 
@@ -726,9 +882,14 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status != "done":
         return False
+    blocked = recall_block_reason(source)
+    if blocked:
+        raise TicketRecallBlocked(blocked)
     ticket.status = "in_progress"
     ticket.completed_at = None
-    ticket.save(update_fields=["status", "completed_at"])
+    ticket.completed_by = ""
+    ticket.completed_via = ""
+    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
 
     order = source if isinstance(source, Order) else None
     if (
@@ -770,7 +931,7 @@ def _lock_ticket_after_source(ticket):
 
 
 def expedition_block_reason(order, *, action: str) -> str:
-    """Por que a expedição NÃO pode aplicar esta ação agora, na voz do operador.
+    """Por que a Saída do KDS NÃO pode aplicar esta ação agora, na voz do operador.
 
     "" quando pode. A pergunta sobre dinheiro é feita ao ``payment_gate`` — a
     MESMA régua do Gestor (``operator_orders.advance_block``) — e a frase vem do
@@ -798,17 +959,26 @@ def expedition_block_reason(order, *, action: str) -> str:
 
         if needs_card_machine(order):
             return "Abra este pedido no Gestor e confirme a maquininha no despacho."
+        if operator_orders.change_out_suggested_q(order) > 0:
+            # O troco sai da gaveta no despacho (``courier_out``) e só o Gestor
+            # pergunta quanto: despachar daqui deixaria a gaveta desfalcada sem
+            # linha no livro, e o acerto recusaria o troco devolvido.
+            return "Abra este pedido no Gestor e informe o troco que o entregador leva."
     return ""
 
 
 def expedition_action(order, *, action: str, actor: str) -> str:
     """Apply an expedition action and return the new order status.
 
-    A expedição é o painel por onde a mercadoria fisicamente sai, então ela
-    consulta o gate de pagamento como o Gestor consulta — antes ela chamava
-    ``transition_status`` direto e uma venda de link/pix não capturada saía pela
-    porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
-    pagamento acontece na porta, por desenho (ver ``payment_gate``).
+    A Saída do KDS é outra porta por onde a mercadoria sai, e a saída tem UMA
+    implementação: ``operator_orders.advance_order``, a mesma do Gestor. É lá
+    que moram o gate de pagamento, a custódia da maquininha, o fulfillment de
+    entrega, o troco da gaveta (``courier_out``), o aviso fiscal e a
+    auto-conclusão da entrega. Quando a Saída fazia a transição por conta
+    própria, a entrega despachada daqui ficava sem auto-conclusão, com o
+    fulfillment parado e — com troco — sem a linha do livro que o acerto exige.
+    O que a Saída não sabe perguntar (quanto de troco, qual maquininha)
+    ela recusa com "abra no Gestor" (``expedition_block_reason``).
     """
     _ensure_source_due(order)
     is_delivery = get_fulfillment_type(order) == "delivery"
@@ -823,14 +993,17 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     blocked = expedition_block_reason(order, action=action)
     if blocked:
         raise ValueError(blocked)
-    # A outra porta por onde a mercadoria sai: mesmo aviso do Gestor
-    # (``operator_orders.advance_order``), sem barrar.
-    from shopman.shop.services import fiscal as fiscal_service
+    from shopman.shop.services import operator_orders
 
-    fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
-    order.transition_status(next_status, actor=actor)
+    try:
+        new_status = operator_orders.advance_order(order, actor=actor, target_status=next_status)
+    except operator_orders.ChangeOutRequired as exc:
+        # Rede de segurança: o bloqueio acima já diz isto antes do toque.
+        raise ValueError(
+            "Abra este pedido no Gestor e informe o troco que o entregador leva."
+        ) from exc
     logger.info("kds_expedition %s order=%s", action, order.ref)
-    return next_status
+    return new_status
 
 
 def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> str:
@@ -838,7 +1011,7 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
 
     Guard + transição na MESMA transação com lock (padrão ``operator_orders``):
     ``can_transition_to`` decide na linha travada, nunca na instância em
-    memória — a expedição corre em paralelo com outras estações e com o
+    memória — a Saída corre em paralelo com outras estações e com o
     gestor. Replay (duas estações agindo no mesmo pedido) é decidido sob o
     mesmo lock: pedido já no status alvo = sucesso no-op, nunca "Ação inválida".
     """

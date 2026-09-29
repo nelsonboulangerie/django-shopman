@@ -1,0 +1,430 @@
+{
+  "ready": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_public",
+    "delivery_cursor": "d_ready_00010",
+    "transport_generation_id": "tg_sub_example_public_1",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "streams": [
+      {
+        "stream_id": "s_example_public_list",
+        "head": {
+          "cursor": {
+            "epoch": "e_alpha",
+            "sequence": "00000000000000000010"
+          },
+          "state_token": "t_state_10",
+          "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+        },
+        "schema": "https://schemas.example.test/projections/public-list/v1"
+      }
+    ]
+  },
+  "ready_11": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_public",
+    "delivery_cursor": "d_ready_00011",
+    "transport_generation_id": "tg_sub_example_public_1",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "streams": [
+      {
+        "stream_id": "s_example_public_list",
+        "head": {
+          "cursor": {
+            "epoch": "e_alpha",
+            "sequence": "00000000000000000011"
+          },
+          "state_token": "t_state_11",
+          "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+        },
+        "schema": "https://schemas.example.test/projections/public-list/v1"
+      }
+    ]
+  },
+  "caught_up": {
+    "protocol_version": "0.2",
+    "kind": "caught_up",
+    "subscription_id": "sub_example_public",
+    "delivery_cursor": "d_caught_up_00014",
+    "transport_generation_id": "tg_sub_example_public_1",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "streams": [
+      {
+        "stream_id": "s_example_public_list",
+        "head": {
+          "cursor": {
+            "epoch": "e_alpha",
+            "sequence": "00000000000000000014"
+          },
+          "state_token": "t_state_14",
+          "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+        },
+        "schema": "https://schemas.example.test/projections/public-list/v1"
+      }
+    ]
+  },
+  "security_grant_initial": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_principal_a",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "security_generation_id": "g_principal_a",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_renew": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_principal_a",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "security_generation_id": "g_principal_a",
+    "lease_revision": "00000000000000000002",
+    "action": "renew",
+    "lease_for_ms": 1
+  },
+  "security_reauthorize": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_principal_a",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "security_generation_id": "g_principal_a",
+    "next_security_generation_id": "g_principal_a_policy_2",
+    "lease_revision": "00000000000000000003",
+    "action": "reauthorize",
+    "lease_for_ms": 0
+  },
+  "security_grant_reauthorized": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_principal_a_policy_2",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "security_generation_id": "g_principal_a_policy_2",
+    "previous_subscription_id": "sub_principal_a",
+    "previous_security_generation_id": "g_principal_a",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_purge": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_principal_a",
+    "subscription_manifest_digest": "sha256-Di1vvlLYzT0ZavTNGnXGA3BnaDemTyVtnyPj2OTzFk0",
+    "security_generation_id": "g_principal_a",
+    "lease_revision": "00000000000000000003",
+    "action": "purge",
+    "lease_for_ms": 0
+  },
+  "ready_multiplexed": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_public_multiplexed",
+    "delivery_cursor": "d_ready_ab_00010",
+    "transport_generation_id": "tg_sub_example_public_multiplexed_1",
+    "subscription_manifest_digest": "sha256-o2x9R56ntEZXWGbWe9FZqQIMS0Sz6XIZogzt4hIVpNo",
+    "streams": [
+      {
+        "stream_id": "s_example_public_list",
+        "head": {
+          "cursor": {
+            "epoch": "e_alpha",
+            "sequence": "00000000000000000010"
+          },
+          "state_token": "t_state_a_10",
+          "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+        },
+        "schema": "https://schemas.example.test/projections/public-list/v1"
+      },
+      {
+        "stream_id": "s_example_public_summary",
+        "head": {
+          "cursor": {
+            "epoch": "e_alpha",
+            "sequence": "00000000000000000007"
+          },
+          "state_token": "t_state_b_07",
+          "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+        },
+        "schema": "https://schemas.example.test/projections/public-summary/v1"
+      }
+    ]
+  },
+  "ready_protected": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_protected_owner",
+    "delivery_cursor": "d_ready_protected_00010",
+    "transport_generation_id": "tg_sub_example_protected_owner_1",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "streams": [
+      {
+        "stream_id": "s_example_protected_account",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000010"
+          },
+          "state_token": "t_protected_10",
+          "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+        },
+        "schema": "https://schemas.example.test/projections/protected-account/v1"
+      }
+    ]
+  },
+  "security_grant_initial_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_renew_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner",
+    "lease_revision": "00000000000000000002",
+    "action": "renew",
+    "lease_for_ms": 1
+  },
+  "security_reauthorize_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner",
+    "next_security_generation_id": "g_example_protected_owner_policy_2",
+    "lease_revision": "00000000000000000003",
+    "action": "reauthorize",
+    "lease_for_ms": 0
+  },
+  "security_grant_reauthorized_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner_policy_2",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner_policy_2",
+    "previous_subscription_id": "sub_example_protected_owner",
+    "previous_security_generation_id": "g_example_protected_owner",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_purge_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner",
+    "lease_revision": "00000000000000000003",
+    "action": "purge",
+    "lease_for_ms": 0
+  },
+  "security_grant_initial_command": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_command",
+    "subscription_manifest_digest": "sha256-nYdD3VYS6duoKhw6_OjPwSQ7XGBkPmzI1YgPVVWC64Q",
+    "security_generation_id": "g_example_protected_command",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_renew_command": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_command",
+    "subscription_manifest_digest": "sha256-nYdD3VYS6duoKhw6_OjPwSQ7XGBkPmzI1YgPVVWC64Q",
+    "security_generation_id": "g_example_protected_command",
+    "lease_revision": "00000000000000000002",
+    "action": "renew",
+    "lease_for_ms": 1
+  },
+  "security_purge_command": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_command",
+    "subscription_manifest_digest": "sha256-nYdD3VYS6duoKhw6_OjPwSQ7XGBkPmzI1YgPVVWC64Q",
+    "security_generation_id": "g_example_protected_command",
+    "lease_revision": "00000000000000000003",
+    "action": "purge",
+    "lease_for_ms": 0
+  },
+  "ready_protected_11": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_protected_owner",
+    "delivery_cursor": "d_ready_protected_00011",
+    "transport_generation_id": "tg_sub_example_protected_owner_1",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "streams": [
+      {
+        "stream_id": "s_example_protected_account",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000011"
+          },
+          "state_token": "t_protected_11",
+          "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+        },
+        "schema": "https://schemas.example.test/projections/protected-account/v1"
+      }
+    ]
+  },
+  "caught_up_protected": {
+    "protocol_version": "0.2",
+    "kind": "caught_up",
+    "subscription_id": "sub_example_protected_owner",
+    "delivery_cursor": "d_caught_up_protected_00014",
+    "transport_generation_id": "tg_sub_example_protected_owner_1",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "streams": [
+      {
+        "stream_id": "s_example_protected_account",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000014"
+          },
+          "state_token": "t_protected_14",
+          "state_digest": "sha256-80brCYncNttJKLahjMe_9hzswUFKsMH3fywH1Knt96E"
+        },
+        "schema": "https://schemas.example.test/projections/protected-account/v1"
+      }
+    ]
+  },
+  "security_grant_multiplexed_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_multiplexed",
+    "subscription_manifest_digest": "sha256-YAASjmr7Y-kEwNPESKm9curwSOp1DKGUbeNksUT1Ahw",
+    "security_generation_id": "g_example_protected_multiplexed",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_grant_second_lineage_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner_tab_b",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner_tab_b",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "security_renew_second_lineage_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner_tab_b",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner_tab_b",
+    "lease_revision": "00000000000000000002",
+    "action": "renew",
+    "lease_for_ms": 1
+  },
+  "security_grant_successor_protected": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_owner_successor",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "security_generation_id": "g_example_protected_owner_policy_2",
+    "previous_subscription_id": "sub_example_protected_owner",
+    "previous_security_generation_id": "g_example_protected_owner",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "ready_protected_tab_b": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_protected_owner_tab_b",
+    "delivery_cursor": "d_ready_protected_tab_b_00010",
+    "transport_generation_id": "tg_sub_example_protected_owner_tab_b_1",
+    "subscription_manifest_digest": "sha256-eVL5kq96vFCqubQA0K_wl1DYcK9GYAAX3Mid0HmWxeM",
+    "streams": [
+      {
+        "stream_id": "s_example_protected_account",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000010"
+          },
+          "state_token": "t_protected_10",
+          "state_digest": "sha256-9fcoD5OyldLxyUeRCXOo0eYgN3oiz_VNyS5nVhP9XuQ"
+        },
+        "schema": "https://schemas.example.test/projections/protected-account/v1"
+      }
+    ]
+  },
+  "security_grant_multiplexed_command": {
+    "protocol_version": "0.2",
+    "kind": "security_generation",
+    "event": "continuum-security-generation",
+    "subscription_id": "sub_example_protected_command_multiplexed",
+    "subscription_manifest_digest": "sha256-8wzskQNb8dxcDkxVxRVtWe-VK-dF7wF5bykkjAAogdk",
+    "security_generation_id": "g_example_protected_command_multiplexed",
+    "lease_revision": "00000000000000000001",
+    "action": "grant",
+    "lease_for_ms": 1
+  },
+  "ready_multiplexed_protected": {
+    "protocol_version": "0.2",
+    "kind": "ready",
+    "subscription_id": "sub_example_protected_multiplexed",
+    "delivery_cursor": "d_ready_protected_ab_10_7",
+    "transport_generation_id": "tg_sub_example_protected_multiplexed_1",
+    "subscription_manifest_digest": "sha256-YAASjmr7Y-kEwNPESKm9curwSOp1DKGUbeNksUT1Ahw",
+    "streams": [
+      {
+        "stream_id": "s_example_protected_account",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000010"
+          },
+          "state_token": "t_protected_a_10",
+          "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+        },
+        "schema": "https://schemas.example.test/projections/protected-account/v1"
+      },
+      {
+        "stream_id": "s_example_protected_summary",
+        "head": {
+          "cursor": {
+            "epoch": "e_protected",
+            "sequence": "00000000000000000007"
+          },
+          "state_token": "t_protected_b_07",
+          "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+        },
+        "schema": "https://schemas.example.test/projections/protected-summary/v1"
+      }
+    ]
+  }
+}

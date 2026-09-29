@@ -36,11 +36,8 @@ const copy: PwaCopyProjection = {
   install_message: entry(),
   install_cta: entry(),
   install_dismiss_cta: entry(),
-  ios_title: entry(),
-  ios_message: entry(),
-  ios_share_step: entry(),
-  ios_add_step: entry(),
-  ios_done_cta: entry(),
+  manual_title: entry(),
+  manual_done_cta: entry(),
   update_title: entry('Nova versão disponível'),
   update_cta: entry('Atualizar')
 }

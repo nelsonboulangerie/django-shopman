@@ -119,7 +119,7 @@ describe('metaDescription', () => {
 describe('productJsonLd', () => {
   it('monta Product + Offer com dados do backend', () => {
     const url = 'https://loja.exemplo.com/produto/CROIS-01'
-    const ld = productJsonLd({ product: product(), origin: ORIGIN, url, brandName: 'Nelson Boulangerie' })
+    const ld = productJsonLd({ product: product({ brand: 'Nelson Boulangerie', item_condition: 'new' }), origin: ORIGIN, url })
     expect(ld['@type']).toBe('Product')
     expect(ld.name).toBe('Croissant de Manteiga')
     expect(ld.sku).toBe('CROIS-01')
@@ -130,12 +130,32 @@ describe('productJsonLd', () => {
     expect(offer.price).toBe('12.90')
     expect(offer.priceCurrency).toBe('BRL')
     expect(offer.availability).toBe('https://schema.org/InStock')
+    expect(offer.itemCondition).toBe('https://schema.org/NewCondition')
     expect(offer.url).toBe(url)
   })
-  it('omite imagem/brand quando ausentes', () => {
-    const ld = productJsonLd({ product: product({ image_url: null }), origin: ORIGIN, url: 'x', brandName: '' })
+  it('declara a marca e os identificadores do Catálogo, não os da loja', () => {
+    const ld = productJsonLd({
+      product: product({ brand: 'St. Dalfour', gtin: '3232490001234', mpn: 'SD-MINI' }),
+      origin: ORIGIN,
+      url: 'x'
+    })
+    expect(ld.brand).toEqual({ '@type': 'Brand', name: 'St. Dalfour' })
+    expect(ld.gtin).toBe('3232490001234')
+    expect(ld.mpn).toBe('SD-MINI')
+  })
+  // Não informado não é "a marca é a da loja": a casa também revende.
+  it('omite imagem, marca e identificadores quando o Catálogo não informa', () => {
+    const ld = productJsonLd({ product: product({ image_url: null, brand: '', gtin: '', mpn: '' }), origin: ORIGIN, url: 'x' })
     expect(ld.image).toBeUndefined()
     expect(ld.brand).toBeUndefined()
+    expect(ld.gtin).toBeUndefined()
+    expect(ld.mpn).toBeUndefined()
+  })
+  // Backend anterior ao campo (janela de deploy): nada quebra, nada é inventado.
+  it('tolera a projeção sem os campos de identidade comercial', () => {
+    const ld = productJsonLd({ product: product(), origin: ORIGIN, url: 'x' })
+    expect(ld.brand).toBeUndefined()
+    expect((ld.offers as Record<string, unknown>).itemCondition).toBeUndefined()
   })
 })
 
@@ -161,7 +181,7 @@ describe('collectionJsonLd', () => {
     { sku: 'CROIS-01', name: 'Croissant', base_price_q: 1290, availability: 'available' as const, image_url: '/media/c.jpg' },
     { sku: 'BAGUE-01', name: 'Baguete', base_price_q: 1300, availability: 'unavailable' as const, image_url: null }
   ]
-  it('monta CollectionPage com ItemList de produtos', () => {
+  it('monta CollectionPage com ItemList que aponta para as PDPs', () => {
     const ld = collectionJsonLd({ name: 'Cardápio', url: ORIGIN + '/menu', origin: ORIGIN, items })
     expect(ld['@type']).toBe('CollectionPage')
     expect(ld.url).toBe('https://loja.exemplo.com/menu')
@@ -169,19 +189,21 @@ describe('collectionJsonLd', () => {
     expect(list['@type']).toBe('ItemList')
     expect(list.numberOfItems).toBe(2)
     const elements = list.itemListElement as Array<Record<string, unknown>>
-    expect(elements[0]!.position).toBe(1)
-    const first = elements[0]!.item as Record<string, unknown>
-    expect(first['@type']).toBe('Product')
-    expect(first.url).toBe('https://loja.exemplo.com/produto/CROIS-01')
-    expect(first.image).toBe('https://loja.exemplo.com/media/c.jpg')
-    expect((first.offers as Record<string, unknown>).price).toBe('12.90')
+    expect(elements[0]).toEqual({
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Croissant',
+      url: 'https://loja.exemplo.com/produto/CROIS-01'
+    })
+    expect(elements[1]!.position).toBe(2)
   })
-  it('omite imagem quando ausente', () => {
+  // Product aninhado na lista vira listagem de comerciante incompleta no Search
+  // Console (sem description, sem marca). O Product completo é da PDP.
+  it('não declara Product nem Offer na lista', () => {
     const ld = collectionJsonLd({ name: 'Cardápio', url: ORIGIN + '/menu', origin: ORIGIN, items })
-    const elements = (ld.mainEntity as Record<string, unknown>).itemListElement as Array<Record<string, unknown>>
-    const second = elements[1]!.item as Record<string, unknown>
-    expect(second.image).toBeUndefined()
-    expect((second.offers as Record<string, unknown>).availability).toBe('https://schema.org/OutOfStock')
+    const text = JSON.stringify(ld)
+    expect(text).not.toContain('"Product"')
+    expect(text).not.toContain('"Offer"')
   })
 })
 

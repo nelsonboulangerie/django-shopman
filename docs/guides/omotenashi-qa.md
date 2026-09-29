@@ -84,7 +84,6 @@ superfície. Essa cobertura entra na revisão do PDV (fase C).
 | `tablet.production.kds` | tablet 1024x768 | Produção (Django) | KDS de produção | Lote, passo, ação primária e falta de insumo. |
 | `desktop.orders.queue` | desktop 1440x900 | Backstage (Django) | fila de pedidos | Urgência, bloqueios, pagamento e ação primária. |
 | `desktop.marketplace.ifood_stale` | desktop 1440x900 | Backstage (Django) | pedido iFood seed | Pedido externo atrasado com ação segura. |
-| `desktop.payment.after_cancel` | desktop 1440x900 | Backstage (Django) | pedido cancelado seed | Alerta crítico, reembolso e comunicação. |
 | `desktop.pos.counter` | touch/desktop 1280x800 | POS (Nuxt próprio) | superfície POS | Venda, edição, comanda disponível e caixa aberto. *Pulado até `SHOPMAN_POS_BASE_URL` (fase C).* |
 | `desktop.cash_register.shift` | touch/desktop 1280x800 | POS (Nuxt próprio) | superfície POS | Estado de caixa, sangria/fechamento e diferença. *Pulado até `SHOPMAN_POS_BASE_URL` (fase C).* |
 | `desktop.closing.day` | desktop 1440x900 | Backstage (Django) | fechamento do dia | Sobras, D-1, caixa e divergências sem planilha paralela. |

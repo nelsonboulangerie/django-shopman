@@ -50,7 +50,13 @@ class ReturnService:
                 context={"current_status": order.status, "valid_statuses": [s.value for s in valid_statuses]},
             )
 
-        order_items_by_line = {item.line_id: item for item in order.items.all()}
+        # Pedido + ajustes: devolver linha que o cliente já tinha tirado, ou
+        # recusar linha que ele acrescentou, seria devolver o pedido errado.
+        from shopman.shop.services import order_composition
+
+        order_items_by_line = {
+            item.line_id: item for item in order_composition.effective_items(order)
+        }
         items_detail = []
         refund_total_q = 0
 
@@ -163,7 +169,11 @@ class ReturnHandler:
                 ref = (message.payload or {}).get("order_ref", "")
                 create_operator_alert(
                     type="lifecycle_phase_stuck", severity="critical", order_ref=ref,
-                    message=f"Devolução {ref} pendente. Confira estoque e estorno antes de retomar. {exc}",
+                    message=(
+                        f"A devolução do pedido {ref} não terminou: o estoque e o estorno podem não ter "
+                        "saído. O suporte recebeu este aviso por e-mail; até ele conferir, não refaça a "
+                        f"devolução à mão. Detalhe técnico: {exc}"
+                    ),
                     dedupe_key=f"return_processing:{message.pk}",
                 )
             raise

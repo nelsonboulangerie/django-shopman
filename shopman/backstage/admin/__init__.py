@@ -7,6 +7,7 @@ from shopman.backstage.admin.accounts import (  # noqa: F401
 )
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
 from shopman.backstage.admin.aliases import (  # noqa: F401
+    AliasBenchmarkReportAdmin,
     CategoryAliasAdmin,
     PaymentMethodAliasAdmin,
     ProductAliasAdmin,

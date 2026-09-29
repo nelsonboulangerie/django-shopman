@@ -195,7 +195,7 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.text()).not.toContain("O que houve");
   });
 
-  it("dois toques no grau atribuem toda a fornada quando nada mais foi distribuído", async () => {
+  it("dois toques no grau atribuem todo o lote quando nada mais foi distribuído", async () => {
     const wrapper = mountQc();
     const fair = buttonByText(wrapper, "Razoável")!;
 

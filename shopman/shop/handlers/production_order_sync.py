@@ -72,6 +72,34 @@ def queue_order_to_work_order_sync(
     transaction.on_commit(reconcile)
 
 
+def queue_order_items_resync(*, order, previous_skus) -> None:
+    """Religa a produção de um pedido cujos ITENS mudaram (edição da encomenda).
+
+    O ``queue_order_to_work_order_sync`` recalcula só os SKUs que o pedido tem
+    agora; um SKU que SAIU do pedido deixaria o vínculo antigo pendurado na
+    ordem de produção. Aqui entram os dois lados — o antes e o depois —, pelo
+    mesmo reconciliador e depois do commit (mesma ordem de locks).
+    """
+    if order is None:
+        return
+    order_pk = order.pk
+    before = tuple(str(sku) for sku in previous_skus if sku)
+
+    def reconcile() -> None:
+        from shopman.orderman.models import Order
+
+        try:
+            current = Order.objects.prefetch_related("items").get(pk=order_pk)
+            _reconcile_pending_links(
+                output_skus=set(before) | set(_order_skus(current)),
+                order_ids=(current.pk,),
+            )
+        except Exception:
+            logger.exception("production_order_sync.order_items_failed order_pk=%s", order_pk)
+
+    transaction.on_commit(reconcile)
+
+
 def queue_work_order_to_order_sync(
     sender=None,
     action: str = "",
@@ -184,7 +212,7 @@ def _reconcile_pending_links(*, output_skus, order_ids=None) -> None:
             )
             .values_list("pk", flat=True)
             .distinct()
-        )
+        ) | _adjusted_active_order_ids(skus)
         relevant_order_ids = active_order_ids | set(order_ids or ())
         orders = list(
             Order.objects.select_for_update().filter(pk__in=relevant_order_ids).prefetch_related("items").order_by("pk")
@@ -257,9 +285,7 @@ def order_requirement_for_work_order(work_order) -> Decimal:
         ref__in=refs,
         status__in=ACTIVE_ORDER_STATUSES,
     ).prefetch_related("items"):
-        for item in order.items.all():
-            if item.sku == work_order.output_sku:
-                total += item.qty
+        total += _order_sku_quantity(order, work_order.output_sku)
     return total
 
 
@@ -568,10 +594,36 @@ def _allocate_pending_links(
 
 
 def _order_sku_quantity(order, sku: str) -> Decimal:
+    # Leitura composta (pedido + ajuste): a encomenda editada pede o que vale
+    # AGORA, não o que as linhas seladas diziam.
+    from shopman.shop.services import order_composition
+
     return sum(
-        (item.qty for item in order.items.all() if item.sku == sku),
+        (item.qty for item in order_composition.effective_items(order) if item.sku == sku),
         Decimal("0"),
     )
+
+
+def _adjusted_active_order_ids(skus) -> set[int]:
+    """Pedidos ativos COM ajuste cujo pedido vigente tem algum destes SKUs.
+
+    A busca por ``items__sku`` olha as linhas seladas; o SKU que ENTROU numa
+    edição só existe no ajuste. Ajuste é exceção, então a busca é pequena.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import order_composition
+
+    wanted = set(skus)
+    found: set[int] = set()
+    for pk, data in (
+        Order.objects.filter(status__in=ACTIVE_ORDER_STATUSES, data__has_key=order_composition.KEY)
+        .values_list("pk", "data")
+    ):
+        items = ((data or {}).get(order_composition.KEY) or {}).get("items") or []
+        if any(isinstance(item, dict) and item.get("sku") in wanted for item in items):
+            found.add(pk)
+    return found
 
 
 def _work_order_operational_quantity(work_order) -> Decimal:
@@ -758,7 +810,9 @@ def _match_strategy() -> str:
 
 
 def _order_skus(order) -> tuple[str, ...]:
-    return tuple(sorted({item.sku for item in order.items.all() if item.sku}))
+    from shopman.shop.services import order_composition
+
+    return tuple(sorted({item.sku for item in order_composition.effective_items(order) if item.sku}))
 
 
 def _target_date(order) -> date:

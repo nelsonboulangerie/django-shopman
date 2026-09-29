@@ -68,7 +68,8 @@ def _make_stock_adapter(holds=None):
 
     adapter.create_hold.side_effect = _create_hold
     adapter.release_holds.return_value = None
-    adapter.retag_hold_reference.return_value = None
+    adapter.retag_hold_reference.return_value = True
+    adapter.reserve_ceding_cart_holds.return_value = ([], [])
     return adapter
 
 
@@ -189,7 +190,8 @@ class TestHoldCorrectQuantities(TestCase):
 
         mock_adapter.create_hold.side_effect = _create_hold
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_get_adapter.return_value = mock_adapter
 
         session = _make_session(self.channel, items=[
@@ -244,7 +246,8 @@ class TestBundleExpansion(TestCase):
 
         mock_adapter.create_hold.side_effect = _create_hold
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_get_adapter.return_value = mock_adapter
 
         session = _make_session(self.channel, items=[
@@ -285,7 +288,8 @@ class TestBundleExpansion(TestCase):
 
         mock_adapter.create_hold.side_effect = _create_hold
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_get_adapter.return_value = mock_adapter
 
         session = _make_session(self.channel, items=[
@@ -325,7 +329,8 @@ class TestPartialStock(TestCase):
 
         mock_adapter.create_hold.side_effect = _create_hold
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_get_adapter.return_value = mock_adapter
 
         session = _make_session(self.channel, items=[
@@ -378,7 +383,8 @@ class TestVerifyHolds(TestCase):
 
         mock_adapter.create_hold.side_effect = _create_hold
         mock_adapter.release_holds.return_value = None
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_get_adapter.return_value = mock_adapter
 
         session = _make_session(self.channel, items=[
@@ -460,7 +466,8 @@ class TestSessionHoldsAdoption(TestCase):
         mock_adapter.find_holds_by_reference.return_value = [
             ("SH-001", "CROIS-01", Decimal("2")),
         ]
-        mock_adapter.retag_hold_reference.return_value = None
+        mock_adapter.retag_hold_reference.return_value = True
+        mock_adapter.reserve_ceding_cart_holds.return_value = ([], [])
         mock_adapter.release_holds.return_value = None
         mock_adapter.create_hold.return_value = {"success": True, "hold_id": "H-NEW"}
         mock_get_adapter.return_value = mock_adapter

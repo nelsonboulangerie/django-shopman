@@ -1,0 +1,2220 @@
+{
+  "protocol_version": "0.2",
+  "fixture_file": "examples.json",
+  "semantics": "Applicability is conjunctive over capabilities and requires_profiles, as in the binding corpus. Load the named message from fixture_file, deep-copy it, then apply each replace entry as an RFC 6901 pointer replacement before delivery. A replacement never adds a missing member. deliver_http is an authorized, current canonical HTTP 200 representation whose freshness and Age were validated; deliver_stream is a stream frame and never improves freshness. repair_result and canonical_poll_result are canonical HTTP responses with the generations named by the action. Expected projection descriptors omitted after installation are preserved exactly. Counts are cumulative observability counters. All time advances use a monotonic clock.",
+  "vectors": [
+    {
+      "id": "snapshot_bootstrap",
+      "description": "An authorized bootstrap snapshot installs atomically and becomes fresh.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"}
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "stream_id": "s_example_public_list",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 1}
+      }
+    },
+    {
+      "id": "json_patch_exact_base",
+      "description": "A JSON Patch applies only over its exact base and advances to its target.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        },
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "representation_etag": "\"patch-10-11-repair\""
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "stream_id": "s_example_public_list",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 2}},
+          "order": ["alpha"]
+        },
+        "absent_fields": ["/representation_etag"],
+        "counts": {"installed": 2}
+      }
+    },
+    {
+      "id": "merge_patch_exact_base",
+      "description": "A Merge Patch independently requires the exact base and advances atomically.",
+      "capabilities": [
+        "continuum.snapshot.v0.2",
+        "continuum.patch.merge.v0.2"
+      ],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "merge_patch_11_12",
+          "replace": [
+            {"path": "/id", "value": "evt_merge_patch_10_11"},
+            {"path": "/data/base/cursor/sequence", "value": "00000000000000000010"},
+            {"path": "/data/base/state_token", "value": "t_state_10"},
+            {
+              "path": "/data/base/state_digest",
+              "value": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+            },
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000011"},
+            {"path": "/data/target/state_token", "value": "t_state_11"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+            },
+            {"path": "/data/patch/document/entities/alpha/value", "value": 2}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 2}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2}
+      }
+    },
+    {
+      "id": "patch_duplicate_is_discarded",
+      "description": "Re-delivery of a non-idempotent patch is discarded by cursor and token.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_http", "message_ref": "patch_10_11"},
+        {"op": "deliver_http", "message_ref": "patch_10_11"}
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 2}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2, "duplicate": 1}
+      }
+    },
+    {
+      "id": "duplicate_does_not_refresh_ttl",
+      "description": "A duplicate cannot extend freshness or stale lifetime.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "advance_monotonic_ms", "milliseconds": 29000},
+        {"op": "deliver_stream", "message_ref": "snapshot_10"},
+        {"op": "advance_monotonic_ms", "milliseconds": 1000}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "duplicate": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "canonical_http_200_same_tuple_revalidates",
+      "description": "The same semantic tuple from a stream is a non-refreshing duplicate, while a current canonical HTTP 200 revalidates it.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        },
+        {"op": "advance_monotonic_ms", "milliseconds": 30000},
+        {"op": "deliver_stream", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "representation_etag": "\"snapshot-10-representation\"",
+        "counts": {"installed": 1, "duplicate": 1, "repair_requests": 1, "revalidated": 1}
+      }
+    },
+    {
+      "id": "authorized_304_renews_freshness",
+      "description": "An authorized 304 with complete matching semantic headers is a revalidation, not a duplicate.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        },
+        {"op": "advance_monotonic_ms", "milliseconds": 30000},
+        {
+          "op": "validated_not_modified",
+          "authorized": true,
+          "etag": "\"snapshot-10-representation\"",
+          "stream_id": "s_example_public_list",
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+          "state_token": "t_state_10",
+          "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+          "fresh_for_ms": 30000,
+          "stale_if_error_ms": 120000,
+          "age_ms": 0,
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "representation_etag": "\"snapshot-10-representation\"",
+        "counts": {"installed": 1, "repair_requests": 1, "revalidated": 1}
+      }
+    },
+    {
+      "id": "mismatched_304_does_not_renew",
+      "description": "A 304 for the installed cursor and ETag with a mismatched state token is equivocation, cannot extend freshness, and closes the source.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        },
+        {"op": "advance_monotonic_ms", "milliseconds": 30000},
+        {
+          "op": "validated_not_modified",
+          "authorized": true,
+          "etag": "\"snapshot-10-representation\"",
+          "stream_id": "s_example_public_list",
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+          "state_token": "t_state_10_other",
+          "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+          "fresh_for_ms": 30000,
+          "stale_if_error_ms": 120000,
+          "age_ms": 0,
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "absent_fields": ["/representation_etag"],
+        "fatal_reason": "equivocation",
+        "counts": {"installed": 1, "repair_requests": 1, "equivocation": 1}
+      }
+    },
+    {
+      "id": "mismatched_304_digest_is_fatal",
+      "description": "A 304 for the installed cursor, token, and ETag with a mismatched state digest is equivocation and cannot renew freshness.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "representation_etag": "\"snapshot-10-representation\""
+        },
+        {"op": "advance_monotonic_ms", "milliseconds": 30000},
+        {
+          "op": "validated_not_modified",
+          "authorized": true,
+          "etag": "\"snapshot-10-representation\"",
+          "stream_id": "s_example_public_list",
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+          "state_token": "t_state_10",
+          "state_digest": "sha256-c91qAaI3TE3BBMs4U-XidRlkj6scrJ286gvLUfN6HlA",
+          "fresh_for_ms": 30000,
+          "stale_if_error_ms": 120000,
+          "age_ms": 0,
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "absent_fields": ["/representation_etag"],
+        "fatal_reason": "equivocation",
+        "counts": {"installed": 1, "repair_requests": 1, "equivocation": 1}
+      }
+    },
+    {
+      "id": "regression_is_discarded",
+      "description": "An older snapshot cannot roll back a newer installed version.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_http", "message_ref": "patch_10_11"},
+        {"op": "deliver_http", "message_ref": "snapshot_10"}
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "counts": {"installed": 2, "regression": 1}
+      }
+    },
+    {
+      "id": "future_patch_base_repairs",
+      "description": "A patch whose base is ahead of local state is not applied and starts one repair.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/base/cursor/sequence", "value": "00000000000000000012"},
+            {"path": "/data/base/state_token", "value": "t_state_12"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000013"},
+            {"path": "/data/target/state_token", "value": "t_state_13"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "gap": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "patch_failure_is_atomic",
+      "description": "A syntactically valid patch that cannot apply leaves the previous state untouched.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/patch/document/0/path", "value": "/entities/missing/value"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 1, "patch_failure": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "snapshot_digest_mismatch_is_rejected",
+      "description": "A snapshot whose recomputed JCS digest differs from target is never installed.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_bad_digest"},
+            {"path": "/data/state/entities/alpha/value", "value": 2}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "counts": {"snapshot_digest_mismatch": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "patch_digest_mismatch_repairs_without_install",
+      "description": "A schema-valid but semantically wrong patch result is rejected by its recomputed digest and repaired by snapshot.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/patch/document/0/value", "value": 5}
+          ]
+        },
+        {
+          "op": "repair_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1,
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_11_after_bad_patch"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000011"},
+            {"path": "/data/target/state_token", "value": "t_state_11"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 2},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "state_digest": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 2}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2, "patch_digest_mismatch": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "prototype_path_is_rejected",
+      "description": "A patch path capable of prototype pollution is rejected before application.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/patch/document/0/path", "value": "/__proto__/polluted"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "unsafe_path": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "same_cursor_different_token_is_fatal",
+      "description": "Two representations for the same cursor are producer equivocation, and a later in-band snapshot cannot clear the fatal generation.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_10_equivocation"},
+            {"path": "/data/target/state_token", "value": "t_state_10_other"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-c91qAaI3TE3BBMs4U-XidRlkj6scrJ286gvLUfN6HlA"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 9}
+          ]
+        },
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_11_after_fatal"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000011"},
+            {"path": "/data/target/state_token", "value": "t_state_11"},
+            {"path": "/data/target/state_digest", "value": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"},
+            {"path": "/data/state/entities/alpha/value", "value": 2},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "fatal_reason": "equivocation",
+        "counts": {"installed": 1, "equivocation": 1, "fatal_message_discard": 1}
+      }
+    },
+    {
+      "id": "same_cursor_same_token_different_digest_is_fatal",
+      "description": "A second representation with the same cursor and state token but different state and digest is producer equivocation.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_10_digest_equivocation"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-c91qAaI3TE3BBMs4U-XidRlkj6scrJ286gvLUfN6HlA"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 9}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "equivocation",
+        "counts": {"installed": 1, "equivocation": 1}
+      }
+    },
+    {
+      "id": "same_message_identity_with_different_content_is_fatal",
+      "description": "The same CloudEvents source/id with different JCS content is an identity collision, never an early duplicate discard.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/data/state/entities/alpha/value", "value": 9}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "fatal_reason": "message_identity_collision",
+        "counts": {"installed": 1, "message_identity_collision": 1}
+      }
+    },
+    {
+      "id": "stream_identity_source_mismatch_is_fatal",
+      "description": "A frame for an installed stream id from a different CloudEvents source is rejected atomically and quarantines the source.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/source", "value": "https://other.example.test/producers/projection"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "stream_identity_violation",
+        "counts": {"installed": 1, "stream_identity_violation": 1, "source_quarantine": 1}
+      }
+    },
+    {
+      "id": "stream_identity_subject_mismatch_is_fatal",
+      "description": "A frame whose subject no longer names its installed stream id is rejected atomically and quarantines the source.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "expected_semantic_violation": "subject_stream_mismatch",
+          "replace": [
+            {"path": "/subject", "value": "stream/s_other_public_list"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "stream_identity_violation",
+        "counts": {"installed": 1, "stream_identity_violation": 1, "source_quarantine": 1}
+      }
+    },
+    {
+      "id": "stream_identity_projection_mismatch_is_fatal",
+      "description": "A frame that reuses an installed stream id for another projection is rejected atomically without replacing the fixed tuple.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/data/stream/projection", "value": "example.other-list"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "stream_identity_violation",
+        "counts": {"installed": 1, "stream_identity_violation": 1, "source_quarantine": 1}
+      }
+    },
+    {
+      "id": "stream_identity_partition_mismatch_is_fatal",
+      "description": "A frame that reuses an installed stream id for another partition is rejected atomically without replacing the fixed tuple.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/data/stream/partition", "value": "p_public_other"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "stream_identity_violation",
+        "counts": {"installed": 1, "stream_identity_violation": 1, "source_quarantine": 1}
+      }
+    },
+    {
+      "id": "stream_identity_classification_mismatch_is_fatal",
+      "description": "A frame cannot reclassify an installed public stream as tenant data; it is rejected atomically and the source is quarantined.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/data/stream/classification", "value": "tenant"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "fatal_reason": "stream_identity_violation",
+        "counts": {"installed": 1, "stream_identity_violation": 1, "source_quarantine": 1}
+      }
+    },
+    {
+      "id": "epoch_change_requires_authoritative_snapshot",
+      "description": "An event from another epoch triggers repair; only its authoritative repair snapshot resets state.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/base/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/base/cursor/sequence", "value": "00000000000000000000"},
+            {"path": "/data/base/state_token", "value": "t_beta_0"},
+            {"path": "/data/target/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000001"},
+            {"path": "/data/target/state_token", "value": "t_beta_1"}
+          ]
+        },
+        {
+          "op": "repair_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1,
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_beta_1"},
+            {"path": "/data/target/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000001"},
+            {"path": "/data/target/state_token", "value": "t_beta_1"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-v8YKjjGzZ3Vy-dwvjR1n3a51yfQMvgydmNAL4ww3Dsg"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 7},
+            {"path": "/data/reset_reason", "value": "epoch_changed"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_beta", "sequence": "00000000000000000001"},
+        "state_token": "t_beta_1",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 7}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2, "epoch_mismatch": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "late_repair_generation_cannot_restore_old_epoch",
+      "description": "A repair callback from an older local generation cannot reinstall the epoch replaced by a newer repair.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {"path": "/data/base/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/base/cursor/sequence", "value": "00000000000000000000"},
+            {"path": "/data/base/state_token", "value": "t_beta_0"},
+            {"path": "/data/target/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000001"},
+            {"path": "/data/target/state_token", "value": "t_beta_1"}
+          ]
+        },
+        {
+          "op": "repair_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1,
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_beta_1_winner"},
+            {"path": "/data/target/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000001"},
+            {"path": "/data/target/state_token", "value": "t_beta_1"},
+            {"path": "/data/reset_reason", "value": "epoch_changed"}
+          ]
+        },
+        {
+          "op": "repair_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1,
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_alpha_11_late"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000011"},
+            {"path": "/data/target/state_token", "value": "t_state_11"},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_beta", "sequence": "00000000000000000001"},
+        "state_token": "t_beta_1",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2, "epoch_mismatch": 1, "repair_requests": 1, "late_repair_discard": 1}
+      }
+    },
+    {
+      "id": "schema_change_requires_repair",
+      "description": "A patch cannot cross projection schema versions.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {
+              "path": "/data/stream/schema",
+              "value": "https://schemas.example.test/projections/item-list/v1.1"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "stream_id": "s_example_public_list",
+        "projection": "example.item-list",
+        "partition": "p_public_default",
+        "schema": "https://schemas.example.test/projections/item-list/v1",
+        "classification": "public",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "schema_mismatch": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "invalidations_coalesce",
+      "description": "Repeated invalidations retain usable data and coalesce into one repair at the newest head.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_stream", "message_ref": "invalidate_13"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/id", "value": "evt_invalidate_14"},
+            {"path": "/data/head/cursor/sequence", "value": "00000000000000000014"},
+            {"path": "/data/head/state_token", "value": "t_state_14"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "latest_head": {
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000014"},
+          "state_token": "t_state_14",
+          "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+        },
+        "counts": {"installed": 1, "invalidations": 2, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "unknown_invalidation_at_exact_head_repairs",
+      "description": "An unknown invalidation at the exact installed head cannot be dismissed as data_changed and forces canonical validation.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/id", "value": "evt_invalidate_10_unknown"},
+            {"path": "/data/head/cursor/sequence", "value": "00000000000000000010"},
+            {"path": "/data/head/state_token", "value": "t_state_10"},
+            {
+              "path": "/data/head/state_digest",
+              "value": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+            },
+            {"path": "/data/reason", "value": "unknown"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "latest_head": {
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+          "state_token": "t_state_10",
+          "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+        },
+        "counts": {"installed": 1, "invalidations": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "invalidation_regression_is_discarded",
+      "description": "An invalidation head older than the installed state cannot make current data stale.",
+      "capabilities": [
+        "continuum.snapshot.v0.2",
+        "continuum.patch.json.v0.2",
+        "continuum.invalidate.v0.2"
+      ],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_http", "message_ref": "patch_10_11"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/id", "value": "evt_invalidate_10_late"},
+            {"path": "/data/head/cursor/sequence", "value": "00000000000000000010"},
+            {"path": "/data/head/state_token", "value": "t_state_10"},
+            {
+              "path": "/data/head/state_digest",
+              "value": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "counts": {"installed": 2, "invalidation_regression": 1}
+      }
+    },
+    {
+      "id": "invalidation_same_cursor_different_token_is_fatal",
+      "description": "An invalidation that contradicts the installed token at the same cursor is equivocation.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/id", "value": "evt_invalidate_10_equivocation"},
+            {"path": "/data/head/cursor/sequence", "value": "00000000000000000010"},
+            {"path": "/data/head/state_token", "value": "t_state_10_other"},
+            {
+              "path": "/data/head/state_digest",
+              "value": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "invalid",
+        "transport_state": "closed",
+        "reconcile_state": "fatal",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "fatal_reason": "equivocation",
+        "counts": {"installed": 1, "equivocation": 1}
+      }
+    },
+    {
+      "id": "delayed_gap_behind_local_state_is_discarded",
+      "description": "A gap whose head is behind the installed state is a regression and cannot reset it.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.replay.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_30"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000030"},
+            {"path": "/data/target/state_token", "value": "t_state_30"}
+          ]
+        },
+        {"op": "deliver_stream", "message_ref": "gap_20_floor_15"}
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000030"},
+        "state_token": "t_state_30",
+        "counts": {"installed": 1, "gap_regression": 1}
+      }
+    },
+    {
+      "id": "transport_and_reconcile_axes_are_independent",
+      "description": "SSE may enter backoff while an HTTP repair remains active and usable data stays installed.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "transport_connecting"},
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "transport_live"},
+        {"op": "deliver_stream", "message_ref": "invalidate_13"},
+        {"op": "transport_backoff"}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "backoff",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "latest_head": {
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000013"},
+          "state_token": "t_state_13",
+          "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+        },
+        "counts": {"installed": 1, "invalidations": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "retention_gap_resets_incremental_state",
+      "description": "A retention gap discards incremental buffers and requests a full snapshot without erasing usable data early.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.replay.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_stream", "message_ref": "gap_20_floor_15"}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "reset_required",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "latest_head": {
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000020"},
+          "state_token": "t_state_20",
+          "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+        },
+        "counts": {"installed": 1, "gap": 1, "full_snapshot_requests": 1}
+      }
+    },
+    {
+      "id": "slow_consumer_overflow_is_bounded",
+      "description": "Queue overflow becomes reset and full repair rather than unbounded buffering.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.replay.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "buffer_overflow"}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "reset_required",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "overflow": 1, "full_snapshot_requests": 1}
+      }
+    },
+    {
+      "id": "hard_expiry_blocks_stale_data",
+      "description": "Freshness and stale-if-error expire on monotonic elapsed time.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "advance_monotonic_ms", "milliseconds": 150000}
+      ],
+      "expected": {
+        "data_state": "stale_blocked",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "counts": {"installed": 1, "repair_requests": 1, "hard_expiry": 1}
+      }
+    },
+    {
+      "id": "security_generation_change_purges_private_state",
+      "description": "A principal change purges protected state regardless of freshness.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "requires_profiles": ["protected-data"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/subject", "value": "stream/s_example_principal"},
+            {"path": "/data/stream/id", "value": "s_example_principal"},
+            {"path": "/data/stream/partition", "value": "p_principal_opaque"},
+            {"path": "/data/stream/classification", "value": "principal"}
+          ]
+        },
+        {
+          "op": "security_generation_change",
+          "security_generation": "g_principal_b"
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "purged": true,
+        "counts": {"installed": 1, "security_purge": 1}
+      }
+    },
+    {
+      "id": "late_private_response_from_old_generation_is_discarded",
+      "description": "A callback captured under the previous principal cannot install after a security-generation change.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "requires_profiles": ["protected-data"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {
+          "op": "security_generation_change",
+          "security_generation": "g_principal_b"
+        },
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_principal_a",
+          "replace": [
+            {"path": "/subject", "value": "stream/s_example_principal"},
+            {"path": "/data/stream/id", "value": "s_example_principal"},
+            {"path": "/data/stream/partition", "value": "p_principal_opaque"},
+            {"path": "/data/stream/classification", "value": "principal"}
+          ]
+        }
+      ],
+      "expected": {
+        "security_generation": "g_principal_b",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "purged": true,
+        "counts": {"security_purge": 1, "late_generation_discard": 1}
+      }
+    },
+    {
+      "id": "wall_clock_does_not_order_state",
+      "description": "A higher semantic sequence is accepted even when its CloudEvents time is earlier.",
+      "capabilities": ["continuum.snapshot.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "snapshot_10",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_11_old_clock"},
+            {"path": "/time", "value": "2020-01-01T00:00:00Z"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000011"},
+            {"path": "/data/target/state_token", "value": "t_state_11"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-O2MQp3HouvbDPWSm2kQOI0wnLtS0qD8OJIbPRYYQmuw"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 2},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "counts": {"installed": 2}
+      }
+    },
+    {
+      "id": "reordered_chain_converges_by_snapshot",
+      "description": "Out-of-order delivery starts repair and converges to the authoritative head snapshot.",
+      "capabilities": [
+        "continuum.snapshot.v0.2",
+        "continuum.patch.json.v0.2",
+        "continuum.patch.merge.v0.2"
+      ],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_http", "message_ref": "merge_patch_11_12"},
+        {"op": "deliver_http", "message_ref": "patch_10_11"},
+        {
+          "op": "repair_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "captured_repair_generation": 1,
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_12_repair"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000012"},
+            {"path": "/data/target/state_token", "value": "t_state_12"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-jTR4vaZMy11GrlefjJ4Vod5XrG47QHZiMlwkrvD4Fgo"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 3},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000012"},
+        "state_token": "t_state_12",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 3}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 2, "gap": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "lost_last_event_converges_by_canonical_poll",
+      "description": "Without a durable outbox, canonical polling repairs an update for which no stream event existed.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "advance_monotonic_ms",
+          "milliseconds": 60000,
+          "note": "Exceeds max_canonical_reconcile_interval_ms plus its jitter bound."
+        },
+        {
+          "op": "canonical_poll_result",
+          "message_ref": "snapshot_10",
+          "captured_security_generation": "g_public_a",
+          "replace": [
+            {"path": "/id", "value": "evt_snapshot_13_canonical_poll"},
+            {"path": "/data/target/cursor/sequence", "value": "00000000000000000013"},
+            {"path": "/data/target/state_token", "value": "t_state_13"},
+            {
+              "path": "/data/target/state_digest",
+              "value": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+            },
+            {"path": "/data/state/entities/alpha/value", "value": 4},
+            {"path": "/data/reset_reason", "value": "repair"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "fresh",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000013"},
+        "state_token": "t_state_13",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 4}},
+          "order": ["alpha"]
+        },
+        "counts": {
+          "installed": 2,
+          "canonical_poll_requests": 1,
+          "canonical_reconciliations": 1
+        }
+      }
+    },
+    {
+      "id": "accepted_receipt_is_nonterminal",
+      "description": "Accepted records durability of the command request but not completion of its effect.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "deliver_http", "message_ref": "commit_accepted"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 0,
+        "command_states": {"cmd_example_01": "accepted"},
+        "counts": {"receipt_accepted": 1}
+      }
+    },
+    {
+      "id": "same_command_retry_has_one_effect",
+      "description": "Retrying the same command id and fingerprint replays one durable result.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "lose_response", "command_id": "cmd_example_01"},
+        {
+          "op": "retry_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "deliver_http", "message_ref": "commit_committed"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "receipt_http_status": 200,
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "committed"},
+        "counts": {"command_attempts": 2, "receipt_replays": 1, "observation_fences": 1}
+      },
+      "notes": "The projection is still absent locally; a receipt fence does not install projection state."
+    },
+    {
+      "id": "same_command_different_fingerprint_conflicts",
+      "description": "Reusing a command id for a different intention returns conflict and does not execute again.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "lose_response", "command_id": "cmd_example_01"},
+        {
+          "op": "retry_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-7bPbzpr72PBW2kSblWZ2fHVZjSPpH_GbaLHaNiq3XiQ",
+          "request_body": {"value": 99}
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "receipt_http_status": 409,
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "unknown"},
+        "counts": {"command_attempts": 2, "fingerprint_conflicts": 1}
+      }
+    },
+    {
+      "id": "lost_command_response_uses_receipt_lookup",
+      "description": "A lost response becomes unknown until receipt lookup; SSE observation is not used as proof.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "lose_response", "command_id": "cmd_example_01"},
+        {"op": "lookup_receipt", "command_id": "cmd_example_01"},
+        {"op": "deliver_http", "message_ref": "commit_committed"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "receipt_http_status": 200,
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "committed"},
+        "counts": {"receipt_lookups": 1, "observation_fences": 1}
+      }
+    },
+    {
+      "id": "terminal_receipt_before_accepted_does_not_regress",
+      "description": "A terminal receipt may arrive first; a later accepted revision is discarded as regression.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {"op": "deliver_http", "message_ref": "commit_accepted"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "committed"},
+        "counts": {"receipt_terminal": 1, "receipt_regression": 1}
+      }
+    },
+    {
+      "id": "conflicting_terminal_receipt_is_invalid",
+      "description": "A different terminal status after commit is producer equivocation for that command.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_rejected",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_conflicting_terminal"},
+            {"path": "/subject", "value": "command/cmd_example_01"},
+            {"path": "/data/command/command_id", "value": "cmd_example_01"},
+            {
+              "path": "/data/command/request_fingerprint",
+              "value": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk"
+            },
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_conflict"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_terminal": 1, "terminal_conflict": 1}
+      }
+    },
+    {
+      "id": "same_receipt_revision_different_content_is_invalid",
+      "description": "The same receipt revision cannot carry a different token or result.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_same_revision_other"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_other"},
+            {"path": "/data/command/result/accepted_value", "value": 5}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_terminal": 1, "receipt_equivocation": 1}
+      }
+    },
+    {
+      "id": "terminal_observations_grow_monotonically",
+      "description": "A higher receipt revision may add observation fences without changing its terminal result.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_observation_revision_3"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_observed_more"},
+            {
+              "path": "/data/command/observations",
+              "value": [
+                {
+                  "stream_id": "s_example_public_list",
+                  "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000013"},
+                  "state_token": "t_state_13",
+                  "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+                },
+                {
+                  "stream_id": "s_example_secondary",
+                  "cursor": {"epoch": "e_secondary", "sequence": "00000000000000000005"},
+                  "state_token": "t_secondary_5",
+                  "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "committed"},
+        "counts": {"receipt_terminal": 1, "observation_fences": 2}
+      }
+    },
+    {
+      "id": "observation_fence_cross_epoch_revision_converges_and_epoch_reuse_is_invalid",
+      "description": "A higher authorized receipt revision may replace a same-stream observation fence after a legitimate epoch change, an out-of-order older revision cannot undo it, and a later reuse of the abandoned epoch is invalid.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_observation_other_epoch"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_other_epoch"},
+            {"path": "/data/command/observations/0/cursor/epoch", "value": "e_beta"},
+            {"path": "/data/command/observations/0/cursor/sequence", "value": "00000000000000000001"},
+            {"path": "/data/command/observations/0/state_token", "value": "t_beta_1"}
+          ]
+        },
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed"
+        },
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_observation_abandoned_epoch_reuse"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000004"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_abandoned_epoch_reuse"},
+            {"path": "/data/command/observations/0/cursor/epoch", "value": "e_alpha"},
+            {"path": "/data/command/observations/0/cursor/sequence", "value": "00000000000000000014"},
+            {"path": "/data/command/observations/0/state_token", "value": "t_state_14"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {
+          "receipt_terminal": 1,
+          "cross_epoch_fence_replacements": 1,
+          "out_of_order_receipts_ignored": 1,
+          "abandoned_epoch_reuse_conflicts": 1
+        }
+      }
+    },
+    {
+      "id": "receipt_retry_horizon_change_is_invalid",
+      "description": "A later receipt revision cannot move the immutable retry horizon.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_committed",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_changed_retry_horizon"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_changed_horizon"},
+            {"path": "/data/command/retry_for_ms", "value": 1}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_terminal": 1, "receipt_horizon_conflict": 1}
+      }
+    },
+    {
+      "id": "same_declared_fingerprint_different_body_conflicts",
+      "description": "The server recomputes the fingerprint and rejects a changed body even when the client repeats the old digest.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "lose_response", "command_id": "cmd_example_01"},
+        {
+          "op": "retry_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 99}
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "receipt_http_status": 409,
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "unknown"},
+        "counts": {"command_attempts": 2, "server_fingerprint_conflicts": 1}
+      }
+    },
+    {
+      "id": "expired_command_id_is_not_executed_again",
+      "description": "Retry after the monotonic retry horizon returns 410, remains locally unknown, and never creates a second effect.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {}
+      },
+      "actions": [
+        {
+          "op": "submit_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        },
+        {"op": "lose_response", "command_id": "cmd_example_01"},
+        {"op": "advance_monotonic_ms", "milliseconds": 86400001},
+        {
+          "op": "retry_command",
+          "command_id": "cmd_example_01",
+          "request_fingerprint": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk",
+          "request_body": {"value": 4}
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "receipt_http_status": 410,
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "unknown"},
+        "counts": {"command_attempts": 2, "expired_command_rejections": 1}
+      }
+    },
+    {
+      "id": "wrong_base_digest_repairs_without_apply",
+      "description": "A patch with matching cursor/token but the wrong base digest is not an exact base and cannot apply.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.patch.json.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_http",
+          "message_ref": "patch_10_11",
+          "replace": [
+            {
+              "path": "/data/base/state_digest",
+              "value": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "state_digest": "sha256-9vIsxhbsqPA6UZJWWtNz8xysbj3SrXqKYGzffi47df0",
+        "state": {
+          "entities": {"alpha": {"label": "Alpha", "value": 1}},
+          "order": ["alpha"]
+        },
+        "counts": {"installed": 1, "base_mismatch": 1, "repair_requests": 1}
+      }
+    },
+    {
+      "id": "gap_floor_is_independent_of_equal_latest_head",
+      "description": "After invalidate head 20, gap head 20/floor 15 still resets a client whose installed base is 10.",
+      "capabilities": ["continuum.snapshot.v0.2", "continuum.invalidate.v0.2", "continuum.replay.v0.2"],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle"
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {
+          "op": "deliver_stream",
+          "message_ref": "invalidate_13",
+          "replace": [
+            {"path": "/id", "value": "evt_invalidate_20"},
+            {"path": "/data/head/cursor/sequence", "value": "00000000000000000020"},
+            {"path": "/data/head/state_token", "value": "t_state_20"}
+          ]
+        },
+        {"op": "deliver_stream", "message_ref": "gap_20_floor_15"}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "reset_required",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000010"},
+        "state_token": "t_state_10",
+        "latest_head": {
+          "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000020"},
+          "state_token": "t_state_20",
+          "state_digest": "sha256-i4qi2GONJlq-CP8I4elaDtICpbyqa1saTUOYiERo4nE"
+        },
+        "counts": {"installed": 1, "invalidations": 1, "gap": 1, "repair_requests": 1, "full_snapshot_requests": 1}
+      }
+    },
+    {
+      "id": "accepted_can_resolve_to_indeterminate",
+      "description": "An accepted command reaches an explicit terminal indeterminate receipt and cannot be retried automatically.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_03": "pending"}
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_accepted",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_accepted_03"},
+            {"path": "/subject", "value": "command/cmd_example_03"},
+            {"path": "/data/command/command_id", "value": "cmd_example_03"},
+            {"path": "/data/command/request_fingerprint", "value": "sha256-YYrxtPMyGXgf7MznBc1DgOOVr6VEvbq5SkzhH8boqHY"}
+          ]
+        },
+        {"op": "deliver_http", "message_ref": "commit_indeterminate"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 0,
+        "command_states": {"cmd_example_03": "indeterminate"},
+        "counts": {"receipt_accepted": 1, "receipt_terminal": 1, "automatic_retries_cancelled": 1}
+      }
+    },
+    {
+      "id": "conflicting_terminals_are_invalid_in_reverse_order",
+      "description": "Rejected revision 3 followed by committed revision 2 is the same terminal conflict as the opposite arrival order.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_rejected",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_rejected_01_r3"},
+            {"path": "/subject", "value": "command/cmd_example_01"},
+            {"path": "/data/command/command_id", "value": "cmd_example_01"},
+            {"path": "/data/command/request_fingerprint", "value": "sha256-cJO7ciYNUzTiosEgIqlAaiFQ2lUcACfaBPpNgZ3__uk"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"}
+          ]
+        },
+        {"op": "deliver_http", "message_ref": "commit_committed"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_terminal": 1, "terminal_conflict": 1}
+      }
+    },
+    {
+      "id": "accepted_revision_after_terminal_is_invalid_regardless_of_order",
+      "description": "Accepted revision 3 followed by terminal revision 2 is invalid instead of remaining accepted.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_accepted",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_accepted_01_r3"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_accepted_r3"}
+          ]
+        },
+        {"op": "deliver_http", "message_ref": "commit_committed"}
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_accepted": 1, "receipt_terminal": 1, "receipt_order_conflict": 1}
+      }
+    },
+    {
+      "id": "terminal_then_higher_accepted_is_also_invalid",
+      "description": "Terminal revision 2 followed by accepted revision 3 reaches the same absorbing invalid state.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "commit_committed"},
+        {
+          "op": "deliver_http",
+          "message_ref": "commit_accepted",
+          "replace": [
+            {"path": "/id", "value": "evt_commit_accepted_01_r3_after"},
+            {"path": "/data/command/receipt_revision", "value": "00000000000000000003"},
+            {"path": "/data/command/receipt_token", "value": "r_example_01_accepted_r3_after"}
+          ]
+        }
+      ],
+      "expected": {
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "effect_count": 1,
+        "command_states": {"cmd_example_01": "invalid"},
+        "counts": {"receipt_terminal": 1, "receipt_accepted": 1, "receipt_order_conflict": 1}
+      }
+    },
+    {
+      "id": "security_change_cancels_pending_command",
+      "description": "A pending command from the old principal is not retried under the new security generation.",
+      "capabilities": ["continuum.command-receipt.v0.2"],
+      "initial": {
+        "security_generation": "g_principal_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "command_states": {"cmd_example_01": "pending"}
+      },
+      "actions": [
+        {
+          "op": "security_generation_change",
+          "security_generation": "g_principal_b"
+        }
+      ],
+      "expected": {
+        "security_generation": "g_principal_b",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "purged": true,
+        "effect_count": 0,
+        "command_states": {"cmd_example_01": "unknown"},
+        "counts": {"security_purge": 1, "command_retries_cancelled": 1}
+      }
+    },
+    {
+      "id": "passive_update_preserves_local_interaction",
+      "description": "Installing a passive update does not steal focus or overwrite an unrelated local draft.",
+      "capabilities": [
+        "continuum.snapshot.v0.2",
+        "continuum.patch.json.v0.2"
+      ],
+      "initial": {
+        "security_generation": "g_public_a",
+        "data_state": "absent",
+        "transport_state": "idle",
+        "reconcile_state": "idle",
+        "ui": {"focus": "control-alpha", "draft": "unsaved text", "scroll_y": 640}
+      },
+      "actions": [
+        {"op": "deliver_http", "message_ref": "snapshot_10"},
+        {"op": "deliver_stream", "message_ref": "patch_10_11"}
+      ],
+      "expected": {
+        "data_state": "stale_usable",
+        "transport_state": "idle",
+        "reconcile_state": "repairing",
+        "cursor": {"epoch": "e_alpha", "sequence": "00000000000000000011"},
+        "state_token": "t_state_11",
+        "ui": {"focus": "control-alpha", "draft": "unsaved text", "scroll_y": 640},
+        "counts": {"installed": 2, "repair_requests": 1, "focus_moves": 0, "draft_overwrites": 0}
+      }
+    }
+  ]
+}

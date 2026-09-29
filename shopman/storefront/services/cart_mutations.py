@@ -100,8 +100,8 @@ def set_qty_by_sku(
             else:
                 # O nome do produto tem que viajar JUNTO com a linha. Sem ele o
                 # `SessionItem.name` nasce vazio, o `OrderItem.name` herda o vazio
-                # e a cozinha/o Gestor caem para o SKU: o balcão lê "CT", "BF",
-                # "MD". Os outros dois chamadores de `add_item` (recompra e
+                # e a cozinha/o Gestor caem para o SKU: o balcão lê "CRO", "TRADI",
+                # "MDLN". Os outros dois chamadores de `add_item` (recompra e
                 # oferta, em `shop/services/`) sempre passaram `name=`; só este
                 # caminho, o "adicionar à sacola" da loja, esquecia. Como o seed
                 # cria itens já com nome, nenhum teste via a diferença.

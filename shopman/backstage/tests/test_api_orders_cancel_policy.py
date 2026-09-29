@@ -261,3 +261,53 @@ def test_capture_between_policy_and_transition_requires_new_approval(client, cai
     order.refresh_from_db()
     assert order.status == "accepted"
     assert PaymentService.refunded_total(intent.ref) == 0
+
+
+# ── Recusa na fase de preparo não prende a intenção ────────────────────────────
+# Homologação de 21/09/2026: o iFood recusou na borda a leitura dos motivos no
+# meio de um cancelamento; a view respondeu 503 sem dizer que nada tinha sido
+# aplicado, a tela tratou como "talvez gravou" e prendeu a intenção até o F5.
+
+
+@pytest.mark.django_db
+def test_recusa_no_preparo_declara_que_nada_foi_aplicado(client, gerente):
+    from unittest.mock import patch
+
+    from shopman.shop.services.operator_orders import CancellationReasonsUnavailable
+
+    order = _order("CANCEL-503", "new")
+    client.force_login(gerente)
+    with patch(
+        "shopman.backstage.services.orders.prepare_cancellation",
+        side_effect=CancellationReasonsUnavailable("Não foi possível consultar os motivos do iFood."),
+    ):
+        resp = _cancel(client, order, cancellation_code="501")
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["outcome"] == "not_applied"
+    assert body["intention"] == f"cancel-{order.ref}"
+    order.refresh_from_db()
+    assert order.status == "new"
+
+
+@pytest.mark.django_db
+def test_depois_da_recusa_a_mesma_intencao_pode_tentar_de_novo(client, gerente):
+    """Nada foi gravado sob a chave: a segunda tentativa roda de verdade."""
+    from unittest.mock import patch
+
+    from shopman.shop.services.operator_orders import CancellationReasonsUnavailable
+
+    order = _order("CANCEL-RETRY", "new")
+    client.force_login(gerente)
+    with patch(
+        "shopman.backstage.services.orders.prepare_cancellation",
+        side_effect=CancellationReasonsUnavailable("iFood fora do ar"),
+    ):
+        assert _cancel(client, order).status_code == 503
+
+    resp = _cancel(client, order)
+
+    assert resp.status_code == 200, resp.json()
+    order.refresh_from_db()
+    assert order.status == "cancelled"
