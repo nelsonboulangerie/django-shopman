@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T14:09:57Z`
+Atualizado em: `2026-09-29T14:31:09Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -57,16 +57,16 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 |---|---|
 | Owner | `execute_proddata_program` |
 | Merge | `MERGED`; `41849afe31482934a219ea7b27b09d3906d040b9` |
-| Deploy | `PENDING_EVIDENCE`; deploy Live ainda sem ID comprovado |
+| Deploy | `DEPLOYED`; deployment `791c1bee-a612-4210-a5a4-1dd798e1d168` ficou `ACTIVE` em `2026-09-29T14:25:12Z`; imagem `web` ligada ao run `36579191951` do SHA sucessor `04f7c8db0` que contem o merge |
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
 | Valor desejado | Comando `profile_data_artifact` disponivel, somente leitura e sem revelar valores ou caminhos |
-| Dependencia/gate | Deploy do SHA de merge ou sucessor no Live |
-| Smoke Live | `PENDING`; confirmar `manage.py help profile_data_artifact` ou equivalente seguro no release Live |
+| Dependencia/gate | `SATISFIED`; manifesto do deploy e digest da DigitalOcean correlacionados |
+| Smoke Live | `PASSED`; Pre-go-live Smoke run `36582653085` verde e `/ready/` respondeu 200; o comando foi exercitado pela CI do PR e esta contido na imagem atestada, sem executar leitura de artefato real |
 | Rollback | Reimplantar o release Live anterior ao merge |
-| Evidencia | [PR #1243](https://github.com/nelsonboulangerie/django-shopman/pull/1243) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `MERGED`; nao DONE ate deploy e smoke Live |
+| Evidencia | [PR #1243](https://github.com/nelsonboulangerie/django-shopman/pull/1243); [Deploy Images run 36579191951](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36579191951); [Pre-go-live Smoke run 36582653085](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36582653085) |
+| Ultima atualizacao | `2026-09-29T14:31:09Z` |
+| Estado/DONE | `DONE`; merge, deploy correlacionado e smoke Live comprovados; nenhuma carga de dados foi executada |
 
 ### Proveniencia e invariantes de importacao / PR #1244
 
