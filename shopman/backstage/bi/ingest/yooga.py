@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
@@ -41,11 +42,16 @@ from django.utils import timezone
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 from shopman.utils.phone import normalize_phone
 
+from shopman.shop.environment import is_production
+
 from . import AlreadyImported, InvalidExport, sha256_of
 
 logger = logging.getLogger(__name__)
 
 SOURCE = "yooga"
+PURPOSE = "historical_sales"
+SCHEMA_VERSION = "yooga-xlsx/v1"
+PARSER_VERSION = "yooga-ingest/v2"
 
 # A linha de taxa de entrega do Yooga. Não vira produto no Shopman — entrega é
 # modalidade, não item de cardápio —, mas o registro dela é sinal de canal.
@@ -264,6 +270,10 @@ def ingest(
     qualquer falha depois de o arquivo abrir, um lote ``failed`` fica gravado
     com o motivo — a transação de dados desfaz tudo, o registro da falha não.
     """
+    if rebuild and is_production():
+        raise InvalidExport(
+            "--rebuild é bloqueado em produção; restauração exige snapshot, procedimento e autorização próprios."
+        )
     try:
         import openpyxl
     except ImportError as exc:  # pragma: no cover - dependência declarada no pyproject
@@ -275,10 +285,15 @@ def ingest(
     if not path.is_file():
         raise InvalidExport(f"Arquivo não encontrado: {path}")
     digest = sha256_of(path)
+    started_at = timezone.now()
 
     if not rebuild:
         done = ImportBatch.objects.filter(
-            source=SOURCE, file_sha256=digest, status=ImportBatch.Status.DONE
+            source=SOURCE,
+            file_sha256=digest,
+            purpose=PURPOSE,
+            parser_version=PARSER_VERSION,
+            status=ImportBatch.Status.DONE,
         ).first()
         if done is not None:
             raise AlreadyImported(
@@ -303,6 +318,12 @@ def ingest(
                     source=SOURCE,
                     file_name=path.name[:200],
                     file_sha256=digest,
+                    purpose=PURPOSE,
+                    artifact_ref=f"sha256:{digest}",
+                    schema_version=SCHEMA_VERSION,
+                    parser_version=PARSER_VERSION,
+                    mode=ImportBatch.Mode.APPLY,
+                    started_at=started_at,
                     imported_by=imported_by,
                     status=ImportBatch.Status.DONE,
                 )
@@ -312,12 +333,15 @@ def ingest(
                     workbook["Itens"], HistoricalSale, HistoricalSaleItem, product_map
                 )
                 remarcadas = marcar_entrega_por_taxa()
+                finished_at = timezone.now()
                 for field, value in summary.items():
                     setattr(batch, field, value)
-                batch.save(update_fields=list(summary))
+                batch.counts = {**summary, "delivery_flags_updated": remarcadas}
+                batch.finished_at = finished_at
+                batch.save(update_fields=[*summary, "counts", "finished_at"])
         except Exception as exc:
             # A transação desfez os dados; o registro da falha fica, e o erro sobe.
-            _record_failure(ImportBatch, path, digest, imported_by, exc)
+            _record_failure(ImportBatch, path, digest, imported_by, started_at, exc)
             raise
     finally:
         workbook.close()
@@ -366,17 +390,35 @@ def marcar_entrega_por_taxa() -> int:
     ).update(is_delivery=True)
 
 
-def _record_failure(batch_model, path: Path, digest: str, imported_by, exc: Exception) -> None:
+def _record_failure(batch_model, path: Path, digest: str, imported_by, started_at, exc: Exception) -> None:
     """Lote ``failed`` com o motivo: importação que falha em silêncio é o pior caso."""
-    logger.warning("bi.ingest.yooga.failed file=%s error=%s", path.name, exc)
+    safe_error = _sanitized_error(exc)
+    logger.warning("bi.ingest.yooga.failed artifact_sha256=%s error=%s", digest[:12], safe_error)
     batch_model.objects.create(
         source=SOURCE,
         file_name=path.name[:200],
         file_sha256=digest,
+        purpose=PURPOSE,
+        artifact_ref=f"sha256:{digest}",
+        schema_version=SCHEMA_VERSION,
+        parser_version=PARSER_VERSION,
+        mode=batch_model.Mode.APPLY,
+        started_at=started_at,
+        finished_at=timezone.now(),
         imported_by=imported_by,
         status=batch_model.Status.FAILED,
-        error=str(exc)[:2000],
+        error=safe_error[:2000],
     )
+
+
+def _sanitized_error(exc: Exception) -> str:
+    """Keep actionable field/sheet context without persisting a rejected cell value."""
+
+    if not isinstance(exc, InvalidExport):
+        return f"internal_error:{type(exc).__name__}"
+    message = str(exc)
+    message = re.sub(r"(ilegível:)\s*.*?(?=(?:;\s+[\w.]+:)|$)", r"\1 <redacted>", message)
+    return message
 
 
 def _product_map(sheet) -> dict[str, tuple[str, str]]:

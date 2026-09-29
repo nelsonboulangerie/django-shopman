@@ -38,15 +38,16 @@ class _ReadOnly:
 @admin.register(ImportBatch)
 class ImportBatchAdmin(_ReadOnly, ModelAdmin):
     list_display = (
-        "imported_at", "source", "file_name", "status_display",
+        "imported_at", "source", "purpose", "mode", "file_name", "status_display",
         "sales_created", "sales_skipped", "sales_completed", "items_created",
     )
-    list_filter = ("source", "status")
+    list_filter = ("source", "purpose", "mode", "status")
     date_hierarchy = "imported_at"
     ordering = ("-imported_at",)
     search_fields = ("file_name", "file_sha256", "notes")
     fields = (
-        "source", "status", "imported_at", "imported_by", "file_name", "file_sha256",
+        "source", "purpose", "status", "mode", "imported_at", "started_at", "finished_at", "imported_by",
+        "file_name", "file_sha256", "artifact_ref", "schema_version", "parser_version", "report_ref", "counts",
         "rows_read", "sales_created", "sales_skipped", "sales_completed", "items_created",
         "error", "notes",
     )
