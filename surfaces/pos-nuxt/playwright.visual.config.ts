@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       command:
-        `NUXT_IGNORE_LOCK=1 NUXT_APP_BASE_URL=/ ` +
+        `NUXT_IGNORE_LOCK=1 POS_VISUAL_CLIENT_ONLY=1 NUXT_APP_BASE_URL=/ ` +
         `NUXT_DJANGO_BASE_URL=http://127.0.0.1:${backendPort} ` +
         `NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:${backendPort} ` +
         `npx nuxt dev --host 127.0.0.1 --port ${appPort}`,

@@ -428,7 +428,7 @@ async function typeSearch(wrapper: Awaited<ReturnType<typeof mount>>, value: str
 }
 
 describe("Encomendas — a semana no centro", () => {
-  it("abre na semana: sete colunas, a conta do dia no topo, o dia vazio por extenso", async () => {
+  it("abre na semana: sete dias numa única árvore responsiva, com conta e vazio por extenso", async () => {
     const wrapper = await mount(PreordersPage);
     const columns = wrapper.find("[data-week-grid]").findAll("[data-week-day]");
     expect(columns).toHaveLength(7);
@@ -436,16 +436,19 @@ describe("Encomendas — a semana no centro", () => {
     expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("A receber R$ 36,00");
     expect(columns[1]!.find("[data-week-day-total]").text()).toBe("Nenhuma encomenda");
     expect(columns[1]!.find("[data-week-day-to-receive]").exists()).toBe(false);
-    // Área estreita: o mesmo conteúdo, em lista por dia.
-    expect(wrapper.find("[data-week-list]").findAll("[data-preorder]")).toHaveLength(2);
-    expect(wrapper.find("[data-preorders-summary]").text()).toBe("2 encomendas · R$ 60,00 · A receber: R$ 36,00");
+    // A mesma árvore responde a qualquer largura: não duplica cards escondidos.
+    expect(wrapper.findAll("[data-week-board]")).toHaveLength(1);
+    expect(wrapper.find("[data-week-grid]").findAll("[data-preorder]")).toHaveLength(2);
+    expect(wrapper.find("[data-week-list]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorders-summary] p").text()).toBe("2 encomendas · R$ 60,00");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber: R$ 36,00");
   });
 
   it("o card da grade: saldo em destaque ou 'pago', e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00 a receber");
-    expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("pago");
+    expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00 pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
     expect(grid.find('[data-preorder="NB-7"]').attributes("href")).toBe("/preorders/NB-7");
@@ -481,7 +484,7 @@ describe("Encomendas — o dia", () => {
     await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
     await flushPromises();
     const windows = wrapper.find("[data-preorders-day]").findAll("[data-preorders-window]");
-    expect(windows.map((w) => w.find("h2").text())).toEqual(["9h às 10h", "14h às 15h"]);
+    expect(windows.map((w) => w.find("h3").text())).toEqual(["9h às 10h", "14h às 15h"]);
     expect(wrapper.find("[data-period-next]").attributes("aria-label")).toBe("Próximo dia");
   });
 });

@@ -3,6 +3,9 @@ import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
+  // A matriz visual usa o mesmo relógio e o mesmo primeiro render do browser.
+  // O app normal e o build de produção continuam SSR.
+  ssr: process.env.POS_VISUAL_CLIENT_ONLY !== "1",
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
 

@@ -46,8 +46,8 @@ const printedLabel = computed(() => (props.card.ticket_printed ? "Via Pedido imp
 <template>
   <NuxtLink
     :to="preorderDetailPath(card.ref, back)"
-    class="flex rounded-md border border-border bg-card text-left transition hover:border-primary/40 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    :class="compact ? 'flex-col gap-0.5 p-2' : 'items-start gap-3 p-3'"
+    class="flex min-h-11 rounded-md border border-border bg-card text-left transition hover:border-primary/50 hover:bg-accent hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    :class="compact ? 'flex-col gap-1 p-2.5' : 'items-start gap-3 p-3'"
     :data-preorder="card.ref"
   >
     <!-- COLUNA DA GRADE: janela · quem · recebimento · dinheiro · via. -->

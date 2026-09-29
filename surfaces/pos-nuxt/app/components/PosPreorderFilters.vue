@@ -33,29 +33,35 @@ function choose(group: keyof PreorderFilters, value: string) {
 </script>
 
 <template>
-  <div class="grid gap-2" data-preorders-filters>
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+  <div class="grid gap-3" data-preorders-filters>
+    <div class="flex items-center gap-2 text-sm font-semibold">
+      <Icon name="lucide:list-filter" class="size-4 text-muted-foreground" aria-hidden="true" />
+      Mostrar
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <div
         v-for="group in GROUPS"
         :key="group.key"
-        class="flex flex-wrap items-center gap-1.5"
+        class="grid content-start gap-1.5"
         role="group"
         :aria-label="`Filtrar por ${group.label}`"
         :data-preorders-filter="group.key"
       >
         <span class="text-xs font-medium text-muted-foreground">{{ group.label }}</span>
-        <UiFilterChip
-          v-for="chip in chips[group.key]"
-          :key="chip.key"
-          :active="filters[group.key] === chip.key"
-          :count="chip.count"
-          :aria-pressed="filters[group.key] === chip.key"
-          :aria-label="`${group.label}, ${chip.label}: ${chip.count}`"
-          :data-preorders-filter-chip="`${group.key}:${chip.key}`"
-          @click="choose(group.key, chip.key)"
-        >
-          {{ chip.label }}
-        </UiFilterChip>
+        <div class="flex flex-wrap gap-1.5">
+          <UiFilterChip
+            v-for="chip in chips[group.key]"
+            :key="chip.key"
+            :active="filters[group.key] === chip.key"
+            :count="chip.count"
+            :aria-pressed="filters[group.key] === chip.key"
+            :aria-label="`${group.label}, ${chip.label}: ${chip.count}`"
+            :data-preorders-filter-chip="`${group.key}:${chip.key}`"
+            @click="choose(group.key, chip.key)"
+          >
+            {{ chip.label }}
+          </UiFilterChip>
+        </div>
       </div>
     </div>
     <div

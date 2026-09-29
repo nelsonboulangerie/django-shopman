@@ -9,8 +9,8 @@ const CASES = [
 async function settle(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
   await page.goto("/preorders");
-  await expect(page.locator("[data-week-grid]")).toBeVisible();
-  await expect(page.locator("[data-preorder]")).toHaveCount(3);
+  await expect(page.locator("[data-week-grid]:visible, [data-week-list]:visible")).toHaveCount(1);
+  await expect(page.locator("[data-preorder]:visible")).toHaveCount(3);
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -18,6 +18,10 @@ for (const viewport of CASES) {
   test(`Encomendas organizadas em ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await settle(page);
+    await expect(page.locator("[data-week-board] [data-preorder]")).toHaveCount(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const firstCard = await page.locator("[data-preorder]").first().boundingBox();
+    expect(firstCard?.height || 0).toBeGreaterThanOrEqual(44);
     await expect(page).toHaveScreenshot(`preorders__week__${viewport.width}x${viewport.height}__light.png`, {
       fullPage: true,
     });
@@ -27,7 +31,10 @@ for (const viewport of CASES) {
 test("busca prioriza a retirada sem perder o contexto", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await settle(page);
-  await page.getByRole("searchbox", { name: /nome, telefone/i }).fill("Ana");
+  const searchbox = page.getByRole("searchbox", { name: /nome, telefone/i });
+  await expect(searchbox).toBeFocused();
+  await searchbox.fill("Ana");
   await expect(page.locator('[data-preorders-results="open"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page).toHaveScreenshot("preorders__search__390x844__light.png", { fullPage: true });
 });

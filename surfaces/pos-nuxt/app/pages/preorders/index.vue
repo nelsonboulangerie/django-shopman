@@ -165,27 +165,40 @@ function refreshAll() {
     wide
     @refresh="refreshAll"
   >
-    <!-- CLIENTE VEIO BUSCAR: sempre no topo, já com o foco. -->
-    <div class="grid max-w-3xl gap-1.5" data-preorders-search-block>
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
+    <section
+      class="grid gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 shadow-sm sm:p-4"
+      aria-labelledby="preorders-search-title"
+      data-preorders-search-block
+    >
+      <div class="flex items-start gap-3">
+        <span class="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary" aria-hidden="true">
+          <Icon name="lucide:package-search" class="size-5" />
+        </span>
+        <div class="min-w-0">
+          <h1 id="preorders-search-title" class="font-semibold leading-tight">Cliente veio buscar?</h1>
+          <p class="mt-0.5 text-sm text-muted-foreground">Ache a encomenda sem precisar saber o dia.</p>
+        </div>
+      </div>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
         <UiInput
           ref="searchField"
           v-model="typed"
           type="search"
           inputmode="search"
           autocomplete="off"
-          class="h-12 min-w-0 flex-1 basis-80 text-base"
+          class="h-12 min-w-0 flex-1 text-base shadow-sm"
           :placeholder="SEARCH_PLACEHOLDER"
           :aria-label="SEARCH_PLACEHOLDER"
           data-preorders-search
           @keydown.enter.prevent="openSingle"
         />
-        <label class="inline-flex shrink-0 items-center gap-1 text-sm">
+        <label class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
           <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
           Incluir concluídas
         </label>
       </div>
-    </div>
+    </section>
 
     <!-- ── O RESULTADO DA BUSCA toma o lugar do período. ── -->
     <template v-if="searching">
@@ -193,16 +206,26 @@ function refreshAll() {
         Digite pelo menos {{ SEARCH_MIN_CHARS }} letras ou números para procurar.
       </p>
 
-      <p v-else-if="search.pending.value && !result" class="p-4 text-sm text-muted-foreground">
-        Procurando…
-      </p>
+      <section
+        v-else-if="search.pending.value && !result"
+        class="grid max-w-3xl gap-2 rounded-md border bg-card p-4"
+        aria-live="polite"
+        aria-busy="true"
+        data-preorders-search-loading
+      >
+        <span class="h-4 w-32 animate-pulse rounded bg-muted" />
+        <span class="h-16 animate-pulse rounded-md bg-muted/70" />
+        <span class="sr-only">Procurando encomendas…</span>
+      </section>
 
       <p
         v-else-if="search.error.value"
-        class="flex max-w-3xl items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        class="flex max-w-3xl flex-wrap items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        role="alert"
       >
         <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ httpErrorMessage(search.error.value, "A busca não respondeu.") }} Tente de novo.</span>
+        <span class="min-w-0 flex-1">{{ httpErrorMessage(search.error.value, "A busca não respondeu.") }} Tente de novo pelo botão ao lado.</span>
+        <UiButton variant="outline" size="sm" data-preorders-search-retry @click="search.refresh()">Tentar de novo</UiButton>
       </p>
 
       <template v-else-if="result">
@@ -271,12 +294,13 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
+      <section class="grid gap-3 rounded-md border bg-card p-3 shadow-sm sm:p-4" aria-labelledby="preorders-period-title">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
           <UiButton variant="outline" size="icon" :aria-label="steps.prev" data-period-prev @click="update({ date: stepDate(view, -1) })">
             <Icon name="lucide:chevron-left" class="size-5" />
           </UiButton>
-          <h1 class="text-lg font-semibold" data-period-title>{{ periodTitle(view, today) }}</h1>
+          <h2 id="preorders-period-title" class="min-w-0 text-lg font-semibold" data-period-title>{{ periodTitle(view, today) }}</h2>
           <UiButton variant="outline" size="icon" :aria-label="steps.next" data-period-next @click="update({ date: stepDate(view, 1) })">
             <Icon name="lucide:chevron-right" class="size-5" />
           </UiButton>
@@ -291,23 +315,42 @@ function refreshAll() {
           <UiButton v-if="!showsToday(view, today)" variant="ghost" size="sm" data-period-today @click="update({ date: today })">
             Voltar para hoje
           </UiButton>
+          </div>
+          <div v-if="summary" class="grid justify-items-start gap-0.5 sm:justify-items-end sm:text-right" data-preorders-summary>
+            <p class="text-sm tabular-nums text-muted-foreground">{{ summary }}</p>
+            <p v-if="toReceive" class="text-sm font-semibold tabular-nums text-foreground" data-preorders-to-receive>{{ toReceive }}</p>
+          </div>
         </div>
-        <p v-if="summary" class="text-sm tabular-nums text-muted-foreground" data-preorders-summary>
-          {{ summary }}<template v-if="toReceive"> · <span class="font-semibold text-foreground" data-preorders-to-receive>{{ toReceive }}</span></template>
+        <p class="flex items-start gap-2 border-t pt-3 text-sm text-muted-foreground">
+          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>{{ PREORDERS_SCOPE_NOTE }}</span>
         </p>
-      </div>
-      <p class="text-sm text-muted-foreground">{{ PREORDERS_SCOPE_NOTE }}</p>
+      </section>
 
-      <p v-if="period.pending.value && !list" class="p-4 text-sm text-muted-foreground">
-        Carregando as encomendas…
-      </p>
+      <section
+        v-if="period.pending.value && !list"
+        class="grid gap-3 rounded-md border bg-card p-4"
+        aria-live="polite"
+        aria-busy="true"
+        data-preorders-period-loading
+      >
+        <div class="flex gap-2">
+          <span v-for="index in 3" :key="index" class="h-8 w-24 animate-pulse rounded-full bg-muted" />
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <span v-for="index in 3" :key="index" class="h-40 animate-pulse rounded-md bg-muted/70" />
+        </div>
+        <span class="sr-only">Carregando as encomendas…</span>
+      </section>
 
       <p
         v-else-if="period.error.value && !list"
-        class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        class="flex flex-wrap items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        role="alert"
       >
         <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ httpErrorMessage(period.error.value, "Não deu para ler as encomendas agora.") }} Tente de novo em Atualizar, no menu ao lado.</span>
+        <span class="min-w-0 flex-1">{{ httpErrorMessage(period.error.value, "Não deu para ler as encomendas agora.") }} Tente de novo pelo botão ao lado.</span>
+        <UiButton variant="outline" size="sm" data-preorders-period-retry @click="period.refresh()">Tentar de novo</UiButton>
       </p>
 
       <template v-else-if="list">
@@ -322,7 +365,7 @@ function refreshAll() {
 
         <template v-else>
           <!-- FILTROS à esquerda, o LOTE à direita: "Imprimir N vias" imprime o que se vê. -->
-          <div class="flex flex-wrap items-start justify-between gap-3">
+          <section class="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-card p-3" aria-label="Refinar e imprimir encomendas">
             <PosPreorderFilters v-model="filters" :cards="allCards" class="min-w-0 flex-1" />
             <div class="grid shrink-0 justify-items-end gap-1">
               <UiButton
@@ -338,7 +381,7 @@ function refreshAll() {
                 {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
               </p>
             </div>
-          </div>
+          </section>
 
           <p
             v-if="notice"
@@ -362,9 +405,12 @@ function refreshAll() {
           </section>
 
           <!-- DIA: por janela, a linha inteira de cada encomenda. -->
-          <div v-else-if="view.mode === 'day' && day" class="grid max-w-3xl gap-4" data-preorders-day>
-            <section v-for="group in groupByWindow(day.orders)" :key="group.key" class="grid gap-2" data-preorders-window>
-              <h2 class="text-sm font-semibold text-muted-foreground">{{ group.label }}</h2>
+          <div v-else-if="view.mode === 'day' && day" class="grid max-w-4xl gap-4" data-preorders-day>
+            <section v-for="group in groupByWindow(day.orders)" :key="group.key" class="grid gap-2 rounded-md border bg-card p-3" data-preorders-window>
+              <h3 class="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                <Icon name="lucide:clock-3" class="size-4" aria-hidden="true" />
+                {{ group.label }}
+              </h3>
               <ul class="grid gap-2">
                 <li v-for="card in group.orders" :key="card.ref">
                   <PosPreorderRow :back="back" :card="card" />
@@ -373,26 +419,28 @@ function refreshAll() {
             </section>
           </div>
 
-          <!-- SEMANA: decide pela largura da ÁREA, não da tela — com a barra
-               lateral aberta, 1024px de tela davam colunas estreitas demais. -->
-          <div v-else class="@container">
-            <!-- GRADE (área larga): sete colunas de segunda a domingo. -->
-            <div class="hidden gap-2 @4xl:grid @4xl:grid-cols-7" data-week-grid>
+          <!-- SEMANA: uma única árvore responsiva. Cada dia conserva largura
+               útil; a leitura não troca de DOM nem comprime sete cards frágeis. -->
+          <div v-else data-week-board>
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-3" data-week-grid>
               <section
                 v-for="weekDay in days"
                 :key="weekDay.date"
-                class="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/30 p-2"
-                :class="weekDay.is_today ? 'border-primary/50' : 'border-border'"
+                class="flex min-w-0 flex-col gap-2 rounded-md border bg-card p-3 shadow-sm"
+                :class="weekDay.is_today ? 'border-primary/60 ring-1 ring-primary/10' : 'border-border'"
                 :data-week-day="weekDay.date"
               >
                 <button
                   type="button"
-                  class="grid gap-0.5 rounded-md border-b border-border pb-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  class="grid min-h-11 gap-1 rounded-md border-b border-border pb-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
                   data-week-day-open
                   @click="openDay(weekDay.date)"
                 >
-                  <span class="text-sm font-semibold capitalize" :class="weekDay.is_today ? 'text-primary' : ''">{{ dayColumnTitle(weekDay) }}</span>
+                  <span class="flex items-center justify-between gap-2 text-sm font-semibold capitalize" :class="weekDay.is_today ? 'text-primary' : ''">
+                    {{ dayColumnTitle(weekDay) }}
+                    <span v-if="weekDay.is_today" class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium normal-case text-primary">Hoje</span>
+                  </span>
                   <span class="text-xs tabular-nums text-muted-foreground" data-week-day-total>
                     <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>
                     <template v-else>Nenhuma encomenda</template>
@@ -401,27 +449,10 @@ function refreshAll() {
                     {{ dayToReceiveLine(weekDay) }}
                   </span>
                 </button>
-                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" compact />
-              </section>
-            </div>
-
-            <!-- LISTA (área estreita): um bloco por dia, na mesma ordem. -->
-            <div class="grid gap-4 @4xl:hidden" data-week-list>
-              <section v-for="weekDay in days" :key="weekDay.date" class="grid gap-2">
-                <button
-                  type="button"
-                  class="flex flex-wrap items-baseline justify-between gap-2 rounded-md text-left text-sm font-semibold hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
-                  @click="openDay(weekDay.date)"
-                >
-                  <span class="capitalize" :class="weekDay.is_today ? 'text-primary' : ''">{{ dayColumnTitle(weekDay) }}</span>
-                  <span class="text-xs font-normal tabular-nums text-muted-foreground">
-                    <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>
-                    <template v-else>Nenhuma encomenda</template>
-                    <template v-if="dayToReceiveLine(weekDay)"> · <span class="font-semibold text-foreground">{{ dayToReceiveLine(weekDay) }}</span></template>
-                  </span>
-                </button>
-                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" />
+                <div v-if="weekDay.orders.length" class="grid gap-2">
+                  <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" />
+                </div>
+                <p v-else class="py-3 text-center text-xs text-muted-foreground">Dia livre de encomendas</p>
               </section>
             </div>
           </div>
