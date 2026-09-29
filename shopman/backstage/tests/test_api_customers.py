@@ -310,6 +310,9 @@ def test_preview_describes_the_merge_and_writes_nothing(client, manager, people)
     assert moves["orders"] == "1 pedido"
     assert moves["identifiers"] == "1 identificador"
     assert preview["actions"][0]["href"] == MERGE_URL
+    # Sem conta de fidelidade, o aviso não fala de pontos.
+    assert preview["loyalty_label"] == ""
+    assert "fidelidade" not in preview["undo_notice"]
 
     assert Customer.objects.get(ref="IF-AAAA0001").is_active is True
     assert Order.objects.get(ref="IF-ORD-1").data["customer_ref"] == "IF-AAAA0001"
@@ -379,6 +382,7 @@ def test_history_lists_the_merge_and_undo_restores_it(client, manager, people):
     assert row["can_undo"] is True
     assert row["undo_label"].startswith("Dá para desfazer por mais")
     assert "1 pedido" in row["moved_label"]
+    assert row["loyalty_merged"] is False
     assert merges["undo_window_hours"] == 24
 
     response = client.post(f"{MERGES_URL}{audit_id}/undo/")
@@ -417,3 +421,36 @@ def test_undo_unknown_audit_is_404(client, manager, shop):
 def test_undo_requires_manage_customers(client, plain_staff, people):
     client.force_login(plain_staff)
     assert client.post(f"{MERGES_URL}00000000-0000-0000-0000-000000000000/undo/").status_code == 403
+
+
+def test_preview_and_history_speak_of_loyalty_only_when_there_is_loyalty(client, manager, people):
+    from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
+
+    LoyaltyAccount.objects.create(customer=people["if_old"], points_balance=120, lifetime_points=120)
+    client.force_login(manager)
+    preview = client.get(PREVIEW_URL, {"source_ref": "IF-AAAA0001", "target_ref": "CLI-MARIA"}).json()["preview"]
+    assert preview["loyalty_label"] == "120 pontos de fidelidade somam no cadastro que fica"
+    assert "não voltam com o desfazer" in preview["undo_notice"]
+
+    client.post(MERGE_URL, {"source_ref": "IF-AAAA0001", "target_ref": "CLI-MARIA"}, content_type="application/json")
+    assert client.get(MERGES_URL).json()["merges"]["items"][0]["loyalty_merged"] is True
+
+
+# ── A aba só para quem pode ───────────────────────────────────────────
+
+SESSION_URL = "/api/v1/backstage/operator/session/"
+
+
+def test_session_answers_whether_the_operator_can_manage_customers(client, manager, plain_staff):
+    """A barra do Gestor pergunta à antessala se mostra a aba Clientes.
+
+    Sem ``shop.manage_customers`` na allowlist a pergunta seria 400 e a aba
+    sumiria para todos, inclusive o gerente.
+    """
+    client.force_login(manager)
+    response = client.get(SESSION_URL, {"perm": "shop.manage_customers"})
+    assert response.status_code == 200
+    assert response.json()["authorized"] is True
+
+    client.force_login(plain_staff)
+    assert client.get(SESSION_URL, {"perm": "shop.manage_customers"}).json()["authorized"] is False

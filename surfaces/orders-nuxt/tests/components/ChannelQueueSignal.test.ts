@@ -14,6 +14,10 @@ const attention = ref<ChannelAttentionProjection | null>(null);
 vi.stubGlobal("useChannelAttention", () => ({ attention, refresh: vi.fn() }));
 vi.stubGlobal("useRoute", () => ({ path: "/" }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "" } }));
+// A barra pergunta à antessala se mostra Clientes; aqui, a resposta é "não".
+vi.stubGlobal("useNuxtData", () => ({ data: ref(null) }));
+vi.stubGlobal("useOperatorResourceKey", (resource: string) => `orders:test:${resource}`);
+vi.stubGlobal("useFetch", () => ({ data: ref({ authorized: false }) }));
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
