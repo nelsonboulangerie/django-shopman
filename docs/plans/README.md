@@ -60,7 +60,7 @@ fica em [`_quarantine/`](_quarantine/).
 |-------|--------|
 | [`CROSS-CHANNEL-CATALOG-HUB-PLAN.md`](CROSS-CHANNEL-CATALOG-HUB-PLAN.md) | Visão: Gestor como hub cross-channel (superfície fed-by-coleção, menuboard SSE). |
 | [`CATALOG-FEEDS-GOOGLE-META.md`](CATALOG-FEEDS-GOOGLE-META.md) | Superfícies FEED do hub cross-channel (RSS/XML para Google/Meta). |
-| [`CATALOG-SYNC-EXTERNO-PLAN.md`](CATALOG-SYNC-EXTERNO-PLAN.md) | Adapters Google/Meta/WhatsApp Catalog; bloqueado em credenciais externas. |
+| [`CATALOG-SYNC-EXTERNO-PLAN.md`](CATALOG-SYNC-EXTERNO-PLAN.md) | Feed pull Google/Meta e push Meta entregues; restam cadastro/homologação externa, vínculo WhatsApp→catálogo Meta e push Google apenas se a latência do pull justificar. |
 | [`WHATSAPP-CONCIERGE-PLAN.md`](WHATSAPP-CONCIERGE-PLAN.md) | Concierge de WhatsApp: pedido por conversa com modelo de linguagem, ferramentas determinísticas, resposta assíncrona via ManyChat ([ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md)); código da F1 escrito, aguarda palavra do dono. |
 | [`WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md`](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) | Um motor de sugestão (adicional que combina, substituto à altura) para site e concierge; proposto, aguarda o dono. |
 | [`WP-ATRIBUTOS-DE-PRODUTO.md`](WP-ATRIBUTOS-DE-PRODUTO.md) | Atributos de produto com definição (registro no `shop`, valores no metadata, zero legado, Core intocado); proposto. |
