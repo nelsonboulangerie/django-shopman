@@ -53,7 +53,7 @@ const digits = computed<number[]>({
   },
 });
 
-function complete(value: number[]) {
+function complete(value: (number | undefined)[]) {
   emit("complete", value.join("").slice(0, props.length));
 }
 </script>
