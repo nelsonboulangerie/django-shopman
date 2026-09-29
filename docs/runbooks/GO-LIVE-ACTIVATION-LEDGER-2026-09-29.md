@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T17:56:36Z`
+Atualizado em: `2026-09-29T18:00:41Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -106,34 +106,34 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `IN_QUEUE`; head `8be4766e6`; #1244 integrado; merge queue posicao 2, aguardando checks |
-| Deploy | `PENDING_MERGE`; sem deploy ID |
-| Migration | `N/A` |
+| Merge | `MERGED`; `a63392b034f281eb908fc6d27dbf23694dc07c51` em `2026-09-29T16:02:15Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `504310d0-909f-41b8-816a-1c637fd8558c` ficou `ACTIVE` em `2026-09-29T16:08:28Z`; Deploy Images run sucessor `36594751485`, do SHA `f0ffd02de`, que contem o merge |
+| Migration | `N/A`; release confirmou `migration-safety: clear`, zero migracoes pendentes/destrutivas e `No migrations to apply` |
 | Env/config/flag | `N/A` |
 | Valor desejado | `audit_catalog_day1` disponivel somente para relatorio; 76 novos SKUs continuam `draft_only` e nao publicados |
-| Dependencia/gate | #1244 mergeado; divergencias fiscais, GTIN, conteudo, imagem, colecao e receitas resolvidas antes de qualquer carga/publicacao |
-| Smoke Live | `PENDING`; confirmar ajuda do comando e dry-run sanitizado com escopo explicito, sem aplicar dados |
+| Dependencia/gate | `SATISFIED`; comando permanece somente leitura e nenhuma carga/publicacao pertence ao WP |
+| Smoke Live | `PASS`; Pre-go-live Smoke run `36595169762` verde: `/ready/` 200, 40 SKUs (37 disponiveis), checkout anonimo falhou fechado com 403 e SSR respondeu 200 com 143216 bytes |
 | Rollback | Reimplantar o release Live anterior; comando nao possui caminho de escrita |
-| Evidencia | [PR #1248](https://github.com/nelsonboulangerie/django-shopman/pull/1248) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `IN_PROGRESS`; nao DONE ate merge, deploy e smoke Live; publicacao nao faz parte deste PR |
+| Evidencia | [PR #1248](https://github.com/nelsonboulangerie/django-shopman/pull/1248); [Deploy Images run 36594751485](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36594751485); [Pre-go-live Smoke run 36595169762](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36595169762) |
+| Ultima atualizacao | `2026-09-29T18:00:41Z` |
+| Estado/DONE | `DONE`; merge, deploy, release safety e smoke comprovados; nenhuma carga ou publicacao Live foi executada |
 
 ### Gate de receitas e insumos Day-1, somente leitura / PR #1250
 
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `STACKED`; head `9c692a3a0`, rebaseado sobre o head atual de #1248; CI reexecutando |
-| Deploy | `PENDING_PREDECESSOR`; sem deploy ID |
-| Migration | `N/A` |
+| Merge | `MERGED`; `46712e03921816cd30ceec516db4519c47c7ca04` em `2026-09-29T17:07:56Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `766b1552-0ac2-4494-a141-141b10fd98da` ficou `ACTIVE` em `2026-09-29T17:18:22Z`; Deploy Images run `36602763165` |
+| Migration | `N/A`; release confirmou `migration-safety: clear`, zero migracoes pendentes/destrutivas e `No migrations to apply` |
 | Env/config/flag | `N/A` |
 | Valor desejado | `audit_recipe_material_day1` disponivel somente para relatorio, com escopo de SKU explicito |
-| Dependencia/gate | #1248 mergeado; receitas faltantes, rendimentos e montagem final exigem prova e gate humano; baixa na venda continua bloqueada |
-| Smoke Live | `PENDING`; confirmar ajuda do comando e dry-run sanitizado, sem escrever receitas/insumos |
+| Dependencia/gate | `SATISFIED`; comando permanece somente leitura; carga de receitas/insumos e baixa na venda continuam fora do escopo sem gate humano proprio |
+| Smoke Live | `PASS`; Pre-go-live Smoke run `36603731352` verde: `/ready/` 200, 40 SKUs (37 disponiveis), checkout anonimo falhou fechado com 403 e SSR respondeu 200 com 143229 bytes |
 | Rollback | Reimplantar o release Live anterior; comando nao possui caminho de escrita |
-| Evidencia | [PR #1250](https://github.com/nelsonboulangerie/django-shopman/pull/1250) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `IN_PROGRESS`; nao DONE ate merge, deploy e smoke Live; carga de receitas permanece fora do escopo sem gate humano |
+| Evidencia | [PR #1250](https://github.com/nelsonboulangerie/django-shopman/pull/1250); [Deploy Images run 36602763165](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36602763165); [Pre-go-live Smoke run 36603731352](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36603731352) |
+| Ultima atualizacao | `2026-09-29T18:00:41Z` |
+| Estado/DONE | `DONE`; merge, deploy, release safety e smoke comprovados; nenhuma carga de receita, insumo ou dado Live foi executada |
 
 ### Enriquecimento seguro de insumos por GTIN / PR #1265
 
@@ -162,12 +162,12 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Migration | `N/A`; release confirmou `migration-safety: clear`, zero migracoes pendentes/destrutivas e `No migrations to apply` |
 | Env/config/flag | `N/A` |
 | Valor desejado | Sugestao de compra explica o rendimento ponderado por ficha a partir de consumo finalizado; `suggestedQty` continua bruto e o FC nao e multiplicado novamente, evitando duplicar `gross_quantity` |
-| Dependencia/gate | `SATISFIED`; CI cobriu ponderacao por ficha, inversao unica do rendimento, nao duplicacao de `gross_quantity` e a apresentacao da conta; o WP nao declara gate humano ou efeito externo |
-| Smoke Live | `PASS`; Pre-go-live Smoke run `36607859250` verde apos o deployment: `/ready/` 200, 40 SKUs (37 disponiveis), checkout anonimo falhou fechado com 403 e SSR respondeu 200 com 143229 bytes; [Compras](https://compras.boulangerie.com.br/) respondeu 200 |
+| Dependencia/gate | `HUMAN_SMOKE`; abrir [Compras](https://compras.boulangerie.com.br/) com sessao autorizada, entrar em `Comprar` e confirmar a sugestao e a explicacao ponderada, sem criar ou enviar pedido |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36607859250` verde apos o deployment: `/ready/` 200, 40 SKUs (37 disponiveis), checkout anonimo falhou fechado com 403 e SSR respondeu 200 com 143229 bytes; [Compras](https://compras.boulangerie.com.br/) respondeu 200, mas o fluxo autenticado nao e automatizado |
 | Rollback | Reimplantar o release Live anterior ao merge; nao ha schema, config, flag ou dado a reverter |
 | Evidencia | [PR #1267](https://github.com/nelsonboulangerie/django-shopman/pull/1267); [Deploy Images run 36607515604](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36607515604); [Pre-go-live Smoke run 36607859250](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36607859250) |
-| Ultima atualizacao | `2026-09-29T17:56:36Z` |
-| Estado/DONE | `DONE`; merge, deploy, release safety e smoke pre-go-live comprovados; nenhuma carga, configuracao ou escrita Live fez parte do WP |
+| Ultima atualizacao | `2026-09-29T18:00:41Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate validar a sugestao e a explicacao do FC em sessao Compras autorizada, sem criar pedido nem alterar dados Live |
 
 ## Operacao, seguranca e marketing
 
