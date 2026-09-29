@@ -14,7 +14,7 @@ fica em [`_quarantine/`](_quarantine/).
 
 | Plano | Estado |
 |-------|--------|
-| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | **Fonte única do estado de go-live**, auditada em 2026-09-29. Deployment técnico e smoke do SHA `1f497db90` verificados; domínio/fases/escopo comercial, evidência externa, QA física, backup/restore e GO/NO-GO continuam explícitos como pendentes, desconhecidos ou bloqueados. |
+| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | **Fonte única do estado de go-live**, auditada em 2026-09-29. Deployment técnico e smoke do SHA `ab148fbd85` verificados; perfil comercial, drift de spec, readiness read-only, domínio/fases/escopo, QA física, backup/restore e GO/NO-GO continuam bloqueados ou desconhecidos. |
 | [`GO-LIVE-CREDENTIALS-MATRIX.md`](GO-LIVE-CREDENTIALS-MATRIX.md) | Contrato de nomes e maturidade: separa credencial declarada, adapter, boot gate, sandbox/homologação e produção; não contém valores nem presume escopo v1. |
 | [`GO-LIVE-SMS-WHATSAPP-STATUS.md`](GO-LIVE-SMS-WHATSAPP-STATUS.md) | Retomada das credenciais WhatsApp/SMS-OTP: passos exatos para concluir. |
 | [`ACCESS-LINK-UNIFICATION-PLAN.md`](ACCESS-LINK-UNIFICATION-PLAN.md) | F1/F2/F4 mergeadas (PR #45); resta F3 (fluxo ManyChat, lado do Pablo) + URLs de staging. |

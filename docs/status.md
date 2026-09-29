@@ -6,7 +6,7 @@
 > [matriz canônica de prontidão](plans/GO-LIVE-READINESS-PLAN.md).
 >
 > Última revisão estrutural: 2026-09-29. Baseline revisada:
-> `1f497db90f150b0a497cd7001d11df19fc7491b0`.
+> `ab148fbd85d50865bf107e95298b712decd9d7f4`.
 
 ## Arquitetura atual
 
