@@ -93,7 +93,7 @@ onMounted(() => {
       </aside>
 
       <article class="min-w-0 max-w-[65ch]">
-        <header :id="TOP" :data-focus-target="TOP" class="scroll-mt-24 outline-none">
+        <header :id="TOP" :data-focus-target="TOP" class="outline-none">
           <h1 class="shop-title">{{ props.title }}</h1>
           <div class="mt-2 flex items-center gap-2 shop-muted">
             <Icon name="lucide:calendar-check" class="size-4 shrink-0" aria-hidden="true" />

@@ -506,10 +506,16 @@
     padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
   }
 
-  /* Régua exata do checkout. Em `scroll-margin-top`, aumentar o valor traz o
-   * alvo para BAIXO. A navbar ocupa 4rem e o fio Brass externo, 6px: alinhar a
-   * hairline da etapa nesse limite a faz desaparecer sem engolir conteúdo. */
-  .shop-focus-ruler {
+  /* Régua exata do foco inteligente em TODO o Storefront. Em
+   * `scroll-margin-top`, aumentar o valor traz o alvo para BAIXO. A navbar
+   * ocupa 4rem e o fio Brass externo, 6px: alinhar a borda do alvo nesse limite
+   * a faz desaparecer sem engolir conteúdo.
+   *
+   * O atributo é o contrato automático: qualquer alvo novo de `useNextFocus`
+   * já nasce na régua correta. A classe continua disponível para alvos que
+   * precisem da mesma geometria sem participar do mecanismo. */
+  .shop-focus-ruler,
+  [data-focus-target] {
     scroll-margin-top: calc(4rem + 6px);
   }
 
@@ -739,8 +745,6 @@
   }
   .shop-legal-section {
     counter-increment: legal-section;
-    /* A linha de foco: o salto do índice para ABAIXO do cabeçalho sticky. */
-    scroll-margin-top: 5rem;
     @apply border-t border-border pt-8 outline-none;
   }
   .shop-legal-section + .shop-legal-section {

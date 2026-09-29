@@ -551,7 +551,10 @@ const stepIcons = checkoutStepIcons
 const focusKey = computed<string>(() => (
   contactEditing.value || nameEditing.value || contactState.value === 'error' ? 'contact' : activeStep.value
 ))
-const { reveal } = useNextFocus(focusKey)
+// Checkout é um fluxo guiado: na chegada, a tarefa atual ocupa a régua mesmo
+// que já caiba parcialmente na tela. Para o cliente identificado isso leva
+// "Como receber" ao fio dourado e deixa o cabeçalho, já lido, rolar para cima.
+const { reveal } = useNextFocus(focusKey, { initialReveal: 'always' })
 
 // A AÇÃO SEGUE O FOCO. A etapa em que o cliente trabalha decide qual é o único
 // botão que avança, e ele mora no card suspenso, nunca no fim da seção.

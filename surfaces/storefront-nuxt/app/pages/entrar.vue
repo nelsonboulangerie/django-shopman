@@ -513,11 +513,9 @@ useSeoMeta({
 
         <template v-else>
         <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
-             campos. A página de entrada é UM bloco por passo, e ele começa no
-             topo: `scroll-mt-40` (10rem) cobre o chrome expandido (6.25rem) mais
-             o respiro da seção, então a linha de foco deste bloco é o topo da
-             página — o passo novo começa ali, com o cabeçalho aberto. -->
-        <section :data-focus-target="step" class="shop-stack-block scroll-mt-40 outline-none" tabindex="-1">
+             campos. `data-focus-target` aplica a régua única do Storefront —
+             exatamente a base visual da navbar (4rem + fio Brass de 6px). -->
+        <section :data-focus-target="step" class="shop-stack-block outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>
