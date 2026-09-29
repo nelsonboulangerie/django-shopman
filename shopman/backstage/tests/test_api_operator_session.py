@@ -177,13 +177,17 @@ def test_unlock_enables_action_lock_blocks_it(client, balcao, baker, operate_pro
     assert client.get(board).status_code == 200
 
     # lock → blocked again
-    client.post(reverse("api-backstage-operator-lock"))
+    client.post(
+        reverse("api-backstage-operator-lock"),
+        {"perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
     assert client.get(board).status_code == 403
 
 
 @pytest.mark.django_db
-def test_travar_derruba_a_pessoa_e_NAO_a_estacao(client, balcao, baker):
-    """Travar é sair, não desprovisionar.
+def test_travar_fecha_a_superficie_e_NAO_a_sessao_ou_estacao(client, balcao, baker):
+    """Travar fecha a superfície, sem desprovisionar nem deslogar a pessoa.
 
     Se a trava levasse a estação junto, o balcão sairia do ar ao fim de cada
     turno e alguém teria de reprovisionar de manhã com senha de gestor. O cookie
@@ -194,8 +198,16 @@ def test_travar_derruba_a_pessoa_e_NAO_a_estacao(client, balcao, baker):
         {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
         content_type="application/json",
     )
-    client.post(reverse("api-backstage-operator-lock"))
+    client.post(
+        reverse("api-backstage-operator-lock"),
+        {"perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
 
-    body = client.get(reverse("api-backstage-operator-session")).json()
-    assert body["locked"] is True and body["operator"] is None
+    body = client.get(
+        reverse("api-backstage-operator-session"),
+        {"perm": "backstage.operate_production"},
+    ).json()
+    assert body["locked"] is True
+    assert body["operator"]["username"] == "bia"
     assert body["station"] == balcao
