@@ -2543,12 +2543,17 @@ class POSPreorderListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="POS preorder detail (read-only)",
+        summary="POS preorder detail — the operator order detail in the counter context",
         responses={200: OpenApiResponse(description="One preorder."), 404: OpenApiResponse(description="Not a preorder.")},
     ),
 )
 class POSPreorderDetailView(APIView):
-    """Uma encomenda: cliente, recebimento, itens, total, saldo e situação.
+    """Uma encomenda — o MESMO detalhe do Gestor, no contexto do balcão.
+
+    O contrato é o de ``OrderDetailView`` (``build_operator_order``, envelope
+    ``read_data(order=...)``); o que muda é ``context="pos"``: as ações são as do
+    balcão, e os gestos dele vêm em ``order.counter``. A rota é própria porque a
+    porta é outra — o balcão (``cashman.operate_pos``) e o corte da seção.
 
     404 para pedido que não existe E para pedido fora do corte (venda de
     Balcão, cancelado, devolvido): o detalhe da seção não lê qualquer pedido.
@@ -2558,14 +2563,17 @@ class POSPreorderDetailView(APIView):
     required_permission = ("cashman.operate_pos", "shop.manage_orders")
 
     def get(self, request, ref: str):
-        from dataclasses import asdict
-
         from shopman.backstage.projections import preorders
 
-        projection = preorders.build_preorder_detail(ref, user=request.user)
-        if projection is None:
+        order = preorders.find_preorder(ref)
+        if order is None:
             return Response({"detail": "Encomenda não encontrada."}, status=404)
-        return Response({"ok": True, **asdict(projection)})
+        # A mesma pergunta ao gateway que o Gestor faz ao abrir o pedido: o
+        # balcão vai receber o saldo, e o cartão pago cujo webhook se perdeu não
+        # pode aparecer como "a pagar" justo aqui.
+        _reconcile_payment_if_due(order)
+        projection = build_operator_order(order, user=request.user, context="pos")
+        return Response(read_data(order=projection_data(projection)))
 
 
 @extend_schema_view(

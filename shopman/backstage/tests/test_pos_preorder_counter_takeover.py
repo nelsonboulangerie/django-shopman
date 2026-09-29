@@ -127,7 +127,7 @@ def _hand_over(client, order: Order, *, tenders, request_id: str, cash_tendered_
 def test_o_detalhe_oferece_receber_o_pix_pendente_e_avisa_que_ele_sera_cancelado(operator):
     order, _ = _pix_order("DET-PIX")
 
-    hand_over = preorders.build_preorder_detail(order.ref, user=operator).hand_over
+    hand_over = preorders.build_counter_block(Order.objects.get(ref=order.ref), user=operator).hand_over
 
     assert (hand_over.allowed, hand_over.needs_payment, hand_over.amount_q) == (True, True, 3600)
     assert hand_over.block_reason == ""
@@ -138,7 +138,7 @@ def test_o_detalhe_oferece_receber_o_pix_pendente_e_avisa_que_ele_sera_cancelado
 def test_o_detalhe_do_link_avisa_que_o_link_sera_cancelado(operator):
     order, _ = _link_order("DET-LINK", session_id="cs_det")
 
-    hand_over = preorders.build_preorder_detail(order.ref, user=operator).hand_over
+    hand_over = preorders.build_counter_block(Order.objects.get(ref=order.ref), user=operator).hand_over
 
     assert hand_over.allowed is True
     assert hand_over.digital_charge_notice == "O link de pagamento enviado ao cliente será cancelado."
@@ -347,7 +347,7 @@ def test_cliente_pagou_segundos_antes_o_balcao_nao_recebe_so_entrega(balcao, ope
     assert "counter_takeover" not in order.data["payment"]
     assert _cash_entries(order.ref) == []
     # O detalhe agora oferece só "Entregar".
-    hand_over = preorders.build_preorder_detail(order.ref, user=operator).hand_over
+    hand_over = preorders.build_counter_block(Order.objects.get(ref=order.ref), user=operator).hand_over
     assert (hand_over.allowed, hand_over.needs_payment, hand_over.digital_charge_notice) == (True, False, "")
 
 

@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -428,7 +428,80 @@ export interface OrderCardProjection {
   danfe_problem: string;
 }
 
-/** Expanded detail for a single order (operator side-panel). */
+/** Uma encomenda na lista, na grade ou no resultado da busca. */
+export interface PreorderCardProjection {
+  ref: string;
+  channel_display_id: string;
+  customer_name: string;
+  channel_ref: string;
+  channel_label: string;
+  fulfillment_type: string;
+  fulfillment_label: string;
+  commitment_date: string;
+  commitment_date_display: string;
+  window_label: string;
+  window_start: string;
+  status: string;
+  situation: string;
+  situation_label: string;
+  payment_state: string;
+  total_q: number;
+  total_display: string;
+  balance_q: number | null;
+  balance_display: string;
+  items_summary: string;
+  items_count: number;
+}
+
+/** Entregar no balcão: "Entregar" (pago) ou "Receber e entregar" (com saldo). */
+export interface PreorderHandOverProjection {
+  allowed: boolean;
+  needs_payment: boolean;
+  amount_q: number;
+  amount_display: string;
+  suggested_method: string;
+  block_reason: string;
+  digital_charge_notice: string;
+}
+
+/** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */
+export interface PreorderCancelProjection {
+  allowed: boolean;
+  requires_approval: boolean;
+  block_reason: string;
+}
+
+/** Reagendar pelo PDV: a régua do orquestrador (``reschedule.state_refusal``). */
+export interface PreorderRescheduleProjection {
+  allowed: boolean;
+  block_reason: string;
+  date: string;
+  slot: string;
+  skus: string[];
+  revision: string;
+}
+
+/** Editar pelo PDV: a régua do orquestrador (``order_edit.state_refusal``). */
+export interface PreorderEditProjection {
+  allowed: boolean;
+  block_reason: string;
+  cancel_and_redo: boolean;
+  revision: string;
+}
+
+/** O que só o balcão lê no detalhe do pedido (contexto ``"pos"``). */
+export interface CounterOrderProjection {
+  card: PreorderCardProjection;
+  ticket_printed: boolean;
+  revision: string;
+  actor_id: number | null;
+  hand_over: PreorderHandOverProjection;
+  cancel: PreorderCancelProjection;
+  reschedule: PreorderRescheduleProjection;
+  edit: PreorderEditProjection;
+}
+
+/** O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``). */
 export interface OperatorOrderProjection {
   ref: string;
   status: string;
@@ -506,6 +579,9 @@ export interface OperatorOrderProjection {
   ifood_negotiations: IFoodNegotiationProjection[];
   test_order_label: string;
   test_order_notice: string;
+  context: string;
+  schedule_label: string;
+  counter: CounterOrderProjection | null;
 }
 
 /** Top-level read model for the operator order queue. */

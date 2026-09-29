@@ -28,6 +28,7 @@ from shopman.backstage.presentation.status import (
 )
 from shopman.backstage.projections import ifood as ifood_projection
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
+from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
 from shopman.shop.projections.types import (
     Action,
@@ -364,7 +365,7 @@ class CustomerProfileProjection:
 
 @dataclass(frozen=True)
 class OperatorOrderProjection:
-    """Expanded detail for a single order (operator side-panel)."""
+    """O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``)."""
 
     ref: str
     status: str
@@ -512,6 +513,45 @@ class OperatorOrderProjection:
     # frase inteira. Vazios no pedido de verdade.
     test_order_label: str = ""
     test_order_notice: str = ""
+    # O DETALHE DO PEDIDO É UM SÓ (decisão do dono, 28/09/2026): o Gestor e o PDV
+    # leem este mesmo contrato, e o que muda entre eles é o CONTEXTO — ``"orders"``
+    # (Gestor) ou ``"pos"`` (balcão). O contexto decide as AÇÕES, aqui no servidor:
+    # no balcão ``actions`` só traz o que o balcão faz a partir desta tela (comentar
+    # no histórico), os ``can_*`` do fluxo do Gestor vêm desligados, e os gestos do
+    # balcão moram em ``counter``. Ver :func:`build_operator_order`.
+    context: str = "orders"
+    # Quando o combinado acontece — "Sáb, 27/09 · 08h às 10h" —, só para pedido com
+    # data ou janela combinada. Vazio no pedido de agora.
+    schedule_label: str = ""
+    # Só no contexto ``"pos"``: a encomenda como o balcão a lê (situação, saldo) e
+    # os gestos do balcão com a régua de cada um (entregar, editar, reagendar,
+    # cancelar). ``None`` no Gestor.
+    counter: CounterOrderProjection | None = None
+
+
+#: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
+DETAIL_CONTEXTS = ("orders", "pos")
+
+#: Os campos do fluxo do Gestor que o balcão NÃO executa a partir do detalhe. No
+#: contexto ``"pos"`` eles vêm desligados, para a tela nunca oferecer um gesto que
+#: não é dela — aceitar, avançar, acertar a entrega e cancelar pelo Gestor têm, no
+#: balcão, o seu equivalente em ``counter`` (ou não existem ali).
+_ORDERS_FLOW_OFF = {
+    "can_confirm": False,
+    "can_advance": False,
+    "can_cancel": False,
+    "cancel_requires_approval": False,
+    "cancel_block_label": "",
+    "next_action_label": "",
+    "advance_block_label": "",
+    "advance_block_reason": "",
+    "can_settle_delivery_cash": False,
+    "cancellation_presets": (),
+    "kitchen_note_tags": (),
+}
+
+#: As ações do detalhe que o balcão executa (o resto do fluxo é do Gestor).
+_POS_DETAIL_ACTIONS = frozenset({"comment"})
 
 
 @dataclass(frozen=True)
@@ -647,13 +687,25 @@ def _approver_options(user) -> tuple[dict[str, str], ...]:
     return _manager_cards(user)
 
 
-def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
-    """Build the expanded detail projection for a single order.
+def build_operator_order(order: Order, *, user=None, context: str = "orders") -> OperatorOrderProjection:
+    """O detalhe de UM pedido — o mesmo contrato para o Gestor e para o PDV.
 
     Pedido + ajustes: o detalhe mostra o pedido que VALE agora. Um pedido que o
     cliente alterou no iFood depois de confirmado tem itens e total novos, e o
     operador não pode conferir a sacola por uma lista velha.
+
+    ``context`` diz QUEM lê (:data:`DETAIL_CONTEXTS`), e com isso quais gestos a
+    tela oferece — decisão do servidor, nunca da tela:
+
+    - ``"orders"`` (Gestor): o fluxo inteiro — aceitar, avançar, acertar a
+      entrega, entregador, iFood, NFC-e, link de pagamento, nota da cozinha.
+    - ``"pos"`` (balcão, seção Encomendas): as mesmas seções de leitura (resumo,
+      cliente, nota fiscal, itens, observação, nota da cozinha, histórico), só
+      o comentário no histórico em ``actions``, e os gestos do balcão em
+      ``counter`` (:func:`preorders.build_counter_block`).
     """
+    if context not in DETAIL_CONTEXTS:
+        raise ValueError(f"Contexto de detalhe desconhecido: {context!r}")
     items = tuple(
         OrderItemProjection(
             sku=it.sku,
@@ -665,7 +717,6 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         for it in order_composition.effective_items(order)
     )
 
-    timeline = _build_timeline(order)
     customer_data = order.data.get("customer", {})
     customer_name = _format_customer_display(
         customer_data.get("name", "")
@@ -679,10 +730,70 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     payment_status = _payment_status(order)
     payment_method_label = _payment_method_label(method, payment_data, order=order)
     fiscal_status, fiscal_status_label, fiscal_state, fiscal_links = _fiscal_status(order)
-
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     is_delivery = _is_delivery(order)
     delivery_address, delivery_instructions = _delivery_address(order)
+
+    # O que as duas telas leem igual.
+    common = dict(
+        ref=order.ref,
+        status=order.status,
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule", "edit")},
+        status_label=order_status_label(order.status),
+        status_color=status_color(order.status),
+        customer_name=customer_name,
+        **_customer_contact(order, customer_data),
+        channel_ref=order.channel_ref or "",
+        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
+        fulfillment_label=_fulfillment_label(is_delivery),
+        fulfillment_type="delivery" if is_delivery else "pickup",
+        delivery_address=delivery_address,
+        delivery_instructions=delivery_instructions,
+        total_display=_money(order_composition.effective_total_q(order)),
+        items=items,
+        timeline=_build_timeline(order),
+        kitchen_note=order.data.get("kitchen_note", ""),
+        customer_note=str(order.data.get("order_notes", "") or ""),
+        payment_method=method,
+        payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        managers=_approver_options(user),
+        ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
+        ifood_payment_summary=ifood_projection.payment_summary(order),
+        ifood_operation_summary=ifood_projection.operation_summary(order),
+        test_order_label=_test_order_label(order),
+        test_order_notice=_test_order_notice(order),
+        payment_status=payment_status,
+        payment_status_label=_order_payment_status_label(order, payment_status),
+        fiscal_status=fiscal_status,
+        fiscal_status_label=fiscal_status_label,
+        fiscal_state=fiscal_state,
+        fiscal_links=fiscal_links,
+        awaiting_work_orders=_awaiting_work_orders(order),
+        is_gift=bool(order.data.get("is_gift")),
+        gift_recipient_name=str(recipient.get("name", "") or ""),
+        gift_recipient_phone=str(recipient.get("phone", "") or ""),
+        gift_message=str(order.data.get("gift_message", "") or ""),
+        gift_hide_values=bool(order.data.get("gift_hide_values")),
+        customer_profile=_customer_profile(order),
+        schedule_label=_schedule_label(order),
+        context=context,
+    )
+
+    if context == "pos":
+        from shopman.backstage.projections import preorders
+
+        return OperatorOrderProjection(
+            **common,
+            **_ORDERS_FLOW_OFF,
+            actions=tuple(
+                action for action in operator_orders.operational_actions(order, user=user)
+                if action.ref in _POS_DETAIL_ACTIONS
+            ),
+            # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
+            payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
+            counter=preorders.build_counter_block(order, user=user),
+        )
+
     bloqueio = operator_orders.gestor_advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
@@ -734,36 +845,9 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
             method="POST", idempotency="required",
             payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     return OperatorOrderProjection(
-        ref=order.ref,
-        status=order.status,
+        **common,
         actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
-        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment", "schedule", "edit")},
-        status_label=order_status_label(order.status),
-        status_color=status_color(order.status),
-        customer_name=customer_name,
-        **_customer_contact(order, customer_data),
-        channel_ref=order.channel_ref or "",
-        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
-        fulfillment_label=_fulfillment_label(is_delivery),
-        fulfillment_type="delivery" if is_delivery else "pickup",
-        delivery_address=delivery_address,
-        delivery_instructions=delivery_instructions,
-        total_display=_money(order_composition.effective_total_q(order)),
-        items=items,
-        timeline=timeline,
-        kitchen_note=order.data.get("kitchen_note", ""),
-        customer_note=str(order.data.get("order_notes", "") or ""),
-        payment_method=method,
-        payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
-        managers=_approver_options(user),
-        ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
-        ifood_payment_summary=ifood_projection.payment_summary(order),
-        ifood_operation_summary=ifood_projection.operation_summary(order),
         ifood_negotiations=negotiations(order, user=user),
-        test_order_label=_test_order_label(order),
-        test_order_notice=_test_order_notice(order),
-        payment_status=payment_status,
-        payment_status_label=_order_payment_status_label(order, payment_status),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         **cancel_capability,
@@ -771,24 +855,30 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
-        fiscal_status=fiscal_status,
-        fiscal_status_label=fiscal_status_label,
-        fiscal_state=fiscal_state,
-        fiscal_links=fiscal_links,
-        awaiting_work_orders=_awaiting_work_orders(order),
-        is_gift=bool(order.data.get("is_gift")),
-        gift_recipient_name=str(recipient.get("name", "") or ""),
-        gift_recipient_phone=str(recipient.get("phone", "") or ""),
-        gift_message=str(order.data.get("gift_message", "") or ""),
-        gift_hide_values=bool(order.data.get("gift_hide_values")),
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
-        customer_profile=_customer_profile(order),
         courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
     )
+
+
+def _schedule_label(order: Order) -> str:
+    """Quando o combinado acontece: "Sáb, 27/09 · 08h às 10h".
+
+    Só para pedido com data (``delivery_date``) ou janela combinada; o pedido de
+    agora não tem o que dizer aqui. Data sem janela diz "sem horário combinado"
+    por extenso — o vazio pareceria esquecimento.
+    """
+    from shopman.shop.services.fulfillment_window import window_label
+
+    commitment = get_commitment_date(order)
+    window = window_label((order.data or {}).get("delivery_time_slot"))
+    if commitment is None:
+        return window
+    day = str(_commitment_date_display(commitment))
+    return f"{day[:1].upper()}{day[1:]} · {window or 'sem horário combinado'}"
 
 
 #: Letra Machine → label pt-BR do operador (fonte única do gestor).

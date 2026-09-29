@@ -334,14 +334,17 @@ def test_sem_manage_orders_a_rota_recusa(client):
 def test_o_detalhe_traz_itens_saldo_e_contato(caixa):
     _order("DET-1", delivery_date=timezone.localdate().isoformat(), order_notes="Sem açúcar por cima")
 
-    body = caixa.get("/api/v1/backstage/pos/preorders/DET-1/").json()
+    order = caixa.get("/api/v1/backstage/pos/preorders/DET-1/").json()["order"]
 
-    assert body["card"]["ref"] == "DET-1"
-    assert body["card"]["balance_q"] == 3600
-    assert body["items"] == [{"name": "Pão de fermentação natural", "qty_display": "2", "line_total_display": "R$ 36,00"}]
-    assert body["customer_note"] == "Sem açúcar por cima"
-    assert body["customer_phone"] == "(43) 99988-7766"
-    assert body["ticket_printed"] is False
+    assert order["context"] == "pos"
+    assert order["counter"]["card"]["ref"] == "DET-1"
+    assert order["counter"]["card"]["balance_q"] == 3600
+    assert [(item["name"], item["qty"], item["total_display"]) for item in order["items"]] == [
+        ("Pão de fermentação natural", "2", "R$ 36,00"),
+    ]
+    assert order["customer_note"] == "Sem açúcar por cima"
+    assert order["customer_phone"] == "(43) 99988-7766"
+    assert order["counter"]["ticket_printed"] is False
 
 
 def test_o_detalhe_nao_e_porta_para_venda_de_balcao(caixa):
@@ -357,6 +360,6 @@ def test_o_detalhe_do_ifood_nao_mostra_o_rele_como_telefone(caixa):
     _order("IFOOD-DET", channel_ref="ifood", delivery_date=timezone.localdate().isoformat(),
            customer={"name": "Marina A.", "phone": "08007050000", "phone_localizer": "12345678"})
 
-    body = caixa.get("/api/v1/backstage/pos/preorders/IFOOD-DET/").json()
+    order = caixa.get("/api/v1/backstage/pos/preorders/IFOOD-DET/").json()["order"]
 
-    assert body["customer_phone"] == ""
+    assert order["customer_phone"] == ""
