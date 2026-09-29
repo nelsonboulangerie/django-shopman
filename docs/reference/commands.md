@@ -46,6 +46,7 @@
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`profile_data_artifact`](#profile_data_artifact) | backstage | Dados | Gera um manifest sanitizado e somente leitura de CSV/XLSX/XML/JSON/SQLite |
 | [`audit_catalog_day1`](#audit_catalog_day1) | backstage | Dados | Compara o catálogo consolidado normalizado com o estado operacional, sem gravar ou publicar |
+| [`audit_recipe_material_day1`](#audit_recipe_material_day1) | backstage | Dados | Audita fichas e dependências reais de insumo/custo para um escopo Day-1 explícito |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
@@ -1279,6 +1280,37 @@ O contrato mínimo do CSV é `sku`, `nome_consolidado`, `situacao_consolidado`,
   humana quando o SKU ainda está publicado ou em vitrine ativa.
 - O relatório inclui SKUs e dados comerciais necessários à decisão, mas não inclui caminho
   local do artefato. `--output` recusa sobrescrita para preservar a trilha de auditoria.
+
+---
+
+### audit_recipe_material_day1
+
+**Propósito:** recebe uma lista explícita de SKUs que a casa pretende produzir no Day-1 e
+percorre toda a árvore de fichas técnicas até os insumos folha. O relatório separa quatro
+perguntas: produção, rastreabilidade da ficha, prontidão de compra e custo vigente.
+
+```bash
+python manage.py audit_recipe_material_day1 \
+  --sku BGG --sku MELON \
+  --output /evidence/recipe-material-day1.json
+
+# ou um SKU por linha; linhas vazias e comentários com # são ignorados
+python manage.py audit_recipe_material_day1 \
+  --sku-file /landing/day1-production-skus.txt \
+  --output /evidence/recipe-material-day1.json
+```
+
+- não existe `--apply`: o comando só lê Produto, Receita, Livro de Receitas, Material,
+  Conversão e Custo de Fornecedor;
+- ficha ausente, ciclo, insumo obrigatório desconhecido ou inativo bloqueiam apenas a dimensão
+  de produção e aparecem com o SKU exato;
+- fornecedor, custo preferencial e proveniência ausentes viram decisões explícitas — nunca
+  valores estimados ou defaults silenciosos;
+- ausência de conversão de embalagem é informativa, pois comprar diretamente na unidade-base
+  continua válido; conversões aproximadas permanecem rotuladas;
+- o escopo nunca é inferido de vendas históricas. Ele precisa ser declarado pelo responsável
+  operacional, preservando a separação entre `HistoricalSale*`/BI e operação corrente;
+- `--output` recusa sobrescrita para preservar a trilha de auditoria.
 
 ---
 
