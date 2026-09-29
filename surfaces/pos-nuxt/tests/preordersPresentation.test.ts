@@ -420,7 +420,7 @@ describe("o selo da barra lateral", () => {
     const today = [card({ ref: "1" }), card({ ref: "2", situation: "out_for_delivery" }), card({ ref: "3", situation: "delivered" })];
     expect(todayPendingCount(list(today).days)).toBe(2);
     expect(railBadge(list(today))).toBe("2");
-    expect(railAriaLabel("2")).toBe("Encomendas — 2 para entregar hoje");
+    expect(railAriaLabel("2")).toBe("Encomendas: 2 para entregar hoje");
   });
 
   it("zero não é selo; sem resposta (403, carregando) também não", () => {

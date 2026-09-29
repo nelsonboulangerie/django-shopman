@@ -64,7 +64,7 @@ function openCustomerDisplay() {
           <NuxtLink
             to="/preorders"
             class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 text-base font-semibold hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            aria-label="Encomendas — voltar para o início da seção"
+            aria-label="Encomendas: voltar para o início da seção"
           >
             <Icon name="lucide:package" class="size-5 text-muted-foreground" />
             <span class="hidden sm:inline">Encomendas</span>
