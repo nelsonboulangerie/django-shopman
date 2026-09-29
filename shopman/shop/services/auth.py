@@ -347,7 +347,10 @@ def request_code_partial_error_message(auth_result) -> str:
 def verify_for_login(*, phone: str, code_input: str, request):
     from shopman.doorman import get_auth_service
 
+    from shopman.shop.services.customer_sign_in import mark_method
+
     AuthService = get_auth_service()
+    mark_method(request, "otp")
     return AuthService.verify_for_login(
         target_value=phone,
         code_input=code_input,
@@ -408,6 +411,7 @@ def trusted_device_login(request, *, phone: str):
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     from shopman.shop.services import account as account_service
+    from shopman.shop.services.customer_sign_in import mark_method
 
     with transaction.atomic():
         try:
@@ -431,6 +435,7 @@ def trusted_device_login(request, *, phone: str):
         # login() dá flush na sessão quando OUTRO usuário estava logado — a sacola
         # anônima tem que sobreviver à troca, como nos fluxos do Doorman.
         preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
+        mark_method(request, "trusted_device")
         login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
         for key, value in preserved.items():
             request.session[key] = value
@@ -512,6 +517,7 @@ def passkey_login(request, *, credential: dict):
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
     from shopman.shop.services import account as account_service
+    from shopman.shop.services.customer_sign_in import mark_method
 
     credential_id = str(credential.get("id") or credential.get("rawId") or "")
     customer_id = Passkey.objects.filter(credential_id=credential_id).values_list(
@@ -550,6 +556,7 @@ def passkey_login(request, *, credential: dict):
         user, _ = get_or_create_user_for_customer(customer_info)
         # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
         preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
+        mark_method(request, "passkey")
         login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
         for key, value in preserved.items():
             request.session[key] = value

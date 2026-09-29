@@ -1283,6 +1283,21 @@ export interface AccountDeviceResponse {
   privacy_requests_available?: boolean
 }
 
+export interface AccountAccessProjection {
+  id: string
+  device_label: string
+  method_label: string
+  approximate_city: string
+  created_at: string | null
+  created_at_display: string
+  is_active: boolean
+  is_current: boolean
+}
+
+export interface AccountAccessResponse {
+  accesses: AccountAccessProjection[]
+}
+
 // POST/DELETE /api/v1/account/favorites/<sku>/. `is_notify_subscribed` é o sino
 // DEPOIS do gesto; `stock_alert_noted` diz se este favorito criou o aviso.
 export interface FavoriteToggleResponse {
