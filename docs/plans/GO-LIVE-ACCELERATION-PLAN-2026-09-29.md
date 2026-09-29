@@ -74,22 +74,50 @@ trabalho que não precisava existir.**
 
 ## 2. Bloqueadores de go-live (ordem de severidade)
 
-### B1 — Marketing/WhatsApp é o único risco IRREVERSÍVEL aberto `[FATO]`
+### ~~B1 — Marketing/WhatsApp~~ — **REBAIXADO: a barreira existe** `[FATO]`
 
-`.do/app.alpha-subdomains.yaml` (spec do ambiente vivo):
-`SHOPMAN_MARKETING_WHATSAPP_MODE=open` (:481-483) · `SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED=true`
-(:485-487) · `CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS=true` (:637-639).
+> **Correção de 2026-09-29, depois de o dono contestar e eu conferir o código.** Eu havia
+> classificado isto como "o único risco irreversível". **Foi exagero meu.** O modo `open` é o
+> **teto de elegibilidade**, não um gatilho: nada é disparado sem uma campanha **aprovada**,
+> que é ato humano deliberado.
 
-Um clique errado na janela manda WhatsApp real para cliente real, e **não há desfazer**.
-**Ação:** desligar Marketing da janela de go-live. São ~2 minutos de env e é a maior redução
-de risco irreversível disponível.
+O que de fato existe:
+
+- **Três modos por etapa** (`manychat_marketing_safety.py:16-29`): `blocked` (padrão — nenhum
+  evento de Marketing sai por WhatsApp), `canary` (só os `customer_ref` listados) e `open`
+  (todo contato elegível). `check` reprova modo desconhecido e exige contatos de canário.
+- **Aprovação é o portão**: `marketing_approval.py` recusa por política — `audience_degraded`
+  quando não é possível conferir **toda** a audiência, e um **mínimo de audiência** editável em
+  `Shop.defaults["marketing"]["whatsapp_minimum_audience"]`, lido no momento da aprovação.
+- **Serialização por construção** (ADR-009, emenda de 17/09): uma mensagem com flow por
+  assinante por vez, reservada no cache compartilhado; quem não reserva **não escreve nada**.
+- **Falha fechado**: sem cache compartilhado, `canary`/`open` ficam bloqueados.
+
+Config viva em `.do/app.alpha-subdomains.yaml`: `MODE=open` (:481-483),
+`DELIVERY_ENABLED=true` (:485-487), `CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS=true` (:637-639).
+
+**Decisão do dono:** manter como está. Registrado em `DECISIONS.md` **D-005**. Não é mais item
+da Onda 0.
 
 ### B2 — Botão público de quitar o próprio pedido `[FATO]`
 
 `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true` (:321-323) + `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`
 (:325-327), com Pix resolvendo para `payment_mock`. Rota
 `storefront/api/urls.py:182` (`payment/<ref>/mock-confirm/`). O guard de runtime exige as duas
-condições — e as duas valem. Auto-quitação alcançável pelo cliente.
+condições — e as duas valem. Auto-quitação alcançável pelo cliente. **Confirmado em uso:** é
+assim que a rodada de testes do alpha confirma Pix hoje.
+
+**⚠️ Não desligue só a flag — você perde a capacidade de testar pagamento.** `mock_capture_allowed`
+(`shopman/shop/services/payment.py:1891-1919`) exige que o **adapter efetivo daquele método seja
+o simulado**. Logo a troca certa é mover o adapter, não só apagar o botão:
+
+> **Pix: `payment_mock` → `payment_efi` com `EFI_SANDBOX=true`** (que já é o default), e
+> `SHOPMAN_EXPOSE_MOCK_CAPTURE=false`.
+
+Por que assim: o botão some **por construção** (não por alguém lembrar da flag); o testador passa
+a pagar um QR de sandbox real; e o alpha passa a exercitar **o mesmo adapter e o mesmo caminho de
+código** da produção — ou seja, o ensaio de K2 deixa de ser teatro. O mock continua disponível
+para o que ele serve (teste de unidade), não para a jornada de ponta a ponta.
 
 ### B3 — Pix em gateway simulado; NFC-e em homologação `[FATO]`
 
@@ -261,7 +289,20 @@ fallback `methods[0]`**; e tornar a forma audível no resumo com troca em 1 cliq
 disponível. Alternativa A (nunca pré-selecionar) é coerente mas descarta a preferência lembrada;
 C (só tornar visível) **não resolve**, porque a falha é atencional, não informacional.
 
-**Pergunta ao dono:** a casa quer um default? Sem essa resposta, B entrega "sem default".
+**DECIDIDO pelo dono em 2026-09-29:** se for obrigatório ter um default, a casa prefere
+**Pix** — mas se *ter* um default for problema real de UX, abre-se mão dele. **Omotenashi em
+primeiro lugar.** Isso fecha a recomendação B como está: **default só quando foi dito**
+(preferência lembrada do cliente, ou `payment.default_method` declarado em config), nunca por
+posição na lista. A forma deve ser **audível** no resumo, com troca em 1 clique. E se houver
+default, **instrumentar** a escolha (hoje não há telemetria que distinga escolha ativa de
+default aceito). Ver `docs/coordination/DECISIONS.md` D-001.
+
+> **Nota sobre o incidente do testador (corrigido pelo dono em 2026-09-29):** o ambiente era o
+> **alpha, com o adapter de Pix simulado** (`payment_mock`) e a captura simulada ligada — não
+> Efí de teste. O pedido foi aceito abertamente como teste e **nenhuma cobrança real foi
+> realizada**. **Nenhum dano**, e o defeito de UX permanece como o que se corrige.
+> Consequência operacional registrada em B2: a rodada de testes de hoje **depende** do botão de
+> captura simulada.
 
 ### D2 — Alterar pedido da loja online pelo Gestor
 
@@ -290,8 +331,26 @@ destino da diferença; nunca reescreve a **forma** de um pedido cujo valor não 
 forma de pagamento com **uma das três semânticas**: (i) cobrança pendente, (ii) pedido já pago
 (estornar+recobrar), (iii) no ato (já existe).
 
-**Perguntas ao dono:** (1) qual das três semânticas? (2) pedido imediato entra, ou só com data?
-(3) quem opera o Gestor tem caixa aberto? (4) o Gestor é a superfície do atendimento por WhatsApp?
+**DECIDIDO pelo dono em 2026-09-29:**
+
+- **Semântica: (i) cobrança pendente.** O trabalho é *cancelar a cobrança aberta e emitir outra*,
+  a partir do Gestor. Isso resolve dois obstáculos nomeados: hoje cancelar cobrança digital só
+  tem porta pelo balcão (`counter_takeover`), e `order_edit` retorna antes de tocar em
+  `payment` quando o valor não muda (`order_edit.py:413-414`).
+- **Pedido imediato entra**, sim. *(A pergunta existia porque `order_edit` corta por status —
+  `new|accepted|preparing` `[FATO]` `order_edit.py:244-267` — e num pedido imediato essa
+  janela é curta. A resposta não muda o código; muda a expectativa de quando o operador
+  consegue editar.)*
+- **Dinheiro não é problema deste fluxo:** pedido remoto da loja online **não oferece pagamento
+  em dinheiro**. COD, troco e o tratamento de dinheiro vivem no caminho de **encomenda anotada
+  pelo operador** (PDV, aba Encomendas), que já tem sessão de caixa. Logo a semântica (ii)
+  estorno+recobrança não é necessária aqui.
+- **Superfície:** a **concierge é o atendimento automatizado** e será; **hoje o atendimento é
+  PDV/Encomendas**. Consequência de desenho: para o caso do WhatsApp, o **deep-link para o PDV
+  (R3) é o caminho canônico hoje**, não um editor novo no Gestor. O editor no Gestor vira
+  trabalho de quando a concierge chegar.
+
+Ver `docs/coordination/DECISIONS.md` D-002 e D-003.
 
 ---
 
