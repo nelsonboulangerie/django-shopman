@@ -4,12 +4,13 @@ import { toast } from "vue-sonner";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
 import type {
-  PreorderDetailResponse,
+  PreorderDetail,
   PreorderHandOverResponse,
   PreorderRedoResponse,
   PreorderRescheduleResponse,
 } from "~/types/preorders";
 import type { POSProjection } from "~/types/pos";
+import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
 
 export interface ManagerChallenge {
   code: string;
@@ -31,10 +32,14 @@ export interface ManagerChallenge {
  *   `manager_approval_required`; a página abre o `OperatorManagerAuth` e repete o
  *   gesto com a assinatura.
  *
+ * - **Comentar no histórico**: a MESMA rota do Gestor (`/orders/<ref>/comment/`),
+ *   com a base que o servidor mandou na ação `comment` do detalhe — é o contexto
+ *   "pos" que a oferece, e só ela.
+ *
  * Depois de qualquer gesto, a leitura canônica é refeita (`refresh`).
  */
 export function usePosPreorderActions(options: {
-  detail: Ref<PreorderDetailResponse | null | undefined>;
+  detail: Ref<PreorderDetail | null | undefined>;
   pos: ComputedRef<POSProjection | null>;
   refresh: () => Promise<unknown>;
 }) {
@@ -58,9 +63,9 @@ export function usePosPreorderActions(options: {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
-    const path = `/api/v1/backstage/pos/preorders/${encodeURIComponent(detail.card.ref)}/hand-over/`;
+    const path = `/api/v1/backstage/pos/preorders/${encodeURIComponent(detail.ref)}/hand-over/`;
     const payload = {
-      base_revision: detail.revision,
+      base_revision: detail.counter.revision,
       terminal_ref: options.pos.value?.terminal_ref || "",
       ...body,
     };
@@ -95,8 +100,8 @@ export function usePosPreorderActions(options: {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
-    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.card.ref)}/cancel/`;
-    const payload = { reason: reason.trim(), base_revision: detail.revision, expected_actor_id: detail.actor_id };
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/cancel/`;
+    const payload = { reason: reason.trim(), base_revision: detail.counter.revision, expected_actor_id: detail.counter.actor_id };
     try {
       await action.call(path, {
         body: {
@@ -152,9 +157,9 @@ export function usePosPreorderActions(options: {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
-    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.card.ref)}/reschedule/`;
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/reschedule/`;
     // A revisão da DATA (`reschedule.revision`): é a que o reagendar confere.
-    const payload = { ...choice, base_revision: detail.reschedule.revision, expected_actor_id: detail.actor_id };
+    const payload = { ...choice, base_revision: detail.counter.reschedule.revision, expected_actor_id: detail.counter.actor_id };
     try {
       const response = await action.call<PreorderRescheduleResponse>(path, {
         body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) },
@@ -172,9 +177,32 @@ export function usePosPreorderActions(options: {
     }
   }
 
+  /** Comentar no histórico do pedido. `true` quando gravou (a página limpa o campo). */
+  async function comment(note: string): Promise<boolean> {
+    const detail = options.detail.value;
+    const offered = detailAction(detail, "comment");
+    if (!detail || !offered?.enabled || busy.value) return false;
+    busy.value = true;
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/comment/`;
+    const payload = { note, ...offered.payload_schema };
+    try {
+      await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
+      lastAttempt = null;
+      toast.success("Comentário adicionado.");
+      await options.refresh();
+      return true;
+    } catch (error) {
+      toast.error(`${httpErrorMessage(error, "Não deu para comentar.")} O texto continua no campo: tente de novo.`);
+      await options.refresh();
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   function dismissManagerChallenge() {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, dismissManagerChallenge };
+  return { busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge };
 }

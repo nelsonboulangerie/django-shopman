@@ -75,14 +75,19 @@ export function usePosPreorders(options: {
   };
 }
 
-/** Uma encomenda, para o detalhe. 404 = não é encomenda (ou não existe). */
+/**
+ * Uma encomenda, para o detalhe. 404 = não é encomenda (ou não existe).
+ *
+ * A resposta é o detalhe do pedido do Gestor no contexto do balcão (envelope
+ * `read_data`, `{order: …}`): as seções comuns e, em `order.counter`, os gestos.
+ */
 export function usePosPreorderDetail(ref: Ref<string>) {
   const apiPath = useApiPath();
   const { data, pending, error, refresh } = useFetch<PreorderDetailResponse>(
     () => apiPath(`/api/v1/backstage/pos/preorders/${encodeURIComponent(ref.value)}/`),
     { key: `pos-preorder:${ref.value}`, credentials: "include", server: false, lazy: true },
   );
-  return { detail: data, pending, error, refresh };
+  return { detail: computed(() => data.value?.order ?? null), pending, error, refresh };
 }
 
 /** A semana que começa hoje (hoje + 6), sem busca: o selo da barra e a casa. */

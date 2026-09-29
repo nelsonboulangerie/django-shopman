@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
-// Order detail — the operator's full view of one order: items, timeline, kitchen
-// note, fiscal links, and the complete action set. Reads the expanded projection
-// via useOrderDetail; actions POST through the django proxy and reconcile.
+// Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
+// observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
+// MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
+// fica só o que é do Gestor: a barra de ações do fluxo, o iFood, o entregador, o
+// editor da nota da cozinha e os diálogos. Lê a projeção no contexto "orders"
+// (useOrderDetail); as ações vão pelo proxy do Django e a leitura se refaz.
 import {
   appendTag,
   changeBackSuggestionQ,
-  joinFacts,
-  lucideIcon,
   moneyInput,
   splitRef,
-  statusTone,
-  toneBadge,
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
 import type { CancellationReason } from "~/types/orders";
@@ -29,45 +28,19 @@ const { readMetadata, order, pending, error, refresh, busy, mutationError, confi
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
 useOrderEvents(orderRef.value, () => refresh());
 
-// timeline comment composer
+// O rascunho do comentário mora aqui (o aviso de texto não salvo é da página);
+// o campo é do `OperatorOrderDetail`, que só o mostra com a ação `comment`.
 const comment = ref("");
-async function submitComment() {
-  if (!comment.value.trim()) return;
-  const ok = await addComment(comment.value.trim());
+async function submitComment(note: string) {
+  const ok = await addComment(note);
   if (ok) comment.value = "";
 }
 
 const code = computed(() => splitRef(orderRef.value));
 
-// Cadastro do cliente: hoje o CRUD de cliente mora no Admin, e o Gestor precisa
-// pelo menos APONTAR para lá — quem está atendendo quer saber quem é a pessoa,
-// e descobrir isso não pode custar caçar a URL do Admin de cabeça. O dia em que
-// o Gestor tiver a própria tela de clientes, este link some.
+// Cadastro do cliente: o CRUD de cliente ainda mora no Admin, e o Gestor aponta
+// para lá (o link "Abrir cadastro" é do `OperatorOrderDetail`).
 const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
-const customerAdminUrl = computed(() => {
-  const ref_ = order.value?.customer_ref;
-  if (!ref_ || !adminBaseUrl) return "";
-  return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(ref_)}`;
-});
-// Até quando o código do iFood leva à pessoa. Depois disso a central não repassa.
-const relayExpiresLabel = computed(() => {
-  const iso = order.value?.customer_relay_expires_at;
-  if (!iso) return "";
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return "";
-  return `Vale até ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
-});
-// Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece — vale
-// mais uma tela honesta do que uma fileira de botões que não fazem nada.
-const hasCustomerContact = computed(() =>
-  Boolean(
-    order.value?.customer_phone_uri ||
-      order.value?.customer_relay_phone ||
-      order.value?.customer_whatsapp_url ||
-      order.value?.customer_email ||
-      customerAdminUrl.value,
-  ),
-);
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
@@ -242,27 +215,8 @@ async function submitDispatch(value: string | null) {
   if (ok) { cashDrafts.clear("dispatch", orderRef.value); dialog.value = ""; }
 }
 
-// Quem é este cliente (WP-360). O servidor manda os fatos já em português e só
-// os que sabe; aqui montamos as duas linhas, deixando de fora o que faltou —
-// nunca "R$ 0,00" ou "0 pedidos" no lugar de "ainda não sabemos".
-const profile = computed(() => order.value?.customer_profile ?? null);
-const profileHistory = computed(() =>
-  joinFacts(
-    profile.value?.orders_label,
-    profile.value?.last_order_display ? `última compra ${profile.value.last_order_display}` : "",
-  ),
-);
-const profileHabits = computed(() =>
-  joinFacts(
-    profile.value?.average_ticket_display ? `ticket médio ${profile.value.average_ticket_display}` : "",
-    profile.value?.favorite_product ? `costuma levar ${profile.value.favorite_product}` : "",
-  ),
-);
-
 // Estação travada pelo servidor: não é "pedido não encontrado".
 const { denied: stationLocked } = useStationLock();
-
-const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.url || "#";
 </script>
 
 <template>
@@ -290,357 +244,131 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
       {{ order ? "Falha ao atualizar. Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações." : "Pedido não encontrado ou falha ao carregar." }}
     </p>
 
-    <template v-if="order">
-      <!-- Homologação do iFood contra o ambiente VIVO: o pedido de teste avança
-           como qualquer outro, e o detalhe é onde o operador decide o que fazer
-           com ele. O aviso abre a tela, acima do resumo. -->
-      <p
-        v-if="order.test_order_notice"
-        class="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 p-3 text-sm font-medium"
-        role="status"
-        data-test-order-notice
-      >
-        <Icon name="lucide:flask-conical" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ order.test_order_notice }}</span>
-      </p>
+    <OperatorOrderDetail
+      v-if="order"
+      v-model:comment="comment"
+      :order="order"
+      :busy="busy"
+      :admin-base-url="adminBaseUrl"
+      @comment="submitComment"
+    >
+      <!-- iFood: o resumo do pagamento/operação e as negociações abertas. -->
+      <template #summary>
+        <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
+        <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
+      </template>
 
-      <!-- summary -->
-      <section class="flex flex-col gap-3 rounded-lg border bg-card p-4">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-medium" :class="toneBadge(statusTone(order.status))">
-            {{ order.status_label }}
-          </span>
-          <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Icon :name="`lucide:${lucideIcon(order.channel_icon)}`" class="size-4" /> {{ order.channel_ref }}
-          </span>
-          <span class="ml-auto text-xl font-bold tabular-nums">{{ order.total_display }}</span>
-        </div>
-        <div class="grid gap-1 text-sm">
-          <p class="flex items-center gap-2">
-            <Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}
-            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name" class="text-muted-foreground tabular-nums" data-customer-phone>
-              · {{ order.customer_phone }}
-            </span>
-          </p>
-          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:package" class="size-4" /> {{ order.fulfillment_label }}</p>
-          <!-- Para onde vai. Quem despacha não tinha o endereço em tela nenhuma
-               do Gestor, embora o pedido sempre o carregasse. -->
-          <p v-if="order.delivery_address" class="flex items-start gap-2" data-order-address>
-            <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <span class="min-w-0">
-              {{ order.delivery_address }}
-              <span v-if="order.delivery_instructions" class="block text-muted-foreground">{{ order.delivery_instructions }}</span>
-            </span>
-          </p>
-          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "Pagamento não informado" }}<template v-if="order.payment_status_label"> · {{ order.payment_status_label }}</template></p>
-          <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
-          <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
-          <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
-               às 14h32" ou "falhou — reenvie". Lida da última Directive do
-               aviso; sem aviso nenhum, a linha não existe. -->
-          <p v-if="order.payment_link_notice" class="flex items-center gap-2 text-muted-foreground" data-payment-link-notice>
-            <Icon name="lucide:send" class="size-4" /> {{ order.payment_link_notice }}
-          </p>
-        </div>
-
-        <!-- Falar com o cliente. Um pedido é um combinado com uma pessoa, e
-             quem abre o detalhe abre justamente quando algo precisa ser dito:
-             o item acabou, o endereço não fecha, a entrega vai atrasar. Cada
-             botão só existe quando tem para onde levar. -->
-        <div v-if="hasCustomerContact" class="flex flex-wrap gap-2 border-t pt-3" data-customer-contact>
-          <a
-            v-if="order.customer_whatsapp_url"
-            :href="order.customer_whatsapp_url"
-            target="_blank"
-            rel="noopener"
-            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-            data-contact-whatsapp
-          >
-            <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
-          </a>
-          <!-- Pedido do iFood: o número NÃO é do cliente. É o 0800 da central
-               deles + um código que leva até a pessoa, e o código vence. Por
-               isso não há WhatsApp aqui, e o "Ligar" disca os dois de uma vez. -->
-          <div
-            v-if="order.customer_relay_phone"
-            class="flex w-full flex-wrap items-center gap-2 rounded-md bg-muted px-2.5 py-2 text-sm"
-            data-contact-relay
-          >
-            <span class="text-muted-foreground">Falar pelo iFood:</span>
-            <span class="tabular-nums">Central {{ order.customer_relay_phone }}</span>
-            <template v-if="order.customer_relay_code">
-              <span class="text-muted-foreground">·</span>
-              <span class="font-semibold tabular-nums" data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
-              <span v-if="relayExpiresLabel" class="text-xs text-muted-foreground">{{ relayExpiresLabel }}</span>
-            </template>
-            <span v-else class="text-xs text-muted-foreground" data-contact-relay-expired>
-              Código vencido: o iFood não repassa mais a ligação
-            </span>
-          </div>
-          <a
-            v-if="order.customer_phone_uri"
-            :href="order.customer_phone_uri"
-            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-            data-contact-phone
-          >
-            <Icon name="lucide:phone" class="size-4" /> {{ order.customer_relay_phone ? "Ligar pela central" : "Ligar" }}
-          </a>
-          <a
-            v-if="order.customer_email"
-            :href="`mailto:${order.customer_email}`"
-            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-            data-contact-email
-          >
-            <Icon name="lucide:mail" class="size-4" /> E-mail
-          </a>
-          <a
-            v-if="customerAdminUrl"
-            :href="customerAdminUrl"
-            target="_blank"
-            rel="noopener"
-            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            data-contact-cadastro
-          >
-            <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
-          </a>
-        </div>
-
-        <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
-             pedido continua presente, e a instrução vira "embalar", não
-             "entregar a alguém" com o nome pendurado no vazio. -->
-        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm" data-gift-block>
-          <p class="flex items-center gap-1.5 font-medium">
-            <Icon name="lucide:gift" class="size-4" />
-            {{ order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : "Embalar para presente" }}
-          </p>
-          <p v-if="order.gift_recipient_phone" class="mt-1 flex items-center gap-1.5 text-muted-foreground" data-gift-phone>
-            <Icon name="lucide:phone" class="size-3.5" /> {{ order.gift_recipient_phone }}
-          </p>
-          <p v-if="order.gift_message" class="mt-1 text-muted-foreground">“{{ order.gift_message }}”</p>
-          <!-- instrução operacional: nada de valores junto do presente (sem
-               cupom/valor na sacola) — hoje essa vontade do cliente sumia. -->
-          <p
-            v-if="order.gift_hide_values"
-            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-warning/50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
-            data-gift-hide-values
-          >
-            <Icon name="lucide:eye-off" class="size-3" /> Não mostrar valores
-          </p>
-        </div>
-      </section>
-
-      <!-- actions — as MESMAS regras do board (cardAffordances), lidas da mesma
-           projection. A guarda do "Avançar" era `can_settle_delivery_cash !==
-           undefined`, sempre verdadeira, e o "Aceitar" não tinha guarda: num
-           pedido `new` os dois apareciam cheios e o clique levava 400. Aqui o
-           que decide é o servidor, e quando ele bloqueia o lugar do botão
-           continua ocupado dizendo o motivo, em vez de sumir. -->
-      <section class="flex flex-wrap gap-2">
-        <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
-          <Icon name="lucide:check" class="size-4" /> Aceitar
-        </button>
-        <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
-          <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
-        </button>
-        <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
-          <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
-        </button>
-        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-          <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
-        </button>
-        <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
-          <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
-        </button>
-        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
-          <Icon name="lucide:file-text" class="size-4" /> Reprocessar NFC-e
-        </button>
-        <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
-             não pago, não vencido) — o servidor decide, a tela obedece. A
-             cadência (cedo demais, envio em andamento) é recusa da hora do
-             clique, com o motivo no toast. -->
-        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
-          <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
-        </button>
-        <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
-             aceito o gesto certo é Cancelar. -->
-        <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
-          <Icon name="lucide:x" class="size-4" /> Recusar
-        </button>
-        <!-- `can_cancel` já é régua + política + permissão, resolvidas no
-             servidor. O botão ficava sempre visível e o servidor respondia
-             "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
-             de oferecer um gesto que não acontece. -->
-        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
-          <Icon name="lucide:ban" class="size-4" />
-          {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
-        </button>
-        <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
-          {{ order.cancel_block_label }}
-        </p>
-      </section>
-
-      <!-- quem é este cliente (WP-360) — o operador abria o detalhe sem saber se
-           quem está do outro lado é da casa ou comprou pela primeira vez. O
-           bloco só existe com cliente identificado, e cada linha só aparece com
-           o dado que o servidor de fato tem. -->
-      <section v-if="profile" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4 text-sm" data-customer-profile>
-        <div class="flex flex-wrap items-center gap-2">
-          <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
-            <Icon name="lucide:user-round" class="size-4 text-muted-foreground" /> Cliente
-          </h2>
-          <!-- Selo só nos segmentos que mudam o atendimento (fiel/campeão, em
-               risco/perdido). Regular e recente não ganham selo: badge que
-               aparece sempre deixa de ser lido. -->
-          <span
-            v-if="profile.segment_tone"
-            class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium"
-            :class="toneBadge(profile.segment_tone)"
-            data-customer-segment
-          >
-            {{ profile.segment_label }}
-          </span>
-        </div>
-        <p v-if="profileHistory" data-customer-history>{{ profileHistory }}</p>
-        <p v-if="profileHabits" class="text-muted-foreground" data-customer-habits>{{ profileHabits }}</p>
-        <!-- Aniversário: no dia, é gesto de casa; fora dele, é só cadastro. -->
-        <p v-if="profile.birthday_display" class="flex items-center gap-1.5" :class="profile.is_birthday_today ? 'font-medium' : 'text-muted-foreground'" data-customer-birthday>
-          <Icon name="lucide:cake" class="size-3.5 shrink-0" />
-          {{ profile.is_birthday_today ? "Faz aniversário hoje" : `Aniversário em ${profile.birthday_display}` }}
-        </p>
-        <!-- Restrição alimentar é a única linha deste bloco que pode virar
-             incidente se passar batido — por isso tom de atenção, não cinza. -->
-        <p v-if="profile.dietary_restrictions" class="flex items-start gap-1.5 font-medium text-amber-700 dark:text-amber-400" data-customer-restrictions>
-          <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
-          <span>{{ profile.dietary_restrictions }}</span>
-        </p>
-        <p v-if="profile.notes" class="flex items-start gap-1.5 text-muted-foreground" data-customer-notes>
-          <Icon name="lucide:sticky-note" class="mt-0.5 size-3.5 shrink-0" />
-          <span>{{ profile.notes }}</span>
-        </p>
-      </section>
-
-      <!-- corrida de entrega (logística externa) -->
-      <OrderCourierPanel
-        v-if="order.courier"
-        :courier="order.courier"
-        :cancel-action="order.actions.find(action => action.ref === 'courier-cancel')"
-        :quote-action="order.actions.find(action => action.ref === 'courier-quote')"
-        :dispatch-action="order.actions.find(action => action.ref === 'courier-dispatch')"
-        :busy="busy"
-        @quote="courierQuote"
-        @dispatch="courierDispatch"
-        @cancel="courierCancel"
-      />
-
-      <!-- fiscal -->
-      <section v-if="order.fiscal_status_label || order.fiscal_links.length" class="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-sm">
-        <Icon name="lucide:receipt" class="size-4 text-muted-foreground" />
-        <span class="text-muted-foreground">{{ order.fiscal_status_label || "Fiscal" }}</span>
-        <a v-for="(link, i) in order.fiscal_links" :key="i" :href="fiscalHref(link)" target="_blank" rel="noopener" class="font-medium text-primary underline-offset-2 hover:underline">
-          {{ link.label || "Documento" }}
-        </a>
-      </section>
-
-      <!-- items -->
-      <section class="overflow-hidden rounded-lg border bg-card">
-        <h2 class="border-b px-4 py-2.5 text-sm font-bold uppercase tracking-wide">Itens</h2>
-        <table class="w-full text-sm">
-          <tbody>
-            <tr v-for="(item, i) in order.items" :key="i" class="border-b last:border-0">
-              <td class="px-4 py-2.5 tabular-nums text-muted-foreground">{{ item.qty }}×</td>
-              <td class="px-1 py-2.5">{{ item.name }}</td>
-              <td class="px-4 py-2.5 text-right tabular-nums">{{ item.total_display }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- observação do CLIENTE (order_notes, escrita no checkout): somente
-           leitura, dona diferente da nota da cozinha logo abaixo — o operador
-           edita a dele, nunca a do cliente. -->
-      <section v-if="order.customer_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-customer-note>
-        <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
-          <Icon name="lucide:message-square" class="size-4 text-muted-foreground" /> Observação do cliente
-        </h2>
-        <p class="whitespace-pre-line text-sm">{{ order.customer_note }}</p>
-      </section>
-
-      <!-- kitchen note -->
-      <section class="flex flex-col gap-2 rounded-lg border bg-card p-4">
-        <label class="text-sm font-bold uppercase tracking-wide" for="order-notes">Nota da cozinha</label>
-        <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
-        <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
-          <button
-            v-for="(tag, i) in noteTags"
-            :key="i"
-            type="button"
-            class="min-h-control min-w-control inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            @click="applyNoteTag(tag)"
-          >
-            <Icon name="lucide:plus" class="size-3" />{{ tag }}
+      <template #actions>
+        <!-- actions — as MESMAS regras do board (cardAffordances), lidas da mesma
+             projection. A guarda do "Avançar" era `can_settle_delivery_cash !==
+             undefined`, sempre verdadeira, e o "Aceitar" não tinha guarda: num
+             pedido `new` os dois apareciam cheios e o clique levava 400. Aqui o
+             que decide é o servidor, e quando ele bloqueia o lugar do botão
+             continua ocupado dizendo o motivo, em vez de sumir. -->
+        <section class="flex flex-wrap gap-2">
+          <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
+            <Icon name="lucide:check" class="size-4" /> Aceitar
           </button>
-        </div>
-        <textarea
-          id="order-notes"
-          v-model="notes"
-          rows="3"
-          placeholder="Instruções de preparo para a cozinha…"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+            <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
+          </button>
+          <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+            <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
+          </button>
+          <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
+            <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
+          </button>
+          <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+            <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
+          </button>
+          <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
+            <Icon name="lucide:file-text" class="size-4" /> Reprocessar NFC-e
+          </button>
+          <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
+               não pago, não vencido) — o servidor decide, a tela obedece. A
+               cadência (cedo demais, envio em andamento) é recusa da hora do
+               clique, com o motivo no toast. -->
+          <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
+            <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
+          </button>
+          <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
+               aceito o gesto certo é Cancelar. -->
+          <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
+            <Icon name="lucide:x" class="size-4" /> Recusar
+          </button>
+          <!-- `can_cancel` já é régua + política + permissão, resolvidas no
+               servidor. O botão ficava sempre visível e o servidor respondia
+               "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
+               de oferecer um gesto que não acontece. -->
+          <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
+            <Icon name="lucide:ban" class="size-4" />
+            {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
+          </button>
+          <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
+            {{ order.cancel_block_label }}
+          </p>
+        </section>
+      </template>
+
+      <template #after-profile>
+        <!-- corrida de entrega (logística externa) -->
+        <OrderCourierPanel
+          v-if="order.courier"
+          :courier="order.courier"
+          :cancel-action="order.actions.find(action => action.ref === 'courier-cancel')"
+          :quote-action="order.actions.find(action => action.ref === 'courier-quote')"
+          :dispatch-action="order.actions.find(action => action.ref === 'courier-dispatch')"
+          :busy="busy"
+          @quote="courierQuote"
+          @dispatch="courierDispatch"
+          @cancel="courierCancel"
         />
-        <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
-        <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
-          <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
-          <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
-          <div class="flex gap-2">
-            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
-            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
+      </template>
+
+      <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->
+      <template #kitchen-note>
+        <section class="flex flex-col gap-2 rounded-lg border bg-card p-4">
+          <label class="text-sm font-bold uppercase tracking-wide" for="order-notes">Nota da cozinha</label>
+          <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
+          <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
+            <button
+              v-for="(tag, i) in noteTags"
+              :key="i"
+              type="button"
+              class="min-h-control min-w-control inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              @click="applyNoteTag(tag)"
+            >
+              <Icon name="lucide:plus" class="size-3" />{{ tag }}
+            </button>
           </div>
-        </div>
-        <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
-        <button
-          type="button"
-          :disabled="busy || !notesDirty || notesConflict"
-          class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
-          @click="saveKitchenNote"
-        >
-          Salvar nota
-        </button>
-      </section>
-
-      <!-- timeline -->
-      <section class="flex flex-col gap-2 rounded-lg border bg-card p-4">
-        <h2 class="text-sm font-bold uppercase tracking-wide">Histórico</h2>
-        <ol v-if="order.timeline.length" class="flex flex-col gap-2.5">
-          <li v-for="(ev, i) in order.timeline" :key="i" class="flex gap-3 text-sm">
-            <span class="mt-1 size-2 shrink-0 rounded-full" :class="ev.event_type === 'operator_comment' ? 'bg-primary' : 'bg-muted-foreground/40'" />
-            <div class="min-w-0">
-              <p class="font-medium">{{ ev.label }}</p>
-              <p class="text-xs text-muted-foreground">{{ ev.timestamp_display }}<template v-if="ev.actor"> · {{ ev.actor }}</template><template v-if="ev.detail"> · {{ ev.detail }}</template></p>
-            </div>
-          </li>
-        </ol>
-
-        <!-- comment composer -->
-        <div class="flex items-start gap-2 border-t pt-3">
           <textarea
-            v-model="comment"
-            rows="1"
-            placeholder="Comentar no histórico…"
-            class="min-h-control flex-1 resize-y rounded-md border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Comentar no histórico"
-            @keydown.enter.meta.prevent="submitComment"
+            id="order-notes"
+            v-model="notes"
+            rows="3"
+            placeholder="Instruções de preparo para a cozinha…"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
+          <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
+          <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
+            <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
+            <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
+            <div class="flex gap-2">
+              <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
+              <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
+            </div>
+          </div>
+          <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
           <button
             type="button"
-            :disabled="!comment.trim() || busy"
-            class="inline-flex min-h-action shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            @click="submitComment"
+            :disabled="busy || !notesDirty || notesConflict"
+            class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+            @click="saveKitchenNote"
           >
-            <Icon name="lucide:message-square-plus" class="size-4" /> Comentar
+            Salvar nota
           </button>
-        </div>
-      </section>
-    </template>
+        </section>
+      </template>
+    </OperatorOrderDetail>
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->

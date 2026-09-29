@@ -24,7 +24,7 @@ from shopman.offerman.models import Product
 from shopman.orderman.models import Order, OrderItem
 from shopman.payman import PaymentService
 
-from shopman.backstage.projections.preorders import build_preorder_detail
+from shopman.backstage.projections.preorders import build_counter_block
 from shopman.backstage.tests.pos_test_runtime import bind_station
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import order_composition
@@ -242,7 +242,7 @@ def test_estorno_da_maquininha_fecha_a_pendencia_pelo_pdv(client, operator, mana
 def test_detalhe_da_encomenda_oferece_editar_com_a_revisao_certa(operator):
     order = _order("ED-API-7")
 
-    detail = build_preorder_detail(order.ref, user=operator)
+    detail = build_counter_block(order, user=operator)
 
     assert detail.edit.allowed is True and detail.edit.cancel_and_redo is False
     assert detail.edit.revision == operational_revision(order, field="edit")
@@ -251,7 +251,7 @@ def test_detalhe_da_encomenda_oferece_editar_com_a_revisao_certa(operator):
 
     order.data = {**order.data, "nfce_access_key": "4126" + "0" * 40}
     order.save(update_fields=["data", "updated_at"])
-    detail = build_preorder_detail(order.ref, user=operator)
+    detail = build_counter_block(order, user=operator)
     assert detail.edit.allowed is False and detail.edit.cancel_and_redo is True
     assert "cancele e refaça" in detail.edit.block_reason
 
@@ -259,7 +259,7 @@ def test_detalhe_da_encomenda_oferece_editar_com_a_revisao_certa(operator):
 def test_reagendar_pelo_pdv_com_a_revisao_do_detalhe_aplica(client, operator):
     """Regressão: o PDV mandava a revisão geral e todo reagendamento voltava 409."""
     order = _order("ED-API-8")
-    detail = build_preorder_detail(order.ref, user=operator)
+    detail = build_counter_block(order, user=operator)
     client.force_login(operator)
 
     response = client.post(

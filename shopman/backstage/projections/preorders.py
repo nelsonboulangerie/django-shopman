@@ -29,8 +29,6 @@ from datetime import date, timedelta
 from django.utils import formats, timezone
 from shopman.utils.monetary import format_money
 
-from shopman.backstage.projections import order_queue
-
 logger = logging.getLogger(__name__)
 
 #: Teto do intervalo de uma leitura. A grade é de uma semana e a busca olha um
@@ -82,13 +80,6 @@ PAYMENT_STATES = ("to_receive", "paid", "on_account", "check")
 
 
 # ── Projeções ─────────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class PreorderItemProjection:
-    name: str
-    qty_display: str
-    line_total_display: str
 
 
 @dataclass(frozen=True)
@@ -223,19 +214,17 @@ class PreorderEditProjection:
 
 
 @dataclass(frozen=True)
-class PreorderDetailProjection:
+class CounterOrderProjection:
+    """O que só o balcão lê no detalhe do pedido (contexto ``"pos"``).
+
+    O detalhe é UM contrato (``order_queue.OperatorOrderProjection``, decisão do
+    dono de 28/09/2026): resumo, cliente, nota fiscal, itens, observação, nota da
+    cozinha e histórico são os mesmos do Gestor. Aqui fica só o que é do balcão —
+    a encomenda como a lista a mostra (situação e saldo) e os gestos, cada um com
+    a régua do orquestrador.
+    """
+
     card: PreorderCardProjection
-    items: tuple[PreorderItemProjection, ...]
-    payment_method_label: str
-    delivery_address: str
-    delivery_instructions: str
-    # A observação do CLIENTE no checkout (``order_notes``). A nota do operador
-    # (``kitchen_note``) é da cozinha e mora no Gestor/KDS.
-    customer_note: str
-    customer_phone: str
-    customer_phone_uri: str
-    customer_relay_phone: str
-    customer_relay_code: str
     ticket_printed: bool
     # A base das mutações (entregar, cancelar): a revisão operacional do pedido
     # e quem está identificado. O servidor recusa se qualquer um mudou.
@@ -245,8 +234,6 @@ class PreorderDetailProjection:
     cancel: PreorderCancelProjection
     reschedule: PreorderRescheduleProjection
     edit: PreorderEditProjection
-    # Quem pode assinar o cancelamento de pedido pago (a lista do PDV).
-    managers: tuple[dict, ...]
 
 
 # ── Leitura ───────────────────────────────────────────────────────────────
@@ -322,53 +309,34 @@ def build_preorder_list(*, date_from: date, date_to: date, query: str = "") -> P
     )
 
 
-def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | None:
-    """Uma encomenda, com o que o balcão precisa para entregar.
+def find_preorder(ref: str):
+    """O pedido ``ref`` quando ele é uma ENCOMENDA — o corte da seção.
 
     ``None`` quando o pedido não existe OU não está no corte (venda de Balcão,
     cancelado, devolvido): o detalhe da seção não é uma porta lateral para ler
-    qualquer pedido da casa.
+    qualquer pedido da casa. O detalhe em si é o do Gestor, no contexto do
+    balcão (``order_queue.build_operator_order(order, context="pos")``).
     """
     from shopman.orderman.models import Order
 
     from shopman.backstage.services import order_ticket
-    from shopman.shop.services import order_composition
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
     order = Order.objects.filter(ref=ref).prefetch_related("items").first()
     if order is None or order.status in order_ticket.EXCLUDED_STATUSES or is_pos_counter_order(order):
         return None
+    return order
+
+
+def build_counter_block(order, *, user=None) -> CounterOrderProjection:
+    """O bloco do balcão no detalhe do pedido: a encomenda e os gestos dela."""
+    from shopman.shop.services import operator_orders
 
     card = _cards_for([order])[0]
     data = order.data or {}
-    payment_data = data.get("payment") or {}
-    address, instructions = order_queue._delivery_address(order)
-    contact = order_queue._customer_contact(order, data.get("customer") if isinstance(data.get("customer"), dict) else {})
-    items = tuple(
-        PreorderItemProjection(
-            name=item.name or item.sku,
-            qty_display=format(item.qty.normalize(), "f"),
-            line_total_display=_money(item.line_total_q),
-        )
-        for item in order_composition.effective_items(order)
-    )
-    method = str(payment_data.get("method") or "")
-    from shopman.shop.services import operator_orders
-
-    return PreorderDetailProjection(
+    method = str((data.get("payment") or {}).get("method") or "")
+    return CounterOrderProjection(
         card=card,
-        items=items,
-        payment_method_label=(
-            "iFood" if order.channel_ref == "ifood"
-            else order_queue._payment_method_label(method, payment_data, order=order)
-        ),
-        delivery_address=address,
-        delivery_instructions=instructions,
-        customer_note=str(data.get("order_notes") or "").strip(),
-        customer_phone=contact.get("customer_phone", ""),
-        customer_phone_uri=contact.get("customer_phone_uri", ""),
-        customer_relay_phone=contact.get("customer_relay_phone", ""),
-        customer_relay_code=contact.get("customer_relay_code", ""),
         ticket_printed=bool(data.get("ticket_printed_at")),
         revision=operator_orders.operational_revision(order),
         actor_id=getattr(user, "pk", None),
@@ -376,7 +344,6 @@ def build_preorder_detail(ref: str, *, user=None) -> PreorderDetailProjection | 
         cancel=_cancel(order, user),
         reschedule=_reschedule(order, card),
         edit=_edit(order),
-        managers=tuple(order_queue._approver_options(user)) if user is not None else (),
     )
 
 
@@ -430,6 +397,8 @@ def _cancel(order, user) -> PreorderCancelProjection:
     O iFood fica no Gestor: cancelar ali exige um motivo da lista do iFood, lido
     na hora, e o balcão não precisa de uma segunda tela para isso.
     """
+    from shopman.backstage.projections import order_queue
+
     if order.channel_ref == "ifood":
         return PreorderCancelProjection(
             allowed=False, requires_approval=False,
@@ -456,6 +425,7 @@ def _cards_for(orders: list) -> list[PreorderCardProjection]:
 
 
 def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjection:
+    from shopman.backstage.projections import order_queue
     from shopman.backstage.services import order_ticket
     from shopman.shop.services import order_composition
     from shopman.shop.services.fulfillment_window import window_label, window_start_time

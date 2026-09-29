@@ -238,7 +238,7 @@ def test_saldo_a_receber_sem_caixa_aberto_pede_o_caixa():
 def test_o_detalhe_oferece_receber_e_entregar_com_o_valor_e_a_forma_combinada(operator):
     _order("DET-1", payment={"method": "cash"})
 
-    detail = preorders.build_preorder_detail("DET-1", user=operator)
+    detail = preorders.build_counter_block(Order.objects.get(ref="DET-1"), user=operator)
 
     assert detail.hand_over.allowed is True
     assert (detail.hand_over.needs_payment, detail.hand_over.amount_q) == (True, 3600)
@@ -257,8 +257,8 @@ def test_o_detalhe_oferece_cancelar_a_encomenda_aceita_e_pede_pin_se_paga(operat
     paga.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
     paga.save(update_fields=["data"])
 
-    aceita = preorders.build_preorder_detail("DET-ACEITA", user=operator).cancel
-    pago = preorders.build_preorder_detail("DET-PAGA", user=operator).cancel
+    aceita = preorders.build_counter_block(Order.objects.get(ref="DET-ACEITA"), user=operator).cancel
+    pago = preorders.build_counter_block(Order.objects.get(ref="DET-PAGA"), user=operator).cancel
 
     assert (aceita.allowed, aceita.requires_approval) == (True, False)
     assert (pago.allowed, pago.requires_approval) == (True, True)
@@ -267,7 +267,7 @@ def test_o_detalhe_oferece_cancelar_a_encomenda_aceita_e_pede_pin_se_paga(operat
 def test_o_detalhe_do_ifood_manda_cancelar_pelo_gestor(operator):
     _order("IFOOD-DET", channel_ref="ifood", ifood={"payments": {"prepaid_q": 3600, "pending_q": 0, "methods": []}})
 
-    detail = preorders.build_preorder_detail("IFOOD-DET", user=operator)
+    detail = preorders.build_counter_block(Order.objects.get(ref="IFOOD-DET"), user=operator)
 
     assert detail.cancel.allowed is False
     assert "Gestor" in detail.cancel.block_reason
@@ -328,7 +328,7 @@ def test_a_rota_exige_manage_orders(client, shift):
 def test_o_detalhe_oferece_reagendar_a_encomenda_aceita_com_o_combinado(operator):
     _order("REAG-1", status="accepted", delivery_time_slot="slot-09")
 
-    reschedule = preorders.build_preorder_detail("REAG-1", user=operator).reschedule
+    reschedule = preorders.build_counter_block(Order.objects.get(ref="REAG-1"), user=operator).reschedule
 
     assert reschedule.allowed is True
     assert (reschedule.date, reschedule.slot) == (timezone.localdate().isoformat(), "slot-09")
@@ -338,7 +338,7 @@ def test_o_detalhe_oferece_reagendar_a_encomenda_aceita_com_o_combinado(operator
 def test_pronta_nao_reagenda_e_diz_por_que(operator):
     _order("REAG-PRONTA", status="ready")
 
-    reschedule = preorders.build_preorder_detail("REAG-PRONTA", user=operator).reschedule
+    reschedule = preorders.build_counter_block(Order.objects.get(ref="REAG-PRONTA"), user=operator).reschedule
 
     assert reschedule.allowed is False
     assert "já está pronto" in reschedule.block_reason
