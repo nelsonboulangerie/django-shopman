@@ -70,14 +70,6 @@ from shopman.backstage.projections.feeds import (
     MenuboardAutomaticProjection,
 )
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
-from shopman.backstage.projections.preorders import (
-    CounterOrderProjection,
-    PreorderCancelProjection,
-    PreorderCardProjection,
-    PreorderEditProjection,
-    PreorderHandOverProjection,
-    PreorderRescheduleProjection,
-)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CustomerProfileProjection,
@@ -87,6 +79,14 @@ from shopman.backstage.projections.order_queue import (
     OrderCardProjection,
     OrderQueueProjection,
     TwoZoneQueueProjection,
+)
+from shopman.backstage.projections.preorders import (
+    CounterOrderProjection,
+    PreorderCancelProjection,
+    PreorderCardProjection,
+    PreorderEditProjection,
+    PreorderHandOverProjection,
+    PreorderRescheduleProjection,
 )
 from shopman.shop.projections.types import Action, OrderItemProjection, TimelineEventProjection
 
