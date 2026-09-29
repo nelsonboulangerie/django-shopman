@@ -23,8 +23,18 @@ def _quebra_a_loja():
 
 
 def test_grade_ilegivel_abre_alerta_e_erro_para_o_sentry(caplog):
-    with _quebra_a_loja(), caplog.at_level(logging.ERROR, logger="shopman.shop.rules.validation"):
-        assert BusinessHoursRule._get_opening_hours() is None  # a venda segue
+    # O handler do ``caplog`` mora na raiz e o logger ``shopman`` não propaga
+    # (settings): anexar direto no logger da regra captura em qualquer ordem.
+    rules_logger = logging.getLogger("shopman.shop.rules.validation")
+    with _quebra_a_loja(), caplog.at_level(logging.ERROR, logger=rules_logger.name):
+        rules_logger.addHandler(caplog.handler)
+        prev_propagate = rules_logger.propagate
+        rules_logger.propagate = False
+        try:
+            assert BusinessHoursRule._get_opening_hours() is None  # a venda segue
+        finally:
+            rules_logger.propagate = prev_propagate
+            rules_logger.removeHandler(caplog.handler)
 
     (alerta,) = OperatorAlert.objects.filter(type="shop_calendar_unreadable")
     assert alerta.severity == "error"
