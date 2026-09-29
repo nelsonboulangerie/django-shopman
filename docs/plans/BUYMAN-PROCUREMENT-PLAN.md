@@ -7,8 +7,26 @@
 > Decisão do Pablo (2026-06-27): novo pacote persona; Fase 1 = fundação
 > (Material + Supplier + custo); merece plano + WPs dedicados.
 
-**Status**: 🟡 Plano proposto. **Nome recomendado: `Buyman`** (simetria com
-Orderman: venda↔compra) — confirmar. Não iniciado.
+**Status**: ✅ Fundação e operação de Compras entregues no `main`. O nome
+**`Buyman`** foi adotado. A reconciliação factual de 2026-09-29 abaixo substitui
+o retrato inicial de "não iniciado"; o restante do documento preserva o desenho
+histórico que originou a implementação.
+
+## Reconciliação factual (2026-09-29)
+
+| Entrega do plano | Estado | Evidência atual / decisão |
+|---|---|---|
+| WP-B0 e Fase 1 (B1–B5b) | **DONE** | `Move.kind`; pacote `buyman`; Material, Supplier, custo e conversões; Admin; adapters compostos; seed; shelf-life e disponibilidade estão no `main` e cobertos pelas suítes do Buyman/Stockman. |
+| WP-B6 (validade) | **DONE** | FEFO em `stockman.services.holds`, lote+validade no recebimento/produção e margem de near-expiry em `stockman.services.scope`; o antigo auto-transfer D-1 foi aposentado pela ADR-017. |
+| Fase 2, modelo formal `PurchaseOrder*` | **SUPERSEDED** | O fluxo operacional de pedido/reposição vive em `purchase-nuxt` + `backstage.services.purchase`, com estado de solicitação no cadastro do material. Não criar um segundo agregado só para reproduzir esse fluxo sem novo requisito de negócio. |
+| Fase 3, modelo formal `PurchaseReceipt` + signal | **SUPERSEDED** | O recebimento é uma mutação atômica e idempotente que escreve diretamente o ledger imutável `stockman.Move(kind=BUY)`, com fornecedor, documento, quantidades, custo, lote e validade em metadata. Um segundo ledger de recibos duplicaria a verdade já persistida. |
+| Fase 4, reposição | **DONE** | Projeção e serviço calculam mínimo, lead time, validade, conversão, custo/fornecedor preferencial e rendimento ponderado; aprovação/envio são gestos explícitos na superfície de Compras. |
+| `CostBackend` vivo + custo congelado da produção | **PENDING (fora deste plano operacional)** | A decisão está na ADR-023 e a unidade/conversão na ADR-024. O seam do Offerman continua desligado; implementar custeio de receita/fornada é WP próprio e não é requisito para pedido, recebimento ou reposição. |
+
+**Resultado da auditoria:** não há lacuna de código de Compras a reimplementar
+nestes WPs. A única pendência real é o custeio da ADR-023, que cruza receita,
+produção e B.I. e deve permanecer fora desta frente até ganhar WP e critérios
+próprios.
 
 ## Por que um novo pacote (e por que isso respeita "Core sagrado")
 
@@ -194,17 +212,18 @@ não dá categoria queryable).
   no finish de produção, near-expiry gate (config). Ver
   [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md).
 
-## Custo / risco
+## Custo / risco (estimativa histórica da Fase 1)
 Fase 1 ~5–7 dias (pacote+model+admin, supplier+custo, 2-3 adapters, seed,
 reescrever ~50 linhas de fixtures, ligar validator). Aditivo; risco baixo
 (RecipeItem.meta desacoplado; protocolos já existem). Fases 2–4 são incrementos
 maiores, pós-go-live.
 
-## Decisões abertas (Pablo)
-1. **Nome do pacote** — `Buyman` (recomendado) / outro persona.
-2. **Quando a Fase 1** — agora (foco atual) ou agendada perto do go-live (com
-   validity/media).
-3. **Custo por fornecedor** já na Fase 1, ou custo único por material primeiro?
+## Decisões originais, hoje encerradas
+1. **Nome do pacote:** `Buyman`, adotado.
+2. **Quando a Fase 1:** concluída e integrada antes do go-live.
+3. **Modelo de custo:** custo por fornecedor entregue, com unidade de compra e
+   conversão conforme a ADR-024. O custeio vivo/congelado permanece no WP futuro
+   da ADR-023, não como decisão aberta deste plano.
 
 ## Referências
 - [MATERIAL-MASTER-PLAN](MATERIAL-MASTER-PLAN.md) (origem) · [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md)

@@ -16,6 +16,21 @@
 > Base do levantamento: `origin/main @ b1fd8a844` (cashman WP-0/1/2 mergeados; WP-3 = #205 e
 > WP-4 = #206 abertos). Tudo abaixo foi lido no código; onde cito número, cito a linha.
 
+### Reconciliação factual (2026-09-29)
+
+| Passo | Estado | Evidência / limite |
+|---|---|---|
+| P0, ingestão com lote | **DONE** | `ImportBatch`, validação, transação, proveniência e Admin somente leitura seguem no `main`. |
+| P1, de-paras como dado | **DONE** | aliases de produto/categoria/pagamento, sugestão e curadoria humana seguem no `main`. |
+| P2, leitura canônica | **DONE** | compositor e adaptadores por fonte continuam como dono único da fusão, sem copiar `Order` nem `HistoricalSale*`. |
+| P3, série diária | **DONE** | `DailySalesFact`, refresh e fallback vivo continuam cobertos por equivalência. |
+| P4, caixa canônico | **DONE** | leitura de `cashman.Entry` e gate `cashman.audit_shift` seguem ativos. |
+| P5, NFC-e | **PENDING EXTERNO** | Continua condicionado a emissão fiscal real. Não implementar, simular carga viva ou antecipar uma tabela fiscal nesta frente. |
+
+Não há passo **SUPERSEDED** nesta fundação: P0–P4 permanecem a arquitetura
+vigente. O único item aberto, P5, depende do evento externo declarado no próprio
+plano e não representa lacuna de código executável agora.
+
 ## 0. Resumo executivo
 
 O B.I. de hoje é **bom na camada de leitura e inexistente nas outras duas**. Há oito
