@@ -100,7 +100,7 @@ _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
         "Encomenda para uma data futura. O preparo abre no dia combinado."
     ),
     AdvanceBlock.WAITLIST_FERMATA: (
-        "Reserva na fila do lote. O preparo abre quando ele sair."
+        "Reserva na fila de espera. O preparo abre quando o lote sair."
     ),
 }
 

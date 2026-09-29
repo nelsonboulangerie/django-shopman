@@ -235,11 +235,24 @@ function onNewSale() {
       </p>
       <p v-else-if="enterHint" class="text-xs text-muted-foreground">Enter também avança.</p>
 
-      <!-- Secundárias: mesmo peso, mesmo tamanho -->
+      <!-- Secundárias: só PAPEL, na ordem em que sai. Via Recibo vai para a
+           mão do cliente agora; Via Pedido acompanha a encomenda até o dia; a
+           nota fecha a fila, porque é a última a existir (na encomenda, sai na
+           retirada). Navegar para outro app não é papel e desce para as
+           terciárias. -->
       <div class="flex flex-wrap items-center justify-center gap-2">
         <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
           <Icon name="lucide:printer" class="size-4" />
-          Imprimir recibo
+          Via Recibo
+        </UiButton>
+        <UiButton
+          v-if="result.salesMode === 'order'"
+          variant="outline" size="sm" class="gap-1.5"
+          :disabled="printingTicket"
+          @click="emit('printTicket')"
+        >
+          <Icon name="lucide:printer" class="size-4" />
+          {{ printingTicket ? "Imprimindo…" : "Via Pedido" }}
         </UiButton>
         <!-- A DANFE só é botão vivo quando a nota EXISTE. Na fila, o botão
              fica desabilitado e a impressão automática o promove quando o 409
@@ -263,25 +276,20 @@ function onNewSale() {
           <Icon name="lucide:clock" class="size-4" />
           {{ danfe.label }}
         </p>
-        <!-- A FICHA DO PEDIDO mora AQUI, com as outras saídas de papel. Era um
-             cartaz separado acima da tela, como se fosse outra coisa. -->
-        <UiButton
-          v-if="result.salesMode === 'order'"
-          variant="outline" size="sm" class="gap-1.5"
-          :disabled="printingTicket"
-          @click="emit('printTicket')"
-        >
-          <Icon name="lucide:printer" class="size-4" />
-          {{ printingTicket ? "Imprimindo…" : "Imprimir ficha do pedido" }}
-        </UiButton>
-        <UiButton v-if="result.salesMode === 'order'" variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
-          <Icon name="lucide:external-link" class="size-4" />
-          Abrir no gestor
-        </UiButton>
       </div>
 
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
+        <UiButton
+          v-if="result.salesMode === 'order'"
+          variant="ghost"
+          size="sm"
+          class="gap-1.5 text-muted-foreground hover:text-foreground"
+          :href="result.nextUrl"
+        >
+          <Icon name="lucide:external-link" class="size-4" />
+          Abrir no gestor
+        </UiButton>
         <UiButton
           v-if="danfe?.kind === 'print' && danfeScreenUrl"
           variant="ghost"
