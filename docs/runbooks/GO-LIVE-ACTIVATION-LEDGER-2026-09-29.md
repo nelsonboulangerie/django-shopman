@@ -1,10 +1,26 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T14:51:40Z`
+Atualizado em: `2026-09-29T15:16:23Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
 dados de clientes. Nao mantenha outro ledger em paralelo.
+
+## Ambiente alvo e nomes sem ambiguidade
+
+O alvo atual e o **ambiente vivo de pre-go-live**, ainda operado com integracoes
+staging/mock/sandbox ate o cutover comercial. Ele e o app DigitalOcean
+`shopman-nelson` (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`), acessado pelo contexto
+operacional `shopman-alpha-deploy`, mas atende os hosts publicos finais:
+
+- loja: `https://www.nelsonboulangerie.com.br`;
+- API: `https://api.boulangerie.com.br`;
+- Admin: `https://admin.boulangerie.com.br`.
+
+Neste ledger, `Live` significa que o artefato esta rodando nesse ambiente vivo de
+pre-go-live. Nao significa que ocorreu o cutover comercial. O host antigo
+`api.staging.nelsonboulangerie.com.br` esta aposentado e responde NXDOMAIN; ele
+nunca deve ser usado em smoke novo.
 
 ## Regra de conclusao
 
@@ -127,16 +143,47 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 |---|---|
 | Owner | `nondata_operational_backlog` |
 | Merge | `MERGED`; `c6f8ee1269f0a2e46d0d21cb4678020d856e378f`, contido no SHA sucessor `fad34627d5` |
-| Deploy | `DEPLOYED`; deployment `9dec55ad-dde0-4932-a1f3-8f04240f7763` ficou `ACTIVE` em `2026-09-29T14:49:46Z`; digest `sha256:fb0032d45c9f06b05421f98f2ce5bcf5da3bb59a6442fa9b8d150c3263d81d4d` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `9dec55ad-dde0-4932-a1f3-8f04240f7763` ficou `ACTIVE` em `2026-09-29T14:49:46Z`; digest `sha256:fb0032d45c9f06b05421f98f2ce5bcf5da3bb59a6442fa9b8d150c3263d81d4d` |
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
 | Valor desejado | Admin de disponibilidade operacional acessivel somente a perfis autorizados |
-| Dependencia/gate | `HUMAN_SMOKE`; precisa sessao Admin autorizada do owner para provar acesso ao calendario operacional |
-| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36585437565` verde (`/ready/` 200, menu 40/37, checkout anonimo 403 canonico, SSR 200); rota Admin redireciona anonimo ao login com 302. Acesso autorizado nao foi testado sem credencial do owner |
+| Dependencia/gate | `HUMAN_SMOKE`; precisa sessao Admin autorizada do owner em `https://admin.boulangerie.com.br/admin/shop/shopoperation/` para provar acesso ao calendario operacional |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36585437565`, disparado por `workflow_run` sem input manual, usou `STOREFRONT_URL=https://www.nelsonboulangerie.com.br` e API `https://api.boulangerie.com.br`: `/ready/` 200, menu 40/37, checkout anonimo 403 canonico e SSR 200. O host Admin canonico redireciona anonimo ao login com 302. Acesso autorizado nao foi testado sem credencial do owner |
 | Rollback | Reimplantar o release Live anterior; nenhum schema, config ou flag precisa ser revertido |
 | Evidencia | [PR #1253](https://github.com/nelsonboulangerie/django-shopman/pull/1253); [Deploy Images run 36584648904](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36584648904); [Pre-go-live Smoke run 36585437565](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36585437565) |
-| Ultima atualizacao | `2026-09-29T14:51:40Z` |
+| Ultima atualizacao | `2026-09-29T15:16:23Z` |
 | Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate o owner validar acesso autorizado e leitura operacional no Live |
+
+#### Correcao da URL do smoke manual
+
+Em `2026-09-29T15:16:23Z`, uma aba foi aberta manualmente em
+`https://api.staging.nelsonboulangerie.com.br/admin/shop/shopoperation/` a partir
+de uma copia local desatualizada do workflow. A pagina nunca carregou: DNS e
+`curl` devolveram host inexistente. A aba foi fechada. Essa URL nao veio do PR
+#1253, deste ledger nem do run `36585437565`, e nunca constituiu evidencia de
+smoke.
+
+A separacao comprovada e:
+
+- workflow automatico: `www.nelsonboulangerie.com.br` e
+  `api.boulangerie.com.br` no ambiente vivo de pre-go-live;
+- smoke humano do Admin: `admin.boulangerie.com.br`, conforme
+  `SHOPMAN_ADMIN_HOST` e o ingress de `.do/app.alpha-subdomains.yaml`;
+- `api.staging.nelsonboulangerie.com.br`: referencia historica aposentada,
+  NXDOMAIN e proibida para novas verificacoes.
+
+Referencias residuais intencionais, auditadas no mesmo horario:
+
+- `docs/reports/IFOOD-HOMOLOGACAO-2026-09-12.md` registra uma configuracao
+  externa obsoleta do iFood e ja a identifica como falha de DNS;
+- `shopman/shop/management/commands/efi_webhook.py` explica por que o comando
+  corrige webhook legado, enquanto `test_do_spec_hosts.py` e
+  `test_efi_webhook_command.py` usam o host morto como fixture de regressao;
+- tres planos concluidos preservam a topologia historica e agora exibem aviso
+  explicito de que o host esta aposentado e nao serve para smoke atual.
+
+Nao ha referencia ao host aposentado em workflow, spec ativo ou runbook
+operacional alem deste registro de prevencao.
 
 ### Confirmacao visual do endereco no mapa / PR #1256
 

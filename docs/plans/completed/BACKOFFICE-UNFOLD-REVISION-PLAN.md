@@ -4,6 +4,9 @@
 > quitação das dívidas (D4-parcial, D1 read-only, D2 metadata, U2 empty-state pt-BR, C2 design
 > tokens, C5 nav-PDV, warning rules). Mergeado no `main` (ff `2fac15d5..f175c6b6`) e deployado no
 > staging (`doctl … 40b86e35-… --wait` → ACTIVE; `api.staging.nelsonboulangerie.com.br/ready/`=200).
+> Essa URL e evidencia historica do deploy de junho: o host foi aposentado e responde NXDOMAIN;
+> nao deve ser reutilizado. Smokes atuais usam `api.boulangerie.com.br` e o Admin usa
+> `admin.boulangerie.com.br`.
 > `make test`(2093)/`lint`/`admin` verdes; cada WP verificado ao vivo. **Único item aberto:** decisão
 > KDS (HTMX vs Nuxt) → kill do KDS-HTMX fica no `SURFACE-CONVERGENCE-PLAN`. Status por camada em §2/§3/§4.
 

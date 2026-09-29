@@ -2,6 +2,11 @@
 
 > Prompt auto-contido para uma nova sessão. Cola o bloco abaixo. Continua a iniciativa
 > "Operador em apps dedicados" (Fases 0–3 concluídas; ver `docs/plans/OPERATOR-APPS-PLAN.md`).
+>
+> **Nota operacional (2026-09-29):** este e um kickoff historico. O host
+> `api.staging.nelsonboulangerie.com.br` citado abaixo foi aposentado e responde
+> NXDOMAIN. Smokes atuais usam `api.boulangerie.com.br`; o Admin usa
+> `admin.boulangerie.com.br`.
 
 ---
 
