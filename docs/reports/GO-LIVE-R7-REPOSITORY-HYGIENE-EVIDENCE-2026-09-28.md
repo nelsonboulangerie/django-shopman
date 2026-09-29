@@ -37,7 +37,7 @@ O arquivamento usou `git worktree remove <path-exato>`, nunca remoção manual d
 
 ## Matriz de worktrees
 
-A matriz integral está em `worktree-matrix.csv` no pacote de evidência, SHA-256 `9d0dbe8cca11e209adfa64552f9e8467940c65c1c953f74bc2701fd9615e37b6`.
+A matriz integral está em `worktree-matrix.csv` no pacote de evidência, SHA-256 `07559fc69457c42dfed6dd0b7482ff9c99a702ff6e1a841342585f472b16898a`.
 
 | Classe | Quantidade | Decisão |
 |---|---:|---|
@@ -58,7 +58,7 @@ Os drafts críticos permanecem abertos e imutáveis nesta fase:
 
 ## Quarentena de branches
 
-A matriz integral das 861 branches locais está em `branch-quarantine-matrix.csv`, SHA-256 `7d016cbbab1e0f39989e3ca8c528b1cb81943ad161152b2ea0e5510b186a7f80`.
+A matriz integral das 861 branches locais está em `branch-quarantine-matrix.csv`, SHA-256 `44c22d327162f356571b6ad745da9f4127ec451bbe0777e7ca5cb055bde2ba0f`.
 
 | Classificação | Quantidade |
 |---|---:|
@@ -94,7 +94,7 @@ O contêiner `.codex-worktrees/` de aproximadamente 1,9 GB dentro da raiz possui
 
 O pacote contém, entre outros:
 
-- `worktrees-after-batch1.porcelain`;
+- `worktrees-after-batch1.porcelain` e `worktrees-final.porcelain`;
 - `worktree-prune-dry-run-after-batch1.txt`;
 - `worktree-matrix.csv` e `worktree-class-summary.json`;
 - `branch-quarantine-matrix.csv` e `branch-class-summary.json`;
