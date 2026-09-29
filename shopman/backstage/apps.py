@@ -140,6 +140,10 @@ class BackstageConfig(AppConfig):
         # Produto que o Core registrou. Precisa ser aqui, no ready() do último
         # app: as abas fiscal e social também são compostas em ready(), e o
         # autodiscover do admin roda antes de todos eles.
+        from shopman.backstage.admin.material_enrichment import (
+            install_material_enrichment_review,
+        )
         from shopman.backstage.admin.product_enrichment import install_enrichment_review
 
         install_enrichment_review()
+        install_material_enrichment_review()
