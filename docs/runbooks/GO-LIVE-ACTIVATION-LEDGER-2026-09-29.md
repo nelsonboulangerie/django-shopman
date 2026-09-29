@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T14:45:43Z`
+Atualizado em: `2026-09-29T14:51:40Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -126,17 +126,17 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `nondata_operational_backlog` |
-| Merge | `IN_QUEUE`; head `54bfb2879c9fece52318ce01a81b073aa750dd28`; merge queue posicao 1, aguardando checks |
-| Deploy | `PENDING_MERGE`; sem deploy ID |
-| Migration | `N/A`, salvo confirmacao diferente no merge final |
-| Env/config/flag | Confirmar no PR; nenhum segredo deve ser registrado aqui |
+| Merge | `MERGED`; `c6f8ee1269f0a2e46d0d21cb4678020d856e378f`, contido no SHA sucessor `fad34627d5` |
+| Deploy | `DEPLOYED`; deployment `9dec55ad-dde0-4932-a1f3-8f04240f7763` ficou `ACTIVE` em `2026-09-29T14:49:46Z`; digest `sha256:fb0032d45c9f06b05421f98f2ce5bcf5da3bb59a6442fa9b8d150c3263d81d4d` |
+| Migration | `N/A` |
+| Env/config/flag | `N/A` |
 | Valor desejado | Admin de disponibilidade operacional acessivel somente a perfis autorizados |
-| Dependencia/gate | CI obrigatoria verde, merge e deploy Live |
-| Smoke Live | `PENDING`; acesso autorizado, negacao para perfil sem permissao e leitura operacional basica |
-| Rollback | Reimplantar release anterior; desativar flag somente se o PR declarar uma |
-| Evidencia | [PR #1253](https://github.com/nelsonboulangerie/django-shopman/pull/1253) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `IN_PROGRESS`; nao DONE ate deploy e smoke Live |
+| Dependencia/gate | `HUMAN_SMOKE`; precisa sessao Admin autorizada do owner para provar acesso ao calendario operacional |
+| Smoke Live | `PARTIAL_PASS`; Pre-go-live Smoke run `36585437565` verde (`/ready/` 200, menu 40/37, checkout anonimo 403 canonico, SSR 200); rota Admin redireciona anonimo ao login com 302. Acesso autorizado nao foi testado sem credencial do owner |
+| Rollback | Reimplantar o release Live anterior; nenhum schema, config ou flag precisa ser revertido |
+| Evidencia | [PR #1253](https://github.com/nelsonboulangerie/django-shopman/pull/1253); [Deploy Images run 36584648904](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36584648904); [Pre-go-live Smoke run 36585437565](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36585437565) |
+| Ultima atualizacao | `2026-09-29T14:51:40Z` |
+| Estado/DONE | `DEPLOYED_PENDING_HUMAN_SMOKE`; nao DONE ate o owner validar acesso autorizado e leitura operacional no Live |
 
 ### Confirmacao visual do endereco no mapa / PR #1256
 
