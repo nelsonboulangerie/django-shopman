@@ -1,6 +1,6 @@
 # WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE — conferir endereço × localização atual
 
-> **Status:** READY — docs-only, autocontido e pronto para execução
+> **Status:** READY — extensão dependente; executar depois da base de confirmação visual
 >
 > **Data da auditoria e do benchmark:** 2026-09-28
 >
@@ -13,6 +13,16 @@
 > **Rollout:** configuração pública canônica em `off | measure | visible`; default `off`
 >
 > **Risco:** médio — localização precisa é dado pessoal e GPS pode produzir falso positivo
+
+Autoridade entre documentos:
+
+| Tema | Documento canônico |
+|---|---|
+| mapa, ponto confirmado, reverse, contrato de coordenadas, envelope de eventos e privacidade geral | WP de confirmação visual |
+| comparação endereço escolhido × posição atual, antifalso positivo, alerta e calibração | este WP |
+
+Este documento especifica somente o delta. Em conflito, a base governa mapa/contratos e esta
+extensão governa a política de divergência.
 
 ## 1. Resultado esperado
 
@@ -98,7 +108,10 @@ leitura será **opt-in e contextual**, diferente da checagem descrita na abertur
 nativo. Limiares, fórmula, UX e copies abaixo são decisões Shopman, calibráveis e não
 atribuídas ao iFood.
 
-## 4. Auditoria técnica do estado atual (`origin/main` `79263250e`)
+## 4. Auditoria técnica do estado atual (revalidada em `origin/main` `e3880d89d`)
+
+O levantamento original nasceu em `79263250e`; a consolidação R4 revalidou contratos,
+arquivos e riscos no baseline acima.
 
 | Área | Estado verificado | Lacuna/decisão deste WP |
 |---|---|---|
@@ -159,7 +172,10 @@ atribuídas ao iFood.
 - criar nova fonte de verdade de endereço ou novo provedor de mapas;
 - recalibrar automaticamente o limiar com dados individuais.
 
-## 6. Invariantes
+## 6. Invariantes adicionais da extensão
+
+Herdam-se integralmente as invariantes de contrato, Core, reverse, fallback, chave e
+telemetria do WP base. Este slice acrescenta apenas:
 
 1. Endereço escolhido continua ativo até uma nova confirmação explícita.
 2. A divergência nunca bloqueia avanço, pagamento ou pedido.
@@ -168,12 +184,8 @@ atribuídas ao iFood.
 5. Accuracy é parte obrigatória da decisão. Sem precisão confiável, não há alerta.
 6. Coordenadas reduzidas de um salvo nunca descem ao cliente e nenhum status de
    proximidade cria um canal lateral equivalente.
-7. Reverse descreve o ponto; não move GPS nem pin confirmado.
-8. `delivery_address_structured` e `AddressSelection` seguem canônicos.
-9. Core segue como única autoridade de cobertura e taxa.
-10. Analytics nunca recebe coordenada, endereço, CEP, query, `place_id`, id de salvo ou cliente.
-11. Fechar/ignorar o alerta equivale a manter o endereço; nada é persistido.
-12. Uma resposta assíncrona antiga nunca se aplica a outra seleção.
+7. Fechar/ignorar o alerta equivale a manter o endereço; nada é persistido.
+8. Uma resposta assíncrona antiga nunca se aplica a outra seleção.
 
 ## 7. Onde e quando oferecer a checagem
 
@@ -344,6 +356,11 @@ servidor (`threshold_m` entre 100 e 10.000; `max_accuracy_m` entre 20 e 2.000;
 `maximum_age_ms` entre 0 e 300.000). Config ausente/inválida equivale a `mode='off'`.
 Não duplicar números em env, Nuxt e componente.
 
+O objeto público chama-se `address_location_divergence`. Ele é independente do boolean
+`address_map_confirmation_enabled` da base, mas `visible` só é válido quando o mapa base está
+ativo; caso contrário o servidor projeta `off`. Isso mantém rollout e rollback separados sem
+deixar “Revisar no mapa” apontar para uma implementação ausente.
+
 `measure` só calcula e emite eventos agregados quando houve gesto opt-in; não mostra alerta.
 Ele não autoriza leitura passiva de GPS.
 
@@ -483,36 +500,26 @@ fluxo de edição já existente, fora da decisão implícita do alerta.
 
 ## 13. Privacidade e segurança
 
-- Geolocation é dado pessoal preciso: explicar finalidade antes do prompt.
-- Não consultar `navigator.permissions` para criar fingerprint ou polling; no máximo usar
-  estado disponível para adaptar instrução depois do gesto.
-- Current fix vive somente na memória do componente e é descartado ao sair/confirmar.
-- Não guardar em localStorage, sessionStorage, cookie, Sentry breadcrumb ou URL.
-- Nenhum endpoint/status de proximidade é oferecido contra salvo reduzido.
-- Nenhum evento/log contém lat/lng, endereço, id, CEP, query, place id ou distância exata.
-- Reverse geocode continua server-side e sujeito a rate limit.
-- Atualizar política de privacidade conforme o WP de mapa antes de `visible`.
-- Revisar browser key, server key, referrers e quotas; nunca colocar server key no cliente.
-- CSRF/auth/IDOR seguem os contratos existentes nos requests de reverse/save que só ocorrem
-  depois de decisão explícita.
-- Threat test: sessão reduzida não consegue transformar ids/pontos forjados num oráculo de
-  existência, proximidade ou coordenada de endereço salvo.
+Aplicam-se os controles gerais do WP base: finalidade antes do prompt, fix apenas em memória,
+nenhuma coordenada/PII em storage, URL, breadcrumb ou evento, reverse server-side e keys no
+boundary correto. Esta extensão acrescenta dois gates:
+
+1. nenhum endpoint/status de proximidade pode existir para salvo reduzido;
+2. threat test deve provar que ids/pontos forjados não viram oráculo de existência,
+   proximidade ou coordenada.
+
+Sem esses dois gates, `measure` e `visible` permanecem `off`, mesmo que o mapa base esteja ativo.
 
 ## 14. Acessibilidade e mobile
 
-1. A ação opt-in tem alvo mínimo 44×44 CSS px e texto, não só ícone.
-2. Pending é anunciado uma vez por `aria-live="polite"`.
-3. Divergência usa `role="status"` ou região nomeada; como nasce de gesto, mover foco para
-   o título pode ser apropriado, desde que testado e não crie trap.
-4. Endereço e localização aparecem como texto; mapa nunca é a única explicação.
-5. As três ações são botões reais com nomes distintos e ordem previsível.
-6. “Entregar neste endereço” permanece primeira ação no DOM; não privilegiar troca por GPS.
-7. Esc/fechar mantém endereço e devolve foco ao acionador.
-8. Modo compare do mapa permite teclado/zoom e oferece decisões equivalentes fora do canvas.
-9. Accuracy não depende de círculo/cor; baixa precisão tem mensagem textual.
-10. Card funciona a 320 CSS px, 200%/400% zoom, landscape e com teclado virtual.
-11. Respeitar `prefers-reduced-motion`; sem shake/bounce de erro.
-12. Testar VoiceOver iOS, TalkBack Android e teclado desktop.
+Aplicam-se tamanho de alvo, teclado, zoom, leitores reais, reduced motion, fallback textual e
+retorno de foco do WP base. Deltas desta extensão:
+
+1. aviso nasce de gesto e usa região nomeada/status sem trap;
+2. as três decisões são botões reais; “Entregar neste endereço” é a primeira no DOM;
+3. accuracy/divergência nunca dependem apenas de círculo, cor ou mapa;
+4. fechar/Esc preserva destino e cotação e devolve foco ao acionador;
+5. 320 CSS px, landscape e teclado virtual não escondem nenhuma das três decisões.
 
 ## 15. Analytics e observabilidade
 

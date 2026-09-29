@@ -1,6 +1,6 @@
 # WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION — confirmação visual do ponto de entrega
 
-> **Status:** READY — autocontido, pronto para execução
+> **Status:** READY — base canônica; divergência endereço × localização é extensão separada
 >
 > **Data da especificação e do benchmark:** 2026-09-28
 >
@@ -13,6 +13,8 @@
 > **Rollout:** protegido por kill switch; sem migração e com fallback para o fluxo atual
 >
 > **Dependências já disponíveis:** Places, reverse geocode, `AddressPicker`, mapa/pin, cálculo canônico de zona
+
+> **Extensão dependente:** `WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE-2026-09-28.md`
 
 ## 1. Resultado esperado
 
@@ -83,6 +85,7 @@ Antes de editar:
 - copiar ilustração, vermelho, iconografia ou identidade visual do iFood;
 - reproduzir testes A/B do iFood sem necessidade local;
 - rastreamento do entregador ou alteração de endereço após o pedido;
+- comparação entre endereço escolhido e localização atual, que pertence ao WP de divergência;
 - resolver neste WP a cascata Google → BrasilAPI → Nominatim do plano de geocoding.
 
 ## 4. Invariantes
@@ -98,7 +101,10 @@ Antes de editar:
 9. Acessibilidade não depende de enxergar nem arrastar o mapa.
 10. Rollback do recurso não muda nem invalida endereços já salvos.
 
-## 5. Auditoria do estado atual (baseline em `origin/main` `2f207410e`)
+## 5. Auditoria do estado atual (revalidada em `origin/main` `e3880d89d`)
+
+O levantamento original nasceu em `2f207410e`; a consolidação R4 revalidou contratos,
+arquivos e lacunas no baseline acima.
 
 | Área | Estado verificado | Consequência para este WP |
 |---|---|---|
@@ -139,9 +145,10 @@ tela antiga vire “verdade atual”.
 - **Média:** fonte oficial recente descreve o comportamento, mas a etapa não foi observada diretamente.
 - **Baixa/inferência:** dedução coerente a partir de sinais atuais; nunca tratada como fato de tela.
 
-Não foi aceita permissão de localização, não foi salvo endereço e nenhum pedido foi criado
-durante a observação. Dados de endereços já presentes na sessão foram deliberadamente
-omitidos deste documento.
+Nesta sub-sessão dedicada ao endereço não foi aceita permissão de localização, não foi salvo
+endereço e nenhum pedido foi criado. Uma sessão posterior do benchmark concluiu pedido e
+pós-entrega; isso está registrado no relatório canônico e não muda a evidência específica do
+mapa. Dados de endereços já presentes foram deliberadamente omitidos.
 
 ### 6.2 Evidências
 
@@ -221,7 +228,7 @@ componentes ou microcopy integral. A Nelson usa seus tokens, seu tom e sua hiera
 | Número | Depois do ponto; já vem preenchido quando disponível | Foco guiado já faz isso | Preservar; se vazio, focar número após mapa. |
 | Complemento/referência | Campos separados | Complemento + `delivery_instructions` | Não criar `reference`; renomear/apresentar o campo canônico como “Referência e instruções”. |
 | Favorito | Casa/Trabalho antes de salvar | Etiqueta depois de salvar/pedido | **Não copiar.** Manter etiqueta pós-salvamento conforme spec canônica. |
-| GPS × salvo | iFood declara comparar e pedir revisão | Sem leitura passiva no checkout | Não acessar GPS passivamente; futuro só com opt-in claro. |
+| GPS × salvo | iFood declara comparar e pedir revisão | Sem leitura passiva no checkout | Tratar somente no WP de divergência, com opt-in; não duplicar mecanismo aqui. |
 | Fora da área | Região filtra oferta; detalhes da tela não verificados | Core verifica cedo e oferece retirada | Manter solução local, que já é mais explícita e recuperável. |
 | Voltar | Busca ↔ mapa ↔ detalhes preservam contexto | Sheet fecha; fluxo não tem mapa intermediário | Implementar back determinístico sem zerar rascunho. |
 | Falha Maps | Alternativa manual recomendada oficialmente | Busca/manual e fallback já existem | Nunca bloquear; cair no formulário atual com explicação acionável. |
@@ -316,7 +323,11 @@ Regras:
 - fechar sheet cancela/ignora resultado tardio e remove listeners;
 - nenhum estado de erro elimina query, rascunho, carrinho ou opção de retirada.
 
-## 10. Precisão e divergência
+## 10. Precisão do ponto durante a confirmação
+
+Esta seção cobre apenas a consistência entre o ponto proposto dentro do fluxo GPS/mapa e o
+texto devolvido pelo reverse geocode. Comparar um endereço já escolhido com a localização
+atual é decisão distinta e pertence exclusivamente ao WP de divergência.
 
 `GeolocationCoordinates.accuracy` é sinal de incerteza; não é garantia de que a porta
 correta foi encontrada. Usar faixas configuradas numa função pura, não números espalhados:
@@ -374,7 +385,7 @@ Manter request e response atuais:
 
 ```http
 POST /api/v1/geocode/reverse/
-{"lat": -23.31, "lng": -51.16}
+{"lat": <finite-latitude>, "lng": <finite-longitude>}
 ```
 
 O endpoint continua sendo enriquecedor textual. No cliente, criar função pura equivalente a:
@@ -745,6 +756,11 @@ Rodar também o gate Omotenashi aplicável e os testes focados de API/serviço a
 Adicionar boolean runtime `address_map_confirmation_enabled` ao `public_config`, derivado de uma
 configuração canônica do servidor. Default `false` em ausência. Não usar query param secreto,
 localStorage ou flag duplicada no Nuxt.
+
+Essa flag governa somente a confirmação visual do ponto. A extensão de divergência usa o objeto
+`address_location_divergence` definido em seu próprio WP. `visible` nessa extensão exige esta
+flag ativa porque a ação “Revisar no mapa” reutiliza o componente canônico; `off` aqui força a
+extensão a `off`. Não fundir os dois rollouts nem criar terceiro sinal no cliente.
 
 Com flag off:
 

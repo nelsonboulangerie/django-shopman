@@ -1,6 +1,6 @@
 # WP — benchmark iFood single-tenant para planejamento do Storefront
 
-> **Status:** BENCHMARK DOCUMENTADO — planejamento e implementação ainda não iniciados
+> **Status:** BENCHMARK CONSOLIDADO — evidência até pós-entrega; implementação não autorizada
 >
 > **Data de corte:** 2026-09-28
 >
@@ -11,7 +11,7 @@
 >
 > **Escopo desta entrega:** pesquisa, síntese, limitações e prompt de planejamento
 >
-> **Fora desta entrega:** prioridade, roadmap, código, teste de produto, PR e deploy
+> **Fora desta entrega:** prioridade de produto, roadmap, código, teste de produto e deploy
 
 ## 1. Objetivo
 
@@ -55,10 +55,14 @@ O relatório canônico cobre:
 - Sessão inicialmente deslogada, depois autenticada pelo próprio usuário.
 - Endereço autorizado usado apenas para contextualizar cobertura e checkout.
 - Loja Rap1000 Kibixinha aberta com ajuda do usuário quando a busca interna falhou.
-- Jornada levada até o CTA `Fazer pedido`, sem acioná-lo.
-- Meios de pagamento explorados sem salvar cartão/benefício e sem dados reais.
-- Valores sintéticos inválidos usados somente para observar validação; nada submetido.
-- Nenhuma compra, QR Code, cobrança, autorização, captura ou mensagem criada.
+- Primeira rodada levada até o CTA `Fazer pedido`, sem acioná-lo; uma rodada posterior,
+  conduzida pelo usuário, concluiu um pedido Pix e permitiu observar tracking e entrega.
+- Meios de pagamento explorados sem salvar cartão/benefício e sem registrar dado financeiro
+  real neste documento.
+- Valores sintéticos inválidos foram usados somente para observar validação; não foram
+  submetidos. O pedido posterior usou os dados do próprio usuário, todos omitidos daqui.
+- O relatório registra somente estados e transições; QR, código Pix, identificador do pedido,
+  endereço, sessão e dados pessoais não foram versionados.
 
 ### 3.2 Pesquisa complementar
 
@@ -68,9 +72,9 @@ essa qualificação explícita.
 
 ### 3.3 Auditoria Shopman
 
-Leitura estática de rotas, componentes, contratos, projeções, testes e PRs. A auditoria-base
-foi feita sobre `origin/main` em `7cc56f77d`; a síntese documental foi criada a partir de
-`origin/main` em `664a57b93`, que já inclui o merge do PR #1215 de performance do Storefront.
+Leitura estática de rotas, componentes, contratos, projeções e testes. A auditoria original
+foi feita em `7cc56f77d` e sintetizada em `664a57b93`; contratos e referências foram
+revalidados em `origin/main` `e3880d89d` na consolidação R4.
 
 ### 3.4 Taxonomia
 
@@ -110,7 +114,12 @@ foi feita sobre `origin/main` em `7cc56f77d`; a síntese documental foi criada a
 
 ### Pagamentos
 
-- Pix só criaria cobrança depois do CTA final, que não foi acionado.
+- Na primeira rodada, Pix só criaria cobrança depois do CTA final, ainda não acionado.
+- Na rodada posterior, o pedido Pix foi criado. Copiar o código pareceu adiantar a interface
+  antes da confirmação financeira; isso é observação de UI a validar tecnicamente, não
+  afirmação sobre o estado interno do iFood.
+- O handoff móvel de pagamento exibiu “conexão não é privada”, risco concreto de confiança e
+  continuidade; host, parâmetros e qualquer identificador foram omitidos.
 - Widget externo ofereceu Crédito, Débito, Vale-refeição e Vale-alimentação.
 - VR listou Ticket, VR Refeição, Alelo Refeição e Pluxee Refeição/Sodexo.
 - Crédito/Débito/VR/VA reutilizaram formulário com cartão, apelido e CPF/CNPJ.
@@ -131,13 +140,17 @@ foi feita sobre `origin/main` em `7cc56f77d`; a síntese documental foi criada a
 - Entrega: R$ 14,00.
 - Desconto: -R$ 6,75.
 - Total: R$ 41,99.
-- Pix restaurado; `Fazer pedido` não clicado.
+- Esse foi o estado final da primeira rodada. Na rodada posterior, o pedido foi enviado,
+  acompanhado até a entrega e observado novamente após refresh, sem registrar identificador,
+  código de pagamento ou endereço.
 
 ## 5. Limitações
 
-1. O app nativo do iFood não foi navegado nesta pesquisa.
+1. A observação foi majoritariamente no Web desktop. O celular participou do handoff de
+   pagamento, mas o app nativo não foi auditado de ponta a ponta.
 2. Conta, região, horário e experimentos podem alterar a UI.
-3. Pós-pedido não foi observado com uma compra real.
+3. Houve uma única observação transacional de pós-pedido; ela não mede prevalência nem
+   explica a arquitetura interna.
 4. Nenhum cartão válido foi cadastrado; não há conclusão sobre autorização, 3DS,
    parcelamento, recusa ou recuperação depois da submissão.
 5. Não houve medição confiável de Core Web Vitals do iFood.
@@ -191,9 +204,9 @@ Itens dessa lista podem terminar como “não fazer”. Este WP não os ranqueia
 ## 9. Entradas obrigatórias da futura sessão de planejamento
 
 1. Este WP e o relatório canônico.
-2. O WP de mapa:
-   `docs/plans/WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md`, branch
-   `codex/wp-checkout-map-confirmation-20260928`, commit `34f962ae5`.
+2. O WP base de confirmação visual e sua extensão de divergência:
+   `docs/plans/WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md` e
+   `docs/plans/WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE-2026-09-28.md`.
 3. `origin/main` atualizado e estado dos PRs/worktrees ativos.
 4. Contratos atuais de carrinho, checkout, endereço, pagamento e tracking.
 5. Dados disponíveis de RUM, funil, busca, suporte e operação.
@@ -222,9 +235,9 @@ Planeje a evolução end-to-end do Shopman Storefront a partir de:
 
 1. docs/reports/IFOOD-SINGLE-TENANT-END-TO-END-BENCHMARK-2026-09-28.md
 2. docs/plans/WP-IFOOD-SINGLE-TENANT-BENCHMARK-2026-09-28.md
-3. docs/plans/WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md na branch
-   codex/wp-checkout-map-confirmation-20260928, commit 34f962ae5
-4. origin/main atualizado, contratos e trabalho em voo
+3. docs/plans/WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md
+4. docs/plans/WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE-2026-09-28.md
+5. origin/main atualizado, contratos e trabalho em voo
 
 Antes de propor qualquer mudança, valide no código e no Live o estado atual, leia os
 contratos canônicos de carrinho, endereço, checkout, pagamento e tracking e levante os dados
@@ -248,9 +261,11 @@ owners, proponha uma sequência. Registre decisões pendentes em vez de inventá
 
 ## 12. Critérios de conclusão deste WP documental
 
-- [x] Jornada login → revisão final documentada.
-- [x] Pagamentos online e na entrega observados sem dados reais.
-- [x] Rap1000/Kibixinha e custos finais registrados sem compra.
+- [x] Jornada login → pedido → tracking → pós-entrega documentada.
+- [x] Métodos online/na entrega explorados com valores sintéticos; pedido real posterior
+  sanitizado antes do registro.
+- [x] Rap1000/Kibixinha e custos da primeira rodada registrados; pedido posterior descrito
+  sem dados pessoais, financeiros ou identificadores.
 - [x] Fontes e inferências separadas.
 - [x] Multitenância filtrada.
 - [x] Shopman comparado com soluções maduras preservadas.

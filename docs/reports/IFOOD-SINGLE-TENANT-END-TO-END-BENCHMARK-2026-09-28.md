@@ -6,8 +6,10 @@
 
 **Caso real observado:** Rap1000 Kibixinha, Londrina-PR
 
-**Resultado:** benchmark documental; nenhuma mudança de produto, pedido, pagamento, PR ou deploy
-**Base desta síntese:** `origin/main` em `664a57b93`, já contendo o merge do PR #1215
+**Resultado:** benchmark documental consolidado; esta mudança não altera produto nem inicia
+pagamento/deploy, mas incorpora uma observação posterior de pedido real conduzido pelo usuário
+
+**Base revalidada:** `origin/main` em `e3880d89d`; observações anteriores preservam sua data
 
 ## 1. Objetivo e conclusão
 
@@ -52,14 +54,13 @@ O benchmark comprova, entre outros pontos:
 
 ### 2.2 Artefatos incorporados
 
-1. `/private/tmp/ifood-full-journey-observation-20260928.md`, incluindo a exploração
-   autenticada de endereço, Rap1000/Kibixinha, carrinho, cupons, checkout e meios de
-   pagamento.
-2. `/private/tmp/ifood-benchmark-research-20260928.md`, com fontes primárias, secundárias,
-   normativas e inferências single-tenant.
-3. `/private/tmp/shopman-full-journey-audit-20260928.md`, auditoria estática do Storefront.
-4. `WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md`, branch
-   `codex/wp-checkout-map-confirmation-20260928`, commit `34f962ae5`.
+1. Notas efêmeras da exploração autenticada de endereço, Rap1000/Kibixinha, carrinho,
+   cupons, checkout, pagamento e pós-entrega. Elas não são dependência do repositório; apenas
+   a síntese sanitizada abaixo é canônica.
+2. Pesquisa com fontes primárias, normativas e inferências single-tenant.
+3. Auditoria estática do Storefront, revalidada no baseline informado no cabeçalho.
+4. `WP-CHECKOUT-ADDRESS-MAP-CONFIRMATION-2026-09-28.md` e sua extensão dependente
+   `WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE-2026-09-28.md`.
 
 ### 2.3 Procedimento observado
 
@@ -67,23 +68,26 @@ O benchmark comprova, entre outros pontos:
 - Um endereço autorizado pelo usuário em Londrina foi usado para contextualizar o catálogo.
 - CAPTCHAs foram resolvidos somente pelo usuário; a observação não os contornou.
 - O usuário realizou o login e abriu a loja correta quando a descoberta interna falhou.
-- A jornada chegou ao CTA `Fazer pedido`, mas ele nunca foi acionado.
-- O widget de cartão foi explorado apenas com valores sintéticos obviamente inválidos; nenhum
-  dado financeiro real foi digitado ou salvo.
-- Não houve QR Code Pix, autorização, captura, cobrança, mensagem ou criação de pedido.
-- Dados de outros endereços, conta, sessão antifraude e identificadores foram omitidos.
+- A primeira rodada chegou ao CTA `Fazer pedido` sem acioná-lo. Em rodada posterior, o usuário
+  concluiu um pedido Pix e acompanhou a entrega.
+- O widget de cartão foi explorado apenas com valores sintéticos obviamente inválidos;
+  nenhum desses valores foi submetido ou salvo.
+- A rodada posterior produziu código Pix, pedido, mensagens e tracking reais, mas código,
+  identificadores, endereço, conta e sessão foram deliberadamente omitidos.
+- A observação posterior foi feita no Web, com handoff móvel pontual; não equivale a auditoria
+  completa do app nativo.
 
 ### 2.4 Limitações
 
-- A observação foi Web desktop; o app nativo pode divergir.
+- A observação foi majoritariamente Web desktop; o app nativo pode divergir. O celular só foi
+  observado no handoff de pagamento, sem cobertura sistemática da jornada móvel.
 - Conteúdo e regras do iFood variam por conta, região, horário e experimento.
 - Busca/listagem falharam regionalmente durante a sessão; o usuário abriu a loja correta.
-- Pós-pedido do iFood não foi observado transacionalmente. Nessa fase, o relatório usa apenas
-  fontes oficiais e separa inferências.
+- Houve uma única observação transacional de pós-pedido. Fontes oficiais continuam sendo a
+  base para capacidades não vistas; um caso não prova frequência nem mecanismo interno.
 - Não foram coletados LCP, INP, CLS, waterfall ou RUM do iFood.
-- A auditoria do Shopman foi estática e não executou uma compra real. Ela leu
-  `origin/main` em `7cc56f77d`; esta síntese parte de `664a57b93`, onde o PR #1215 já está
-  mesclado.
+- A auditoria Shopman foi estática e não executou compra local. O levantamento nasceu em
+  `7cc56f77d`, foi sintetizado em `664a57b93` e revalidado em `e3880d89d`.
 - Avaliação, conversão, preferência e impacto financeiro exigem teste local; aparência não é
   evidência de resultado.
 
@@ -129,9 +133,18 @@ vermelho, mascote, composição, ícones, nomes de componentes ou microcopy do i
 9. **[OD] Carrinho/checkout.** Itens, taxas, entrega, cupom, pagamento e total ficaram
    editáveis até o último CTA.
 10. **[OD] Exploração financeira segura.** Pix, dinheiro/troco, maquininha na entrega e o
-    widget de Crédito/Débito/VR/VA foram explorados sem dado real e sem submissão.
-11. **[OD] Parada.** Pix foi restaurado e `Fazer pedido` permaneceu habilitado, mas não foi
-    acionado.
+    widget de Crédito/Débito/VR/VA foram explorados sem submeter os valores sintéticos.
+11. **[OD] Parada da primeira rodada.** Pix foi restaurado e `Fazer pedido` permaneceu
+    habilitado, mas não foi acionado nessa rodada.
+12. **[OD] Retomada posterior.** O usuário refez o trecho final e submeteu um pedido Pix.
+13. **[OD] Handoff móvel degradado.** A transição de pagamento no celular mostrou o erro
+    “conexão não é privada”, sem continuidade confiável nessa superfície.
+14. **[OD] Pix copiado.** Após copiar o código, a interface avançou otimisticamente. A
+    observação não prova confirmação financeira nem revela o gatilho interno.
+15. **[OD] Tracking.** A página acompanhou as etapas, mas ficou atrasada em relação à entrega
+    física; a mudança apareceu somente após refresh manual.
+16. **[OD] Pós-entrega.** O fluxo chegou ao estado entregue sem que endereço, código Pix,
+    identificador do pedido ou mensagens fossem transcritos para este relatório.
 
 ### 4.2 Estado financeiro final observado
 
@@ -145,14 +158,42 @@ vermelho, mascote, composição, ícones, nomes de componentes ou microcopy do i
 | Desconto aplicado | -R$ 6,75 |
 | **Total final** | **R$ 41,99** |
 
-**[OD]** A promessa era entrega no mesmo dia em 60–70 minutos. O endereço completo não é
-repetido aqui; foi autorizado para a sessão e está no artefato de observação. Nenhum pedido
-foi criado.
+**[OD]** A promessa era entrega no mesmo dia em 60–70 minutos. O endereço completo foi usado
+sob autorização na sessão, mas não foi preservado em artefato versionado. A tabela retrata a
+primeira rodada; a submissão ocorreu apenas na rodada posterior.
 
 **[OD/INF]** O desconto permaneceu R$ 6,75 quando o subtotal passou de R$ 27 para R$ 36,
 embora a regra exibida fosse 25% até R$ 10. Isso pode ser elegibilidade parcial, cache ou
 regra não exposta. Não é possível concluir bug sem remover/reaplicar o benefício em teste
 controlado.
+
+### 4.3 Transições e URLs sanitizadas
+
+| Transição | Evidência | Registro seguro |
+|---|---|---|
+| Loja → produto → carrinho | [OD] Web desktop | Somente tipo de rota; nenhum parâmetro de sessão |
+| Carrinho → `/pedido/finalizar` | [OD] Web desktop | Rota estável observada |
+| Checkout → widget de pagamento | [OD] Web + handoff móvel | Domínio do widget e origem funcional; query, token e ids omitidos |
+| Confirmação → tracking | [OD] rodada posterior | `/pedido/{id}` como padrão redigido; id real omitido |
+| Tracking → estado entregue | [OD] rodada posterior | Estado textual; sem mensagem, endereço ou identificador |
+
+### 4.4 Matriz de decisão por etapa
+
+| Etapa | Padrão iFood observado | Estado Shopman auditado | Oportunidade | Risco | Prioridade documental |
+|---|---|---|---|---|---|
+| Identidade | Login tardio preserva intenção | WhatsApp-first, `next` seguro e dispositivo confiável | Medir melhor momento do login | Copiar atraso e aumentar surpresa | Medir, não implementar |
+| Endereço | Busca → ponto → detalhes; divergência é princípio oficial | Endereço estruturado e zona/taxa no Core | Executar WPs base/extensão após aprovação | GPS passivo, PII, falso positivo | P1 planejado |
+| Descoberta | Contexto rico, mas busca falhou sem recuperação | Shell leve, catálogo vivo, busca acessível | Medir zero-result e oferecer saída útil | Importar excesso de marketplace | P2 de evidência |
+| Produto | Quantidade e comentário simples | Conteúdo mais rico; sem variantes selecionáveis | Levantar demanda real por modificadores | Criar domínio sem operação | Hipótese |
+| Carrinho | Mínimo e revisão editável | Fila otimista e reconciliação canônica | Explicar mínimo e preservar reversibilidade | Valor transitório/stale | Preservar/P2 |
+| Benefício | Regra visível; desconto possivelmente stale | Elegibilidade server-side | Tornar motivo verificável | Prometer desconto incorreto | P1 de confiança |
+| Pagamento | Métodos amplos, widget e Pix; handoff móvel falhou | Métodos server-driven e resultado ambíguo seguro | Validar continuidade entre superfícies | Duplicar cobrança ou perder confiança | P1 de confiabilidade |
+| Confirmação | Avanço otimista após copiar Pix [OD] | Recibo e estado autoritativo | Medir diferença entre cópia e confirmação | Tratar UI como verdade financeira | P0 de invariante |
+| Tracking | Estado ficou stale até refresh [OD] | SSE + polling canônico | Testar atualização real e recuperação | Progresso decorativo/atrasado | P1 de observabilidade |
+| Pós-entrega | Estado entregue observado uma vez | Suporte, avaliação e reorder já existem | Preservar continuidade e ação contextual | Inferir satisfação/prevalência | Preservar |
+
+“Prioridade documental” orienta investigação e proteção de invariantes; não autoriza backlog
+nem implementação.
 
 ## 5. Comparação end-to-end
 
@@ -330,7 +371,7 @@ controlado.
 
 - **[OD]** A loja oferecia só entrega padrão, hoje, 60–70 min, R$ 14. Retirada aparecia,
   abria “Retirada indisponível” e terminava em `Ok, entendi`.
-- **[OD]** Não houve agendamento neste pedido.
+- **[OD]** Não houve agendamento na jornada observada.
 - **[FI]** Fontes oficiais documentam preparo, saída, mapa quando a logística permite,
   atraso/cancelamento e janela para recebimento.
 
@@ -378,8 +419,13 @@ controlado.
 
 **iFood observado**
 
-- **[OD] Pix:** selecionado em um clique; QR/cobrança só surgiriam depois de `Fazer pedido`,
-  que não foi acionado.
+- **[OD] Pix, primeira rodada:** selecionado em um clique; QR/cobrança só surgiriam depois de
+  `Fazer pedido`, que não foi acionado nessa rodada.
+- **[OD] Pix, rodada posterior:** o pedido foi criado e o código foi copiado. A tela pareceu
+  avançar imediatamente após a cópia; sem instrumentação interna, não se sabe se foi estado
+  otimista, polling, evento ou coincidência temporal.
+- **[OD] Mobile:** o handoff exibiu “conexão não é privada”. Host, query e certificado não
+  foram registrados; causa e abrangência continuam desconhecidas.
 - **[OD] Widget externo:** `paymentwidget.ifood.com.br` abriu na mesma aba com
   `origin=/pedido/finalizar`, skeleton e quatro opções: Crédito, Débito, Vale-refeição e
   Vale-alimentação.
@@ -467,7 +513,15 @@ controlado.
 
 **iFood observado/fontes**
 
-- **[OD]** O pedido não foi enviado; não há observação direta da confirmação.
+- **[OD]** Uma rodada posterior enviou o pedido e chegou ao tracking; código Pix,
+  identificador, endereço e mensagens foram omitidos.
+- **[OD]** Copiar o Pix foi seguido por avanço otimista da UI. Isso não é prova de pagamento
+  confirmado nem especificação a copiar.
+- **[OD]** O tracking ficou atrasado em relação à entrega física e só exibiu a mudança depois
+  de refresh manual.
+- **[HIP]** Chamada antecipada de entregador é uma explicação possível para sinais percebidos
+  na jornada, mas não houve observação de dispatch, logs, rede interna ou operação que a
+  confirme. Não tratar como comportamento do iFood.
 - **[FI]** Publicações do iFood descrevem aceite do restaurante, cancelamento quando não há
   resposta, push de preparo, acompanhamento de etapas, mapa quando aplicável, código de
   entrega e Live Activities no iOS.
@@ -485,6 +539,8 @@ controlado.
 
 - **Shopman maduro:** pagamento e tracking numa linha do tempo, degradação SSE→polling,
   cancelamento conforme ação válida e reorder com conflito explícito.
+- A interface não deve avançar para “pago” por gesto de cópia; confirmação vem do provedor e
+  da projeção canônica. Tracking stale precisa de detecção/recuperação, não animação inventada.
 - Live Activity ou equivalente PWA é hipótese de canal, não requisito derivado da observação.
 - Não criar ETA, mapa ou progresso decorativo.
 
@@ -533,7 +589,9 @@ controlado.
 - retirada com falso affordance;
 - mapa sem tiles e sem fallback;
 - perda silenciosa da seleção de pagamento;
-- modal de troco sem saída clara.
+- modal de troco sem saída clara;
+- handoff móvel de pagamento com “conexão não é privada”;
+- tracking atrasado até refresh manual.
 
 **Leitura single-tenant [INF]**
 
@@ -567,6 +625,7 @@ Comportamentos transferíveis:
 - antecipar troco, indisponibilidade e condição de cupom;
 - preservar carrinho e rascunho em login/widget;
 - avisar mudança material sem exigir refresh;
+- não confundir gesto local, como copiar Pix, com confirmação financeira;
 - abrir ajuda no contexto do pedido.
 
 O omotenashi superior ao benchmark está nas falhas: oferecer retry/fallback no mapa, busca e
@@ -618,6 +677,8 @@ testes reais com teclado, VoiceOver e TalkBack.
   opt-out; não copiar sem revisão LGPD.
 - **[OD]** Widget de pagamento separa domínio e apresenta links legais, mas a tela não explicou
   tokenização/PCI nem os detalhes da pré-autorização.
+- **[OD]** O handoff móvel mostrou erro de confiança TLS. Como host, parâmetros e certificado
+  não foram coletados, causa e abrangência continuam desconhecidas.
 - **[OD]** Um iframe antifraude expôs identificador derivado da sessão na URL da árvore; o
   valor foi omitido.
 - **[AS]** Shopman já remove capacidades sensíveis da URL, faz step-up em direitos de conta e
@@ -638,7 +699,9 @@ padrão e não usar benchmark como justificativa para ampliar dados.
 | Mínimo | Bloqueio e regra exata [OD] | Bloqueio cedo, saída para adicionar ou retirar |
 | Cupom | Condição visível; desconto possivelmente stale [OD/INF] | Elegibilidade e total server-side, motivo específico |
 | Widget | Carrinho/cupom preservados; pagamento perdido [OD] | Preservar tudo e anunciar reconfirmação necessária |
+| Handoff móvel | “Conexão não é privada” [OD] | Falhar fechado, explicar retorno seguro e nunca pedir credencial em origem não confiável |
 | Pagamento ambíguo | Não observado | Idempotência, recibo e “não pague novamente” |
+| Tracking stale | Entrega só apareceu após refresh [OD] | SSE + polling + refresh recuperável, com relógio/estado do servidor |
 | Atraso | Ações oficiais por estado [FI] | Promise/deadline, suporte/cancelamento server-driven |
 | Reembolso | Status, meio e prazo [FI] | Timeline e protocolo no pedido |
 
