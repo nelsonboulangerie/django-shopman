@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from unittest import mock
@@ -16,6 +17,27 @@ _CFG = {
     "code_message": "",
     "timeout": 5,
 }
+
+
+@contextlib.contextmanager
+def _capture_operational(caplog):
+    """Captura ``shopman.operational`` sem depender da propagação ambiente.
+
+    O settings põe ``propagate=False`` no logger ``shopman``; o handler do
+    ``caplog`` mora na raiz, então só capturava quando outro teste tinha virado a
+    propagação antes. Anexar direto no logger e desligar a propagação aqui dá
+    captura única em qualquer ordem e em qualquer worker do ``-n auto``.
+    """
+    operational_logger = logging.getLogger("shopman.operational")
+    with caplog.at_level(logging.INFO, logger="shopman.operational"):
+        operational_logger.addHandler(caplog.handler)
+        prev_propagate = operational_logger.propagate
+        operational_logger.propagate = False
+        try:
+            yield
+        finally:
+            operational_logger.propagate = prev_propagate
+            operational_logger.removeHandler(caplog.handler)
 
 
 class _Resp:
@@ -164,7 +186,7 @@ def test_accept_emits_latency_event(caplog):
     def fake_urlopen(request, timeout=None):
         return _Resp({"hasError": False})
 
-    with caplog.at_level(logging.INFO, logger="shopman.operational"):
+    with _capture_operational(caplog):
         with mock.patch.object(comtele, "urlopen", fake_urlopen):
             assert comtele.ComteleSMSSender().send_code("+5543999990000", "482913", "sms") is True
 
@@ -183,7 +205,7 @@ def test_slow_accept_is_a_warning(caplog):
         return _Resp({"hasError": False})
 
     ticks = iter([100.0, 100.0 + comtele.SLOW_ACCEPT_MS / 1000 + 1])
-    with caplog.at_level(logging.INFO, logger="shopman.operational"):
+    with _capture_operational(caplog):
         with mock.patch.object(comtele, "urlopen", fake_urlopen), \
                 mock.patch.object(comtele.time, "monotonic", lambda: next(ticks)):
             assert comtele.ComteleSMSSender().send_code("+5543999990000", "482913", "sms") is True

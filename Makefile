@@ -190,11 +190,11 @@ test-framework: test-shop test-storefront test-backstage ## Testes do framework 
 # do zero é literalmente o que eles provam.
 test-shop: ## Orquestrador
 	@echo "── Shop ──"
-	$(PYTHON) -m pytest shopman/shop/tests -q
+	$(PYTHON) -m pytest shopman/shop/tests -q -n auto
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
-	$(PYTHON) -m pytest shopman/storefront/tests -q
+	$(PYTHON) -m pytest shopman/storefront/tests -q -n auto
 
 test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 	@echo "── Backstage ──"
