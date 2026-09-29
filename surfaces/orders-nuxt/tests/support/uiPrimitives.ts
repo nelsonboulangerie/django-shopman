@@ -6,8 +6,13 @@ import { config } from "@vue/test-utils";
 // nesta mesma tela que motivou a promoção. Mesmo arranjo do Marketing
 // (`marketing-nuxt/tests/support/uiPrimitives.ts`).
 import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
+// O detalhe do pedido também entra de verdade: é o kit que desenha as seções do
+// `pages/[ref].vue` (a mesma tela do detalhe da encomenda no PDV), e stubá-lo
+// apagaria justamente o que os testes da página cobram.
+import OperatorOrderDetail from "../../../operator-kit/app/components/OperatorOrderDetail.vue";
 
 config.global.components = {
   ...config.global.components,
   UiSwitch,
+  OperatorOrderDetail,
 };

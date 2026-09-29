@@ -10,42 +10,13 @@ import type {
   TwoZoneQueueProjection,
 } from "~/types/orders";
 
-// ── Status tone (functional color; chrome stays neutral) ───────────────────
+// ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
+// Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
+// do pedido é o mesmo no Gestor e no PDV; o board lê as mesmas peças.
+import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 
-export type Tone = "info" | "warning" | "success" | "danger" | "neutral";
-
-const STATUS_TONE: Record<string, Tone> = {
-  new: "info",
-  accepted: "info",
-  preparing: "warning",
-  ready: "success",
-  dispatched: "info",
-  delivered: "success",
-  completed: "success",
-  cancelled: "danger",
-  returned: "neutral",
-};
-
-export function statusTone(status: string): Tone {
-  return STATUS_TONE[status] ?? "neutral";
-}
-
-/** Badge classes (border+tint+text) for a status tone. Calm by default; only
- *  danger/warning/success carry saturated meaning. */
-export function toneBadge(tone: Tone): string {
-  switch (tone) {
-    case "danger":
-      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
-    case "warning":
-      return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
-    case "success":
-      return "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-300";
-    case "info":
-      return "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300";
-    default:
-      return "border-border bg-muted text-muted-foreground";
-  }
-}
+export { joinFacts, lucideIcon, statusTone, toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
+export type { Tone } from "../../../operator-kit/app/presentation/orderDetail";
 
 // ── Timer tone (urgency of the elapsed clock) ──────────────────────────────
 
@@ -70,29 +41,6 @@ export function timerChip(tone: TimerTone): string {
     default:
       return "border-border bg-muted text-muted-foreground";
   }
-}
-
-// ── Icon vocabulary ────────────────────────────────────────────────────────
-
-/** Map the projection's Material-Symbol ligatures (channel + fulfillment) onto
- *  this surface's lucide vocabulary. The backend projection is surface-agnostic
- *  (it also feeds the Admin queue); owning the translation here keeps it that way. */
-const MATERIAL_TO_LUCIDE: Record<string, string> = {
-  language: "globe",
-  chat: "message-circle",
-  fastfood: "utensils-crossed",
-  storefront: "store",
-  shopping_bag: "shopping-bag",
-  local_shipping: "bike",
-  store: "store",
-  restaurant: "utensils",
-  takeout_dining: "shopping-bag",
-  pedal_bike: "bike",
-  two_wheeler: "bike",
-};
-
-export function lucideIcon(name: string): string {
-  return MATERIAL_TO_LUCIDE[name] || name || "circle";
 }
 
 /** Split an order ref into the repetitive {channel-date-} prefix and the short
@@ -677,19 +625,4 @@ export function appendTag(current: string, tag: string): string {
   if (!base) return t;
   if (base.toLowerCase().includes(t.toLowerCase())) return base;
   return `${base}, ${t}`;
-}
-
-// ── Customer profile (quem é este cliente) ──────────────────────────────────
-
-/** Junta fatos opcionais numa linha só, com " · " entre os que existem.
- *
- *  O bloco do cliente é feito de dados que faltam com frequência: cliente sem
- *  insight não tem ticket médio nem favorito, e cliente novo não tem recência.
- *  Interpolar direto no template produziria " · " solto ou uma linha vazia com
- *  separador — o vazio precisa DESAPARECER, não virar pontuação. */
-export function joinFacts(...parts: (string | null | undefined)[]): string {
-  return parts
-    .map((part) => (part ?? "").trim())
-    .filter(Boolean)
-    .join(" · ");
 }

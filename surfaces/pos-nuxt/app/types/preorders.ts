@@ -1,7 +1,10 @@
 // Contrato da seção Encomendas — espelho de `shopman/backstage/projections/preorders.py`.
-// `GET /api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` e
+// `GET /api/v1/backstage/pos/preorders/?week=2026-W40` (ou `?date_from=&date_to=`),
+// `GET /api/v1/backstage/pos/preorders/search/?q=&include_completed=1`,
 // `GET /api/v1/backstage/pos/preorders/<ref>/` e
 // `POST /api/v1/backstage/pos/preorders/<ref>/hand-over/`.
+
+import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -46,6 +49,8 @@ export interface PreorderCard {
   balance_display: string;
   items_summary: string;
   items_count: number;
+  /** A Via Pedido já saiu (o carimbo `ticket_printed_at`). */
+  ticket_printed: boolean;
 }
 
 export interface PreorderDay {
@@ -68,33 +73,40 @@ export interface PreorderListResponse {
   date_from: string;
   date_to: string;
   today: string;
-  query: string;
   count: number;
   total_q: number;
   total_display: string;
   to_receive_q: number;
   to_receive_display: string;
   days: PreorderDay[];
+  /** O teto do lote da Via Pedido (servidor). */
+  max_batch: number;
 }
 
-export interface PreorderItem {
-  name: string;
-  qty_display: string;
-  line_total_display: string;
-}
-
-export interface PreorderDetailResponse {
+/**
+ * "Cliente veio buscar" — sem período. `open`: em aberto, de qualquer data;
+ * `completed`: só com `include_completed`, as dos últimos `completed_days` dias.
+ * `*_count` é o total achado; as listas param no teto do servidor.
+ */
+export interface PreorderSearchResponse {
   ok: boolean;
+  query: string;
+  today: string;
+  include_completed: boolean;
+  completed_days: number;
+  open_count: number;
+  open: PreorderCard[];
+  completed_count: number;
+  completed: PreorderCard[];
+}
+
+/**
+ * O que só o balcão lê no detalhe (`order.counter`, contexto "pos"): a encomenda
+ * como a lista a mostra (situação e saldo) e os gestos, cada um com a régua do
+ * orquestrador. Espelho de `preorders.CounterOrderProjection`.
+ */
+export interface PreorderCounter {
   card: PreorderCard;
-  items: PreorderItem[];
-  payment_method_label: string;
-  delivery_address: string;
-  delivery_instructions: string;
-  customer_note: string;
-  customer_phone: string;
-  customer_phone_uri: string;
-  customer_relay_phone: string;
-  customer_relay_code: string;
   ticket_printed: boolean;
   /** Base das mutações: a revisão operacional do pedido e quem está identificado. */
   revision: string;
@@ -103,8 +115,24 @@ export interface PreorderDetailResponse {
   cancel: PreorderCancel;
   reschedule: PreorderReschedule;
   edit: PreorderEdit;
+}
+
+/**
+ * O detalhe da encomenda — o MESMO detalhe do pedido do Gestor
+ * (`order_queue.build_operator_order`, contexto "pos"): as seções comuns vêm do
+ * contrato do kit (`OperatorOrderDetail`), e o que é do balcão, de `counter`.
+ */
+export interface PreorderDetail extends OperatorOrderDetail {
+  counter: PreorderCounter;
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
+}
+
+/** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */
+export interface PreorderDetailResponse {
+  order: PreorderDetail;
+  generated_at: string;
+  contract_version: number;
 }
 
 /** Entregar no balcão — a régua é do servidor (`counter_hand_over_block`). */

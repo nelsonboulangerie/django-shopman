@@ -1,21 +1,28 @@
 <script setup lang="ts">
-// ENCOMENDAS · DETALHE — uma encomenda, com o que o balcão precisa para entregar:
-// quem, como recebe, quando, o que leva, quanto é e quanto falta.
+// ENCOMENDAS · DETALHE — o MESMO detalhe do pedido do Gestor, no balcão.
 //
-// Os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4/E6): **Receber e entregar** (ou só
-// **Entregar**, quando já está paga), **Editar**, **Reagendar** e **Cancelar**,
-// cada um só quando o servidor diz que pode (`hand_over`, `edit`, `reschedule`,
-// `cancel`). Quando não pode entregar, a tela diz por quê em vez de mostrar botão
-// apagado. **Editar** abre a própria tela de venda em modo edição (`/?edit=<ref>`);
-// com a NFC-e já autorizada o servidor fecha a edição e o gesto vira **Cancelar e
-// refazer** (decisão do dono, 28/09).
+// Decisão do dono (28/09/2026): o detalhe do Gestor e o da encomenda são telas
+// IRMÃS. As seções (resumo, cliente, nota fiscal, itens, observação do cliente,
+// nota da cozinha, histórico com comentários) são do `OperatorOrderDetail` do
+// kit; a leitura é a do Gestor no contexto "pos" (`order.counter` traz o que é
+// do balcão). Aqui fica só o que é do balcão:
+//
+// - o SALDO no resumo (situação e quanto falta receber);
+// - a barra de ações (ENCOMENDAS-PDV-PLAN, WP-E3/E4/E6): **Receber e entregar**
+//   (ou só **Entregar**, quando já está paga), **Editar**, **Reagendar**,
+//   **Cancelar** e **Imprimir Via Pedido**, cada um só quando o servidor diz que
+//   pode (`hand_over`, `edit`, `reschedule`, `cancel`). Quando não pode entregar,
+//   a tela diz por quê em vez de mostrar botão apagado. **Editar** abre a própria
+//   tela de venda em modo edição (`/?edit=<ref>`); com a NFC-e já autorizada o
+//   servidor fecha a edição e o gesto vira **Cancelar e refazer** (28/09);
+// - os diálogos de cada gesto.
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { HandOverBody } from "~/presentation/preorderActions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
-import { fulfillmentIcon } from "~/presentation/orderTickets";
 import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
 
 const route = useRoute();
@@ -26,10 +33,11 @@ useHead({ title: () => `Encomenda ${ref_.value}` });
 const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal();
 
 const { detail, pending, error, refresh } = usePosPreorderDetail(ref_);
-const card = computed(() => detail.value?.card ?? null);
+const counter = computed(() => detail.value?.counter ?? null);
+const card = computed(() => counter.value?.card ?? null);
 const notFound = computed(() => !!error.value && httpError(error.value).status === 404);
 
-const tickets = usePosOrderTickets(pos, { loadBatch: false });
+const tickets = usePosOrderTickets(pos);
 
 async function printTicket() {
   if (await tickets.printOne(ref_.value)) await refresh();
@@ -42,6 +50,12 @@ const handOverOpen = ref(false);
 const cancelOpen = ref(false);
 const rescheduleOpen = ref(false);
 
+// O rascunho do comentário no histórico (o campo é do `OperatorOrderDetail`).
+const comment = ref("");
+async function submitComment(note: string) {
+  if (await actions.comment(note)) comment.value = "";
+}
+
 async function confirmReschedule(choice: { date: string; slot: string; reason: string }) {
   if (await actions.reschedule(choice)) rescheduleOpen.value = false;
 }
@@ -52,8 +66,8 @@ const cancelReason = ref("");
 const redoAfterCancel = ref(false);
 
 function editOrder() {
-  if (!card.value) return;
-  void navigateTo({ path: "/", query: { edit: card.value.ref } });
+  if (!detail.value) return;
+  void navigateTo({ path: "/", query: { edit: detail.value.ref } });
 }
 
 function cancelAndRedo() {
@@ -103,9 +117,14 @@ const TONE_CLASS: Record<string, string> = {
   neutral: "border-border bg-muted text-muted-foreground",
 };
 
+// A volta respeita de onde o operador veio: o recorte da lista (modo, data,
+// filtros) mora na URL dela — `?back=` ou o histórico —, e só sem nenhum dos
+// dois a volta é a casa da seção.
 function goBack() {
-  if (import.meta.client && window.history.length > 1) window.history.back();
-  else void navigateTo("/preorders/today");
+  const target = preorderBackTarget(route.query.back);
+  if (target) void navigateTo(target);
+  else if (import.meta.client && window.history.length > 1) window.history.back();
+  else void navigateTo(PREORDERS_HOME);
 }
 </script>
 
@@ -129,7 +148,7 @@ function goBack() {
       <p class="text-sm text-muted-foreground">
         O pedido {{ ref_ }} não é uma encomenda: não existe, foi cancelado ou foi venda de Balcão.
       </p>
-      <UiButton variant="outline" size="sm" to="/preorders">Procurar outra encomenda</UiButton>
+      <UiButton variant="outline" size="sm" :to="PREORDERS_HOME">Procurar outra encomenda</UiButton>
     </section>
 
     <p
@@ -140,166 +159,130 @@ function goBack() {
       <span>{{ httpErrorMessage(error, "Não deu para ler a encomenda agora.") }} Tente de novo em Atualizar, no menu ao lado.</span>
     </p>
 
-    <template v-else-if="detail && card">
-      <!-- QUEM e a SITUAÇÃO: o que se lê primeiro. -->
-      <section class="grid gap-2 rounded-md border border-border bg-card p-4" data-preorder-detail>
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="grid min-w-0 gap-0.5">
-            <h1 class="truncate text-lg font-semibold">{{ customerLine(card) }}</h1>
-            <p class="text-sm text-muted-foreground">{{ card.ref }} · {{ card.channel_label }}</p>
-          </div>
-          <span
-            class="rounded-md border px-2 py-0.5 text-sm font-medium"
-            :class="TONE_CLASS[situationTone(card.situation)]"
-            data-preorder-situation
-          >{{ card.situation_label }}</span>
-        </div>
-        <p class="text-base font-semibold tabular-nums" data-preorder-money>{{ moneyLine(card) }}</p>
-        <p class="text-sm text-muted-foreground">{{ detail.payment_method_label }}</p>
-      </section>
+    <template v-else-if="detail && counter && card">
+      <!-- QUEM: o que o balcão lê primeiro ("vim buscar a encomenda da Ana"). -->
+      <header class="grid min-w-0 gap-0.5" data-preorder-detail>
+        <h1 class="truncate text-lg font-semibold">{{ customerLine(card) }}</h1>
+        <p class="text-sm text-muted-foreground">{{ card.ref }} · {{ card.channel_label }}</p>
+      </header>
 
-      <!-- OS GESTOS: entregar é o óbvio; cancelar fica ao lado, menor. -->
-      <section class="grid gap-2" data-preorder-actions>
-        <p
-          v-if="actions.paidOnline.value && detail.hand_over.allowed && !detail.hand_over.needs_payment"
-          class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
-          role="status"
-          data-preorder-paid-online
-        >
-          <Icon name="lucide:badge-check" class="mt-0.5 size-4 shrink-0" />
-          <span>{{ actions.paidOnline.value }}</span>
-        </p>
-        <UiButton
-          v-if="detail.hand_over.allowed"
-          size="lg"
-          class="w-full"
-          :disabled="actions.busy.value"
-          data-preorder-hand-over
-          @click="handOverOpen = true"
-        >
-          <Icon :name="detail.hand_over.needs_payment ? 'lucide:hand-coins' : 'lucide:package-check'" class="size-5" />
-          {{ handOverCta(detail.hand_over) }}
-        </UiButton>
-        <p
-          v-else-if="card.situation !== 'delivered'"
-          class="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
-          data-preorder-hand-over-blocked
-        >
-          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
-          <span>{{ detail.hand_over.block_reason }}</span>
-        </p>
-        <UiButton
-          v-if="detail.edit.allowed"
-          variant="outline"
-          class="w-full"
-          :disabled="actions.busy.value"
-          data-preorder-edit
-          @click="editOrder"
-        >
-          <Icon name="lucide:pencil" class="size-4" />
-          Editar encomenda
-        </UiButton>
-        <template v-else-if="detail.edit.cancel_and_redo && detail.cancel.allowed">
-          <p class="text-sm text-muted-foreground" data-preorder-edit-blocked>{{ detail.edit.block_reason }}</p>
-          <UiButton
-            variant="outline"
-            class="w-full"
-            :disabled="actions.busy.value"
-            data-preorder-cancel-and-redo
-            @click="cancelAndRedo"
-          >
-            <Icon name="lucide:rotate-ccw" class="size-4" />
-            Cancelar e refazer
-          </UiButton>
+      <OperatorOrderDetail
+        v-model:comment="comment"
+        :order="detail"
+        :busy="actions.busy.value"
+        @comment="submitComment"
+      >
+        <!-- O SALDO: a situação da encomenda e quanto falta receber no balcão. -->
+        <template #summary>
+          <p class="flex flex-wrap items-center gap-2 pt-1">
+            <span
+              class="rounded-md border px-2 py-0.5 text-sm font-medium"
+              :class="TONE_CLASS[situationTone(card.situation)]"
+              data-preorder-situation
+            >{{ card.situation_label }}</span>
+            <span class="text-base font-semibold tabular-nums" data-preorder-money>{{ moneyLine(card) }}</span>
+          </p>
         </template>
-        <UiButton
-          v-if="detail.reschedule.allowed"
-          variant="outline"
-          class="w-full"
-          :disabled="actions.busy.value"
-          data-preorder-reschedule
-          @click="rescheduleOpen = true"
-        >
-          <Icon name="lucide:calendar-clock" class="size-4" />
-          Reagendar
-        </UiButton>
-        <UiButton
-          v-if="detail.cancel.allowed"
-          variant="outline"
-          class="w-full text-destructive"
-          :disabled="actions.busy.value"
-          data-preorder-cancel
-          @click="redoAfterCancel = false; cancelOpen = true"
-        >
-          <Icon name="lucide:x" class="size-4" />
-          Cancelar encomenda
-        </UiButton>
-      </section>
 
-      <!-- COMO e QUANDO recebe. -->
-      <section class="grid gap-2 rounded-md border border-border bg-card p-4">
-        <h2 class="flex items-center gap-2 text-sm font-semibold">
-          <Icon :name="fulfillmentIcon(card.fulfillment_type)" class="size-4 text-muted-foreground" />
-          {{ card.fulfillment_label }}
-        </h2>
-        <p class="text-sm">
-          <span class="capitalize">{{ card.commitment_date_display }}</span>
-          <template v-if="card.window_label"> · {{ card.window_label }}</template>
-          <template v-else> · sem horário combinado</template>
-        </p>
-        <p v-if="detail.delivery_address" class="text-sm">{{ detail.delivery_address }}</p>
-        <p v-if="detail.delivery_instructions" class="text-sm text-muted-foreground">{{ detail.delivery_instructions }}</p>
-        <p v-if="detail.customer_phone" class="text-sm">
-          <a v-if="detail.customer_phone_uri" :href="detail.customer_phone_uri" class="underline underline-offset-2">{{ detail.customer_phone }}</a>
-          <template v-else>{{ detail.customer_phone }}</template>
-        </p>
-        <p v-else-if="detail.customer_relay_phone" class="text-sm text-muted-foreground">
-          Telefone da central do iFood: {{ detail.customer_relay_phone }}<template v-if="detail.customer_relay_code">, código {{ detail.customer_relay_code }}</template>
-        </p>
-      </section>
-
-      <!-- O QUE leva. -->
-      <section class="grid gap-2 rounded-md border border-border bg-card p-4">
-        <h2 class="text-sm font-semibold">Itens</h2>
-        <ul class="grid gap-1 text-sm">
-          <li v-for="(item, index) in detail.items" :key="index" class="flex justify-between gap-3">
-            <span class="min-w-0"><span class="tabular-nums">{{ item.qty_display }}x</span> {{ item.name }}</span>
-            <span class="shrink-0 tabular-nums text-muted-foreground">{{ item.line_total_display }}</span>
-          </li>
-        </ul>
-        <p class="flex justify-between border-t border-border pt-2 text-sm font-semibold">
-          <span>Total</span>
-          <span class="tabular-nums">{{ card.total_display }}</span>
-        </p>
-      </section>
-
-      <section v-if="detail.customer_note" class="grid gap-1 rounded-md border border-border bg-card p-4">
-        <h2 class="text-sm font-semibold">Observação do cliente</h2>
-        <p class="text-sm">{{ detail.customer_note }}</p>
-      </section>
-
-      <!-- A Via Pedido individual: a mesma impressão da Via Pedido – painel. -->
-      <section class="grid gap-2">
-        <UiButton
-          size="lg"
-          variant="outline"
-          class="w-full"
-          :disabled="!!tickets.printingRef.value"
-          :loading="tickets.printingRef.value === ref_"
-          data-preorder-print
-          @click="printTicket"
-        >
-          <Icon name="lucide:printer" class="size-5" />
-          {{ detail.ticket_printed ? "Imprimir a Via Pedido de novo" : "Imprimir Via Pedido" }}
-        </UiButton>
-        <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted-foreground">
-          {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
-        </p>
-      </section>
+        <!-- OS GESTOS DO BALCÃO: entregar é o óbvio; cancelar fica ao lado, menor. -->
+        <template #actions>
+          <section class="grid gap-2" data-preorder-actions>
+            <p
+              v-if="actions.paidOnline.value && counter.hand_over.allowed && !counter.hand_over.needs_payment"
+              class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+              role="status"
+              data-preorder-paid-online
+            >
+              <Icon name="lucide:badge-check" class="mt-0.5 size-4 shrink-0" />
+              <span>{{ actions.paidOnline.value }}</span>
+            </p>
+            <UiButton
+              v-if="counter.hand_over.allowed"
+              size="lg"
+              class="w-full"
+              :disabled="actions.busy.value"
+              data-preorder-hand-over
+              @click="handOverOpen = true"
+            >
+              <Icon :name="counter.hand_over.needs_payment ? 'lucide:hand-coins' : 'lucide:package-check'" class="size-5" />
+              {{ handOverCta(counter.hand_over) }}
+            </UiButton>
+            <p
+              v-else-if="card.situation !== 'delivered'"
+              class="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+              data-preorder-hand-over-blocked
+            >
+              <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
+              <span>{{ counter.hand_over.block_reason }}</span>
+            </p>
+            <UiButton
+              v-if="counter.edit.allowed"
+              variant="outline"
+              class="w-full"
+              :disabled="actions.busy.value"
+              data-preorder-edit
+              @click="editOrder"
+            >
+              <Icon name="lucide:pencil" class="size-4" />
+              Editar encomenda
+            </UiButton>
+            <template v-else-if="counter.edit.cancel_and_redo && counter.cancel.allowed">
+              <p class="text-sm text-muted-foreground" data-preorder-edit-blocked>{{ counter.edit.block_reason }}</p>
+              <UiButton
+                variant="outline"
+                class="w-full"
+                :disabled="actions.busy.value"
+                data-preorder-cancel-and-redo
+                @click="cancelAndRedo"
+              >
+                <Icon name="lucide:rotate-ccw" class="size-4" />
+                Cancelar e refazer
+              </UiButton>
+            </template>
+            <UiButton
+              v-if="counter.reschedule.allowed"
+              variant="outline"
+              class="w-full"
+              :disabled="actions.busy.value"
+              data-preorder-reschedule
+              @click="rescheduleOpen = true"
+            >
+              <Icon name="lucide:calendar-clock" class="size-4" />
+              Reagendar
+            </UiButton>
+            <UiButton
+              v-if="counter.cancel.allowed"
+              variant="outline"
+              class="w-full text-destructive"
+              :disabled="actions.busy.value"
+              data-preorder-cancel
+              @click="redoAfterCancel = false; cancelOpen = true"
+            >
+              <Icon name="lucide:x" class="size-4" />
+              Cancelar encomenda
+            </UiButton>
+            <!-- A Via Pedido individual: a mesma impressão da Via Pedido – painel. -->
+            <UiButton
+              variant="outline"
+              class="w-full"
+              :disabled="!!tickets.printingRef.value"
+              :loading="tickets.printingRef.value === ref_"
+              data-preorder-print
+              @click="printTicket"
+            >
+              <Icon name="lucide:printer" class="size-4" />
+              {{ counter.ticket_printed ? "Imprimir a Via Pedido de novo" : "Imprimir Via Pedido" }}
+            </UiButton>
+            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted-foreground">
+              {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
+            </p>
+          </section>
+        </template>
+      </OperatorOrderDetail>
 
       <PosPreorderHandOverDialog
         v-model:open="handOverOpen"
-        :hand-over="detail.hand_over"
+        :hand-over="counter.hand_over"
         :customer-name="customerLine(card)"
         :busy="actions.busy.value"
         @confirm="confirmHandOver"
@@ -307,16 +290,16 @@ function goBack() {
       <PosPreorderRescheduleDialog
         v-model:open="rescheduleOpen"
         :customer-name="customerLine(card)"
-        :current-date="detail.reschedule.date"
-        :current-slot="detail.reschedule.slot"
-        :skus="detail.reschedule.skus"
+        :current-date="counter.reschedule.date"
+        :current-slot="counter.reschedule.slot"
+        :skus="counter.reschedule.skus"
         :busy="actions.busy.value"
         @confirm="confirmReschedule"
       />
       <PosPreorderCancelDialog
         v-model:open="cancelOpen"
         :customer-name="customerLine(card)"
-        :requires-approval="detail.cancel.requires_approval"
+        :requires-approval="counter.cancel.requires_approval"
         :busy="actions.busy.value"
         @confirm="(reason: string) => confirmCancel(reason)"
       />

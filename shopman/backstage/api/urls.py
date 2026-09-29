@@ -182,6 +182,7 @@ from .operations import (
     POSPreorderHandOverView,
     POSPreorderListView,
     POSPreorderRedoTabView,
+    POSPreorderSearchView,
     POSRecentSalesView,
     POSResendFiscalEmailView,
     POSResendPaymentLinkView,
@@ -549,9 +550,8 @@ urlpatterns = [
     path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
-    # Order tickets (filipeta do pedido remoto) — o lote da semana para o painel.
-    # ⚠️ ANTES de `orders/<str:ref>/`: `tickets` casaria com `<str:ref>` e a
-    # conferência do lote viraria "pedido TICKETS não encontrado".
+    # Order tickets (Via Pedido) — o lote do que a tela das Encomendas mostra.
+    # ⚠️ ANTES de `orders/<str:ref>/…`: `tickets` casaria com `<str:ref>`.
     path("orders/tickets/", OrderTicketBatchView.as_view(), name="api-backstage-order-tickets"),
     path(
         "orders/tickets/escpos/",
@@ -751,6 +751,8 @@ urlpatterns = [
     path("pos/schedule/", POSScheduleView.as_view(), name="api-backstage-pos-schedule"),
     path("pos/recent-sales/", POSRecentSalesView.as_view(), name="api-backstage-pos-recent-sales"),
     path("pos/preorders/", POSPreorderListView.as_view(), name="api-backstage-pos-preorders"),
+    # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.
+    path("pos/preorders/search/", POSPreorderSearchView.as_view(), name="api-backstage-pos-preorder-search"),
     path("pos/preorders/<str:ref>/", POSPreorderDetailView.as_view(), name="api-backstage-pos-preorder-detail"),
     path("pos/preorders/<str:ref>/hand-over/", POSPreorderHandOverView.as_view(), name="api-backstage-pos-preorder-hand-over"),
     path("pos/preorders/<str:ref>/edit-session/", POSPreorderEditSessionView.as_view(), name="api-backstage-pos-preorder-edit-session"),
