@@ -29,6 +29,10 @@ class ImportBatch(models.Model):
         DONE = "done", "concluído"
         FAILED = "failed", "falhou"
 
+    class Mode(models.TextChoices):
+        DRY_RUN = "dry_run", "simulação"
+        APPLY = "apply", "aplicação"
+
     source = models.CharField(
         "origem", max_length=16, db_index=True,
         help_text="Mesmo valor carimbado nas linhas importadas (ex.: yooga).",
@@ -37,6 +41,35 @@ class ImportBatch(models.Model):
     file_sha256 = models.CharField(
         "hash do arquivo (sha256)", max_length=64, blank=True,
         help_text="Identidade do arquivo. O mesmo hash não entra duas vezes na mesma origem.",
+    )
+    purpose = models.CharField(
+        "finalidade",
+        max_length=64,
+        blank=True,
+        help_text="Destino permitido do lote (ex.: historical_sales); não é inferido pela origem.",
+    )
+    artifact_ref = models.CharField(
+        "referência opaca do artefato",
+        max_length=200,
+        blank=True,
+        help_text="Referência segura na landing; nunca caminho pessoal, URL assinada ou segredo.",
+    )
+    schema_version = models.CharField("versão do schema", max_length=64, blank=True)
+    parser_version = models.CharField("versão do parser", max_length=64, blank=True)
+    mode = models.CharField("modo", max_length=8, choices=Mode.choices, default=Mode.APPLY)
+    started_at = models.DateTimeField("iniciado em", null=True, blank=True)
+    finished_at = models.DateTimeField("finalizado em", null=True, blank=True)
+    counts = models.JSONField(
+        "contagens genéricas",
+        default=dict,
+        blank=True,
+        help_text="Somente agregados sanitizados; PII e amostras de linha são proibidas.",
+    )
+    report_ref = models.CharField(
+        "referência do relatório",
+        max_length=200,
+        blank=True,
+        help_text="Referência opaca do relatório sanitizado, sem caminho pessoal ou URL assinada.",
     )
     imported_at = models.DateTimeField("importado em", auto_now_add=True, db_index=True)
     imported_by = models.ForeignKey(
@@ -72,9 +105,9 @@ class ImportBatch(models.Model):
             # impedir a tentativa seguinte do mesmo arquivo — e precisa ficar
             # registrado, senão a falha some junto com a transação.
             models.UniqueConstraint(
-                fields=["source", "file_sha256"],
+                fields=["source", "file_sha256", "purpose", "parser_version"],
                 condition=models.Q(status="done") & ~models.Q(file_sha256=""),
-                name="backstage_importbatch_source_sha_done",
+                name="backstage_importbatch_identity_done",
             ),
         ]
 

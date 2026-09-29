@@ -143,8 +143,38 @@ def test_every_import_is_a_batch_with_identity_and_counts(export_file):
     assert batch.file_name == "yooga.xlsx"
     assert len(batch.file_sha256) == 64
     assert batch.status == ImportBatch.Status.DONE
+    assert batch.purpose == "historical_sales"
+    assert batch.artifact_ref == f"sha256:{batch.file_sha256}"
+    assert batch.schema_version == "yooga-xlsx/v1"
+    assert batch.parser_version == "yooga-ingest/v2"
+    assert batch.mode == ImportBatch.Mode.APPLY
+    assert batch.started_at is not None
+    assert batch.finished_at is not None
     assert (batch.rows_read, batch.sales_created, batch.sales_skipped, batch.items_created) == (2, 2, 0, 3)
+    assert batch.counts == {
+        "rows_read": 2,
+        "sales_created": 2,
+        "sales_skipped": 0,
+        "sales_completed": 0,
+        "items_created": 3,
+        "delivery_flags_updated": 0,
+    }
     assert HistoricalSale.objects.filter(batch=batch).count() == 2
+
+
+@pytest.mark.django_db
+def test_historical_ingest_leaves_operational_ledgers_invariant(export_file):
+    from shopman.cashman.models import Entry
+    from shopman.guestman.models import Customer
+    from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent
+    from shopman.stockman.models import Move
+
+    forbidden = (Order, Customer, PaymentIntent, Entry, Move)
+    before = {model._meta.label: model.objects.count() for model in forbidden}
+    ingest(export_file)
+    after = {model._meta.label: model.objects.count() for model in forbidden}
+    assert after == before
 
 
 @pytest.mark.django_db
@@ -157,6 +187,15 @@ def test_same_file_is_refused_not_duplicated(export_file):
 
     with pytest.raises(CommandError, match="rebuild"):
         call_command("ingest_yooga", "--file", export_file)
+
+
+@pytest.mark.django_db
+def test_completed_batch_identity_includes_purpose_and_parser_version():
+    common = {"source": "yooga", "file_sha256": "a" * 64, "status": ImportBatch.Status.DONE}
+    ImportBatch.objects.create(**common, purpose="historical_sales", parser_version="v1")
+    ImportBatch.objects.create(**common, purpose="historical_sales", parser_version="v2")
+    ImportBatch.objects.create(**common, purpose="catalog_aliases", parser_version="v1")
+    assert ImportBatch.objects.count() == 3
 
 
 @pytest.mark.django_db
@@ -216,6 +255,8 @@ def test_missing_column_fails_at_the_boundary_and_is_recorded(tmp_path):
     failed = ImportBatch.objects.get()
     assert failed.status == ImportBatch.Status.FAILED
     assert "valor" in failed.error
+    assert failed.started_at is not None
+    assert failed.finished_at is not None
 
 
 @pytest.mark.django_db
@@ -229,7 +270,10 @@ def test_bad_row_names_sheet_and_line_and_writes_nothing(tmp_path):
     # A venda 1001 era válida e veio antes: a transação única a desfez junto.
     assert HistoricalSale.objects.count() == 0
     assert HistoricalSaleItem.objects.count() == 0
-    assert ImportBatch.objects.get().status == ImportBatch.Status.FAILED
+    failed = ImportBatch.objects.get()
+    assert failed.status == ImportBatch.Status.FAILED
+    assert "valor" in failed.error
+    assert "seis e quarenta" not in failed.error
 
 
 @pytest.mark.django_db

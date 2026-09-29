@@ -1890,6 +1890,26 @@ Chave ausente = o export não trouxe; nunca se grava vazio.
 A proveniência da linha (arquivo, hash, quando, quantas) não mora aqui: mora em
 `HistoricalSale.batch` → `ImportBatch`.
 
+## ImportBatch — identidade e proveniência
+
+Um lote concluído é identificado por `(source, file_sha256, purpose, parser_version)`.
+Isso separa o artefato físico da finalidade autorizada e permite que um parser corrigido
+reprocesse a mesma evidência sem fingir que é o mesmo tratamento.
+
+| Campo | Contrato |
+|-------|----------|
+| `purpose` | Destino permitido, por exemplo `historical_sales`; nunca inferido apenas por `source`. |
+| `artifact_ref` | Referência opaca na landing (`sha256:…` no Yooga); nunca caminho pessoal, segredo ou URL assinada. |
+| `schema_version` / `parser_version` | Versões explícitas da forma esperada e da transformação aplicada. |
+| `mode` | `dry_run` ou `apply`; lote Yooga persistido é sempre `apply`. |
+| `started_at` / `finished_at` | Janela real da execução, separada de `imported_at`. |
+| `counts` | Agregados sanitizados da execução. Valores de linha e PII são proibidos. |
+| `report_ref` | Referência opaca para relatório externo sanitizado, quando houver. |
+
+Os campos legados (`rows_read`, `sales_created`, `sales_skipped`, `sales_completed`,
+`items_created`) continuam durante a migração dos consumidores. O importador Yooga também
+espelha essas contagens em `counts`; erros persistidos e logs removem valores de célula.
+
 
 ## BIAlertRule.last_reading
 
