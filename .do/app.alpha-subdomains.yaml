@@ -382,7 +382,11 @@ envs:
   type: GENERAL
 - key: SHOPMAN_EXPOSE_DEBUG_OTP
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
+  type: GENERAL
+- key: DOORMAN_MESSAGE_SENDER_CLASS
+  scope: RUN_TIME
+  value: shopman.doorman.senders.LogSender
   type: GENERAL
 - key: DJANGO_SECRET_KEY
   scope: RUN_TIME
@@ -470,6 +474,17 @@ envs:
 - key: SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION
   scope: RUN_TIME
   value: '1'
+  type: GENERAL
+# Configuracao viva do canal WhatsApp. Declarada aqui para que um futuro
+# `apps update --spec` nao apague silenciosamente as duas chaves. Alterar o
+# modo ou desligar o canal exige uma decisao operacional separada.
+- key: SHOPMAN_MARKETING_WHATSAPP_MODE
+  scope: RUN_TIME
+  value: open
+  type: GENERAL
+- key: SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED
+  scope: RUN_TIME
+  value: 'true'
   type: GENERAL
 - key: DOORMAN_ACCESS_LINK_API_KEY
   scope: RUN_TIME
@@ -600,6 +615,32 @@ envs:
 - key: CONCIERGE_OBSERVATION_RETENTION_DAYS
   scope: RUN_TIME
   value: '30'
+  type: GENERAL
+# Observacao passiva ja configurada no app vivo. Estas chaves precisam morar no
+# blueprint para nao desaparecerem num update integral do App Platform.
+- key: CONCIERGE_OPERATION_MODE
+  scope: RUN_TIME
+  value: observe
+  type: GENERAL
+- key: CONCIERGE_OBSERVATION_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_OBSERVATION_PRIVACY_APPROVED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_OBSERVATION_NOTICE_VERSION
+  scope: RUN_TIME
+  value: observacao-client
+  type: GENERAL
+- key: CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_OBSERVATION_ALLOWED_SUBSCRIBERS
+  scope: RUN_TIME
+  value: ''
   type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
@@ -817,6 +858,18 @@ services:
   # maioridade (medido 17/09); nos apps de operador, o mesmo IP ia para a trilha de
   # acesso (SignInEvent). Com o segredo, lê um salto a mais. Vazio = desligado.
   - key: SHOPMAN_BFF_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
+  # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS
     scope: RUN_TIME
     type: SECRET
   # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.

@@ -24,6 +24,27 @@ DEPLOY_SPECS = (
     PRODUCTION_SPEC,
     ROOT / ".do" / "app.alpha-subdomains.yaml",
 )
+ALPHA_SPEC = ROOT / ".do" / "app.alpha-subdomains.yaml"
+
+# Configuracoes que ja existiam somente no App Platform e seriam apagadas por
+# um `apps update --spec`. O teste guarda o contrato de nome/tipo/escopo; valores
+# de segredo nunca entram no repositorio.
+ALPHA_LIVE_ONLY_APP_ENVS = {
+    "CONCIERGE_OBSERVATION_ALLOWED_SUBSCRIBERS",
+    "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS",
+    "CONCIERGE_OBSERVATION_ENABLED",
+    "CONCIERGE_OBSERVATION_NOTICE_VERSION",
+    "CONCIERGE_OBSERVATION_PRIVACY_APPROVED",
+    "CONCIERGE_OPERATION_MODE",
+    "DOORMAN_MESSAGE_SENDER_CLASS",
+    "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED",
+    "SHOPMAN_MARKETING_WHATSAPP_MODE",
+}
+PRIVACY_RECEIPT_WEB_ENVS = {
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY": "SECRET",
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION": "GENERAL",
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS": "SECRET",
+}
 
 # Chaves que, ligadas, fazem o sistema fingir que foi pago.
 PAYMENT_BYPASS_KEYS = (
@@ -170,3 +191,26 @@ def test_deploy_templates_never_prearm_publication_canary():
             f"{path.name}: via pública de canário pré-armada: "
             + ", ".join(sorted(offenders))
         )
+
+
+def test_alpha_never_exposes_debug_otp():
+    spec = _load_spec(ALPHA_SPEC)
+    entry = next(item for item in spec["envs"] if item["key"] == "SHOPMAN_EXPOSE_DEBUG_OTP")
+    assert entry["scope"] == "RUN_TIME"
+    assert entry["type"] == "GENERAL"
+    assert str(entry.get("value", "")).strip().lower() == "false"
+
+
+def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():
+    spec = _load_spec(ALPHA_SPEC)
+    app_envs = {entry["key"]: entry for entry in spec["envs"]}
+    assert ALPHA_LIVE_ONLY_APP_ENVS <= app_envs.keys()
+    assert all(app_envs[key]["scope"] == "RUN_TIME" for key in ALPHA_LIVE_ONLY_APP_ENVS)
+
+    web = next(component for component in spec["services"] if component["name"] == "web")
+    web_envs = {entry["key"]: entry for entry in web["envs"]}
+    for key, expected_type in PRIVACY_RECEIPT_WEB_ENVS.items():
+        assert web_envs[key]["scope"] == "RUN_TIME"
+        assert web_envs[key]["type"] == expected_type
+        if expected_type == "SECRET":
+            assert "value" not in web_envs[key]
