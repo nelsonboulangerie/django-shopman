@@ -84,6 +84,7 @@ def test_google_offer_and_whatsapp_template_keep_their_real_options():
 
     whatsapp = marketing_provider_capabilities.provider_capability("whatsapp")
     assert whatsapp.format("template").implementation_state == "partial"
+    assert whatsapp.format("template").operational_format_refs == ("message",)
     assert whatsapp.format("template").media.kinds == ("image", "video", "document")
     assert any("três botões" in note for note in whatsapp.format("template").notes)
 

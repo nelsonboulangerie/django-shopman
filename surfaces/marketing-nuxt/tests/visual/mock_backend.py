@@ -398,6 +398,53 @@ def platform(ref: str, state: str = "ready", *, in_use: bool = True) -> dict:
     }
 
 
+def provider_format(
+    ref: str,
+    label: str,
+    state: str,
+    *,
+    delivery_kind: str = "publication",
+    variants: tuple[str, ...] = (),
+    operational_refs: tuple[str, ...] = (),
+) -> dict:
+    return {
+        "ref": ref,
+        "label": label,
+        "delivery_kind": delivery_kind,
+        "implementation_state": state,
+        "implemented_variants": list(variants),
+        "operational_format_refs": list(operational_refs),
+        "fields": [],
+        "media": {
+            "min_items": 0,
+            "max_items": 1,
+            "kinds": ["image"],
+            "image_formats": ["jpeg"],
+            "video_formats": [],
+            "notes": [],
+        },
+        "cta_model": "none",
+        "notes": [],
+    }
+
+
+def provider_capability(
+    platform_ref: str,
+    label: str,
+    formats: list[dict],
+    *,
+    connector_state: str = "active",
+    notes: list[str] | None = None,
+) -> dict:
+    return {
+        "platform": platform_ref,
+        "label": label,
+        "connector_state": connector_state,
+        "formats": formats,
+        "notes": notes or [],
+    }
+
+
 def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> dict:
     resource = f"notification:{pk}"
     return {
@@ -677,6 +724,56 @@ class Handler(BaseHTTPRequestHandler):
                             {"ref": "message", "label": "Mensagem", "provider_fields": ["template_name"], "required_provider_fields": [], "media_required": False},
                         ],
                     },
+                ],
+                "provider_capability_schema_version": 2,
+                "provider_capabilities": [
+                    provider_capability("instagram", "Instagram", [
+                        provider_format("feed", "Feed", "partial", variants=("image",)),
+                        provider_format("story", "Story", "partial", variants=("image",)),
+                        provider_format("reel", "Reel", "planned"),
+                        provider_format("carousel", "Carrossel", "planned"),
+                    ]),
+                    provider_capability("facebook", "Facebook", [
+                        provider_format("feed", "Feed da Página", "partial", variants=("text", "link", "image")),
+                        provider_format("reel", "Reel", "planned"),
+                    ]),
+                    provider_capability("google_business", "Google", [
+                        provider_format("standard", "Atualização", "ready", variants=("standard",)),
+                        provider_format("event", "Evento", "ready", variants=("event",)),
+                        provider_format("offer", "Oferta", "partial", variants=("offer",)),
+                    ]),
+                    provider_capability("whatsapp", "WhatsApp", [
+                        provider_format(
+                            "template",
+                            "Template aprovado",
+                            "partial",
+                            delivery_kind="direct_message",
+                            variants=("manychat_flow",),
+                            operational_refs=("message",),
+                        ),
+                    ]),
+                    provider_capability(
+                        "tiktok",
+                        "TikTok",
+                        [
+                            provider_format(
+                                "photo_draft",
+                                "Rascunho de fotos",
+                                "planned",
+                                delivery_kind="creator_handoff",
+                            ),
+                            provider_format(
+                                "video_draft",
+                                "Rascunho de vídeo",
+                                "planned",
+                                delivery_kind="creator_handoff",
+                            ),
+                            provider_format("photo", "Publicação direta de fotos", "gated"),
+                            provider_format("video", "Publicação direta de vídeo", "gated"),
+                        ],
+                        connector_state="dormant",
+                        notes=["Connector dormente: oferecer primeiro o handoff de rascunho, não Direct Post."],
+                    ),
                 ],
                 "templates": [template(requires_product=scenario == "fire-product")],
                 "variables": ["product_name", "link"],

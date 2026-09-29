@@ -47,7 +47,9 @@ describe("entrada funcional do Marketing V2", () => {
     expect(workspace).toContain("Criar oferta");
     expect(workspace).toContain("Criar cupom");
     expect(workspace).toContain("useMarketingOffers()");
-    expect(workspace).toContain("TikTok via Relay");
+    expect(workspace).toContain("providerCapabilities");
+    expect(workspace).toContain("plannedDestinations");
+    expect(workspace).not.toContain("Visível como direção de produto");
     expect(workspace).not.toContain("fetch(");
   });
 

@@ -1,4 +1,9 @@
-import type { Choice, MarketingPlatformCapability } from "~/types/campaign";
+import type {
+  Choice,
+  MarketingPlatformCapability,
+  MarketingProviderCapability,
+  MarketingProviderFormatCapability,
+} from "~/types/campaign";
 import type { Platform } from "~/composables/usePlatforms";
 
 export type MarketingV2DestinationState =
@@ -9,7 +14,21 @@ export type MarketingV2Destination = {
   label: string;
   deliveryLabel: string;
   formatLabels: string[];
+  formats: MarketingV2Format[];
+  connectorState: "active" | "dormant" | "unknown";
   state: MarketingV2DestinationState;
+  stateLabel: string;
+  detail: string;
+  selectable: boolean;
+};
+
+export type MarketingV2FormatState =
+  "executable" | "partial" | "planned" | "gated" | "unimplemented";
+
+export type MarketingV2Format = {
+  ref: string;
+  label: string;
+  state: MarketingV2FormatState;
   stateLabel: string;
   detail: string;
   selectable: boolean;
@@ -18,19 +37,31 @@ export type MarketingV2Destination = {
 type DestinationInput = {
   choices: readonly Choice[];
   capabilities: readonly MarketingPlatformCapability[];
+  providerCapabilities?: readonly MarketingProviderCapability[];
   readiness: readonly Platform[];
 };
 
 function stateFor(
   platform: Platform | undefined,
   selectable: boolean,
+  provider: MarketingProviderCapability | undefined,
 ): Pick<MarketingV2Destination, "state" | "stateLabel" | "detail"> {
   if (!selectable) {
+    if (provider?.connector_state === "dormant") {
+      return {
+        state: "available",
+        stateLabel: "Planejado",
+        detail:
+          provider.notes[0] ||
+          "O conector ainda não faz parte da operação executável.",
+      };
+    }
     return {
       state: "available",
-      stateLabel: "Disponível",
+      stateLabel: "Não implementada",
       detail:
-        "O destino é conhecido, mas ainda não foi liberado para campanhas neste contrato.",
+        provider?.notes[0] ||
+        "A API reconhece este destino, mas o Shopman ainda não o executa.",
     };
   }
   if (!platform) {
@@ -80,6 +111,88 @@ function stateFor(
   };
 }
 
+function formatDetail(format: MarketingProviderFormatCapability): string {
+  const implemented = format.implemented_variants.length
+    ? "O conector já executa parte deste formato."
+    : "";
+  return [implemented, format.notes[0], format.media.notes[0]]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function providerFormats(
+  provider: MarketingProviderCapability | undefined,
+  executable: MarketingPlatformCapability | undefined,
+  destinationSelectable: boolean,
+): MarketingV2Format[] {
+  const executableRefs = new Set(
+    executable?.formats.map((format) => format.ref) ?? [],
+  );
+  if (!provider) {
+    return (executable?.formats ?? []).map((format) => ({
+      ref: format.ref,
+      label: format.label,
+      state: "executable",
+      stateLabel: "Executável",
+      detail: "Formato disponível no contrato operacional atual.",
+      selectable: destinationSelectable,
+    }));
+  }
+  return provider.formats.map((format) => {
+    const executableNow =
+      destinationSelectable &&
+      (executableRefs.has(format.ref) ||
+        (format.operational_format_refs ?? []).some((ref) =>
+          executableRefs.has(ref),
+        ));
+    if (executableNow) {
+      const partial = format.implementation_state === "partial";
+      return {
+        ref: format.ref,
+        label: format.label,
+        state: partial ? "partial" : "executable",
+        stateLabel: partial ? "Executável em parte" : "Executável",
+        detail:
+          formatDetail(format) ||
+          "Formato disponível no contrato operacional atual.",
+        selectable: true,
+      };
+    }
+    if (format.implementation_state === "planned") {
+      return {
+        ref: format.ref,
+        label: format.label,
+        state: "planned",
+        stateLabel: "Planejado",
+        detail: formatDetail(format) || "Ainda não implementado no conector.",
+        selectable: false,
+      };
+    }
+    if (format.implementation_state === "gated") {
+      return {
+        ref: format.ref,
+        label: format.label,
+        state: "gated",
+        stateLabel: "Com gate",
+        detail:
+          formatDetail(format) ||
+          "Depende de aprovação, conexão ou prova controlada.",
+        selectable: false,
+      };
+    }
+    return {
+      ref: format.ref,
+      label: format.label,
+      state: "unimplemented",
+      stateLabel: "Não implementado",
+      detail:
+        formatDetail(format) ||
+        "A plataforma suporta este formato, mas o conector ainda não.",
+      selectable: false,
+    };
+  });
+}
+
 /**
  * Une três verdades sem confundi-las:
  *
@@ -93,6 +206,7 @@ function stateFor(
 export function marketingV2Destinations({
   choices,
   capabilities,
+  providerCapabilities = [],
   readiness,
 }: DestinationInput): MarketingV2Destination[] {
   const choiceMap = new Map(choices.map((item) => [item.value, item]));
@@ -100,7 +214,11 @@ export function marketingV2Destinations({
     capabilities.map((item) => [item.platform, item]),
   );
   const readinessMap = new Map(readiness.map((item) => [item.platform, item]));
+  const providerMap = new Map(
+    providerCapabilities.map((item) => [item.platform, item]),
+  );
   const refs = [
+    ...providerCapabilities.map((item) => item.platform),
     ...capabilities.map((item) => item.platform),
     ...choices.map((item) => item.value),
     ...readiness.map((item) => item.platform),
@@ -109,17 +227,30 @@ export function marketingV2Destinations({
   return refs.map((ref) => {
     const choice = choiceMap.get(ref);
     const capability = capabilityMap.get(ref);
+    const provider = providerMap.get(ref);
     const platform = readinessMap.get(ref);
     const selectable = Boolean(choice && capability);
-    const state = stateFor(platform, selectable);
+    const state = stateFor(platform, selectable, provider);
+    const formats = providerFormats(provider, capability, selectable);
+    const deliveryKind =
+      capability?.delivery_kind || provider?.formats[0]?.delivery_kind;
     return {
       ref,
-      label: choice?.label || capability?.label || platform?.label || ref,
+      label:
+        choice?.label ||
+        provider?.label ||
+        capability?.label ||
+        platform?.label ||
+        ref,
       deliveryLabel:
-        capability?.delivery_kind === "direct_message"
+        deliveryKind === "direct_message"
           ? "Mensagem direta"
-          : "Publicação pública",
-      formatLabels: capability?.formats.map((format) => format.label) ?? [],
+          : deliveryKind === "creator_handoff"
+            ? "Rascunho para concluir no app"
+            : "Publicação pública",
+      formatLabels: formats.map((format) => format.label),
+      formats,
+      connectorState: provider?.connector_state ?? "unknown",
       selectable,
       ...state,
     };

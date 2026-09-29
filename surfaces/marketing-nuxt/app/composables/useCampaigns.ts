@@ -41,6 +41,12 @@ export function useCampaigns() {
   const deliveryCapabilities = computed(
     () => options.value?.delivery_capabilities ?? [],
   );
+  const providerCapabilities = computed(
+    () => options.value?.provider_capabilities ?? [],
+  );
+  const providerCapabilitySchemaVersion = computed(
+    () => options.value?.provider_capability_schema_version ?? 0,
+  );
   const variables = computed(() => options.value?.variables ?? []);
   const priceTiers = computed(() => options.value?.price_tiers ?? []);
   const tags = computed(() => options.value?.tags ?? []);
@@ -147,6 +153,8 @@ export function useCampaigns() {
     triggers,
     platforms,
     deliveryCapabilities,
+    providerCapabilities,
+    providerCapabilitySchemaVersion,
     platformLabels,
     variables,
     priceTiers,

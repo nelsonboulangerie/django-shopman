@@ -267,12 +267,59 @@ export interface MarketingPlatformCapability {
   default_format: string;
 }
 
+export type MarketingProviderImplementationState =
+  "ready" | "partial" | "planned" | "gated";
+
+export interface MarketingProviderFieldCapability {
+  ref: string;
+  label: string;
+  kind:
+    "text" | "url" | "boolean" | "choice" | "datetime" | "template_variable";
+  required: boolean;
+  max_length: number | null;
+  choices: string[];
+  availability_note: string;
+}
+
+export interface MarketingProviderMediaCapability {
+  min_items: number;
+  max_items: number | null;
+  kinds: string[];
+  image_formats: string[];
+  video_formats: string[];
+  notes: string[];
+}
+
+export interface MarketingProviderFormatCapability {
+  ref: string;
+  label: string;
+  delivery_kind: "publication" | "direct_message" | "creator_handoff";
+  implementation_state: MarketingProviderImplementationState;
+  implemented_variants: string[];
+  fields: MarketingProviderFieldCapability[];
+  media: MarketingProviderMediaCapability;
+  cta_model: "none" | "link" | "provider_choice" | "template_defined";
+  operational_format_refs?: string[];
+  notes: string[];
+}
+
+export interface MarketingProviderCapability {
+  platform: string;
+  label: string;
+  connector_state: "active" | "dormant";
+  formats: MarketingProviderFormatCapability[];
+  notes: string[];
+}
+
 export interface CampaignOptions {
   triggers: Choice[];
   platforms: Choice[];
   /** Contrato canônico projetado pelo servidor; evita que cada tela reinvente
    *  modalidade, formatos ou exigências de mídia por plataforma. */
   delivery_capabilities: MarketingPlatformCapability[];
+  /** Inventário informativo do provider. Não amplia a allow-list executável. */
+  provider_capability_schema_version?: number;
+  provider_capabilities?: MarketingProviderCapability[];
   templates: AnnouncementTemplate[];
   variables: string[];
   /** Vocabulário de público — vem do backend para a tela nunca oferecer o que o
