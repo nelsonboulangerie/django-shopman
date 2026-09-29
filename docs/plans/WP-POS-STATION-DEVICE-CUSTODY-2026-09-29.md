@@ -51,10 +51,17 @@ cada ato, não só qual pessoa e qual terminal.
 `shopman/shop/telemetry.py:237-276` · caminhos de dinheiro que gravam `Entry.payload` ·
 `docs/reference/data-schemas.md` (**obrigatório**, é o inventário de chaves em JSONField).
 
-**Mudança.** Acrescentar a identidade do `TrustedDevice` ao payload já existente. **Zero
-migração** — os campos `data`/`payload` são JSONField projetados exatamente para isto
-(`CLAUDE.md`, "Core é Sagrado", regras 1 e 2). Documentar a chave nova em
-`data-schemas.md` **antes** de usá-la.
+**Mudança.**
+1. Acrescentar a identidade do `TrustedDevice` ao payload já existente. **Zero migração** — os
+   campos `data`/`payload` são JSONField projetados exatamente para isto (`CLAUDE.md`, "Core é
+   Sagrado", regras 1 e 2). Documentar a chave nova em `data-schemas.md` **antes** de usá-la.
+2. **Autoria por linha (depende de decisão do dono — ver D-008).** A tela do PDV mostra
+   "Lançado por / Editado por" (`surfaces/pos-nuxt/app/components/PosCartPanel.vue:993-1017`) a
+   partir de `meta.pos_authorship`, que **nenhum código escreve** (o único hit é a leitura, em
+   `shopman/backstage/api/pos_concurrency.py:71`). Se a decisão for **implementar**: gravar a
+   autoria no mesmo lugar onde a concorrência da comanda já é serializada, e cobrir com teste.
+   Se for **remover**: tirar da tela e apagar o campo. **Não deixe como está** — prometer
+   responsabilização inexistente é pior que não mostrar.
 
 **Fora de escopo.** Não mudar o modelo de custódia. Não criar campo em modelo do Core. Não mexer
 em `operations.py`.
@@ -63,6 +70,7 @@ em `operations.py`.
 ```
 login com PIN em dois clientes distintos → os dois eventos carregam device ids DIFERENTES
 um lançamento de caixa carrega o device de quem o fez
+(se D-008 = implementar) duas linhas lançadas por operadores diferentes mostram autores diferentes
 make test-framework  (verde)
 ```
 
@@ -103,16 +111,17 @@ Três itens triviais, todos verificados, todos do mesmo padrão "o registro não
 1. **Remover `SHOPMAN_REQUIRE_ACTIVE_OPERATOR`** do spec — está em
    `.do/app.alpha-subdomains.yaml:252` e **nenhum `.py`/`.ts` lê**. Flag de segurança fantasma:
    quem lê o spec acredita numa trava que não existe.
-2. **`pos_authorship`:** a tela do PDV mostra "Lançado por / Editado por"
-   (`PosCartPanel.vue:993-1017`) a partir de um campo que **nenhum código escreve** (o único hit é
-   a leitura, `pos_concurrency.py:71`). **Decidir:** implementar ou tirar da tela. Prometer
-   responsabilização que não existe é pior que não mostrar.
-3. **`docs/plans/WP-LOCK-01-*.md`** diz "não iniciado" e descreve `logout()` como vigente — mas o
+2. **`docs/plans/WP-LOCK-01-*.md`** diz "não iniciado" e descreve `logout()` como vigente — mas o
    PR #1249 (merge `b9ee08f43`, commit `366c13b00`) já está no `main` e a trava é capability na
    sessão. **Corrigir o estado**, conforme `CLAUDE.md`.
 
-**Prova de pronto.** `grep` não encontra a flag no spec; a tela e o código concordam sobre
-`pos_authorship`; o plano diz o estado real.
+> **Movido para o WP-1:** o item `pos_authorship` (a tela do PDV mostra "Lançado por / Editado por"
+> a partir de um campo que ninguém escreve, `PosCartPanel.vue:993-1017`; único hit é a leitura em
+> `pos_concurrency.py:71`). É **responsabilização**, o mesmo assunto do WP-1 — e depende de decisão
+> do dono (implementar ou tirar da tela). Mantê-lo aqui faria o WP-3, que é higiene pura, depender
+> de produto.
+
+**Prova de pronto.** `grep` não encontra a flag no spec; o plano diz o estado real.
 
 **Risco.** Trivial. É provavelmente o melhor primeiro PR do conjunto.
 
