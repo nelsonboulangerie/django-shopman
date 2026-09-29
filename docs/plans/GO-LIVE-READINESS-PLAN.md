@@ -1,209 +1,97 @@
-# GO-LIVE-READINESS-PLAN — Sair do staging e publicar de verdade
+# GO-LIVE-READINESS-PLAN — matriz canônica de prontidão
 
-> Plano executivo, honesto e priorizado para virar a chave de produção da Nelson.
-> Consolida o "Critério Para Produção Real" do [ROADMAP](../ROADMAP.md) com o
-> [WP-GAP-07 pre-prod migration playbook](WP-GAP-07-pre-prod-migration-playbook.md).
-> Separa **o que um agente executa sozinho** de **o que depende do Pablo**
-> (credenciais, domínio, decisões, QA físico, data de go-live).
+> **Única fonte operacional de estado de go-live.** Documentos de arquitetura,
+> roadmap, credenciais e runbooks apontam para esta matriz; não mantêm cópias do
+> status.
 
-**Status**: 🟢 Plano aprovado para gravação — execução dos lotes ainda **não iniciada**
-(decisão Pablo 2026-06-26: "montar o plano em docs" primeiro).
-**Última auditoria de estado**: 2026-06-26 (via `make release-readiness` + leitura de código).
+- `auditoria_id`: `GLR-2026-09-29`
+- `verificado_em`: `2026-09-29T03:06:10Z`
+- `baseline_git`: `1f497db90f150b0a497cd7001d11df19fc7491b0`
+- `ambiente_observado`: app DigitalOcean `shopman-nelson`, ambiente técnico vivo
+  de pré-go-live
+- `estado_comercial`: `DESCONHECIDO`
+- `auditor`: execução R6 do programa de recuperação
 
----
+## Como ler
 
-## 1. Estado real hoje (não a memória)
+Estados permitidos:
 
-`make release-readiness` em 2026-06-26: **`passed_with_external_blockers`** —
-`5 passed / 0 failed / 3 blocked_external`.
+- `VERIFICADO`: há fonte datada e sanitizada para a afirmação exata;
+- `PENDENTE`: trabalho ou evidência ainda precisa ser produzido;
+- `BLOQUEADO`: depende de decisão/ação externa identificada;
+- `DESCONHECIDO`: o acesso ou a evidência não permite concluir;
+- `N/A`: não se aplica ao escopo confirmado.
 
-```
-[OK]      django.check          System checks passed.
-[OK]      django.migrations     No model changes without migrations.
-[OK]      storefront.contact    WhatsApp configurado (wa.me/554333231997).
-[OK]      omotenashi.seed       11/11 cenários canônicos com seed.
-[OK]      gateways.local        EFI, Stripe e iFood — 5 fixtures com rollback.
-[BLOCKED] gateways.sandbox      Falta focus_nfe (NFC-e), iFood, ManyChat. EFI+Stripe = "ready" local.
-[BLOCKED] omotenashi.manual     Falta arquivo de evidência física/staging marcado `manual_qa_status: passed`.
-[BLOCKED] preprod.environment   Falta URL/secrets de pré-prod declarados (SHOPMAN_PREPROD_URL).
-```
+Um workflow verde não autoriza dinheiro real, emissão fiscal, envio, corrida,
+DNS, mudança de credencial ou lançamento comercial.
 
-**Correções ao que a memória dizia (estavam pessimistas):**
+## Matriz corrente
 
-- **2FA já existe em código.** `django_otp` + `otp_totp` instalados; `AdminTwoFactorMiddleware`
-  ([`shopman/backstage/middleware_2fa.py`](../../shopman/backstage/middleware_2fa.py)) faz o gate,
-  no-op até `SHOPMAN_ADMIN_REQUIRE_2FA` ([`config/settings.py:867`](../../config/settings.py)).
-  Falta só **enrollment dos operadores reais + virar a flag** — decisão/operação do Pablo,
-  não código novo.
-- **Gap cross-subdomínio de auth já está RESOLVIDO no staging.** Opção C no ar e verificada
-  ao vivo em `*.boulangerie.com.br` (login único + autorização por operador ativo + tela de
-  trava nas 4 surfaces) — ver [OPERATOR-AUTH-PLAN](OPERATOR-AUTH-PLAN.md). Não é mais bloqueio
-  de QA autenticado. O que resta é **produção**: domínio próprio, `SESSION_COOKIE_DOMAIN` de
-  prod, e substituir os superusers triviais de staging (`admin/admin`) pelo `bootstrap_admin`
-  env-driven.
-- **IP allowlist NÃO existe** (só um TODO em [`config/settings.py:866`](../../config/settings.py)).
-  Decisão correta é **ingress** (DigitalOcean/Cloudflare), não um middleware app-level frágil.
-- **Runbooks de incidente já cobrem** gateway/webhook/estoque/pago-sem-confirmação/postgres/
-  redis/worker em [`docs/runbooks/`](../runbooks/README.md); rollback citado em
-  `docs/guides/deploy.md` e `operations.md` (a auditar — WP-B1).
+O carimbo `verificado_em` do cabeçalho vale para todas as linhas, salvo quando a
+evidência informa outro instante.
 
-**Volume de migrations hoje** (justifica o squash final do WP-GAP-07): shop 16, craftsman 16,
-backstage 14, orderman 8, payman 8, demais ≤5.
+<!-- canonical-readiness:start -->
+| Critério | Estado | Ambiente | Fonte / evidência sanitizada | Owner | Próximo evento |
+|---|---|---|---|---|---|
+| Baseline candidata | VERIFICADO | GitHub `main` | `origin/main` = `1f497db90`; merge #1226 em 2026-09-29T02:26:37Z | Engenharia | Reauditar quando `main` mudar |
+| Gates do commit | VERIFICADO | GitHub Actions | Check-runs do SHA: Runtime, Surfaces, Omotenashi, Security, Production Contract, Operator Groups e Coverage concluíram com sucesso | Engenharia | Reexecutar no PR/merge group que alterar a baseline |
+| Publicação de imagens | VERIFICADO | GitHub Actions / DOCR | [Deploy Images run 36515098853](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36515098853), sucesso, SHA `1f497db90`, 2026-09-29T02:59:03Z–03:01:52Z | Plataforma | Novo merge em `main` gera novo manifesto |
+| Deployment técnico | VERIFICADO | DigitalOcean `shopman-nelson` | deployment `57e43069-0a75-47ec-badb-7fbecd8f635f`, criado 2026-09-29T03:00:54Z, `ACTIVE` às 03:05:16Z; imagens com `deploy_on_push=true` | Plataforma | Relacionar o próximo manifesto ao próximo deployment |
+| Smoke pós-deploy | VERIFICADO | ambiente técnico vivo | [Pre-go-live Smoke run 36515319701](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36515319701), sucesso no mesmo SHA; `/ready/`, menu, checkout não mutante e SSR verificados | Plataforma | Repetir depois de cada Deploy Images com componentes publicados |
+| Banco/cache/migrations do processo vivo | VERIFICADO | ambiente técnico vivo | `/ready/` retornou 200 no run 36515319701; o endpoint falha fechado para DB, cache, migrations pendentes e workers/filas | Plataforma | Preservar saída do smoke do próximo candidato |
+| Tag `go-live-v1` / ADR-015 | VERIFICADO | Git/GitHub | tag remota ausente; ADR-015 **inativa**. O repositório tem 268 migration files na baseline; isso não autoriza novo squash/reset | Engenharia | No corte autorizado: backup/restore, decisão de migration e só então tag |
+| Versão Django | VERIFICADO | repositório | `pyproject.toml`: `Django>=6.1,<6.2`; `docs/status.md` e runtime apontam para o mesmo contrato | Engenharia | Gate `make canonical-docs` acompanha qualquer bump |
+| Domínio `www.nelsonboulangerie.com.br` | DESCONHECIDO | ambiente técnico vivo | spec vivo comprova domínio PRIMARY apontando para `shopman-nelson`; não há evidência de aprovação como produção comercial | Pablo / owner comercial | Registrar decisão explícita: domínio técnico, comercial ou ambos |
+| Nomenclatura de fases | DESCONHECIDO | produto/operação | documentos históricos usam `staging`, `alpha`, `beta`, `soft` e `oficial`; não há confirmação atual de que sejam fases oficiais | Pablo / owner de produto | Aprovar nomes, critérios de entrada/saída e responsáveis |
+| Escopo v1 de iFood, ManyChat/Concierge, Machine, fiscal e Marketing | DESCONHECIDO | produto/operação | capacidade de código não prova inclusão comercial | Pablo / owner de produto | Assinar inclusão/exclusão por frente antes do pré-flight final |
+| Credenciais e integrações externas | PENDENTE | ambiente técnico vivo | [matriz de credenciais](GO-LIVE-CREDENTIALS-MATRIX.md) separa nome declarado, adapter, boot gate e exercício; nenhuma presença de variável prova operação | Owners por integração | Produzir probes sanitizados no ambiente e nível aprovados |
+| `production-readiness` com ambiente alvo | PENDENTE | ambiente comercial a definir | não há artefato datado anexado para a configuração comercial final | Plataforma + Pablo | Rodar o perfil após domínio, escopo e credenciais aprovados |
+| QA física Omotenashi | PENDENTE | dispositivos reais | não há evidência datada de cliente, operador, cozinha e gerente na baseline | Operação | Executar roteiro em aparelho/equipamento real e anexar evidência sem PII |
+| Impressão, gaveta e som | PENDENTE | loja física | código e agente existem; funcionamento físico atual não foi comprovado nesta auditoria | Operação | Validar equipamento, origem autorizada e procedimento de fallback |
+| Backup/PITR | DESCONHECIDO | banco do ambiente alvo | leitura de bancos via API DigitalOcean retornou 403; alegações antigas não foram tratadas como prova | Plataforma | Anexar política real, janela, referência e owner sem expor credenciais |
+| Ensaio de restore | DESCONHECIDO | banco isolado de recuperação | nenhuma evidência datada e recuperável foi localizada | Plataforma | Restaurar em cluster isolado, validar dados e registrar RTO/RPO |
+| Aprovação comercial / GO-NO-GO | BLOQUEADO | lançamento comercial | não existe assinatura contextual do owner/incident commander para esta baseline | Pablo + incident commander | Decisão humana no momento do corte, depois dos demais gates |
+<!-- canonical-readiness:end -->
 
----
+## Leitura da baseline técnica
 
-## 2. Os 7 critérios de produção → quem executa
+O ambiente observado está vivo e recebeu a baseline auditada. A cadeia
+`main → Deploy Images → deploy_on_push → deployment ACTIVE → Pre-go-live Smoke`
+foi comprovada. Isso é **produção técnica de software** no sentido de haver um
+serviço acessível e operado; não significa lançamento oficial, tráfego aprovado
+ou autorização para efeitos externos.
 
-| # | Critério (ROADMAP §"Produção Real") | Estado | Dono |
-|---|---|---|---|
-| 1 | `Runtime Gate` verde no commit de release | Verde no PR #3 | ✅ ~pronto |
-| 2 | `release-readiness-strict` verde | Local 5/5; faltam 3 externos | 🟡 misto |
-| 3 | `check --deploy` com secrets/hosts reais | Verde local; precisa env de prod | 🔴 Pablo |
-| 4 | Gateway sandbox: pagamento, refund, webhook duplicado, evento fora de ordem | **Lógica já provada por fixtures locais**; falta exercer contra sandbox real | 🔴 Pablo (creds) |
-| 5 | Reconciliação diária + snapshot de gateway em staging | Reconciliação pronta; snapshot real falta | 🔴 Pablo (creds) |
-| 6 | QA manual Omotenashi (cliente/operador/cozinha/gerente) | Gate browser CI verde; falta evidência física | 🔴 Pablo (device/humano) |
-| 7 | Runbook de incidente (gateway fora, webhook atrasado, estoque divergente, pago-sem-confirmação) + rollback | ✅ completo (rollback runbook criado 2026-06-26) | ✅ |
-| — | WP-GAP-07 migrations-freeze | Greenfield (nada criado) | 🟢 agente (prep) / 🔴 Pablo (data go-live) |
+Até o gate humano de fases ser resolvido, os termos históricos abaixo têm uso
+restrito:
 
----
+| Termo histórico | Uso permitido agora |
+|---|---|
+| `staging` | somente quando uma fonte datada nomeia explicitamente o ambiente |
+| `alpha` / `beta` / `soft launch` | rótulos históricos; não expressam estado corrente |
+| produção técnica | app vivo com deployment e smoke comprovados |
+| produção comercial | requer domínio, escopo, provedores e GO/NO-GO aprovados |
+| lançamento oficial | marco comercial humano; nunca inferido de CI/deploy |
 
-## 3. Lotes autônomos (agente executa sem depender do Pablo)
+## Evidência que não pode ser promovida por inferência
 
-Cada WP abaixo é auto-contido, commitável e validável com `make test` / `make admin` / `make lint`.
+- Variável declarada no spec não comprova valor válido.
+- Adapter construído não comprova adapter selecionado no ambiente.
+- Processo `ACTIVE` não comprova o perfil de boot de produção comercial.
+- Fixture, teste hermético ou provider mock não comprova sandbox.
+- Sandbox não comprova produção.
+- Smoke HTTP não comprova pagamento, estorno, emissão fiscal, mensagem ou corrida.
+- Domínio roteado não comprova aprovação comercial.
 
-### Lote A — WP-GAP-07 prep (maior bloco; pré-requisito honesto de tudo)
+## Gates para cutover
 
-> **Política de squash (decisão Pablo 2026-06-26): prep agora, reset/squash no go-live.**
-> O playbook diz que squashear antes da hora é engenharia prematura (migrations envelhecem).
-> Logo: criar tooling + docs + dry-run agora; o **reset final é evento único, só no go-live**.
+Antes de abrir o [runbook de cutover](../runbooks/go-live-cutover.md), todas as
+linhas aplicáveis precisam estar `VERIFICADO` ou `N/A`, com a decisão humana
+registrada. `DESCONHECIDO`, `PENDENTE` e `BLOQUEADO` impedem o corte.
 
-- **WP-A1 · `make test-migrations`** — harness que roda `migrate` de schema limpo + `check`
-  pós-migrate + valida que `makemigrations --check --dry-run` está limpo. Vira gate local
-  (e candidato ao `Runtime Gate`). Entregável: target no `Makefile` + script.
-- **WP-A2 · `docs/guides/production-upgrades.md`** — playbook zero-downtime:
-  expand-contract para renames; renome de chave em `Session.data`/`Order.data` (backfill +
-  lookup condicional em serializers, respeitando `CommitService._do_commit`); checklist
-  pré-deploy (backup, testar migration em staging, rollback); feature-flag para rollout gradual.
-- **WP-A3 · `docs/decisions/adr-015-backward-compat-policy-post-prod.md`** — formaliza a virada:
-  pós go-live, aliases temporários permitidos em janela explícita (1 sprint) com
-  `# DEPRECATED(remove by YYYY-MM-DD)`; migrations append-only (nunca editar migration aplicada em prod).
-  *(O WP-GAP-07 chamava de "adr-011", mas 011 já é `formula-and-cashshift`; o número livre é 015.)*
-- **WP-A4 · Atualizar `CLAUDE.md`** — substituir parcialmente "zero residuals/zero backward-compat":
-  regra nova vale **a partir do go-live**, apontando para o ADR-015. Hoje (pré-prod) as regras
-  atuais seguem valendo.
-- **WP-A5 · Decisão de squash documentada** — nota de decisão (squashear vs já-compacto) por
-  app. **Não executa o reset** — só deixa pronto para o go-live. Ver [Apêndice A](#apêndice-a--decisão-de-squash-wp-a5).
+Fontes de procedimento:
 
-### Lote B — Critério 7 (runbooks/rollback) ✅ CONCLUÍDO (2026-06-26)
-
-- **WP-B1 ✅ · Runbook de rollback de deploy** criado:
-  [`docs/runbooks/rollback-de-deploy.md`](../runbooks/rollback-de-deploy.md) (DO App Platform +
-  self-hosted; rollback por tipo de migration, ancorado no ADR-015) + adicionado ao índice
-  [`docs/runbooks/README.md`](../runbooks/README.md). Os 5 cenários do critério 7 ficam cobertos:
-  gateway/webhook (`webhook-falhando`, `pagamento-divergente`), estoque (`estoque-divergente`),
-  pago-sem-confirmação (`pedido-pago-sem-confirmacao`) e rollback (novo).
-
-### Lote C — Hardening de auth do operador ✅ CONCLUÍDO (2026-06-26)
-
-- **WP-C1 ✅ · 2FA provado + documentado** — gate já existe e é testado (`test_admin_2fa.py`,
-  8 passed); comando `setup_admin_totp` (QR + otpauth). Procedimento de enrollment + virada da
-  flag documentado em
-  [`docs/guides/operator-security-hardening.md`](../guides/operator-security-hardening.md).
-- **WP-C2 ✅ · IP allowlist desenhada como ingress** — decisão: Cloudflare Access/WAF na frente
-  de `admin.`/`pos.`/`kds.`/`gestor.`/`prod.` (não middleware app-level, por causa do
-  `X-Forwarded-For` forjável). Documentado no mesmo guia; fecha o TODO de
-  [`config/settings.py`](../../config/settings.py). **Faixas de IP = pendente do Pablo.**
-
----
-
-## 4. Bloqueios no Pablo (checklist de insumos — agente fecha cada um na hora que chegar)
-
-| Insumo | Destrava | Critério |
-|---|---|---|
-| Creds **EFI sandbox** + **Stripe test** (exercer de verdade) | `make smoke-gateways-sandbox` real: refund, webhook duplicado, evento fora de ordem | 4, 5 |
-| Creds **Focus NFe homologação** (NFC-e) | smoke fiscal real | 4 |
-| Creds **iFood sandbox** + **ManyChat** (token + webhook secret) | smoke marketplace/conversacional | 4 |
-| **Domínio de produção** + secrets + `SHOPMAN_PREPROD_URL` | `preprod.environment` verde; `check --deploy` real | 2, 3 |
-| **`SESSION_COOKIE_DOMAIN` de prod** + `bootstrap_admin` env-driven (matar `admin/admin`) | auth operador segura em prod | 3 |
-| **Decisão 2FA**: virar flag + enrollar operadores; faixas de IP do allowlist | hardening de acesso | — |
-| **QA físico Omotenashi**: device/humano gera `manual_qa_status: passed` | `omotenashi.manual` verde | 6 |
-| **Dados reais da Nelson** | catálogo/estoque/preços de verdade | 6 |
-| **Data de go-live** (>30 dias, DB de prod existe) | dispara o **reset final** do WP-GAP-07 | — |
-| Creds **Meta Broadcast** (`META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_ACCESS_TOKEN`) | adapter F5 sai do dry-run e publica IG + FB de verdade; sem elas o post fica `pending_manual` de propósito | — |
-
----
-
-## 5. Ordem de execução recomendada
-
-1. **Lote A** (WP-GAP-07 prep) — autônomo, maior, pré-requisito. Termina com `make test` verde
-   e o squash pronto-para-disparar.
-2. **Lote B + C** — autônomos, menores; fecham critério 7 e o desenho de hardening.
-3. **Conforme Pablo traz insumos** (§4) — agente fecha cada bloqueio: roda
-   `smoke-gateways-sandbox` real, declara `SHOPMAN_PREPROD_URL`, registra evidência de QA, etc.,
-   até `make release-readiness-strict` ficar verde.
-4. **No go-live** (data definida pelo Pablo) — executar o **reset/squash final** do WP-GAP-07,
-   `git tag go-live-v1`, rollback testado em staging.
-
----
-
-## 6. Definição de pronto (sair do staging)
-
-`make release-readiness-strict` **verde** (sem `blocked_external`) **E** os 7 critérios do
-ROADMAP §"Critério Para Produção Real" satisfeitos com evidência **E** WP-GAP-07 executado
-(reset final + tag + rollback testado).
-
-### Faxina obrigatória antes do corte
-
-Estão no `.gitignore` para não vazarem em commit, mas **continuam no disco** e precisam
-sair de vez antes do go-live:
-
-- [ ] `_to_delete/` — quarentena local (`incoming-*`, ~416K de material solto).
-- [ ] `guia-credenciais-*.pdf` — guia de credencial não fica no diretório do projeto;
-      mover para o gerenciador de segredos e apagar o arquivo.
-
-O `.gitignore` só impede o commit acidental. Não confundir ignorado com limpo.
-
----
-
-## Apêndice A — Decisão de squash (WP-A5)
-
-**Decisão (2026-06-26): squashear no go-live os apps com histórico longo; não
-executar agora** (o reset é evento único, no go-live — ADR-015). `squashmigrations`
-do Django não tem dry-run real (gera arquivo), então a decisão fica documentada
-aqui e a execução no playbook WP-GAP-07.
-
-Contagem de leaf migrations hoje:
-
-| App | Migrations | Squashear no go-live? |
-|---|---|---|
-| shop | 16 | ✅ sim (→ 1 initial) |
-| craftsman | 16 | ✅ sim |
-| backstage | 14 | ✅ sim |
-| orderman | 8 | ✅ sim |
-| payman | 8 | ✅ sim |
-| doorman | 5 | ✅ sim |
-| offerman | 5 | ✅ sim |
-| storefront | 5 | ✅ sim |
-| stockman, guestman, refs, consent, identifiers, insights, loyalty, merge, preferences, timeline | ≤2 | ⏭️ já compacto, deixar |
-
-**Procedimento no go-live** (executado no WP-GAP-07, não agora):
-1. `make test-migrations` verde + `make test` verde no commit base.
-2. Por app marcado ✅: `python manage.py squashmigrations <app> <primeira> <última>`,
-   revisar o initial gerado, remover as antigas, rodar `make test-migrations`.
-3. Aplicar em staging com snapshot representativo; validar dados.
-4. Tag `go-live-v1` após deploy verde.
-
-> Squash ≠ reset destrutivo de dado: Django mantém o estado via
-> `replaces`. Ainda assim, só rodar com backup e em staging primeiro.
-
----
-
-## Referências
-
-- [ROADMAP §"Critério Para Produção Real"](../ROADMAP.md)
-- [WP-GAP-07 pre-prod migration playbook](WP-GAP-07-pre-prod-migration-playbook.md)
-- [OPERATOR-AUTH-PLAN](OPERATOR-AUTH-PLAN.md) — auth cross-subdomínio (Opção C no ar em staging)
-- [OPERATION-RUNBOOKS-PLAN](OPERATION-RUNBOOKS-PLAN.md) — gateways/diagnóstico
-- [OMOTENASHI-FIRST-FULLNESS-PLAN](OMOTENASHI-FIRST-FULLNESS-PLAN.md) — QA manual
-- [`scripts/check_release_readiness.py`](../../scripts/check_release_readiness.py) — contrato de prontidão
-- [`shopman/backstage/services/gateway_smoke.py`](../../shopman/backstage/services/gateway_smoke.py) — smoke local + readiness sandbox
+- [Pré-flight](../runbooks/go-live-preflight.md)
+- [Matriz de credenciais](GO-LIVE-CREDENTIALS-MATRIX.md)
+- [Cutover](../runbooks/go-live-cutover.md)
+- [Rollback](../runbooks/rollback-de-deploy.md)
+- [Backup e restore](../runbooks/backup-e-restore.md)

@@ -1,101 +1,55 @@
 # ROADMAP — Django Shopman
 
-> Atualizado em 2026-08-13 (faxina pré-alpha; antes: 2026-07-11, pós PRs #53–#69). Este documento é o
-> mapa executivo vivo. Estado factual fica em [`status.md`](status.md); planos
-> detalhados ficam em [`plans/README.md`](plans/README.md).
+> Atualizado em 2026-09-29. Este documento registra prioridades e direção.
+> Arquitetura existente fica em [status](status.md); a única fonte de estado de
+> go-live é a
+> [matriz canônica de prontidão](plans/GO-LIVE-READINESS-PLAN.md).
 
-## Estado Atual (factual, 2026-08-13)
+## Prioridade imediata
 
-- **Headless completo**: Django serve API JSON + projections; superfícies são 7 apps
-  Nuxt 4 SSR + layer `operator-kit` (ver [`status.md`](status.md)).
-- **Alpha destravado** (2026-08): checkout, cascata completa, SSE e virada do dia
-  exercitados de ponta a ponta no staging; PDV endurecido pelo teste de estresse;
-  gaveta e crachá construídos (falta QA físico). Ver
-  [`reports/alpha-readiness-2026-08-12.md`](reports/alpha-readiness-2026-08-12.md).
-- **11 core apps** pip-instaláveis, incluindo Buyman (compras, Fase 1) e Fiscalman
-  (NFC-e, S0–S4).
-- **Suite ~6.500 testes** (~2.200 cores + ~4.250 framework + tools; medido 2026-08-13), CI com Runtime Gate
-  (PostgreSQL + Redis), Surfaces Gate (typecheck Nuxt) e gates de docs/copy/admin.
-- **Auth WhatsApp-first por access link** (`NB-XxXx`) mergeada; reverse-OTP aposentado.
-- **iFood direto** (polling + sync de catálogo) em staging; **Machine** (logística
-  externa/courier) construída aguardando credenciais.
-- **Copy omotenashi**: backlog zerado; registro `OmotenashiCopy` é fonte única.
-- **Hardening pré-alpha** de 2026-07-11: 16 PRs (#53–#69) fechando achados da
-  auditoria [`reports/analise_pre_alpha_2026-07-11.md`](reports/analise_pre_alpha_2026-07-11.md)
-  — oversell, dialeto de erro, directives, tz, POS anti-fraude, suíte hermética,
-  rotas/chaves em inglês, baseline selado.
-- **Staging** DigitalOcean App Platform ativo (deploy manual `create-deployment`).
+| Prioridade | Resultado | Fonte / owner |
+|---|---|---|
+| P0 | Fechar os gates humanos de domínio, fases, escopo v1 e GO/NO-GO sem inferir aprovação a partir de CI | [Matriz canônica](plans/GO-LIVE-READINESS-PLAN.md) · owner comercial |
+| P0 | Produzir evidência externa sanitizada: gateways, fiscal, QA física, backup/PITR e restore | [Pré-flight](runbooks/go-live-preflight.md) · owners na matriz |
+| P0 | Executar cutover apenas depois de autorização contextual e evidência completa | [Cutover](runbooks/go-live-cutover.md) · incident commander |
+| P1 | Resolver hardening humano de Admin/operadores (2FA, recuperação e ingress aprovado) | [Operator security](guides/operator-security-hardening.md) |
+| P1 | Validar impressão e operação física em equipamento real | [Matriz canônica](plans/GO-LIVE-READINESS-PLAN.md) |
+| P1 | Definir inclusão comercial de iFood, ManyChat/Concierge, Machine, fiscal e Marketing | [Matriz de credenciais](plans/GO-LIVE-CREDENTIALS-MATRIX.md) · owner de produto |
 
-## Próximos Passos
+## Depois da decisão de lançamento
 
-| Prioridade | Frente | Entrega esperada | Plano / dono |
-|------------|--------|------------------|--------------|
-| P1 | Go-live Lote C | 2FA/IP allowlist do Admin, corte v1, QA final e data. | [`plans/GO-LIVE-READINESS-PLAN.md`](plans/GO-LIVE-READINESS-PLAN.md) — bloqueado no dono |
-| P1 | Credenciais go-live | WhatsApp Meta, Focus NFe produção, iFood homologação, Machine creds. | [`plans/GO-LIVE-CREDENTIALS-MATRIX.md`](plans/GO-LIVE-CREDENTIALS-MATRIX.md) — lado do dono |
-| P1 | Access link F3 | Fluxo ManyChat do access link + URLs de staging. | [`plans/ACCESS-LINK-UNIFICATION-PLAN.md`](plans/ACCESS-LINK-UNIFICATION-PLAN.md) — lado do dono |
-| P2 | Fiscalman S5 | NF-e mod. 55 / itens resale; e2e homolog Focus; contador valida NCM/CSC/IBPT. | [`plans/FISCALMAN-PLAN.md`](plans/FISCALMAN-PLAN.md) |
-| P2 | QA físico | Som/térmica da produção; QA visual em dispositivo real (staging). | [`plans/completed/PRODUCTION-EXCELLENCE-PLAN.md`](plans/completed/PRODUCTION-EXCELLENCE-PLAN.md) (resta só QA físico) |
-| P2 | Impressão DANFE NFC-e no PDV | Obrigação legal para venda presencial — incontornável antes de operação fiscal plena. | pós-alpha, ver [`plans/POS-FASE-C-REVISION.md`](plans/POS-FASE-C-REVISION.md) |
-| P3 | Concierge de WhatsApp | Pedido por conversa no WhatsApp com modelo de linguagem; ferramentas determinísticas, resposta assíncrona via ManyChat. F1 escrita; F2 (flow + teste com o número do Pablo) e F3 (piloto) aguardam o dono. | [`plans/WHATSAPP-CONCIERGE-PLAN.md`](plans/WHATSAPP-CONCIERGE-PLAN.md) · [ADR-026](decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) (supera o MANYCHAT-CONVERSACIONAL-PLAN) |
-| P3 | Buyman Fases 2–4 | PurchaseOrder, recebimento, reposição. | [`plans/BUYMAN-PROCUREMENT-PLAN.md`](plans/BUYMAN-PROCUREMENT-PLAN.md) — pós-go-live |
-| P3 | Tempo real de forno (BI da fornada) | Definição benzida (2026-08-13): start = armar o timer (enfornou), stop = Concluir declarado no timer (retirou); fim de timer sem resposta e Confirmar do QC NÃO medem tempo. Exige promover o timer (hoje localStorage) a fato do servidor. O QC segue dono do fato COMERCIAL (partição/lote). | frente separada, sem plano ainda — sem tabela de agregação (doutrina anti-BI) |
-| P3 | Pre-prod real | Executar playbook às vésperas do primeiro deploy com dado real. | [`plans/WP-GAP-07-pre-prod-migration-playbook.md`](plans/WP-GAP-07-pre-prod-migration-playbook.md) |
+| Frente | Direção |
+|---|---|
+| Fiscal | concluir NF-e mod. 55 e validação do contador em janela própria |
+| Compras | avançar as fases posteriores a recebimento e reposição sem misturar com o corte |
+| Operação | fechar QA de dispositivo, impressão, gaveta, som e rede degradada |
+| Marketing | promover provider por shadow/canário com consentimento e reconciliação |
+| Dados | definir storage persistente para uploads antes de depender de filesystem de container |
+| Plataforma | ensaiar restore e registrar RTO/RPO reais antes de afirmar recuperabilidade |
 
-## Dívida Técnica Viva
+## Direção de produto
 
-| Dívida | Impacto | Próxima ação |
-|--------|---------|--------------|
-| **D-1 aposentado — lote/validade assumiu** (ADR-017 + QC-FORNADA) | ✅ **Concluído (C1–C6)**: preço por lote na venda (`percent_for_lot`), write-off de lote no fechamento, gate `sells_nonconforming`/validade por canal, quiosque de QC (ADR-017 §9), e o código do D-1 removido por inteiro (regra, posição "ontem", `cleanup_d1`, bucket do POS, badge F3). | — |
-| Gateway sandbox e snapshot real pendentes | Smoke local existe; falta provar divergência contra provedores reais. | Executar `make smoke-gateways-sandbox` com credenciais/staging reais. |
-| PostgreSQL pequeno exige disciplina de conexões | Sem pool, `CONN_MAX_AGE=60` saturou o Postgres da DO. | Staging usa pool em modo transaction; validar latência antes de repetir em produção. |
-| QA visual/manual ainda não cobre mundo real | Gates headless não provam toque real, teclado virtual, rede degradada. | Rodar dispositivo físico/staging antes de release real. |
-| ManyChat webhook ainda pulado | Fluxo ManyChat → session → confirmação não reimplementado. | Retomar junto com canais externos. |
-| Playwright E2E opcional | A suite existe, mas só roda quando Playwright está instalado. | Decidir se vira gate antes de piloto público. |
-| Migração futura para CSP nativo do Django 6 | `django-csp` funciona, mas Django 6 tem CSP nativo a avaliar. | Avaliar isoladamente, sem misturar com features. |
-| **Identificador em pt-br nas superfícies** (35 declarações, 20 arquivos) | Quebra a convenção "identificador em inglês" do `CLAUDE.md`. As 3 do `operator-kit` são as caras: sete apps importam o layer, então a convenção quebrada é **herdada**. Não cresce: catraca em `surfaces/operator-kit/tests/guardrails.identifiers.test.ts` reprova acima de 35. | [`plans/WP-IDENT-PT-BR.md`](plans/WP-IDENT-PT-BR.md) — **primeira janela de faxina pós-go-live**; começar pelo `operator-kit`, um PR por superfície, gate é `nuxi typecheck`. |
-| Media persistente na App Platform | Static resolvido por WhiteNoise; uploads não devem depender de filesystem efêmero. | Decidir Spaces/S3-compatible antes de piloto público com uploads reais. |
+Os itens abaixo são intenção, não compromisso de release:
 
-## Visão de produto (registro de intenção — dono: Pablo)
+- Hub cross-channel e feeds de catálogo;
+- Concierge de WhatsApp com ferramentas determinísticas;
+- POS offline-first, tela do cliente e split por item;
+- tempo de forno como fato de servidor;
+- telas passivas e menuboard;
+- evolução de B.I., previsão e operação de compras.
 
-> Carimbo 2026-07-11: itens abaixo são direção, não compromisso datado.
+Os planos detalhados e seu ciclo de vida ficam no
+[índice de planos](plans/README.md). Nenhum item desta seção entra no escopo v1
+sem decisão explícita registrada na matriz canônica.
 
-- **Hub cross-channel**: Gestor como hub único de canais (espírito iFood) —
-  [`plans/CROSS-CHANNEL-CATALOG-HUB-PLAN.md`](plans/CROSS-CHANNEL-CATALOG-HUB-PLAN.md).
-- **Feeds de catálogo Google/Meta/WhatsApp** —
-  [`plans/CATALOG-FEEDS-GOOGLE-META.md`](plans/CATALOG-FEEDS-GOOGLE-META.md) e
-  [`plans/CATALOG-SYNC-EXTERNO-PLAN.md`](plans/CATALOG-SYNC-EXTERNO-PLAN.md).
-- **POS**: tela do cliente (estilo Odoo), split por item, offline-first (WP-9+).
-- **Storefront**: scroll inteligente, auto-fill de teleporte, avaliação do cliente.
-- **Notação visual de pâtonnage** para etiquetas (nunca perder —
-  [`plans/PRODUCTION-FORECAST-BOARD-PLAN.md`](plans/PRODUCTION-FORECAST-BOARD-PLAN.md) é vizinho).
-- **Mudar número de telefone** ([`plans/CHANGE-PHONE-NUMBER-PLAN.md`](plans/CHANGE-PHONE-NUMBER-PLAN.md))
-  — telefone é identidade; só se valer a pena.
-- **SEO como capítulo próprio** — [`plans/SEO-PLAN.md`](plans/SEO-PLAN.md).
-- **Gastos recorrentes do operador (carimbo 2026-09-14, dono: Pablo)** — aluguel,
-  folha, contas fixas: lançamento em poucos toques, recorrência, vencimento,
-  comprovante anexado, lembrete. Benchmark: Organizze. A fonte de verdade contábil
-  é o Conta Azul, operado por BPO financeiro; o sistema só ALIMENTA (vendas por
-  meio de pagamento, movimentos de caixa, notas de compra e estes lançamentos) por
-  Directive + adapter, no padrão do fiscal. Não bloqueia o go-live; tem que estar
-  previsto no desenho do `finance.sync` desde o primeiro envio.
-- **Agentes de operador sobre o kernel da Concierge v3** — Pierre (produção),
-  Étienne (compras) e Anaïs (financeiro consultivo). Persona é dado do tenant; o
-  kernel é agnóstico. Decisões de 2026-09-14 na memória de sessão
-  (`project_mecanismo_de_interacao_agentica`); WP só depois do go-live.
-- **PWA de verdade nas surfaces** (notificação ativa com tela desligada, instalável,
-  kiosk) — [`plans/WP-PWA-CONFORMIDADE.md`](plans/WP-PWA-CONFORMIDADE.md). Torna o
-  Telegram escolha, não necessidade, para o proativo dos agentes.
+## Regra de conclusão
 
-## Critério Para Produção Real
+Um gate técnico verde demonstra somente o contrato que executou. Lançamento
+comercial exige, cumulativamente:
 
-Antes de abrir tráfego real, o mínimo honesto é:
-
-1. `Runtime Gate` verde no commit de release.
-2. `make release-readiness-strict` verde com evidência manual e pre-prod reais.
-3. `check --deploy` verde com secrets e hosts reais do ambiente.
-4. Gateway sandbox validado para pagamento, refund, webhook duplicado e evento
-   fora de ordem.
-5. Reconciliação diária interna provada e snapshot de gateway validado em staging.
-6. QA manual Omotenashi registrado para cliente, operador, cozinha e gerente.
-7. Runbook de incidente para gateway fora, webhook atrasado, estoque divergente,
-   pedido pago sem confirmação e rollback.
+1. commit candidato e deployment técnico identificados;
+2. migrations e runtime prontos no ambiente alvo;
+3. integrações necessárias exercidas no nível exigido;
+4. QA física e recuperação verificadas;
+5. escopo, domínio e fases aprovados pelo owner;
+6. decisão GO/NO-GO registrada no momento do corte.
