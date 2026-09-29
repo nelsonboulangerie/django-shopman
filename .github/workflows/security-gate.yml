@@ -1,0 +1,55 @@
+name: Security Gate
+
+"on":
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  security-gate:
+    name: Security Gate
+    needs: codeql
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: As duas análises produziram resultado
+        env:
+          CODEQL_RESULT: ${{ needs.codeql.result }}
+        run: |
+          echo "CodeQL matrix: $CODEQL_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          test "$CODEQL_RESULT" = "success"

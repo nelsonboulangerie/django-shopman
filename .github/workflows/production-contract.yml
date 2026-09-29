@@ -1,0 +1,102 @@
+name: Production Contract
+
+"on":
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  production-contract:
+    name: Production Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings
+      SHOPMAN_ENVIRONMENT: production
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ci-production-contract-aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zC
+      DJANGO_ALLOWED_HOSTS: shop.example.invalid
+      DJANGO_SECURE_SSL_REDIRECT: "true"
+      CSRF_TRUSTED_ORIGINS: https://shop.example.invalid
+      AUTH_DEFAULT_DOMAIN: shopman-ci.example
+      SHOPMAN_DOMAIN: https://shop.example.invalid
+      DATABASE_URL: postgresql://shopman:synthetic@db.invalid:5432/shopman
+      REDIS_URL: rediss://cache.invalid:6379/0
+      SHOPMAN_PIX_ADAPTER: shopman.shop.adapters.payment_efi
+      SHOPMAN_CARD_ADAPTER: shopman.shop.adapters.payment_stripe
+      SHOPMAN_LINK_ADAPTER: shopman.shop.adapters.payment_stripe
+      SHOPMAN_FISCAL_ADAPTER: shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
+      SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS: "false"
+      SHOPMAN_EXPOSE_MOCK_CAPTURE: "false"
+      SHOPMAN_MOCK_PIX_AUTO_CONFIRM: "false"
+      SHOPMAN_EXPOSE_DEBUG_OTP: "false"
+      SHOPMAN_STAGING_AUTOPILOT: "false"
+      SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER: "false"
+      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "false"
+      EFI_SANDBOX: "false"
+      EFI_CLIENT_ID: ci-efi-client
+      EFI_CLIENT_SECRET: ci-efi-secret
+      EFI_PIX_KEY: ci-efi-pix-key
+      EFI_WEBHOOK_TOKEN: ci-efi-webhook-token
+      STRIPE_SECRET_KEY: sk_live_ci_contract_only
+      STRIPE_PUBLISHABLE_KEY: pk_live_ci_contract_only
+      STRIPE_WEBHOOK_SECRET: whsec_ci_contract_only
+      FOCUS_NFE_TOKEN: ci-focus-token
+      FOCUS_NFE_ENVIRONMENT: producao
+      FOCUS_NFE_CNPJ_EMITENTE: "00000000000191"
+      DOORMAN_ACCESS_LINK_API_KEY: ci-doorman-access-link-key
+      COMTELE_API_KEY: ci-comtele-api-key
+      COMTELE_ROUTE: ci-comtele-route
+      IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
+      MANYCHAT_API_TOKEN: ci-manychat-api-token
+      MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION: "1"
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS: "{}"
+      GOOGLE_MAPS_API_KEY: ""
+      GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key
+      GOOGLE_MAPS_SERVER_API_KEY: ci-maps-server-key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Gerar certificado sintético efêmero
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=ci-production-contract.invalid' \
+            -keyout /tmp/ci-production-contract.key \
+            -out /tmp/ci-production-contract.crt
+          cp /tmp/ci-production-contract.key /tmp/ci-production-contract.pem
+          cat /tmp/ci-production-contract.crt >> /tmp/ci-production-contract.pem
+          echo "EFI_CERTIFICATE_PATH=/tmp/ci-production-contract.pem" >> "$GITHUB_ENV"
+
+      - name: Testes negativos do contrato
+        run: .venv/bin/python -m pytest shopman/shop/tests/test_production_contract.py -q
+
+      - name: Contrato hermético
+        run: make production-contract
+
+      - name: Migration safety sintética
+        env:
+          DATABASE_URL: ""
+          DJANGO_SETTINGS_MODULE: config.settings_test
+        run: make test-migrations

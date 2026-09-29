@@ -314,7 +314,22 @@ jobs:
 
       - name: ${{ matrix.suite }}
         timeout-minutes: 30
-        run: make ${{ matrix.suite }}
+        env:
+          COVERAGE_FILE: .coverage.${{ matrix.suite }}
+        run: |
+          if [ "${{ matrix.suite }}" = "test-shop" ] || [ "${{ matrix.suite }}" = "test-storefront" ]; then
+            export PYTEST_ADDOPTS="--cov=shopman --cov-report= --cov-append"
+          fi
+          make ${{ matrix.suite }}
+
+      - name: Publicar cobertura do shard
+        if: matrix.suite == 'test-shop' || matrix.suite == 'test-storefront'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.suite }}
+          path: .coverage.${{ matrix.suite }}
+          include-hidden-files: true
+          if-no-files-found: error
 
   # ── O backstage roda em DOIS shards, sob um nome só ────────────────────
   # `Testes (test-backstage)` é check OBRIGATÓRIO em `main`. Trocar as entradas
@@ -353,7 +368,18 @@ jobs:
 
       - name: test-backstage-${{ matrix.shard }}
         timeout-minutes: 30
+        env:
+          COVERAGE_FILE: .coverage.backstage-${{ matrix.shard }}
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append
         run: make test-backstage-${{ matrix.shard }}
+
+      - name: Publicar cobertura do shard
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-backstage-${{ matrix.shard }}
+          path: .coverage.backstage-${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: error
 
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes — ver o comentário acima.
@@ -376,6 +402,57 @@ jobs:
           # job existe porque o caminho contrário (deixar o `needs:` pular o
           # dependente) faria a branch protection ler "skipped" como verde.
           [ "$resultado" = "success" ] || exit 1
+
+  coverage-gate:
+    name: Coverage Gate
+    needs: [tests, tests-backstage-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Todos os shards de teste passaram
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+          BACKSTAGE_RESULT: ${{ needs.tests-backstage-shards.result }}
+        run: |
+          test "$TESTS_RESULT" = "success"
+          test "$BACKSTAGE_RESULT" = "success"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Instalar coverage
+        run: python -m pip install 'coverage[toml]>=7.6,<8.0'
+
+      - name: Baixar todos os quatro shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-*
+          path: coverage-data
+          merge-multiple: true
+
+      - name: Combinar, publicar e aplicar o piso de 75%
+        run: |
+          count=$(find coverage-data -type f -name '.coverage.*' | wc -l | tr -d ' ')
+          test "$count" = "4"
+          python -m coverage combine coverage-data
+          python -m coverage report --fail-under=75 | tee coverage.txt
+          python -m coverage xml -o coverage.xml
+          cat coverage.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatório combinado
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-combined
+          path: |
+            coverage.xml
+            coverage.txt
+          if-no-files-found: error
 
   docker-image:
     name: Docker deploy image
