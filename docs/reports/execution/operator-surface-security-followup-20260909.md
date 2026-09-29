@@ -17,7 +17,7 @@ deploy, staging, produção ou rollout para outras surfaces está autorizado.
 | `orders-nuxt` | ligado | `img-src https:` (foto do produto) e `connect-src` loopback (agente do dispositivo), por decisão do dono em 29/09/2026 | onda A com exceções declaradas |
 | `kds-nuxt` | ligado | nenhuma | onda A concluída |
 | `bi-nuxt` | ligado | nenhuma | onda A concluída |
-| `hub-nuxt` | desligado | precisaria de `img-src` para as origens dos outros apps | parado, esperando decisão do dono |
+| `hub-nuxt` | ligado | `img-src https:` (ícone de cada app na origem dele), decisão do dono em 29/09/2026 | onda A com exceção declarada |
 | `pos-nuxt`, `purchase-nuxt` | desligado | a inventariar (Maps, ViaCEP) | onda B pendente |
 | `storefront-nuxt` | fora do kit | fora do kit | item separado |
 
@@ -32,12 +32,7 @@ foi recusado por `connect-src` nas duas, como controle negativo.
 (`tileIconUrl`: `https://pdv.<zona>/pwa/pwa-192x192.png`, `https://kds.<zona>/…`),
 e o Shopman Apps mora em `central.<zona>`. Com o envelope ligado num build de teste, a
 política de base recusou esses ícones (`img-src 'self' data: blob:`) e o tile caiu no
-Lucide de reserva. Não quebra a tela, mas tira o ícone real, que é função escrita no
-código. Liberar isso é exceção nova, fora das duas já aprovadas (foto de produto e
-agente do dispositivo), então o app segue desligado até o dono escolher entre: listar os
-hosts dos apps em `img-src` (o deploy teria de fornecer a lista, porque o host não mora
-no código), abrir `img-src https:` como no Pedidos, ou servir os ícones pela própria
-origem do Shopman Apps.
+Lucide de reserva. Não quebra a tela, mas tira o ícone real, que é função escrita no código. O dono escolheu, em 29/09/2026, a mesma regra do Pedidos: `img-src https:`, declarada no `nuxt.config` do app com o motivo.
 
 ## Achado confirmado no código
 
