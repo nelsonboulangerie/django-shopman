@@ -1435,6 +1435,7 @@ os checks locais passaram. Em modo estrito, bloqueios externos também falham.
 | `manual_qa=...` / `--manual-qa-evidence=...` | `SHOPMAN_MANUAL_QA_EVIDENCE` | Relatório manual/físico de QA |
 | `preprod_url=...` / `--preprod-url=...` | `SHOPMAN_PREPROD_URL` | URL de staging/pre-prod |
 | `--strict-external` | — | Falha também se gateway/manual/pre-prod estiver bloqueado |
+| `read_only=1` / `--read-only` | — | Zero escrita no banco: pula o que grava, recusa todo SQL que não é leitura |
 
 ```bash
 # Local: mostra bloqueios externos sem falhar por eles
@@ -1457,6 +1458,41 @@ O script serializa execuções concorrentes com lock de processo porque os smoke
 locais escrevem no banco durante transações com rollback. Isso evita falso
 negativo `database is locked` quando dois operadores ou automações disparam o
 readiness ao mesmo tempo em SQLite local.
+
+#### Modo `--read-only` (banco alvo, preflight do corte)
+
+Contra o banco vivo, rode com `read_only=1` (`--read-only`). O modo garante
+**zero escrita** por mecanismo, não por convenção:
+
+- toda conexão ganha um `execute_wrapper` que levanta `ReadOnlyViolation`
+  **antes** de o comando chegar ao banco, para qualquer SQL que não seja
+  leitura (`SELECT`, `WITH` e `SHOW` sem `INSERT`/`UPDATE`/`DELETE`/`INTO`/
+  `FOR UPDATE`/`FOR SHARE`/`nextval`, `EXPLAIN` sem `ANALYZE`, `PRAGMA` de
+  consulta e controle de transação). Formato desconhecido conta como escrita;
+- no PostgreSQL, cada check roda ainda numa transação aberta com
+  `SET TRANSACTION READ ONLY` e desfeita no fim: o próprio servidor recusa
+  escrita. O comando vale só para a transação, não gruda na conexão de
+  servidor, então é seguro atrás do PgBouncer em modo transaction;
+- `Shop` é lido direto do banco, sem aquecer o cache (`Shop.load()` faria
+  `cache.set`), e o lock de processo não é usado.
+
+Continuam rodando todos os checks respondidos por leitura (`django check`,
+perfil, migrations sem model pendente, contato, seed Omotenashi, validades,
+copy pública, host de fotos, carga de `RuleConfig`, prontidão sandbox/staging,
+evidência manual e pre-prod). Entram três checks de runtime do alvo:
+`database.connectivity` (`SELECT 1`), `django.migrations_applied` (plano do
+`MigrationExecutor` sem aplicar; migration pendente reprova) e `cache.read`
+(`get` de chave inexistente). O smoke local de gateways (`gateways.local`)
+cria canal, produto, pedido e webhooks, então sai como `SKIP` com o motivo;
+prove-o com `make smoke-gateways` no CI ou num clone descartável do banco.
+
+`skipped` não bloqueia: o código de saída segue a mesma regra (1 se algum
+check falhou ou, em modo estrito, se há bloqueio externo). O JSON ganha
+`"read_only": true` e `counts.skipped`.
+
+```bash
+make production-readiness read_only=1 json=1 manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
+```
 
 ---
 
