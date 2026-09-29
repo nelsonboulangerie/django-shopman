@@ -89,6 +89,21 @@ class ShopmanConfig(AppConfig):
         #     morrer no log). Ver shopman/shop/services/unhandled_errors.py.
         self._connect_unhandled_exception_alert()
 
+        # 14. Login de cliente vira aviso pessoal e linha gerenciável em
+        #     Segurança e dados. Só as portas marcadas do Storefront entram.
+        self._connect_customer_sign_in_alerts()
+
+    def _connect_customer_sign_in_alerts(self):
+        from django.contrib.auth.signals import user_logged_in
+
+        from shopman.shop.services.customer_sign_in import on_user_logged_in
+
+        user_logged_in.connect(
+            on_user_logged_in,
+            dispatch_uid="shop.customer_sign_in.on_logged_in",
+            weak=False,
+        )
+
     def _connect_unhandled_exception_alert(self):
         """Exceção não tratada vira alerta operacional.
 

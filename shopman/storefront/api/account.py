@@ -1122,6 +1122,57 @@ class AccountDeviceDetailView(APIView):
         return response
 
 
+class AccountAccessListView(APIView):
+    """GET/DELETE /api/v1/account/accesses/ — acessos ativos e recentes."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def get(self, request):
+        customer_info = getattr(request, "customer", None)
+        if customer_info is None or not getattr(request.user, "is_authenticated", False):
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        from shopman.shop.services import customer_sign_in
+
+        return Response({
+            "accesses": customer_sign_in.list_accesses(
+                user=request.user,
+                current_session_key=request.session.session_key or "",
+            ),
+        })
+
+    def delete(self, request):
+        customer_info = getattr(request, "customer", None)
+        if customer_info is None or not getattr(request.user, "is_authenticated", False):
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        from shopman.shop.services import customer_sign_in
+
+        revoked = customer_sign_in.revoke_other_sessions(
+            user=request.user,
+            current_session_key=request.session.session_key or "",
+        )
+        return Response({"revoked": revoked})
+
+
+class AccountAccessDetailView(APIView):
+    """DELETE /api/v1/account/accesses/<ref>/ — encerra um acesso escolhido."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def delete(self, request, access_ref: str):
+        customer_info = getattr(request, "customer", None)
+        if customer_info is None or not getattr(request.user, "is_authenticated", False):
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        from shopman.shop.services import customer_sign_in
+
+        revoked = customer_sign_in.revoke_session(user=request.user, access_ref=access_ref)
+        return Response({"revoked": revoked, "id": access_ref})
+
+
 class AccountExportView(APIView):
     """GET /api/v1/account/export/ — customer data export JSON."""
 

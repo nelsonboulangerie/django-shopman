@@ -16,7 +16,10 @@ SOURCE_TO_ORIGIN = {
 def exchange_token(token_str: str, request):
     from shopman.doorman import get_access_link_service
 
+    from shopman.shop.services.customer_sign_in import mark_method
+
     AccessLinkService = get_access_link_service()
+    mark_method(request, "access_link")
     return AccessLinkService.exchange(
         token_str=token_str,
         request=request,

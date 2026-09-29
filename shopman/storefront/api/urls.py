@@ -7,6 +7,8 @@ from django_eventstream.views import events as eventstream_view
 
 from . import views
 from .account import (
+    AccountAccessDetailView,
+    AccountAccessListView,
     AccountDeleteView,
     AccountDeviceDetailView,
     AccountDeviceListView,
@@ -202,6 +204,8 @@ urlpatterns = [
     path("account/passkeys/<str:credential_id>/", AccountPasskeyDetailView.as_view(), name="api-account-passkey-detail"),
     path("account/devices/", AccountDeviceListView.as_view(), name="api-account-devices"),
     path("account/devices/<uuid:device_id>/", AccountDeviceDetailView.as_view(), name="api-account-device-detail"),
+    path("account/accesses/", AccountAccessListView.as_view(), name="api-account-accesses"),
+    path("account/accesses/<str:access_ref>/", AccountAccessDetailView.as_view(), name="api-account-access-detail"),
     path("account/phone/request/", PhoneChangeRequestView.as_view(), name="api-account-phone-request"),
     path("account/phone/confirm/", PhoneChangeConfirmView.as_view(), name="api-account-phone-confirm"),
     path("account/step-up/", AccountStepUpView.as_view(), name="api-account-step-up"),

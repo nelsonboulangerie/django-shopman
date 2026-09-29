@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
+import type { AccountAccessProjection, AccountAccessResponse, AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
 import { deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
 import { authPhonePayload, displayE164Phone, maskPhoneInput } from '~/utils/authPhone'
 import { formatCount } from '~/utils/display'
@@ -28,6 +28,8 @@ const revokeDeviceOpen = ref(false)
 const revokeDeviceMode = ref<RevokeDeviceMode>('one')
 const revokeDeviceCandidate = ref<AccountDeviceProjection | null>(null)
 const revokeDevicePending = ref(false)
+const accessIssue = ref('')
+const accessPending = ref('')
 
 // Step-up: reconfirma identidade por OTP antes de excluir/exportar (mesmo logado).
 const stepUpOpen = ref(false)
@@ -51,6 +53,14 @@ const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices 
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])
+const { data: accessesResponse, pending: accessesPending, refresh: refreshAccesses } = await useFetch<AccountAccessResponse>(apiPath('/api/v1/account/accesses/'), {
+  credentials: 'include',
+  headers: requestHeaders,
+  lazy: true
+})
+const recentAccesses = computed(() => accessesResponse.value?.accesses || [])
+const activeAccesses = computed(() => recentAccesses.value.filter(access => access.is_active))
+const customerAccessLabel = (label: string) => label.replace(/^dispositivo/i, 'Aparelho')
 // Campo opcional mantém compatibilidade com o backend anterior durante rolling
 // deploy. Assim que o backend novo responde, falhamos fechados sem iniciar OTP.
 const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_requests_available !== false)
@@ -386,6 +396,44 @@ async function confirmRevokeDevice () {
   }
 }
 
+async function revokeAccess (access: AccountAccessProjection) {
+  if (accessPending.value || access.is_current) return
+  accessPending.value = access.id
+  accessIssue.value = ''
+  try {
+    await $fetch(apiPath(`/api/v1/account/accesses/${encodeURIComponent(access.id)}/`), {
+      method: 'DELETE',
+      headers: await csrfHeaders(),
+      credentials: 'include'
+    })
+    await refreshAccesses()
+    if (import.meta.client) useSonner.success('Acesso encerrado.')
+  } catch (e) {
+    accessIssue.value = errorDetail(e, 'Não foi possível encerrar este acesso agora.')
+  } finally {
+    accessPending.value = ''
+  }
+}
+
+async function revokeOtherAccesses () {
+  if (accessPending.value) return
+  accessPending.value = 'all'
+  accessIssue.value = ''
+  try {
+    await $fetch(apiPath('/api/v1/account/accesses/'), {
+      method: 'DELETE',
+      headers: await csrfHeaders(),
+      credentials: 'include'
+    })
+    await refreshAccesses()
+    if (import.meta.client) useSonner.success('Outros acessos encerrados.')
+  } catch (e) {
+    accessIssue.value = errorDetail(e, 'Não foi possível encerrar os outros acessos agora.')
+  } finally {
+    accessPending.value = ''
+  }
+}
+
 async function requireStepUp (purpose: 'export' | 'delete', action: () => void | Promise<void>) {
   pendingStepUpAction = action
   pendingStepUpPurpose = purpose
@@ -686,6 +734,75 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiItemActions>
               <UiButton variant="ghost" size="sm" icon="lucide:trash-2" @click="removePasskey(row)">
                 Remover
+              </UiButton>
+            </UiItemActions>
+          </UiItem>
+        </UiItemGroup>
+      </section>
+
+      <!-- Acessos: sessões reais, separadas dos aparelhos que só dispensam o código. -->
+      <section class="space-y-4" data-accesses-section>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="shop-heading">Acessos recentes</h2>
+            <p class="shop-muted">
+              Confira quando e como sua conta foi usada.
+            </p>
+          </div>
+          <UiButton
+            v-if="activeAccesses.length > 1"
+            variant="outline"
+            size="sm"
+            icon="lucide:log-out"
+            :loading="accessPending === 'all'"
+            @click="revokeOtherAccesses"
+          >
+            Encerrar outros acessos
+          </UiButton>
+        </div>
+
+        <UiAlert v-if="accessIssue" variant="destructive">
+          <UiAlertTitle>Não foi possível atualizar</UiAlertTitle>
+          <UiAlertDescription>{{ accessIssue }}</UiAlertDescription>
+        </UiAlert>
+
+        <UiSkeleton v-if="accessesPending" class="h-32 rounded-lg" />
+
+        <UiEmpty v-else-if="!recentAccesses.length" class="border">
+          <UiEmptyMedia variant="icon">
+            <Icon name="lucide:shield-check" />
+          </UiEmptyMedia>
+          <UiEmptyHeader>
+            <UiEmptyTitle>Nenhum acesso recente</UiEmptyTitle>
+            <UiEmptyDescription>Os próximos acessos aparecerão aqui para você conferir.</UiEmptyDescription>
+          </UiEmptyHeader>
+        </UiEmpty>
+
+        <UiItemGroup v-else class="gap-3">
+          <UiItem v-for="access in recentAccesses" :key="access.id" variant="outline" class="bg-card">
+            <UiItemMedia variant="icon" class="size-10 rounded-md">
+              <Icon :name="deviceIcon(access.device_label)" />
+            </UiItemMedia>
+            <UiItemContent>
+              <UiItemTitle>
+                {{ customerAccessLabel(access.device_label) }}
+                <UiBadge v-if="access.is_current" variant="secondary">Este acesso</UiBadge>
+                <UiBadge v-else-if="access.is_active" variant="outline">Ativo</UiBadge>
+              </UiItemTitle>
+              <UiItemDescription>
+                <span v-if="access.approximate_city" class="block">Próximo a {{ access.approximate_city }}</span>
+                <span class="block">{{ customerAccessLabel(access.method_label) }} · {{ access.created_at_display }}</span>
+              </UiItemDescription>
+            </UiItemContent>
+            <UiItemActions v-if="access.is_active && !access.is_current">
+              <UiButton
+                variant="ghost"
+                size="sm"
+                icon="lucide:log-out"
+                :loading="accessPending === access.id"
+                @click="revokeAccess(access)"
+              >
+                Encerrar
               </UiButton>
             </UiItemActions>
           </UiItem>

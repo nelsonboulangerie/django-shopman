@@ -22,7 +22,7 @@ import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-uti
 import { getRequestHeaders, setResponseHeader, setResponseStatus } from 'h3'
 
 import SecurityPage from '~/pages/conta/seguranca.vue'
-import type { AccountDeviceProjection } from '~/types/shopman'
+import type { AccountAccessProjection, AccountDeviceProjection } from '~/types/shopman'
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateToMock)
@@ -63,6 +63,7 @@ function device (overrides: Partial<AccountDeviceProjection> = {}): AccountDevic
 type Reply = { status?: number, body: Record<string, unknown> }
 
 let servedDevices: AccountDeviceProjection[] = []
+let servedAccesses: AccountAccessProjection[] = []
 let privacyAvailable: boolean | undefined
 let deleteReply: Reply
 let stepUpReply: Reply
@@ -98,6 +99,18 @@ registerEndpoint('/api/v1/account/devices/', () => ({
   copy: COPY,
   privacy_requests_available: privacyAvailable
 }))
+registerEndpoint('/api/v1/account/accesses/', {
+  method: 'GET',
+  handler: () => ({ accesses: servedAccesses })
+})
+registerEndpoint('/api/v1/account/accesses/other-access/', {
+  method: 'DELETE',
+  handler: () => {
+    const id = 'other-access'
+    servedAccesses = servedAccesses.map(access => access.id === id ? { ...access, is_active: false } : access)
+    return { revoked: true, id }
+  }
+})
 registerEndpoint('/api/v1/account/passkeys/', () => ({ passkeys: [] }))
 registerEndpoint('/api/auth/request-code/', {
   method: 'POST',
@@ -202,6 +215,7 @@ beforeEach(async () => {
   deleteKeys = []
   savedFiles = []
   privacyAvailable = true
+  servedAccesses = []
   deleteReply = { body: { ok: true, receipt_ref: 'rcpt-1', replayed: false } }
   stepUpReply = { body: { ok: true } }
   exportReply = null
@@ -270,6 +284,46 @@ describe('conta/seguranca — o aparelho confiável', () => {
     expect(comSelo).toHaveLength(1)
     expect(comSelo[0]!.text()).toContain('Safari no iPhone')
     expect(comSelo[0]!.text()).not.toContain('Chrome no Windows')
+  })
+})
+
+describe('conta/seguranca — acessos recentes', () => {
+  it('distingue o acesso atual e permite encerrar outro acesso ativo', async () => {
+    servedAccesses = [
+      {
+        id: 'current-access',
+        device_label: 'Safari no iPhone',
+        method_label: 'link de acesso',
+        approximate_city: 'Londrina, PR · Brasil',
+        created_at: '2026-09-29T09:00:00-03:00',
+        created_at_display: '29/09/2026 às 09:00',
+        is_active: true,
+        is_current: true
+      },
+      {
+        id: 'other-access',
+        device_label: 'Chrome no Android',
+        method_label: 'aparelho reconhecido',
+        approximate_city: '',
+        created_at: '2026-09-28T18:00:00-03:00',
+        created_at_display: '28/09/2026 às 18:00',
+        is_active: true,
+        is_current: false
+      }
+    ]
+    const page = await openSecurity()
+
+    expect(page.text()).toContain('Acessos recentes')
+    expect(page.text()).toContain('Próximo a Londrina, PR · Brasil')
+    expect(page.text()).toContain('Este acesso')
+    expect(page.text()).toContain('Chrome no Android')
+
+    await buttonBy(page, 'Encerrar')!.trigger('click')
+    await settle()
+
+    const other = page.findAll('[data-slot="item"]').find(item => item.text().includes('Chrome no Android'))
+    expect(other?.text()).not.toContain('Ativo')
+    expect(other?.text()).not.toContain('Encerrar')
   })
 })
 
