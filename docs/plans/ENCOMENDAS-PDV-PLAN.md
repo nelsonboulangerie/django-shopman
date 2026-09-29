@@ -28,16 +28,30 @@
    **Via Pedido** da seção (a palavra do dono para o papel — ver
    `backstage/services/order_documents.py`).
 
-## A seção, card a card (antesala do PDV, `pages/session/index.vue`)
+## A seção: uma tela só, `/preorders` (redesenho aprovado pelo dono, 28/09/2026)
 
-| Card | Pergunta do balcão | Abre |
+> A antesala de quatro cards (Cliente veio buscar · Hoje · Semana · Via Pedido, painel)
+> foi o desenho de 26/09. Em 28/09 o dono o trocou por **uma tela**, com o panorama da
+> semana no centro. Entregue pela #1231 (integração das frentes #1221 e #1222); a volta do
+> detalhe com o recorte (`?back=`) pela PR "Encomendas: uma tela, com o panorama da semana
+> no centro".
+
+| Parte | Pergunta do balcão | Como é |
 |---|---|---|
-| **Cliente veio buscar** | "Vim buscar a encomenda da Ana" | busca por nome, telefone ou número → a encomenda → **receber o saldo e entregar** num gesto |
-| **Hoje** · selo com a contagem | "O que sai hoje?" | lista do dia por janela, com situação (a pagar · pago · pronto) |
-| **Semana** · selo com a contagem | "Quanto temos para sábado?" | **grade semanal** (7 colunas, uma por dia, encomendas por janela) com totais do dia |
-| **Via Pedido – painel** | "Imprimir a semana para o painel" | a tela de lote atual, renomeada e corrigida |
+| **Busca** (sempre no topo, nasce focada) | "Vim buscar a encomenda da Ana" | nome, telefone, CPF, endereço ou número; em aberto de **qualquer** data; "Incluir concluídas" (30 dias) em seção **separada**; sem nada em aberto, oferece procurar nas concluídas; resultado único: Enter abre |
+| **Dia** | "O que sai hoje?" | o dia escolhido (padrão hoje), agrupado por horário, ‹ › anda um dia |
+| **Semana** (abre nela) | "Quanto temos para sábado?" | semana de **segunda** a domingo que contém o dia escolhido (`?week=2026-W40`), 7 colunas com contagem, total e "a receber"; tocar no dia abre o Dia; área estreita vira lista por dia |
+| **Filtros** (chips com contagem) | "Quais faltam cobrar? Quais faltam imprimir?" | Recebimento Todas · Retiradas · Entregas; Pagamento Todas · A receber · Pagas (+ "Na conta da casa" quando existe; "a conferir" é aviso próprio, #1171); Via Pedido Todas · Falta imprimir |
+| **Imprimir N vias** | "Imprimir a semana para o painel" | o lote da Via Pedido do que está **visível** (`order_ticket.select_refs`, agente local); `Order.data.ticket_printed_at` alimenta "Falta imprimir" e o sinal no card |
 
-O detalhe de uma encomenda (aberto de qualquer card) oferece, conforme o estado e a
+O estado inteiro (modo, data, filtros, busca) mora na URL (`presentation/preorders.parseView`).
+As rotas antigas respondem 301 por uma release: `/preorders/today` → `?mode=day`,
+`/preorders/week` → `?mode=week`, `/preorders/panel` e `/tickets` →
+`?mode=week&print=pending`. Cada linha leva o recorte ao detalhe (`?back=`,
+`presentation/preorderDetail.preorderDetailPath`), e a volta cai nele mesmo com o
+detalhe recarregado ou aberto noutra aba.
+
+O detalhe de uma encomenda (aberto de qualquer linha da tela) oferece, conforme o estado e a
 permissão: **Receber e entregar**, **Reagendar**, **Editar**, **Cancelar**, **Imprimir Via
 Pedido**.
 
@@ -71,11 +85,12 @@ Uma frente = um branch = uma PR. A ordem é de dependência.
   ("Vendidas hoje" não confere com a consulta).
 
 ### WP-E2 — PDV: a seção e as telas  *(sem decisão pendente; depende de E1)*
-- Seção **Encomendas** na antesala com os quatro cards (`PosSessionTile`), visível com ou
-  sem caixa aberto, só para quem tem `shop.manage_orders`.
-- Páginas `pages/preorders/` (URL em inglês — convenção das superfícies de operador):
-  busca, dia, **grade semanal**, detalhe. A tela de lote vira `pages/preorders/panel.vue`
-  (Via Pedido – painel); `/tickets` responde 301 (bookmark de kiosk).
+- Seção **Encomendas** visível com ou sem caixa aberto, só para quem tem
+  `shop.manage_orders`. ✅ Desde 28/09 a porta é o item da barra lateral (com o selo das
+  de hoje por entregar), não mais a antesala de quatro cards.
+- Páginas `pages/preorders/` (URL em inglês, convenção das superfícies de operador):
+  ✅ desde 28/09 são duas, a tela única (`index.vue`) e o detalhe (`[ref].vue`); a tela
+  de lote morreu dentro do "Imprimir N vias", e `/tickets` responde 301 (bookmark de kiosk).
 - "Fichas de pedido" sai da barra lateral (`PosFunctionRail`).
 - Vocabulário: "Via Pedido", nunca "ficha"/"filipeta" na tela.
 

@@ -30,3 +30,18 @@ export function preorderBackTarget(raw: unknown): string | null {
   if (/[\r\n\\]/.test(target)) return null;
   return target;
 }
+
+/**
+ * O endereço do detalhe, levando a volta junto: `/preorders/NB-7?back=…`.
+ *
+ * `from` é o recorte da lista (`viewPath`: modo, data, filtros, busca). A volta
+ * só pelo histórico falha justamente quando mais importa: detalhe recarregado,
+ * aberto noutra aba, ou kiosk cujo histórico começa em outro app. Recorte que é
+ * a própria casa da seção não vai na URL (a volta sem `back` já cai nela).
+ */
+export function preorderDetailPath(ref: string, from = ""): string {
+  const path = `${PREORDERS_HOME}/${encodeURIComponent(ref)}`;
+  const back = preorderBackTarget(from);
+  if (!back || back === PREORDERS_HOME) return path;
+  return `${path}?${new URLSearchParams({ back }).toString()}`;
+}

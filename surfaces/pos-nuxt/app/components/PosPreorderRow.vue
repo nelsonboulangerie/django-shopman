@@ -8,6 +8,7 @@
 // sábado": que horas, quem, retirada ou entrega, o saldo (ou "pago") e se a Via
 // Pedido já saiu.
 import { fulfillmentIcon } from "~/presentation/orderTickets";
+import { preorderDetailPath } from "~/presentation/preorderDetail";
 import { balanceStandsOut, compactMoneyLine, customerLine, moneyLine, situationTone } from "~/presentation/preorders";
 import type { PreorderCard } from "~/types/preorders";
 
@@ -16,7 +17,9 @@ const props = withDefaults(defineProps<{
   compact?: boolean;
   /** Mostrar a data (na busca, onde os dias se misturam). */
   showDate?: boolean;
-}>(), { compact: false, showDate: false });
+  /** O recorte da lista de onde a linha foi aberta: a volta do detalhe cai nele. */
+  back?: string;
+}>(), { compact: false, showDate: false, back: "" });
 
 const TONE_CLASS: Record<string, string> = {
   warning: "border-warning/40 bg-warning/10 text-warning",
@@ -42,7 +45,7 @@ const printedLabel = computed(() => (props.card.ticket_printed ? "Via Pedido imp
 
 <template>
   <NuxtLink
-    :to="`/preorders/${encodeURIComponent(card.ref)}`"
+    :to="preorderDetailPath(card.ref, back)"
     class="flex rounded-md border border-border bg-card text-left transition hover:border-primary/40 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     :class="compact ? 'flex-col gap-0.5 p-2' : 'items-start gap-3 p-3'"
     :data-preorder="card.ref"

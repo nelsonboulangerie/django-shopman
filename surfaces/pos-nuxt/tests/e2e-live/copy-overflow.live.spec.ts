@@ -257,16 +257,22 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     });
 
     // ── ENCOMENDAS ──
-    for (const path of ["/preorders", "/preorders/today", "/preorders/week", "/preorders/panel"]) {
-      await step(page, `encomendas${path.replace("/preorders", "") || "-inicio"}`, async () => {
+    // Uma tela só: os modos e o filtro de impressão são estados da URL.
+    for (const [screen, path] of [
+      ["encomendas-semana", "/preorders"],
+      ["encomendas-dia", "/preorders?mode=day"],
+      ["encomendas-falta-imprimir", "/preorders?mode=week&print=pending"],
+      ["encomendas-busca", "/preorders?q=an&completed=1"],
+    ] as const) {
+      await step(page, screen, async () => {
         await page.goto(path);
         await page.waitForLoadState("networkidle");
       });
     }
     await step(page, "encomenda-detalhe", async () => {
-      await page.goto("/preorders/week");
+      await page.goto("/preorders");
       await page.waitForLoadState("networkidle");
-      await page.locator('a[href*="/preorders/"]').filter({ hasNotText: /Hoje|Semana|Painel/ }).first().click();
+      await page.locator("a[data-preorder]").first().click();
       await page.waitForLoadState("networkidle");
     });
 

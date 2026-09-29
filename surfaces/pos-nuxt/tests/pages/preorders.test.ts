@@ -446,6 +446,9 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
     await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery" });
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-8"]);
+    // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
+      .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
   });
 
   it("'Falta imprimir' mostra só o que não saiu, e o botão imprime exatamente o visível", async () => {
@@ -517,10 +520,10 @@ describe("Encomendas — Cliente veio buscar", () => {
     expect(refsIn(completed)).toEqual(["NB-1"]);
   });
 
-  it("um resultado só: Enter abre o detalhe", async () => {
+  it("um resultado só: Enter abre o detalhe, e a volta cai de novo na busca", async () => {
     const wrapper = await mount(PreordersPage);
     await typeSearch(wrapper, "Ana");
     await wrapper.find("[data-preorders-search]").trigger("keydown", { key: "Enter" });
-    expect(navigate).toHaveBeenCalledWith("/preorders/NB-7");
+    expect(navigate).toHaveBeenCalledWith("/preorders/NB-7?back=%2Fpreorders%3Fq%3DAna");
   });
 });

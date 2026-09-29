@@ -19,6 +19,7 @@
 import { useEventListener, watchDebounced } from "@vueuse/core";
 
 import { batchNotice, canPrintBatch, isoDate, printCtaLabel } from "~/presentation/orderTickets";
+import { preorderDetailPath } from "~/presentation/preorderDetail";
 import {
   PREORDERS_SCOPE_NOTE,
   SEARCH_MIN_CHARS,
@@ -50,6 +51,7 @@ import {
   stepDate,
   stepLabels,
   toReceiveLine,
+  viewPath,
   viewQuery,
   type PreorderFilters,
   type PreordersView,
@@ -70,6 +72,8 @@ function update(patch: Partial<PreordersView>) {
 }
 
 const sections = computed(() => modeSections(view.value, today));
+// O recorte de agora: cada linha o leva ao detalhe (`?back=`), e a volta cai nele.
+const back = computed(() => viewPath(view.value, today));
 
 // ── O período (Dia ou Semana) ──
 const params = computed(() => periodParams(view.value));
@@ -133,7 +137,7 @@ onMounted(() => { void nextTick(() => searchField.value?.inputRef?.focus()); });
 
 function openSingle() {
   const only = singleResult(result.value);
-  if (only) void navigateTo(`/preorders/${encodeURIComponent(only.ref)}`);
+  if (only) void navigateTo(preorderDetailPath(only.ref, back.value));
 }
 
 // Leitor de código (ou alguém digitando) com o foco fora de qualquer campo: a
@@ -221,7 +225,7 @@ function refreshAll() {
             <h2 class="text-sm font-semibold text-muted-foreground">{{ searchOpenHeading(result.open_count) }}</h2>
             <ul class="grid gap-2">
               <li v-for="card in result.open" :key="card.ref">
-                <PosPreorderRow :card="card" show-date />
+                <PosPreorderRow :back="back" :card="card" show-date />
               </li>
             </ul>
             <p v-if="openLimit" class="text-sm text-muted-foreground">{{ openLimit }}</p>
@@ -256,7 +260,7 @@ function refreshAll() {
             </h2>
             <ul class="grid gap-2">
               <li v-for="card in result.completed" :key="card.ref">
-                <PosPreorderRow :card="card" show-date />
+                <PosPreorderRow :back="back" :card="card" show-date />
               </li>
             </ul>
             <p v-if="completedLimit" class="text-sm text-muted-foreground">{{ completedLimit }}</p>
@@ -363,7 +367,7 @@ function refreshAll() {
               <h2 class="text-sm font-semibold text-muted-foreground">{{ group.label }}</h2>
               <ul class="grid gap-2">
                 <li v-for="card in group.orders" :key="card.ref">
-                  <PosPreorderRow :card="card" />
+                  <PosPreorderRow :back="back" :card="card" />
                 </li>
               </ul>
             </section>
@@ -397,7 +401,7 @@ function refreshAll() {
                     {{ dayToReceiveLine(weekDay) }}
                   </span>
                 </button>
-                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :card="card" compact />
+                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" compact />
               </section>
             </div>
 
@@ -417,7 +421,7 @@ function refreshAll() {
                     <template v-if="dayToReceiveLine(weekDay)"> · <span class="font-semibold text-foreground">{{ dayToReceiveLine(weekDay) }}</span></template>
                   </span>
                 </button>
-                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :card="card" />
+                <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" />
               </section>
             </div>
           </div>

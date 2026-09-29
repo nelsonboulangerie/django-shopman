@@ -502,5 +502,5 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
 /** O nome acessível do item da barra, com o selo por extenso. */
 export function railAriaLabel(badge: string | undefined): string {
   if (!badge) return "Encomendas";
-  return badge === "1" ? "Encomendas — 1 para entregar hoje" : `Encomendas — ${badge} para entregar hoje`;
+  return badge === "1" ? "Encomendas: 1 para entregar hoje" : `Encomendas: ${badge} para entregar hoje`;
 }
