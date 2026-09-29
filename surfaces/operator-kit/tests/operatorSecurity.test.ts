@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeVaryHeader,
   OPERATOR_CONTENT_SECURITY_POLICY,
-  operatorContentSecurityPolicy,
+  operatorBaselineContentSecurityPolicy,
   operatorResponseHeaders,
 } from "../server/utils/operatorSecurity";
 
@@ -52,12 +52,12 @@ describe("operator-kit — borda HTTP segura", () => {
 
 describe("operator-kit — exceção de CSP por app e por diretiva", () => {
   it("sem exceção declarada, a política é exatamente a de base", () => {
-    expect(operatorContentSecurityPolicy()).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
-    expect(operatorContentSecurityPolicy({})).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
+    expect(operatorBaselineContentSecurityPolicy()).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
+    expect(operatorBaselineContentSecurityPolicy({})).toBe(OPERATOR_CONTENT_SECURITY_POLICY);
   });
 
   it("acrescenta a origem só na diretiva declarada e mantém o resto fechado", () => {
-    const csp = operatorContentSecurityPolicy({
+    const csp = operatorBaselineContentSecurityPolicy({
       "img-src": ["https:"],
       "connect-src": ["http://127.0.0.1:*", "http://localhost:*"],
     });
@@ -71,16 +71,16 @@ describe("operator-kit — exceção de CSP por app e por diretiva", () => {
 
   it("recusa diretiva que não aceita exceção", () => {
     expect(() =>
-      operatorContentSecurityPolicy({ "script-src": ["https://cdn.example.com"] } as never),
+      operatorBaselineContentSecurityPolicy({ "script-src": ["https://cdn.example.com"] } as never),
     ).toThrow(/script-src/);
     expect(() =>
-      operatorContentSecurityPolicy({ "frame-ancestors": ["https:"] } as never),
+      operatorBaselineContentSecurityPolicy({ "frame-ancestors": ["https:"] } as never),
     ).toThrow(/frame-ancestors/);
   });
 
   it("recusa origem que desliga a política", () => {
     for (const source of ["*", "'unsafe-eval'", "http:", "data:", "http://192.168.0.10:47811", "https://*"]) {
-      expect(() => operatorContentSecurityPolicy({ "img-src": [source] })).toThrow();
+      expect(() => operatorBaselineContentSecurityPolicy({ "img-src": [source] })).toThrow();
     }
   });
 

@@ -48,7 +48,7 @@ export type OperatorCspAllow = Partial<Record<OperatorCspDirective, readonly str
 
 const ALLOWED_SOURCE = /^(https:|https:\/\/[a-z0-9.-]+(:\d+)?|http:\/\/(127\.0\.0\.1|localhost)(:(\d+|\*))?)$/i;
 
-export function operatorContentSecurityPolicy(allow?: OperatorCspAllow | null): string {
+export function operatorBaselineContentSecurityPolicy(allow?: OperatorCspAllow | null): string {
   if (!allow || Object.keys(allow).length === 0) return OPERATOR_CONTENT_SECURITY_POLICY;
   for (const [directive, sources] of Object.entries(allow)) {
     if (!(OPERATOR_CSP_EXTENSIBLE_DIRECTIVES as readonly string[]).includes(directive)) {
@@ -118,7 +118,7 @@ export function operatorResponseHeaders(options: {
   cspAllow?: OperatorCspAllow | null;
 }): Record<string, string> {
   const headers: Record<string, string> = {
-    "Content-Security-Policy": operatorContentSecurityPolicy(options.cspAllow),
+    "Content-Security-Policy": operatorBaselineContentSecurityPolicy(options.cspAllow),
     ...SECURITY_HEADERS,
   };
 
