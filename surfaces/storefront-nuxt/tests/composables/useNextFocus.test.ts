@@ -135,6 +135,11 @@ describe('useNextFocus — a página segue o foco', () => {
     await vi.waitFor(() => {
       expect(lastScroll()).toEqual({ element: when, options: { block: 'start', behavior: 'smooth' } })
     })
+
+    scrolledSpy.mockClear()
+    await page.finishNavigation()
+    await settle()
+    expect(scrolledSpy).not.toHaveBeenCalled()
     page.unmount()
   })
 
