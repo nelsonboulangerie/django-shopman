@@ -5,6 +5,8 @@
 > **Data-base:** 29/09/2026.
 >
 > **Missão:** deixar o Shopman pronto para a loja **abrir amanhã**, com todos os dados operacionais atuais, completos e aprovados. O legado ajuda a reconstruir identidade, fiscal, receitas e referências; vendas antigas ficam numa trilha analítica paralela que não bloqueia o Day-1. O plano falha fechado: ausência, divergência e fonte não acessível são `UNKNOWN`, nunca “zero”, “não se aplica” ou fato inferido.
+>
+> **Decisão do owner em 29/09/2026:** **`Catálogo Nelson — consolidado` é a fonte autoritativa inicial para o mix ativo e os preços atuais.** Shopman Live, cofre, iFood/Bling/outros canais e histórico apenas reconciliam; divergência sempre entra numa fila humana explícita e nunca sobrescreve o consolidado silenciosamente.
 
 ## 1. Resultado que este WP precisa entregar
 
@@ -67,7 +69,7 @@ As contagens abaixo são um ponto de partida sanitizado, não autorização de i
 | Yooga — itens sem SKU | **~27.177** | resolver por alias/revisão; não casar só por nome |
 | Período Yooga | **UNKNOWN**: `jul/2024–20/07/2026` conflita com `16/01/2024–20/07/2026` | gate bloqueado até recontagem por `min/max occurred_at` e fonte física |
 | Mapa SKU Yooga | **143 linhas de dados** em [`sku-real-mapa.csv`](sku-real-mapa.csv) | proposta/curadoria; conferir estados e assinaturas |
-| Catálogo consolidado | **183 linhas**: 114 casa, 62 revenda, 57 materiais | categorias se sobrepõem; medir chaves únicas e duplicatas |
+| `Catálogo Nelson — consolidado` | **183 linhas**: 114 casa, 62 revenda, 57 materiais | fonte autoritativa inicial de mix/preço; categorias se sobrepõem, então medir chaves únicas e duplicatas |
 | API pública viva — amostra | **44 itens** | amostra, não inventário completo do banco |
 | Sem alergênicos na amostra | **11/44** | revisão humana obrigatória |
 | Sem informação dietética | **25/44** | não publicar afirmação positiva por silêncio |
@@ -103,13 +105,13 @@ Se `~380.199` não fechar, o relatório mostra as contagens por aba/arquivo e ex
 | XML NFC-e/NF-e de saída | chave, emissor/destinatário permitido, itens, totais, status fiscal, datas | arquivo histórico fiscal; conciliação com Yooga; evidência de cancelamento/autorização | reemitir, criar `Order`, assumir recebimento financeiro |
 | XML NF-e de entrada | fornecedor, produtos, GTIN, unidades, quantidades, preços, NCM/CFOP/lote/validade quando declarados | enriquecer cadastro e preparar recebimento revisável; custo histórico | lançar estoque/contas a pagar sem conferência e recebimento explícitos |
 | Cofre XLSX/CSV e Google Sheets | 33 entidades curadas | migração de curadoria por chave natural, com dry-run | incluir segredo, PII ou transacional no import |
-| Catálogo consolidado | sortimento e classificação candidata | comparação e fila de aprovação | publicar ou precificar automaticamente |
+| `Catálogo Nelson — consolidado` | fonte autoritativa inicial de mix ativo e preços atuais | preparar a candidata canônica e a fila de validação | aplicar linha sem identidade inequívoca, proveniência ou aprovação |
 | `sku-real-mapa.csv` | mapa Yooga → SKU canônico | aliases assinados após validação | resolver ambiguidades silenciosamente |
 | `RECEITAS 2.4.xlsx` e “Ficha Técnica - Maysa” | fórmulas, rendimentos, perdas, custos históricos e versões | rascunhos versionados e revisão do responsável técnico | escolher aba vigente, custo atual ou rendimento real por inferência |
 | Snapshots de catálogo/SQLite | estado antigo e relações que podem ter sumido | whitelist, diff semântico e recuperação registro a registro | importar banco inteiro, PKs ou credenciais |
 | Imagens legadas | candidatos por hash e possível SKU | deduplicação e fila de aprovação | assumir autoria/licença ou correspondência com produto |
-| Bling | produtos, fornecedores, XMLs ou preços se exportação autêntica for localizada | fonte de comparação com data e id externo | sobrescrever dado mais recente sem precedência comprovada |
-| iFood | catálogo e ids externos capturados | comparação de sortimento/copy/preço por canal | escrita/publicação durante este programa |
+| Bling | produtos, fornecedores, XMLs ou preços se exportação autêntica for localizada | reconciliação com data e id externo | sobrescrever o consolidado; promover divergência sem decisão humana |
+| iFood/outros canais | catálogo e ids externos capturados | reconciliar publicação, disponibilidade e preço exibido | virar fonte de preço/mix, retroalimentar o canônico ou escrever/publicar durante este programa |
 | API pública do Storefront | visão do que o cliente recebe | profiling de cobertura e regressão | tratá-la como inventário completo do banco |
 | Live DB | estado operacional atual | leitura/profiling quando acesso read-only existir | mutação ad hoc no console |
 
@@ -140,13 +142,27 @@ Precedência não é “último arquivo vence”. Para cada campo:
 
 Uma fonte de menor prioridade pode preencher campo vazio; não sobrescreve campo aprovado de maior prioridade. Conflito vira item de revisão.
 
+Para **mix ativo e preço atual**, a regra específica substitui a precedência genérica: o ponto de partida é `Catálogo Nelson — consolidado`. Live, cofre, canais e histórico são comparadores. Cada diferença gera uma decisão com `field`, valor do consolidado, valor encontrado, fonte comparada, impacto, decisão, justificativa, ator e data. Nenhum job adota “o valor mais novo”, “o valor do Live” ou “o valor do canal” automaticamente.
+
+Todo preço candidato/aprovado carrega, no mínimo:
+
+- `amount_q` e moeda;
+- escopo (`base` ou canal explícito);
+- `as_of` — instante/data a partir do qual o valor é considerado vigente;
+- `source` — `catalogo_nelson_consolidado` ou decisão humana posterior identificada;
+- `approver` e `approved_at`;
+- referência da divergência quando substitui o consolidado;
+- validade/fim, quando temporário.
+
+Preço sem `as_of`, `source` ou `approver` é `VALIDAR` e não pode ser publicado.
+
 ### 5.2 Precedência por domínio
 
 | Domínio/campo | Fonte de verdade | Fontes auxiliares | Gate humano |
 |---|---|---|---|
-| SKU e identidade do produto | catálogo canônico + alias aprovado | Yooga, consolidado, iFood, Bling | dono do catálogo |
-| Sortimento atual/publicação | decisão comercial atual | API pública, catálogos externos, vendas recentes | dono |
-| Preço de venda atual e por canal | tabela atual aprovada e datada | preço Yooga/iFood/Bling apenas como comparação histórica | dono; nenhuma aprovação em massa implícita |
+| SKU e identidade do produto | `Catálogo Nelson — consolidado` + alias aprovado | Shopman Live, cofre, Yooga, iFood, Bling | dono do catálogo resolve conflitos |
+| Sortimento atual/publicação | `Catálogo Nelson — consolidado` como fonte inicial | Live, cofre, canais e vendas apenas reconciliam | dono decide cada divergência material |
+| Preço de venda atual e por canal | `Catálogo Nelson — consolidado`, com `as_of/source/approver`; override por canal só por decisão explícita | Live/cofre/iFood/Bling/Yooga apenas reconciliam | dono; nenhuma vitória por “mais recente” ou aprovação implícita |
 | NCM/CEST/CFOP/CSOSN/CST/origem/unidade tributável | parametrização fiscal aprovada | XMLs, GTIN e cadastro legado | contador/responsável fiscal |
 | Alergênicos | receita vigente + declaração de cada insumo, com revisão | rótulo do fornecedor | responsável técnico |
 | Nutrição | receita vigente, rendimento e base nutricional identificada | planilha antiga apenas como pista | responsável técnico; laudo quando aplicável |
@@ -177,6 +193,8 @@ Todo campo/fonte recebe uma destas ações no manifest de profiling:
 
 Exemplos normativos:
 
+- mix/preço do `Catálogo Nelson — consolidado`: `IMPORTAR` apenas depois de identidade inequívoca e aprovação registrada; até lá, `VALIDAR`;
+- divergência Live/cofre/canal versus consolidado: `VALIDAR` em fila humana; nunca resolver por sobrescrita automática;
 - preço Yooga antigo: `VALIDAR`, nunca `IMPORTAR` como preço atual;
 - chave de acesso e total de XML autêntico: `IMPORTAR` no histórico fiscal;
 - alergênico derivado de receita incompleta: `VALIDAR`/bloquear, não afirmar “não contém”;
@@ -287,7 +305,7 @@ O0 gera um relatório por fonte e um consolidado com:
 11. fornecedores por documento e frescor dos custos;
 12. PII presente, fundamento de uso, minimização e retenção;
 13. cobertura e conflitos do grafo de identidade;
-14. comparação Live × cofre × consolidado × fontes externas;
+14. comparação `Catálogo Nelson — consolidado` × Live × cofre × canais × histórico, com uma linha de conflito por campo;
 15. defaults perigosos e valores de desenvolvimento.
 
 Saídas obrigatórias: CSV sanitizado de exceções, sumário Markdown, JSON para gate automatizado e zero amostras de PII nos artefatos versionados.
@@ -297,8 +315,8 @@ Saídas obrigatórias: CSV sanitizado de exceções, sumário Markdown, JSON par
 O programa prioriza aquilo que impede abrir e operar amanhã. Nenhum trabalho de migração histórica toma lease, atenção humana ou janela de deploy desta sequência:
 
 1. **Loja e identidade:** razão/nome, documentos, endereço, timezone, contato, ambientes, unidades e parâmetros legais.
-2. **Mix vendável:** SKU, produto ativo/inativo, coleções, listings, componentes e disponibilidade intencional.
-3. **Preço atual:** preço-base e por canal, validade, arredondamento, adicionais, promoções reais e bloqueio de zero.
+2. **Mix vendável:** carregar a candidata de `Catálogo Nelson — consolidado`; reconciliar SKU, produto ativo/inativo, coleções, listings, componentes e disponibilidade contra as demais fontes; conflitos aguardam decisão.
+3. **Preço atual:** partir do consolidado e registrar preço-base/por canal com `as_of`, `source`, `approver`, validade, arredondamento, adicionais, promoções reais e bloqueio de zero; canais apenas reconciliam.
 4. **Fiscal e segurança alimentar:** NCM/CEST/CFOP/CSOSN/CST/origem, unidade tributável, alergênicos, dietético, warnings e nutrição no escopo aprovado.
 5. **Como fabricar:** receitas/BOM vigentes, sub-receitas, rendimento, fator de correção, perdas, validade e capacidade.
 6. **Como comprar:** insumos reais, unidade-base, conversões, fornecedores, contatos operacionais mínimos e custo vigente.
@@ -385,9 +403,9 @@ O7 deve:
 | Domínio | Gate automático | Gate humano | Condição de GO |
 |---|---|---|---|
 | Organização/loja | documento/formato, endereço, timezone, DDD e unidade sem fallback dev | dono confirma identidade e contatos | dados legais/operacionais vigentes em todas as superfícies |
-| Produtos/SKUs | unicidade, SKU válido, alias sem ambiguidade, nenhum seed marcado como real | sortimento e descontinuados aprovados | 100% dos publicados com identidade confirmada |
+| Produtos/SKUs | unicidade, SKU válido, alias sem ambiguidade, nenhum seed marcado como real; diff consolidado×demais fontes | sortimento e descontinuados do consolidado aprovados; cada conflito decidido | 100% dos publicados com identidade confirmada e nenhuma divergência silenciosa |
 | Coleções/listings | vínculos íntegros, coleção ativa, ordem sem duplicata | taxonomia e exposição aprovadas | todo publicado pertence a navegação intencional |
-| Preços | `>0` para publicado/vendável, moeda/centavos, validade e canal, margem/custo sinalizados | **todos os preços atuais aprovados** | zero preço herdado sem data/aprovador; zero publicado a R$0 |
+| Preços | `>0`, moeda/centavos, canal e `as_of/source/approver`; diff consolidado×Live/cofre/canais/histórico | **todos os preços atuais e overrides aprovados** | zero preço sem proveniência/aprovador, zero publicado a R$0 e zero conflito auto-resolvido |
 | Fiscal | formato NCM/CEST/GTIN, combinações permitidas, unidade tributável, origem | **contador assina a matriz** | 100% do vendável no strict gate fiscal ou exceção formal bloqueada |
 | Alergênicos | derivação fecha pela receita/insumo; ausência não vira negativo | **responsável técnico aprova** | 100% do alimento publicado com declaração revisada |
 | Informação dietética | consistência com ingredientes e contaminação cruzada | responsável técnico | nenhuma alegação positiva baseada em silêncio |
@@ -415,6 +433,7 @@ O7 deve:
 
 - DDD padrão **11** em operação de Londrina/DDD **43**;
 - produto publicado/vendável com preço zero;
+- preço sem `as_of`, `source` e `approver`, ou canal usado como fonte de verdade por sincronização reversa;
 - coleção/listing ativa por default sem decisão;
 - `SupplierMaterialCost` antigo tratado como atual;
 - canal em `immediate`, dinheiro, entrega não rastreada, sem commit check, preorder ou lead time zero por fallback;
@@ -428,7 +447,7 @@ O7 deve:
 
 - [ ] loja/organização, documento, endereço e timezone conferidos;
 - [ ] mix ativo fechado; descontinuados não aparecem; SKU/GTIN não colidem;
-- [ ] todos os preços atuais por canal aprovados e nenhum vendável custa zero;
+- [ ] todos os preços atuais por canal carregam `as_of/source/approver`, estão aprovados e nenhum vendável custa zero;
 - [ ] contador aprovou fiscal de todo item ativo;
 - [ ] alergênicos/dietético/warnings estão completos e não fazem alegação por ausência;
 - [ ] receitas usadas amanhã, rendimentos, perdas e validades estão publicadas;
@@ -590,15 +609,15 @@ Cada lease tem branch/worktree, base SHA, arquivos permitidos, predecessor, saí
 
 ### O1 — Loja, mix ativo e identidade
 
-**Entregas:** organização/loja; catálogo consolidado; diff multi-fonte; SKUs/GTINs; aliases; coleções/listings/componentes; ativos/descontinuados; fila de conflitos e de imagens.
+**Entregas:** organização/loja; candidata de mix nascida de `Catálogo Nelson — consolidado`; diff contra Shopman Live, cofre, canais e histórico; SKUs/GTINs; aliases; coleções/listings/componentes; ativos/descontinuados; fila explícita de conflitos e de imagens.
 
-**Gate:** 183 linhas consolidadas decompostas em chaves únicas/sobreposições; 100% do mix Day-1 com SKU e estado aprovados; nenhuma identidade ambígua publicada.
+**Gate:** 183 linhas consolidadas decompostas em chaves únicas/sobreposições; 100% do mix Day-1 com SKU e estado aprovados; toda divergência externa decidida por pessoa; nenhuma identidade ambígua ou sobrescrita silenciosa publicada.
 
 ### O2 — Preço, fiscal e segurança do produto
 
-**Entregas:** preços atuais por canal; regras de adicionais/promoções reais; matriz fiscal; alergênicos, dietético, warnings, nutrição e imagens aprovadas.
+**Entregas:** preços atuais iniciados pelo consolidado e registrados com `as_of/source/approver`; fila de divergências/overrides por canal; regras de adicionais/promoções reais; matriz fiscal; alergênicos, dietético, warnings, nutrição e imagens aprovadas.
 
-**Gate:** todo item vendável tem preço positivo aprovado; strict gate fiscal e contador verdes; segurança alimentar completa; imagem real/licenciada quando publicada em feed.
+**Gate:** todo item vendável tem preço positivo e proveniência completa; canal nenhum retroalimenta o canônico; conflitos/overrides foram aprovados; strict gate fiscal e contador verdes; segurança alimentar completa; imagem real/licenciada quando publicada em feed.
 
 ### O3 — Receitas, insumos, fornecedores e custo vigente
 
@@ -664,7 +683,8 @@ Cada lease tem branch/worktree, base SHA, arquivos permitidos, predecessor, saí
 
 ### Gate Day-1 — bloqueia abrir
 
-- [ ] 100% dos produtos publicados têm SKU, preço positivo aprovado e coleção intencional;
+- [ ] 100% dos produtos publicados vêm do mix consolidado ou de exceção humana registrada, com SKU, preço positivo aprovado e coleção intencional;
+- [ ] divergências entre consolidado, Live, cofre, canais e histórico estão decididas ou bloqueadas; nenhuma fonte reconciliadora sobrescreveu o canônico;
 - [ ] 100% dos produtos alimentícios publicados passaram por fiscal, alergênicos e gate dietético; nutrição cumpre o escopo aprovado;
 - [ ] toda imagem publicada como produto é real, correspondente e licenciada;
 - [ ] toda receita usada para custo/rótulo/estoque é versão vigente, assinada e fecha unidade/rendimento;
@@ -696,7 +716,7 @@ H1/H2 incompletos não mudam um `GO` operacional para `NO-GO`, exceto quando rev
 
 Perguntar em um único pacote, depois de O0–O4 preencherem tudo o que os dados respondem:
 
-1. **Sortimento e preço:** qual fonte representa hoje o sortimento/preço vigente? Aprovar a tabela final inteira, incluindo diferenças por canal.
+1. **Sortimento e preço:** revisar somente a fila de divergências entre `Catálogo Nelson — consolidado` e Live/cofre/canais/histórico; aprovar exceções/overrides por canal e a tabela final inteira.
 2. **Receitas:** entre as 34 abas e versões `OLD`, quais são vigentes? Quem confirma rendimentos, fatores, validade e os casos incompletos?
 3. **Fiscal:** quem é o contador aprovador e qual matriz fiscal final deve valer por SKU/canal?
 4. **Compras:** qual janela define custo “atual”? Quais fornecedores/embalagens/conversões ainda valem?
