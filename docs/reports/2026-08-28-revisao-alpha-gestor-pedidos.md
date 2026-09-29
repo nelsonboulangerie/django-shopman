@@ -100,37 +100,36 @@
 - Janela: cancelamento do cliente so enquanto pagamento nao capturado (dialogo avisa; apos captura, sumiu o botao e o caminho e 'Ajuda'/WhatsApp).
 - Tracking anonimo: 'Nao encontramos este pedido - entre com seu telefone' (privacidade ok).
 
-## 10. Correcao do diagnostico do P1 (28/08, pos-execucao)
+## 10. DOC-OBSOLETA: modelo de deploy DO mudou (anotado para correcao)
 
-O P1 da matriz (linha 26: "Feeds vaza URLs de dev") foi diagnosticado no prompt
-`2026-08-28-prompt-p1e-do.md` como "falta a env `NUXT_PUBLIC_DJANGO_BASE_URL` no
-spec vivo do orders-nuxt; aplicar e rebuildar". **Esse diagnostico estava errado**,
-e o plano dele seria um no-op.
+- OBSOLETO: docs/guides/deploy-digitalocean.md (linhas ~49-55) instrui redeploy via doctl apps create-deployment e descreve blueprint com git.repo_clone_url.
+- ATUAL: .github/workflows/deploy-images.yml publica imagens no DOCR (registry.digitalocean.com/nelsonboulangerie/shopman) e o App Platform usa deploy_on_push por tag — publicar a tag E o deploy; merge em main = deploy automatico no alpha (build seletivo, concurrency sem cancel).
+- IMPLICACAO: corrigir o trecho do doc (instrucao de deploy) mantendo os avisos validos (nunca doctl apps update --spec so para subir codigo — sobrescreve spec vivo/secrets; para topologia, partir de doctl apps spec get preservando secrets).
+- IMPLICACAO DE RISCO: merge em main redeploya o alpha automaticamente — revisao de PR + gates de CI (runtime-gate, surfaces-gate, omotenashi-gate, alpha-smoke) sao a protecao.
 
-A env ja estava no spec vivo, com escopo `RUN_AND_BUILD_TIME` e valor
-`https://api.boulangerie.com.br` — em 8 componentes, orders-nuxt e bi-nuxt
-inclusive. Nenhuma mudanca de spec era necessaria.
+- CONFIRMACAO (28/08): .do/app.alpha-subdomains.yaml usa image: {registry_type: DOCR, repository: shopman} em TODOS os componentes (web + surfaces Nuxt) — sem blocos git; o modelo de imagens com deploy_on_push e o vigente.
 
-A causa real: o Nuxt deriva o nome da env **da chave** do `runtimeConfig`. A chave
-era `public.djangoPublicBaseUrl`, que so escutaria
-`NUXT_PUBLIC_DJANGO_PUBLIC_BASE_URL`. Chave desconhecida o Nuxt ignora em silencio,
-e o bundle servia o fallback de dev.
+## 11. Decisoes do dono + ensaio cego do prompt
 
-Prova, na mesma pagina do alpha, mesmo container, mesmo escopo de env:
-`operatorHubUrl` (chave que casa com `NUXT_PUBLIC_OPERATOR_HUB_URL`) vinha com o
-valor da env; `djangoPublicBaseUrl` vinha `http://127.0.0.1:8000`. Uma aplicou, a
-outra nao — o que descarta imagem velha, spec desatualizado e necessidade de
-rebuild.
+- Ensaio cego (subagente lendo so o prompt): veredito quase, falta X — corrigiu P1-E (env ausente no spec, nao bug de codigo), P2-C (mecanismo ResumeNotAllowedError / last-event-id error), P2-D (chip deliberado de custodia, decisao) e inseriu a regra merge=deploy na execucao. Prompt v2/v3 incorpora tudo.
+- Decisoes (28/08): B-1 P1-E aprovado (base api.boulangerie.com.br); B-2 P2-C aprovado (seam); B-3 P2-D aprovado (navegar ao pedido); B-4a P2-E PENDENTE (sessao dedicada, nao implementar); B-4b P1-C aprovado (open/close loja iFood no Gestor).
 
-O escopo `RUN_AND_BUILD_TIME` tambem nao era a rede de seguranca que parecia: os
-componentes sao imagem DOCR, o App Platform nao builda nada, e o
-`deploy-images.yml` passa so `SURFACE=` como build-arg. O valor publico sempre
-chega por override de runtime.
+## 12. Correcao pos-ensaio: P1-E (env) — diagnostico refinado
 
-Corrigido no PR #383, renomeando a chave para `public.djangoBaseUrl` nas 7
-superficies. Sem tocar no spec do App Platform.
+- Spec committed (.do/app.alpha-subdomains.yaml, HEAD b462dcf7f): orders-nuxt JA TEM NUXT_PUBLIC_DJANGO_BASE_URL (RUN_AND_BUILD_TIME, linha 605). Quem NAO tem e bi-nuxt (bloco 783+; avaliar se BI precisa).
+- Conclusao: o alpha vivo mostra 127.0.0.1 porque roda SPEC/BUILD ANTIGO (env no repo, nao aplicada no DO / imagem orders buildada antes). Acao real: aplicar a env no App Platform vivo + REBUILD da imagem orders (B-1 aprovado). No repo: validacao de config + guard opcional. O diff do ensaio (adicionar a env em orders-nuxt) NAO e necessario — ja existe.
 
-**Achado adjacente, nao corrigido:** `pos-nuxt` nao tem `NUXT_PUBLIC_PRODUCTION_URL`
-no spec vivo nem no espelho `.do/app.alpha-subdomains.yaml`, entao o link "resolver
-na producao" da tela de fechamento sai como `http://127.0.0.1:3005/` no alpha. Essa
-chave mapeia certo — e gap de spec, nao de codigo.
+## 13. Status de execucao (branch fix/alpha-rev-2026-08-28, sincronizada com main 97c7a62cd)
+
+- Sincronizacao: rebase em origin/main sem conflitos; uniao preservada com o #381 (verificado: pix_pending_note, pix_auto_update_note, fulfillment_wait_kind/until, 25 chaves TRACKING_PAYMENT_PIX_* vivas).
+- Commitado (5 commits sobre main): P2-C (seam SSE + client + teste 9/9), P2-D (chip maquininha navegavel), P2-H (doc deploy por imagens), P2-A (motivo + reembolso no tracking, Pix E cartao), P1-A (evento CAN do iFood refletido no Order, actor system:ifood, guard anti-eco, 3 testes).
+- LICAO (perda silenciosa): os campos cancellation_reason/refund_status_key do TrackingData sumiram no caminho commit/rebase (construcao ok, declaracao nao) — o alerta do coordenador estava certo; restaurado + serializer mirror + fix de tipografia (font-medium 500 banido -> font-semibold).
+- Validacao: pytest storefront 1244 passed/3 skipped; test_ifood_direct 44 passed; vitest storefront 396/396 (5 suites de componente nao carregam no worktree por erro de mock-transform do $fetch — ambientais; CI confirma).
+- Pendente: lote 3 (P1-B codigos de cancelamento iFood, P1-D reflexo de status, P2-B notificacoes, P2-F substitutos waitlist); P1-E aplicar env no DO vivo + rebuild (dono); P2-E sessao dedicada.
+
+## 14. Lote 3 (parcial) — P1-B/P1-D commitados; P2-B e P2-F verificados
+
+- P1-B: resolve_cancellation_code (motivo do Gestor -> cancellationCode, config-driven SHOPMAN_IFOOD[cancellation_reason_codes], fallback para cancellation_default_code; default vazio ate homologacao) + send_for_status usa o code do motivo. Testes: mapping + fallback + uso no requestCancellation.
+- P1-D: testes travam o reflexo — action_for_status (accepted->confirm, ready->readyToPickup, dispatched->dispatch, cancelled->requestCancellation) e o handler enfileira o callback de aceite.
+- P2-B (verificado, sem mudanca): falha controlada e visivel (adapter sms loga Comtele nao configurado; handler retry/backoff e escala OperatorAlert em 5 tentativas; painel de Alertas expoe; fallback console em DEBUG); template order_cancelled inclui {reason_note} e o lifecycle passa reason=note — o motivo chega ao cliente quando ha provedor.
+- P2-F (parcial): SubstituteSheet ja trata is_planned (pre-reserva) e substitutos (servidor-driven via 409); o gap observado no alpha (checkout com item waitlist max 0 sem substitutos) e o caso do Finalizar bloqueado — amarrado a decisao P2-E (sessao dedicada).
