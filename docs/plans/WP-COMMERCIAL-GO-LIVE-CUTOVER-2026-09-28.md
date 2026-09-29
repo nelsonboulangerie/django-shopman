@@ -126,7 +126,7 @@ Após o owner inserir credenciais no console seguro, verificar:
 - `DOORMAN_TRUSTED_PROXY_DEPTH` correto;
 - Machine somente se logística estiver no v1.
 
-Executar um `production-readiness` estritamente read-only. Se o comando atual puder criar fixtures, chamar provider ou gravar dados, implementar e provar `--read-only` antes do corte.
+Executar um `production-readiness` estritamente read-only: `make production-readiness read_only=1` (`--read-only`). O modo recusa por mecanismo todo SQL que não é leitura (guard `execute_wrapper` e, no PostgreSQL, `SET TRANSACTION READ ONLY`) e reporta o smoke local de gateways, que grava fixtures, como `SKIP`; esse smoke se prova no CI ou em clone descartável. Contrato em [commands.md](../reference/commands.md#release-readiness).
 
 ### Gate humano C3
 

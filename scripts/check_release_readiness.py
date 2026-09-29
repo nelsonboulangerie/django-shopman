@@ -16,6 +16,17 @@ QA evidence, pre-prod URL) are reported honestly and only fail with
   guardrails.
 - ``production`` means real-money go-live. Test affordances and mock gateways
   are blockers.
+
+``--read-only`` is the mode for the live target database (cutover preflight):
+every check that is answered by pure reads still runs, plus runtime reads
+(database connectivity, applied migrations, cache read); any check that
+writes (the local gateway smoke creates fixtures under rollback) is reported
+as ``skipped`` with the reason. Zero writes are enforced mechanically, not by
+convention: every connection gets an ``execute_wrapper`` that raises
+``ReadOnlyViolation`` before any statement that is not a read reaches the
+database, and on PostgreSQL each check also runs inside a transaction opened
+with ``SET TRANSACTION READ ONLY`` and rolled back (transaction scope, safe
+behind PgBouncer in transaction mode).
 """
 
 from __future__ import annotations
@@ -24,8 +35,10 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
@@ -40,7 +53,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-Status = Literal["passed", "failed", "blocked_external", "warning"]
+Status = Literal["passed", "failed", "blocked_external", "warning", "skipped"]
 ReadinessProfile = Literal["pilot", "alpha", "production"]
 
 _NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "staging", "alpha", "test"}
@@ -80,6 +93,7 @@ class ReadinessReport:
     checks: tuple[ReadinessCheck, ...]
     strict_external: bool
     profile: ReadinessProfile = "pilot"
+    read_only: bool = False
 
     @property
     def local_failed(self) -> bool:
@@ -103,13 +117,14 @@ class ReadinessReport:
 
     @property
     def counts(self) -> dict[str, int]:
-        statuses = ("passed", "failed", "blocked_external", "warning")
+        statuses = ("passed", "failed", "blocked_external", "warning", "skipped")
         return {status: sum(1 for check in self.checks if check.status == status) for status in statuses}
 
     def as_dict(self) -> dict[str, object]:
         return {
             "status": self.status,
             "profile": self.profile,
+            "read_only": self.read_only,
             "strict_external": self.strict_external,
             "counts": self.counts,
             "checks": [check.as_dict() for check in self.checks],
@@ -151,33 +166,130 @@ def _process_lock():
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+class ReadOnlyViolation(RuntimeError):
+    """A statement that is not a read tried to reach the database in ``--read-only``."""
+
+
+# Controle de transação não grava nada: abre, marca ponto e desfaz.
+_TRANSACTION_CONTROL = {"BEGIN", "SAVEPOINT", "RELEASE", "ROLLBACK"}
+# PRAGMA do SQLite que só consultam (os que a introspecção do Django usa).
+_READ_PRAGMAS = {
+    "compile_options",
+    "database_list",
+    "foreign_key_check",
+    "foreign_key_list",
+    "index_info",
+    "index_list",
+    "index_xinfo",
+    "table_info",
+    "table_xinfo",
+}
+# Dentro de um comando que começa lendo, o que ainda grava ou trava linha:
+# CTE com INSERT/UPDATE/DELETE, SELECT ... INTO, FOR UPDATE/SHARE e sequências.
+_WRITE_WORDS = re.compile(r"\b(INSERT|UPDATE|DELETE|MERGE|INTO|SHARE|NEXTVAL|SETVAL)\b", re.IGNORECASE)
+_QUOTED = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|`[^`]*`")
+_SET_READ_ONLY = re.compile(r"^SET\s+TRANSACTION\s+READ\s+ONLY\s*;?$", re.IGNORECASE)
+
+
+def is_read_statement(sql: str) -> bool:
+    """True only for statements that cannot write; any unknown shape counts as a write."""
+    text = _QUOTED.sub(" ", str(sql or "")).strip()
+    if not text:
+        return False
+    keyword = text.split(None, 1)[0].upper()
+    if keyword in _TRANSACTION_CONTROL or _SET_READ_ONLY.match(text):
+        return True
+    if keyword == "PRAGMA":
+        name = re.match(r"PRAGMA\s+(?:\w+\.)?(\w+)\s*(\(|;|$)", text, re.IGNORECASE)
+        return bool(name and name.group(1).lower() in _READ_PRAGMAS)
+    if keyword == "EXPLAIN":
+        rest = text.split(None, 1)[1] if " " in text else ""
+        return not re.match(r"\(?\s*ANALY[SZ]E\b", rest, re.IGNORECASE) and is_read_statement(rest)
+    if keyword in {"SELECT", "WITH", "SHOW"}:
+        return not _WRITE_WORDS.search(text)
+    return False
+
+
+def _reject_writes(execute, sql, params, many, context):
+    if not is_read_statement(sql):
+        raise ReadOnlyViolation(f"--read-only recusou comando que não é leitura: {str(sql)[:200]}")
+    return execute(sql, params, many, context)
+
+
+@contextmanager
+def read_only_database():
+    """Install the write guard on every configured database connection."""
+    from django.db import connections
+
+    with ExitStack() as stack:
+        for connection in connections.all():
+            stack.enter_context(connection.execute_wrapper(_reject_writes))
+        yield
+
+
+@contextmanager
+def _read_only_transaction():
+    """Defense in depth on PostgreSQL: the server itself refuses writes.
+
+    ``SET TRANSACTION`` vale só para a transação aberta aqui, que termina em
+    rollback; não gruda na conexão de servidor, então é seguro atrás do
+    PgBouncer em modo transaction. Se a conexão já está num bloco atômico
+    (testes), o comando não pode mais ser o primeiro da transação e o guard do
+    ``execute_wrapper`` continua sendo a trava.
+    """
+    from django.db import connections, transaction
+
+    with ExitStack() as stack:
+        for connection in connections.all():
+            if connection.vendor != "postgresql" or connection.in_atomic_block:
+                continue
+            stack.enter_context(transaction.atomic(using=connection.alias))
+            stack.callback(transaction.set_rollback, True, using=connection.alias)
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION READ ONLY")
+        yield
+
+
 def build_report(
     *,
     profile: ReadinessProfile = "pilot",
     strict_external: bool = False,
     manual_qa_evidence: str = "",
     preprod_url: str = "",
+    read_only: bool = False,
 ) -> ReadinessReport:
     setup_django()
     strict_external = bool(strict_external or profile == "production")
 
-    with _suppress_operational_logs():
-        checks = [
-            _django_system_check(),
-            *(_profile_checks(profile)),
-            _migration_check(),
-            _storefront_contact_check(),
-            _omotenashi_seed_check(),
-            _preparation_shelf_life_review_check(profile=profile),
-            _public_copy_review_check(profile=profile),
-            _product_image_host_check(profile=profile),
-            _rules_load_check(),
-            _gateway_smoke_check(),
-            _gateway_sandbox_check(profile=profile),
-            _manual_qa_check(manual_qa_evidence, profile=profile),
-            _preprod_check(preprod_url),
-        ]
-    return ReadinessReport(checks=tuple(checks), strict_external=strict_external, profile=profile)
+    steps: list[Callable[[], ReadinessCheck | tuple[ReadinessCheck, ...]]] = [
+        _django_system_check,
+        lambda: _profile_checks(profile),
+        *((_database_connectivity_check, _applied_migrations_check, _cache_read_check) if read_only else ()),
+        _migration_check,
+        lambda: _storefront_contact_check(read_only=read_only),
+        _omotenashi_seed_check,
+        lambda: _preparation_shelf_life_review_check(profile=profile),
+        lambda: _public_copy_review_check(profile=profile),
+        lambda: _product_image_host_check(profile=profile),
+        _rules_load_check,
+        _gateway_smoke_skipped_check if read_only else _gateway_smoke_check,
+        lambda: _gateway_sandbox_check(profile=profile),
+        lambda: _manual_qa_check(manual_qa_evidence, profile=profile),
+        lambda: _preprod_check(preprod_url),
+    ]
+
+    checks: list[ReadinessCheck] = []
+    with _suppress_operational_logs(), read_only_database() if read_only else nullcontext():
+        for step in steps:
+            with _read_only_transaction() if read_only else nullcontext():
+                result = step()
+            checks.extend(result if isinstance(result, tuple) else (result,))
+    return ReadinessReport(
+        checks=tuple(checks),
+        strict_external=strict_external,
+        profile=profile,
+        read_only=read_only,
+    )
 
 
 @contextmanager
@@ -368,10 +480,11 @@ def _migration_check() -> ReadinessCheck:
     )
 
 
-def _storefront_contact_check() -> ReadinessCheck:
+def _storefront_contact_check(*, read_only: bool = False) -> ReadinessCheck:
     from shopman.shop.models import Shop
 
-    shop = Shop.load() or Shop.objects.order_by("pk").first()
+    # ``Shop.load()`` aquece o cache (cache.set); em --read-only lê só o banco.
+    shop = Shop.objects.order_by("pk").first() if read_only else (Shop.load() or Shop.objects.order_by("pk").first())
     if not shop:
         return ReadinessCheck(
             id="storefront.contact",
@@ -605,6 +718,109 @@ def _public_copy_review_check(*, profile: ReadinessProfile, review=None) -> Read
     )
 
 
+def _database_connectivity_check() -> ReadinessCheck:
+    """Cada banco configurado responde a um SELECT (só em --read-only, no alvo)."""
+    from django.db import connections
+
+    reached: list[str] = []
+    try:
+        for connection in connections.all():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            reached.append(f"{connection.alias}:{connection.vendor}")
+    except Exception as exc:  # noqa: BLE001 - readiness must report every local blocker
+        return ReadinessCheck(
+            id="database.connectivity",
+            title="Database connectivity",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+            details={"reached": reached},
+        )
+    return ReadinessCheck(
+        id="database.connectivity",
+        title="Database connectivity",
+        status="passed",
+        message="Banco respondeu a SELECT 1.",
+        details={"reached": reached},
+    )
+
+
+def _applied_migrations_check() -> ReadinessCheck:
+    """Plano de migrations sem aplicar: lê ``django_migrations`` e compara com o código."""
+    from django.db import connections
+    from django.db.migrations.executor import MigrationExecutor
+
+    pending: dict[str, list[str]] = {}
+    try:
+        for connection in connections.all():
+            executor = MigrationExecutor(connection)
+            plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+            if plan:
+                pending[connection.alias] = [f"{migration.app_label}.{migration.name}" for migration, _ in plan]
+    except Exception as exc:  # noqa: BLE001 - readiness must report every local blocker
+        return ReadinessCheck(
+            id="django.migrations_applied",
+            title="Migrations applied",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+        )
+    if pending:
+        total = sum(len(names) for names in pending.values())
+        return ReadinessCheck(
+            id="django.migrations_applied",
+            title="Migrations applied",
+            status="failed",
+            message=f"{total} migration(s) do código ainda não aplicada(s) no banco.",
+            details={"pending": {alias: names[:50] for alias, names in pending.items()}},
+        )
+    return ReadinessCheck(
+        id="django.migrations_applied",
+        title="Migrations applied",
+        status="passed",
+        message="Todas as migrations do código estão aplicadas no banco.",
+    )
+
+
+def _cache_read_check() -> ReadinessCheck:
+    """O cache responde a uma leitura (``get`` de chave inexistente, nada é gravado)."""
+    from django.core.cache import caches
+
+    reached: list[str] = []
+    try:
+        for alias in caches:
+            caches[alias].get("shopman:release-readiness:read-only-probe")
+            reached.append(alias)
+    except Exception as exc:  # noqa: BLE001 - readiness must report every local blocker
+        return ReadinessCheck(
+            id="cache.read",
+            title="Cache read",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+            details={"reached": reached},
+        )
+    return ReadinessCheck(
+        id="cache.read",
+        title="Cache read",
+        status="passed",
+        message="Cache respondeu a uma leitura.",
+        details={"reached": reached},
+    )
+
+
+def _gateway_smoke_skipped_check() -> ReadinessCheck:
+    return ReadinessCheck(
+        id="gateways.local",
+        title="Local gateway smoke",
+        status="skipped",
+        message=(
+            "Pulado em --read-only: o smoke local cria canal, produto, pedido e webhooks "
+            "(get_or_create e save) dentro de transação com rollback, e isso é escrita no banco alvo."
+        ),
+        details={"run_instead": "make smoke-gateways no CI ou num clone descartável do banco."},
+    )
+
+
 def _gateway_smoke_check() -> ReadinessCheck:
     from shopman.backstage.services.gateway_smoke import run_gateway_smoke
 
@@ -787,11 +1003,13 @@ def _preprod_check(preprod_url: str) -> ReadinessCheck:
 
 
 def print_human(report: ReadinessReport) -> None:
-    print(f"release-readiness[{report.profile}]: {report.status}")
+    mode = ",read-only" if report.read_only else ""
+    print(f"release-readiness[{report.profile}{mode}]: {report.status}")
     print(
         "counts: "
         f"passed={report.counts['passed']} failed={report.counts['failed']} "
-        f"blocked_external={report.counts['blocked_external']} warning={report.counts['warning']}"
+        f"blocked_external={report.counts['blocked_external']} warning={report.counts['warning']} "
+        f"skipped={report.counts['skipped']}"
     )
     for check in report.checks:
         marker = {
@@ -799,6 +1017,7 @@ def print_human(report: ReadinessReport) -> None:
             "failed": "FAIL",
             "blocked_external": "BLOCKED",
             "warning": "WARN",
+            "skipped": "SKIP",
         }[check.status]
         print(f"- [{marker}] {check.id}: {check.message}")
         if check.details:
@@ -817,15 +1036,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--manual-qa-evidence", default="", help="Path to a physical/staging QA evidence report.")
     parser.add_argument("--preprod-url", default="", help="Staging/pre-prod URL declared for release playbook.")
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Zero writes: skip checks that write (local gateway smoke) and refuse any non-read SQL.",
+    )
     args = parser.parse_args(argv)
     strict_external = bool(args.strict_external or args.profile == "production")
 
-    with _process_lock():
+    # O lock só serializa os smokes que gravam; em --read-only não há o que serializar.
+    with nullcontext() if args.read_only else _process_lock():
         report = build_report(
             profile=args.profile,
             strict_external=strict_external,
             manual_qa_evidence=args.manual_qa_evidence,
             preprod_url=args.preprod_url,
+            read_only=args.read_only,
         )
     if args.json:
         print(json.dumps(report.as_dict(), ensure_ascii=False, sort_keys=True, indent=2))

@@ -481,16 +481,16 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 	@bash scripts/inflight.sh
 
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
-	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 release-readiness-strict: ## Igual ao release-readiness, mas falha em bloqueios externos
-	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 alpha-readiness: ## Gate para alpha tecnico publicavel: aceita mocks explicitos, bloqueia externos relevantes
-	$(PYTHON) scripts/check_release_readiness.py --profile=alpha --strict-external $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py --profile=alpha --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 production-readiness: ## Gate final de go-live: real money, sem mocks/debug/staging
-	$(PYTHON) scripts/check_release_readiness.py --profile=production --strict-external $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py --profile=production --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 production-contract: ## Contrato hermético de produção com credenciais sintéticas e rede bloqueada
 	$(PYTHON) scripts/check_production_contract.py

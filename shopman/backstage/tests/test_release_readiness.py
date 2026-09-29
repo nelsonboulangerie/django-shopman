@@ -357,3 +357,210 @@ def test_product_images_all_on_the_media_host_pass():
 
 def test_missing_product_image_base_is_itself_a_go_live_blocker():
     assert readiness._product_image_host_check(profile="production", image_base="").status == "failed"
+
+
+# ── --read-only: zero escrita no banco alvo (preflight R8, item 4) ─────────
+
+
+def _seed_read_only_fixture():
+    from shopman.craftsman.models import Recipe
+    from shopman.offerman.models import Product
+
+    cache.delete(SHOP_CACHE_KEY)
+    Shop.objects.create(name="Loja", phone="554333231997")
+    Recipe.objects.create(
+        ref="creme-ro",
+        name="Creme",
+        output_sku="CREME-RO",
+        batch_size=1,
+        meta={"output_unit": "kg", "shelf_life_days": 2},
+    )
+    Product.objects.create(sku="PAO-RO", name="Pão", image_url="https://www.example.com/pao.jpg")
+
+
+@pytest.mark.django_db
+def test_read_only_report_makes_zero_write_queries(monkeypatch):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _seed_read_only_fixture()
+    monkeypatch.setenv("SHOPMAN_PRODUCT_IMAGE_BASE", "https://media.example.com/")
+
+    with CaptureQueriesContext(connection) as captured:
+        report = readiness.build_report(profile="production", read_only=True)
+
+    statements = [query["sql"] for query in captured.captured_queries]
+    assert statements, "o modo --read-only precisa de fato consultar o banco"
+    writes = [sql for sql in statements if not readiness.is_read_statement(sql)]
+    assert writes == []
+    assert not any("ReadOnlyViolation" in check.message for check in report.checks)
+    assert report.read_only is True
+    assert report.as_dict()["read_only"] is True
+    ids = {check.id for check in report.checks}
+    # Os checks de leitura continuam rodando, e os de runtime do alvo entram.
+    assert {
+        "django.check",
+        "production.profile",
+        "database.connectivity",
+        "django.migrations_applied",
+        "cache.read",
+        "django.migrations",
+        "storefront.contact",
+        "omotenashi.seed",
+        "production.preparation_shelf_life_review",
+        "catalog.product_image_host",
+        "rules.load",
+        "gateways.sandbox",
+    } <= ids
+    by_id = {check.id: check for check in report.checks}
+    assert by_id["database.connectivity"].status == "passed"
+    assert by_id["django.migrations_applied"].status == "passed"
+    assert by_id["cache.read"].status == "passed"
+    assert by_id["storefront.contact"].status == "passed"
+    assert by_id["production.preparation_shelf_life_review"].status == "failed"
+    assert by_id["catalog.product_image_host"].status == "failed"
+
+
+@pytest.mark.django_db
+def test_read_only_does_not_warm_the_shop_cache():
+    cache.delete(SHOP_CACHE_KEY)
+    Shop.objects.create(name="Loja", phone="554333231997")
+
+    assert readiness._storefront_contact_check(read_only=True).status == "passed"
+    assert cache.get(SHOP_CACHE_KEY) is None
+
+
+@pytest.mark.django_db
+def test_read_only_reports_the_writing_gateway_smoke_as_skipped(monkeypatch, capsys):
+    from shopman.backstage.services import gateway_smoke
+
+    real_smoke = gateway_smoke.run_gateway_smoke
+
+    def refuse_local_fixtures(**kwargs):
+        assert not kwargs.get("include_local"), "--read-only não pode rodar o smoke local que grava"
+        return real_smoke(**kwargs)
+
+    monkeypatch.setattr(gateway_smoke, "run_gateway_smoke", refuse_local_fixtures)
+
+    report = readiness.build_report(profile="pilot", read_only=True)
+
+    skipped = [check for check in report.checks if check.status == "skipped"]
+    assert [check.id for check in skipped] == ["gateways.local"]
+    assert "--read-only" in skipped[0].message
+    assert "escrita" in skipped[0].message
+    assert report.counts["skipped"] == 1
+
+    readiness.print_human(report)
+    out = capsys.readouterr().out
+    assert "release-readiness[pilot,read-only]" in out
+    assert "- [SKIP] gateways.local:" in out
+
+
+@pytest.mark.django_db
+def test_read_only_guard_raises_before_a_write_reaches_the_database():
+    from django.db import connection, transaction
+
+    writes = (
+        lambda: Shop.objects.create(name="Loja"),
+        lambda: Shop.objects.all().update(name="Outra"),
+        lambda: Shop.objects.all().delete(),
+        lambda: connection.cursor().execute("CREATE TABLE readiness_probe (id integer)"),
+    )
+    Shop.objects.create(name="Original")
+    with readiness.read_only_database():
+        assert Shop.objects.count() == 1
+        for write in writes:
+            # Cada tentativa num savepoint próprio: a recusa não envenena a transação do teste.
+            with pytest.raises(readiness.ReadOnlyViolation), transaction.atomic():
+                write()
+
+    assert list(Shop.objects.values_list("name", flat=True)) == ["Original"]
+    # Fora do guard, o banco volta a aceitar escrita normalmente.
+    Shop.objects.create(name="Loja")
+    assert Shop.objects.count() == 2
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        'SELECT "shop_shop"."id", "shop_shop"."updated_at" FROM "shop_shop" WHERE "shop_shop"."name" = %s',
+        "SELECT 1",
+        "WITH x AS (SELECT 1) SELECT * FROM x",
+        "SHOW search_path",
+        'PRAGMA table_info("shop_shop")',
+        "EXPLAIN SELECT 1",
+        'SAVEPOINT "s1"',
+        'RELEASE SAVEPOINT "s1"',
+        'ROLLBACK TO SAVEPOINT "s1"',
+        "SET TRANSACTION READ ONLY",
+        "SELECT 'insert into x' AS literal",
+    ],
+)
+def test_statement_classifier_accepts_reads(sql):
+    assert readiness.is_read_statement(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        'INSERT INTO "shop_shop" ("name") VALUES (%s)',
+        'UPDATE "shop_shop" SET "name" = %s',
+        'DELETE FROM "shop_shop"',
+        "CREATE TABLE t (id int)",
+        "ALTER TABLE t ADD COLUMN c int",
+        "DROP TABLE t",
+        "TRUNCATE t",
+        "WITH moved AS (DELETE FROM t RETURNING *) SELECT * FROM moved",
+        "SELECT * INTO copy FROM t",
+        "SELECT * FROM t FOR UPDATE",
+        "SELECT * FROM t FOR SHARE",
+        "SELECT nextval('seq')",
+        "EXPLAIN ANALYZE DELETE FROM t",
+        "EXPLAIN DELETE FROM t",
+        "PRAGMA foreign_keys = ON",
+        "SET search_path = ''",
+        "SET TRANSACTION READ WRITE",
+        "COPY t TO STDOUT",
+        "VACUUM",
+        "",
+    ],
+)
+def test_statement_classifier_rejects_writes_and_unknown_shapes(sql):
+    assert not readiness.is_read_statement(sql)
+
+
+def test_main_read_only_flag_reaches_build_report_and_keeps_exit_semantics(monkeypatch, capsys):
+    captured = {}
+
+    def fake_build_report(**kwargs):
+        captured.update(kwargs)
+        return readiness.ReadinessReport(
+            profile=kwargs["profile"],
+            strict_external=kwargs["strict_external"],
+            read_only=kwargs["read_only"],
+            checks=(
+                readiness.ReadinessCheck(id="gateways.local", title="Local", status="skipped", message="pulado"),
+                readiness.ReadinessCheck(id="external", title="External", status="blocked_external", message="x"),
+            ),
+        )
+
+    monkeypatch.setattr(readiness, "build_report", fake_build_report)
+
+    exit_code = readiness.main(["--profile", "production", "--read-only", "--json"])
+
+    data = json.loads(capsys.readouterr().out)
+    assert captured["read_only"] is True
+    assert exit_code == 1
+    assert data["read_only"] is True
+    assert data["counts"]["skipped"] == 1
+
+    monkeypatch.setattr(
+        readiness,
+        "build_report",
+        lambda **kwargs: readiness.ReadinessReport(
+            strict_external=False,
+            read_only=True,
+            checks=(readiness.ReadinessCheck(id="gateways.local", title="Local", status="skipped", message="x"),),
+        ),
+    )
+    assert readiness.main(["--read-only"]) == 0
