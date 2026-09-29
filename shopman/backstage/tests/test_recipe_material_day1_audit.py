@@ -98,6 +98,8 @@ def test_complete_recipe_tree_separates_production_procurement_cost_and_traceabi
     report = audit_operational_day1(["PAO"], snapshot)
     output = report["outputs"][0]
 
+    assert output["day1_ready"] is True
+    assert output["catalog_ready"] is True
     assert output["production_ready"] is True
     assert output["traceability_ready"] is True
     assert output["procurement_ready"] is True
@@ -136,6 +138,7 @@ def test_unknown_supplier_and_cost_are_explicit_decisions_not_fake_defaults():
     codes = {finding["code"] for finding in output["findings"]}
 
     assert output["production_ready"] is True
+    assert output["day1_ready"] is False
     assert output["traceability_ready"] is False
     assert output["procurement_ready"] is False
     assert output["cost_ready"] is False
@@ -145,6 +148,21 @@ def test_unknown_supplier_and_cost_are_explicit_decisions_not_fake_defaults():
         "preferred_cost_unknown",
         "no_declared_purchase_conversion",
     } <= codes
+
+
+def test_inactive_selected_product_is_a_catalog_gate_without_faking_recipe_failure():
+    snapshot = _snapshot(
+        products={"PAO": _product(is_published=False)},
+        recipes={"PAO": _recipe("FARINHA")},
+        materials={"FARINHA": _material()},
+        versions={"PAO": _version()},
+    )
+
+    output = audit_operational_day1(["PAO"], snapshot)["outputs"][0]
+
+    assert output["catalog_ready"] is False
+    assert output["production_ready"] is True
+    assert output["day1_ready"] is False
 
 
 def test_cycle_and_unresolved_required_input_block_production():

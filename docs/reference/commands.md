@@ -1287,7 +1287,9 @@ O contrato mínimo do CSV é `sku`, `nome_consolidado`, `situacao_consolidado`,
 
 **Propósito:** recebe uma lista explícita de SKUs que a casa pretende produzir no Day-1 e
 percorre toda a árvore de fichas técnicas até os insumos folha. O relatório separa quatro
-perguntas: produção, rastreabilidade da ficha, prontidão de compra e custo vigente.
+perguntas operacionais, além do gate do catálogo: produção, rastreabilidade da ficha,
+prontidão de compra e custo vigente. `day1_ready` só fica verdadeiro quando as cinco
+dimensões estão comprovadas.
 
 ```bash
 python manage.py audit_recipe_material_day1 \

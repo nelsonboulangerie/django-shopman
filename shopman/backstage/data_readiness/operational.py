@@ -374,13 +374,22 @@ def audit_operational_day1(skus: list[str], snapshot: OperationalSnapshot) -> di
 
         blocking_domains = {finding["domain"] for finding in findings if finding["severity"] == "block"}
         decision_domains = {finding["domain"] for finding in findings if finding["severity"] == "decision"}
+        catalog_ready = "catalog" not in blocking_domains | decision_domains
+        production_ready = not bool(blocking_domains & {"catalog", "production"})
+        traceability_ready = "traceability" not in decision_domains
+        procurement_ready = "procurement" not in decision_domains
+        cost_ready = "cost" not in decision_domains
         results.append(
             {
                 "sku": sku,
-                "production_ready": not bool(blocking_domains & {"catalog", "production"}),
-                "traceability_ready": "traceability" not in decision_domains,
-                "procurement_ready": "procurement" not in decision_domains,
-                "cost_ready": "cost" not in decision_domains,
+                "day1_ready": all(
+                    (catalog_ready, production_ready, traceability_ready, procurement_ready, cost_ready)
+                ),
+                "catalog_ready": catalog_ready,
+                "production_ready": production_ready,
+                "traceability_ready": traceability_ready,
+                "procurement_ready": procurement_ready,
+                "cost_ready": cost_ready,
                 "leaf_materials": sorted(leaf_materials),
                 "findings": findings,
             }
@@ -393,6 +402,8 @@ def audit_operational_day1(skus: list[str], snapshot: OperationalSnapshot) -> di
         "scope": requested,
         "summary": {
             "outputs": len(results),
+            "day1_ready": sum(result["day1_ready"] for result in results),
+            "catalog_ready": sum(result["catalog_ready"] for result in results),
             "production_ready": sum(result["production_ready"] for result in results),
             "traceability_ready": sum(result["traceability_ready"] for result in results),
             "procurement_ready": sum(result["procurement_ready"] for result in results),
