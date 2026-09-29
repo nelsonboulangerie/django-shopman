@@ -1412,7 +1412,7 @@ def _commitment_date_display(commitment) -> str:
 
 
 _WAITLIST_LABELS = {
-    "fermata": "Na fila do lote",
+    "fermata": "Na fila de espera",
     "confirming": "Aguardando o cliente confirmar",
     "confirmed": "Confirmado pelo cliente",
     "released": "Vaga liberada",

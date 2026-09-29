@@ -120,7 +120,7 @@ describe("PosSaleResult — o palco pós-venda", () => {
 
   it("a ficha do pedido fica na fileira de saídas de papel, só na encomenda", async () => {
     const order = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "order" }), printingTicket: false }) });
-    const button = order.findAll("button").find((b) => b.text().includes("Imprimir ficha do pedido"));
+    const button = order.findAll("button").find((b) => b.text().includes("Via Pedido"));
     expect(button).toBeDefined();
     await button!.trigger("click");
     expect(order.emitted("printTicket")).toHaveLength(1);
@@ -177,7 +177,7 @@ describe("PosSaleResult — o palco pós-venda", () => {
       props: props({ result: result({ fiscalExpected: true, fiscalState: "authorized" }) }),
     });
     const buttons = wrapper.findAll("button");
-    await buttons.find((b) => b.text().includes("Imprimir recibo"))!.trigger("click");
+    await buttons.find((b) => b.text().includes("Via Recibo"))!.trigger("click");
     await buttons.find((b) => b.text().includes("DANFE"))!.trigger("click");
     await buttons.find((b) => b.text().includes("Cancelar venda"))!.trigger("click");
     expect(wrapper.emitted("printReceipt")).toHaveLength(1);
