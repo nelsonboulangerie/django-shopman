@@ -126,7 +126,7 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `nondata_operational_backlog` |
-| Merge | `OPEN`; head `54bfb2879c9fece52318ce01a81b073aa750dd28`; confirmar estado da fila |
+| Merge | `IN_QUEUE`; head `54bfb2879c9fece52318ce01a81b073aa750dd28`; merge queue posicao 1, aguardando checks |
 | Deploy | `PENDING_MERGE`; sem deploy ID |
 | Migration | `N/A`, salvo confirmacao diferente no merge final |
 | Env/config/flag | Confirmar no PR; nenhum segredo deve ser registrado aqui |
