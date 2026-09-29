@@ -103,3 +103,41 @@ O pacote contém, entre outros:
 - `artifact-summary.csv`, manifests individuais e `artifact-manifest-sha256.txt`.
 
 Este relatório registra uma fase intermediária segura. Não representa autorização para remoção de branches, descarte de artefatos ou arquivamento das fontes ainda consumidas por outros WPs.
+
+## Continuação final segura — 2026-09-29 04:39 UTC
+
+Após os merges consumidores e os gates pós-merge verdes informados pela coordenação, a fase final recapturou `origin/main` em `ab148fbd85d50865bf107e95298b712decd9d7f4`. O checkout canônico foi atualizado apenas por fast-forward de `44b4cba81d5e036c25669411a2743e5e31753674` para esse SHA e terminou limpo, idêntico ao remoto.
+
+### Prova de absorção
+
+| Fonte preservada | Consumidor integrado | Prova | Decisão da worktree |
+|---|---|---|---|
+| #1221 `claude/encomendas-tela-unica` em `f0d7e699d02da2d564c8634be476e2ca054d861d` | #1231, merge `a05f82af9bb577d0b331aa224018d87b8ed70312` | corpo do PR consumidor identifica nominalmente #1221 e registra a composição semântica das duas capacidades | arquivada; branch local e remota preservadas |
+| #1222 `claude/detalhe-do-pedido-compartilhado` em `5c37b5812ec490ba99915db3fa14bd8d059f5e6e` | #1231, merge `a05f82af9bb577d0b331aa224018d87b8ed70312` | corpo do PR consumidor identifica nominalmente #1222 e registra o contrato final compartilhado | arquivada; branch local e remota preservadas |
+| `codex/storefront-focus-ruler-20260928` em `c28c98bd3fd41d23146f7cc322c61c207519bc0d` | #1224, merge `ae52ef768e053959ff9abd82f9b968d2ee8e3900` | `git cherry origin/main <branch>` retornou somente `-` para `d055d522d` e `c28c98bd3` | arquivada; branch local preservada |
+| `codex/ifood-single-tenant-benchmark-20260928` em `e385ef1cfe159c1f08850fa0b7e0dd91f6470ec0` | #1226, merge `1f497db90f150b0a497cd7001d11df19fc7491b0` | `git cherry origin/main <branch>` retornou somente `-` para `e385ef1cf` | arquivada; branch local preservada |
+| `codex/wp-checkout-map-confirmation-20260928` em `ddd26e3ae98fcbbe62c35bea8cfae479c3f08fc1` | #1226, merge `1f497db90f150b0a497cd7001d11df19fc7491b0` | `git cherry origin/main <branch>` retornou somente `-` para `34f962ae5` e `ddd26e3ae` | arquivada; branch local preservada |
+| #1220 `codex/marketing-v2-offers-coupons-20260928` em `084b1fa6e687dd952362532bca1033647553514b` | #1233, merge `85bde2190d1e9ae45f10ca4f5b4bf9a70de70df1` | corpo do PR consumidor identifica nominalmente #1220 e explica o porte semântico e a renumeração da migration para `0084` | **preservada**: ainda contém o artefato não rastreado descrito abaixo |
+
+Os três doadores R4 são equivalentes por patch ao `main`. Os snapshots de Encomendas e Marketing continuam aparecendo com `+` em `git cherry` porque foram integrados semanticamente, não por reaplicação textual; por isso a prova adicional é a matriz explícita dos PRs #1231 e #1233 e seus gates. Nenhum draft foi fechado e nenhuma branch foi removida.
+
+### Lote recuperável 2
+
+Antes da operação, as cinco worktrees removidas estavam limpas, sem submódulo, repositório Git embutido, arquivo não rastreado ou processo com `cwd` no caminho. O arquivamento usou somente `git worktree remove <caminho-exato>`, sem `--force`, e preservou todos os refs locais. A receita de recuperação é `git worktree add <novo-caminho> <branch>`, usando o branch/HEAD registrado na tabela acima.
+
+O inventário tinha 59 worktrees imediatamente antes do lote. Cinco fontes foram arquivadas e uma nova worktree ativa de preflight R8 foi registrada concorrentemente; por isso a recaptura final mostra 55, redução líquida de quatro. A nova worktree não sobrepôs os caminhos removidos. Depois do lote:
+
+- `git worktree prune --dry-run --verbose`: vazio;
+- `git fsck --no-dangling`: sem achados;
+- 55 worktrees registradas, oito detached e zero locks;
+- os cinco branches locais ainda resolvem exatamente para os SHAs registrados;
+- nenhuma branch local ou remota foi removida.
+
+### Exceções preservadas
+
+- A worktree fonte de #1220 continua registrada porque `surfaces/node_modules` é um symlink não rastreado para `/Users/pablovalentini/Dev/Claude/django-shopman/surfaces/marketing-nuxt/node_modules`. O artefato já tem manifest em `artifact-marketing-node-modules-link.csv`, mas `artifact-summary.csv` ainda declara receita exata e aprovação do dono não comprovadas. Remover a worktree com `--force` violaria H3; nenhuma alteração foi feita no symlink.
+- #1223 e `codex/root-local-docs-recovery-20260928` em `87a1df2ce85e9197e6ef0dfe56ac64c9bb2ad50d` permanecem integralmente preservados, conforme a ordem de coordenação.
+- A quarentena H4 iniciada em `2026-09-29T01:25:23Z` continua vigente até pelo menos `2026-10-06T01:25:23Z` e ainda exige aprovação humana. Nenhuma matriz de remoção foi executada.
+- Os demais artefatos sem receita/dono comprovados continuam intactos; não houve limpeza ampla, prune efetivo nem descarte de temporários.
+
+Assim, a fase final autorizada concluiu o arquivamento recuperável das cinco fontes sem artefatos pendentes. O R7 global permanece deliberadamente aberto para o artefato de #1220 e para o gate temporal/humano H4; isso não autoriza contornar nenhum dos dois.
