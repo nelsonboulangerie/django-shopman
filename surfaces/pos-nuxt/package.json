@@ -14,6 +14,7 @@
     "test:unit": "vitest run --project unit",
     "test:component": "vitest run --project component",
     "test:e2e": "playwright test",
+    "test:visual": "playwright test -c playwright.visual.config.ts",
     "test:live": "playwright test -c playwright.live.config.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
