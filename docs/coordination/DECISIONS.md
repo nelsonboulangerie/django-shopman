@@ -202,6 +202,30 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-004 | Sessão de PDV multi-dispositivo e custódia da gaveta | `DECIDIDA` (resposta) + pendência do dono | 2026-10-15 |
 | D-005 | Marketing/WhatsApp permanece ligado como está | `DECIDIDA` | 2026-10-31 |
 | D-006 | Pix simulado permanece no alpha por ora | `ADIADA` | 2026-10-15 |
+| D-007 | Postura de multi-dispositivo no mesmo balcão | `DECIDIDA` | 2026-12-31 |
+
+---
+
+## D-007 · Vários dispositivos no mesmo balcão, com visibilidade
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto/operação) · **Data:** 2026-09-29 · **revisar_em:** 2026-12-31
+
+**Decisão (D-004b):** com **uma** gaveta física e vários dispositivos, a postura é **(b) vários
+dispositivos no mesmo terminal, com visibilidade** — não "um dispositivo por terminal".
+
+**Consequências, todas no WP-2:**
+1. Provisionar um segundo dispositivo no mesmo `Terminal.ref` **avisa e pede confirmação** — não
+   recusa (recusar seria a postura (a)).
+2. A tela do caixa mostra **"há N dispositivos neste balcão"** e **"caixa já aberto"**.
+3. O dispositivo entra no rastro (é o WP-1, que não depende desta decisão, mas passa a ter um
+   consumidor claro).
+4. O Admin de terminais lista e permite revogar dispositivos (dados prontos, zero migração).
+
+**Racional:** é a operação real da loja. A alternativa (a) tornaria o segundo tablet inútil e
+exigiria reprovisionamento manual se um dispositivo morresse.
+
+**Sequência definida:** CI primeiro (destravar `-n auto`), depois WP-3 → WP-1 → WP-4 → WP-2,
+**uma sessão executora, sequencial**, um branch por WP.
 
 ---
 

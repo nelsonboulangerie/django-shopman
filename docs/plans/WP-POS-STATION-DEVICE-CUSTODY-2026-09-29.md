@@ -16,16 +16,23 @@ bem guardado (turno único, livro imutável, sangria com PIN gerencial, autoapro
 O que falta é **rastro e visibilidade**: o sistema responsabiliza *pessoa + terminal*, nunca
 *dispositivo*, então dois tablets no mesmo balcão são indistinguíveis na auditoria.
 
-## ⛔ Decisão que destrava WP-2 (uma linha de resposta)
+## ✅ Decisão tomada — D-004b (2026-09-29)
 
-**D-004b:** com **uma** gaveta física, qual postura?
+**Postura escolhida: (b) vários dispositivos no mesmo terminal, COM VISIBILIDADE.**
+Registrado em `docs/coordination/DECISIONS.md` **D-007**. Consequência: WP-2 **avisa e pede
+confirmação** no segundo provisionamento (não recusa), mostra "há N dispositivos neste balcão" e
+"caixa já aberto" na tela do caixa, e lista/revoga dispositivos no Admin.
 
-- **(a) Um dispositivo por terminal** — mais simples, casa com gaveta única. WP-2 vira "impedir o
-  segundo dispositivo".
-- **(b) Vários dispositivos no mesmo terminal, com visibilidade** — avisar no provisionamento e
-  mostrar na tela do caixa. **É o caso real da loja.**
-
-WP-1 e WP-3 **não dependem** desta decisão e podem começar já.
+**Ordem definida pelo gestor:**
+```
+Frente 0  destravar CI (-n auto)      ← PRIMEIRO, corta 8-16 min de cada PR seguinte
+WP-3      higiene                     ← trivial, valida o loop
+WP-1      rastro por dispositivo      ← aditivo, zero migração
+WP-4      X/Z terminal_ref            ← cirúrgico
+WP-2      visibilidade                ← tela + projeção
+WP-5      trava por dispositivo       ← depois, desenho próprio
+```
+**Uma sessão executora, sequencial.** Um branch por WP, mergeado antes de abrir o próximo.
 
 ---
 
