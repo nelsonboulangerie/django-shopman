@@ -8,7 +8,7 @@ mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = vi.fn()
   fn.error = vi.fn()
-  return () => fn
+  return fn
 })
 
 const activeState = {

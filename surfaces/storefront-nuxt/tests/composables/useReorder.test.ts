@@ -10,7 +10,7 @@ mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
   fn.error = () => {}
-  return () => fn
+  return fn
 })
 
 function fetchError (status: number, data: Record<string, unknown>) {
