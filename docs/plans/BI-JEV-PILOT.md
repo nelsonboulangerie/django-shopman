@@ -4,6 +4,22 @@
 > 23/09/2026 ("vamos fazer esse piloto do De-Para do BI"). Nada aqui muda o fluxo do
 > `suggest_aliases`: o piloto só mede. Irmão de [BI-DATA-FOUNDATION-PLAN](BI-DATA-FOUNDATION-PLAN.md) (P1).
 
+## Reconciliação factual (2026-09-29)
+
+Base auditada: `origin/main @ ed49a8624`; implementação já integrada pelas PRs #1001 e #1018.
+
+| Entrega | Estado | Evidência / gate |
+|---|---|---|
+| Benchmark fuzzy × Jev × LLM × embeddings | **DONE** | `matcher_benchmark.py` + `benchmark_alias_matchers`, com placar, CSV e testes de parsing/falha segura. |
+| Execução semanal e leitura no Admin | **DONE** | `run_alias_benchmark`, `maintenance_worker` e `AliasBenchmarkReport` somente leitura estão no `main`. |
+| Medição fuzzy/LLM/embeddings no gabarito real | **PENDING EXTERNO** | Gate: corpus com pelo menos 20 de-paras confirmados, staging autorizado e runtime/pacote disponível. Fixture local não vale como resultado. |
+| Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, `JEV_API_KEY` injetada pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
+| Usar vencedor no `suggest_aliases` | **PENDING DECISÃO** | Gate: acerto solo ≥ 50%, zero erro aceito com confiança ≥ 0,9, desempenho superior ao fuzzy, custo por 1.000 itens em centavos, p95 < 1 s e decisão humana registrada. O vencedor apenas propõe; nunca confirma automaticamente. |
+
+Nada foi **SUPERSEDED**: o piloto continua válido. A pendência é produzir
+evidência no ambiente autorizado, não implementar outra ferramenta ou repetir o
+benchmark no código.
+
 ## A pergunta
 
 O `suggest_aliases` propõe o de-para produto Yooga → `offerman.Product` por nome parecido
