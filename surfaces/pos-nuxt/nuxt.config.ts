@@ -39,12 +39,18 @@ export default defineNuxtConfig({
     },
   },
 
-  // 301 da rota antiga → a casa nova. "Fichas de pedido" (`/tickets`) virou a
-  // Via Pedido – painel, card da seção Encomendas (ENCOMENDAS-PDV-PLAN, WP-E2);
-  // o kiosk do painel de parede tem bookmark da antiga. Mesmo mecanismo das rotas
-  // pt-br antigas (PR #68): `routeRules` do Nitro, direto ao destino final.
+  // 301 das rotas antigas → a tela única das Encomendas (redesenho de 28/09/2026).
+  // Hoje, Semana e "Via Pedido – painel" eram páginas; viraram modos e filtros da
+  // mesma tela, e o estado vai na query. "Fichas de pedido" (`/tickets`) e o painel
+  // abrem a semana com "Falta imprimir" ligado — o kiosk do painel de parede tem
+  // bookmark das duas. Mesmo mecanismo das rotas pt-br antigas (PR #68):
+  // `routeRules` do Nitro, direto ao destino final (e o middleware de route rules
+  // do Nuxt faz o mesmo na navegação do cliente).
   routeRules: {
-    "/tickets": { redirect: { to: "/preorders/panel", statusCode: 301 } },
+    "/tickets": { redirect: { to: "/preorders?mode=week&print=pending", statusCode: 301 } },
+    "/preorders/panel": { redirect: { to: "/preorders?mode=week&print=pending", statusCode: 301 } },
+    "/preorders/today": { redirect: { to: "/preorders?mode=day", statusCode: 301 } },
+    "/preorders/week": { redirect: { to: "/preorders?mode=week", statusCode: 301 } },
   },
 
   modules: [
@@ -56,8 +62,8 @@ export default defineNuxtConfig({
       // SÓ a tela de venda, e mesmo nela só com o balcão vazio: as razões de espera
       // (`useOperatorReloadHold` em `pages/index.vue`) barram carrinho, comanda,
       // pagamento e resultado na tela. `/session` fica de fora porque a contagem de
-      // fechamento é digitada e não está salva; `/preorders/panel`, porque a seleção de vias
-      // para impressão é rascunho.
+      // fechamento é digitada e não está salva; `/preorders`, porque a busca e os filtros
+      // da tela das Encomendas são o lugar em que o operador está.
       //
       // ⚠️ `/display` fica de fora pelo motivo mais forte de todos: `skipWaiting` vale
       // para a ORIGEM inteira, e toda janela que viu o worker em espera recarrega
