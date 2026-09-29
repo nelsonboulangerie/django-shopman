@@ -42,6 +42,16 @@ MARKETING_PUBLICATION_CANARY_KEYS = (
     "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
 )
 
+# The release gate must remain visible in the App Platform logs and must stop
+# the PRE_DEPLOY job before touching the schema.  Keep these as full commands:
+# loose substring checks would accept `migration_safety --report`, which always
+# exits successfully and therefore disables the protection.
+RELEASE_GUARD_PREFIX = (
+    "python manage.py check --deploy",
+    "python manage.py migration_safety",
+    "python manage.py migrate --noinput",
+)
+
 
 class UniqueKeyLoader(yaml.SafeLoader):
     pass
@@ -87,6 +97,12 @@ def _envs(spec: dict):
         yield entry.get("key"), entry.get("value")
 
 
+def _release_job(spec: dict, *, path: pathlib.Path) -> dict:
+    jobs = [job for job in spec.get("jobs") or [] if job.get("name") == "release"]
+    assert len(jobs) == 1, f"{path.name}: esperado exatamente um job release"
+    return jobs[0]
+
+
 def test_do_specs_have_unique_yaml_keys():
     for path in DEPLOY_SPECS:
         _load_spec(path)
@@ -99,6 +115,33 @@ def test_do_specs_env_entries_are_complete():
             key = entry.get("key") or "<sem key>"
             assert entry.get("scope"), f"{path.name}: env {key} sem scope"
             assert entry.get("type"), f"{path.name}: env {key} sem type"
+
+
+def test_release_jobs_fail_closed_before_migrate():
+    for path in DEPLOY_SPECS:
+        release = _release_job(_load_spec(path), path=path)
+        assert release.get("kind") == "PRE_DEPLOY", (
+            f"{path.name}: release precisa bloquear o deploy antes de subir a versao"
+        )
+
+        # YAML may fold the command over multiple lines.  Normalize whitespace
+        # before checking the shell contract, but keep command boundaries exact.
+        command = " ".join(str(release.get("run_command") or "").split())
+        assert command.startswith("sh -c '") and command.endswith("'"), (
+            f"{path.name}: release precisa usar um unico pipeline fail-closed"
+        )
+        pipeline = command[len("sh -c '") : -1]
+        assert ";" not in pipeline and "||" not in pipeline, (
+            f"{path.name}: release nao pode contornar falhas no gate de migrations"
+        )
+
+        stages = pipeline.split(" && ")
+        assert tuple(stages[:3]) == RELEASE_GUARD_PREFIX, (
+            f"{path.name}: ordem obrigatoria e check --deploy -> migration_safety -> migrate --noinput"
+        )
+        assert "python manage.py setup_groups" in stages[3:], (
+            f"{path.name}: setup_groups deve rodar somente depois do migrate"
+        )
 
 
 def test_production_template_never_auto_confirms_payment():
