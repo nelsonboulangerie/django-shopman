@@ -42,6 +42,8 @@ from django.utils import timezone
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 from shopman.utils.phone import normalize_phone
 
+from shopman.shop.environment import is_production
+
 from . import AlreadyImported, InvalidExport, sha256_of
 
 logger = logging.getLogger(__name__)
@@ -268,6 +270,10 @@ def ingest(
     qualquer falha depois de o arquivo abrir, um lote ``failed`` fica gravado
     com o motivo — a transação de dados desfaz tudo, o registro da falha não.
     """
+    if rebuild and is_production():
+        raise InvalidExport(
+            "--rebuild é bloqueado em produção; restauração exige snapshot, procedimento e autorização próprios."
+        )
     try:
         import openpyxl
     except ImportError as exc:  # pragma: no cover - dependência declarada no pyproject

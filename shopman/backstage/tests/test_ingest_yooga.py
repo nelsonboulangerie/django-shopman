@@ -16,6 +16,7 @@ from decimal import Decimal
 
 import pytest
 from django.core.management import CommandError, call_command
+from django.test import override_settings
 from django.utils import timezone
 
 from shopman.backstage.bi.ingest import AlreadyImported, InvalidExport
@@ -238,6 +239,15 @@ def test_rebuild_reloads_from_scratch(export_file):
     assert HistoricalSale.objects.get(external_id=1001).total_q == 3748
     assert HistoricalSaleItem.objects.count() == 3
     assert ImportBatch.objects.filter(source="yooga").count() == 1  # o lote velho foi junto
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_ENVIRONMENT="production")
+def test_rebuild_is_unconditionally_blocked_in_production(export_file):
+    with pytest.raises(InvalidExport, match="bloqueado em produção"):
+        ingest(export_file, rebuild=True)
+    assert HistoricalSale.objects.count() == 0
+    assert ImportBatch.objects.count() == 0
 
 
 # ── Fronteira ─────────────────────────────────────────────────────────────────
