@@ -34,6 +34,7 @@ TARGET_STATUSES = frozenset({"ativo", "novo"})
 RESTRICTIVE_STATUSES = frozenset({"despublicar", "excluir", "adicional", "insumo"})
 SUPPORTED_UNITS = frozenset({"un", "kg", "g", "l", "lt", "ml"})
 NCM_RE = re.compile(r"^\d{8}$")
+CEST_RE = re.compile(r"^\d{7}$")
 
 
 class CatalogAuditError(ValueError):
@@ -201,8 +202,13 @@ def _issue(
 
 def _requires_recipe(row: dict[str, str]) -> bool:
     declared = _fold(row.get("receita_consolidado"))
+    if declared in {"sim", "s", "yes", "1", "true"}:
+        return True
+    if declared in {"nao", "n", "no", "0", "false"}:
+        return False
     origin = _fold(row.get("origem"))
-    return declared in {"sim", "s", "yes", "1", "true"} or origin in {
+    operating_profile = _fold(row.get("perfil_fiscal"))
+    return operating_profile in {"producao", "producao propria"} or origin in {
         "producao",
         "producao propria",
         "casa",
@@ -281,6 +287,8 @@ def audit_catalog_candidate(
         gtin = re.sub(r"\D", "", _text(row.get("gtin")))
         if _text(row.get("ncm")) and not NCM_RE.fullmatch(ncm):
             issues.append(_issue("invalid_ncm", "block", "ncm", "NCM deve ter 8 dígitos."))
+        if _text(row.get("cest")) and not CEST_RE.fullmatch(cest):
+            issues.append(_issue("invalid_cest", "block", "cest", "CEST deve ter 7 dígitos."))
         if _text(row.get("gtin")) and not gtin_is_valid(gtin):
             issues.append(_issue("invalid_gtin", "block", "gtin", "GTIN tem formato ou dígito verificador inválido."))
 

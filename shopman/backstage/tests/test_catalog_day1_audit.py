@@ -138,6 +138,18 @@ def test_new_product_can_only_be_draft_and_missing_curation_blocks_publication()
     } <= codes
 
 
+def test_explicit_no_recipe_overrides_house_origin_and_invalid_cest_blocks():
+    report = audit_catalog_candidate(
+        [_row(receita_consolidado="não", cest="17.02")],
+        _snapshot(products={"BGG": _product()}, recipes=()),
+        source={"sha256": "d" * 64, "logical_name": "catalogo.csv"},
+    )
+
+    codes = {issue["code"] for issue in report["candidates"][0]["issues"]}
+    assert "missing_active_recipe" not in codes
+    assert "invalid_cest" in codes
+
+
 def test_restrictive_live_sku_and_shared_material_unit_mismatch_need_explicit_resolution():
     report = audit_catalog_candidate(
         [_row(situacao_consolidado="despublicar", unidade_consolidado="kg")],
