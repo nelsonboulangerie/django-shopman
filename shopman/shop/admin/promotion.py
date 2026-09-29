@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.db import transaction
 from django.utils import timezone
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
@@ -19,6 +20,25 @@ class CouponInline(TabularInline):
     extra = 1
     fields = ("code", "max_uses", "uses_count", "is_active")
     readonly_fields = ("uses_count",)
+
+
+def _set_active(model_admin, request, queryset, *, active: bool) -> int:
+    """Liga ou desliga `is_active` só nas linhas que mudam, e registra cada uma.
+
+    É a chave de desligar do go-live: precisa ser auditável. O `update()` vai só nas
+    linhas cujo valor muda (pausar o que já está pausado não conta como pausa), e
+    cada uma ganha um `LogEntry` no histórico do objeto.
+    """
+    changed = list(queryset.exclude(is_active=active))
+    if not changed:
+        return 0
+    change_message = "Reativação em lote." if active else "Pausa em lote."
+    with transaction.atomic():
+        queryset.model.objects.filter(pk__in=[obj.pk for obj in changed]).update(is_active=active)
+        for obj in changed:
+            obj.is_active = active
+            model_admin.log_change(request, obj, change_message)
+    return len(changed)
 
 
 class PromotionStatusFilter(admin.SimpleListFilter):
@@ -53,6 +73,54 @@ class PromotionAdmin(ModelAdmin):
     search_fields = ("name",)
     ordering = ("-valid_from",)
     inlines = [CouponInline]
+    actions = ["pause_selected", "reactivate_selected"]
+
+    # Pausar a promoção NÃO mexe nos cupons dela: não precisa. `get_coupon_promotion`
+    # exige `promotion.is_active`, então promoção pausada já não dá desconto por
+    # código nenhum, e os cupons voltam a valer sozinhos quando ela for reativada.
+    @admin.action(description="Pausar promoções selecionadas", permissions=["change"])
+    def pause_selected(self, request, queryset):
+        count = _set_active(self, request, queryset, active=False)
+        if count == 0:
+            self.message_user(
+                request,
+                "Nenhuma promoção mudou: as selecionadas já estavam pausadas.",
+                level=messages.WARNING,
+            )
+        elif count == 1:
+            self.message_user(
+                request,
+                "1 promoção pausada. Nenhum desconto dela vale até reativar, nem por cupom.",
+                level=messages.SUCCESS,
+            )
+        else:
+            self.message_user(
+                request,
+                f"{count} promoções pausadas. Nenhum desconto delas vale até reativar, nem por cupom.",
+                level=messages.SUCCESS,
+            )
+
+    @admin.action(description="Reativar promoções selecionadas", permissions=["change"])
+    def reactivate_selected(self, request, queryset):
+        count = _set_active(self, request, queryset, active=True)
+        if count == 0:
+            self.message_user(
+                request,
+                "Nenhuma promoção mudou: as selecionadas já estavam ativas.",
+                level=messages.WARNING,
+            )
+        elif count == 1:
+            self.message_user(
+                request,
+                "1 promoção reativada. Volta a valer dentro do prazo de validade.",
+                level=messages.SUCCESS,
+            )
+        else:
+            self.message_user(
+                request,
+                f"{count} promoções reativadas. Voltam a valer dentro do prazo de validade.",
+                level=messages.SUCCESS,
+            )
 
     @admin.display(description="desconto", ordering="value")
     def value_display(self, obj):
@@ -84,12 +152,60 @@ class CouponAdmin(ModelAdmin):
     search_fields = ("code", "promotion__name")
     ordering = ("code",)
     readonly_fields = ("uses_count",)
-    actions = ["reset_usage"]
+    actions = ["reset_usage", "pause_selected", "reactivate_selected"]
 
     @admin.action(description="Zerar contador de usos")
     def reset_usage(self, request, queryset):
         updated = queryset.update(uses_count=0)
         self.message_user(request, f"{updated} cupom(ns) com contador zerado.")
+
+    # Pausar o cupom NÃO mexe na promoção dele: promoção com cupom só é resolvida
+    # pelo código (`get_active_promotions` exclui as que têm cupom), então pausar o
+    # cupom já basta para parar o desconto que vem por ele. Pausar a promoção
+    # derrubaria também os outros cupons dela, que não foram selecionados.
+    @admin.action(description="Pausar cupons selecionados", permissions=["change"])
+    def pause_selected(self, request, queryset):
+        count = _set_active(self, request, queryset, active=False)
+        if count == 0:
+            self.message_user(
+                request,
+                "Nenhum cupom mudou: os selecionados já estavam pausados.",
+                level=messages.WARNING,
+            )
+        elif count == 1:
+            self.message_user(
+                request,
+                "1 cupom pausado. O código dele não dá desconto até reativar.",
+                level=messages.SUCCESS,
+            )
+        else:
+            self.message_user(
+                request,
+                f"{count} cupons pausados. Os códigos deles não dão desconto até reativar.",
+                level=messages.SUCCESS,
+            )
+
+    @admin.action(description="Reativar cupons selecionados", permissions=["change"])
+    def reactivate_selected(self, request, queryset):
+        count = _set_active(self, request, queryset, active=True)
+        if count == 0:
+            self.message_user(
+                request,
+                "Nenhum cupom mudou: os selecionados já estavam ativos.",
+                level=messages.WARNING,
+            )
+        elif count == 1:
+            self.message_user(
+                request,
+                "1 cupom reativado. O código volta a dar desconto se a promoção dele estiver ativa e no prazo.",
+                level=messages.SUCCESS,
+            )
+        else:
+            self.message_user(
+                request,
+                f"{count} cupons reativados. Os códigos voltam a dar desconto se a promoção de cada um estiver ativa e no prazo.",
+                level=messages.SUCCESS,
+            )
 
     @admin.display(description="uso")
     def usage_display(self, obj):
