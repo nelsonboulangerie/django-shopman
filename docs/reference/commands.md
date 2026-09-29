@@ -45,6 +45,7 @@
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`profile_data_artifact`](#profile_data_artifact) | backstage | Dados | Gera um manifest sanitizado e somente leitura de CSV/XLSX/XML/JSON/SQLite |
+| [`audit_catalog_day1`](#audit_catalog_day1) | backstage | Dados | Compara o catálogo consolidado normalizado com o estado operacional, sem gravar ou publicar |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
@@ -1250,6 +1251,34 @@ python manage.py profile_data_artifact \
   para stdout.
 - O comando não abre conexão com o banco, não cria `ImportBatch` e não importa nada. O manifest
   é a evidência de descoberta/profiling que antecede `dry-run` e aprovação.
+
+---
+
+### audit_catalog_day1
+
+**Propósito:** compara um CSV normalizado do `Catálogo Nelson — consolidado` com o estado
+operacional de produtos, vitrines, coleções, insumos e fichas técnicas. O resultado é uma fila
+determinística de divergências e decisões; o comando faz apenas leitura e não oferece `--apply`.
+
+```bash
+python manage.py audit_catalog_day1 \
+  --file /landing/catalogo-consolidado-normalizado.csv \
+  --output /evidence/catalogo-day1-audit.json
+```
+
+O contrato mínimo do CSV é `sku`, `nome_consolidado`, `situacao_consolidado`,
+`preco_consolidado_brl` e `unidade_consolidado`. Campos de curadoria como
+`peso_g_consolidado`, `ncm`, `cest`, `gtin`, `marca`, `copy_curta`, `foto_consolidado`,
+`categoria_consolidado`, `receita_consolidado` e `origem` enriquecem os gates.
+
+- `ativo` e `novo` compõem o mix candidato; `despublicar`, `excluir`, `adicional` e `insumo`
+  são estados restritivos. Qualquer outro valor vira decisão explícita.
+- SKU novo nunca sai como publicável: no máximo `draft_only`, e os bloqueios de foto, copy,
+  fiscal, peso ou receita permanecem visíveis.
+- Divergências não alteram o banco. Até uma retirada solicitada no consolidado vira decisão
+  humana quando o SKU ainda está publicado ou em vitrine ativa.
+- O relatório inclui SKUs e dados comerciais necessários à decisão, mas não inclui caminho
+  local do artefato. `--output` recusa sobrescrita para preservar a trilha de auditoria.
 
 ---
 
