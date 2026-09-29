@@ -37,6 +37,21 @@ from shopman.shop.services.order_helpers import get_commitment_date, is_test_ord
 logger = logging.getLogger(__name__)
 
 
+def _items_to_hold(order) -> list[dict]:
+    """As linhas que a reserva cobre: as que VALEM agora.
+
+    No commit é o snapshot (o pedido nunca foi alterado). Depois de uma edição
+    (``order_composition``), o snapshot guarda o pedido como nasceu, e reservar
+    por ele traria de volta o item que o cliente tirou: foi o que a remarcação
+    fez, recusando por um produto que já não estava na encomenda (29/09/2026).
+    """
+    from shopman.shop.services import order_composition
+
+    if order_composition.is_adjusted(order):
+        return [order_composition.as_payload(item) for item in order_composition.effective_items(order)]
+    return (order.snapshot or {}).get("items", [])
+
+
 def hold(order, *, require_all: bool = False) -> None:
     """
     Reserve stock for all order items, expanding bundles.
@@ -93,7 +108,7 @@ def hold(order, *, require_all: bool = False) -> None:
         logger.info("stock.hold: skip (holds já criados) order=%s", order.ref)
         return
 
-    items = order.snapshot.get("items", [])
+    items = _items_to_hold(order)
     if not items:
         return
 
