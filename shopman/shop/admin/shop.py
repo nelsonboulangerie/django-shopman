@@ -288,6 +288,16 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminDecimalFieldWidget,
             help_text="Taxa de entrega zera a partir deste valor. 0 ou vazio = desligado.",
         ),
+        "defaults_storefront_address_map_confirmation_enabled": forms.BooleanField(
+            label="Confirmar o ponto de entrega no mapa",
+            required=False,
+            widget=UnfoldBooleanSwitchWidget,
+            help_text=(
+                "Libera a confirmação visual do ponto de entrega no checkout. "
+                "Começa desligado: ligue primeiro para um canário e, se houver "
+                "regressão, desligue este controle para o rollback imediato."
+            ),
+        ),
         "defaults_pickup_rounding_minutes": forms.IntegerField(
             label="Arredondamento dos horários",
             required=False,
@@ -1143,6 +1153,12 @@ class ShopForm(forms.ModelForm):
             for field_name, key in DEFAULTS_RULE_Q_FIELDS:
                 self.fields[field_name].initial = _q_to_reais(rules.get(key))
 
+        if self._has("defaults_storefront_address_map_confirmation_enabled"):
+            storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
+            self.fields["defaults_storefront_address_map_confirmation_enabled"].initial = bool(
+                storefront.get("address_map_confirmation_enabled", False)
+            )
+
         if self._has("defaults_pos_discount_approval_threshold_q"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             threshold_q = pos_cfg.get("discount_approval_threshold_q")
@@ -1645,6 +1661,18 @@ class ShopForm(forms.ModelForm):
                 rules[key] = _reais_to_q(self.cleaned_data.get(field_name))
             defaults["rules"] = rules
 
+        if self._has("defaults_storefront_address_map_confirmation_enabled"):
+            storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
+            storefront = dict(storefront)
+            if self.cleaned_data.get("defaults_storefront_address_map_confirmation_enabled"):
+                storefront["address_map_confirmation_enabled"] = True
+            else:
+                storefront.pop("address_map_confirmation_enabled", None)
+            if storefront:
+                defaults["storefront"] = storefront
+            else:
+                defaults.pop("storefront", None)
+
         if (
             self._has("defaults_pos_discount_approval_threshold_q")
             or self._has("defaults_pos_fiscal_toggle")
@@ -2023,12 +2051,14 @@ _ORDERING_FIELDSETS = (
         "Pedido e entrega",
         {
             "fields": (
+                "defaults_storefront_address_map_confirmation_enabled",
                 "defaults_rules_minimum_order_q",
                 "defaults_rules_delivery_minimum_q",
                 "defaults_rules_free_delivery_above_q",
             ),
             "description": (
-                "Políticas em Reais gravadas em Shop.defaults.rules (centavos). "
+                "Liberação controlada da confirmação de endereço no mapa e políticas "
+                "em Reais gravadas em Shop.defaults.rules (centavos). "
                 "0 ou vazio desliga a regra. O mínimo de entrega e o frete grátis "
                 "valem só para entrega; a taxa por região fica nas Zonas de Entrega."
             ),

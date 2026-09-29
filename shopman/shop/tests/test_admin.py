@@ -317,6 +317,57 @@ class TestShopAdminDefaults:
         assert production_suggestion["safety_stock_percent"] == "0.15"
 
 
+class TestAddressMapConfirmationAdminToggle:
+    FIELD = "defaults_storefront_address_map_confirmation_enabled"
+
+    def test_toggle_is_canonical_unfold_control_on_ordering_page(self, db, admin_user, shop):
+        from unfold.widgets import UnfoldBooleanSwitchWidget
+
+        from shopman.shop.admin.shop import _ORDERING_FIELDSETS, _section_form
+
+        form = _section_form(_ORDERING_FIELDSETS)(instance=shop)
+        assert isinstance(form.fields[self.FIELD].widget, UnfoldBooleanSwitchWidget)
+        assert form.fields[self.FIELD].initial is False
+
+        client = Client()
+        client.force_login(admin_user)
+        response = client.get(reverse("admin:shop_shopordering_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        assert f'name="{self.FIELD}"'.encode() in response.content
+        assert "canário".encode() in response.content
+
+    def test_toggle_round_trip_preserves_other_storefront_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {
+            "surface_policy": {"keep": True},
+            "storefront": {"existing": "preserved"},
+        }
+        shop.save(update_fields=["defaults"])
+
+        enabled_data = _shop_form_data(shop)
+        enabled_data[self.FIELD] = "on"
+        enabled_form = ShopForm(data=enabled_data, instance=shop)
+        assert enabled_form.is_valid(), enabled_form.errors
+        saved = enabled_form.save()
+
+        assert saved.defaults["surface_policy"] == {"keep": True}
+        assert saved.defaults["storefront"] == {
+            "existing": "preserved",
+            "address_map_confirmation_enabled": True,
+        }
+
+        disabled_data = _shop_form_data(saved)
+        disabled_data.pop(self.FIELD, None)
+        disabled_form = ShopForm(data=disabled_data, instance=saved)
+        assert disabled_form.is_valid(), disabled_form.errors
+        disabled = disabled_form.save()
+
+        assert disabled.defaults["storefront"] == {"existing": "preserved"}
+        assert ShopForm(instance=disabled).fields[self.FIELD].initial is False
+
+
 class TestShopProductionAdmin:
     def test_change_page_exposes_every_structured_block(self, admin_user, shop):
         client = Client()
