@@ -74,10 +74,15 @@ Zona DNS já criada no DigitalOcean; falta só delegar os NS no Registro.br (aç
 
 Layout:
 
+> **Nota operacional (2026-09-29):** o layout abaixo preserva a topologia da
+> decisao original. `api.staging.nelsonboulangerie.com.br` foi aposentado e
+> responde NXDOMAIN. Smokes atuais usam `api.boulangerie.com.br`; links do Admin
+> usam `admin.boulangerie.com.br`.
+
 ```
 LOJA (cliente) — inalterada:
   nelsonboulangerie.com.br            Loja (Nuxt)      sessão cliente: host-only
-  api.staging.nelsonboulangerie.com.br  API/BFF (atual)
+  api.staging.nelsonboulangerie.com.br  API/BFF (histórico; aposentado, não usar)
 
 OPERADOR — zona isolada, sessão = .boulangerie.com.br:
   boulangerie.com.br                  Entrar (login 1×) + hub
