@@ -39,6 +39,7 @@ const search = ref("");
 const results = ref<CustomerRowProjection[]>([]);
 const searching = ref(false);
 const searchError = ref("");
+let previewRun = 0;
 
 watch(
   () => props.open,
@@ -83,18 +84,21 @@ const pair = computed(() => (other.value ? mergePair(props.current.ref, other.va
 watch(
   () => (props.open && pair.value ? `${pair.value.source_ref}>${pair.value.target_ref}` : ""),
   async (key) => {
+    const run = ++previewRun;
     preview.value = null;
     previewError.value = "";
+    loadingPreview.value = false;
     if (!key || !pair.value) return;
     loadingPreview.value = true;
-    const requested = key;
     try {
       const response = await fetchMergePreview(pair.value.source_ref, pair.value.target_ref);
-      if (pair.value && `${pair.value.source_ref}>${pair.value.target_ref}` === requested) preview.value = response.preview;
+      if (run === previewRun) preview.value = response.preview;
     } catch (failure) {
-      previewError.value = httpErrorMessage(failure, "Não foi possível calcular o que muda.");
+      if (run === previewRun) {
+        previewError.value = httpErrorMessage(failure, "Não foi possível calcular o que muda.");
+      }
     } finally {
-      loadingPreview.value = false;
+      if (run === previewRun) loadingPreview.value = false;
     }
   },
   { immediate: true },

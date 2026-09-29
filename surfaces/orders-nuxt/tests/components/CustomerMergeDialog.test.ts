@@ -87,6 +87,25 @@ describe("CustomerMergeDialog", () => {
     expect(wrapper.find("[data-merge-side='target']").text()).toContain("IF-AAAA0001");
   });
 
+  it("ignora a resposta antiga quando duas prévias chegam fora de ordem", async () => {
+    let finishFirst!: (value: { preview: MergePreviewProjection }) => void;
+    fetchMergePreview
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+      .mockResolvedValueOnce({ preview: previewFor("CLI-MARIA", "IF-AAAA0001") });
+
+    const wrapper = mountDialog();
+    await flushPromises();
+    await wrapper.find("[data-merge-swap]").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("[data-merge-side='target']").text()).toContain("IF-AAAA0001");
+    finishFirst({ preview: previewFor("IF-AAAA0001", "CLI-MARIA") });
+    await flushPromises();
+
+    expect(wrapper.find("[data-merge-side='target']").text()).toContain("IF-AAAA0001");
+    expect(wrapper.find("[data-merge-confirm]").attributes("disabled")).toBeUndefined();
+  });
+
   it("unificar manda o par da prévia e avisa quem ficou", async () => {
     const wrapper = mountDialog();
     await flushPromises();
