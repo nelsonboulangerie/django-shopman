@@ -53,11 +53,11 @@ def _iso(value: Any) -> str | None:
         if "T" not in candidate and " " not in candidate:
             try:
                 return date.fromisoformat(candidate).isoformat()
-            except ValueError:
+            except ValueError:  # silêncio-deliberado: tentar o próximo formato de data
                 pass
         try:
             parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError:  # silêncio-deliberado: tentar o próximo formato de data
             continue
         return _iso(parsed)
     return None
