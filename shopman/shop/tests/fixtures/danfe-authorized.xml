@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DADOS FICTÍCIOS: fixture estrutural sem assinatura; não é autorização real. -->
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><NFe><infNFe Id="NFe41260800000000000000650010000001521151375188" versao="4.00">
+<ide><mod>65</mod><nNF>152</nNF><serie>1</serie><dhEmi>2026-09-12T12:05:00+00:00</dhEmi><tpAmb>2</tpAmb><tpEmis>1</tpEmis><indPres>4</indPres></ide>
+<emit><CNPJ>00000000000191</CNPJ><xNome>Padaria Exemplo Ltda</xNome><xFant>Padaria Exemplo</xFant><IE>1234567890</IE><enderEmit><xLgr>Rua Fictícia</xLgr><nro>100</nro><xBairro>Centro</xBairro><xMun>Curitiba</xMun><UF>PR</UF><CEP>80000000</CEP></enderEmit></emit>
+<dest><CPF>00000000191</CPF><xNome>Ana Exemplo</xNome><enderDest><xLgr>Avenida das Araucárias</xLgr><nro>1234</nro><xCpl>Apartamento 702, bloco dos Ipês, entrada pela rua lateral</xCpl><xBairro>Jardim das Flores</xBairro><xMun>Curitiba</xMun><UF>PR</UF><CEP>80000000</CEP></enderDest></dest>
+<det nItem="1"><prod><cProd>PAO</cProd><xProd>Pão de fermentação natural</xProd><qCom>2.0000</qCom><uCom>UN</uCom><vUnCom>18.0000000000</vUnCom><vProd>36.00</vProd></prod></det>
+<det nItem="2"><prod><cProd>CROISSANT</cProd><xProd>Croissant de amêndoas</xProd><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>12.0000000000</vUnCom><vProd>12.00</vProd></prod></det>
+<total><ICMSTot><vProd>48.00</vProd><vDesc>3.00</vDesc><vFrete>5.00</vFrete><vNF>50.00</vNF><vTotTrib>6.25</vTotTrib></ICMSTot></total>
+<pag><detPag><tPag>01</tPag><vPag>30.00</vPag></detPag><detPag><tPag>17</tPag><vPag>25.00</vPag></detPag><vTroco>5.00</vTroco></pag>
+<infAdic><infAdFisco>Documento de demonstração sem validade fiscal.</infAdFisco><infCpl>Pedido FICTICIO-152. Dados fictícios para avaliação de impressão.</infCpl></infAdic>
+</infNFe><infNFeSupl><qrCode>http://www.fazenda.pr.gov.br/nfce/qrcode?p=41260800000000000000650010000001521151375188|3|2</qrCode><urlChave>http://www.fazenda.pr.gov.br/nfce/consulta</urlChave></infNFeSupl></NFe><protNFe><infProt><tpAmb>2</tpAmb><chNFe>41260800000000000000650010000001521151375188</chNFe><dhRecbto>2026-09-12T12:05:03+00:00</dhRecbto><nProt>141260000000152</nProt><cStat>100</cStat></infProt></protNFe></nfeProc>

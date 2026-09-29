@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
@@ -19,6 +20,12 @@ from shopman.cashman.models import Shift
 from shopman.orderman.models import Order
 
 from shopman.shop.models import Channel, Shop
+from shopman.shop.tests.danfe_fixtures import xml_for_key
+
+
+@pytest.fixture(autouse=True)
+def authorized_xml(monkeypatch):
+    monkeypatch.setattr("shopman.shop.services.danfe_xml.read_authorized_xml", xml_for_key)
 
 
 class POSSaleReceiptTests(TestCase):

@@ -1,8 +1,9 @@
 """
 DANFE NFC-e na TELA — a nota aberta para consulta, renderizada no servidor.
 
-Monta o DANFE (Documento Auxiliar da NFC-e) a partir do resultado guardado em
-``order.data`` (chave, protocolo, QR, itens) + os dados do emitente (``Shop``).
+O pedido localiza a nota. Quando ela foi emitida, dados fiscais e comerciais
+saem exclusivamente do XML autorizado do provedor; ``order.data`` não substitui
+essa fonte se o XML estiver indisponível ou inválido.
 
 **Há um documento só, e duas maneiras de olhar para ele.** A via que vai para o
 cliente é a BOBINA, composta em ESC/POS por ``backstage.services.receipt_escpos
@@ -126,11 +127,23 @@ class DanfeDocument:
     qr_svg: str = ""
     danfe_url: str = ""
     consult_url: str = ""
+    source_verified: bool = False
+    source_problem: str = ""
+    query_url: str = ""
+    issued_at: str = ""
+    authorized_at: str = ""
+    customer_tax_id_label: str = "CPF"
+    customer_address: str = ""
+    totals: tuple[tuple[str, str], ...] = ()
+    payments: tuple[tuple[str, str], ...] = ()
+    additional_info: tuple[str, ...] = ()
+    contingency: bool = False
+    shop_ie: str = ""
 
 
 def _format_tax_id(value: str) -> str:
-    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
-    if len(digits) == 11:
+    digits = "".join(ch for ch in str(value or "").upper() if ch.isascii() and ch.isalnum())
+    if len(digits) == 11 and digits.isdigit():
         return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
     if len(digits) == 14:
         return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
@@ -207,7 +220,7 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
     payment_method = str(payment.get("method") or "")
     payment_label = _PAYMENT_LABELS.get(payment_method, payment_method.title() or "—")
 
-    return DanfeDocument(
+    document = DanfeDocument(
         order_ref=order.ref,
         emitted=bool(key),
         is_homolog=is_homolog,
@@ -231,6 +244,153 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
         qr_svg=_qr_svg(qr_content),
         danfe_url=str(data.get("nfce_danfe_url") or ""),
         consult_url=qr_content,
+    )
+
+    if not key:
+        return document
+
+    from dataclasses import replace
+
+    from shopman.shop.services.danfe_xml import DanfeSourceError, read_authorized_xml
+
+    if data.get("nfce_cancelled") or str(data.get("nfce_status") or "").lower() in {"cancelado", "cancelada"}:
+        return replace(document, source_problem="NFC-e cancelada. Impressão fiscal indisponível.", status="cancelada")
+    try:
+        root = read_authorized_xml(str(data.get("nfce_xml_url") or ""), key)
+        return document_from_xml(document, root)
+    except (DanfeSourceError, ValueError, ArithmeticError) as exc:
+        logger.warning("danfe_source_unavailable order=%s reason=%s", order.ref, type(exc).__name__)
+        return replace(
+            document,
+            source_problem=str(exc) if isinstance(exc, DanfeSourceError) else "Valores inválidos no XML fiscal.",
+        )
+
+
+def document_from_xml(document: DanfeDocument, root) -> DanfeDocument:
+    """Projeta o documento validado; o pedido fornece somente a referência interna."""
+    from dataclasses import replace
+    from datetime import datetime
+    from decimal import Decimal
+
+    from django.utils import timezone
+
+    from shopman.shop.services.danfe_xml import NS, DanfeSourceError, value
+
+    info = root.find("n:NFe/n:infNFe", NS)
+    protocol = root.find("n:protNFe/n:infProt", NS)
+
+    def money(text: str) -> str:
+        return _money(int((Decimal(text or "0") * 100).quantize(Decimal("1"))))
+
+    def number(text: str) -> str:
+        return (format(Decimal(text), "f").rstrip("0").rstrip(".") or "0") if "." in text else text
+
+    def unit_price(text: str) -> str:
+        raw = number(text)
+        places = max(2, len(raw.split(".")[1]) if "." in raw else 0)
+        return "R$ " + format(Decimal(raw), f",.{places}f").translate(str.maketrans({",": ".", ".": ","}))
+
+    def address(path: str) -> str:
+        return ", ".join(
+            value(info, f"{path}/{part}")
+            for part in ("xLgr", "nro", "xCpl", "xBairro", "xMun", "UF", "CEP")
+            if value(info, f"{path}/{part}")
+        )
+
+    items = tuple(
+        DanfeItem(
+            seq=int(item.get("nItem")),
+            sku=value(item, "prod/cProd"),
+            name=value(item, "prod/xProd"),
+            qty=number(value(item, "prod/qCom")).replace(".", ","),
+            unit=value(item, "prod/uCom"),
+            unit_price_display=unit_price(value(item, "prod/vUnCom")),
+            total_display=money(value(item, "prod/vProd")),
+        )
+        for item in info.findall("n:det", NS)
+    )
+    if not items:
+        raise DanfeSourceError("XML fiscal sem itens.")
+
+    forms = {
+        "01": "Dinheiro",
+        "02": "Cheque",
+        "03": "Cartão de crédito",
+        "04": "Cartão de débito",
+        "05": "Crédito loja",
+        "10": "Vale alimentação",
+        "11": "Vale refeição",
+        "15": "Boleto",
+        "16": "Depósito bancário",
+        "17": "PIX",
+        "18": "Transferência",
+        "19": "Fidelidade",
+        "20": "PIX estático",
+        "90": "Sem pagamento",
+        "99": "Outros",
+    }
+    payments = tuple(
+        (
+            value(pay, "xPag") or forms.get(value(pay, "tPag"), f"Pagamento {value(pay, 'tPag')}"),
+            money(value(pay, "vPag")),
+        )
+        for pay in info.findall("n:pag/n:detPag", NS)
+    )
+    totals = [("Valor dos produtos", money(value(info, "total/ICMSTot/vProd")))]
+    for tag, label in (("vDesc", "Desconto"), ("vFrete", "Frete"), ("vSeg", "Seguro"), ("vOutro", "Outros acréscimos")):
+        raw = value(info, f"total/ICMSTot/{tag}")
+        if Decimal(raw or "0"):
+            totals.append((label, money(raw)))
+    change = value(info, "pag/vTroco")
+    if Decimal(change or "0"):
+        payments += (("Troco", money(change)),)
+
+    extras = tuple(value(info, f"infAdic/{tag}") for tag in ("infAdFisco", "infCpl") if value(info, f"infAdic/{tag}"))
+    if value(protocol, "xMsg"):
+        extras += (value(protocol, "xMsg"),)
+    tax = value(info, "total/ICMSTot/vTotTrib")
+    if tax:
+        extras += (f"Tributos totais incidentes (Lei Federal 12.741/2012): {money(tax)}",)
+
+    tax_id = value(info, "dest/CPF") or value(info, "dest/CNPJ") or value(info, "dest/idEstrangeiro")
+    tax_label = "CPF" if value(info, "dest/CPF") else "CNPJ" if value(info, "dest/CNPJ") else "Id. estrangeiro"
+    qr = value(root, "NFe/infNFeSupl/qrCode")
+    homolog = value(info, "ide/tpAmb") == "2"
+    return replace(
+        document,
+        source_verified=True,
+        source_problem="",
+        emitted=True,
+        is_homolog=homolog,
+        environment_label="Homologação" if homolog else "Produção",
+        status="autorizado",
+        shop_name=value(info, "emit/xFant"),
+        shop_legal_name=value(info, "emit/xNome"),
+        shop_cnpj=_format_tax_id(value(info, "emit/CNPJ") or value(info, "emit/CPF")),
+        shop_ie=value(info, "emit/IE"),
+        shop_address=address("emit/enderEmit"),
+        number=value(info, "ide/nNF"),
+        series=value(info, "ide/serie"),
+        protocol=value(protocol, "nProt"),
+        issued_at=timezone.localtime(datetime.fromisoformat(value(info, "ide/dhEmi"))).strftime("%d/%m/%Y %H:%M:%S"),
+        authorized_at=timezone.localtime(datetime.fromisoformat(value(protocol, "dhRecbto"))).strftime(
+            "%d/%m/%Y %H:%M:%S"
+        ),
+        items=items,
+        item_count=len(items),
+        total_display=money(value(info, "total/ICMSTot/vNF")),
+        totals=tuple(totals),
+        payments=payments,
+        payment_label=", ".join(label for label, _ in payments),
+        customer_name=value(info, "dest/xNome"),
+        customer_tax_id_display=_format_tax_id(tax_id) or tax_id,
+        customer_tax_id_label=tax_label,
+        customer_address=address("dest/enderDest"),
+        query_url=value(root, "NFe/infNFeSupl/urlChave"),
+        consult_url=qr,
+        qr_svg=_qr_svg(qr),
+        additional_info=extras,
+        contingency=value(info, "ide/tpEmis") == "9",
     )
 
 

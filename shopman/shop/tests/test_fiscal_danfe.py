@@ -1,157 +1,180 @@
-"""DANFE NFC-e — projeção + view de operador (o 'lampejo' do cupom fiscal)."""
+"""DANFE NFC-e: a fonte fiscal é o XML autorizado, nunca o pedido mutável."""
 
 from __future__ import annotations
+
+from unittest.mock import Mock, patch
 
 import pytest
 from django.contrib.auth.models import User
 from shopman.orderman.models import Order, OrderItem
 
+from shopman.backstage.services.receipt_escpos import danfe_nfce
 from shopman.shop.models import Shop
+from shopman.shop.services.danfe_xml import DanfeSourceError, parse_authorized_xml, read_authorized_xml
+from shopman.shop.tests.danfe_fixtures import KEY, XML, xml_for_key
 from shopman.shop.views.fiscal_danfe import build_danfe
 
 
 @pytest.fixture
-def emitted_order(db):
-    Shop.objects.create(name="Nelson", brand_name="Nelson Boulangerie", legal_name="NHK Ltda")
+def emitted_order(db, monkeypatch):
+    Shop.objects.create(name="Cadastro alterado", legal_name="Razão alterada")
     order = Order.objects.create(
-        ref="WEB-1", channel_ref="web", session_key="k1", status="completed", total_q=1800,
+        ref="WEB-1",
+        channel_ref="web",
+        total_q=99_999,
         data={
-            "customer": {"name": "Ana"},
-            "payment": {"method": "pix"},
-            "fiscal": {"issue_document": True},
-            "nfce_access_key": "41260799999999000191650010000012342876543210",
-            "nfce_number": 1234, "nfce_series": "1", "nfce_protocol": "141260000012345",
+            "customer": {"name": "Outro cliente"},
+            "fiscal": {"tax_id": "52998224725"},
+            "payment": {"method": "card", "status": "pending"},
+            "nfce_access_key": KEY,
+            "nfce_number": 999,
+            "nfce_series": "9",
+            "nfce_protocol": "999",
+            "nfce_xml_url": "https://api.focusnfe.com.br/fixture.xml",
+            "nfce_danfe_url": "https://api.focusnfe.com.br/fixture.pdf",
+            "nfce_qrcode_url": "https://example.invalid/errado",
             "nfce_status": "autorizado",
-            "nfce_danfe_url": "https://homologacao.focusnfe.com.br/danfe.pdf",
-            "nfce_qrcode_url": "http://www.fazenda.pr.gov.br/nfce/qrcode?p=41260799999999000191",
         },
     )
     OrderItem.objects.create(
-        order=order, line_id="L1", sku="PAO", name="Pão", qty="2", unit_price_q=500, line_total_q=1000
+        order=order,
+        line_id="1",
+        sku="TAXA",
+        name="Taxa fora da nota",
+        qty=1,
+        unit_price_q=99_999,
+        line_total_q=99_999,
     )
-    OrderItem.objects.create(
-        order=order, line_id="L2", sku="BOLO", name="Bolo", qty="1", unit_price_q=800, line_total_q=800
-    )
+    monkeypatch.setattr("shopman.shop.services.danfe_xml.read_authorized_xml", xml_for_key)
     return order
 
 
-def test_build_danfe_emitted(emitted_order):
-    d = build_danfe("WEB-1")
-    assert d is not None
-    assert d.emitted is True
-    assert d.is_homolog is True
-    assert d.environment_label == "Homologação"
-    assert d.item_count == 2
-    assert d.total_display == "R$ 18,00"
-    assert d.payment_label == "PIX"
-    assert d.customer_name == "Ana"
-    # chave agrupada de 4 em 4
-    assert d.chave_grouped.startswith("4126 0799")
-    # QR gerado inline
-    assert d.qr_svg.startswith("<?xml") or "<svg" in d.qr_svg
+def test_authorized_values_ignore_mutable_order_shop_and_environment(emitted_order, settings):
+    settings.SHOPMAN_FOCUS_NFE = {"environment": "producao"}
+    document = build_danfe("WEB-1")
+
+    assert document.source_verified and document.is_homolog
+    assert document.shop_legal_name == "Padaria Exemplo Ltda"
+    assert document.total_display == "R$ 50,00"
+    assert document.item_count == 2 and document.items[0].sku == "PAO"
+    assert document.items[0].unit_price_display == "R$ 18,00"
+    assert document.customer_name == "Ana Exemplo"
+    assert document.customer_tax_id_display == "000.000.001-91"
+    assert "entrada pela rua lateral" in document.customer_address
+    assert document.issued_at == "12/09/2026 09:05:00"
+    assert document.authorized_at.endswith("09:05:03")
+    assert document.number == "152" and document.series == "1"
+    assert document.consult_url.endswith(f"{KEY}|3|2")
+    assert document.payments == (("Dinheiro", "R$ 30,00"), ("PIX", "R$ 25,00"), ("Troco", "R$ 5,00"))
+    assert ("Desconto", "R$ 3,00") in document.totals
+    assert ("Frete", "R$ 5,00") in document.totals
+
+    paper = danfe_nfce(document).decode("cp860")
+    for critical in ("R$ 50,00", "R$ 3,00", "R$ 5,00", "000.000.001-91", "141260000000152", "PAO"):
+        assert critical in paper
+    assert "Taxa fora da nota" not in paper
+    assert "Cadastro alterado" not in paper
 
 
-def test_build_danfe_missing_order(db):
-    assert build_danfe("NOPE") is None
-
-
-def test_build_danfe_not_emitted(db):
-    Shop.objects.create(name="Nelson")
-    Order.objects.create(ref="WEB-2", channel_ref="web", session_key="k2", status="completed", total_q=500)
-    d = build_danfe("WEB-2")
-    assert d is not None
-    assert d.emitted is False
-    assert d.status == "não emitida"
-    assert d.qr_svg == ""
-
-
-def test_view_requires_staff(client, emitted_order):
-    user = User.objects.create_user("plain", password="pw", is_staff=False)
+def test_view_requires_staff_and_never_falls_back_to_mutable_data(client, emitted_order, monkeypatch):
+    user = User.objects.create_user("plain", is_staff=False)
     client.force_login(user)
-    assert client.get("/fiscal/danfe/WEB-1/").status_code in (302, 404)
+    assert client.get("/fiscal/danfe/WEB-1/").status_code == 404
 
+    user.is_staff = True
+    user.save()
+    client.force_login(user)
+    response = client.get("/fiscal/danfe/WEB-1/")
+    assert response.status_code == 200
+    assert "SEM VALOR FISCAL" in response.content.decode()
 
-def test_view_renders_for_staff(client, emitted_order):
-    staff = User.objects.create_user("op", password="pw", is_staff=True)
-    client.force_login(staff)
-    resp = client.get("/fiscal/danfe/WEB-1/")
-    assert resp.status_code == 200
-    body = resp.content.decode()
-    assert "SEM VALOR FISCAL" in body  # carimbo obrigatório de homologação
-    assert "DANFE NFC-e" in body
-    assert "<svg" in body  # QR inline
-
-
-def test_view_404_unknown_order(client, db):
-    staff = User.objects.create_user("op2", password="pw", is_staff=True)
-    client.force_login(staff)
-    assert client.get("/fiscal/danfe/GHOST/").status_code == 404
-
-
-def test_a_pagina_nao_oferece_impressao_nem_se_chama_previa(client, emitted_order):
-    """Um documento, dois modos de olhar — e só um deles imprime.
-
-    A tela oferecia "Imprimir prévia" e se declarava "Prévia interna", com o
-    DANFE do Focus como "oficial". Aquilo descrevia um mundo em que não havia
-    saída conforme nossa; agora há: a bobina em ESC/POS, composta do MESMO
-    `build_danfe`. Sobraram duas leituras da mesma nota (tela e provedor) e
-    nenhuma promessa de que o A4 do escritório seja um DANFE.
-    """
-    staff = User.objects.create_user("op3", password="pw", is_staff=True)
-    client.force_login(staff)
+    monkeypatch.setattr(
+        "shopman.shop.services.danfe_xml.read_authorized_xml",
+        Mock(side_effect=DanfeSourceError("XML indisponível")),
+    )
     body = client.get("/fiscal/danfe/WEB-1/").content.decode()
-
-    assert "prévia" not in body.lower()
-    assert "window.print" not in body
-    assert "oficial" not in body.lower()
-    # A via do provedor continua alcançável — é a do contador.
+    assert "XML indisponível" in body
     assert "Ver no Focus" in body
-    assert "A via do cliente sai na bobina" in body
+    assert "999,99" not in body
+    assert "Taxa fora da nota" not in body
 
 
-def test_pagamento_misto_nao_sai_em_ingles_no_documento(db):
-    """O rótulo é lido pela tela E pela bobina; `.title()` punha "Mixed" nas duas."""
-    Shop.objects.create(name="Nelson")
-    Order.objects.create(
-        ref="WEB-3", channel_ref="web", session_key="k3", status="completed", total_q=500,
-        data={"payment": {"method": "mixed"}, "nfce_access_key": "4126079999999900019165001000001234287654321"},
+def test_cancelled_unavailable_and_unemitted_documents_do_not_print(emitted_order, monkeypatch):
+    monkeypatch.setattr(
+        "shopman.shop.services.danfe_xml.read_authorized_xml",
+        Mock(side_effect=DanfeSourceError("Sem XML")),
     )
-    assert build_danfe("WEB-3").payment_label == "Pagamento misto"
+    document = build_danfe("WEB-1")
+    assert document.emitted and not document.source_verified
+    with pytest.raises(ValueError, match="XML autorizado"):
+        danfe_nfce(document)
+
+    emitted_order.data["nfce_cancelled"] = True
+    emitted_order.save(update_fields=["data"])
+    cancelled = build_danfe("WEB-1")
+    assert cancelled.status == "cancelada" and not cancelled.source_verified
+
+    Order.objects.create(ref="EMPTY", channel_ref="web")
+    empty = build_danfe("EMPTY")
+    assert not empty.emitted and not empty.source_verified
+    assert build_danfe("MISSING") is None
 
 
-def test_o_cpf_pedido_aparece_na_nota_inteiro_e_formatado(db):
-    """Achado do balcão: "coloquei CPF na nota e saiu um número parcial".
-
-    A linha do consumidor mostrava o NOME do cadastro — e o PDV batiza quem só
-    deu CPF como "Cliente Doc 6789" (os quatro últimos dígitos). Quem pediu CPF
-    lia um pedaço do próprio documento onde deveria estar o nome, e não tinha
-    como saber se o CPF entrou na nota. Agora o documento aparece inteiro e
-    formatado, que é a resposta para a pergunta que o cliente faz.
-    """
-    Shop.objects.create(name="Nelson")
-    Order.objects.create(
-        ref="WEB-CPF", channel_ref="pdv", session_key="kcpf", status="completed", total_q=1000,
-        data={
-            "customer": {"name": "Cliente Doc 4725"},   # apelido interno do CRM
-            "fiscal": {"tax_id": "52998224725"},
-            "nfce_access_key": "41260799999999000191650010000012342876543210",
-        },
-    )
-
-    d = build_danfe("WEB-CPF")
-
-    assert d.customer_tax_id_display == "529.982.247-25"
-    assert d.customer_name == ""   # apelido de cadastro não vai para documento
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (b"<mod>65</mod>", b"<mod>55</mod>"),
+        (b"<cStat>100</cStat>", b"<cStat>101</cStat>"),
+        (b"<nProt>141260000000152</nProt>", b""),
+        (b"<urlChave>http://www.fazenda.pr.gov.br/nfce/consulta</urlChave>", b""),
+    ],
+)
+def test_invalid_or_incomplete_sources_are_rejected(old, new):
+    with pytest.raises(DanfeSourceError):
+        parse_authorized_xml(XML.replace(old, new), KEY)
 
 
-def test_sem_documento_a_nota_diz_nao_identificado(db):
-    Shop.objects.create(name="Nelson")
-    Order.objects.create(
-        ref="WEB-SEMCPF", channel_ref="pdv", session_key="ksem", status="completed", total_q=1000,
-        data={"customer": {"name": "Ana Souza"}, "nfce_access_key": "4126079999999900019165001000001234287654321"},
-    )
+def test_wrong_key_entities_rtc_and_delivery_without_address_are_rejected():
+    with pytest.raises(DanfeSourceError):
+        parse_authorized_xml(XML, "9" * 44)
+    with pytest.raises(DanfeSourceError):
+        parse_authorized_xml(b'<!DOCTYPE x [<!ENTITY secret SYSTEM "file:///etc/passwd">]><x>&secret;</x>', KEY)
+    with pytest.raises(DanfeSourceError, match="RTC"):
+        parse_authorized_xml(XML.replace(b"</ICMSTot>", b"</ICMSTot><IBSCBSTot/>", 1), KEY)
+    without_address = XML.replace("<xLgr>Avenida das Araucárias</xLgr>".encode(), b"", 1)
+    with pytest.raises(DanfeSourceError, match="endereço"):
+        parse_authorized_xml(without_address, KEY)
 
-    d = build_danfe("WEB-SEMCPF")
 
-    assert d.customer_tax_id_display == ""
-    assert d.customer_name == "Ana Souza"   # nome de gente continua valendo
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://api.focusnfe.com.br/a",
+        "https://localhost/a",
+        "https://api.focusnfe.com.br.evil.test/a",
+        "https://secret@api.focusnfe.com.br/a",
+        "https://api.focusnfe.com.br:444/a",
+    ],
+)
+def test_source_transport_rejects_untrusted_urls(url, settings):
+    settings.SHOPMAN_FOCUS_NFE = {"base_url": "https://api.focusnfe.com.br"}
+    with pytest.raises(DanfeSourceError, match="provedor configurado"):
+        read_authorized_xml(url, KEY)
+
+
+def test_source_transport_rejects_redirect_and_oversized_body(settings):
+    settings.SHOPMAN_FOCUS_NFE = {"base_url": "https://api.focusnfe.com.br"}
+    redirect = Mock(status_code=302)
+    redirect.__enter__ = Mock(return_value=redirect)
+    redirect.__exit__ = Mock(return_value=False)
+    with patch("shopman.shop.services.danfe_xml.requests.get", return_value=redirect):
+        with pytest.raises(DanfeSourceError, match="obter o XML"):
+            read_authorized_xml("https://api.focusnfe.com.br/redirect.xml", KEY)
+
+    oversized = Mock(status_code=200)
+    oversized.iter_content.return_value = [b"x" * 1_100_000, b"y" * 1_100_000]
+    oversized.__enter__ = Mock(return_value=oversized)
+    oversized.__exit__ = Mock(return_value=False)
+    with patch("shopman.shop.services.danfe_xml.requests.get", return_value=oversized):
+        with pytest.raises(DanfeSourceError, match="excede"):
+            read_authorized_xml("https://api.focusnfe.com.br/large.xml", KEY)
