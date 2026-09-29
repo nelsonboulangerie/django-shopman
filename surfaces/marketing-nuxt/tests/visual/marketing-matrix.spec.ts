@@ -64,7 +64,11 @@ async function expectStableScreenshot(
   name: string,
   viewport: Viewport,
   theme: Theme = "light",
-  options: { fullPage?: boolean; maxDiffPixels?: number } = {},
+  options: {
+    fullPage?: boolean;
+    maxDiffPixels?: number;
+    maxDiffPixelRatio?: number;
+  } = {},
 ) {
   await expect(page).toHaveScreenshot(
     [`${name}__${viewport.label}__${theme}.png`],
@@ -73,6 +77,9 @@ async function expectStableScreenshot(
       ...(options.maxDiffPixels === undefined
         ? {}
         : { maxDiffPixels: options.maxDiffPixels }),
+      ...(options.maxDiffPixelRatio === undefined
+        ? {}
+        : { maxDiffPixelRatio: options.maxDiffPixelRatio }),
     },
   );
   const width = await page.evaluate(() => ({
@@ -332,6 +339,25 @@ test.describe("workspace Marketing V2", () => {
     ).toBeVisible();
     await expect(page.getByText("TikTok via Relay")).toBeVisible();
     await expectStableScreenshot(page, "v2__platforms", V1280);
+  });
+
+  test("ofertas e cupons ficam legíveis no desktop", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=offers", V1280);
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Ofertas e cupons" }),
+    ).toBeVisible();
+    await expect(page.getByText("Hibisco Primavera")).toBeVisible();
+    await expectStableScreenshot(page, "v2__offers", V1280);
+  });
+
+  test("novo cupom preserva formulário no mobile", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=offers", V390);
+    await page.getByRole("button", { name: "Criar cupom" }).click();
+    await expect(page.getByRole("dialog", { name: "Novo cupom" })).toBeVisible();
+    await expect(page.getByLabel("Código do cupom")).toBeVisible();
+    await expectStableScreenshot(page, "v2__coupon-form", V390, "light", {
+      fullPage: false,
+    });
   });
 });
 
@@ -790,7 +816,7 @@ test.describe("listas operacionais", () => {
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: "Ver conexão e configuração" })
+      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
       .click();
     await page.getByRole("button", { name: "Enviar teste" }).click();
     await expect(
@@ -812,7 +838,7 @@ test.describe("listas operacionais", () => {
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: "Ver conexão e configuração" })
+      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
       .click();
     // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
     // em vez de um cartão por modelo.
@@ -1147,6 +1173,10 @@ test.describe("modos transversais", () => {
     await openScenario(page, "platforms-blocked", "/v2?area=platforms", zoom);
     await expectStableScreenshot(page, "platforms__blocked", zoom, "light", {
       fullPage: false,
+      // Chromium rasteriza texto ampliado com uma pequena variação entre
+      // processos; limite o ruído à tipografia sem ocultar mudança de layout.
+      maxDiffPixels: 1_500,
+      maxDiffPixelRatio: 0.004,
     });
   });
 

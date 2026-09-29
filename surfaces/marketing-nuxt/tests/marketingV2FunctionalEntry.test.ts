@@ -31,7 +31,7 @@ describe("entrada funcional do Marketing V2", () => {
     expect(v2Entry).not.toContain("marketing-v2-preview");
   });
 
-  it("torna as áreas esperadas alcançáveis sem inventar comandos", () => {
+  it("torna as áreas esperadas alcançáveis com gestão comercial real", () => {
     for (const area of [
       "Hoje",
       "Campanhas",
@@ -44,10 +44,11 @@ describe("entrada funcional do Marketing V2", () => {
     expect(topBar).not.toContain("legacySections");
     expect(workspace).not.toContain('aria-label="Áreas do Marketing V2"');
     expect(workspace).toContain("marketingV2Destinations");
-    expect(workspace).toContain("Action versionada e auditável");
+    expect(workspace).toContain("Criar oferta");
+    expect(workspace).toContain("Criar cupom");
+    expect(workspace).toContain("useMarketingOffers()");
     expect(workspace).toContain("TikTok via Relay");
     expect(workspace).not.toContain("fetch(");
-    expect(workspace).not.toContain("$fetch(");
   });
 
   it("mantém a V2 atrás do mesmo gate de operador", () => {

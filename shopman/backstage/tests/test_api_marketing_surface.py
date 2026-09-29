@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from shopman.offerman.models import Product
 from shopman.orderman.models import Directive
 
 from shopman.shop.models import (
@@ -27,10 +30,12 @@ from shopman.shop.models import (
     AnnouncementTemplate,
     AudienceSnapshot,
     Campaign,
+    Coupon,
     MarketingAuditEvent,
     MarketingCommandReceipt,
     MarketingContentArtifact,
     MarketingOutbox,
+    Promotion,
 )
 
 pytestmark = pytest.mark.django_db
@@ -41,6 +46,7 @@ BOARD_URL = "/api/v1/backstage/marketing/"
 RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
+OFFERS_URL = "/api/v1/backstage/marketing/offers/"
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
 PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
@@ -48,17 +54,21 @@ PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="marketing", password="x", is_staff=True)
-    user.user_permissions.add(*Permission.objects.filter(codename__in={
-        "view_marketing",
-        "edit_marketing_campaigns",
-        "edit_marketing_templates",
-        "preview_marketing_audience",
-        "approve_marketing_announcements",
-        "publish_marketing_announcements",
-        "fire_marketing_campaigns",
-        "send_marketing_test",
-        "configure_marketing_platforms",
-    }))
+    user.user_permissions.add(
+        *Permission.objects.filter(
+            codename__in={
+                "view_marketing",
+                "edit_marketing_campaigns",
+                "edit_marketing_templates",
+                "preview_marketing_audience",
+                "approve_marketing_announcements",
+                "publish_marketing_announcements",
+                "fire_marketing_campaigns",
+                "send_marketing_test",
+                "configure_marketing_platforms",
+            }
+        )
+    )
     return user
 
 
@@ -90,9 +100,7 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
         "audience": {"favorites": 12, "alerts": 3, "total": 15},
         "trigger_context": {"sku": "CRO-001"},
     }
-    return Announcement.objects.create(
-        rule=rule, template=template, status=status, **{**defaults, **kwargs}
-    )
+    return Announcement.objects.create(rule=rule, template=template, status=status, **{**defaults, **kwargs})
 
 
 def _confirmed_post(client, url: str, payload: dict, *, key: str):
@@ -135,10 +143,16 @@ class TestGate:
     def test_anonymous_is_rejected(self, client):
         assert client.get(BOARD_URL).status_code == 401
 
+    def test_anonymous_cannot_manage_offers(self, client):
+        assert client.get(OFFERS_URL).status_code == 401
+        assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 401
+
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)
         client.login(username="caixa", password="x")
         assert client.get(BOARD_URL).status_code == 403
+        assert client.get(OFFERS_URL).status_code == 403
+        assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 403
 
     def test_manager_with_permission_gets_the_board(self, client, gestor):
         client.force_login(gestor)
@@ -216,9 +230,7 @@ class TestBoard:
         assert len(announcements) == 1
         assert announcements[0]["status"] == AnnouncementStatus.PUBLISHED
 
-    def test_result_states_remain_reachable_for_inline_recovery(
-        self, client, gestor, rule, template
-    ):
+    def test_result_states_remain_reachable_for_inline_recovery(self, client, gestor, rule, template):
         visible = (
             AnnouncementStatus.APPROVED,
             AnnouncementStatus.SETTLED,
@@ -234,12 +246,8 @@ class TestBoard:
 
         assert history.status_code == board.status_code == 200
         expected = {post.pk for post in posts}
-        assert {
-            item["pk"] for item in history.json()["announcements"]
-        } == expected
-        assert {
-            item["pk"] for item in board.json()["board"]["recent"]
-        } == expected
+        assert {item["pk"] for item in history.json()["announcements"]} == expected
+        assert {item["pk"] for item in board.json()["board"]["recent"]} == expected
 
 
 # ── Decisão sobre o announcement ─────────────────────────────────────────────
@@ -266,9 +274,7 @@ class TestPostDecision:
         )
         assert announcement.approved_by_id == gestor.pk
 
-    def test_approval_points_an_unsafe_image_back_to_the_exact_field(
-        self, client, gestor, rule, template
-    ):
+    def test_approval_points_an_unsafe_image_back_to_the_exact_field(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -291,9 +297,7 @@ class TestPostDecision:
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
-    def test_v2_approval_returns_one_receipt_and_only_durable_outbox(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_approval_returns_one_receipt_and_only_durable_outbox(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
         url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
@@ -330,9 +334,7 @@ class TestPostDecision:
         assert MarketingOutbox.objects.count() == 2
         assert Directive.objects.count() == 0
 
-    def test_v2_approval_never_downgrades_when_idempotency_header_is_missing(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_approval_never_downgrades_when_idempotency_header_is_missing(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -348,9 +350,7 @@ class TestPostDecision:
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
         assert Directive.objects.count() == 0
 
-    def test_v2_now_overrides_the_announcement_suggested_schedule(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_now_overrides_the_announcement_suggested_schedule(self, client, gestor, rule, template):
         suggested = timezone.now() + timedelta(hours=3)
         announcement = _post(rule, template, publish_at=suggested)
         client.force_login(gestor)
@@ -373,13 +373,9 @@ class TestPostDecision:
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PUBLISHING
         assert announcement.publish_at is None
-        assert suggested not in set(
-            MarketingOutbox.objects.values_list("available_at", flat=True)
-        )
+        assert suggested not in set(MarketingOutbox.objects.values_list("available_at", flat=True))
 
-    def test_v2_now_with_a_timestamp_is_rejected_instead_of_guessing(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_now_with_a_timestamp_is_rejected_instead_of_guessing(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -408,12 +404,15 @@ class TestPostDecision:
         url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
         base = {"base_version": 1, "publish_mode": "now", "body": "Primeiro"}
 
-        assert _confirmed_post(
-            client,
-            url,
-            base,
-            key="idem-api-approval-000002",
-        ).status_code == 200
+        assert (
+            _confirmed_post(
+                client,
+                url,
+                base,
+                key="idem-api-approval-000002",
+            ).status_code
+            == 200
+        )
         conflict = client.post(
             url,
             data={**base, "body": "Segundo"},
@@ -425,9 +424,7 @@ class TestPostDecision:
         assert conflict.json()["code"] == "idempotency_conflict"
         assert MarketingCommandReceipt.objects.count() == 1
 
-    def test_v2_replays_its_version_conflict_even_if_server_content_changes_again(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_replays_its_version_conflict_even_if_server_content_changes_again(self, client, gestor, rule, template):
         from shopman.shop.services import campaign as campaign_service
 
         announcement = _post(rule, template)
@@ -456,9 +453,7 @@ class TestPostDecision:
         assert first.json()["current_version"] == replay.json()["current_version"] == 2
         assert MarketingCommandReceipt.objects.count() == 1
 
-    def test_v2_reject_has_version_receipt_and_session_actor(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_reject_has_version_receipt_and_session_actor(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -476,9 +471,7 @@ class TestPostDecision:
         assert receipt.actor_id == gestor.pk
         assert receipt.actor_ref == f"user:{gestor.pk}"
 
-    def test_v2_cancel_tombstones_scheduled_outbox(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_cancel_tombstones_scheduled_outbox(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
         base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
@@ -503,14 +496,15 @@ class TestPostDecision:
         assert approved.status_code == cancelled.status_code == 200
         assert cancelled.json()["announcement"]["status"] == "cancelled"
         assert cancelled.json()["receipt"]["outcome"]["outbox_cancelled"] == 2
-        assert MarketingOutbox.objects.filter(
-            state=MarketingOutbox.State.CANCELLED,
-            cancelled_by_command__kind="cancel",
-        ).count() == 2
+        assert (
+            MarketingOutbox.objects.filter(
+                state=MarketingOutbox.State.CANCELLED,
+                cancelled_by_command__kind="cancel",
+            ).count()
+            == 2
+        )
 
-    def test_v2_reschedule_moves_pending_outbox_and_returns_absolute_time(
-        self, client, gestor, rule, template
-    ):
+    def test_v2_reschedule_moves_pending_outbox_and_returns_absolute_time(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
         base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
@@ -607,9 +601,7 @@ class TestPostDecision:
         # O "#" é do texto, não do dado: guardar a tag limpa evita "##paes".
         assert announcement.content["hashtags"] == ["paes", "artesanal"]
 
-    def test_edit_with_unknown_variable_returns_a_field_addressed_error(
-        self, client, gestor, rule, template
-    ):
+    def test_edit_with_unknown_variable_returns_a_field_addressed_error(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -621,16 +613,12 @@ class TestPostDecision:
 
         assert response.status_code == 422
         assert response.json()["code"] == "unknown_template_variable"
-        assert response.json()["field_errors"] == {
-            "body": ["Variável não reconhecida: nome_errado."]
-        }
+        assert response.json()["field_errors"] == {"body": ["Variável não reconhecida: nome_errado."]}
         announcement.refresh_from_db()
         assert announcement.version == 1
         assert announcement.content["body"] == "Croissant saiu do forno"
 
-    def test_edit_returns_next_version_and_stale_edit_preserves_current_draft(
-        self, client, gestor, rule, template
-    ):
+    def test_edit_returns_next_version_and_stale_edit_preserves_current_draft(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
         url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/"
@@ -701,9 +689,7 @@ class TestPostDecision:
 
 
 class TestRules:
-    def test_list_actions_use_the_same_campaign_version_as_the_projection(
-        self, client, gestor, rule
-    ):
+    def test_list_actions_use_the_same_campaign_version_as_the_projection(self, client, gestor, rule):
         rule.version = 7
         rule.save(update_fields=["version"])
         client.force_login(gestor)
@@ -716,8 +702,7 @@ class TestRules:
         fire = next(
             action
             for action in body["actions"]
-            if action["kind"] == "fire_campaign"
-            and action["resource_ref"] == f"campaign:{rule.pk}"
+            if action["kind"] == "fire_campaign" and action["resource_ref"] == f"campaign:{rule.pk}"
         )
         assert projected["version"] == 7
         assert fire["ref"] == f"campaign:{rule.pk}:fire_campaign:v7"
@@ -748,8 +733,10 @@ class TestRules:
         response = client.post(
             RULES_URL,
             data={
-                "name": "X", "trigger": "fornada_magica",
-                "template_id": template.pk, "platforms": ["instagram"],
+                "name": "X",
+                "trigger": "fornada_magica",
+                "template_id": template.pk,
+                "platforms": ["instagram"],
             },
             content_type="application/json",
         )
@@ -763,8 +750,10 @@ class TestRules:
         response = client.post(
             RULES_URL,
             data={
-                "name": "X", "trigger": "low_stock",
-                "template_id": template.pk, "platforms": ["tiktok"],
+                "name": "X",
+                "trigger": "low_stock",
+                "template_id": template.pk,
+                "platforms": ["tiktok"],
             },
             content_type="application/json",
         )
@@ -796,8 +785,10 @@ class TestRules:
         response = client.post(
             RULES_URL,
             data={
-                "name": "Relâmpago torta", "trigger": "schedule",
-                "template_id": template.pk, "platforms": ["whatsapp"],
+                "name": "Relâmpago torta",
+                "trigger": "schedule",
+                "template_id": template.pk,
+                "platforms": ["whatsapp"],
                 "schedule": {"type": "immediate"},
             },
             content_type="application/json",
@@ -813,8 +804,10 @@ class TestRules:
         response = client.post(
             RULES_URL,
             data={
-                "name": "Relâmpago das 17h30", "trigger": "schedule",
-                "template_id": template.pk, "platforms": ["whatsapp"],
+                "name": "Relâmpago das 17h30",
+                "trigger": "schedule",
+                "template_id": template.pk,
+                "platforms": ["whatsapp"],
                 "schedule": {"type": "recurring", "windows": [["17:30", "18:30"]]},
             },
             content_type="application/json",
@@ -855,9 +848,7 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.is_active is False
 
-    def test_rule_projection_exposes_the_complete_public_schema_but_no_members(
-        self, client, gestor, rule
-    ):
+    def test_rule_projection_exposes_the_complete_public_schema_but_no_members(self, client, gestor, rule):
         rule.audience_rules = {
             "favorites": True,
             "bought_skus": ["PAO-01"],
@@ -881,9 +872,7 @@ class TestRules:
         }
         assert "customer:secret" not in json.dumps(response.json())
 
-    def test_patch_replaces_public_schema_without_erasing_private_or_legacy_state(
-        self, client, gestor, rule
-    ):
+    def test_patch_replaces_public_schema_without_erasing_private_or_legacy_state(self, client, gestor, rule):
         rule.audience_rules = {
             "favorites": True,
             "price_tiers": ["varejo"],
@@ -909,9 +898,7 @@ class TestRules:
         assert response.json()["rule"]["audience_rules"] == {"tags": ["sem-gluten"]}
         assert "customer:secret" not in json.dumps(response.json())
 
-    def test_unknown_or_private_audience_field_is_rejected_without_hidden_write(
-        self, client, gestor, rule
-    ):
+    def test_unknown_or_private_audience_field_is_rejected_without_hidden_write(self, client, gestor, rule):
         original = dict(rule.audience_rules)
         client.force_login(gestor)
 
@@ -927,9 +914,7 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.audience_rules == original
 
-    def test_unknown_top_level_field_is_rejected_without_hidden_write(
-        self, client, gestor, rule
-    ):
+    def test_unknown_top_level_field_is_rejected_without_hidden_write(self, client, gestor, rule):
         client.force_login(gestor)
 
         response = client.patch(
@@ -944,9 +929,7 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.name == "Fornada de pães"
 
-    def test_edit_uses_updated_at_as_cas_and_returns_the_current_rule_on_conflict(
-        self, client, gestor, rule
-    ):
+    def test_edit_uses_updated_at_as_cas_and_returns_the_current_rule_on_conflict(self, client, gestor, rule):
         client.force_login(gestor)
         loaded = client.get(f"{RULES_URL}{rule.pk}/").json()["rule"]
         rule.name = "Alterada em outra sessão"
@@ -983,9 +966,7 @@ class TestRules:
 
 
 class TestTemplates:
-    def test_dependency_projection_has_constant_query_cost(
-        self, rule, django_assert_num_queries
-    ):
+    def test_dependency_projection_has_constant_query_cost(self, rule, django_assert_num_queries):
         """A ajuda prévia à exclusão não pode virar N+1 ao crescer o catálogo."""
         spare = AnnouncementTemplate.objects.create(name="Livre", body="x")
         from shopman.backstage.projections import marketing as marketing_projection
@@ -1033,9 +1014,7 @@ class TestTemplates:
         assert client.delete(f"{TEMPLATES_URL}{template.pk}/").status_code == 200
         assert not AnnouncementTemplate.objects.filter(pk=template.pk).exists()
 
-    def test_concurrent_template_edit_returns_current_content_without_overwrite(
-        self, client, gestor, template
-    ):
+    def test_concurrent_template_edit_returns_current_content_without_overwrite(self, client, gestor, template):
         client.force_login(gestor)
         loaded = client.get(f"{TEMPLATES_URL}{template.pk}/").json()["template"]
         template.body = "Texto de outra sessão"
@@ -1054,6 +1033,221 @@ class TestTemplates:
         assert template.body == "Texto de outra sessão"
 
 
+# ── Ofertas e cupons ─────────────────────────────────────────────────
+
+
+class TestMarketingOffers:
+    def payload(self, **overrides):
+        now = timezone.now()
+        return {
+            "kind": "offer",
+            "name": "Semana do pão",
+            "type": "percent",
+            "value": 15,
+            "valid_from": now.isoformat(),
+            "valid_until": (now + timedelta(days=7)).isoformat(),
+            "skus": [],
+            "collections": [],
+            "channels": [],
+            "fulfillment_types": [],
+            "customer_segments": [],
+            "min_order_q": 0,
+            "birthday_only": False,
+            "is_active": True,
+            **overrides,
+        }
+
+    def test_creates_and_lists_an_automatic_offer(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        created = response.json()["offer"]
+        assert created["name"] == "Semana do pão"
+        assert created["ref"] == "semana-do-pao"
+        assert created["coupons"] == []
+        promotion = Promotion.objects.get(ref="semana-do-pao")
+        assert promotion.value == 15
+        assert client.get(OFFERS_URL).json()["offers"][0]["ref"] == promotion.ref
+
+    def test_coupon_gets_a_dedicated_promotion_and_usage_limit(self, client, gestor):
+        automatic = Promotion.objects.create(
+            ref="automatic",
+            name="Oferta automática",
+            type=Promotion.PERCENT,
+            value=5,
+            valid_from=timezone.now(),
+            valid_until=timezone.now() + timedelta(days=3),
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(
+                kind="coupon",
+                name="Primeira compra",
+                coupon_code="primeira-10",
+                max_uses=30,
+            ),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        coupon = Coupon.objects.select_related("promotion").get(code="PRIMEIRA-10")
+        assert coupon.max_uses == 30
+        assert coupon.promotion_id != automatic.pk
+        assert response.json()["offer"]["coupons"][0]["code"] == "PRIMEIRA-10"
+
+    def test_rejects_invalid_period_without_writing(self, client, gestor):
+        now = timezone.now()
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(
+                valid_from=(now + timedelta(days=1)).isoformat(),
+                valid_until=now.isoformat(),
+            ),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field_errors"]["valid_until"]
+        assert not Promotion.objects.exists()
+
+    def test_rejects_unknown_fields_without_writing(self, client, gestor):
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(unexpected="não entra"),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field_errors"]["payload"]
+        assert not Promotion.objects.exists()
+
+    @pytest.mark.parametrize(
+        ("override", "field"),
+        [
+            ({"type": "percent", "value": 101}, "value"),
+            ({"type": "fixed", "value": 0}, "value"),
+            ({"valid_from": "não é data"}, "valid_from"),
+            ({"skus": ["NAO-EXISTE"]}, "skus"),
+            ({"collections": ["nao-existe"]}, "collections"),
+            ({"channels": ["nao-existe"]}, "channels"),
+            ({"fulfillment_types": ["drone"]}, "fulfillment_types"),
+            ({"customer_segments": ["inventado"]}, "customer_segments"),
+            ({"skus": "SKU-EM-STRING"}, "skus"),
+            ({"birthday_only": "talvez"}, "birthday_only"),
+        ],
+    )
+    def test_rejects_invalid_business_fields_without_writing(self, client, gestor, override, field):
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(**override),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field_errors"][field]
+        assert not Promotion.objects.exists()
+
+    def test_rejects_duplicate_coupon_code_without_orphan_promotion(self, client, gestor):
+        existing = Promotion.objects.create(
+            ref="existing",
+            name="Existente",
+            type=Promotion.PERCENT,
+            value=5,
+            valid_from=timezone.now(),
+            valid_until=timezone.now() + timedelta(days=3),
+        )
+        Coupon.objects.create(code="PRIMEIRA-10", promotion=existing)
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(kind="coupon", coupon_code="primeira-10"),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field_errors"]["coupon_code"]
+        assert Promotion.objects.count() == 1
+
+    def test_coupon_failure_rolls_back_its_dedicated_promotion(self, client, gestor, monkeypatch):
+        def reject_coupon(_coupon):
+            raise DjangoValidationError({"code": ["Falha comprovada após a promoção."]})
+
+        monkeypatch.setattr(Coupon, "full_clean", reject_coupon)
+        client.force_login(gestor)
+
+        response = client.post(
+            OFFERS_URL,
+            data=self.payload(kind="coupon", coupon_code="ATOMICO"),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert not Promotion.objects.exists()
+        assert not Coupon.objects.exists()
+
+    def test_created_rules_preserve_the_canonical_pricing_split(self, client, gestor):
+        from shopman.shop.adapters.pricing import PromotionPricingBackend
+        from shopman.shop.services import promotions as promotion_service
+
+        Product.objects.create(
+            sku="CRO-API",
+            name="Croissant API",
+            base_price_q=1000,
+            is_published=True,
+            is_sellable=True,
+        )
+        client.force_login(gestor)
+
+        automatic = client.post(
+            OFFERS_URL,
+            data=self.payload(name="Automática", skus=["CRO-API"]),
+            content_type="application/json",
+        )
+        coupon = client.post(
+            OFFERS_URL,
+            data=self.payload(
+                kind="coupon",
+                name="Somente com código",
+                coupon_code="SO-COM-CODIGO",
+                skus=["CRO-API"],
+            ),
+            content_type="application/json",
+        )
+
+        assert automatic.status_code == 201
+        assert coupon.status_code == 201
+        active = promotion_service.get_active_promotions(timezone.now())
+        assert [promotion.name for promotion in active] == ["Automática"]
+        priced = PromotionPricingBackend().get_price(
+            sku="CRO-API",
+            qty=Decimal("1"),
+            listing=None,
+            list_unit_price_q=1000,
+            list_total_price_q=1000,
+        )
+        assert priced.final_total_price_q == 850
+        assert priced.adjustments[0].label == "Automática"
+        coupon_promotion = promotion_service.get_coupon_promotion("SO-COM-CODIGO", timezone.now())
+        assert coupon_promotion is not None
+        assert coupon_promotion.name == "Somente com código"
+        assert promotion_service.get_coupon_promotion("", timezone.now()) is None
+
+
 # ── Opções do formulário ─────────────────────────────────────────────
 
 
@@ -1068,45 +1262,29 @@ class TestOptions:
 
         assert {t["value"] for t in options["triggers"]} >= {"production_finished", "low_stock"}
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
-        capabilities = {
-            item["platform"]: item for item in options["delivery_capabilities"]
-        }
+        capabilities = {item["platform"]: item for item in options["delivery_capabilities"]}
         assert capabilities["whatsapp"]["delivery_kind"] == "direct_message"
         assert capabilities["instagram"]["delivery_kind"] == "publication"
         assert capabilities["instagram"]["default_format"] == "story"
-        assert [
-            item["ref"] for item in capabilities["instagram"]["formats"]
-        ] == ["story", "feed"]
+        assert [item["ref"] for item in capabilities["instagram"]["formats"]] == ["story", "feed"]
         assert capabilities["instagram"]["formats"][0]["media_required"] is True
         assert options["provider_capability_schema_version"] == 2
-        provider_capabilities = {
-            item["platform"]: item for item in options["provider_capabilities"]
-        }
+        provider_capabilities = {item["platform"]: item for item in options["provider_capabilities"]}
         assert provider_capabilities["instagram"]["connector_state"] == "active"
-        instagram_formats = {
-            item["ref"]: item
-            for item in provider_capabilities["instagram"]["formats"]
-        }
+        instagram_formats = {item["ref"]: item for item in provider_capabilities["instagram"]["formats"]}
         assert instagram_formats["carousel"]["implementation_state"] == "planned"
         assert instagram_formats["carousel"]["media"]["max_items"] == 10
         assert provider_capabilities["tiktok"]["connector_state"] == "dormant"
-        tiktok_formats = {
-            item["ref"]: item
-            for item in provider_capabilities["tiktok"]["formats"]
-        }
+        tiktok_formats = {item["ref"]: item for item in provider_capabilities["tiktok"]["formats"]}
         assert tiktok_formats["video_draft"]["delivery_kind"] == "creator_handoff"
         assert template.pk in {t["pk"] for t in options["templates"]}
         projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
         assert projected_template["requires_product"] is True
         assert "product_name" in options["variables"]
-        assert {p["value"]: p["label"] for p in options["products"]}["MDL"] == (
-            "Madeleine (MDL)"
-        )
+        assert {p["value"]: p["label"] for p in options["products"]}["MDL"] == ("Madeleine (MDL)")
         assert options["shop_timezone"] == "America/Sao_Paulo"
 
-    def test_template_options_preserve_platform_variants_for_faithful_preview(
-        self, client, gestor, template
-    ):
+    def test_template_options_preserve_platform_variants_for_faithful_preview(self, client, gestor, template):
         template.platform_variants = {
             "whatsapp": {"body": "WhatsApp {{product_name}}"},
         }
@@ -1119,9 +1297,7 @@ class TestOptions:
         assert projected["platform_variants"] == template.platform_variants
         assert projected["updated_at"]
 
-    def test_preview_batch_returns_exact_artifact_for_each_platform(
-        self, client, gestor, monkeypatch
-    ):
+    def test_preview_batch_returns_exact_artifact_for_each_platform(self, client, gestor, monkeypatch):
         from shopman.offerman.models import Product
 
         from shopman.shop.models import NotificationTemplate
@@ -1176,9 +1352,7 @@ class TestOptions:
         payload = response.json()
         assert payload["sample"] is True
         assert payload["previews"]["instagram"]["artifact"]["body"] == "Instagram R$ 8,50"
-        assert payload["previews"]["whatsapp"]["artifact"]["body"] == (
-            "WhatsApp Croissant da prévia"
-        )
+        assert payload["previews"]["whatsapp"]["artifact"]["body"] == ("WhatsApp Croissant da prévia")
         assert payload["previews"]["whatsapp"]["flow"] == {
             "configured": True,
             "name": "Campanha API",
@@ -1186,9 +1360,7 @@ class TestOptions:
             "catalog_as_of": checked_at.isoformat(),
         }
 
-    def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(
-        self, client, gestor, monkeypatch
-    ):
+    def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(self, client, gestor, monkeypatch):
         from shopman.shop.models import NotificationTemplate
         from shopman.shop.services.manychat_flows import FlowCatalog
 
@@ -1247,9 +1419,7 @@ class TestAnnouncementReviewPreview:
             image_url="/media/agua.jpg",
         )
 
-    def test_announcement_without_product_previews_without_link(
-        self, client, gestor, rule, template
-    ):
+    def test_announcement_without_product_previews_without_link(self, client, gestor, rule, template):
         announcement = _post(
             rule,
             template,
@@ -1308,9 +1478,9 @@ class TestAnnouncementReviewPreview:
             key="review-preview-equals-approval",
         )
         assert response.status_code == 200, response.content
-        sealed = MarketingContentArtifact.objects.get(
-            announcement=announcement
-        ).payload["resolved_artifacts"]["instagram"]
+        sealed = MarketingContentArtifact.objects.get(announcement=announcement).payload["resolved_artifacts"][
+            "instagram"
+        ]
         for key in ("body", "link", "hashtags", "image_url"):
             assert preview["artifact"][key] == sealed[key], key
         assert sealed["link"] == "/produto/cro"
@@ -1328,11 +1498,9 @@ class TestAnnouncementReviewPreview:
 
 
 class TestScheduledPublishing:
-    """"Agendar" no card: a decisão é agora, a publicação é na hora marcada."""
+    """ "Agendar" no card: a decisão é agora, a publicação é na hora marcada."""
 
-    def test_future_publish_at_schedules_instead_of_dispatching(
-        self, client, gestor, rule, template
-    ):
+    def test_future_publish_at_schedules_instead_of_dispatching(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
         when = timezone.localtime(timezone.now() + timedelta(hours=3))
@@ -1352,12 +1520,8 @@ class TestScheduledPublishing:
         assert response.status_code == 200
         assert response.json()["scheduled"] is True
         assert response.json()["receipt"]["outcome"]["publish_at"] == when.isoformat()
-        assert response.json()["receipt"]["outcome"]["publish_timezone"] == (
-            "America/Sao_Paulo"
-        )
-        assert list(MarketingOutbox.objects.values_list("available_at", flat=True)) == [
-            when
-        ] * 2
+        assert response.json()["receipt"]["outcome"]["publish_timezone"] == ("America/Sao_Paulo")
+        assert list(MarketingOutbox.objects.values_list("available_at", flat=True)) == [when] * 2
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.APPROVED
         assert announcement.publish_at is not None
@@ -1430,9 +1594,7 @@ class TestScheduledPublishing:
         assert MarketingContentArtifact.objects.count() == 0
         assert MarketingOutbox.objects.count() == 0
 
-    def test_approve_applies_the_card_edits_in_the_same_request(
-        self, client, gestor, rule, template
-    ):
+    def test_approve_applies_the_card_edits_in_the_same_request(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -1453,9 +1615,7 @@ class TestScheduledPublishing:
         assert announcement.content["body"] == "Texto revisado pelo gestor"
         assert announcement.platforms == ["instagram"]
 
-    def test_garbage_date_is_refused_before_anything_is_published(
-        self, client, gestor, rule, template
-    ):
+    def test_garbage_date_is_refused_before_anything_is_published(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
@@ -1505,14 +1665,20 @@ class TestPlatformResultDetail:
         # O handler grava ``error`` na falha — ler só ``detail`` deixaria um
         # "falhou" mudo no histórico.
         results = self._results(
-            client, gestor, rule, template,
+            client,
+            gestor,
+            rule,
+            template,
             {"instagram": {"status": "failed", "error": "token expirado"}},
         )
         assert results["instagram"]["detail"] == "token expirado"
 
     def test_manual_pending_explains_itself(self, client, gestor, rule, template):
         results = self._results(
-            client, gestor, rule, template,
+            client,
+            gestor,
+            rule,
+            template,
             {"instagram": {"status": "pending_manual", "reason": "sem adapter configurado"}},
         )
         assert results["instagram"]["status"] == "pending_manual"
@@ -1520,31 +1686,29 @@ class TestPlatformResultDetail:
 
     def test_whatsapp_reports_how_many_actually_went_out(self, client, gestor, rule, template):
         announcement = _post(
-            rule, template, status=AnnouncementStatus.PUBLISHED, platforms=["whatsapp"],
+            rule,
+            template,
+            status=AnnouncementStatus.PUBLISHED,
+            platforms=["whatsapp"],
             platform_results={"whatsapp": {"status": "sent", "sent": 38, "failed": 2}},
         )
         client.force_login(gestor)
-        found = next(
-            p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk
-        )
+        found = next(p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk)
         assert found["platform_results"][0]["detail"] == "38 enviados, 2 falharam"
 
-    def test_a_clean_whatsapp_wave_does_not_invent_a_failure_count(
-        self, client, gestor, rule, template
-    ):
+    def test_a_clean_whatsapp_wave_does_not_invent_a_failure_count(self, client, gestor, rule, template):
         announcement = _post(
-            rule, template, status=AnnouncementStatus.PUBLISHED, platforms=["whatsapp"],
+            rule,
+            template,
+            status=AnnouncementStatus.PUBLISHED,
+            platforms=["whatsapp"],
             platform_results={"whatsapp": {"status": "sent", "sent": 40, "failed": 0}},
         )
         client.force_login(gestor)
-        found = next(
-            p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk
-        )
+        found = next(p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk)
         assert found["platform_results"][0]["detail"] == "40 enviados"
 
-    def test_targeted_platform_with_no_answer_yet_stays_visible(
-        self, client, gestor, rule, template
-    ):
+    def test_targeted_platform_with_no_answer_yet_stays_visible(self, client, gestor, rule, template):
         # Silêncio no painel esconderia justamente o caso que precisa de ação.
         results = self._results(client, gestor, rule, template, {})
         assert results["instagram"]["status"] == "queued"
@@ -1596,9 +1760,7 @@ class TestManualFire:
         assert limited.status_code == 429
         assert int(limited.headers["Retry-After"]) > 0
 
-    def test_body_bypass_is_rejected_before_any_announcement_or_effect(
-        self, client, gestor, rule
-    ):
+    def test_body_bypass_is_rejected_before_any_announcement_or_effect(self, client, gestor, rule):
         client.force_login(gestor)
         resp = client.post(
             _fire_url(rule),
@@ -1616,9 +1778,7 @@ class TestManualFire:
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
 
-    def test_fire_resolves_the_event_audience_with_the_chosen_product(
-        self, client, gestor, rule, template
-    ):
+    def test_fire_resolves_the_event_audience_with_the_chosen_product(self, client, gestor, rule, template):
         """A campanha "quem favoritou" contava 1 e o disparo respondia "ninguém elegível".
 
         O disparo resolvia o público SEM o SKU; ``favorites`` nem rodava. Contagem,
@@ -1632,7 +1792,9 @@ class TestManualFire:
 
         Product.objects.create(sku="BE", name="Baguete Gergelim", base_price_q=1200)
         customer = Customer.objects.create(
-            ref="CLI-FAV-FIRE", first_name="Pablo", phone="+5543999998811",
+            ref="CLI-FAV-FIRE",
+            first_name="Pablo",
+            phone="+5543999998811",
             birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
@@ -1644,7 +1806,8 @@ class TestManualFire:
         payload = {"base_version": rule.version, "sku": "BE"}
 
         counted = client.post(
-            COUNT_URL, {"audience_rules": rule.audience_rules, "sku": "BE"},
+            COUNT_URL,
+            {"audience_rules": rule.audience_rules, "sku": "BE"},
             content_type="application/json",
         ).json()
         assert counted["total"] == 1
@@ -1715,10 +1878,13 @@ class TestManualFire:
         announcement = Announcement.objects.get(rule=rule)
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
         assert announcement.approved_by_id is None
-        assert AudienceSnapshot.objects.filter(
-            announcement=announcement,
-            version=announcement.version,
-        ).count() == 1
+        assert (
+            AudienceSnapshot.objects.filter(
+                announcement=announcement,
+                version=announcement.version,
+            ).count()
+            == 1
+        )
         receipt = MarketingCommandReceipt.objects.get(ref=result["receipt"]["ref"])
         event = MarketingAuditEvent.objects.get(command=receipt)
         assert event.event_type == MarketingAuditEvent.EventType.CAMPAIGN_FIRED
@@ -1762,9 +1928,7 @@ class TestManualFire:
         assert conflict.json()["receipt_ref"]
         assert Announcement.objects.filter(rule=rule).count() == 1
 
-    def test_product_is_chosen_before_confirmation_and_sealed_in_the_result(
-        self, client, gestor, rule, monkeypatch
-    ):
+    def test_product_is_chosen_before_confirmation_and_sealed_in_the_result(self, client, gestor, rule, monkeypatch):
         from shopman.guestman import ConsentService
         from shopman.guestman.models import Customer, PriceTier
         from shopman.offerman.models import Product
@@ -1873,9 +2037,7 @@ class TestManualFire:
         assert degraded.json()["receipt_ref"]
         assert Announcement.objects.filter(rule=rule).count() == 0
 
-    def test_public_only_campaign_creates_review_with_no_contact_audience(
-        self, client, gestor, rule, template
-    ):
+    def test_public_only_campaign_creates_review_with_no_contact_audience(self, client, gestor, rule, template):
         template.body = "Um pequeno respiro bonito no seu dia."
         template.save(update_fields=["body"])
         rule.platforms = ["instagram"]
@@ -1906,9 +2068,7 @@ class TestManualFire:
         assert snapshot.members.count() == 0
         assert MarketingOutbox.objects.count() == 0
 
-    def test_inactive_and_private_audience_are_rejected_safely(
-        self, client, gestor, rule
-    ):
+    def test_inactive_and_private_audience_are_rejected_safely(self, client, gestor, rule):
         client.force_login(gestor)
         private = client.post(
             _fire_url(rule),
@@ -2019,9 +2179,7 @@ class TestWhatsAppTemplateFromTheSurface:
         assert body["catalog_state"] == "fresh"
         assert body["command_available"] is True
 
-    def test_config_write_requires_version_idempotency_and_confirmation(
-        self, client, gestor, flows
-    ):
+    def test_config_write_requires_version_idempotency_and_confirmation(self, client, gestor, flows):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
@@ -2035,13 +2193,9 @@ class TestWhatsAppTemplateFromTheSurface:
         assert resp.status_code == 428
         assert resp.json()["code"] == "confirmation_required"
         assert resp.json()["confirmation"]["step_up"] == "totp"
-        assert not NotificationTemplate.objects.filter(
-            event="announcement_published"
-        ).exists()
+        assert not NotificationTemplate.objects.filter(event="announcement_published").exists()
 
-    def test_confirmed_command_returns_durable_receipt_and_new_version(
-        self, client, gestor, flows, monkeypatch
-    ):
+    def test_confirmed_command_returns_durable_receipt_and_new_version(self, client, gestor, flows, monkeypatch):
         from shopman.shop.models import (
             MarketingPlatformAuditEvent,
             NotificationTemplate,
@@ -2049,7 +2203,7 @@ class TestWhatsAppTemplateFromTheSurface:
 
         monkeypatch.setattr(
             "shopman.backstage.api.marketing._command_authorizer",
-            lambda *args, **kwargs: (lambda context, receipt: None),
+            lambda *args, **kwargs: lambda context, receipt: None,
         )
         client.force_login(gestor)
         response = client.post(
@@ -2064,9 +2218,7 @@ class TestWhatsAppTemplateFromTheSurface:
         assert body["receipt"]["state"] == "completed"
         assert body["receipt"]["resulting_version"] == 2
         assert body["receipt"]["resource_ref"] == "platform:whatsapp"
-        assert NotificationTemplate.objects.get(
-            event="announcement_published"
-        ).version == 2
+        assert NotificationTemplate.objects.get(event="announcement_published").version == 2
         assert MarketingPlatformAuditEvent.objects.count() == 1
 
         replay = client.post(
@@ -2083,14 +2235,11 @@ class TestWhatsAppTemplateFromTheSurface:
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
-        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""},
-                           content_type="application/json")
+        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""}, content_type="application/json")
 
         assert resp.status_code == 422
         assert resp.json()["code"] == "invalid_base_version"
-        assert not NotificationTemplate.objects.filter(
-            event="announcement_published"
-        ).exists()
+        assert not NotificationTemplate.objects.filter(event="announcement_published").exists()
 
     def test_a_template_that_no_longer_exists_is_refused(self, client, gestor, flows):
         client.force_login(gestor)
@@ -2107,9 +2256,7 @@ class TestWhatsAppTemplateFromTheSurface:
         assert resp.status_code == 422
         assert resp.json()["code"] == "flow_not_active"
 
-    def test_platform_outage_cannot_turn_into_an_unverified_write(
-        self, client, gestor, no_flows
-    ):
+    def test_platform_outage_cannot_turn_into_an_unverified_write(self, client, gestor, no_flows):
         client.force_login(gestor)
         resp = client.post(
             WA_TEMPLATE_URL,
@@ -2133,9 +2280,7 @@ class TestWhatsAppTemplateFromTheSurface:
         assert body["catalog_state"] == "unavailable"
         assert body["command_available"] is False
 
-    def test_successful_empty_catalog_is_not_reported_as_outage(
-        self, client, gestor, empty_flows
-    ):
+    def test_successful_empty_catalog_is_not_reported_as_outage(self, client, gestor, empty_flows):
         client.force_login(gestor)
 
         body = client.get(WA_TEMPLATE_URL).json()
@@ -2222,16 +2367,17 @@ class TestWhatsAppTestSend:
         response = self._post(client, {})
         assert response.status_code == 422
 
-    def test_free_recipient_and_audience_payload_are_rejected_before_adapter(
-        self, client, gestor, test_lane
-    ):
+    def test_free_recipient_and_audience_payload_are_rejected_before_adapter(self, client, gestor, test_lane):
         adapter, _recipient = test_lane
         client.force_login(gestor)
-        response = self._post(client, {
-            "target_ref": "owner-sandbox",
-            "recipient": "4605528796186498,4605528796186499",
-            "audience_rules": {"favorites": True},
-        })
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "recipient": "4605528796186498,4605528796186499",
+                "audience_rules": {"favorites": True},
+            },
+        )
 
         assert response.status_code == 422
         assert response.json()["code"] == "test_payload_not_isolated"
@@ -2253,13 +2399,20 @@ class TestWhatsAppTestSend:
 
         adapter, recipient = test_lane
         Product.objects.create(
-            sku="BAGUETE-TEST", name="Baguete", base_price_q=1600,
-            is_published=True, is_sellable=True,
+            sku="BAGUETE-TEST",
+            name="Baguete",
+            base_price_q=1600,
+            is_published=True,
+            is_sellable=True,
         )
         client.force_login(gestor)
-        response = self._post(client, {
-            "target_ref": "owner-sandbox", "sku": "BAGUETE-TEST",
-        })
+        response = self._post(
+            client,
+            {
+                "target_ref": "owner-sandbox",
+                "sku": "BAGUETE-TEST",
+            },
+        )
 
         assert response.status_code == 200
         body = response.json()
@@ -2285,9 +2438,7 @@ class TestWhatsAppTestSend:
         assert "body" not in stored_fields
         assert "idempotency_key" not in stored_fields
 
-    def test_transactional_test_sends_the_selected_configured_flow_event(
-        self, client, gestor, test_lane
-    ):
+    def test_transactional_test_sends_the_selected_configured_flow_event(self, client, gestor, test_lane):
         from shopman.shop.models import NotificationTemplate
 
         adapter, recipient = test_lane
@@ -2322,9 +2473,7 @@ class TestWhatsAppTestSend:
         assert adapter.calls[0]["recipient"] == recipient
         assert adapter.calls[0]["template"] == "order_rescheduled"
 
-    def test_transactional_test_never_falls_back_to_free_text(
-        self, client, gestor, test_lane
-    ):
+    def test_transactional_test_never_falls_back_to_free_text(self, client, gestor, test_lane):
         from shopman.shop.models import NotificationTemplate
 
         adapter, _recipient = test_lane
@@ -2400,25 +2549,23 @@ class TestWhatsAppTestSend:
         assert receipt.failure_code == "template_binding_changed"
         assert adapter.calls == []
 
-    def test_target_options_expose_safe_refs_never_recipient(
-        self, client, gestor, test_lane, monkeypatch
-    ):
+    def test_target_options_expose_safe_refs_never_recipient(self, client, gestor, test_lane, monkeypatch):
         _adapter, recipient = test_lane
         monkeypatch.setattr("shopman.shop.services.manychat_flows.list_flows", lambda: [])
         client.force_login(gestor)
 
         response = client.get("/api/v1/backstage/marketing/whatsapp-template/")
 
-        assert response.json()["test_targets"] == [{
-            "ref": "owner-sandbox",
-            "label": "Dispositivo verificado",
-            "backend": "manychat",
-        }]
+        assert response.json()["test_targets"] == [
+            {
+                "ref": "owner-sandbox",
+                "label": "Dispositivo verificado",
+                "backend": "manychat",
+            }
+        ]
         assert recipient not in response.content.decode()
 
-    def test_same_key_same_payload_replays_receipt_without_second_effect(
-        self, client, gestor, test_lane
-    ):
+    def test_same_key_same_payload_replays_receipt_without_second_effect(self, client, gestor, test_lane):
         adapter, _recipient = test_lane
         client.force_login(gestor)
         payload = {"target_ref": "owner-sandbox"}
@@ -2439,9 +2586,7 @@ class TestWhatsAppTestSend:
         assert response.status_code == 409
         assert response.json()["code"] == "idempotency_conflict"
 
-    def test_provider_exception_is_unknown_and_redacted(
-        self, client, gestor, test_lane, monkeypatch
-    ):
+    def test_provider_exception_is_unknown_and_redacted(self, client, gestor, test_lane, monkeypatch):
         adapter, recipient = test_lane
         adapter.error = RuntimeError(f"vendor exploded for {recipient}")
         emitted = []
@@ -2460,9 +2605,7 @@ class TestWhatsAppTestSend:
         assert recipient not in serialized
         assert "vendor exploded" not in serialized
 
-    def test_unavailable_sandbox_is_503_with_a_safe_receipt(
-        self, client, gestor, test_lane
-    ):
+    def test_unavailable_sandbox_is_503_with_a_safe_receipt(self, client, gestor, test_lane):
         from shopman.shop.models import MarketingTestReceipt
 
         adapter, _recipient = test_lane
@@ -2476,9 +2619,7 @@ class TestWhatsAppTestSend:
         receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
         assert receipt.state == MarketingTestReceipt.State.FAILED_FINAL
 
-    def test_busy_contact_is_503_denied_and_never_reads_as_accepted(
-        self, client, gestor, test_lane
-    ):
+    def test_busy_contact_is_503_denied_and_never_reads_as_accepted(self, client, gestor, test_lane):
         """O adiamento do ManyChat é um dict — e `bool(dict)` é True.
 
         Contar o dict pela verdade dele gravava "aceito" para um teste que não
@@ -2505,9 +2646,7 @@ class TestWhatsAppTestSend:
         assert receipt.failure_code == "subscriber_busy"
         assert len(adapter.calls) == 1
 
-    def test_sixth_test_in_an_hour_is_throttled_with_retry_after(
-        self, client, gestor, test_lane
-    ):
+    def test_sixth_test_in_an_hour_is_throttled_with_retry_after(self, client, gestor, test_lane):
         adapter, _recipient = test_lane
         client.force_login(gestor)
         for index in range(5):
@@ -2528,20 +2667,19 @@ class TestWhatsAppTestSend:
         assert int(response.headers["Retry-After"]) > 0
         assert len(adapter.calls) == 5
 
-    def test_twenty_first_test_in_rolling_day_is_shop_throttled(
-        self, client, gestor, test_lane, monkeypatch
-    ):
+    def test_twenty_first_test_in_rolling_day_is_shop_throttled(self, client, gestor, test_lane, monkeypatch):
         adapter, _recipient = test_lane
-        monkeypatch.setattr(
-            "shopman.shop.services.campaign._TEST_USER_HOURLY_LIMIT", 100
-        )
+        monkeypatch.setattr("shopman.shop.services.campaign._TEST_USER_HOURLY_LIMIT", 100)
         client.force_login(gestor)
         for index in range(20):
-            assert self._post(
-                client,
-                {"target_ref": "owner-sandbox"},
-                key=f"test-send-daily-{index:04d}",
-            ).status_code == 200
+            assert (
+                self._post(
+                    client,
+                    {"target_ref": "owner-sandbox"},
+                    key=f"test-send-daily-{index:04d}",
+                ).status_code
+                == 200
+            )
 
         response = self._post(
             client,
@@ -2553,9 +2691,7 @@ class TestWhatsAppTestSend:
         assert int(response.headers["Retry-After"]) > 3600
         assert len(adapter.calls) == 20
 
-    def test_test_path_never_calls_audience_resolver(
-        self, client, gestor, test_lane, monkeypatch
-    ):
+    def test_test_path_never_calls_audience_resolver(self, client, gestor, test_lane, monkeypatch):
         monkeypatch.setattr(
             "shopman.shop.services.audience.resolve",
             lambda *_args, **_kwargs: pytest.fail("test-send alcançou audience resolver"),
@@ -2624,15 +2760,19 @@ class TestAudienceCount:
         assert data["match_label"] == "Somando as regras"
 
     def test_crossing_rules_narrows_it(self, client, gestor):
-        """"fiéis QUE são atacado" — o recorte que a união não sabe fazer."""
+        """ "fiéis QUE são atacado" — o recorte que a união não sabe fazer."""
         self._audience()
         client.force_login(gestor)
 
         response = client.post(
             COUNT_URL,
-            {"audience_rules": {
-                "price_tiers": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
-            }},
+            {
+                "audience_rules": {
+                    "price_tiers": ["atacado"],
+                    "rfm_segments": ["loyal_customer"],
+                    "match": "all",
+                }
+            },
             content_type="application/json",
         )
 
@@ -2641,15 +2781,19 @@ class TestAudienceCount:
         assert data["match_label"] == "Cruzando as regras"
 
     def test_the_parts_explain_the_total(self, client, gestor):
-        """""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
+        """ ""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
         self._audience()
         client.force_login(gestor)
 
         data = client.post(
             COUNT_URL,
-            {"audience_rules": {
-                "price_tiers": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
-            }},
+            {
+                "audience_rules": {
+                    "price_tiers": ["atacado"],
+                    "rfm_segments": ["loyal_customer"],
+                    "match": "all",
+                }
+            },
             content_type="application/json",
         ).json()
 
@@ -2667,7 +2811,8 @@ class TestAudienceCount:
         assert empty["parts"] == []
 
         chosen = client.post(
-            COUNT_URL, {"audience_rules": {"birthday_today": True}},
+            COUNT_URL,
+            {"audience_rules": {"birthday_today": True}},
             content_type="application/json",
         ).json()
         assert chosen["empty_selection"] is False
@@ -2690,11 +2835,16 @@ class TestAudienceCount:
 
         Customer.objects.create(ref="CLI-SEM-DATA", first_name="Pablo", phone="+5543999993101")
         Customer.objects.create(
-            ref="CLI-SEM-CONSENT", first_name="Ana", phone="+5543999993102",
+            ref="CLI-SEM-CONSENT",
+            first_name="Ana",
+            phone="+5543999993102",
             birthday=date(1990, 1, 1),
         )
         Customer.objects.create(
-            ref="CLI-OK", first_name="Bia", phone="+5543999993103", birthday=date(1990, 1, 1),
+            ref="CLI-OK",
+            first_name="Bia",
+            phone="+5543999993103",
+            birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent("CLI-OK", "whatsapp", source="test")
         for ref in ("CLI-SEM-DATA", "CLI-SEM-CONSENT", "CLI-OK"):
@@ -2702,7 +2852,8 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         data = client.post(
-            COUNT_URL, {"audience_rules": {"favorites": True}, "sku": "BE"},
+            COUNT_URL,
+            {"audience_rules": {"favorites": True}, "sku": "BE"},
             content_type="application/json",
         ).json()
 
@@ -2723,7 +2874,8 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         data = client.post(
-            COUNT_URL, {"audience_rules": {"favorites": True}},
+            COUNT_URL,
+            {"audience_rules": {"favorites": True}},
             content_type="application/json",
         ).json()
 
@@ -2741,7 +2893,8 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         response = client.post(
-            COUNT_URL, {"audience_rules": {"customer_refs": ["CLI-SEGREDO"]}},
+            COUNT_URL,
+            {"audience_rules": {"customer_refs": ["CLI-SEGREDO"]}},
             content_type="application/json",
         )
 
@@ -2766,17 +2919,20 @@ class TestAudienceCount:
             source_ref="test-batch",
             status=StockAlertOccurrence.Status.ELIGIBLE,
         )
-        StockAlertDelivery.objects.bulk_create([
-            StockAlertDelivery(
-                subscription=subscription,
-                occurrence=occurrence,
-                status=StockAlertDelivery.Status.ACCEPTED,
-            )
-            for subscription in subscriptions
-        ])
+        StockAlertDelivery.objects.bulk_create(
+            [
+                StockAlertDelivery(
+                    subscription=subscription,
+                    occurrence=occurrence,
+                    status=StockAlertDelivery.Status.ACCEPTED,
+                )
+                for subscription in subscriptions
+            ]
+        )
 
         data = client.post(
-            COUNT_URL, {"audience_rules": {"alerts": True}, "sku": "BF"},
+            COUNT_URL,
+            {"audience_rules": {"alerts": True}, "sku": "BF"},
             content_type="application/json",
         ).json()
 
@@ -2788,7 +2944,8 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         data = client.post(
-            COUNT_URL, {"audience_rules": {"alerts": True}, "sku": "SEM-FILA"},
+            COUNT_URL,
+            {"audience_rules": {"alerts": True}, "sku": "SEM-FILA"},
             content_type="application/json",
         ).json()
 
@@ -2800,7 +2957,9 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         data = client.post(
-            COUNT_URL, {"audience_rules": {"alerts": True}}, content_type="application/json",
+            COUNT_URL,
+            {"audience_rules": {"alerts": True}},
+            content_type="application/json",
         ).json()
 
         assert data["alerts_pending"] == -1
@@ -2812,7 +2971,8 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         raw = client.post(
-            COUNT_URL, {"audience_rules": {"price_tiers": ["atacado"]}},
+            COUNT_URL,
+            {"audience_rules": {"price_tiers": ["atacado"]}},
             content_type="application/json",
         ).content.decode()
 
@@ -2841,7 +3001,9 @@ class TestAudienceCount:
     def test_a_broken_payload_counts_nobody_instead_of_exploding(self, client, gestor):
         client.force_login(gestor)
         response = client.post(
-            COUNT_URL, {"audience_rules": "atacado"}, content_type="application/json",
+            COUNT_URL,
+            {"audience_rules": "atacado"},
+            content_type="application/json",
         )
         assert response.status_code == 200
         assert response.json()["total"] == 0
@@ -3000,9 +3162,7 @@ class TestGoogleBusinessPost:
             data={
                 "body": "Ligue 43 99988-7766",
                 "platforms": ["google_business"],
-                "platform_content": {
-                    "google_business": {"publication_format": "standard", "call_to_action": "call"}
-                },
+                "platform_content": {"google_business": {"publication_format": "standard", "call_to_action": "call"}},
             },
             content_type="application/json",
         )
@@ -3010,9 +3170,7 @@ class TestGoogleBusinessPost:
         assert response.status_code == 422
         assert response.json()["code"] == "google_summary_has_phone"
 
-    def test_review_preview_shows_the_button_chosen_in_the_card(
-        self, client, gestor, rule, template
-    ):
+    def test_review_preview_shows_the_button_chosen_in_the_card(self, client, gestor, rule, template):
         announcement = _post(rule, template, platforms=["google_business"])
         client.force_login(gestor)
 
@@ -3034,9 +3192,7 @@ class TestGoogleBusinessPost:
         fields = response.json()["previews"]["google_business"]["artifact"]["provider_fields"]
         assert fields == {"call_to_action": "call", "publication_format": "standard"}
 
-    def test_review_preview_refuses_what_the_approval_would_refuse(
-        self, client, gestor, rule, template
-    ):
+    def test_review_preview_refuses_what_the_approval_would_refuse(self, client, gestor, rule, template):
         announcement = _post(rule, template, platforms=["google_business"])
         client.force_login(gestor)
 

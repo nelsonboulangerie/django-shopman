@@ -61,7 +61,7 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     audience_total: 15,
     platform_results: [],
     trigger: "production_finished",
-    trigger_label: "Lote concluído",
+    trigger_label: "Produção concluída",
     rule_name: "Lote de pães",
     template_name: "Lote",
     sku: "CRO-001",
@@ -122,7 +122,9 @@ describe("AnnouncementCard", () => {
       "America/Sao_Paulo",
       false,
       false,
-      { productOptions: [{ value: "CRO-001", label: "Croissant de manteiga" }] },
+      {
+        productOptions: [{ value: "CRO-001", label: "Croissant de manteiga" }],
+      },
     );
 
     expect(wrapper.text()).toContain("Croissant de manteiga");
@@ -154,7 +156,8 @@ describe("AnnouncementCard", () => {
             platform: "instagram",
             state: "blocked",
             ready: false,
-            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            reason:
+              "A integração existe, mas está sem credencial neste ambiente.",
             limitation: "",
             source_status: "live",
           },
@@ -268,7 +271,11 @@ describe("AnnouncementCard", () => {
       },
       global: {
         components: { AnnouncementPreview, DraftRecoveryNotice },
-        stubs: { AnnouncementSimulatedPreview: true, Icon: true, NuxtLink: true },
+        stubs: {
+          AnnouncementSimulatedPreview: true,
+          Icon: true,
+          NuxtLink: true,
+        },
       },
     });
     await wrapper.find("textarea").setValue("Texto revisado");
@@ -318,11 +325,17 @@ describe("AnnouncementCard", () => {
       "O texto que você conferir na próxima tela é o que será disparado",
     );
     expect(wrapper.text()).not.toMatch(/\bAprovar\b|\bsela\b/);
-    expect(wrapper.get("[data-testid=delivery-now]").attributes("aria-pressed")).toBe("true");
     expect(
-      wrapper.get("[data-testid=delivery-scheduled]").attributes("aria-pressed"),
+      wrapper.get("[data-testid=delivery-now]").attributes("aria-pressed"),
+    ).toBe("true");
+    expect(
+      wrapper
+        .get("[data-testid=delivery-scheduled]")
+        .attributes("aria-pressed"),
     ).toBe("false");
-    expect(wrapper.get("[data-testid=publish-now]").text()).toContain("Continuar");
+    expect(wrapper.get("[data-testid=publish-now]").text()).toContain(
+      "Continuar",
+    );
     expect(wrapper.text()).not.toContain("silêncio");
   });
 
@@ -366,7 +379,8 @@ describe("AnnouncementCard", () => {
       "O WhatsApp está em silêncio das 20:00 às 08:00",
     );
     expect(
-      (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement).disabled,
+      (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
   });
 
@@ -784,14 +798,14 @@ describe("AnnouncementCard", () => {
 describe("AnnouncementCard — post do Google", () => {
   it("só pergunta pelo post do Google quando o Google está entre as plataformas", () => {
     expect(
-      mountCard(makeAnnouncement({ platforms: ["instagram"] })).find(
-        "[data-testid=google-business-options]",
-      ).exists(),
+      mountCard(makeAnnouncement({ platforms: ["instagram"] }))
+        .find("[data-testid=google-business-options]")
+        .exists(),
     ).toBe(false);
     expect(
-      mountCard(makeAnnouncement({ platforms: ["google_business"] })).find(
-        "[data-testid=google-business-options]",
-      ).exists(),
+      mountCard(makeAnnouncement({ platforms: ["google_business"] }))
+        .find("[data-testid=google-business-options]")
+        .exists(),
     ).toBe(true);
   });
 
@@ -800,7 +814,10 @@ describe("AnnouncementCard — post do Google", () => {
       makeAnnouncement({
         platforms: ["google_business"],
         platform_content: {
-          google_business: { publication_format: "standard", call_to_action: "learn_more" },
+          google_business: {
+            publication_format: "standard",
+            call_to_action: "learn_more",
+          },
         },
       }),
     );

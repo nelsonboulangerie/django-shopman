@@ -113,6 +113,10 @@ const stateFilter = computed(() =>
 const platformFilter = computed(() =>
   typeof route.query.platform === "string" ? route.query.platform : "",
 );
+const createdPk = computed(() => {
+  const value = Number(route.query.created || 0);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+});
 const currentPage = computed(() => {
   const value = Number(route.query.page || 1);
   return Number.isSafeInteger(value) && value > 0 ? value : 1;
@@ -130,23 +134,31 @@ function searchable(value: unknown): string {
 
 const filteredRules = computed(() => {
   const term = searchable(search.value.trim());
-  return rules.value.filter((rule) => {
-    if (stateFilter.value === "active" && !rule.is_active) return false;
-    if (stateFilter.value === "inactive" && rule.is_active) return false;
-    if (platformFilter.value && !rule.platforms.includes(platformFilter.value))
-      return false;
-    if (!term) return true;
-    return searchable(
-      [
-        rule.name,
-        rule.trigger_label,
-        rule.template_name,
-        ...rule.platforms.map(
-          (platform) => platformLabels.value[platform] ?? platform,
-        ),
-      ].join(" "),
-    ).includes(term);
-  });
+  return rules.value
+    .filter((rule) => {
+      if (stateFilter.value === "active" && !rule.is_active) return false;
+      if (stateFilter.value === "inactive" && rule.is_active) return false;
+      if (
+        platformFilter.value &&
+        !rule.platforms.includes(platformFilter.value)
+      )
+        return false;
+      if (!term) return true;
+      return searchable(
+        [
+          rule.name,
+          rule.trigger_label,
+          rule.template_name,
+          ...rule.platforms.map(
+            (platform) => platformLabels.value[platform] ?? platform,
+          ),
+        ].join(" "),
+      ).includes(term);
+    })
+    .sort(
+      (a, b) =>
+        Number(b.pk === createdPk.value) - Number(a.pk === createdPk.value),
+    );
 });
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(filteredRules.value.length / PAGE_SIZE)),
@@ -385,15 +397,31 @@ function cancelFireConfirmation() {
 async function onSubmit(payload: Record<string, unknown>) {
   const resource = `campaign:${editing.value?.pk ?? "new"}`;
   busy.value = true;
-  const ok = editing.value
-    ? await patch(editing.value.pk, payload)
+  const edited = editing.value;
+  const result = edited
+    ? await patch(edited.pk, payload)
     : await create(payload);
   busy.value = false;
-  if (ok) {
+  if (!result) return;
+  clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
+  if (edited) {
     await close();
-    await nextTick();
-    clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
+    return;
   }
+  creating.value = false;
+  editingPk.value = null;
+  const created = result as Campaign;
+  await navigateTo(
+    {
+      path: "/campaigns",
+      query: { experience: "v2", created: created.pk },
+    },
+    { replace: true },
+  );
+  await nextTick();
+  document
+    .querySelector<HTMLElement>(`[data-created-campaign="${created.pk}"]`)
+    ?.focus();
 }
 
 useHead({ title: "Campanhas" });
@@ -463,6 +491,17 @@ useHead({ title: "Campanhas" });
     </div>
 
     <template v-else>
+      <div
+        v-if="createdPk"
+        class="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm"
+        role="status"
+      >
+        <p class="font-semibold">Campanha criada e salva.</p>
+        <p class="mt-1 text-muted-foreground">
+          Ela está destacada abaixo. Abra para conferir ou prepare o primeiro
+          disparo.
+        </p>
+      </div>
       <section
         class="mb-4 rounded-md border border-border bg-card p-3"
         aria-labelledby="campaign-filters-title"
@@ -559,7 +598,14 @@ useHead({ title: "Campanhas" });
         <li
           v-for="rule in pageRules"
           :key="rule.pk"
-          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
+          :data-created-campaign="rule.pk === createdPk ? rule.pk : undefined"
+          :tabindex="rule.pk === createdPk ? -1 : undefined"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 outline-none sm:flex sm:flex-wrap sm:gap-3"
+          :class="
+            rule.pk === createdPk
+              ? 'bg-emerald-500/5 ring-2 ring-inset ring-emerald-500/30'
+              : ''
+          "
         >
           <!-- Liga/desliga é o <UiSwitch> do kit: mesmo role=switch e mesmo
              aria-checked que esta página escrevia à mão, e agora o alvo de 44 px

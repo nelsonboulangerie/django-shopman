@@ -37,7 +37,7 @@ class _AppendOnlyMarketingQuerySet(models.QuerySet):
 class Trigger(models.TextChoices):
     """Eventos operacionais que podem gerar campanha."""
 
-    PRODUCTION_FINISHED = "production_finished", "Lote concluído"
+    PRODUCTION_FINISHED = "production_finished", "Produção concluída"
     LOW_STOCK = "low_stock", "Estoque baixo"
     STOCK_BACK = "stock_back", "Voltou ao estoque"
     PRODUCT_CREATED = "product_created", "Produto novo"

@@ -8,7 +8,7 @@ const TRIGGER_LABELS: Record<
   string
 > = {
   "": "Anúncio",
-  production_finished: "Lote concluído",
+  production_finished: "Produção concluída",
   low_stock: "Estoque baixo",
   stock_back: "Produto de volta ao estoque",
   product_created: "Produto novo",
@@ -23,7 +23,7 @@ const RECOVERY_ACTIONS = new Set<MarketingActionProjectionV2["kind"]>([
 ]);
 
 /**
- * "Lote concluído · Baguete tradicional". O nome vem de `options.products`
+ * "Produção concluída · Baguete tradicional". O nome vem de `options.products`
  * (rótulo por SKU); sem rótulo, o SKU é o que há — e aí a frase diz "Produto",
  * para o gestor saber que está lendo um código.
  */
@@ -43,9 +43,7 @@ export function historySubject(
 export function historyActorLabel(
   policy: AnnouncementProjectionV2["decision_actor_policy"],
 ): string {
-  return policy === "operator"
-    ? "Decisão de uma pessoa"
-    : "Disparo automático";
+  return policy === "operator" ? "Decisão de uma pessoa" : "Disparo automático";
 }
 
 export function historyOccurredAt(item: AnnouncementProjectionV2): string {

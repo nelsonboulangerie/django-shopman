@@ -35,14 +35,23 @@ não reimplementa o despacho por plataforma nem a régua de expiração.
 from __future__ import annotations
 
 import logging
+import re
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError, Q
+from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.text import slugify
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
-from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
+from rest_framework.exceptions import (
+    AuthenticationFailed,
+    NotAuthenticated,
+)
+from rest_framework.exceptions import (
+    ValidationError as DRFValidationError,
+)
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -79,7 +88,16 @@ from shopman.backstage.projections.marketing_actions import (
     resolve_actions_for,
     with_resolved_actions,
 )
-from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    Campaign,
+    Channel,
+    Coupon,
+    Promotion,
+    Trigger,
+)
 from shopman.shop.services import campaign as campaign_service
 from shopman.shop.services.marketing_commands import (
     MarketingCommandConflict,
@@ -363,9 +381,7 @@ class CampaignHistoryV2View(_CampaignV2Base):
         raw_cursor = str(request.query_params.get("cursor") or "").strip()
         try:
             cursor = (
-                decode_cursor(raw_cursor, collection=collection)
-                if raw_cursor
-                else first_cursor(collection=collection)
+                decode_cursor(raw_cursor, collection=collection) if raw_cursor else first_cursor(collection=collection)
             )
         except InvalidMarketingCursor as exc:
             raise MarketingV2Problem(
@@ -449,6 +465,82 @@ class CampaignOptionsView(_CampaignBase):
         return Response({"options": projection_data(marketing_projection.build_options())})
 
 
+class MarketingOfferListView(_CampaignBase):
+    """Daily promotion/coupon management for the Marketing cockpit.
+
+    Coupon discounts get their own Promotion row.  Reusing an automatic offer
+    would silently turn that offer into coupon-only because the pricing service
+    deliberately excludes every Promotion that has coupons.
+    """
+
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "POST": "shop.edit_marketing_campaigns",
+    }
+
+    def get(self, request):
+        return Response(_marketing_offers_payload())
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            fields, coupon_fields, error = _marketing_offer_fields(payload)
+        except DRFValidationError as exc:
+            return Response(_offer_parser_error(exc), status=422)
+        if error:
+            return Response(error, status=422)
+
+        try:
+            with transaction.atomic():
+                channels = fields.pop("channels")
+                promotion = Promotion(**fields)
+                promotion.full_clean()
+                promotion.save()
+                if channels:
+                    promotion.channels.set(channels)
+
+                coupon = None
+                if coupon_fields is not None:
+                    coupon = Coupon(promotion=promotion, **coupon_fields)
+                    coupon.full_clean()
+                    coupon.save()
+        except DjangoValidationError as exc:
+            return Response(_model_validation_error(exc), status=422)
+        except IntegrityError:
+            # ``full_clean`` gives the friendly path in the ordinary case, but
+            # only the database can arbitrate two simultaneous requests.  The
+            # atomic block guarantees the losing request leaves neither its
+            # Promotion nor its Coupon behind.
+            if coupon_fields and Coupon.objects.filter(code=coupon_fields["code"]).exists():
+                return Response(
+                    _offer_error("coupon_code", "Já existe um cupom com este código."),
+                    status=409,
+                )
+            return Response(
+                {
+                    "code": "offer_conflict",
+                    "detail": "Outra oferta usou esta referência ao mesmo tempo. Tente novamente.",
+                    "field_errors": {"ref": ["Outra oferta usou esta referência ao mesmo tempo."]},
+                },
+                status=409,
+            )
+
+        logger.info(
+            "marketing.offer_created actor=%s promotion=%s coupon=%s request_id=%s",
+            request.user.pk,
+            promotion.ref,
+            coupon.code if coupon else "",
+            str(request.headers.get("X-Request-ID") or ""),
+        )
+        return Response(
+            {
+                "ok": True,
+                "offer": _marketing_offer_projection(promotion),
+            },
+            status=201,
+        )
+
+
 # ── Posts ────────────────────────────────────────────────────────────
 
 
@@ -478,9 +570,7 @@ class AnnouncementDetailView(_CampaignBase):
             {
                 "announcement": projection_data(marketing_projection.build_announcement(announcement)),
                 "shop_timezone": configured_timezone_name(),
-                "quiet_hours_suspended_for_local_simulation": (
-                    quiet_hours_suspended_for_local_simulation()
-                ),
+                "quiet_hours_suspended_for_local_simulation": (quiet_hours_suspended_for_local_simulation()),
             }
         )
 
@@ -661,9 +751,7 @@ class AnnouncementApproveView(_CampaignBase):
                     with_review_options,
                 )
 
-                platform_content = with_review_options(
-                    platform_content, edits["google_business"]
-                )
+                platform_content = with_review_options(platform_content, edits["google_business"])
 
         try:
             result = marketing_approval.approve_command(
@@ -733,9 +821,7 @@ class AnnouncementApproveView(_CampaignBase):
         )
 
 
-@method_decorator(
-    ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"
-)
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
 class WhatsAppTestSendView(_CampaignBase):
     """POST campaign/whatsapp-template/test/ → teste sandbox unitário.
 
@@ -1169,6 +1255,308 @@ class AnnouncementReconcileDeliveriesView(_CampaignBase):
 # ── Regras ───────────────────────────────────────────────────────────
 
 
+def _marketing_offers_payload() -> dict:
+    promotions = Promotion.objects.prefetch_related("channels", "coupons").all().order_by("-valid_from", "name")
+    return {
+        "offers": [_marketing_offer_projection(promotion) for promotion in promotions],
+        "options": _marketing_offer_options(),
+    }
+
+
+def _marketing_offer_projection(promotion: Promotion) -> dict:
+    from shopman.shop.services import offers as offer_service
+
+    now = timezone.now()
+    coupons = list(promotion.coupons.all())
+    if not promotion.is_active:
+        status = "inactive"
+    elif promotion.valid_from > now:
+        status = "scheduled"
+    elif promotion.valid_until < now:
+        status = "expired"
+    else:
+        status = "live"
+    return {
+        "ref": promotion.ref,
+        "name": promotion.name,
+        "type": promotion.type,
+        "type_label": promotion.get_type_display(),
+        "value": promotion.value,
+        "valid_from": promotion.valid_from.isoformat(),
+        "valid_until": promotion.valid_until.isoformat(),
+        "skus": list(promotion.skus or []),
+        "collections": list(promotion.collections or []),
+        "min_order_q": promotion.min_order_q,
+        "fulfillment_types": list(promotion.fulfillment_types or []),
+        "customer_segments": list(promotion.customer_segments or []),
+        "birthday_only": promotion.birthday_only,
+        "channels": list(promotion.channels.values_list("ref", flat=True)),
+        "is_active": promotion.is_active,
+        "status": status,
+        "available_for_campaign": bool(status == "live" and not coupons and offer_service.offer_skus(promotion)),
+        "coupons": [
+            {
+                "code": coupon.code,
+                "max_uses": coupon.max_uses,
+                "uses_count": coupon.uses_count,
+                "is_active": coupon.is_active,
+                "available": coupon.is_available and status == "live",
+            }
+            for coupon in coupons
+        ],
+    }
+
+
+def _marketing_offer_options() -> dict:
+    from shopman.offerman.models import Collection, Product
+
+    return {
+        "types": [{"value": value, "label": label} for value, label in Promotion.TYPE_CHOICES],
+        "products": [
+            {"value": str(product.sku), "label": f"{product.name} ({product.sku})"}
+            for product in Product.objects.filter(is_published=True, is_sellable=True)
+            .only("sku", "name")
+            .order_by("name", "sku")
+        ],
+        "collections": [
+            {"value": collection.ref, "label": collection.name}
+            for collection in Collection.objects.filter(is_active=True).only("ref", "name").order_by("name", "ref")
+        ],
+        "channels": [
+            {"value": channel.ref, "label": channel.name or channel.ref}
+            for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name")
+        ],
+        "customer_segments": [
+            {"value": choice.value, "label": choice.label} for choice in marketing_projection._rfm_segment_choices()
+        ],
+        "fulfillment_types": [
+            {"value": "delivery", "label": "Entrega"},
+            {"value": "pickup", "label": "Retirada"},
+        ],
+        "shop_timezone": marketing_projection._marketing_timezone_name(),
+    }
+
+
+def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]:
+    from django.utils.dateparse import parse_datetime
+    from shopman.offerman.models import Collection, Product
+
+    from shopman.shop.services import marketing_time
+
+    allowed = {
+        "kind",
+        "name",
+        "ref",
+        "type",
+        "value",
+        "valid_from",
+        "valid_until",
+        "skus",
+        "collections",
+        "min_order_q",
+        "fulfillment_types",
+        "customer_segments",
+        "birthday_only",
+        "channels",
+        "is_active",
+        "coupon_code",
+        "max_uses",
+    }
+    unexpected = sorted(set(data) - allowed)
+    if unexpected:
+        return {}, None, _offer_error("payload", "Há campos desconhecidos neste cadastro.", unexpected)
+
+    kind = str(data.get("kind") or "offer").strip()
+    if kind not in {"offer", "coupon"}:
+        return {}, None, _offer_error("kind", "Escolha Oferta ou Cupom.")
+
+    coupon_code = str(data.get("coupon_code") or "").strip().upper()
+    if kind == "coupon":
+        if not coupon_code:
+            return {}, None, _offer_error("coupon_code", "Informe o código do cupom.")
+        if len(coupon_code) > 50 or not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]*", coupon_code):
+            return (
+                {},
+                None,
+                _offer_error(
+                    "coupon_code",
+                    "Use até 50 letras, números, hífen ou sublinhado, sem espaços.",
+                ),
+            )
+        if Coupon.objects.filter(code=coupon_code).exists():
+            return {}, None, _offer_error("coupon_code", "Já existe um cupom com este código.")
+
+    name = str(data.get("name") or "").strip()
+    if not name:
+        name = f"Cupom {coupon_code}" if coupon_code else ""
+    if not name:
+        return {}, None, _offer_error("name", "Dê um nome à oferta.")
+    if len(name) > 200:
+        return {}, None, _offer_error("name", "Use no máximo 200 caracteres.")
+
+    promotion_type = str(data.get("type") or "percent").strip()
+    valid_types = {value for value, _label in Promotion.TYPE_CHOICES}
+    if promotion_type not in valid_types:
+        return {}, None, _offer_error("type", "Escolha um tipo de desconto válido.")
+
+    value = as_int(data, "value", default=-1)
+    if promotion_type == Promotion.PERCENT and not 1 <= value <= 100:
+        return {}, None, _offer_error("value", "Informe um percentual entre 1 e 100.")
+    if promotion_type == Promotion.FIXED and value < 1:
+        return {}, None, _offer_error("value", "Informe um desconto maior que zero.")
+    if promotion_type == Promotion.FREE_DELIVERY and value < 0:
+        return {}, None, _offer_error("value", "O teto do frete não pode ser negativo.")
+
+    def instant(field: str):
+        raw = str(data.get(field) or "").strip()
+        parsed = parse_datetime(raw) if raw else None
+        if parsed is None:
+            raise ValueError(field)
+        if timezone.is_naive(parsed):
+            return marketing_time.resolve_wall_time(
+                parsed,
+                timezone_name=marketing_time.configured_timezone_name(),
+            )
+        return parsed
+
+    try:
+        valid_from = instant("valid_from")
+        valid_until = instant("valid_until")
+    except ValueError as exc:
+        field = str(exc) if str(exc) in {"valid_from", "valid_until"} else "valid_from"
+        return {}, None, _offer_error(field, "Informe uma data e hora válidas.")
+    if valid_until <= valid_from:
+        return {}, None, _offer_error("valid_until", "O término precisa ser posterior ao início.")
+
+    list_fields = (
+        "skus",
+        "collections",
+        "channels",
+        "fulfillment_types",
+        "customer_segments",
+    )
+    invalid_list_field = next(
+        (field for field in list_fields if field in data and not isinstance(data.get(field), (list, tuple))),
+        "",
+    )
+    if invalid_list_field:
+        return {}, None, _offer_error(invalid_list_field, "Envie uma lista de opções para este campo.")
+
+    skus = _string_list(data.get("skus"))
+    collections = _string_list(data.get("collections"))
+    channels = _string_list(data.get("channels"))
+    fulfillment_types = _string_list(data.get("fulfillment_types"))
+    customer_segments = _string_list(data.get("customer_segments"))
+
+    missing_skus = sorted(set(skus) - set(Product.objects.filter(sku__in=skus).values_list("sku", flat=True)))
+    if missing_skus:
+        return {}, None, _offer_error("skus", "Há produtos que não existem ou foram removidos.", missing_skus)
+    missing_collections = sorted(
+        set(collections) - set(Collection.objects.filter(ref__in=collections).values_list("ref", flat=True))
+    )
+    if missing_collections:
+        return (
+            {},
+            None,
+            _offer_error("collections", "Há coleções que não existem ou foram removidas.", missing_collections),
+        )
+    channel_rows = list(Channel.objects.filter(ref__in=channels))
+    if len(channel_rows) != len(set(channels)):
+        return {}, None, _offer_error("channels", "Há canais que não existem ou foram removidos.")
+    if set(fulfillment_types) - {"delivery", "pickup"}:
+        return {}, None, _offer_error("fulfillment_types", "Escolha somente entrega e/ou retirada.")
+    valid_customer_segments = {choice.value for choice in marketing_projection._rfm_segment_choices()}
+    if set(customer_segments) - valid_customer_segments:
+        return {}, None, _offer_error("customer_segments", "Há segmentos de clientes que não existem.")
+
+    min_order_q = as_int(data, "min_order_q", default=0)
+    if min_order_q < 0:
+        return {}, None, _offer_error("min_order_q", "O pedido mínimo não pode ser negativo.")
+
+    requested_ref = str(data.get("ref") or "").strip()
+    base_ref = slugify(requested_ref or (coupon_code if kind == "coupon" else name))[:64]
+    if not base_ref:
+        return {}, None, _offer_error("name", "O nome precisa formar uma referência válida.")
+    ref = _unique_promotion_ref(base_ref)
+
+    fields = {
+        "ref": ref,
+        "name": name,
+        "type": promotion_type,
+        "value": value,
+        "valid_from": valid_from,
+        "valid_until": valid_until,
+        "skus": skus,
+        "collections": collections,
+        "min_order_q": min_order_q,
+        "fulfillment_types": fulfillment_types,
+        "customer_segments": customer_segments,
+        "birthday_only": as_bool(data, "birthday_only", default=False),
+        "channels": channel_rows,
+        "is_active": as_bool(data, "is_active", default=True),
+    }
+    coupon_fields = None
+    if kind == "coupon":
+        max_uses = as_int(data, "max_uses", default=0)
+        if max_uses < 0:
+            return {}, None, _offer_error("max_uses", "O limite de usos não pode ser negativo.")
+        coupon_fields = {
+            "code": coupon_code,
+            "max_uses": max_uses,
+            "is_active": fields["is_active"],
+        }
+    return fields, coupon_fields, None
+
+
+def _string_list(value) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return list(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+
+
+def _unique_promotion_ref(base: str) -> str:
+    candidate = base[:64]
+    suffix = 1
+    while Promotion.objects.filter(ref=candidate).exists():
+        suffix += 1
+        ending = f"-{suffix}"
+        candidate = f"{base[: 64 - len(ending)]}{ending}"
+    return candidate
+
+
+def _offer_error(field: str, detail: str, values: list[str] | None = None) -> dict:
+    payload = {"code": "invalid_offer", "detail": detail, "field_errors": {field: [detail]}}
+    if values:
+        payload["values"] = values
+    return payload
+
+
+def _offer_parser_error(exc: DRFValidationError) -> dict:
+    raw = exc.detail if isinstance(exc.detail, dict) else {"payload": exc.detail}
+    field_errors = {
+        str(field): [str(message) for message in messages] if isinstance(messages, (list, tuple)) else [str(messages)]
+        for field, messages in raw.items()
+    }
+    first = next(iter(field_errors.values()), ["Revise os campos destacados."])[0]
+    return {
+        "code": "invalid_offer",
+        "detail": first,
+        "field_errors": field_errors,
+    }
+
+
+def _model_validation_error(exc: DjangoValidationError) -> dict:
+    if hasattr(exc, "message_dict"):
+        field_errors = {field: [str(message) for message in messages] for field, messages in exc.message_dict.items()}
+    else:
+        field_errors = {"payload": [str(message) for message in exc.messages]}
+    return {
+        "code": "invalid_offer",
+        "detail": "Revise os campos destacados.",
+        "field_errors": field_errors,
+    }
+
+
 class CampaignListView(_CampaignBase):
     permission_map = {
         "GET": "shop.view_marketing",
@@ -1278,11 +1666,7 @@ class PreviewView(_CampaignBase):
                 status=404,
             )
         edits, error = _announcement_edits(
-            {
-                key: payload[key]
-                for key in ("body", "hashtags", "platforms", "google_business")
-                if key in payload
-            }
+            {key: payload[key] for key in ("body", "hashtags", "platforms", "google_business") if key in payload}
         )
         if error:
             field = str(error.get("field") or "payload")
@@ -1424,9 +1808,7 @@ class WhatsAppTemplateView(_CampaignBase):
         current = (template.whatsapp_flow_ns or "") if template else ""
         catalog = manychat_flows.flow_catalog(force=request.query_params.get("refresh") == "1")
         names = dict(catalog.flows)
-        rows = NotificationTemplate.objects.filter(
-            event__in=TRANSACTIONAL_WHATSAPP_EVENTS
-        ).in_bulk(field_name="event")
+        rows = NotificationTemplate.objects.filter(event__in=TRANSACTIONAL_WHATSAPP_EVENTS).in_bulk(field_name="event")
         readiness = delivery_readiness.readiness_for(("whatsapp",))[0]
         can_send_test = request.user.has_perm("shop.send_marketing_test")
 
@@ -1454,25 +1836,15 @@ class WhatsAppTemplateView(_CampaignBase):
                     {
                         "event": event,
                         "label": WHATSAPP_EVENT_LABELS[event],
-                        "current": (
-                            (rows[event].whatsapp_flow_ns or "")
-                            if event in rows
-                            else ""
-                        ),
+                        "current": ((rows[event].whatsapp_flow_ns or "") if event in rows else ""),
                         "current_name": names.get(
-                            (rows[event].whatsapp_flow_ns or "")
-                            if event in rows
-                            else "",
+                            (rows[event].whatsapp_flow_ns or "") if event in rows else "",
                             "",
                         ),
-                        "current_active": bool(
-                            event in rows and rows[event].is_active
-                        ),
+                        "current_active": bool(event in rows and rows[event].is_active),
                         "version": rows[event].version if event in rows else 1,
                         "available": event in rows,
-                        "configured": bool(
-                            event in rows and rows[event].whatsapp_flow_ns
-                        ),
+                        "configured": bool(event in rows and rows[event].whatsapp_flow_ns),
                     }
                     for event in TRANSACTIONAL_WHATSAPP_EVENTS
                 ],
@@ -1490,10 +1862,7 @@ class WhatsAppTemplateView(_CampaignBase):
         )
 
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload)
-            - ({"event", "flow_ns", "base_version"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"event", "flow_ns", "base_version"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
