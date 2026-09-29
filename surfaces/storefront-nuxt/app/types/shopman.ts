@@ -580,6 +580,13 @@ export interface LastOrderItemProjection {
 export interface PublicConfigProjection {
   google_maps_api_key: string
   address_map_confirmation_enabled: boolean
+  address_location_divergence: {
+    mode: 'off' | 'measure' | 'visible'
+    threshold_m: number
+    max_accuracy_m: number
+    maximum_age_ms: number
+    policy_version: string
+  }
   whatsapp_url: string
   shop_latitude: number | null
   shop_longitude: number | null

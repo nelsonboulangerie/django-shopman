@@ -1,6 +1,6 @@
 # WP-CHECKOUT-ADDRESS-LOCATION-DIVERGENCE — conferir endereço × localização atual
 
-> **Status:** READY — extensão dependente; executar depois da base de confirmação visual
+> **Status:** IMPLEMENTED — 2026-09-29; rollout protegido por config, ativação Live pendente do deploy deste slice
 >
 > **Data da auditoria e do benchmark:** 2026-09-28
 >
@@ -13,6 +13,11 @@
 > **Rollout:** configuração pública canônica em `off | measure | visible`; default `off`
 >
 > **Risco:** médio — localização precisa é dado pessoal e GPS pode produzir falso positivo
+
+> **Entrega:** política conservadora versionada, projeção/Admin canônicos, opt-in para
+> salvo e busca, aviso não bloqueante, mapa comparativo, ações de manter/trocar/revisar,
+> telemetria fechada sem PII e rollback por `off`. A base de mapa #1256/#1261 foi
+> comprovada Live em `true`, incluindo ensaio `true → false → true`, antes da integração.
 
 Autoridade entre documentos:
 
@@ -760,6 +765,20 @@ pedido para outra pessoa, trabalho/casa ou falso positivo; exige pesquisa e amos
 - [ ] **AC-20** — `off` preserva baseline; `measure` calcula sem aviso; `visible` mostra a UX.
 - [ ] **AC-21** — Unit, contrato, componente, API, E2E, a11y, visual, lint, typecheck e build passam.
 - [ ] **AC-22** — Privacidade, specs e runbook/rollback estão atualizados antes de produção visível.
+
+### 21.1 Evidência da implementação de 2026-09-29
+
+| ACs | Evidência |
+|---|---|
+| 01, 05, 06, 07, 14, 20 | `useAddressLocationCheck.ts` e `addressLocationConsistency.ts`; GPS só após `request`, sequence/fingerprint, accuracy/timestamp e limite inferior versionado. |
+| 02, 03, 04, 08–13, 15, 16, 19 | `AddressPicker.vue` + `AddressLocationDivergence.vue`; salvo reduzido nunca ganha status perto/longe, escolha atual não muda antes de mapa/formulário e o modo compare diferencia “Entrega” de “Você”. |
+| 17, 18 | `storefront/api/telemetry.py`; apenas enums fechados, sem endpoint de comparação nem coordenada/distância/id. |
+| 20 | `Shop.defaults.storefront.address_location_divergence`, edição tipada no Unfold e projeção fail-closed dependente do mapa. |
+| 21 | Testes puros, de composable, componente, contrato de projeção, Admin, API e guardrails do Storefront. Smoke de dispositivo real e visual Live permanece evidência de rollout, não é substituído por unit tests. |
+| 22 | Este WP, `ADDRESS-UX-PLAN.md`, `data-schemas.md` e política pública refletem a retenção transitória; ledger recebe merge/deploy/ativação após o PR. |
+
+Checklist acima permanece aberto até CI, deploy, canário `measure → visible`, smoke móvel
+autenticado e rollback operacional serem anexados. “Código pronto” não é “Live”.
 
 ## 22. Definition of Done
 

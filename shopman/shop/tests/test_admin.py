@@ -485,6 +485,60 @@ class TestAddressMapConfirmationAdminToggle:
         assert ShopForm(instance=disabled).fields[self.FIELD].initial is False
 
 
+class TestAddressLocationDivergenceAdminConfig:
+    MODE = "defaults_storefront_address_location_divergence_mode"
+
+    def test_controls_use_canonical_unfold_widgets_and_start_off(self, shop):
+        from unfold.widgets import UnfoldAdminIntegerFieldWidget, UnfoldAdminSelectWidget
+
+        from shopman.shop.admin.shop import ShopForm
+
+        form = ShopForm(instance=shop)
+        assert isinstance(form.fields[self.MODE].widget, UnfoldAdminSelectWidget)
+        assert isinstance(
+            form.fields["defaults_storefront_address_location_divergence_threshold_m"].widget,
+            UnfoldAdminIntegerFieldWidget,
+        )
+        assert form.fields[self.MODE].initial == "off"
+
+    def test_visible_round_trip_preserves_other_storefront_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {
+            "surface_policy": {"keep": True},
+            "storefront": {
+                "existing": "preserved",
+                "address_map_confirmation_enabled": True,
+            },
+        }
+        shop.save(update_fields=["defaults"])
+
+        enabled_data = _shop_form_data(shop)
+        enabled_data[self.MODE] = "visible"
+        enabled_form = ShopForm(data=enabled_data, instance=shop)
+        assert enabled_form.is_valid(), enabled_form.errors
+        saved = enabled_form.save()
+
+        assert saved.defaults["surface_policy"] == {"keep": True}
+        assert saved.defaults["storefront"]["existing"] == "preserved"
+        assert saved.defaults["storefront"]["address_location_divergence"] == {
+            "mode": "visible",
+            "threshold_m": 500,
+            "max_accuracy_m": 250,
+            "maximum_age_ms": 30_000,
+            "policy_version": "v1",
+        }
+
+        disabled_data = _shop_form_data(saved)
+        disabled_data[self.MODE] = "off"
+        disabled_form = ShopForm(data=disabled_data, instance=saved)
+        assert disabled_form.is_valid(), disabled_form.errors
+        disabled = disabled_form.save()
+
+        assert "address_location_divergence" not in disabled.defaults["storefront"]
+        assert disabled.defaults["storefront"]["existing"] == "preserved"
+
+
 class TestShopProductionAdmin:
     def test_change_page_exposes_every_structured_block(self, admin_user, shop):
         client = Client()

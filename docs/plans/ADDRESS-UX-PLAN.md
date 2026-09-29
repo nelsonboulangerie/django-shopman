@@ -79,6 +79,14 @@ Benefício: cliente sente **controle** ("eu pedi isso") em vez de suspeita
 ("como ele sabe onde estou?"). Omotenashi = respeito pelo gesto, não
 adivinhação.
 
+Depois que um endereço salvo ou vindo da busca já estiver escolhido, o checkout pode
+oferecer o mesmo gesto para uma **conferência pontual**. A posição só existe em memória,
+accuracy e margem do alvo evitam falso positivo, e uma divergência confiável gera aviso
+calmo: manter o destino, usar a localização como novo destino ou comparar no mapa. Nada
+troca sozinho, nada bloqueia a compra e permissão negada/imprecisa preserva endereço,
+carrinho e cotação. O modo é `off | measure | visible`, default `off`, em
+`Shop.defaults.storefront.address_location_divergence`.
+
 ### 4. Digitação manual
 
 Todos os campos editáveis a qualquer momento. Se cliente prefere digitar,
@@ -120,9 +128,9 @@ Seguem o que já existe em `CustomerAddress` (Guestman) + `Session.data`/`Order.
 
 **Ordem de pré-seleção (cascata):**
 1. Endereço padrão (`is_default=True`), se existir.
-2. Geolocalização do device compatível com algum endereço salvo (GPS
-   coincide com `latitude`/`longitude` de um `CustomerAddress`). Só
-   consulta geo se cliente já deu opt-in antes.
+2. A compatibilidade com a localização atual pode ser conferida depois da seleção,
+   somente por novo gesto explícito nesta montagem. O web/PWA não reutiliza uma
+   permissão anterior para ler GPS automaticamente.
 3. Último usado em pedido.
 4. Mais usado historicamente.
 5. Se nenhum → abre a tela de cliente novo (ver abaixo).
@@ -172,7 +180,8 @@ Cada opção salva com 1 clique — cliente nunca digita a label manualmente.
 
 **Portão 1 (Antecipar):**
 - ✓ Pré-seleção do endereço mais provável — cliente não precisa pedir.
-- ✓ Geolocalização pergunta *uma vez* e lembra a decisão.
+- ✓ Geolocalização explica a finalidade e pergunta apenas após o gesto; a checagem
+  contextual não memoriza posição nem consentimento para leituras futuras.
 - ✓ Proximity bias garante que as primeiras sugestões sejam perto.
 
 **Portão 2 (Estar presente):**

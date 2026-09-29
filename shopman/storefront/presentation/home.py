@@ -12,6 +12,10 @@ from dataclasses import dataclass
 
 from django.http import HttpRequest
 
+from shopman.shop.address_location_config import (
+    AddressLocationDivergenceProjection,
+    build_address_location_divergence,
+)
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
 from shopman.storefront.presentation.catalog import CatalogItemProjection, build_catalog
@@ -184,6 +188,9 @@ class PublicConfigProjection:
     # Kill switch da confirmação visual de ponto. A ausência é ``False`` e
     # deploy nenhum liga a experiência comercial por acidente.
     address_map_confirmation_enabled: bool
+    # Rede de segurança independente do mapa. Ausente ou inválida projeta
+    # ``off``; ``visible`` também cai para off enquanto o mapa estiver desligado.
+    address_location_divergence: AddressLocationDivergenceProjection
     whatsapp_url: str
     # Proximity bias do Places Autocomplete client-side (a key acima é a
     # pública domain-restricted; o geocoding reverso continua server-side).
@@ -322,15 +329,21 @@ def build_shell(
 
     shop_latitude = float(shop.latitude) if shop and shop.latitude else None
     shop_longitude = float(shop.longitude) if shop and shop.longitude else None
+    storefront_defaults = (
+        (shop.defaults or {}).get("storefront")
+        if shop and isinstance((shop.defaults or {}).get("storefront"), dict)
+        else {}
+    )
+    address_map_confirmation_enabled = bool(
+        storefront_defaults.get("address_map_confirmation_enabled", False)
+    )
     public_config = PublicConfigProjection(
         google_maps_api_key=browser_api_key(),
-        address_map_confirmation_enabled=bool(
-            ((shop.defaults or {}).get("storefront") or {}).get(
-                "address_map_confirmation_enabled", False
-            )
-        )
-        if shop
-        else False,
+        address_map_confirmation_enabled=address_map_confirmation_enabled,
+        address_location_divergence=build_address_location_divergence(
+            storefront_defaults.get("address_location_divergence"),
+            map_enabled=address_map_confirmation_enabled,
+        ),
         whatsapp_url=shop_proj.whatsapp_url or "",
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,

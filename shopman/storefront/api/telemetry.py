@@ -56,6 +56,33 @@ _ADDRESS_EVENT_SCHEMA: dict[str, dict[str, set[str]]] = {
         "moved": {"true", "false"},
     },
     "address.zone.resolved": {"result": {"covered", "outside", "deferred"}},
+    "address.location_check.requested": {
+        "target": {"saved", "search"},
+        "mode": {"measure", "visible"},
+    },
+    "address.location_check.resolved": {
+        "target": {"saved", "search"},
+        "status": {"compatible", "diverged", "inconclusive", "unavailable"},
+        "accuracy_bucket": {"good", "medium", "low", "unknown"},
+        "policy_version": {"v1"},
+    },
+    "address.location_check.failed": {
+        "target": {"saved", "search"},
+        "reason": {"denied", "timeout", "unavailable", "unsupported", "rate_limited"},
+    },
+    "address.location_mismatch.shown": {
+        "target": {"saved", "search"},
+        "accuracy_bucket": {"good", "medium", "low", "unknown"},
+        "policy_version": {"v1"},
+    },
+    "address.location_mismatch.action": {
+        "action": {"keep", "use_current", "review_map", "dismiss"},
+        "target": {"saved", "search"},
+    },
+    "address.location_mismatch.recovered": {
+        "path": {"use_current", "review_map"},
+        "zone_result": {"covered", "uncovered", "deferred"},
+    },
 }
 
 

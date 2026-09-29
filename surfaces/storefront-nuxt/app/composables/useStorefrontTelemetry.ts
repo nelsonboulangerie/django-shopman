@@ -1,4 +1,4 @@
-type AddressEventName =
+export type AddressEventName =
   | 'address.location.requested'
   | 'address.location.resolved'
   | 'address.location.denied'
@@ -6,6 +6,12 @@ type AddressEventName =
   | 'address.map.fallback'
   | 'address.map.confirmed'
   | 'address.zone.resolved'
+  | 'address.location_check.requested'
+  | 'address.location_check.resolved'
+  | 'address.location_check.failed'
+  | 'address.location_mismatch.shown'
+  | 'address.location_mismatch.action'
+  | 'address.location_mismatch.recovered'
 
 /**
  * Fire-and-forget aggregate telemetry. Callers pass only closed enums: the
@@ -25,4 +31,3 @@ export function useStorefrontTelemetry () {
 
   return { addressEvent }
 }
-
