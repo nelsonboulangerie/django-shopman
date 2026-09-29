@@ -1,6 +1,6 @@
 # POS de primeira linha - plano de produto e execucao
 
-**Status:** WP-0 a WP-8 implementados no produto; WP-9+ permanecem roadmap controlado  
+**Status:** WP-0 a WP-8 e WP-10 implementados; WP-11 parcialmente entregue; WP-9 permanece roadmap controlado
 **Data:** 2026-05-12  
 **Escopo:** POS runtime em `/gestor/pos/`, `POSTerminal`, `CashShift`, comandas, delivery/pickup, fiscal Focus NFe para NFC-e, teclado/foco, offline e analytics  
 **Roadmap apenas:** venda por peso
@@ -625,10 +625,21 @@ Aceite:
 9. WP-9: offline-first.
 10. WP-10 e WP-11: permissoes/analytics.
 
-## Status de implementacao em 2026-05-12
+## Status de implementacao (revalidado em 2026-09-29)
 
 - WP-0 a WP-5: concluidos, incluindo nomenclatura `FocusNFeBackend`, homologacao configuravel e metadata fiscal de produto nos seeds.
 - WP-6: concluido para UX operacional interna: status fiscal no gestor, links DANFE/QR quando autorizados, reprocessamento de falha e cancelamento fiscal no lifecycle de cancelamento/devolucao.
 - WP-7: concluido para ledger manual comercial: pagamento misto, dinheiro/troco, referencias de comprovante, total por meio e dinheiro de entrega fora do turno ate o acerto.
 - WP-8: concluido sem hardware real: `POSTerminal.metadata` agora carrega perfil runtime, fulfillment default, colecoes favoritas e health de impressora/gaveta/leitor/TEF/display via adapters simulados/manuais.
-- WP-9 a WP-11: continuam roadmap porque dependem de politica de contingencia fiscal, PIN operacional e analytics gerencial ampliado alem do pacote aprovado ate WP-8.
+- WP-9: continua roadmap e requer gate humano. O contrato declara replay
+  idempotente e bloqueio de fechamento com fila pendente, mas a superfície ainda
+  não tem fila local persistente/replay. Implementar exige decidir política de
+  contingência fiscal, conflitos e limites operacionais offline antes de escrever
+  código.
+- WP-10: concluído. O runtime tem operador ativo por PIN, rate limit/bloqueio,
+  troca sem logout da sessão Django, aprovações gerenciais e trilha de auditoria.
+- WP-11: parcialmente concluído. O BI/caixa já agrega turnos, operadores, meios,
+  custódia, divergências, cancelamentos e acertos. A fatia restante é explicitar
+  incidentes fiscais pendentes/rejeitados na lente gerencial e validar o recorte
+  completo contra `DayClosing`; ela deve ser executada como WP estreito, não como
+  reconstrução do analytics.

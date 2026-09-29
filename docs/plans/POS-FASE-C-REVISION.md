@@ -4,7 +4,9 @@
 > + backend headless. Frente **v1** (Onda 1). Cada achado abaixo tem **status de
 > verificação** — claims não confirmados no código não viram "gap".
 
-**Status**: 🟡 Auditoria em curso (2026-06-26). 1 fix aplicado; resto = achados + recomendações.
+**Status**: ✅ Reconciliação concluída em 2026-09-29. Os achados técnicos desta
+revisão foram revalidados no código atual; nenhuma lacuna adicional segura foi
+confirmada para execução autônoma.
 
 ---
 
@@ -64,27 +66,25 @@ surface cobre intent/payment math/operator lock.
   original sempre chega ao operador. Teste:
   `test_split_rollback_failure_does_not_mask_move_error`.
 
-### 🟡 Confirmado, menor (recomendação — não executado sem você)
+### ✅ Achados revalidados em 2026-09-29
 
-- **Cédulas de dinheiro hardcoded** em
-  [`app/presentation/payment.ts:103`](../../surfaces/pos-nuxt/app/presentation/payment.ts)
-  (`BRL_CASH_NOTES_Q`). Funciona, mas para tornar config-driven seria expor
-  `cash_notes_q` em `POSCheckoutContractProjection` com fallback. Baixo valor;
-  decidir se entra.
-
-### 🔵 A verificar antes de virar tarefa (não asserir como gap)
-
-- **Completude do seletor de fulfillment** (pickup/delivery/balcão) no checkout —
-  o código referencia `fulfillment`, mas falta confirmar o fluxo de UI ponta a
-  ponta (especialmente delivery com taxa/endereço no PDV).
-- **Campos fiscais de produto para NFC-e** (NCM/CFOP/CSOSN/CEST/origem) — o
-  report sugeriu incompletos; precisa confirmar se vivem em `Product.metadata`
-  ou se faltam de fato. **Cruza com o bloqueio de credenciais Focus NFe** (gate
-  de go-live), então é melhor verificar junto com o smoke fiscal real.
-- **Cobertura de atalhos de teclado** — existem handlers; falta mapear o conjunto
-  real vs. o spec (WP-1) e cobrir por teste.
-- **Reconciliação fire→KDS→commit** (Path B) — sem teste de ciclo fechado
-  (operador cancela `fired`, KDS já recebeu). Verificar risco de comanda "solta".
+- **Cédulas de dinheiro**: o contrato canônico já expõe
+  `cash_tender_delta_presets_q`; `cashNotesQ()` consome o contrato e mantém a
+  lista BRL apenas como fallback. Cobertura em
+  `surfaces/pos-nuxt/tests/presentation.test.ts`.
+- **Fulfillment no checkout**: retirada e delivery, inclusive endereço, taxa e
+  regras condicionais, estão no contrato de `shopman/backstage/projections/pos.py`
+  e no workspace de pagamento da superfície Nuxt.
+- **Dados fiscais e operação NFC-e**: o perfil fiscal de produto, validação,
+  status, DANFE e reprocessamento existem no pipeline atual. O smoke real ainda
+  depende das credenciais/homologação externas do gate de go-live; isso não é
+  lacuna de implementação desta revisão.
+- **Teclado e foco**: o mapa operacional está implementado em
+  `surfaces/pos-nuxt/app/pages/index.vue` e coberto por testes de apresentação,
+  componentes e páginas.
+- **Fire → KDS → cancelamento/fechamento**: há fluxo explícito para cancelar
+  linhas já disparadas, refazer o fire e manter a consistência do fechamento,
+  com cenários em `shopman/backstage/tests/test_pos_fire.py`.
 
 ### ⚪ Decisões de produto (suas — não autônomas)
 
@@ -99,16 +99,13 @@ surface cobre intent/payment math/operator lock.
 
 ## Recomendação
 
-A Fase C **não** deve virar um refactor amplo do POS unsupervised — o POS está
-maduro. O caminho honesto:
+A Fase C **não** deve virar um refactor amplo do POS: os itens técnicos levantados
+em 2026-06 foram resolvidos ou derrubados pela verificação no produto atual.
 
-1. ✅ Fix de robustez do move_lines (feito).
-2. Verificar item-a-item os 🔵 acima (cada um vira tarefa só se confirmado).
-3. Cruzar fiscal de produto com o gate de credenciais Focus NFe (go-live).
-4. Decisões ⚪ ficam com o Pablo.
-
-Cobertura de testes do surface (vitest) é a área de maior retorno seguro: cart
-mutations, payment numpad, move dialog. Candidata a próxima leva autônoma.
+O único bloco estrutural ainda aberto é **WP-9, offline-first e contingência**,
+registrado em `POS-FIRST-CLASS-PLAN.md`. Ele exige decisão de política fiscal,
+conflito/replay e operação em contingência; não é uma correção pequena nem deve
+ser executado autonomamente. As decisões de produto acima continuam com o dono.
 
 ---
 
