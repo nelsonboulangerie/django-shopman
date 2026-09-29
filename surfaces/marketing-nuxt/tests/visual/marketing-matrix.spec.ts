@@ -340,6 +340,25 @@ test.describe("workspace Marketing V2", () => {
     await expect(page.getByText("TikTok via Relay")).toBeVisible();
     await expectStableScreenshot(page, "v2__platforms", V1280);
   });
+
+  test("ofertas e cupons ficam legíveis no desktop", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=offers", V1280);
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Ofertas e cupons" }),
+    ).toBeVisible();
+    await expect(page.getByText("Hibisco Primavera")).toBeVisible();
+    await expectStableScreenshot(page, "v2__offers", V1280);
+  });
+
+  test("novo cupom preserva formulário no mobile", async ({ page }) => {
+    await openScenario(page, "board-normal", "/v2?area=offers", V390);
+    await page.getByRole("button", { name: "Criar cupom" }).click();
+    await expect(page.getByRole("dialog", { name: "Novo cupom" })).toBeVisible();
+    await expect(page.getByLabel("Código do cupom")).toBeVisible();
+    await expectStableScreenshot(page, "v2__coupon-form", V390, "light", {
+      fullPage: false,
+    });
+  });
 });
 
 test.describe("cartão de anúncio", () => {
