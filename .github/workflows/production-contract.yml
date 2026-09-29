@@ -90,6 +90,10 @@ jobs:
           echo "EFI_CERTIFICATE_PATH=/tmp/ci-production-contract.pem" >> "$GITHUB_ENV"
 
       - name: Testes negativos do contrato
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings_test
+          DATABASE_URL: ""
+          REDIS_URL: ""
         run: .venv/bin/python -m pytest shopman/shop/tests/test_production_contract.py -q
 
       - name: Contrato hermético
