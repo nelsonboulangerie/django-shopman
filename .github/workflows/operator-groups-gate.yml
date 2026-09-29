@@ -12,12 +12,7 @@ name: Operator Groups Gate
 
 "on":
   pull_request:
-    paths:
-      - "surfaces/operator-router/**"
-      - "surfaces/Dockerfile.operator-group"
-      - "surfaces/operator-kit/**"
-      - ".github/workflows/operator-groups-gate.yml"
-      - ".github/workflows/deploy-images.yml"
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -25,8 +20,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: detectar escopo
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detectar mudança de contrato de grupo
+        id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="$PR_BASE_SHA"
+          if [ "$EVENT_NAME" = "merge_group" ]; then base="$MERGE_GROUP_BASE_SHA"; fi
+          test -n "$base"
+          if git diff --quiet "$base" HEAD -- \
+            surfaces/operator-router/ \
+            surfaces/Dockerfile.operator-group \
+            surfaces/operator-kit/ \
+            .github/workflows/operator-groups-gate.yml \
+            .github/workflows/deploy-images.yml; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
   router-tests:
     name: operator-router — testes
+    needs: scope
+    if: needs.scope.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -48,7 +81,8 @@ jobs:
 
   group-image:
     name: imagem ${{ matrix.group }}
-    needs: router-tests
+    needs: [scope, router-tests]
+    if: needs.scope.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -123,3 +157,27 @@ jobs:
           docker stop --time 30 gate
           docker logs gate 2>&1 | grep '"event":"shutdown_done"'
           test "$(docker inspect gate --format '{{.State.ExitCode}}')" = "0"
+
+  contract:
+    name: Operator Groups Contract
+    needs: [scope, router-tests, group-image]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar resultado aplicável ou não aplicável
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          RELEVANT: ${{ needs.scope.outputs.relevant }}
+          ROUTER_RESULT: ${{ needs.router-tests.result }}
+          IMAGE_RESULT: ${{ needs.group-image.result }}
+        run: |
+          test "$SCOPE_RESULT" = "success"
+          if [ "$RELEVANT" = "false" ]; then
+            echo "not applicable: nenhum contrato de grupo foi alterado" >> "$GITHUB_STEP_SUMMARY"
+            test "$ROUTER_RESULT" = "skipped"
+            test "$IMAGE_RESULT" = "skipped"
+          else
+            echo "applicable: router e as duas imagens foram validados" >> "$GITHUB_STEP_SUMMARY"
+            test "$ROUTER_RESULT" = "success"
+            test "$IMAGE_RESULT" = "success"
+          fi
