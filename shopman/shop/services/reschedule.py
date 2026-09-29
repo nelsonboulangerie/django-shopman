@@ -39,6 +39,8 @@ from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 
+from shopman.shop.services import order_composition
+
 logger = logging.getLogger(__name__)
 
 HISTORY_KEY = "reschedule_history"
@@ -308,7 +310,7 @@ def _stock_refusal(order, exc, day: date_type) -> str:
     if exc.code == "insufficient_stock":
         sku = context.get("sku") or context.get("component_sku") or ""
         name = next(
-            (item.get("name") for item in (order.snapshot or {}).get("items", []) if item.get("sku") == sku),
+            (item.name for item in order_composition.effective_items(order) if item.sku == sku),
             None,
         ) or sku
         if context.get("error_code") == "SKU_PAUSED":
@@ -460,8 +462,9 @@ def _commitment_day(order) -> date_type:
 
 
 def _order_skus(order) -> list[str]:
+    """Os SKUs que valem agora: depois de uma edição, não os do snapshot."""
     return [
         sku
-        for item in (order.snapshot or {}).get("items", [])
-        if isinstance(item, dict) and (sku := str(item.get("sku") or "").strip())
+        for item in order_composition.effective_items(order)
+        if (sku := str(item.sku or "").strip())
     ]

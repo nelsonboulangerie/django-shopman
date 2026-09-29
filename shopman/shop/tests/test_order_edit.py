@@ -557,6 +557,28 @@ def test_data_nova_vai_pelo_reagendar_com_um_aviso_so(vitrine):
     assert result.revision is None  # itens não mudaram: sem ajuste novo
 
 
+def test_remarcar_depois_de_trocar_item_reserva_o_que_vale_agora(vitrine):
+    """A remarcação refazia a reserva pelo snapshot, o pedido como NASCEU: no
+    alpha (29/09/2026) ela recusou "Croissant Mini está pausado" numa encomenda
+    que já tinha trocado o croissant por baguette. Vale o que está no pedido
+    agora, na reserva, na janela de horário e no nome da recusa."""
+    from shopman.shop.services import reschedule
+
+    _plan(BAGUETE, 3, 10, vitrine)
+    _plan(CROISSANT, 3, 10, vitrine)
+    _plan(CROISSANT, 5, 10, vitrine)
+    order = _encomenda("ED-17b", qty=1)
+    order_edit.edit(order, lines=[{"sku": CROISSANT, "qty": 2}], actor="pos:marina")
+    order.refresh_from_db()
+
+    reschedule.reschedule(order, date=_day(5).isoformat(), slot="slot-09", actor="pos:marina", notify=False)
+
+    order.refresh_from_db()
+    assert order.data["delivery_date"] == _day(5).isoformat()
+    assert _holds_by_sku(order) == {CROISSANT: Decimal("2")}
+    assert reschedule._order_skus(order) == [CROISSANT]
+
+
 def test_data_recusada_desfaz_tudo(vitrine):
     _plan(BAGUETE, 3, 10, vitrine)
     order = _encomenda("ED-18")
