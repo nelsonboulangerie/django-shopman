@@ -37,6 +37,12 @@ export interface Material {
   leadTimeDays?: number;
   replenishAtDays?: number;
   suggestedQty?: number;
+  /** Rendimento ponderado pelo consumo bruto de cada ficha; ausente sem perda medida. */
+  weightedUsableFactor?: number | null;
+  /** Inverso do rendimento para explicar a conta; não multiplica `suggestedQty`. */
+  correctionFactor?: number | null;
+  /** Parcela líquida equivalente da sugestão bruta. */
+  suggestedNetQty?: number | null;
   // O saldo atravessou uma ponte aproximada e carrega o "≈" ate a tela
   // (ADR-024, R3). Vem do carimbo `converted_via.approximate` no Move.
   stockIsApproximate?: boolean;

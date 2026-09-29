@@ -28,6 +28,7 @@ import {
   resaleCopy,
   resaleSuggestionView,
   openingView,
+  purchaseSuggestionLabel,
   skuRoleBadges,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
@@ -822,7 +823,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <span class="min-w-0">
                 <span class="block font-semibold">{{ row.material.name }}</span>
                 <span class="mt-0.5 block text-sm text-muted-foreground">
-                  {{ coverageLabel(row.material.coverageDays) }} · sugerir {{ formatQty(row.suggestedQty, row.material.unit) }}
+                  {{ coverageLabel(row.material.coverageDays) }} · sugerir {{ purchaseSuggestionLabel(row.material, row.suggestedQty) }}
                 </span>
               </span>
               <span class="shrink-0 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs font-medium text-warning">
@@ -932,8 +933,8 @@ onBeforeUnmount(stopInvoiceScanner);
               </span>
             </div>
             <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><dt class="text-xs text-muted-foreground">Cobertura</dt><dd class="font-semibold tabular-nums">{{ coverageLabel(row.material.coverageDays) }}</dd></div>
-              <div><dt class="text-xs text-muted-foreground">Sugestão</dt><dd class="font-semibold tabular-nums">{{ formatQty(row.suggestedQty, row.material.unit) }}</dd></div>
+              <div class="col-span-2"><dt class="text-xs text-muted-foreground">Cobertura</dt><dd class="font-semibold tabular-nums">{{ coverageLabel(row.material.coverageDays) }}</dd></div>
+              <div class="col-span-2"><dt class="text-xs text-muted-foreground">Sugestão</dt><dd class="font-semibold tabular-nums">{{ purchaseSuggestionLabel(row.material, row.suggestedQty) }}</dd></div>
               <div><dt class="text-xs text-muted-foreground">Fornecedor</dt><dd class="truncate font-semibold">{{ row.supplier?.name || "Definir" }}</dd></div>
               <div><dt class="text-xs text-muted-foreground">Estimado</dt><dd class="font-semibold tabular-nums">{{ formatMoney(row.estimatedCostQ) }}</dd></div>
             </dl>
