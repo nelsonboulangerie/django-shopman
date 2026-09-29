@@ -1535,14 +1535,12 @@ FISCAL_DIVERGENCE_ALERT_TYPE = "purchase_invoice_fiscal_divergence"
 
 
 def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_key: str) -> None:
-    """A NF-e é a PRIMEIRA fonte da sugestão de catálogo da mercadoria de revenda.
+    """A NF-e é a PRIMEIRA fonte da sugestão do item recebido.
 
-    Revenda é o cadastro de compra cujo SKU também existe no catálogo de venda
-    (ver ``shop/services/sku_namespace.py``). GTIN, NCM, CEST e unidade entram
-    no RASCUNHO desse produto (``metadata['enrichment']``), nunca no produto:
-    quem aceita é gente, campo a campo, no Admin. Insumo sem produto de venda
-    fica de fora até o WP de insumos decidir se o GTIN é do material ou da
-    oferta do fornecedor.
+    GTIN, NCM, CEST e unidade entram primeiro no RASCUNHO do Material, que é a
+    identidade comprável independentemente do fornecedor. Se o mesmo SKU
+    também é vendido, entram ainda no rascunho do Product. Nenhum dos dois
+    cadastros muda sem aceite humano campo a campo no Admin.
 
     A mesma nota CONFERE o cadastro fiscal (``shop/services/invoice_fiscal_check``):
     NCM ou CEST diferentes vão para o rascunho com o porquê em ``detail``, e
@@ -1553,6 +1551,7 @@ def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_k
     Sugestão é conveniência: se falhar, a entrada de estoque não cai — mas
     grita no log, porque rascunho que some calado é pergunta que ninguém faz.
     """
+    from shopman.shop.services import material_enrichment
     from shopman.shop.services.invoice_fiscal_check import check_invoice_fiscal
     from shopman.shop.services.product_enrichment import suggest_from_invoice
 
@@ -1568,10 +1567,19 @@ def _suggest_catalog_from_invoice(*, lines: list[ResolvedReceiptLine], invoice_k
         ):
             continue
         product = Product.objects.filter(sku=line.sku).first()
-        if product is None:
-            continue
         try:
             with transaction.atomic():
+                material_enrichment.suggest_from_invoice(
+                    line.material,
+                    gtin=line.invoice_ean,
+                    other_gtin=line.invoice_package_ean,
+                    ncm=line.invoice_ncm,
+                    cest=line.invoice_cest,
+                    unit=line.invoice_unit,
+                    access_key=invoice_key,
+                )
+                if product is None:
+                    continue
                 divergences = check_invoice_fiscal(
                     metadata=product.metadata,
                     ncm=line.invoice_ncm,

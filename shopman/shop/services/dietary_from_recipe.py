@@ -101,18 +101,15 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
     if not items:
         return False
 
-    profiles: list[IngredientDietary] = []
-    for item in items:
-        meta = item.meta if isinstance(item.meta, dict) else {}
-        profile = IngredientDietary.from_meta(meta)
-        if profile is None:
+    profiles, missing = dietary_profiles_for_items(items)
+    if missing:
+        for input_sku in missing:
             logger.info(
                 "dietary_from_recipe: %s has insumo without dietary profile (%s); "
                 "skipping (incomplete data is unsafe for allergen labelling).",
-                product.sku, item.input_sku,
+                product.sku, input_sku,
             )
-            return False
-        profiles.append(profile)
+        return False
 
     allergens = _union_allergens(profiles)
     dietary_info = _derive_dietary_info(profiles, allergens)
@@ -141,6 +138,38 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
         product.sku, allergens, dietary_info,
     )
     return True
+
+
+def dietary_profiles_for_items(items) -> tuple[list[IngredientDietary], list[str]]:
+    """Perfis efetivos das folhas, com o Material sobre o snapshot da ficha.
+
+    ``RecipeItem.meta`` continua sendo o snapshot publicável e o fallback.
+    Quando o cadastro do insumo declara ``allergens`` ou ``diet``, esses campos
+    vencem individualmente. Assim a curadoria por GTIN corrige o rótulo sem
+    reescrever receitas, mas uma folha sem ``diet`` continua bloqueando tudo.
+    """
+    from shopman.buyman.models import Material
+
+    items = list(items)
+    skus = {item.input_sku for item in items}
+    material_meta = {
+        sku: metadata or {}
+        for sku, metadata in Material.objects.filter(sku__in=skus).values_list("sku", "metadata")
+    }
+    profiles: list[IngredientDietary] = []
+    missing: list[str] = []
+    for item in items:
+        effective = dict(item.meta) if isinstance(item.meta, dict) else {}
+        current = material_meta.get(item.input_sku, {})
+        for key in ("allergens", "diet"):
+            if key in current:
+                effective[key] = current[key]
+        profile = IngredientDietary.from_meta(effective)
+        if profile is None:
+            missing.append(item.input_sku)
+        else:
+            profiles.append(profile)
+    return profiles, missing
 
 
 # ──────────────────────────────────────────────────────────────────────
