@@ -301,6 +301,7 @@ class ProviderFormatCapabilityProjection:
     fields: tuple[ProviderFieldCapabilityProjection, ...]
     media: ProviderMediaCapabilityProjection
     cta_model: str
+    operational_format_refs: tuple[str, ...]
     notes: tuple[str, ...]
 
 
@@ -909,6 +910,7 @@ def build_options() -> CampaignOptionsProjection:
                             notes=format_capability.media.notes,
                         ),
                         cta_model=format_capability.cta_model,
+                        operational_format_refs=format_capability.operational_format_refs,
                         notes=format_capability.notes,
                     )
                     for format_capability in provider.formats

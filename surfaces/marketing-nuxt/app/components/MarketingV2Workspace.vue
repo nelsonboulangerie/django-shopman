@@ -19,6 +19,7 @@ const {
   rules,
   platforms: platformChoices,
   deliveryCapabilities,
+  providerCapabilities,
   platformLabels,
   loading: campaignsLoading,
   refresh: refreshCampaigns,
@@ -57,8 +58,19 @@ const destinations = computed(() =>
   marketingV2Destinations({
     choices: platformChoices.value,
     capabilities: deliveryCapabilities.value,
+    providerCapabilities: providerCapabilities.value,
     readiness: readiness.value,
   }),
+);
+const activeDestinations = computed(() =>
+  destinations.value.filter(
+    (destination) => destination.connectorState !== "dormant",
+  ),
+);
+const plannedDestinations = computed(() =>
+  destinations.value.filter(
+    (destination) => destination.connectorState === "dormant",
+  ),
 );
 const activeCampaigns = computed(() =>
   rules.value.filter((campaign) => campaign.is_active),
@@ -97,6 +109,13 @@ const stateClasses: Record<MarketingV2DestinationState, string> = {
   unknown: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
   available: "bg-muted text-muted-foreground",
 };
+const formatStateClasses = {
+  executable: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  partial: "bg-warning/10 text-warning",
+  planned: "bg-muted text-muted-foreground",
+  gated: "bg-destructive/10 text-destructive",
+  unimplemented: "bg-muted text-muted-foreground",
+} as const;
 
 async function refreshWorkspace() {
   await Promise.all([
@@ -386,7 +405,7 @@ useHead({ title: "Marketing V2" });
 
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <article
-          v-for="destination in destinations"
+          v-for="destination in activeDestinations"
           :key="destination.ref"
           class="rounded-xl border border-border bg-card p-4"
         >
@@ -640,7 +659,7 @@ useHead({ title: "Marketing V2" });
 
       <ul class="grid gap-3 md:grid-cols-2">
         <li
-          v-for="destination in destinations"
+          v-for="destination in activeDestinations"
           :key="destination.ref"
           class="rounded-xl border border-border bg-card p-5"
         >
@@ -661,12 +680,19 @@ useHead({ title: "Marketing V2" });
                 </span>
               </div>
               <p class="mt-1 text-xs text-muted-foreground">
-                {{ destination.deliveryLabel }} ·
-                {{
-                  destination.formatLabels.join(" · ") ||
-                  "sem formato executável"
-                }}
+                {{ destination.deliveryLabel }}
               </p>
+              <ul class="mt-2 flex flex-wrap gap-1.5">
+                <li
+                  v-for="format in destination.formats"
+                  :key="format.ref"
+                  class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  :class="formatStateClasses[format.state]"
+                  :title="format.detail"
+                >
+                  {{ format.label }} · {{ format.stateLabel }}
+                </li>
+              </ul>
               <p class="mt-3 text-sm text-muted-foreground">
                 {{ destination.detail }}
               </p>
@@ -694,6 +720,8 @@ useHead({ title: "Marketing V2" });
       </ul>
 
       <article
+        v-for="destination in plannedDestinations"
+        :key="destination.ref"
         class="rounded-xl border border-dashed border-border bg-muted/30 p-5"
       >
         <div class="flex items-start gap-3">
@@ -702,13 +730,21 @@ useHead({ title: "Marketing V2" });
             class="mt-0.5 size-5 text-muted-foreground"
           />
           <div>
-            <h3 class="font-semibold">TikTok via Relay</h3>
+            <h3 class="font-semibold">{{ destination.label }} via Relay</h3>
             <p class="mt-1 text-sm text-muted-foreground">
-              Visível como direção de produto, fora da allow-list executável. Só
-              entra no composer depois de conexão aprovada, sandbox proof e
-              revisão do TikTok; até lá, nenhum controle sugere que uma postagem
-              será feita.
+              {{ destination.detail }}
             </p>
+            <ul class="mt-3 flex flex-wrap gap-1.5">
+              <li
+                v-for="format in destination.formats"
+                :key="format.ref"
+                class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                :class="formatStateClasses[format.state]"
+                :title="format.detail"
+              >
+                {{ format.label }} · {{ format.stateLabel }}
+              </li>
+            </ul>
           </div>
         </div>
       </article>

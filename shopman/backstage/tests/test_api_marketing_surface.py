@@ -1277,6 +1277,8 @@ class TestOptions:
         assert provider_capabilities["tiktok"]["connector_state"] == "dormant"
         tiktok_formats = {item["ref"]: item for item in provider_capabilities["tiktok"]["formats"]}
         assert tiktok_formats["video_draft"]["delivery_kind"] == "creator_handoff"
+        whatsapp_formats = {item["ref"]: item for item in provider_capabilities["whatsapp"]["formats"]}
+        assert whatsapp_formats["template"]["operational_format_refs"] == ["message"]
         assert template.pk in {t["pk"] for t in options["templates"]}
         projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
         assert projected_template["requires_product"] is True

@@ -1,6 +1,6 @@
 # Marketing V2 — Capability Composer
 
-Status: proposta de arquitetura pronta para execução incremental
+Status: execução incremental; WP-01 projetado até a superfície, demais WPs seguem controlados
 
 Data da pesquisa: 2026-09-26
 
@@ -629,12 +629,16 @@ Entrega:
 - estado de implementação/readiness distinto;
 - nenhuma nova publicação externa.
 
-Fundação implementada nesta branch:
+Fundação implementada no produto e revalidada em 2026-09-29:
 
 - inventário tipado e versionado em `marketing_provider_capabilities.py`;
 - projeção aditiva `provider_capabilities` nas opções do composer;
 - catálogo teórico separado da allow-list executável existente;
 - TikTok documentado com handoff de rascunho `planned` e Direct Post `gated`, sem tornar-se destino executável;
+- catálogo de provider consumido pelo workspace V2, que distingue por formato o
+  que é executável, parcial, planejado e condicionado por gate;
+- bridge server-driven entre o formato teórico de template do WhatsApp e a
+  identidade operacional legada `message`, sem ampliar a allow-list;
 - testes de formatos, mídia, CTA e não ampliação acidental dos efeitos externos.
 
 ### WP-02 — Conexões múltiplas

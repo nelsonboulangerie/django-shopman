@@ -57,6 +57,10 @@ class ProviderFormatCapability:
     fields: tuple[ProviderFieldCapability, ...]
     media: ProviderMediaCapability
     cta_model: CtaModel = "none"
+    # Transitional bridge to the executable identity catalog. Most formats use
+    # the same ref and need no entry; WhatsApp's provider-level "template"
+    # currently executes through the legacy operational ref "message".
+    operational_format_refs: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
 
 
@@ -385,6 +389,7 @@ _PROVIDER_CAPABILITIES = (
                     notes=("O tipo do cabeçalho é fixado pelo template aprovado.",),
                 ),
                 cta_model="template_defined",
+                operational_format_refs=("message",),
                 notes=(
                     "O template pode ter um botão URL ou até três botões de resposta, sem misturar os grupos.",
                     "Opt-in e template aprovado são gates de envio.",
