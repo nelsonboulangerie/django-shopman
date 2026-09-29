@@ -25,7 +25,7 @@ const emit = defineEmits<{
 
 const visibleMismatch = computed(() => props.mode === 'visible' && props.state === 'diverged')
 const neutralStatus = computed(() => {
-  if (props.state === 'compatible') return 'Sua localização parece próxima do endereço escolhido.'
+  if (props.state === 'compatible') return props.statusMessage || 'Sua localização parece próxima do endereço escolhido.'
   if (props.state === 'inconclusive') return props.statusMessage || 'Não deu para comparar com segurança. Você pode tentar de novo ou seguir com o endereço escolhido.'
   if (props.state === 'unavailable') return props.statusMessage || 'Este endereço não tem um ponto preciso para comparar. Você pode revisá-lo no mapa.'
   if (props.state === 'failed') return props.statusMessage || 'Não foi possível conferir agora. Seu endereço continua selecionado.'
@@ -35,7 +35,7 @@ const neutralStatus = computed(() => {
 </script>
 
 <template>
-  <section v-if="mode !== 'off'" class="space-y-3" aria-label="Conferir local da entrega" data-address-location-check>
+  <section v-if="mode !== 'off'" class="shop-stack-tight" aria-label="Conferir local da entrega" data-address-location-check>
     <div v-if="state === 'idle'" class="space-y-2">
       <p class="text-sm text-muted-foreground">
         Podemos usar sua localização uma vez para conferir o ponto da entrega.
