@@ -1,103 +1,74 @@
-# Rollback de deploy quebrado
+# Rollback de deploy
 
-## Sintoma visivel
+> Resposta a regressão técnica. Estado corrente e referência do ambiente devem
+> vir da [matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md), não deste arquivo.
 
-Apos um deploy: health/readiness falha, erro 500 em massa, regressao funcional
-grave (checkout, pagamento, KDS) ou migration que travou/quebrou o schema.
+## Quando usar
 
-## Impacto
+Health/readiness falha, há 5xx em massa, regressão crítica em checkout/operação,
+worker/queue indisponível ou migration incompatível.
 
-Operacao em producao degradada ou fora do ar. Cada minuto conta — mas reverter
-sem entender o tipo de mudanca pode piorar (especialmente migration).
+## 1. Conter e preservar
 
-## Diagnostico
+1. Parar expansão e novos deploys pelo mecanismo aprovado.
+2. Registrar horário, SHA, deployment, primeiro sintoma e superfícies afetadas.
+3. Preservar logs e métricas; não apagar fila, receipt, webhook ou registro de
+   reconciliação.
+4. Se houver risco de dado, registrar imediatamente a referência de
+   restauração disponível. Não afirmar backup/PITR sem prova do ambiente.
 
-```bash
-make diagnose-health
-make diagnose-runtime
-make deploy-logs        # self-hosted; na DigitalOcean, ver logs do app/release job
-```
+## 2. Classificar antes de reverter
 
-Antes de reverter, classifique a mudanca do deploy (decisivo para a estrategia):
+| Classe | Ação inicial |
+|---|---|
+| Só código | candidato a rollback do deployment |
+| Migration aditiva | código anterior pode ser compatível; confirmar antes |
+| Backfill/data migration | verificar idempotência e efeitos parciais |
+| Contract/destrutiva | não reverter código às cegas; escalar para plano de restore |
+| Efeito externo | congelar novos efeitos e reconciliar provider antes de repetir |
 
-- **So codigo** (sem migration nova).
-- **Migration aditiva** (expand — coluna/chave nova, nada removido).
-- **Migration destrutiva** (contract — removeu campo/coluna/constraint).
-- **Data migration** (backfill).
+Consulte [production-upgrades](../guides/production-upgrades.md) e a
+[ADR-015](../decisions/adr-015-backward-compat-policy-post-prod.md). A ADR só
+está ativa quando `go-live-v1` existe.
 
-Ver os tipos e a tabela de rollback em
-[`production-upgrades.md`](../guides/production-upgrades.md#rollback-por-tipo-de-mudança).
+## 3. Rollback de código
 
-## Acao imediata segura
+1. Identificar o último deployment comprovadamente verde.
+2. Confirmar que o rollback não dispara migration incompatível.
+3. Usar o mecanismo de rollback/redeploy aprovado para o ambiente; não mover
+   tags ou aplicar spec incompleto.
+4. Esperar o deployment correto ficar pronto.
+5. Validar `/health/`, `/ready/`, loja, login e um fluxo **não mutante** antes
+   de considerar qualquer canário real.
 
-1. Congelar novos deploys.
-2. Preservar horario do deploy, commit/deployment id e a primeira tela afetada.
-3. Se houver suspeita de corrupcao de dado, **registrar o ponto de restauracao
-   agora** (antes de qualquer ajuste). O backup ja existe — a DO o tira
-   diariamente e mantem PITR de 7 dias; o que falta e anotar o instante e
-   conferir a janela: [backup-e-restore](backup-e-restore.md) §2.2.
+## 4. Migration ou dado
 
-## Recuperacao — rollback de codigo
+Para contract/destrutiva, divergência financeira/fiscal ou corrupção:
 
-Migration **aditiva** ou **so codigo**: o rollback e seguro por redeploy da
-release anterior. Coluna/chave nova fica orfa e inofensiva (e por isso que o
-expand-contract do ADR-015 mantem todo deploy reversivel, menos o contract).
+1. manter tráfego/efeitos congelados;
+2. chamar owner de banco e incident commander;
+3. restaurar somente em destino/procedimento aprovado, usando referência
+   registrada antes do incidente;
+4. validar integridade e reconciliação em dry-run;
+5. promover o resultado apenas após decisão humana.
 
-**DigitalOcean App Platform** (staging/prod):
+Nunca restaurar por cima do banco vivo apenas para acelerar a recuperação.
 
-1. Identificar o ultimo deployment verde:
-   ```bash
-   doctl apps list-deployments <APP_ID>
-   ```
-2. Reverter para ele pelo painel (Deployments → Rollback) ou disparar um novo
-   deployment fixado no ultimo commit verde. Confirmar que o release job
-   **nao** roda migration destrutiva nova.
-3. Validar: `/health/`, `/ready/`, `/menu/`, login do operador, um pedido ponta
-   a ponta.
+## 5. Efeitos externos
 
-**Self-hosted (compose):**
+- Pagamento: reconciliar antes de estornar ou repetir.
+- Fiscal: conferir status no provider antes de emitir/cancelar.
+- Mensagem/Marketing: preservar receipts/outbox; efeito `unknown` não é retry.
+- Delivery: conferir corrida antes de abrir/cancelar outra.
 
-1. `git checkout <commit-verde>`
-2. `make deploy-up` (build + release + web/worker).
-3. Validar health/readiness e um fluxo real.
+Qualquer ação real nessas linhas exige autorização específica no momento.
 
-## Recuperacao — migration destrutiva (contract)
+## 6. Evidência mínima
 
-**Nao ha rollback barato.** O deploy de contract so deve ter rodado quando o
-codigo anterior ja nao dependia do que foi removido (regra do ADR-015). Se mesmo
-assim quebrou:
-
-1. Restaurar o banco para o ponto anotado antes do deploy — cluster NOVO,
-   nunca por cima: [backup-e-restore](backup-e-restore.md) §2.4 e §3.
-2. Redeploy do codigo anterior.
-3. Reconciliar pagamento em dry-run antes de qualquer ajuste manual:
-   ```bash
-   make reconcile-financial-day dry_run=1
-   ```
-
-Data migration (backfill) e idempotente por desenho — reexecucao e segura; se
-corrompeu dado, restore do snapshot.
-
-## Pos-rollback
-
-- Confirmar `make diagnose-worker` sem backlog stuck e `make diagnose-payments`
-  sem divergencia.
-- Se o deploy tocou Marketing, rodar `make marketing-diagnose` antes e depois do
-  rollback. Preservar command receipts/outbox/targets em voo: não apagar filas nem
-  repetir `unknown`. Congele efeitos externos, deixe o reconciler classificar o que o
-  provider pode ter aceitado e use o runbook
-  [`marketing-rollout-rollback.md`](marketing-rollout-rollback.md).
-- Se houve queda durante pagamento, reconciliar o dia antes de reabrir.
-- Abrir post-mortem curto: o que o deploy mudou, por que o gate
-  (`make test-migrations`, `release-readiness-strict`, staging) nao pegou.
-
-## Escalar
-
-Escalar imediatamente: migration destrutiva quebrada, divergencia financeira
-apos rollback, ou indisponibilidade acima de poucos minutos sem causa clara.
-
-## Evidencia minima
-
-Horario do deploy e do rollback, commit/deployment id (quebrado e revertido),
-tipo da mudanca, saida de health/runtime, snapshot tirado (se houve) e o
-primeiro fluxo validado apos recuperacao.
+- SHA/deployment com problema e SHA/deployment recuperado;
+- classe da mudança;
+- horários de detecção, contenção e recuperação;
+- health/readiness e superfície validada;
+- referência de backup/restore quando usada;
+- reconciliação de efeitos externos;
+- owner e próximo evento.

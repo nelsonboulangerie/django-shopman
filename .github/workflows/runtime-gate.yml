@@ -85,6 +85,13 @@ jobs:
         run: |
           git fetch --force --depth=1 origin tag go-live-v1 || echo "pré-go-live: tag go-live-v1 ausente no remoto"
 
+      # Stdlib-only, but intentionally after the tag fetch above: the docs gate
+      # must observe the same ADR-015 trigger state as the migrations gate.
+      # It runs in the already-required Quality context, so drift blocks merge
+      # without creating another workflow/context that could race the R5 gates.
+      - name: Canonical go-live docs have no drift
+        run: python scripts/check_canonical_docs.py
+
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
       # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED
       # precisa do prazo "remove by YYYY-MM-DD" válido e não vencido. Pré-tag:

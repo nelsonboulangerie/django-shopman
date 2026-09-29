@@ -1,148 +1,81 @@
-# Go-live — checklist de cutover (staging → produção)
+# Go-live — sequência de cutover
 
-> Procedimento de virada de chave. A **engenharia autônoma está feita** (auth
-> cross-subdomínio, surface convergence, Lote A WP-GAP-07 prep, Lote B rollback
-> runbook, Buyman Fase 1). O que falta é **decisão/ação do Pablo** (creds, 2FA,
-> QA física, escopo, data). Este checklist é a ordem dessas ações.
->
-> Âncoras: [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md) ·
-> [WP-GAP-07](../plans/WP-GAP-07-pre-prod-migration-playbook.md) ·
-> [production-upgrades](../guides/production-upgrades.md) · [ADR-015](../decisions/adr-015-backward-compat-policy-post-prod.md) ·
-> rollback: [rollback-de-deploy](rollback-de-deploy.md).
+> Procedimento do dia D. Não executar sem a
+> [matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md) fechada e uma autorização
+> GO contextual do incident commander/owner. Este runbook nunca concede essa
+> autorização por si só.
 
-## 0. Estado dos 7 critérios (ROADMAP §"Produção Real")
+## 0. Regra de parada
 
-| # | Critério | Estado | Quem |
-|---|---|---|---|
-| 1 | Runtime Gate verde no commit de release | ✅ | — |
-| 2 | `release-readiness-strict` verde | 🟡 local 5/5; 3 externos faltam | Pablo (creds) |
-| 3 | `check --deploy` com secrets/hosts REAIS | 🔴 env de prod | Pablo |
-| 4 | Gateway sandbox: pagamento/refund/webhook-dup/fora-de-ordem | 🔴 exercer contra sandbox real | Pablo (creds) |
-| 5 | Reconciliação diária + snapshot de gateway | 🔴 snapshot real | Pablo (creds) |
-| 6 | QA manual Omotenashi (cliente/operador/cozinha/gerente) | 🔴 evidência física | Pablo (humano) |
-| 7 | Runbooks de incidente + rollback | ✅ | — |
+Parar antes de qualquer mutação quando:
 
-## 1. Decisões pré-cutover (Pablo)
+- houver `PENDENTE`, `BLOQUEADO` ou `DESCONHECIDO` aplicável na matriz;
+- SHA, manifesto, deployment ou ambiente não coincidirem;
+- backup/restore ou rollback não estiverem comprovados;
+- faltar autorização específica para pagamento, estorno, emissão/cancelamento
+  fiscal, envio, corrida, credencial/2FA/DNS ou tráfego comercial.
 
-- [ ] **Corte de escopo v1** — fechar o que entra (ver [PRODUCT-V1-SCOPE-BACKLOG](../plans/PRODUCT-V1-SCOPE-BACKLOG.md)). Tudo fora do corte = pós-go-live, não bloqueia.
-- [ ] **Domínio de produção** definido (loja + zona de operador). Hoje staging usa `nelsonboulangerie.com.br` (cliente) + `boulangerie.com.br` (operador). Decidir os equivalentes de prod (ou promover os atuais).
-- [ ] **Data do go-live** marcada — é o gatilho do reset de migrations (WP-GAP-07) e do `git tag go-live-v1`.
+## 1. Abrir a janela
 
-## 2. Credenciais e segredos de produção (Pablo)
+1. Registrar horário, incident commander, executor, observador e canal.
+2. Congelar merges/deploys não relacionados pelo mecanismo aprovado.
+3. Registrar SHA, ambiente, domínio e deployment anteriores.
+4. Confirmar ponto de restauração e último restore ensaiado.
+5. Registrar decisão **GO** assinada. Ausência de assinatura é **NO-GO**.
 
-- [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no ambiente de destino e executar `make production-readiness` com evidência de QA. Remover `SHOPMAN_EXPOSE_MOCK_CAPTURE`, `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` e `SHOPMAN_STAGING_AUTOPILOT`.
-- [ ] Configurar `SENTRY_DSN` e comprovar o recebimento de um alerta sintético no procedimento autorizado de cutover. A presença da variável sozinha não comprova entrega.
-- [ ] Configurar `SHOPMAN_ALERT_EMAIL` (o dono/gestor) e comprovar que um alerta crítico chega por e-mail. Sem ela, o alerta crítico termina num aviso de log: ninguém fora do app fica sabendo.
+## 2. Preparar a release
 
-- [ ] `DJANGO_SECRET_KEY` forte (não o default) · `DJANGO_DEBUG=false` · `DJANGO_ALLOWED_HOSTS` explícito (sem `*`).
-- [ ] Banco de produção (Postgres) + Redis/Valkey provisionados; `DATABASE_URL`/cache configurados.
-- [ ] **Gateways em modo PRODUÇÃO**: EFI (Pix) cert+creds de prod, Stripe live keys, iFood prod. (Hoje staging = sandbox/test.)
-- [ ] `ADMIN_PASSWORD` forte (≥12, não-trivial) p/ o bootstrap do superuser de prod (em prod NÃO usar `admin/admin`).
-- [ ] Notificação: ManyChat token de prod, EmailSender de prod.
-- [x] ✅ **RESOLVIDO em 24/09/2026 — chave da Comtele rotacionada.** O dono criou a
-      chave nova, trocou `COMTELE_API_KEY` na DO e apagou a antiga. Provas (sem SMS):
-      o deploy `f25973a7` ("app spec updated") ficou `ACTIVE` às 08:08Z com
-      `COMTELE_API_KEY` presente como SECRET; a chave **antiga** agora leva `401` em
-      `GET api.comtele.com.br/routes` (em 02/09 dava `200`), igual a uma chave
-      inventada. ⚠️ **Falta 1 login por SMS de prova** com a chave nova: até lá, nenhum
-      envio passou por ela (zero códigos e zero alertas "SMS de login (Comtele)" desde
-      a troca). O histórico do git **não** foi reescrito, por decisão: com a chave
-      revogada o ganho é nulo, e o force-push quebraria os branches e PRs abertos de
-      outras sessões.
+1. Reexecutar os gates definidos no [pré-flight](go-live-preflight.md).
+2. Revisar o plano de migrations e o comportamento de rollback.
+3. Criar `go-live-v1` somente se a decisão humana autorizar a virada da
+   ADR-015. A tag é uma mudança de política, não um marcador decorativo.
+4. Configurar gates de migration do ambiente somente pelo canal aprovado, com
+   referência de backup sanitizada.
 
-      Registro do bloqueio, mantido como histórico e roteiro para a próxima rotação:
+Mudança de secret, 2FA, ingress ou DNS exige autorização específica e dupla
+checagem no momento. Nunca substituir o spec vivo por um arquivo local que não
+preserve secrets e configuração atual.
 
-      🔴 **BLOQUEIO — rotacionar a chave de API da Comtele (vazou).** O repositório é
-      **público**. A chave (a única da conta, a que manda o SMS do login) foi publicada
-      em **30/06/2026** em dois commits: `cefff8f8e` (valor inteiro em
-      `docs/plans/GO-LIVE-SMS-WHATSAPP-STATUS.md`) e `4469773ab` (valor de fixture em
-      `shopman/shop/tests/test_otp_sms_comtele.py`, onde ficou até 23/09/2026). Tirar do
-      arquivo **não despublica o histórico**: a chave antiga tem de morrer na Comtele. A
-      trava `shopman/shop/tests/test_sem_segredo_no_repositorio.py` impede a volta dela
-      (por hash) e de qualquer UUID atribuído a nome de credencial.
+## 3. Deployment
 
-      Onde a chave mora (e só aqui): spec **live** do app `shopman-alpha`
-      (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`), variável app-level `COMTELE_API_KEY`,
-      `type: SECRET` (vale para `web` e workers). No GitHub **não** há segredo da
-      Comtele (o CI usa o valor falso `ci-comtele-api-key`). Localmente, os `.env`
-      de worktree antigos podem ter a chave velha: apague depois da troca.
+1. Promover/publicar exatamente o SHA aprovado pelo fluxo vigente.
+2. Acompanhar o release job e migrations; não seguir se houver warning não
+   classificado.
+3. Esperar o deployment correto ficar `ACTIVE`.
+4. Confirmar `/ready/`, `/health/`, menu, SSR, login e superfícies do escopo.
+5. Relacionar manifesto, deployment e smoke na matriz.
 
-      ⚠️ **Com uma chave só, revogar antes de trocar derruba o SMS do login.** A ordem
-      certa encolhe essa janela para os minutos do deploy:
+O fluxo normal da baseline é `main → Deploy Images → deploy_on_push →
+Pre-go-live Smoke`. Um deploy manual excepcional precisa de registro e da mesma
+rastreabilidade; não pode produzir uma segunda fonte de verdade.
 
-      1. **Painel da Comtele** (portal.comtele.com.br → Configurações → Chaves de API):
-         se o painel deixar ter duas, **gere a nova sem revogar a antiga**. Se só
-         permitir uma, pule para o passo 1b.
-         1b. Sem duas chaves simultâneas: faça a troca fora do horário da loja. O
-         login pelo WhatsApp continua funcionando durante a janela, porque não
-         depende de SMS.
-      2. **DigitalOcean → shopman-alpha → Settings → App-Level Environment Variables**
-         → `COMTELE_API_KEY` → cole a nova → **Encrypt** ligado → Save. Isso dispara
-         o redeploy. ⛔ Não use `doctl apps update --spec` com o arquivo do repo: ele
-         apaga os segredos (ver [conferir-spec-digitalocean](conferir-spec-digitalocean.md)).
-      3. Espere o deploy ficar `ACTIVE` e prove: um login por SMS no seu número. No
-         Gestor não deve aparecer alerta "Integração SMS de login (Comtele) falhando".
-      4. **Só agora revogue a chave antiga** no painel da Comtele (no caso 1b, ela já
-         morreu no passo 1).
-      5. Troque a chave nos `.env` locais que ainda a tenham.
+## 4. Canário autorizado
 
-## 3. Hardening (Lote C — Pablo)
+Executar somente as ações individualmente autorizadas. Para cada uma:
 
-- [ ] **2FA do Admin**: seguir o [piloto individual](../reports/2026-09-15-admin-2fa-pilot.md): preparar conta, confirmar autenticador e recuperação no navegador. Flag global OFF no piloto; expansão só após `check_admin_2fa_ready` verde para todos os staff ativos.
-- [ ] **IP allowlist** no ingress de prod p/ o `admin.` (Django Admin = CRUD/config restrito). A zona de operador (`gestor./kds./pdv./prod.`) fica acessível; só o `admin.` tranca.
-- [ ] **`DOORMAN_TRUSTED_PROXY_DEPTH=2`** no env de prod (componente `web`). Atrás de Cloudflare+DO o rightmost do `X-Forwarded-For` é a borda CF que rotaciona; sem isso o rate-limit por IP (OTP/login/checkout) se dilui e um cliente cai em vários buckets. Verificado em staging (429 no threshold, spoof-safe). Setar pelo **console** (não aplicar o spec do repo — apaga segredos). NUNCA ligar `SHOPMAN_LOG_CLIENT_IP` em prod (loga IP de cliente = dado pessoal). Detalhe: scaffolding comentado em `.do/app.subdomains.yaml`.
-- [ ] `check --deploy` verde com o env real (critério 3): `make deploy-check` no ambiente de prod.
+1. registrar intenção, valor/efeito esperado e responsável;
+2. executar uma unidade;
+3. confirmar webhook/lifecycle/idempotência;
+4. reconciliar o efeito no sistema e no provider;
+5. confirmar rollback/estorno/cancelamento apenas se também autorizado;
+6. parar diante de efeito `unknown`, duplicidade ou divergência.
 
-## 4. QA antes da virada (Pablo — humano)
+Não automatizar pagamento, estorno, emissão fiscal, envio ou corrida para
+“completar o checklist”.
 
-- [ ] **Gateway sandbox real** (critérios 4-5): pagamento aprovado, refund, webhook duplicado, evento fora de ordem; depois `make reconcile-financial-day dry_run=1` sem divergência + snapshot do gateway.
-- [ ] **QA Omotenashi física** (critério 6): cliente faz pedido na loja; operador no gestor/PDV; cozinha no KDS; gerente no fechamento. Login 1× cobre a zona de operador (já verificado ao vivo).
-- [ ] **Reseed/seed de produção**: decidir os dados reais (catálogo, preços, posições, insumos). NÃO usar `seed --flush` de staging em prod (é demo). Popular o catálogo real via Admin/import.
+## 5. GO/NO-GO final e expansão
 
-## 5. Reset de migrations (WP-GAP-07 — evento único, só agora)
+O incident commander avalia evidência técnica, física, financeira e fiscal:
 
-> Política travada (ADR-015): squash é prematuro antes da hora. Fazer **só no go-live**.
+- **NO-GO:** congelar expansão, seguir
+  [rollback](rollback-de-deploy.md) quando aplicável e preservar evidência;
+- **GO limitado:** abrir somente o volume/canal aprovado e monitorar;
+- **expansão:** nova decisão humana após a janela de observação. O GO limitado
+  não autoriza automaticamente expansão ou lançamento oficial.
 
-- [ ] `make test-migrations` verde (schema limpo do zero).
-- [ ] Squash dos apps com >5 migrations (ver Apêndice A do GO-LIVE-READINESS-PLAN); apps ≤2 já compactos.
-- [ ] Após o reset: `makemigrations --check --dry-run` limpo; `make test` verde.
+## 6. Encerramento
 
-## 6. Cutover (dia D)
-
-- [ ] **Ponto de restauração anotado ANTES de tudo** — o backup diário e o PITR
-      de 7 dias já existem na DO; o que falta é anotar o instante, conferir a
-      janela e declarar a referência. Procedimento, conferências e custo em
-      [backup-e-restore.md](backup-e-restore.md) §2.2.
-      ⚠️ **Pré-requisito**: o ensaio de restauração ([§3](backup-e-restore.md))
-      precisa ter sido feito ao menos uma vez — é o item aberto de
-      [security-readiness](security-readiness.md). Um backup nunca restaurado
-      não é uma rede; é uma esperança.
-- [ ] `git tag go-live-v1` no commit de release; a partir daqui valem as regras pós-prod do ADR-015 (migrations append-only, aliases só em janela explícita).
-- [ ] **`SHOPMAN_GO_LIVE=true`** no ambiente de prod (componente `release`) — a
-      imagem do app não carrega o `.git`, então a tag não é legível lá dentro.
-      É esta env que arma o `migration_safety`, a trava que recusa o deploy com
-      migração destrutiva pendente e nenhum ponto de restauração declarado em
-      `SHOPMAN_MIGRATION_BACKUP_REF`. Sem ela, a trava continua só relatando.
-      Setar pelo **console** (não aplicar o spec do repo — apaga segredos).
-- [ ] O `run_command` do job `release` no app de prod já inclui
-      `python manage.py migration_safety` antes do `migrate`. O spec versionado
-      inclui; o app vivo só passa a incluir depois de `doctl apps update` — ver
-      [conferir-spec-digitalocean.md](conferir-spec-digitalocean.md) antes de
-      aplicar.
-- [ ] Deploy de prod (mesmo padrão do staging, app/contexto de PROD): `doctl apps create-deployment <APP_ID_PROD> --wait`. O release job roda `check --deploy` + `migrate`; `SHOPMAN_E022` inclui os ambientes dos provedores. Isso não substitui o perfil completo `production-readiness` nem a QA externa.
-   - ⚠️ Lembrar do gotcha: **todo pacote `packages/*` precisa estar no Dockerfile + pyproject** (mordeu com o buyman). Já corrigido; conferir se algum novo entrou.
-- [ ] Validar ao vivo: `/ready/` (db/cache/migrations ok), `/health/`, loja, login do operador (cookie na zona certa), um **pedido ponta-a-ponta** com pagamento real de teste.
-
-## 7. Pós-cutover
-
-- [ ] `make diagnose-health` · `make diagnose-worker` (sem backlog) · `make diagnose-payments` (sem divergência).
-- [ ] **Reconciliação financeira** do primeiro dia: `make reconcile-financial-day`.
-- [ ] Monitorar alertas (CPU/mem/restart já no spec) nas primeiras horas.
-- [ ] **Rollback pronto**: se algo quebrar, seguir [rollback-de-deploy](rollback-de-deploy.md) (classificar tipo de migration ANTES de reverter).
-
-## Notas de operação aprendidas (staging)
-
-- **Contexto doctl** de deploy = `shopman-alpha-deploy` (único vivo; os outros foram removidos). Prod terá o seu — gerar token e `doctl auth init`.
-- **Autodeploy**: confira `deploy_on_push` por componente no spec do ambiente alvo antes do push. O spec de alpha versionado contém autodeploy ativo; não presuma deploy exclusivamente manual.
-- **Bootstrap/reseed**: inventarie os jobs existentes no spec alvo. Não há contrato de um job chamado `bootstrap-staging`; não arme `seed --flush` no release como rotina. Em produção, bootstrap exige procedimento e autorização próprios.
-- **Preservar os secrets `EV[...]`** ao editar o spec (usar `apps spec get` como base, nunca um spec local sem os valores atuais).
+- registrar deployment/SHA, horário, decisão e owners;
+- executar diagnósticos e reconciliação autorizados;
+- registrar incidentes, efeitos `unknown` e follow-ups;
+- atualizar a matriz canônica sem copiar o estado para outros documentos.

@@ -1,7 +1,8 @@
 # Runtime dependencies
 
 Este arquivo e a fonte canonica para banco, cache, realtime e limites de
-ambiente do Django Shopman.
+ambiente do Django Shopman. Versoes de dependencias Python sao derivadas do
+`pyproject.toml`, que permanece a autoridade executavel.
 
 ## Decisao
 
@@ -15,11 +16,10 @@ Contrato atual:
 - **SQLite/LocMem**: fallback local para scripts, exploracao rapida e ambientes
   sem Docker. Nao serve como evidencia de release.
 - **Celery/Django Tasks**: nao fazem parte do contrato atual. Directives rodam
-  pelo management command `process_directives`; se uma fila externa entrar depois, sera
-  uma decisao explicita. No bump para Django 6, avaliar o framework nativo de
-  Tasks antes de escolher Celery, lembrando que Django Tasks nao fornece worker
-  de execucao por si so.
-- **Django 6**: runtime canônico em `Django>=6.0,<6.1`. Redis usa
+  pelo management command `process_directives`; se uma fila externa entrar
+  depois, sera uma decisao explicita. Django Tasks nao fornece worker de
+  execucao por si so.
+- **Django 6.1**: runtime canônico em `Django>=6.1,<6.2`. Redis usa
   `django.core.cache.backends.redis.RedisCache`; nao ha dependencia de pacote
   externo para cache Redis. `django-ratelimit 4.1` ainda emite um warning de
   allowlist para esse backend, silenciado no settings depois do check proprio
@@ -118,7 +118,7 @@ subconjunto cobre concorrencia de estoque, invariantes de quantidade, Payman,
 Craftsman, checkout concorrente, rate limit em Redis, acesso a pedidos,
 permissoes SSE, replay de webhooks, deploy checks e health/readiness.
 
-Evidencia registrada em 2026-05-05: o workflow `Runtime Gate` do PR #3 passou
+Evidencia historica registrada em 2026-05-05: o workflow `Runtime Gate` do PR #3 passou
 no run `25404598547` com:
 
 - `Quality + deploy contract`: `ruff`, migrations check, `check --deploy` e
@@ -128,6 +128,9 @@ no run `25404598547` com:
   reais do GitHub Actions em 1m31s;
 - `Omotenashi browser QA`: `make omotenashi-browser-ci` em Node 24/Chrome,
   `14 pass`, `0 review`, com screenshots/JSON/log como artifact.
+
+Essa medicao nao descreve o HEAD corrente. A evidencia operacional atual fica
+na [matriz canonica de prontidao](../plans/GO-LIVE-READINESS-PLAN.md).
 
 Para stress HTTP complementar, com o servidor ja rodando e seed aplicado:
 

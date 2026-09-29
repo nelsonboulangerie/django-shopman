@@ -1,174 +1,79 @@
-# GO-LIVE-CREDENTIALS-MATRIX — Credenciais e webhooks por fase de lançamento
+# GO-LIVE-CREDENTIALS-MATRIX — contrato e maturidade das integrações
 
-> Referência operacional de **qual credencial/segredo precisa estar viva em cada fase**
-> do lançamento progressivo da Nelson, e **o que flipa de sandbox para produção** em
-> cada salto. Complementa — não duplica — o [GO-LIVE-READINESS-PLAN](GO-LIVE-READINESS-PLAN.md)
-> (que cobre os 7 critérios, migrations e runbooks) e o checklist de bloqueios do Pablo.
->
-> **Última auditoria de código**: 2026-06-29. As integrações têm **adapter + webhook reais
-> e um gate de boot** (`SHOPMAN_E001..E010` em [`shopman/shop/checks.py`](../../shopman/shop/checks.py))
-> que recusa subir em produção sem as credenciais. O que falta é majoritariamente **obter e
-> plugar as credenciais**, não escrever código.
+> Este documento registra **nomes e significado**, nunca valores. A única fonte
+> de prontidão e bloqueios é a
+> [matriz canônica](GO-LIVE-READINESS-PLAN.md).
 
----
+- `verificado_em`: `2026-09-29T03:06:10Z`
+- `ambiente_inspecionado`: spec vivo do app DigitalOcean `shopman-nelson`
+- `fonte`: leitura de nomes/tipos de variáveis, código e gates; valores não foram
+  lidos nem exibidos
+- `owner_da_matriz`: Plataforma
+- `próximo_evento`: atualizar após mudança de spec ou decisão de escopo v1
 
-## 1. Modelo de fases (decisão Pablo, 2026-06-29)
+## Cinco estados diferentes
 
-| Fase | Público | Pedido vale? | Dinheiro real? | Nota fiscal? |
-|---|---|---|---|---|
-| **staging** | funcionários + família | ❌ teste | ❌ sandbox | ❌ homologação |
-| **alpha** | amigos convidados (cupom ~50%) | ✅ **real** | ✅ **real** | ✅ **real** |
-| **beta** | ~10 clientes próximos (cupom ~30%) | ✅ real | ✅ real | ✅ real |
-| **soft** | público discreto, ~1 mês | ✅ real | ✅ real | ✅ real |
-| **oficial** | lançamento marcado | ✅ real | ✅ real | ✅ real |
+Cada integração deve avançar explicitamente por estas colunas:
 
-> ⚠️ **O verdadeiro go-live técnico é staging → alpha.** É o único salto em que sandbox vira
-> produção em pagamento **e** fiscal **e** estorno ao mesmo tempo. Beta/soft/oficial são
-> ganho de volume sobre a mesma configuração de produção do alpha. Trate o alpha como
-> "tudo de verdade pela primeira vez".
+1. **credencial declarada** — o nome existe no spec; não prova valor;
+2. **adapter configurado** — a configuração seleciona o adapter esperado;
+3. **boot gate aprovado** — o processo sobe no perfil/ambiente declarado;
+4. **integração exercida em sandbox/homologação** — probe externo sanitizado;
+5. **integração exercida em produção** — efeito real autorizado e reconciliado.
 
----
+É proibido colapsar essas etapas em “configurado”.
 
-## 2. Matriz de credenciais por integração × fase
+## Maturidade observada
 
-Legenda: `sandbox` = chave de teste · `LIVE` = chave de produção · `—` = não precisa nesta fase
-· `✅` = igual à fase anterior.
+`declarada` abaixo significa apenas presença do nome no spec vivo. `código`
+significa capacidade construída na baseline. O carimbo do cabeçalho vale para
+todas as linhas.
 
-| Integração | Variáveis | staging | alpha → oficial |
-|---|---|---|---|
-| **Django core** | `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` | secrets de staging | **LIVE** (domínio prod) |
-| **DB / cache** | `DATABASE_URL` (Postgres), `REDIS_URL` | staging | **LIVE** (prod gerenciado) |
-| **Domínio/cookie** | `SHOPMAN_DOMAIN`, `SHOPMAN_OPERATOR_COOKIE_DOMAIN`, `AUTH_DEFAULT_DOMAIN` | zona staging | **zona prod** (`.boulangerie.com.br`) |
-| **Admin** | `SHOPMAN_ADMIN_USERNAME/EMAIL/PASSWORD`, `SHOPMAN_ADMIN_REQUIRE_2FA` | bootstrap (2FA opcional) | **bootstrap + 2FA on** |
-| **Stripe** (cartão) | `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | `pk_test_`/`sk_test_` | **`pk_live_`/`sk_live_`** + webhook secret de prod |
-| **Efi** (PIX) | `EFI_CLIENT_ID/SECRET`, `EFI_CERTIFICATE_*`, `EFI_PIX_KEY`, `EFI_WEBHOOK_TOKEN`, `EFI_SANDBOX` | `EFI_SANDBOX=true` | **`EFI_SANDBOX=false`** + cert + PIX key de prod |
-| **Focus NFe** (fiscal) | `SHOPMAN_FISCAL_ADAPTER`, `FOCUS_NFE_TOKEN`, `FOCUS_NFE_ENVIRONMENT`, `FOCUS_NFE_CNPJ_EMITENTE`, série/CFOP | `homologacao` | **`producao`** + token prod + **validação do contador** |
-| **ManyChat** (WhatsApp) | `MANYCHAT_API_TOKEN`, `MANYCHAT_WEBHOOK_SECRET`, `MANYCHAT_OTP_FLOW_NS` | conta teste | **conta LIVE** |
-| **iFood** (se canal ativo) | `IFOOD_WEBHOOK_TOKEN`, `IFOOD_MERCHANT_ID`, (catálogo: `IFOOD_CATALOG_API_*`) | sandbox | **LIVE** merchant |
-| **Doorman** (magic links) | `DOORMAN_ACCESS_LINK_API_KEY` | staging | **LIVE** |
-| **Email** (fallback OTP) | `EMAIL_HOST/PORT/USER/PASSWORD`, `DEFAULT_FROM_EMAIL` | SMTP staging | **SMTP prod** |
-| **Maps** (UI + geocodificação) | `GOOGLE_MAPS_BROWSER_API_KEY`, `GOOGLE_MAPS_SERVER_API_KEY` | opcionais | LIVE: navegador restrita por referer + Maps JS/Places; servidor restrita a Geocoding (+ IP quando houver egress fixo) |
-| **Meta Broadcast** (IG + FB) | `META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_ACCESS_TOKEN` | ausente (adapter F5 em dry-run; post fica `pending_manual`) | **LIVE** — Page Access Token permanente com `instagram_content_publish`, `pages_manage_posts`, `pages_read_engagement` |
-| **Machine** (courier/entregas) | `SHOPMAN_COURIER_ADAPTER`, `MACHINE_API_USER/PASSWORD/API_KEY`, `MACHINE_WEBHOOK_TOKEN`, `MACHINE_FORMA_PAGAMENTO` | mock (`courier_mock`) ou desligado | **LIVE** (credenciais da central) + `machine_register_webhook` + `fulfillment.courier="auto"` no canal delivery |
+| Integração | Variáveis principais | Código | Declarada no spec | Adapter no ambiente | Boot gate comercial | Sandbox/homologação | Produção | Escopo v1 | Owner / próximo evento |
+|---|---|---|---|---|---|---|---|---|---|
+| Django / domínio | `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `SHOPMAN_DOMAIN`, `AUTH_DEFAULT_DOMAIN`, `SHOPMAN_OPERATOR_COOKIE_DOMAIN` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | N/A | DESCONHECIDO | BLOQUEADO | Plataforma + Pablo / decidir domínio comercial e rodar readiness |
+| PostgreSQL / Redis | `DATABASE_URL`, `REDIS_URL` | VERIFICADO | VERIFICADO | VERIFICADO pelo `/ready/` | DESCONHECIDO | N/A | DESCONHECIDO | BLOQUEADO | Plataforma / identificar ambiente comercial e backup/restore |
+| Stripe | `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CAPTURE_METHOD` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Financeiro + Plataforma / probe autorizado e reconciliação |
+| EFI PIX | `EFI_CLIENT_ID`, `EFI_CLIENT_SECRET`, `EFI_CERTIFICATE_PEM_BASE64`, `EFI_PIX_KEY`, `EFI_WEBHOOK_TOKEN`, `EFI_SANDBOX` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Financeiro + Plataforma / probe autorizado e reconciliação |
+| Focus NFe | `SHOPMAN_FISCAL_ADAPTER`, `FOCUS_NFE_TOKEN`, `FOCUS_NFE_ENVIRONMENT`; emitente em `Shop.document` ou `FOCUS_NFE_CNPJ_EMITENTE` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Fiscal + contador / homologar, validar parâmetros e decidir escopo |
+| ManyChat / WhatsApp | `MANYCHAT_API_TOKEN`, `MANYCHAT_WEBHOOK_SECRET`, `MANYCHAT_OTP_FLOW_NS` e flags de Concierge | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Produto + Marketing / decidir canal v1 e provar fluxo sem envio não autorizado |
+| iFood | `IFOOD_CLIENT_ID`, `IFOOD_CLIENT_SECRET`, `IFOOD_MERCHANT_ID`, `IFOOD_WEBHOOK_TOKEN`, `IFOOD_CANCELLATION_CODE` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Operação + Produto / decidir canal v1 e anexar homologação |
+| Machine courier | `SHOPMAN_COURIER_ADAPTER`, `MACHINE_API_USER`, `MACHINE_API_PASSWORD`, `MACHINE_API_KEY`, `MACHINE_WEBHOOK_TOKEN`, `MACHINE_FORMA_PAGAMENTO`, `MACHINE_CANCEL_REASON_ID` | VERIFICADO | PENDENTE | DESCONHECIDO | N/A enquanto adapter não for selecionado | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Operação + Produto / decidir escopo antes de pedir/configurar credenciais |
+| Meta / Marketing | `META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_ACCESS_TOKEN` e flags `SHOPMAN_MARKETING_*_ENABLED` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Marketing / decisão shadow-canário e consentimento |
+| Email / SMS | `EMAIL_*`, `DEFAULT_FROM_EMAIL`, `COMTELE_API_KEY`, `COMTELE_ROUTE` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | DESCONHECIDO | Operação / provar entrega em contato autorizado |
+| Observabilidade | `SENTRY_DSN`, `SHOPMAN_ALERT_EMAIL` | VERIFICADO | VERIFICADO | DESCONHECIDO | DESCONHECIDO | N/A | DESCONHECIDO | BLOQUEADO | Plataforma + Operação / provar recebimento de alerta sintético autorizado |
 
-Inventário completo de variáveis comentadas: [`.env.example`](../../.env.example).
+## Contrato por ambiente
 
-### Toggles sandbox → produção (o que muda no salto staging → alpha)
+Enquanto o owner não aprovar nomenclatura oficial, a documentação usa apenas:
 
-| Toggle | Sandbox | Produção |
-|---|---|---|
-| `SHOPMAN_ENVIRONMENT` | `staging` | `production` |
-| `DJANGO_DEBUG` | `false` (staging já é não-DEBUG) | `false` |
-| `EFI_SANDBOX` | `true` (host `pix-h.api.efipay`) | `false` (host `pix.api.efipay`) |
-| Chave Stripe | prefixo `_test_` | prefixo `_live_` |
-| `FOCUS_NFE_ENVIRONMENT` | `homologacao` | `producao` |
-| `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` | `true` só se sem sandbox real | **ausente** (mock = erro `SHOPMAN_E003`) |
-| `SHOPMAN_EXPOSE_DEBUG_OTP` | permitido em staging (`W007`) | **ausente** (erro `E010`) |
-| `SHOPMAN_DEBUG_OTP_TOKEN` | **obrigatório** se a flag acima estiver ligada | irrelevante (a flag some) |
-| `SHOPMAN_OTP_DELIVERY_CHAIN` | `sms,email` | `sms,email` |
+| Ambiente | Contrato |
+|---|---|
+| local/CI | valores sintéticos ou mocks explícitos; nunca evidência externa |
+| técnico vivo de pré-go-live | serviço acessível; pode conter combinações de sandbox, homologação ou flags; cada integração exige prova própria |
+| comercial | ambiente definido pelo owner, com domínio, escopo, providers e GO/NO-GO registrados |
 
-### ⚠️ O debug do OTP deixou de ser "chave para virar no go-live"
+Os rótulos históricos `alpha`, `beta`, `soft` e `oficial` não determinam tipo de
+credencial até o gate humano ser resolvido.
 
-Eram duas decisões amarradas numa condição só
-(`EXPOSE_DEBUG_OTP and ENVIRONMENT == "staging"`), e o resultado era um ambiente
-onde **ninguém recebia OTP** (`DELIVERY_CHAIN = []`): o único jeito de entrar era
-lendo o código na resposta HTTP. Por isso o vazamento era silencioso (a vítima
-não recebia mensagem para desconfiar) e por isso "só desligar" era impossível —
-desligar sem religar a entrega deixaria TODO cliente sem conseguir entrar.
+## Regras para atualização
 
-Agora são duas chaves independentes:
+- Nunca colar token, senha, certificado, webhook secret, DSN ou valor de variável.
+- Registrar somente nome, tipo (`SECRET`/texto), ambiente e identificador da
+  evidência sanitizada.
+- Não executar probe com efeito externo sem autorização contextual.
+- Uma integração fora do escopo aprovado vira `N/A`; até a decisão, fica
+  `DESCONHECIDO`, não “opcional”.
+- O inventário completo de nomes comentados fica em [`.env.example`](../../.env.example).
 
-- **Quem vê o código** → `SHOPMAN_DEBUG_OTP_TOKEN`. Fora de `DEBUG`, o código só
-  volta para quem apresenta o segredo no cabeçalho `X-Shopman-Debug-Otp`. A
-  suíte E2E tem; o público não. **Vazio ⇒ nunca volta** (falha fechado).
-- **Por onde ele é entregue** → `SHOPMAN_OTP_DELIVERY_CHAIN`, que não depende
-  mais da flag de debug.
+## Gates de código relacionados
 
-Consequência prática: o **mesmo ambiente** é seguro e testável, e não há chave
-para virar na manhã do go-live.
+- `make production-contract`: contrato hermético com valores sintéticos;
+- `make production-readiness`: perfil final dependente do ambiente e evidência;
+- `make smoke-gateways-sandbox`: probe externo, somente com credenciais e
+  autorização adequadas;
+- `python manage.py check --deploy`: valida configuração de boot, não exercício
+  do provider.
 
-### ⚠️ O canal de e-mail só conta como disponível se ENTREGAR
-
-`notification_email.is_available()` era `bool(EMAIL_HOST or EMAIL_BACKEND)` — e
-`EMAIL_BACKEND` tem string por default, então era **incondicionalmente True**. O
-backend de console imprime em stdout, `send()` devolvia sucesso, e esse sucesso
-**curto-circuitava a cadeia inteira**: SMS e WhatsApp nunca eram tentados. O
-cliente não recebia o link de pagamento e o log dizia "Email sent".
-
-Agora `console`/`locmem`/`dummy` e SMTP sem `EMAIL_HOST` devolvem `False`, e a
-cadeia segue. **Sem SMTP configurado o e-mail simplesmente não participa** — que
-é a verdade, dita em voz alta.
-
-O gate de boot recusa produção com chave de teste de pagamento faltando (`SHOPMAN_E009`),
-webhook sem token (`E004`), ManyChat sem segredo (`E005`), Redis ausente (`E006`),
-SQLite (`E007`), access-link sem chave (`E008`).
-
----
-
-## 3. Gate de prontidão do **alpha** (o salto que importa)
-
-Antes de convidar o primeiro amigo do alpha, **todos** os itens abaixo verdes:
-
-1. **Pagamento LIVE exercido por você** ("canário de um"): faça 1–2 compras reais (PIX e
-   cartão) ponta-a-ponta com chaves de produção, antes de qualquer convidado.
-2. **Nota fiscal real saindo**: Focus NFe em `producao`, NFC-e emitida na compra-canário.
-   **NCM/CFOP/CSOSN/PIS-COFINS já validados pelo contador ✅** (parametrização aplicada:
-   CFOP 5102/5405, CSOSN 102/500, PIS-COFINS 99 — ver `docs/reference/fiscal-parametrizacao-nfce.md`).
-   Resta só plugar o token Focus de produção. Não receber dinheiro real sem nota.
-3. **Estorno LIVE testado**: estorne a compra-canário (Stripe refund **e** devolução PIX Efi).
-   O caminho já é código pronto e testado em sandbox (`_settle_cancelled_payment` no
-   [`lifecycle.py`](../../shopman/shop/lifecycle.py); `payment_stripe.refund` / `payment_efi.refund`)
-   — falta exercê-lo com gateway de produção uma vez.
-4. **Cupom como kill-switch**: o incentivo (~50%) é um **Coupon** desligável num clique, nunca
-   preço editado no catálogo. Verificar que a NFC-e sai sobre o **valor com desconto**.
-5. **Alerta de erro ligado**: observabilidade (Sentry ou equivalente) antes do alpha — com
-   cliente real, você descobre bug pela tela, não pela reclamação no WhatsApp.
-6. **`make release-readiness-strict` verde** (sem `blocked_external`) + `manage.py check --deploy`
-   limpo com os secrets de produção.
-
-**Critério de saída do alpha** (para liberar beta): N pedidos completam ponta-a-ponta com
-nota emitida, ≥1 estorno real executado com sucesso, e zero bug P0 aberto.
-
----
-
-## 4. Estado de cada frente (auditoria 2026-06-29)
-
-| Frente | Estado no código | Falta |
-|---|---|---|
-| **Estorno (Stripe + Efi PIX)** | ✅ completo + testado, no lifecycle de cancelamento | só **verificar** 1× com gateway LIVE (item 3 do gate alpha) |
-| **Webhook ManyChat (subscriber sync)** | ✅ **registrado** em `/api/webhooks/manychat/webhook/` (HMAC+replay, fail-closed) — 2026-06-29 | credenciais |
-| **Pedido inbound por WhatsApp (conversacional)** | 🔴 endpoints intent/confirm faltam | **feature** — owner: [MANYCHAT-CONVERSACIONAL-PLAN](MANYCHAT-CONVERSACIONAL-PLAN.md) (Arc 2/3) |
-| **bootstrap_admin env-driven** | ✅ existe ([`bootstrap_admin.py`](../../shopman/shop/management/commands/bootstrap_admin.py)), rejeita senha fraca, desativa seed admin | rodar com secrets prod |
-| **`.env.example`** | ✅ drift de credenciais corrigido (2026-06-29) | — |
-| **TaOn / Taxi Machine (logística externa)** | ❌ **não existe no código** | **decisão de escopo** — ver §5 |
-
----
-
-## 5. Logística externa (TaOn / Taxi Machine) — plano separado
-
-A API da Machine chegou (2026-07-07) e a integração first-class foi **construída** (adapter
-`courier_machine` + directive `courier.dispatch` + webhook + painel no gestor). Detalhe e
-roteiro de go-live em [DELIVERY-EXTERNAL-LOGISTICS-PLAN](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md).
-
-- **Integração Machine ✅ construída 2026-07-07**: pedido delivery "pronto" abre corrida
-  automaticamente (`fulfillment.courier="auto"` por canal); status em tempo real no gestor
-  (webhook + polling de fallback); cotação avulsa pelo operador. Falta só: credenciais da
-  central (linha na matriz acima) + homologação do webhook (`manage.py machine_register_webhook`)
-  + confirmar `MACHINE_FORMA_PAGAMENTO` e `motivo_id` de cancelamento com a central.
-- **Teleporte (clipboard) ✅ 2026-06-29**: `manage.py teleporte ORDER-REF` segue como fallback
-  manual (API fora do ar / corrida não atendida com entrega própria).
-
----
-
-## 6. Definição de pronto
-
-Cada fase está pronta quando suas credenciais (§2) estão plugadas, o gate de boot sobe limpo,
-e — para alpha em diante — o gate de prontidão do alpha (§3) está integralmente verde.
-
-## Referências
-
-- [GO-LIVE-READINESS-PLAN](GO-LIVE-READINESS-PLAN.md) — 7 critérios, migrations, runbooks, bloqueios do Pablo
-- [`.env.example`](../../.env.example) — inventário de todas as variáveis
-- [`shopman/shop/checks.py`](../../shopman/shop/checks.py) — gate de boot `SHOPMAN_E001..E010`
-- [`scripts/check_release_readiness.py`](../../scripts/check_release_readiness.py) + [`gateway_smoke.py`](../../shopman/backstage/services/gateway_smoke.py) — smoke/readiness
-- [MANYCHAT-CONVERSACIONAL-PLAN](MANYCHAT-CONVERSACIONAL-PLAN.md) — canal de pedido inbound (Arc 2/3)
+Passos operacionais ficam no [pré-flight](../runbooks/go-live-preflight.md); a
+sequência de corte fica no [cutover](../runbooks/go-live-cutover.md).

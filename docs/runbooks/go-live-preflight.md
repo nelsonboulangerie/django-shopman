@@ -1,67 +1,79 @@
-# Runbook — Pré-flight de go-live real
+# Pré-flight de go-live
 
-> Checklist concreto de "o que lembrar antes de virar a chave", consolidado durante a frente
-> de credenciais (2026-06-29). Complementa o [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md)
-> (critérios/migrations) e a [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md)
-> (credenciais por fase + gate do alpha §3).
->
-> Para alpha tecnico com testadores convidados, Pix/card mockados e botao
-> "Simular pagamento", use primeiro
-> [alpha-technical-readiness](alpha-technical-readiness.md). Este arquivo e o
-> checklist de dinheiro real/producao.
->
-> ⚠️ Antes de checar env do alpha, ler o estado real: `doctl --context shopman-alpha-deploy
-> apps spec get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
+> Verificações antes do corte. Estado, owner e evidência ficam somente na
+> [matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md). Este runbook não contém
+> cronologia nem autoriza efeitos externos.
 
-## Estado verificado (2026-06-29)
-Staging já tem **Stripe + Efi (sandbox) + ManyChat + iFood(token) + Doorman** setados e **provados ao
-vivo** (cobrança PIX real ATIVA; Checkout Session Stripe real; 5/5 contratos internos; webhooks
-fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fiscal: Focus NFe.**
+## Pré-condições
 
-## A virar ANTES DE PRODUCAO (pagamento real)
+- commit candidato e ambiente alvo identificados;
+- fases, domínio comercial e escopo v1 aprovados pelo owner;
+- cada integração aplicável classificada na
+  [matriz de credenciais](../plans/GO-LIVE-CREDENTIALS-MATRIX.md);
+- incident commander, janela e canal de comunicação definidos;
+- autorização contextual reservada para qualquer pagamento, estorno, emissão
+  fiscal, envio ou corrida real.
 
-- [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no destino; remover exposição de OTP/captura simulada e executar `make production-readiness` com evidência de QA.
+Se qualquer pré-condição estiver ausente, registrar `PENDENTE`, `BLOQUEADO` ou
+`DESCONHECIDO` na matriz e parar.
 
-- [ ] **Focus NFe ligada** — `SHOPMAN_FISCAL_ADAPTER` + `FOCUS_NFE_TOKEN` (homolog→**producao**) +
-      `FOCUS_NFE_ENVIRONMENT=producao`. CNPJ vem de `Shop.document` (Admin). Ver
-      [ativar-focus-nfe](ativar-focus-nfe.md). *(contador OK; falta conta+token)*
-- [ ] **Chaves LIVE de pagamento** (não cola no chat — env DO encriptado):
-      Stripe `pk_live_`/`sk_live_` + webhook secret de prod · Efi `EFI_SANDBOX=false` + cert/creds prod.
-- [ ] **Remover `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`** do env DO (hoje `=true`; vira warning W006).
-- [ ] **Confirmar `Shop.document` (CNPJ) preenchido** no ambiente real (emitente da NFC-e).
-- [ ] **Conferir `STRIPE_CAPTURE_METHOD`** no ambiente alvo. O laudo de 12/09 registrou `manual` no staging; não presuma `automatic`. Qualquer mudança exige validar autorização, captura, estorno e entrega no fluxo de pagamento.
-- [ ] **Apagar endpoint Stripe morto** (`we_1Sv6lG…`, ngrok antigo) — limpeza, não bloqueia.
-- [ ] **Canário-de-um**: Pablo faz 1–2 compras reais (PIX+cartão) com NFC-e saindo + 1 estorno,
-      ANTES de convidar qualquer amigo do alpha.
-- [ ] **Alerta de erro** (Sentry ou equiv.) ligado antes do alpha.
-- [ ] **Cupom de incentivo** (~50% alpha / ~30% beta) como **Coupon desligável** (kill-switch),
-      nunca preço no catálogo. Conferir NFC-e sobre o valor com desconto.
-- [ ] **Deploy do código novo** desta frente (webhook ManyChat registrado, teleporte, docs) — está
-      em working tree, **não pushado/deployado**.
+## 1. Identidade da release
 
-## A virar ANTES DE PRODUÇÃO/OFICIAL (hardening — Lote C + WP-GAP-07)
+- [ ] `git rev-parse HEAD` coincide com o SHA candidato da matriz.
+- [ ] Gates exigidos pelo branch estão verdes no PR/merge group.
+- [ ] `Deploy Images` produziu manifesto para o SHA correto.
+- [ ] O deployment do ambiente nasceu depois do manifesto e ficou `ACTIVE`.
+- [ ] `Pre-go-live Smoke` terminou no mesmo SHA.
 
-- [ ] **2FA**: [inscrição individual](../reports/2026-09-15-admin-2fa-pilot.md) confirmada com recuperação; não ligar a flag global antes de `check_admin_2fa_ready` verde para todos os staff ativos.
-- [ ] **IP allowlist** no ingress (Cloudflare/WAF) — faixas de IP do Pablo.
-- [ ] **`bootstrap_admin`** rodado com secrets de prod (matar `admin/admin`).
-- [ ] **Domínio/cookie de prod**: `SHOPMAN_DOMAIN` / `SHOPMAN_OPERATOR_COOKIE_DOMAIN` / `AUTH_DEFAULT_DOMAIN`.
-- [ ] **WP-GAP-07**: squash/reset final de migrations + `git tag go-live-v1` + rollback testado em staging.
-- [ ] **iFood** (se canal ativar no v1): `IFOOD_MERCHANT_ID` + `IFOOD_CATALOG_*`.
-- [ ] **Validades dos preparos revisadas e assinadas** no Admin de Fichas
-      técnicas. Massas=1 dia, cremes=2 dias e outros recheios=3 dias são apenas
-      exemplos pré-go-live; `check_release_readiness --profile production`
-      deve passar sem `production.preparation_shelf_life_review` pendente.
-- [ ] **Etiqueta física 60×40 mm validada no equipamento real**: driver/papel,
-      margem, avanço entre adesivos, acentos, uma etiqueta por item e
-      reimpressão. Dimensões devem coincidir com o Terminal no Admin.
-- [ ] **Agente local reinstalado pelo comando atual do Admin** no PC de
-      impressão; o `--doctor` deve mostrar a versão atual e as origens de PDV e
-      Produção devem conseguir usar `/print` sem 403.
+## 2. Runtime e migrations
 
-## Deferido (sessão separada)
-- **Pedido inbound por WhatsApp** (ManyChat conversacional, Arc 2/3) — [MANYCHAT-CONVERSACIONAL-PLAN](../plans/MANYCHAT-CONVERSACIONAL-PLAN.md).
-- **TaOn auto-fill** do teleporte — bloqueado em URL/campos do serviço.
+- [ ] `make test-migrations` e `make production-contract` verdes.
+- [ ] `make production-readiness` executado no ambiente alvo, com evidência
+  externa e QA exigidas pelo perfil.
+- [ ] `/ready/` confirma banco, cache, migrations e workers/filas.
+- [ ] `git tag -l go-live-v1` e o estado da ADR-015 coincidem com a matriz.
+- [ ] Qualquer plano de migration foi classificado como aditivo, backfill ou
+  contract antes do deploy.
 
-## Referências
-- [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md) · [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md)
-- [ativar-focus-nfe](ativar-focus-nfe.md) · [rollback-de-deploy](rollback-de-deploy.md)
+Não executar reset/squash como “limpeza”. Se houver decisão específica de
+compactação no corte, ela exige plano próprio, backup, restore ensaiado e
+autorização.
+
+## 3. Recuperação
+
+- [ ] Política real de backup/PITR identificada no ambiente alvo.
+- [ ] Referência/ponto de restauração pré-corte registrado sem segredo.
+- [ ] Restore ensaiado em destino isolado; RTO/RPO e validação de dados anexados.
+- [ ] Deployment anterior e procedimento de rollback identificados.
+- [ ] [Rollback de deploy](rollback-de-deploy.md) revisado pelo incident commander.
+
+## 4. Integrações externas
+
+Para cada integração aprovada no escopo v1:
+
+- [ ] nome da credencial declarado no secret store correto;
+- [ ] adapter selecionado e boot gate aprovado;
+- [ ] sandbox/homologação exercida, quando aplicável;
+- [ ] webhook, replay/idempotência e evento fora de ordem verificados;
+- [ ] reconciliação/dry-run sem divergência;
+- [ ] fallback e kill switch conhecidos pelo operador.
+
+Presença de variável, fixture ou teste hermético não fecha esses itens. Probes
+com efeito real só acontecem com autorização explícita no momento da ação.
+
+## 5. Segurança e operação física
+
+- [ ] contas reais sem credenciais triviais;
+- [ ] enrollment/recovery de 2FA concluído antes de qualquer flag global;
+- [ ] ingress/admin aprovado; origem e proxy validados;
+- [ ] alerta sintético recebido por pessoa autorizada;
+- [ ] QA física de loja, operador, cozinha e gerente anexada com data/aparelho;
+- [ ] impressão, gaveta, som e rede degradada testados no equipamento real;
+- [ ] catálogo, estoque, preços, parâmetros fiscais e validade aprovados pelos
+  respectivos owners.
+
+## 6. Resultado
+
+Atualizar a matriz canônica. Só abrir o [cutover](go-live-cutover.md) quando toda
+linha aplicável estiver `VERIFICADO` ou `N/A`. CI verde isoladamente não atende
+este critério.

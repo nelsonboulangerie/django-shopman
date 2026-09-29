@@ -1,185 +1,121 @@
 # Status — Django Shopman
 
-> Última atualização estrutural: 2026-09-10. Contagens históricas mantêm a data
-> explícita de sua medição.
+> Arquitetura e capacidades existentes. Este arquivo não autoriza go-live e não
+> funciona como checklist de corte. Estado operacional corrente, owners e
+> bloqueios vivem na
+> [matriz canônica de prontidão](plans/GO-LIVE-READINESS-PLAN.md).
+>
+> Última revisão estrutural: 2026-09-29. Baseline revisada:
+> `1f497db90f150b0a497cd7001d11df19fc7491b0`.
 
-Retrato factual do que está implementado e funcionando. Não é um plano — é o estado atual.
-Para gaps e roadmap, ver [ROADMAP.md](ROADMAP.md) e os planos ativos em `docs/plans/`.
+## Arquitetura atual
 
----
+O Django expõe APIs JSON, projections, Admin/Unfold e health checks. As
+superfícies de cliente e operador são apps Nuxt 4 SSR em `surfaces/`, com BFF
+Nitro e autenticação compartilhada na zona de operador.
 
-## Arquitetura atual (headless)
+| Superfície | Código | Papel |
+|---|---|---|
+| Loja | `surfaces/storefront-nuxt` | catálogo, carrinho, checkout e conta |
+| Shopman Apps | `surfaces/hub-nuxt` | entrada da suíte do operador |
+| PDV | `surfaces/pos-nuxt` | venda presencial e caixa |
+| Cozinha | `surfaces/kds-nuxt` | preparo, picking e expedição |
+| Encomendas | `surfaces/orders-nuxt` | fila, detalhe e operação de pedidos |
+| Produção | `surfaces/production-nuxt` | plano, mise-en-place e fornadas |
+| Marketing | `surfaces/marketing-nuxt` | campanhas, ofertas e cupons |
+| B.I. | `surfaces/bi-nuxt` | leitura analítica |
+| Compras | `surfaces/purchase-nuxt` | compras, recebimento e insumos |
+| Layer de operador | `surfaces/operator-kit` | contratos compartilhados das superfícies |
 
-O cutover headless está **completo**: os apps Django `storefront` e `backstage` não
-renderizam HTML de superfície — servem **API JSON + projections** (`/api/v1/` e
-`/api/v1/backstage/`). As superfícies vivas são os apps Nuxt 4 SSR em `surfaces/`,
-falando com o Django via BFF Nitro (cookie de sessão cross-subdomínio `.boulangerie`):
+Tempo real é SSE-first conforme a
+[ADR-016](decisions/adr-016-sse-first-realtime.md), com polling como fallback.
+O contrato de runtime exige PostgreSQL 16+ e Redis/Valkey compatível; detalhes
+ficam em [runtime-dependencies](reference/runtime-dependencies.md).
 
-| Superfície | App | Porta dev | Papel |
-|------------|-----|-----------|-------|
-| Loja do cliente | `surfaces/storefront-nuxt` | :3000 | apex, mobile-first, branded |
-| Shopman Apps | `surfaces/hub-nuxt` | :3001 | a home do operador |
-| PDV | `surfaces/pos-nuxt` | :3002 | desktop-first, tabs, turno, caixa |
-| Cozinha (KDS) | `surfaces/kds-nuxt` | :3003 | prep, picking, expedição, painel de retirada |
-| Gestor de pedidos | `surfaces/orders-nuxt` | :3004 | fila, cardápio, showcases |
-| Produção/fornadas | `surfaces/production-nuxt` | :3005 | kiosk Solari (plan/mise-en-place/expedite/board) |
-| Marketing | `surfaces/marketing-nuxt` | :3006 | cockpit de campanhas/anúncios; publicação pública e mensagem direta são fluxos distintos |
-| B.I. | `surfaces/bi-nuxt` | :3007 | leitura analítica cross-suite |
-| Compras | `surfaces/purchase-nuxt` | :3008 | compras, recebimento e inventário de insumos |
-| — layer | `surfaces/operator-kit` | — | Nuxt layer compartilhada dos apps de operador (httpError, retry, connectivity, OperatorLock/PIN, telemetria) |
+## Capacidades construídas
 
-Tempo real é **SSE-first** ([ADR-016](decisions/adr-016-sse-first-realtime.md)) com
-poll como fallback calmo; proxy same-origin no BFF de cada app. Rotas de operador em
-inglês com 301 das antigas (PR #68); chaves de projection em inglês (PR #67); dialeto
-canônico de erro `{detail, field, errors}` ([reference/errors.md](reference/errors.md), PR #60).
+Os estados abaixo descrevem código existente, não inclusão no escopo comercial
+v1 nem exercício contra provedores reais.
 
----
+| Capacidade | Estado do código | Limite da afirmação |
+|---|---|---|
+| Pedidos, estoque, produção e caixa | Construído | prontidão comercial depende da matriz canônica |
+| Pagamentos EFI/PIX e Stripe | Adapters e lifecycle construídos | configuração e exercício externo são estados separados |
+| Fiscal Focus NFe | NFC-e S0–S4 construído | homologação/produção e validação contábil não são inferidas |
+| iFood direto | Polling, webhook e catálogo construídos | escopo v1 e homologação comercial não são inferidos |
+| Machine courier | Adapter, directives, webhook e UI construídos | credenciais, homologação e escopo v1 não são inferidos |
+| Marketing | Cockpit, projection/actions, outbox e ledger construídos | publicação real permanece sujeita a autorização e canário |
+| Autenticação | access link, SMS fallback, passkey e device trust construídos | hardening e enrollment do ambiente são operacionais |
+| Admin | Django Admin com Unfold e gates canônicos | acesso comercial continua sujeito a 2FA/ingress aprovados |
 
-## Core Apps (packages/)
+Referências de implementação: [Delivery externa](plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md),
+[iFood direto](plans/IFOOD-DIRECT-INTEGRATION-PLAN.md),
+[Fiscalman](plans/FISCALMAN-PLAN.md) e
+[Marketing v2](plans/MARKETING-V2-CAPABILITY-COMPOSER-2026-09-26.md).
 
-Testes passando em 2026-08-13 (`make test`, por bloco):
+## Migrations e compatibilidade
 
-| Package | Pip | Testes | Status | Notas |
-|---------|-----|--------|--------|-------|
-| shopman-utils | `shopman-utils` | 98 | Estável | Monetário, phone, formatting, admin mixins |
-| shopman-refs | `shopman-refs` | 175 | Estável | Registro de refs tipadas, rename/audit, fields |
-| shopman-offerman | `shopman-offerman` | 273 | Estável | Catálogo, preços, listings, bundles, coleções |
-| shopman-stockman | `shopman-stockman` | 230 | Estável | Estoque, holds, moves, posições, alertas; shelf-life ligado (validator composto) |
-| shopman-craftsman | `shopman-craftsman` | 243 | Estável | Produção, receitas, work orders, BOM; guardrail de insumos ativo (`INVENTORY_BACKEND`) |
-| shopman-orderman | `shopman-orderman` | 289 | Estável | Pedidos, sessions, directives, channels; baseline selado com cópias (PR #69) |
-| shopman-guestman | `shopman-guestman` | 403 | Estável | CRM, clientes, loyalty, RFM, consent, etiquetas (CustomerTag) |
-| shopman-doorman | `shopman-doorman` | 293 | Estável | Auth OTP, device trust, access links, magic links, passkey (WebAuthn) |
-| shopman-payman | `shopman-payman` | 149 | Estável | Pagamentos, PIX, Stripe, reconciliação cumulativa |
-| shopman-buyman | `shopman-buyman` | 21 | Fase 1 | Compras: Material, Supplier, custo, shelf-life; entrada de insumo é manual até a Fase 2; Fases 2–4 pós-go-live |
-| shopman-fiscalman | `shopman-fiscalman` | 22 | S0–S4 | Classificação NFC-e em Product.metadata; resta S5 (NF-e mod. 55) + validação do contador |
+- O repositório contém **268 arquivos de migration** na baseline de 2026-09-29.
+  Essa contagem é um inventário datado, não um objetivo nem prova do banco vivo.
+- O smoke do ambiente técnico consulta `/ready/`; esse endpoint falha quando há
+  migration pendente. A execução datada fica na matriz canônica.
+- A tag `go-live-v1` estava ausente em 2026-09-29. Portanto a
+  [ADR-015](decisions/adr-015-backward-compat-policy-post-prod.md) estava
+  **inativa**; o CI registra explicitamente esse estado.
+- Houve uma compactação histórica antes da baseline atual. Ela não equivale a
+  um reset autorizado para o cutover futuro. Qualquer novo squash/reset é um
+  evento de corte, sujeito a backup, ensaio e autorização.
 
-**Total cores:** ~2.200 testes. **Framework** (`make test-framework`): ~4.250 testes
-(shop + storefront + backstage). **Suite completa (`make test`): ~6.500 testes**
-(inclui `test-counter-agent`, 31). Medido em 2026-08-13; a última linha do log é o
-bloco do framework, não o total — o total é a SOMA dos blocos.
+## Publicação e deployment
 
----
+Para a baseline auditada, o fluxo hospedado é:
 
-## Framework (shopman/)
+1. merge autorizado em `main` dispara o workflow **Deploy Images**;
+2. o workflow publica no DOCR somente os componentes alterados e produz um
+   manifesto do run;
+3. os componentes do app DigitalOcean têm `deploy_on_push` ativo e trocam os
+   contêineres ao receber as imagens;
+4. o workflow **Pre-go-live Smoke** baixa o manifesto, espera um deployment
+   DigitalOcean posterior ficar `ACTIVE` e só então verifica `/ready/`, menu,
+   checkout não mutante e SSR.
 
-| Módulo | Status | Detalhe |
-|--------|--------|---------|
-| **Lifecycle** (pedidos) | Estável | dispatch funcional config-driven via `ChannelConfig` e signal `order_changed`; durabilidade de fase (PR #62) |
-| **Production lifecycle** | Estável | `dispatch_production()` para WorkOrders (fornadas) |
-| **Services** | Estável | Orquestração: availability, cancellation, stock, payment, customer, etc. |
-| **Adapters** | Estável | EFI/PIX, Stripe, ManyChat, email, SMS, console, stock, inventory, Machine (courier) |
-| **Handlers** | Estável | Directive handlers com dedupe garantido e observabilidade (ADR-003, PR #62) |
-| **Rules engine** | Estável | `RuleConfig` no DB; pricing (D-1/Happy Hour) genérico e config-driven. ⚠️ **D-1 é mecanismo INTERINO** — ver Qualidade de fornada abaixo |
-| **Qualidade de fornada** (ADR-017) | Fundação pronta | Partição no `finish` (grupos por grau/defeito), catálogos `QualityGrade`/`QualityDefect` editáveis, N lotes por fornada com `Batch.nonconformity_percent` **congelado**, veto de segurança → perda, `quality_min_share` no broadcast, relatório receita×grau×defeito. **Falta** para aposentar o D-1: preço por lote na venda, write-off no fechamento, gate por canal, quiosque de QC |
-| **Storefront (API)** | Estável | `api/` + `presentation/` + `intents/`; rate-limiting, delivery zones, favoritos, stock alerts |
-| **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
-| **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); Marketing é auditoria agregada read-only, sem cockpit ou dual write |
-| **Marketing** (campanhas) | Implementação técnica local pronta | Nuxt é o único cockpit; projection v2/Actions, RBAC granular, consentimento, outbox/ledger, recovery, simulador e CI completo. Providers reais, shadow/canário, staging e rollout permanecem pendentes de gate |
-| **PDV: caixa e gaveta** | Construído | troco/teto/sangria endurecidos (PR cd4b41c1), gaveta por software via agente local (tools/pos-counter-agent), crachá com leitor; falta instalar no balcão |
-| **Fiscal** | Parcial | NFC-e via Focus NFe (S0–S4); e2e homolog + emissão em produção pendentes |
-| **iFood direto** | Staging | Polling + sync de catálogo; homologação de produção pendente |
-| **Machine (courier)** | Construído | pronto→corrida, status realtime, cotar/re-despachar/cancelar (PR #43); creds + homologação webhook pendentes |
+O fluxo acima prova deployment técnico e smoke, não aprovação comercial. Os
+identificadores do último run e do deployment ficam na
+[matriz canônica](plans/GO-LIVE-READINESS-PLAN.md). Operações self-hosted e
+diagnóstico local permanecem em [Deploy](guides/deploy.md).
 
----
+## Qualidade e testes
 
-## Hardening pré-alpha (2026-07-11)
+As contagens de aproximadamente 2.200 testes de cores e 6.500 da suíte eram uma
+medição de **2026-08-13**. Elas são históricas e não devem ser apresentadas como
+total corrente. A evidência atual é o resultado dos gates nomeados no commit,
+não uma contagem copiada para documentação.
 
-Auditoria registrada em
-[`reports/analise_pre_alpha_2026-07-11.md`](reports/analise_pre_alpha_2026-07-11.md)
-originou 16 PRs mergeados no mesmo dia (#53–#69), incluindo:
+Gates técnicos atuais incluem Runtime, Surfaces, Omotenashi, Security,
+Production Contract e Operator Groups. A lista exigida pelo branch e a
+evidência do commit candidato ficam na matriz canônica.
 
-- gate transacional de estoque no commit (anti-oversell, PR #65);
-- dialeto de erro uniforme `{detail, field, errors}` (PR #60);
-- directives: observabilidade, dedupe como garantia, durabilidade de fase (PR #62);
-- lifecycle/SSE/pagamento: `on_commit`, PIX suficiente, SameSite, IP real (PR #57);
-- sweep tz-aware `date.today()`/`now().date()` → `timezone.localdate()` (PR #55);
-- suíte hermética ao env do dev + cobertura do `maintenance_worker` (PR #59);
-- surfaces: typecheck total + Surfaces Gate no CI (PRs #61, #63);
-- rotas de operador em inglês com 301 (PR #68) e projection keys em inglês (PR #67);
-- orderman: baseline selado guarda cópias (detecção de mutação in-place, PR #69).
+## Autoridade documental
 
----
-
-## Autenticação e canais
-
-- **Login WhatsApp = access link** (`NB-XxXx`): pivô mergeado no main (PR #45).
-  Reverse-OTP aposentado. Resta F3 (fluxo ManyChat, lado do dono) + URLs de staging.
-- **OTP SMS fallback** (Comtele creds ok), magic links, device trust.
-- **Passkey (WebAuthn)**: entrar com o rosto/digital; tela "acesso rápido" na loja
-  (ativar, entrar, revogar). A identidade sai do cookie.
-- **Desconto de funcionário na loja**: `EmployeeRule.pickup_only` (retirada
-  obrigatória — decisão 2026-08-11); commit preserva `ref` + `price_tier`.
-- **Copy omotenashi**: burndown fechado, backlog de copy **zerado** (PRs #49–#53);
-  toda copy de cliente é canônica em `OmotenashiCopy`/`OMOTENASHI_DEFAULTS` e chega
-  à tela via projection.
-- **Canais ativos**: balcão (POS), web (storefront), iFood direto (staging).
-  ManyChat conversacional (pedido por chat) segue não reimplementado.
-
----
-
-## Baseline de migrações (2026-08)
-
-Reset pré-go-live executado: ~110 migrações viraram 19 iniciais (hoje 35 arquivos
-no total — o shop já cresceu a 0011 por append). RBAC nasce em `setup_groups`.
-**Daqui em diante migrations são append-only** (ADR-015 vale a partir do
-`git tag go-live-v1`, mas o reset já aconteceu — não editar migração aplicada em
-staging).
-
----
-
-## Deploy / alpha
-
-- App único na DigitalOcean App Platform (`shopman-nelson`), ingress por subdomínio
-  (apex→loja Nuxt, `api.`/`admin.`/demais superfícies), Managed PostgreSQL 16 +
-  Valkey. Deploy de código é **manual** via `doctl ... apps create-deployment`
-  (nunca `apps update --spec` do repo — apaga segredos do app live).
-- Buildpack DO usa Node 22; apps pinam `engines.node "22.x"`.
-- CI: Runtime Gate (PostgreSQL + Redis, sem skips), Surfaces Gate (typecheck dos
-  apps Nuxt), gates de docs/copy (`test_copy_wiring_backlog`), `make admin`.
-
----
-
-## Fluxos Validados
-
-- Pedido local (POS): commit → confirmação otimista → KDS → fulfillment
-- Pedido remoto (storefront Nuxt): cart → checkout → PIX → SSE/polling → confirmação → tracking
-- Pedido marketplace (iFood direto): polling → fila do gestor → KDS (staging)
-- Notificações: WhatsApp (ManyChat), email, SMS, console — swappable por adapter
-- Estoque: hold na criação → deduct na confirmação (gate transacional) → release no cancelamento
-- Produção: receitas → work orders → BOM → consumo de insumos via signal (`craftsman/contrib/stockman`)
-- Compras: materiais/fornecedores (Buyman F1) → disponibilidade de insumo valida produção
-- **Entrada de insumo: manual até a Fase 2** (decisão registrada, não omissão). `Move.Kind.BUY`
-  existe no Stockman e **nada o emite**: hoje insumo entra por seed e ajuste manual, sem
-  procedência — numa suíte ledger-first, é o único estoque sem história de origem. Quem passa a
-  emitir BUY é o recebimento da Fase 3, conforme
-  [BUYMAN-PROCUREMENT-PLAN §Fases](plans/BUYMAN-PROCUREMENT-PLAN.md)
-- Loyalty: acúmulo na confirmação, resgate no checkout
-- Auth: access link WhatsApp-first, SMS fallback, device trust, magic links
-- Fechamento do dia: sobras (hoje via D-1, interino — ver ADR-017/QC-FORNADA), apuração de caixa, reconciliação financeira diária
-- Entrega: zonas + geocoding em cascata; corrida Machine construída (aguarda creds)
-
----
-
-## Gaps Conhecidos (dependem de humano/externo)
-
-- **Fiscalman S5** — NF-e mod. 55 / itens resale; e2e homolog Focus NFe; contador
-  valida NCMs/CSC/IBPT. DANFE NFC-e impresso no PDV é obrigação legal (pós-alpha).
-- **Credenciais go-live** — WhatsApp Meta, Focus NFe produção, iFood homologação,
-  Machine (courier) creds centrais.
-- **Go-live Lote C** — 2FA/IP allowlist do Admin + corte v1 + QA (bloqueado no dono).
-- **QA físico** — som/impressora térmica da produção; QA visual em dispositivo real.
-- **ManyChat conversacional** — pedido inbound por chat não reimplementado.
-
----
+- Este arquivo: arquitetura e capacidade construída.
+- [ROADMAP](ROADMAP.md): prioridades e direção, sem repetir estado operacional.
+- [GO-LIVE-READINESS-PLAN](plans/GO-LIVE-READINESS-PLAN.md): única matriz de
+  prontidão e bloqueios.
+- [GO-LIVE-CREDENTIALS-MATRIX](plans/GO-LIVE-CREDENTIALS-MATRIX.md): significado
+  das variáveis e maturidade das integrações, sem valores secretos.
+- [Pré-flight](runbooks/go-live-preflight.md),
+  [cutover](runbooks/go-live-cutover.md) e
+  [rollback](runbooks/rollback-de-deploy.md): procedimentos, não cronologia.
 
 ## Compatibilidade
 
-| Requisito | Versão |
-|-----------|--------|
-| Python | ≥ 3.12 |
-| Django | ≥ 6.0, < 6.1 |
-| Node.js | 22.x (apps Nuxt; buildpack DO) |
-| Banco de dados | PostgreSQL 16+ no dev canônico/staging/prod; SQLite só fallback local |
-| Cache/realtime | Redis 7+ no dev canônico/staging/prod; LocMem só fallback local |
+| Requisito | Contrato |
+|---|---|
+| Python | `>=3.12` |
+| Django | `Django>=6.1,<6.2` |
+| Node.js | `>=22` |
+| Banco | PostgreSQL 16+ em ambiente compartilhado |
+| Cache/realtime | Redis 7+ ou Valkey compatível |
 
-Ver contrato completo em [runtime-dependencies.md](reference/runtime-dependencies.md).
+O `pyproject.toml` é a autoridade executável para versões Python/Django; este
+resumo é protegido pelo gate `make canonical-docs`.

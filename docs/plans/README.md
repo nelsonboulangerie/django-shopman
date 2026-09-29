@@ -1,6 +1,6 @@
 # Planos Ativos
 
-> Atualizado em 2026-09-26.
+> Atualizado em 2026-09-29.
 
 Este diretório deve conter apenas plano vivo, spec ativa ou backlog explícito.
 Planos concluídos ficam em [`completed/`](completed/). Material histórico incerto
@@ -14,8 +14,8 @@ fica em [`_quarantine/`](_quarantine/).
 
 | Plano | Estado |
 |-------|--------|
-| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | Gate de go-live. Lotes A/B feitos; Lote C (2FA/IP) + corte v1 + QA + data bloqueados no Pablo. |
-| [`GO-LIVE-CREDENTIALS-MATRIX.md`](GO-LIVE-CREDENTIALS-MATRIX.md) | Matriz de credenciais por fase (WhatsApp Meta, Focus NFe, iFood, Machine). Comtele ✅. |
+| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | **Fonte única do estado de go-live**, auditada em 2026-09-29. Deployment técnico e smoke do SHA `1f497db90` verificados; domínio/fases/escopo comercial, evidência externa, QA física, backup/restore e GO/NO-GO continuam explícitos como pendentes, desconhecidos ou bloqueados. |
+| [`GO-LIVE-CREDENTIALS-MATRIX.md`](GO-LIVE-CREDENTIALS-MATRIX.md) | Contrato de nomes e maturidade: separa credencial declarada, adapter, boot gate, sandbox/homologação e produção; não contém valores nem presume escopo v1. |
 | [`GO-LIVE-SMS-WHATSAPP-STATUS.md`](GO-LIVE-SMS-WHATSAPP-STATUS.md) | Retomada das credenciais WhatsApp/SMS-OTP: passos exatos para concluir. |
 | [`ACCESS-LINK-UNIFICATION-PLAN.md`](ACCESS-LINK-UNIFICATION-PLAN.md) | F1/F2/F4 mergeadas (PR #45); resta F3 (fluxo ManyChat, lado do Pablo) + URLs de staging. |
 | [`PRODUCT-V1-SCOPE-BACKLOG.md`](PRODUCT-V1-SCOPE-BACKLOG.md) | Índice-mestre de escopo do v1; gate de produto do go-live. |

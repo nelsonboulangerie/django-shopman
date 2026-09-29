@@ -1,8 +1,9 @@
 # Deploy
 
-Este guia define o caminho operacional simples para alpha/piloto. Docker e
-compose ficam encapsulados nos targets `make deploy-*`; o operador nao precisa
-chamar comandos Docker diretamente.
+Este guia descreve os dois caminhos suportados: o fluxo hospedado da
+DigitalOcean App Platform e o compose self-hosted. Estado corrente e autorização
+de corte ficam na
+[matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md), não neste guia.
 
 ## Contrato
 
@@ -28,7 +29,25 @@ Nao ha `django-redis`, Celery ou broker adicional neste contrato.
 - `.do/app.alpha-subdomains.yaml`: referencia DigitalOcean App Platform de alpha
   (ingress por subdomínio), sem valores secretos. Produção: `.do/app.subdomains.yaml`.
 
-## Comandos
+## Fluxo hospedado atual
+
+Na baseline de 2026-09-29, deployment de código não é exclusivamente manual:
+
+1. merge em `main` dispara o workflow **Deploy Images**;
+2. imagens alteradas são publicadas no DOCR e registradas em manifesto;
+3. componentes com `deploy_on_push=true` iniciam o deployment na DigitalOcean;
+4. **Pre-go-live Smoke** espera o deployment correspondente ficar `ACTIVE` e
+   verifica `/ready/`, menu, checkout não mutante e SSR.
+
+`Deploy Images` verde prova publicação; só o smoke posterior prova que o
+deployment correspondente chegou ao ambiente. Nenhum dos dois autoriza
+lançamento comercial.
+
+Mudanças de spec, secrets, ingress ou domínio não fazem parte desse fluxo. Use
+o spec vivo como base e siga o runbook dedicado; nunca aplique um spec local que
+apagaria valores secretos.
+
+## Compose self-hosted
 
 ```bash
 cp .env.example .env
@@ -52,7 +71,7 @@ make deploy-ps
 make deploy-down
 ```
 
-## Variaveis Minimas
+## Variaveis minimas
 
 Para qualquer ambiente publico:
 
@@ -101,6 +120,7 @@ Antes de abrir trafego:
 ```bash
 make deploy-check
 make test-runtime
+make canonical-docs
 ```
 
 No PR, o workflow `Runtime Gate` builda a imagem Docker e executa PostgreSQL +
@@ -130,7 +150,7 @@ está em
 
 ## Limites
 
-Este compose e uma topologia minima para staging/piloto. Em producao final,
+Este compose e uma topologia minima. Em ambiente comercial,
 manter os mesmos contratos, mas decidir provedor, TLS/reverse proxy,
 backup/restore, logs, monitoramento de webhooks e estrategia de rollbacks.
 
