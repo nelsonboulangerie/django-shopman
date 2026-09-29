@@ -2473,10 +2473,14 @@ class TestWhatsAppTestSend:
         assert adapter.calls[0]["recipient"] == recipient
         assert adapter.calls[0]["template"] == "order_rescheduled"
 
-    def test_transactional_test_never_falls_back_to_free_text(self, client, gestor, test_lane):
+    def test_transactional_test_never_falls_back_to_free_text(self, client, gestor, test_lane, settings):
         from shopman.shop.models import NotificationTemplate
 
         adapter, _recipient = test_lane
+        # Sem flow em LUGAR NENHUM: nem no registro, nem no mapa do settings. O
+        # `order_rescheduled` tem flow de verdade no MANYCHAT_FLOW_MAP desde 29/09;
+        # o que este teste prova é a recusa quando não há template aprovado.
+        settings.SHOPMAN_MANYCHAT = {**settings.SHOPMAN_MANYCHAT, "flow_map": {}}
         NotificationTemplate.objects.update_or_create(
             event="order_rescheduled",
             defaults={
