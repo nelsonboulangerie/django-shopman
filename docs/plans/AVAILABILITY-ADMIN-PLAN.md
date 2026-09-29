@@ -5,16 +5,20 @@
 > `business_calendar.is_open_on` + guard no commit). Falta o lado do **admin**
 > para definir essas datas com elegância e de forma proativa.
 
-## Estado atual (2026-06-13)
+## Estado atual (2026-09-29)
 
 - **Dado**: `Shop.defaults["closed_dates"]` — lista que JÁ suporta `{date,label}`
   e **ranges** `{from,to,label}` (lidos por `business_calendar.closed_date_for`).
   Horário semanal em `Shop.opening_hours` (por dia da semana).
-- **Admin (Unfold)**: `shop/admin/shop.py` expõe N linhas fixas "Feriado N:
-  data + rótulo" — **só datas avulsas**. Limitações:
-  - ❌ Não dá pra cadastrar **intervalo** (férias coletivas) — teria que
-    digitar dia a dia (e há um número fixo de linhas).
-  - ❌ Sem proposta proativa de feriados.
+- **Admin (Unfold)**: a página nativa `ShopOperationAdmin` possui ações de
+  diálogo oficiais para registrar/remover decisões sem limite fixo de linhas,
+  tabela de fechamentos e painel dos próximos feriados brasileiros.
+- **Intervalos**: férias coletivas são cadastradas como `{from,to,label}` no
+  mesmo `closed_dates` já consumido pelo calendário de negócio.
+- **Horário especial**: uma data pode guardar `{date,closed:false,open,close,label}`;
+  `business_calendar` aplica a janela específica antes da grade semanal.
+- **Rollout**: nenhuma flag comercial ou configuração de Live é alterada por esta
+  entrega; toda decisão continua exigindo ação explícita do operador.
 
 ## Benchmark: Google Business Profile
 
@@ -52,9 +56,7 @@ o gate; ver `.codex/skills/unfold-admin-canonical`):
 
 ## Escopo / ordem sugerida
 
-- WP-AV-1: suporte a **intervalo** (férias coletivas) no Shop admin (formset
-  com tipo data|intervalo). Desbloqueia o caso mais crítico.
-- WP-AV-2: painel proativo de feriados BR + confirmação (estilo Google).
-- WP-AV-3: horário especial por data (abre com horas diferentes).
-
-Implementação NÃO iniciada — registrado para não se perder.
+- WP-AV-1: ✅ intervalos dinâmicos de fechamento por ação dialog canônica.
+- WP-AV-2: ✅ painel proativo de feriados nacionais + datas regionais configuradas
+  por tenant, sempre como sugestão pendente até decisão humana.
+- WP-AV-3: ✅ horário especial por data na mesma fonte canônica.

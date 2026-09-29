@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import Decimal
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.utils import flatten_fieldsets
+from django.http import HttpResponseRedirect
+from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from shopman.utils import unfold_component
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
+from unfold.decorators import action
+from unfold.enums import ActionVariant
+from unfold.forms import BaseDialogForm
 from unfold.widgets import (
     UnfoldAdminColorInputWidget,
     UnfoldAdminDateWidget,
@@ -70,6 +76,7 @@ from shopman.shop.operator_capacity_policy import (
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 from shopman.shop.resale_markup import DEFAULT_RESALE_MARKUP_PCT, MAX_RESALE_MARKUP_PCT, ResaleMarkup
+from shopman.shop.services.holiday_calendar import decision_for_day, upcoming_holidays
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +146,100 @@ PRODUCTION_ORDER_MATCH_CHOICES = (
 )
 
 
+CALENDAR_DECISION_CHOICES = (
+    ("closed", "Fechado"),
+    ("open", "Aberto no horário semanal"),
+    ("special", "Aberto em horário especial"),
+)
+
+
+class CalendarDecisionForm(BaseDialogForm):
+    """One explicit operator decision for a date or closure range."""
+
+    starts_on = forms.DateField(
+        label="Data inicial",
+        input_formats=["%Y-%m-%d"],
+        widget=UnfoldAdminDateWidget(format="%Y-%m-%d"),
+    )
+    ends_on = forms.DateField(
+        label="Data final",
+        required=False,
+        input_formats=["%Y-%m-%d"],
+        widget=UnfoldAdminDateWidget(format="%Y-%m-%d"),
+        help_text="Preencha somente para um intervalo de fechamento, como férias coletivas.",
+    )
+    label = forms.CharField(
+        label="Motivo ou nome",
+        max_length=120,
+        widget=UnfoldAdminTextInputWidget,
+    )
+    decision = forms.ChoiceField(
+        label="Decisão",
+        choices=CALENDAR_DECISION_CHOICES,
+        widget=UnfoldAdminSelectWidget,
+    )
+    opens_at = forms.TimeField(
+        label="Abre",
+        required=False,
+        input_formats=["%H:%M"],
+        widget=UnfoldAdminTimeWidget(format="%H:%M"),
+    )
+    closes_at = forms.TimeField(
+        label="Fecha",
+        required=False,
+        input_formats=["%H:%M"],
+        widget=UnfoldAdminTimeWidget(format="%H:%M"),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        starts_on = cleaned.get("starts_on")
+        ends_on = cleaned.get("ends_on")
+        decision = cleaned.get("decision")
+        opens_at = cleaned.get("opens_at")
+        closes_at = cleaned.get("closes_at")
+
+        if starts_on and ends_on and ends_on < starts_on:
+            self.add_error("ends_on", "A data final precisa ser igual ou posterior à inicial.")
+        if ends_on and decision != "closed":
+            self.add_error("ends_on", "Intervalos só podem ser marcados como fechados.")
+        if decision == "open" and starts_on:
+            shop = Shop.objects.filter(pk=self.object_id).first() if self.object_id else None
+            weekly = getattr(shop, "opening_hours", None) or {}
+            weekday = OPENING_HOUR_DAYS[starts_on.weekday()][0]
+            regular = weekly.get(weekday) if isinstance(weekly, dict) else None
+            if not (isinstance(regular, dict) and regular.get("open") and regular.get("close")):
+                self.add_error(
+                    "decision",
+                    "Esse dia da semana não tem expediente regular. Informe um horário especial.",
+                )
+        if decision == "special":
+            if not opens_at:
+                self.add_error("opens_at", "Informe o horário de abertura.")
+            if not closes_at:
+                self.add_error("closes_at", "Informe o horário de fechamento.")
+            if opens_at and closes_at and opens_at >= closes_at:
+                self.add_error("closes_at", "O fechamento precisa ser posterior à abertura.")
+        return cleaned
+
+
+class CalendarRemovalForm(BaseDialogForm):
+    """Identify one existing decision without exposing raw JSON in the Admin."""
+
+    starts_on = forms.DateField(
+        label="Data inicial da decisão",
+        input_formats=["%Y-%m-%d"],
+        widget=UnfoldAdminDateWidget(format="%Y-%m-%d"),
+    )
+    ends_on = forms.DateField(
+        label="Data final do intervalo",
+        required=False,
+        input_formats=["%Y-%m-%d"],
+        widget=UnfoldAdminDateWidget(format="%Y-%m-%d"),
+        help_text="Deixe em branco para uma decisão de data avulsa.",
+    )
+
+
 def _opening_field(day: str, suffix: str) -> str:
     return f"opening_hours_{day}_{suffix}"
 
@@ -183,6 +284,51 @@ def _format_admin_date(value) -> str:
 def _shop_defaults(instance: Shop) -> dict:
     defaults = getattr(instance, "defaults", None) or {}
     return defaults if isinstance(defaults, dict) else {}
+
+
+def _calendar_entry_key(entry: dict) -> tuple[str, str]:
+    """Stable identity for one date decision or closure range."""
+
+    if entry.get("date"):
+        return str(entry["date"]), ""
+    return str(entry.get("from") or ""), str(entry.get("to") or "")
+
+
+def _calendar_decision_entry(cleaned_data: dict) -> dict:
+    starts_on = cleaned_data["starts_on"]
+    ends_on = cleaned_data.get("ends_on")
+    decision = cleaned_data["decision"]
+    entry: dict[str, object]
+    if ends_on:
+        entry = {"from": starts_on.isoformat(), "to": ends_on.isoformat()}
+    else:
+        entry = {"date": starts_on.isoformat()}
+    entry["label"] = str(cleaned_data.get("label") or "").strip()
+    if decision in {"open", "special"}:
+        entry["closed"] = False
+    if decision == "special":
+        entry["open"] = _format_admin_time(cleaned_data.get("opens_at"))
+        entry["close"] = _format_admin_time(cleaned_data.get("closes_at"))
+    return entry
+
+
+def _replace_calendar_decision(closed_dates: list, entry: dict) -> list[dict]:
+    key = _calendar_entry_key(entry)
+    kept = [
+        current
+        for current in closed_dates
+        if isinstance(current, dict) and _calendar_entry_key(current) != key
+    ]
+    return [*kept, entry]
+
+
+def _remove_calendar_decision(closed_dates: list, *, starts_on: date, ends_on: date | None) -> list[dict]:
+    key = (starts_on.isoformat(), ends_on.isoformat() if ends_on else "")
+    return [
+        current
+        for current in closed_dates
+        if isinstance(current, dict) and _calendar_entry_key(current) != key
+    ]
 
 
 def _q_to_reais(value_q) -> Decimal | None:
@@ -1993,10 +2139,16 @@ _OPERATION_FIELDSETS = (
         },
     ),
     (
-        "Feriados e fechamentos",
+        "Calendário de funcionamento",
         {
-            "fields": _defaults_closed_date_admin_rows(),
-            "description": "Datas de fechamento usadas pelo calendário de negócio e checkout.",
+            "fields": (
+                "holiday_suggestions_display",
+                "calendar_entries_display",
+            ),
+            "description": (
+                "Use as ações da página para confirmar feriados, cadastrar férias coletivas "
+                "ou informar um horário especial. O checkout lê esta mesma fonte canônica."
+            ),
         },
     ),
 )
@@ -2514,6 +2666,145 @@ class ShopSearchAdmin(_ShopSingletonAdmin):
 class ShopOperationAdmin(_ShopSingletonAdmin):
     form = _section_form(_OPERATION_FIELDSETS)
     fieldsets = _OPERATION_FIELDSETS
+    readonly_fields = ("holiday_suggestions_display", "calendar_entries_display")
+    actions_detail = ("record_calendar_decision", "remove_calendar_decision")
+
+    @admin.display(description="Próximos feriados para confirmar")
+    def holiday_suggestions_display(self, obj):
+        if not obj or not obj.pk:
+            return "Salve a loja para ver as sugestões."
+        defaults = _shop_defaults(obj)
+        closed_dates = defaults.get("closed_dates")
+        if not isinstance(closed_dates, list):
+            closed_dates = []
+        start = timezone.localdate()
+        suggestions = upcoming_holidays(
+            start=start,
+            end=start + timedelta(days=365),
+            defaults=defaults,
+        )
+        state_labels = {
+            "pending": "Pendente",
+            "closed": "Fechado",
+            "open": "Aberto",
+            "special": "Horário especial",
+        }
+        scope_labels = {
+            "national": "Nacional",
+            "state": "Estadual",
+            "city": "Municipal",
+            "regional": "Regional",
+        }
+        rows = [
+            [
+                suggestion.day.strftime("%d/%m/%Y"),
+                suggestion.label,
+                scope_labels.get(suggestion.scope, "Regional"),
+                state_labels[decision_for_day(suggestion.day, closed_dates)],
+            ]
+            for suggestion in suggestions
+        ]
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Data", "Feriado", "Abrangência", "Decisão"], "rows": rows},
+        )
+
+    @admin.display(description="Decisões e fechamentos cadastrados")
+    def calendar_entries_display(self, obj):
+        if not obj or not obj.pk:
+            return "Salve a loja para editar o calendário."
+        entries = _shop_defaults(obj).get("closed_dates")
+        if not isinstance(entries, list):
+            entries = []
+        rows = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("date"):
+                period = str(entry["date"])
+            else:
+                period = f"{entry.get('from', '—')} → {entry.get('to', '—')}"
+            if entry.get("closed") is False and entry.get("open") and entry.get("close"):
+                decision = f"Aberto {entry['open']}–{entry['close']}"
+            elif entry.get("closed") is False:
+                decision = "Aberto no horário semanal"
+            else:
+                decision = "Fechado"
+            rows.append([period, str(entry.get("label") or "—"), decision])
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Período", "Motivo", "Decisão"], "rows": rows},
+        )
+
+    @action(
+        description="Registrar decisão no calendário",
+        url_path="calendar-decision",
+        icon="event_available",
+        permissions=["change"],
+        dialog={
+            "title": "Registrar funcionamento",
+            "description": (
+                "Confirme um feriado, um fechamento ou um horário especial. "
+                "Uma data já existente será atualizada, sem duplicar a decisão."
+            ),
+            "form_class": CalendarDecisionForm,
+            "form_submit_text": "Salvar decisão",
+        },
+    )
+    def record_calendar_decision(self, request, form, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopoperation_changelist"))
+        defaults = dict(_shop_defaults(obj))
+        closed_dates = defaults.get("closed_dates")
+        if not isinstance(closed_dates, list):
+            closed_dates = []
+        entry = _calendar_decision_entry(form.cleaned_data)
+        defaults["closed_dates"] = _replace_calendar_decision(closed_dates, entry)
+        obj.defaults = defaults
+        obj.save(update_fields=["defaults"])
+        self.message_user(request, "Calendário atualizado.", level=messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:shop_shopoperation_change", args=[obj.pk]))
+
+    @action(
+        description="Remover decisão do calendário",
+        url_path="calendar-remove",
+        icon="event_busy",
+        variant=ActionVariant.DANGER,
+        permissions=["change"],
+        dialog={
+            "title": "Remover esta decisão?",
+            "description": (
+                "Informe a mesma data inicial e, se houver, a data final mostrada na tabela. "
+                "A grade semanal não será alterada."
+            ),
+            "form_class": CalendarRemovalForm,
+            "form_submit_text": "Remover",
+        },
+    )
+    def remove_calendar_decision(self, request, form, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopoperation_changelist"))
+        defaults = dict(_shop_defaults(obj))
+        closed_dates = defaults.get("closed_dates")
+        if not isinstance(closed_dates, list):
+            closed_dates = []
+        updated = _remove_calendar_decision(
+            closed_dates,
+            starts_on=form.cleaned_data["starts_on"],
+            ends_on=form.cleaned_data.get("ends_on"),
+        )
+        if len(updated) == len(closed_dates):
+            self.message_user(request, "Nenhuma decisão corresponde a esse período.", level=messages.WARNING)
+        else:
+            defaults["closed_dates"] = updated
+            obj.defaults = defaults
+            obj.save(update_fields=["defaults"])
+            self.message_user(request, "Decisão removida.", level=messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:shop_shopoperation_change", args=[obj.pk]))
 
 
 @admin.register(ShopMenu)
