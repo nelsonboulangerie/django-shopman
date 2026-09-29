@@ -35,6 +35,7 @@ from shopman.backstage.projections.order_queue import build_order_card
 from shopman.backstage.services import order_danfe, print_jobs
 from shopman.backstage.services.receipt_escpos import ENCODING
 from shopman.shop.models import Shop
+from shopman.shop.tests.danfe_fixtures import xml_for_key
 
 pytestmark = pytest.mark.django_db
 
@@ -46,6 +47,11 @@ NOTA = {
     "nfce_protocol": "123",
     "nfce_qrcode_url": "http://www.fazenda.pr.gov.br/nfce/qrcode/?p=x",
 }
+
+
+@pytest.fixture(autouse=True)
+def authorized_xml(monkeypatch):
+    monkeypatch.setattr("shopman.shop.services.danfe_xml.read_authorized_xml", xml_for_key)
 
 
 @pytest.fixture
@@ -251,6 +257,21 @@ def test_a_automatica_sai_UMA_vez(balcao):
     assert order_danfe.enqueue_auto_print(order.ref) is not None
     assert order_danfe.enqueue_auto_print(order.ref) is None
     assert _jobs(order.ref).count() == 1
+
+
+def test_xml_indisponivel_nao_carimba_e_abre_alerta(balcao, monkeypatch):
+    from shopman.shop.services.danfe_xml import DanfeSourceError
+
+    monkeypatch.setattr(
+        "shopman.shop.services.danfe_xml.read_authorized_xml",
+        mock.Mock(side_effect=DanfeSourceError("XML autorizado indisponível")),
+    )
+    order = _order("DLV-XML")
+
+    assert order_danfe.enqueue_auto_print(order.ref) is None
+    order.refresh_from_db()
+    assert "danfe_printed_at" not in order.data
+    assert "XML autorizado indisponível" in _alerts(order.ref).get().message
 
 
 def test_retirada_e_entrega_fora_da_janela_nao_saem_sozinhas(balcao):

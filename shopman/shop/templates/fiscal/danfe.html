@@ -93,7 +93,7 @@
       <div class="muted">Pedido {{ d.order_ref }}</div>
     </div>
 
-    {% if d.emitted %}
+    {% if d.source_verified %}
     <hr class="rule" />
     <!-- Itens -->
     <table class="items">
@@ -116,13 +116,17 @@
     <hr class="rule" />
     <div class="totrow"><span class="muted">Qtd. total de itens</span><span>{{ d.item_count }}</span></div>
     <div class="totrow big"><span>Valor total</span><span>{{ d.total_display }}</span></div>
-    <div class="totrow"><span class="muted">Forma de pagamento</span><span>{{ d.payment_label }}</span></div>
-    <div class="totrow"><span class="muted">Valor pago</span><span>{{ d.total_display }}</span></div>
+    {% for label, amount in d.totals %}
+    <div class="totrow"><span class="muted">{{ label }}</span><span>{{ amount }}</span></div>
+    {% endfor %}
+    {% for label, amount in d.payments %}
+    <div class="totrow"><span class="muted">{{ label }}</span><span>{{ amount }}</span></div>
+    {% endfor %}
 
     <hr class="rule" />
     <div class="center muted" style="font-size:11px">
       Consulte pela chave de acesso em<br />
-      {% if d.consult_url %}{{ d.consult_url }}{% else %}portal da SEFAZ{% endif %}
+      {% if d.query_url %}{{ d.query_url }}{% else %}portal da SEFAZ{% endif %}
     </div>
     <div class="center chave" style="margin-top:6px">{{ d.chave_grouped }}</div>
 
@@ -136,8 +140,9 @@
          "o meu CPF entrou?". Nome só quando houver nome de gente. #}
       <div class="muted" style="font-size:11px">
         {% if d.customer_tax_id_display %}
-          Consumidor: CPF {{ d.customer_tax_id_display }}
+          Consumidor: {{ d.customer_tax_id_label }} {{ d.customer_tax_id_display }}
           {% if d.customer_name %}<br />{{ d.customer_name }}{% endif %}
+          {% if d.customer_address %}<br />{{ d.customer_address }}{% endif %}
         {% else %}
           Consumidor não identificado
         {% endif %}
@@ -145,6 +150,13 @@
       {% if d.number %}<div class="muted" style="font-size:11px">NFC-e nº {{ d.number }} · série {{ d.series }}</div>{% endif %}
       {% if d.protocol %}<div class="muted" style="font-size:11px">Protocolo de autorização: {{ d.protocol }}</div>{% endif %}
       <div style="margin-top:8px"><span class="status-badge">{{ d.status }} · {{ d.environment_label }}</span></div>
+    </div>
+    {% elif d.emitted %}
+    <hr class="rule" />
+    <div class="empty">
+      <p>{{ d.source_problem }}</p>
+      <p>Os dados do pedido não substituem o XML autorizado.</p>
+      {% if d.danfe_url and d.status != "cancelada" %}<p><a href="{{ d.danfe_url }}" target="_blank" rel="noopener">Ver no Focus</a></p>{% endif %}
     </div>
     {% else %}
     <hr class="rule" />

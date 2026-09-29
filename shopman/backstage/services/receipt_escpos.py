@@ -981,7 +981,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     quando for o caso, itens, totais, chave de acesso em grupos, consumidor e o
     QR da SEFAZ para conferência.
     """
-    assert doc.emitted, "danfe_nfce só compõe nota emitida"
+    if not doc.emitted or not doc.source_verified:
+        raise ValueError("DANFE exige XML autorizado validado.")
 
     out = bytearray()
     out += bytes([ESC, ord("@")])
@@ -1009,6 +1010,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
         out += _rule()
         out += _centered("*** EMITIDA EM HOMOLOGACAO ***")
         out += _centered("*** SEM VALOR FISCAL ***")
+    if doc.contingency:
+        out += _centered("*** EMITIDA EM CONTINGENCIA ***")
     out += _rule()
 
     out += _pair(f"NFC-e n. {doc.number}", f"Serie {doc.series}")
@@ -1016,20 +1019,24 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += _rule()
 
     for item in doc.items:
-        for pedaco in _wrap(f"{item.seq:>3} {item.name}", COLUMNS):
+        for pedaco in _wrap(f"{item.seq:>3} {item.sku} {item.name}", COLUMNS):
             out += _line(pedaco)
         out += _pair(f"    {item.qty} {item.unit} x {item.unit_price_display}", item.total_display)
     out += _rule()
 
     out += _pair("QTD. TOTAL DE ITENS", str(doc.item_count))
-    out += _pair("FORMA DE PAGAMENTO", doc.payment_label[: COLUMNS // 2])
+    for label, amount in doc.totals:
+        out += _pair(label, amount)
+    out += _pair("FORMA DE PAGAMENTO", "VALOR PAGO")
+    for label, amount in doc.payments:
+        out += _pair(label, amount)
     out += _line("")
     out += _double(f"TOTAL {doc.total_display}")
     out += _line("")
     out += _rule()
 
     out += _centered("Consulte pela Chave de Acesso em")
-    for pedaco in _wrap("www.fazenda.pr.gov.br/nfce/consulta", COLUMNS):
+    for pedaco in _wrap(doc.query_url, COLUMNS):
         out += _centered(pedaco)
     for pedaco in _wrap(doc.chave_grouped or doc.key, COLUMNS):
         out += _centered(pedaco)
@@ -1039,9 +1046,11 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     # resposta para "o meu documento entrou?". Nome entra em seguida, e só
     # quando é nome de gente (o apelido interno "Cliente Doc 6789" fica no CRM).
     if doc.customer_tax_id_display:
-        out += _line(f"CONSUMIDOR CPF {doc.customer_tax_id_display}"[:COLUMNS])
+        out += _line(f"CONSUMIDOR {doc.customer_tax_id_label} {doc.customer_tax_id_display}"[:COLUMNS])
         if doc.customer_name:
             out += _line(doc.customer_name[:COLUMNS])
+        for pedaco in _wrap(doc.customer_address, COLUMNS):
+            out += _line(pedaco)
     else:
         out += _line("CONSUMIDOR NAO IDENTIFICADO")
     out += _rule()
@@ -1051,6 +1060,13 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
         out += _qr(doc.consult_url)
     if doc.protocol:
         out += _centered(f"Protocolo {doc.protocol}")
+    if doc.issued_at:
+        out += _centered(f"Emissao {doc.issued_at}")
+    if doc.authorized_at:
+        out += _centered(f"Autorizacao {doc.authorized_at}")
+    for text in doc.additional_info:
+        for pedaco in _wrap(text, COLUMNS):
+            out += _line(pedaco)
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])

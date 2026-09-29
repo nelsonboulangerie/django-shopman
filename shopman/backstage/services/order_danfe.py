@@ -367,7 +367,21 @@ def _compose(order_ref: str, *, reprint: bool) -> bytes:
     from shopman.backstage.services.receipt_escpos import danfe_nfce
     from shopman.shop.views.fiscal_danfe import build_danfe
 
-    return danfe_nfce(build_danfe(order_ref), reprint=reprint)
+    document = build_danfe(order_ref)
+    if document is None:
+        raise DanfeRefused("Pedido não encontrado.", code="not_found", status=404)
+    if not document.source_verified:
+        raise DanfeRefused(
+            document.source_problem or "O XML autorizado da NFC-e está indisponível.",
+            code="danfe_xml_unavailable",
+        )
+    try:
+        return danfe_nfce(document, reprint=reprint)
+    except ValueError as exc:
+        raise DanfeRefused(
+            "Não foi possível compor o DANFE para esta bobina. Abra a via no Focus.",
+            code="danfe_xml_unavailable",
+        ) from exc
 
 
 def _stamp(order) -> None:
@@ -430,18 +444,23 @@ def enqueue_auto_print(order_ref: str):
     from shopman.orderman.models import Order
 
     destination = None
+    composition_problem = ""
     with transaction.atomic():
         order = Order.objects.select_for_update().filter(ref=order_ref).first()
         if order is None or not danfe_state(order).auto_print:
             return None
         destination = danfe_destination()
         if destination.available:
-            payload = _compose(order.ref, reprint=False)
-            _stamp(order)
-            job = _create_job(order, destination, payload=payload, reprint=False)
-            transaction.on_commit(lambda: _announce(order_ref))
-            return job
-    _alert_not_printed(order_ref, destination.problem)
+            try:
+                payload = _compose(order.ref, reprint=False)
+            except DanfeRefused as exc:
+                composition_problem = exc.message
+            else:
+                _stamp(order)
+                job = _create_job(order, destination, payload=payload, reprint=False)
+                transaction.on_commit(lambda: _announce(order_ref))
+                return job
+    _alert_not_printed(order_ref, composition_problem or destination.problem)
     _announce(order_ref)
     return None
 
