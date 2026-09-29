@@ -79,6 +79,10 @@ _ADDRESS_EVENT_SCHEMA: dict[str, dict[str, set[str]]] = {
         "action": {"keep", "use_current", "review_map", "dismiss"},
         "target": {"saved", "search"},
     },
+    "address.location_mismatch.recovered": {
+        "path": {"use_current", "review_map"},
+        "zone_result": {"covered", "uncovered", "deferred"},
+    },
 }
 
 

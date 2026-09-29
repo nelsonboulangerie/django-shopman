@@ -55,4 +55,18 @@ describe('AddressLocationDivergence', () => {
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('request')).toHaveLength(1)
   })
+
+  it('lets an unavailable saved point become a new destination without claiming proximity', async () => {
+    const wrapper = render({
+      mode: 'visible',
+      state: 'unavailable',
+      canReviewMap: false,
+      canUseCurrent: true
+    })
+
+    expect(wrapper.text()).toContain('não tem um ponto preciso')
+    expect(wrapper.text()).not.toMatch(/perto|longe/)
+    await wrapper.get('[data-location-action="use-current"]').trigger('click')
+    expect(wrapper.emitted('use-current')).toHaveLength(1)
+  })
 })

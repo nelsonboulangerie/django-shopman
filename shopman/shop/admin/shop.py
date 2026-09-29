@@ -34,6 +34,13 @@ from unfold.widgets import (
 )
 
 from shopman.shop import dynamic_collections
+from shopman.shop.address_location_config import (
+    ADDRESS_LOCATION_DIVERGENCE_MODES,
+    DEFAULT_MAX_ACCURACY_M,
+    DEFAULT_MAXIMUM_AGE_MS,
+    DEFAULT_POLICY_VERSION,
+    DEFAULT_THRESHOLD_M,
+)
 from shopman.shop.admin.widgets import FontPreviewWidget
 from shopman.shop.colors import oklch_to_hex
 from shopman.shop.loyalty_config import (
@@ -102,6 +109,12 @@ NOTIFICATION_BACKEND_CHOICES = (
     ("sms", "SMS"),
     ("webhook", "Webhook"),
     ("none", "Nenhum"),
+)
+
+ADDRESS_LOCATION_DIVERGENCE_MODE_CHOICES = (
+    ("off", "Desligado"),
+    ("measure", "Medir sem mostrar aviso"),
+    ("visible", "Mostrar confirmação ao cliente"),
 )
 
 DEFAULTS_PICKUP_SLOT_ROWS = 5
@@ -443,6 +456,40 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
                 "Começa desligado: ligue primeiro para um canário e, se houver "
                 "regressão, desligue este controle para o rollback imediato."
             ),
+        ),
+        "defaults_storefront_address_location_divergence_mode": forms.ChoiceField(
+            label="Conferir endereço com a localização atual",
+            required=False,
+            choices=ADDRESS_LOCATION_DIVERGENCE_MODE_CHOICES,
+            widget=UnfoldAdminSelectWidget,
+            help_text=(
+                "A localização só é consultada depois do toque do cliente. "
+                "Desligado é o rollback imediato; medir registra apenas eventos agregados."
+            ),
+        ),
+        "defaults_storefront_address_location_divergence_threshold_m": forms.IntegerField(
+            label="Distância mínima para sugerir revisão (m)",
+            required=True,
+            min_value=100,
+            max_value=10_000,
+            initial=DEFAULT_THRESHOLD_M,
+            widget=UnfoldAdminIntegerFieldWidget,
+        ),
+        "defaults_storefront_address_location_divergence_max_accuracy_m": forms.IntegerField(
+            label="Imprecisão máxima aceita (m)",
+            required=True,
+            min_value=20,
+            max_value=2_000,
+            initial=DEFAULT_MAX_ACCURACY_M,
+            widget=UnfoldAdminIntegerFieldWidget,
+        ),
+        "defaults_storefront_address_location_divergence_maximum_age_ms": forms.IntegerField(
+            label="Idade máxima da localização (ms)",
+            required=True,
+            min_value=0,
+            max_value=300_000,
+            initial=DEFAULT_MAXIMUM_AGE_MS,
+            widget=UnfoldAdminIntegerFieldWidget,
         ),
         "defaults_pickup_rounding_minutes": forms.IntegerField(
             label="Arredondamento dos horários",
@@ -1304,6 +1351,24 @@ class ShopForm(forms.ModelForm):
             self.fields["defaults_storefront_address_map_confirmation_enabled"].initial = bool(
                 storefront.get("address_map_confirmation_enabled", False)
             )
+            divergence = (
+                storefront.get("address_location_divergence")
+                if isinstance(storefront.get("address_location_divergence"), dict)
+                else {}
+            )
+            mode = divergence.get("mode")
+            self.fields["defaults_storefront_address_location_divergence_mode"].initial = (
+                mode if mode in ADDRESS_LOCATION_DIVERGENCE_MODES else "off"
+            )
+            self.fields["defaults_storefront_address_location_divergence_threshold_m"].initial = (
+                divergence.get("threshold_m", DEFAULT_THRESHOLD_M)
+            )
+            self.fields["defaults_storefront_address_location_divergence_max_accuracy_m"].initial = (
+                divergence.get("max_accuracy_m", DEFAULT_MAX_ACCURACY_M)
+            )
+            self.fields["defaults_storefront_address_location_divergence_maximum_age_ms"].initial = (
+                divergence.get("maximum_age_ms", DEFAULT_MAXIMUM_AGE_MS)
+            )
 
         if self._has("defaults_pos_discount_approval_threshold_q"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
@@ -1814,6 +1879,23 @@ class ShopForm(forms.ModelForm):
                 storefront["address_map_confirmation_enabled"] = True
             else:
                 storefront.pop("address_map_confirmation_enabled", None)
+            mode = self.cleaned_data.get("defaults_storefront_address_location_divergence_mode")
+            if mode in {"measure", "visible"}:
+                storefront["address_location_divergence"] = {
+                    "mode": mode,
+                    "threshold_m": self.cleaned_data[
+                        "defaults_storefront_address_location_divergence_threshold_m"
+                    ],
+                    "max_accuracy_m": self.cleaned_data[
+                        "defaults_storefront_address_location_divergence_max_accuracy_m"
+                    ],
+                    "maximum_age_ms": self.cleaned_data[
+                        "defaults_storefront_address_location_divergence_maximum_age_ms"
+                    ],
+                    "policy_version": DEFAULT_POLICY_VERSION,
+                }
+            else:
+                storefront.pop("address_location_divergence", None)
             if storefront:
                 defaults["storefront"] = storefront
             else:
@@ -2204,6 +2286,10 @@ _ORDERING_FIELDSETS = (
         {
             "fields": (
                 "defaults_storefront_address_map_confirmation_enabled",
+                "defaults_storefront_address_location_divergence_mode",
+                "defaults_storefront_address_location_divergence_threshold_m",
+                "defaults_storefront_address_location_divergence_max_accuracy_m",
+                "defaults_storefront_address_location_divergence_maximum_age_ms",
                 "defaults_rules_minimum_order_q",
                 "defaults_rules_delivery_minimum_q",
                 "defaults_rules_free_delivery_above_q",

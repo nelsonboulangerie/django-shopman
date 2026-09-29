@@ -63,7 +63,10 @@ sugestão aceita sem movimento) ou `"saved"` (endereço já salvo escolhido). No
 checkout web o ponto confirmado é persistido exatamente; o reverse geocode só
 descreve esse ponto e nunca o troca pelo centroide do provedor. `accuracy`,
 histórico de movimentos, consulta, CEP e permissão não são persistidos nem entram
-na telemetria do fluxo.
+na telemetria do fluxo. A conferência opcional endereço × localização usa
+`accuracy` e timestamp somente em memória; seu resultado também não entra em
+`Session.data`, `Order.data`, perfil ou storage do navegador. Só uma nova seleção
+explicitamente confirmada segue pelo contrato existente.
 
 ### Chaves de sistema (geridas pelo Core)
 
@@ -1144,6 +1147,23 @@ uma chave específica herdam a da loja.
   "rules": {"minimum_order_q": 0, "delivery_minimum_q": 2500, "free_delivery_above_q": 0}
 }
 ```
+
+### Endereço no Storefront — `Shop.defaults["storefront"]`
+
+Configuração operacional editável no ShopAdmin. Ausência preserva o fluxo anterior.
+
+| Chave | Tipo/default | Lido por | Descrição |
+|---|---|---|---|
+| `storefront.address_map_confirmation_enabled` | `bool`, `false` | `storefront.presentation.home`, `AddressPicker` | Kill switch da confirmação visual no mapa. |
+| `storefront.address_location_divergence.mode` | `"off" \| "measure" \| "visible"`, `off` | `address_location_config`, `AddressPicker` | `measure` classifica somente após opt-in e emite agregado; `visible` também mostra o aviso. Ambos projetam `off` se o mapa estiver desligado. |
+| `storefront.address_location_divergence.threshold_m` | `int`, 500 | política TypeScript | Limite inferior conservador a partir do qual há divergência; bounds 100–10.000. |
+| `storefront.address_location_divergence.max_accuracy_m` | `int`, 250 | política TypeScript | Accuracy máxima do fix; bounds 20–2.000. Acima disso o resultado é inconclusivo. |
+| `storefront.address_location_divergence.maximum_age_ms` | `int`, 30.000 | Geolocation/política TypeScript | Idade máxima do fix transitório; bounds 0–300.000. |
+| `storefront.address_location_divergence.policy_version` | `str`, `"v1"` | projeção/telemetria | Versão agregável da política; Admin grava a versão do código. |
+
+Config ausente, incompleta, fora dos bounds ou com versão inválida projeta o objeto inteiro
+como `off`. O fix GPS, accuracy, distância, resultado e decisão do aviso não são gravados
+neste JSONField.
 
 ### Políticas de pedido/entrega — `Shop.defaults["rules"]`
 

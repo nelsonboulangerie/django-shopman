@@ -1,4 +1,4 @@
-import { computed, ref, watch, type ComputedRef } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref, watch, type ComputedRef } from 'vue'
 import type { AddressCoordinatesSource } from '~/presentation/address'
 import {
   classifyLocationConsistency,
@@ -138,6 +138,8 @@ export function useAddressLocationCheck (options: AddressLocationCheckOptions) {
     state.value = 'compatible'
     statusMessage.value = 'Certo. Vamos entregar no endereço escolhido.'
   }
+
+  if (getCurrentScope()) onScopeDispose(reset)
 
   return {
     state,

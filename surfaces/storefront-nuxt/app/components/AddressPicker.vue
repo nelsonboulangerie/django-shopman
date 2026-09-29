@@ -31,10 +31,16 @@ import {
 import {
   accuracyBucket,
   accuracyMessage,
+  distanceMetres,
   mergeConfirmedPoint,
   pointMoved,
   type AddressPoint
 } from '~/presentation/addressMap'
+import type {
+  AddressLocationDivergenceConfig,
+  CurrentLocationFix
+} from '~/presentation/addressLocationConsistency'
+import type { AddressLocationCheckTarget } from '~/composables/useAddressLocationCheck'
 import type { SavedAddressProjection, StructuredAddressProjection } from '~/types/shopman'
 
 interface PickerSuggestion {
@@ -129,6 +135,7 @@ const mapIssue = ref('')
 const mapEl = ref<HTMLElement | null>(null)
 let mapInstance: google.maps.Map | null = null
 let mapAccuracyCircle: google.maps.Circle | null = null
+let mapComparisonMarker: google.maps.Marker | null = null
 let mapSession = 0
 let mapPendingReverse: Promise<StructuredAddressProjection | null> | null = null
 type MapOrigin = 'place' | 'gps' | 'adjust'
@@ -137,6 +144,11 @@ const mapReturnMode = ref<PickerMode>('form')
 const mapInitialPoint = ref<AddressPoint | null>(null)
 const mapAccuracyM = ref<number | null>(null)
 const mapMoved = ref(false)
+const mapComparisonFix = ref<CurrentLocationFix | null>(null)
+const mapRecoveryPath = ref<'use_current' | 'review_map' | null>(null)
+const mapDraftSnapshot = ref<{ draft: AddressDraft, acceptedLine: string } | null>(null)
+const mapApplied = ref(false)
+const draftOriginatedFromCurrentLocation = ref(false)
 
 const routeInput = ref<FocusableInput>(null)
 const numberInput = ref<FocusableInput>(null)
@@ -166,6 +178,58 @@ const mapConfirmationEnabled = computed(() => (
 const draftLine = computed(() => draftSummaryLine(draft as AddressDraft))
 const mapAccuracyText = computed(() => accuracyMessage(mapAccuracyM.value))
 const mapAccuracyKind = computed(() => accuracyBucket(mapAccuracyM.value))
+const locationConfig = computed<AddressLocationDivergenceConfig>(() => {
+  if (props.context !== 'checkout') return offLocationConfig()
+  return session.publicConfig.value?.address_location_divergence || offLocationConfig()
+})
+const locationCheckTarget = computed<AddressLocationCheckTarget | null>(() => {
+  if (props.context !== 'checkout' || draftOriginatedFromCurrentLocation.value) return null
+  if (mode.value === 'saved') {
+    const address = props.savedAddresses.find(candidate => candidate.id === selectedSavedId.value)
+    if (!address) return null
+    const point = validAddressPoint(address.latitude, address.longitude)
+    return { kind: 'saved', point, source: 'saved' }
+  }
+  if (mode.value !== 'form' || !acceptedLine.value) return null
+  return {
+    kind: editingSavedId.value ? 'saved' : 'search',
+    point: validAddressPoint(draft.latitude, draft.longitude),
+    source: draft.coordinates_source
+  }
+})
+const {
+  state: locationCheckState,
+  statusMessage: locationCheckStatus,
+  currentFix: locationCheckFix,
+  request: requestLocationCheck,
+  reset: resetLocationCheck,
+  keep: keepCheckedAddress,
+  recordAction: recordLocationCheckAction
+} = useAddressLocationCheck({ config: locationConfig, target: locationCheckTarget })
+
+// Alterar a identidade postal invalida a conferência anterior mesmo quando o
+// pin ainda não mudou. Complemento e instruções não mudam o ponto da entrega.
+watch(
+  () => [draft.route, draft.street_number, draft.postal_code] as const,
+  () => resetLocationCheck()
+)
+
+function offLocationConfig (): AddressLocationDivergenceConfig {
+  return {
+    mode: 'off',
+    threshold_m: 500,
+    max_accuracy_m: 250,
+    maximum_age_ms: 30_000,
+    policy_version: 'v1'
+  }
+}
+
+function validAddressPoint (latitude: number | null | undefined, longitude: number | null | undefined): AddressPoint | null {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
+  return { lat: latitude, lng: longitude }
+}
 
 // Seleção reidratada de endereço NOVO (sem id salvo): o form reabre preenchido.
 function rehydratedNewSelection (): AddressSelection | null {
@@ -196,6 +260,7 @@ function initialAcceptedLine (): string {
 
 function pickSaved (id: number) {
   const address = props.savedAddresses.find(candidate => candidate.id === id)
+  draftOriginatedFromCurrentLocation.value = false
   selectedSavedId.value = id
   emit('update:selection', address ? selectionFromSavedAddress(address) : null)
 }
@@ -256,6 +321,7 @@ function resetDraft () {
   searchIssue.value = ''
   geoCandidate.value = null
   geoIssue.value = ''
+  draftOriginatedFromCurrentLocation.value = false
   query.value = ''
   suggestions.value = []
 }
@@ -375,6 +441,7 @@ async function viaCepSuggestion (value: string): Promise<PickerSuggestion | null
 async function acceptSuggestion (suggestion: PickerSuggestion) {
   searchOpen.value = false
   searchIssue.value = ''
+  draftOriginatedFromCurrentLocation.value = false
   if (suggestion.kind === 'cep' && suggestion.cepPartial) {
     applyPartial(suggestion.cepPartial)
     return
@@ -410,8 +477,9 @@ async function acceptSuggestion (suggestion: PickerSuggestion) {
   }
 }
 
-function applyPartial (partial: Partial<AddressDraft>) {
+function applyPartial (partial: Partial<AddressDraft>, fromCurrentLocation = false) {
   replaceDraft(partial)
+  draftOriginatedFromCurrentLocation.value = fromCurrentLocation
   mode.value = 'form'
   void focusGuided()
 }
@@ -526,7 +594,56 @@ async function locateMe () {
 
 function useGeoCandidate () {
   if (!geoCandidate.value) return
-  applyPartial({ ...geoCandidate.value })
+  applyPartial({ ...geoCandidate.value }, true)
+}
+
+async function useCurrentLocationFromMismatch () {
+  const fix = locationCheckFix.value
+  if (!fix) return
+  recordLocationCheckAction('use_current')
+  mapDraftSnapshot.value = {
+    draft: { ...(draft as AddressDraft) },
+    acceptedLine: acceptedLine.value
+  }
+  mapRecoveryPath.value = 'use_current'
+  mapComparisonFix.value = null
+  const reverse = $fetch<StructuredAddressProjection>(apiPath('/api/v1/geocode/reverse/'), {
+    method: 'POST',
+    headers: await csrfHeaders(),
+    credentials: 'include',
+    body: fix.point
+  })
+  const reverseResult = reverse.catch(() => null)
+  mapPendingReverse = reverseResult
+  replaceDraft({
+    latitude: fix.point.lat,
+    longitude: fix.point.lng,
+    coordinates_source: 'pin'
+  })
+  draftOriginatedFromCurrentLocation.value = true
+  const sessionId = mapSession + 1
+  await openMapAdjust('gps', fix.accuracyM, mode.value)
+  const result = await reverseResult
+  if (result && mapOpen.value && mapSession === sessionId) {
+    Object.assign(draft, mergeConfirmedPoint(draft as AddressDraft, result, fix.point, 'pin'))
+    acceptedLine.value = draftLine.value
+  }
+}
+
+async function reviewLocationMismatchOnMap () {
+  const fix = locationCheckFix.value
+  if (!fix) return
+  recordLocationCheckAction('review_map')
+  if (mode.value === 'saved') {
+    const address = props.savedAddresses.find(candidate => candidate.id === selectedSavedId.value)
+    if (!address) return
+    Object.assign(draft, draftFromSavedAddress(address))
+    acceptedLine.value = address.formatted_address || draftLine.value
+  }
+  if (!canAdjustOnMap.value) return
+  mapRecoveryPath.value = 'review_map'
+  mapComparisonFix.value = fix
+  await openMapAdjust('adjust', null, mode.value, fix)
 }
 
 // ── Ajustar/confirmar no mapa (bottom-sheet ~85%, pin central) ─────────
@@ -534,7 +651,8 @@ function useGeoCandidate () {
 async function openMapAdjust (
   origin: MapOrigin = 'adjust',
   accuracyM: number | null = null,
-  returnMode: PickerMode = 'form'
+  returnMode: PickerMode = 'form',
+  comparisonFix: CurrentLocationFix | null = null
 ) {
   if (!canAdjustOnMap.value) return
   const sessionId = ++mapSession
@@ -542,6 +660,8 @@ async function openMapAdjust (
   const startedAt = performance.now()
   mapOrigin.value = origin
   mapReturnMode.value = returnMode
+  mapComparisonFix.value = comparisonFix
+  mapApplied.value = false
   mapAccuracyM.value = typeof accuracyM === 'number' && Number.isFinite(accuracyM) ? accuracyM : null
   mapMoved.value = false
   mapInitialPoint.value = { lat: draft.latitude as number, lng: draft.longitude as number }
@@ -559,7 +679,8 @@ async function openMapAdjust (
     const center = { lat: draft.latitude as number, lng: draft.longitude as number }
     mapInstance = new mapsLib.Map(mapEl.value, {
       center,
-      zoom: 17,
+      zoom: comparisonFix ? comparisonZoom(distanceMetres(center, comparisonFix.point)) : 17,
+      minZoom: 8,
       disableDefaultUI: true,
       zoomControl: true,
       gestureHandling: 'greedy',
@@ -571,11 +692,13 @@ async function openMapAdjust (
         { featureType: 'transit', stylers: [{ visibility: 'off' }] }
       ]
     })
-    if (mapAccuracyM.value != null && mapAccuracyM.value > 0) {
+    const accuracyCenter = comparisonFix?.point || center
+    const accuracyRadius = comparisonFix?.accuracyM ?? mapAccuracyM.value
+    if (accuracyRadius != null && accuracyRadius > 0) {
       mapAccuracyCircle = new mapsLib.Circle({
         map: mapInstance,
-        center,
-        radius: mapAccuracyM.value,
+        center: accuracyCenter,
+        radius: accuracyRadius,
         clickable: false,
         fillColor: '#7c3aed',
         fillOpacity: 0.08,
@@ -584,12 +707,31 @@ async function openMapAdjust (
         strokeWeight: 1
       })
     }
+    if (comparisonFix) {
+      mapComparisonMarker = new google.maps.Marker({
+        map: mapInstance,
+        position: comparisonFix.point,
+        title: 'Sua localização atual',
+        label: { text: 'Você', color: '#ffffff', fontSize: '11px', fontWeight: '700' },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: '#7c3aed',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeOpacity: 1,
+          strokeWeight: 2,
+          scale: 14,
+          labelOrigin: new google.maps.Point(0, 0)
+        },
+        zIndex: 2
+      })
+    }
     mapInstance.addListener('center_changed', () => {
       if (sessionId !== mapSession || !mapInitialPoint.value) return
       const current = mapCenter()
       if (!current) return
       mapMoved.value = pointMoved(mapInitialPoint.value, current)
-      mapAccuracyCircle?.setCenter(current)
+      if (!mapComparisonFix.value) mapAccuracyCircle?.setCenter(current)
     })
     telemetry.addressEvent('address.map.ready', {
       origin,
@@ -631,6 +773,14 @@ async function confirmMapAdjust () {
       moved
     })
     acceptedLine.value = draftLine.value
+    draftOriginatedFromCurrentLocation.value = mapOrigin.value === 'gps'
+    mapApplied.value = true
+    if (mapRecoveryPath.value) {
+      telemetry.addressEvent('address.location_mismatch.recovered', {
+        path: mapRecoveryPath.value,
+        zone_result: 'deferred'
+      })
+    }
     mapOpen.value = false
     mode.value = 'form'
     await focusGuided()
@@ -643,14 +793,44 @@ async function confirmMapAdjust () {
 
 watch(mapOpen, open => {
   if (!open) {
+    if (!mapApplied.value) restoreMapDraftSnapshot()
     if (mapInstance && window.google?.maps?.event) window.google.maps.event.clearInstanceListeners(mapInstance)
     mapInstance = null
     mapAccuracyCircle?.setMap(null)
     mapAccuracyCircle = null
+    mapComparisonMarker?.setMap(null)
+    mapComparisonMarker = null
     mapPendingReverse = null
     mapIssue.value = ''
+    mapComparisonFix.value = null
+    mapRecoveryPath.value = null
+    mapDraftSnapshot.value = null
+    mapApplied.value = false
   }
 })
+
+onBeforeUnmount(() => {
+  mapSession += 1
+  if (mapInstance && window.google?.maps?.event) window.google.maps.event.clearInstanceListeners(mapInstance)
+  mapAccuracyCircle?.setMap(null)
+  mapComparisonMarker?.setMap(null)
+})
+
+function restoreMapDraftSnapshot () {
+  const snapshot = mapDraftSnapshot.value
+  if (!snapshot) return
+  Object.assign(draft, emptyAddressDraft(), snapshot.draft)
+  acceptedLine.value = snapshot.acceptedLine
+  draftOriginatedFromCurrentLocation.value = false
+}
+
+function comparisonZoom (distanceM: number): number {
+  if (distanceM <= 300) return 16
+  if (distanceM <= 1_000) return 14
+  if (distanceM <= 5_000) return 12
+  if (distanceM <= 20_000) return 10
+  return 8
+}
 
 function mapCenter (): AddressPoint | null {
   const center = mapInstance?.getCenter?.()
@@ -849,6 +1029,18 @@ function onLabelResolved () {
           </UiField>
         </UiFieldLabel>
       </UiRadioGroup>
+      <AddressLocationDivergence
+        :mode="locationConfig.mode"
+        :state="locationCheckState"
+        :status-message="locationCheckStatus"
+        :can-review-map="!!locationCheckTarget?.point"
+        :can-use-current="!!locationCheckFix"
+        @request="requestLocationCheck"
+        @keep="keepCheckedAddress('keep')"
+        @dismiss="keepCheckedAddress('dismiss')"
+        @use-current="useCurrentLocationFromMismatch"
+        @review-map="reviewLocationMismatchOnMap"
+      />
       <UiButton variant="ghost" size="sm" icon="lucide:plus" class="-ml-2" data-address-new @click="startNewAddress">
         Novo endereço
       </UiButton>
@@ -970,11 +1162,24 @@ function onLabelResolved () {
           icon="lucide:map"
           class="-ml-2 text-muted-foreground hover:text-foreground"
           data-address-adjust-map
-          @click="openMapAdjust"
+          @click="openMapAdjust()"
         >
           Ajustar no mapa
         </UiButton>
       </div>
+
+      <AddressLocationDivergence
+        :mode="locationConfig.mode"
+        :state="locationCheckState"
+        :status-message="locationCheckStatus"
+        :can-review-map="!!locationCheckTarget?.point"
+        :can-use-current="!!locationCheckFix"
+        @request="requestLocationCheck"
+        @keep="keepCheckedAddress('keep')"
+        @dismiss="keepCheckedAddress('dismiss')"
+        @use-current="useCurrentLocationFromMismatch"
+        @review-map="reviewLocationMismatchOnMap"
+      />
 
       <UiAlert v-if="saveIssue" variant="destructive">
         <UiAlertTitle>Revise o endereço</UiAlertTitle>
@@ -1156,8 +1361,8 @@ function onLabelResolved () {
     <BottomSheet
       v-model:open="mapOpen"
       content-class="h-[85dvh]"
-      :title="mapConfirmationEnabled && mapOrigin !== 'adjust' ? 'É aqui que vamos entregar?' : 'Ajustar no mapa'"
-      description="Mova o mapa até o pin ficar no ponto certo."
+      :title="mapComparisonFix ? 'Confira os dois pontos' : (mapConfirmationEnabled && mapOrigin !== 'adjust' ? 'É aqui que vamos entregar?' : 'Ajustar no mapa')"
+      :description="mapComparisonFix ? 'O pin marca a entrega; o círculo mostra onde você está.' : 'Mova o mapa até o pin ficar no ponto certo.'"
       data-address-map-sheet
     >
       <div class="relative h-full">
@@ -1170,8 +1375,11 @@ function onLabelResolved () {
           @keydown="moveMapWithKeyboard"
         />
         <div class="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-          <div class="-translate-y-4 rounded-full bg-primary p-2 text-primary-foreground shadow-lg ring-4 ring-background/80">
-            <Icon name="lucide:map-pin" class="size-6" />
+          <div class="flex -translate-y-4 flex-col items-center gap-1">
+            <div class="rounded-full bg-primary p-2 text-primary-foreground shadow-lg ring-4 ring-background/80">
+              <Icon name="lucide:map-pin" class="size-6" />
+            </div>
+            <span v-if="mapComparisonFix" class="rounded-full bg-card px-2 py-0.5 text-xs font-semibold text-foreground shadow">Entrega</span>
           </div>
         </div>
         <div v-if="mapLoading" class="absolute inset-0 grid place-items-center bg-background/60">
@@ -1185,7 +1393,10 @@ function onLabelResolved () {
         <div class="shop-stack-tight w-full">
           <div aria-live="polite" class="space-y-1 text-left">
             <p v-if="draftLine" class="text-sm font-semibold">{{ draftLine }}</p>
-            <p class="text-xs text-muted-foreground">{{ mapAccuracyText }}</p>
+            <p v-if="mapComparisonFix" class="text-xs text-muted-foreground">
+              O pin marca o ponto de entrega. O círculo roxo com “Você” mostra sua localização atual e a precisão disponível.
+            </p>
+            <p v-else class="text-xs text-muted-foreground">{{ mapAccuracyText }}</p>
             <p v-if="mapMoved" class="text-xs font-semibold text-primary">Ponto ajustado.</p>
           </div>
           <UiButton

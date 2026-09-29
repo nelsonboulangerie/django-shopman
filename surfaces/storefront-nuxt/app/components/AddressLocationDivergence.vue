@@ -9,10 +9,12 @@ const props = withDefaults(defineProps<{
   state?: 'idle' | 'pending' | LocationConsistencyStatus | 'failed'
   statusMessage?: string
   canReviewMap?: boolean
+  canUseCurrent?: boolean
 }>(), {
   state: 'idle',
   statusMessage: '',
-  canReviewMap: true
+  canReviewMap: true,
+  canUseCurrent: false
 })
 
 const emit = defineEmits<{
@@ -88,16 +90,28 @@ const neutralStatus = computed(() => {
 
     <div v-else-if="neutralStatus" class="space-y-2" role="status" aria-live="polite" data-address-location-status>
       <p class="text-sm text-muted-foreground">{{ neutralStatus }}</p>
-      <UiButton
-        v-if="state !== 'compatible'"
-        type="button"
-        variant="ghost"
-        size="sm"
-        class="min-h-11"
-        @click="emit('request')"
-      >
-        Tentar novamente
-      </UiButton>
+      <div v-if="state !== 'compatible'" class="flex flex-col gap-2 sm:flex-row">
+        <UiButton
+          v-if="canUseCurrent"
+          type="button"
+          variant="outline"
+          size="sm"
+          class="min-h-11"
+          data-location-action="use-current"
+          @click="emit('use-current')"
+        >
+          Usar como novo destino
+        </UiButton>
+        <UiButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          class="min-h-11"
+          @click="emit('request')"
+        >
+          Tentar novamente
+        </UiButton>
+      </div>
     </div>
   </section>
 </template>

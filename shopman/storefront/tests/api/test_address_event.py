@@ -87,3 +87,25 @@ def test_location_mismatch_event_keeps_only_policy_enums():
     assert "930" not in repr(event)
     assert "42" not in repr(event)
     assert "-23.31" not in repr(event)
+
+
+def test_location_mismatch_recovery_has_no_address_or_coordinates():
+    event = sanitize_address_event(
+        {
+            "event": "address.location_mismatch.recovered",
+            "properties": {
+                "path": "review_map",
+                "zone_result": "deferred",
+                "address": "Rua pessoal, 123",
+                "latitude": -23.31,
+                "distance_m": 900,
+            },
+        }
+    )
+
+    assert event == {
+        "event": "address.location_mismatch.recovered",
+        "properties": {"path": "review_map", "zone_result": "deferred"},
+    }
+    assert "Rua pessoal" not in repr(event)
+    assert "-23.31" not in repr(event)

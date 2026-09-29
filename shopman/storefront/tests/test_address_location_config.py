@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from shopman.storefront.presentation.address_location import (
+from shopman.shop.address_location_config import (
     build_address_location_divergence,
 )
 
@@ -56,3 +56,7 @@ def test_location_divergence_config_fails_closed(field, value):
 
 def test_location_divergence_config_rejects_boolean_numbers():
     assert build_address_location_divergence(_valid(threshold_m=True), map_enabled=True).mode == "off"
+
+
+def test_location_divergence_config_rejects_fractional_numbers():
+    assert build_address_location_divergence(_valid(threshold_m=500.9), map_enabled=True).mode == "off"

@@ -86,6 +86,37 @@ def test_address_map_confirmation_kill_switch_is_off_by_default_and_tenant_scope
     assert payload["public_config"]["address_map_confirmation_enabled"] is True
 
 
+def test_address_location_divergence_is_off_by_default_and_depends_on_map(rf):
+    from django.core.cache import cache
+
+    from shopman.shop.models import Shop
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.home import build_shell
+
+    shop = Shop.load() or Shop.objects.create(name="Test Padaria")
+    divergence = {
+        "mode": "visible",
+        "threshold_m": 500,
+        "max_accuracy_m": 250,
+        "maximum_age_ms": 30_000,
+        "policy_version": "v1",
+    }
+    shop.defaults = {"storefront": {"address_location_divergence": divergence}}
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+    assert payload["public_config"]["address_location_divergence"]["mode"] == "off"
+
+    shop.defaults["storefront"]["address_map_confirmation_enabled"] = True
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+
+    assert payload["public_config"]["address_location_divergence"] == divergence
+
+
 def test_home_projection_keeps_operational_status_single_sourced(rf):
     from shopman.shop.models import FAQEntry, Shop
     from shopman.storefront.api.projections import projection_data

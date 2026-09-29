@@ -1,9 +1,4 @@
-"""Configuração pública e conservadora da conferência de localização.
-
-O recurso é consultivo: esta projeção nunca calcula cobertura, taxa ou promessa.
-Configuração ausente, incompleta, fora dos limites ou sem o mapa canônico cai
-para ``off``. Assim um deploy não cria leitura de GPS nem UI por acidente.
-"""
+"""Configuração canônica da conferência de endereço e localização."""
 
 from __future__ import annotations
 
@@ -11,11 +6,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-
 DEFAULT_THRESHOLD_M = 500
 DEFAULT_MAX_ACCURACY_M = 250
 DEFAULT_MAXIMUM_AGE_MS = 30_000
 DEFAULT_POLICY_VERSION = "v1"
+ADDRESS_LOCATION_DIVERGENCE_MODES = ("off", "measure", "visible")
 
 
 @dataclass(frozen=True)
@@ -27,7 +22,7 @@ class AddressLocationDivergenceProjection:
     policy_version: str
 
 
-def _off() -> AddressLocationDivergenceProjection:
+def off_address_location_divergence() -> AddressLocationDivergenceProjection:
     return AddressLocationDivergenceProjection(
         mode="off",
         threshold_m=DEFAULT_THRESHOLD_M,
@@ -39,6 +34,8 @@ def _off() -> AddressLocationDivergenceProjection:
 
 def _bounded_int(value: Any, *, minimum: int, maximum: int) -> int | None:
     if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and not value.is_integer():
         return None
     try:
         parsed = int(value)
@@ -60,13 +57,13 @@ def build_address_location_divergence(
     """
 
     if not map_enabled or not isinstance(raw, Mapping):
-        return _off()
+        return off_address_location_divergence()
 
     mode = raw.get("mode")
     if mode == "off":
-        return _off()
-    if mode not in {"measure", "visible"}:
-        return _off()
+        return off_address_location_divergence()
+    if mode not in ADDRESS_LOCATION_DIVERGENCE_MODES:
+        return off_address_location_divergence()
 
     threshold_m = _bounded_int(raw.get("threshold_m"), minimum=100, maximum=10_000)
     max_accuracy_m = _bounded_int(raw.get("max_accuracy_m"), minimum=20, maximum=2_000)
@@ -80,7 +77,7 @@ def build_address_location_divergence(
         or not policy_version.strip()
         or len(policy_version.strip()) > 40
     ):
-        return _off()
+        return off_address_location_divergence()
 
     return AddressLocationDivergenceProjection(
         mode=mode,
