@@ -201,6 +201,27 @@ detalhe; cards "Estorno na maquininha" e a devolução "encomenda ficou mais bar
   ou entrega despachada na janela da emissão tardia (a venda fiscal é a da saída,
   #1173); a linha diz "Retirada hoje às …" e o total é o efetivo.
 
+### WP-E7 — Detalhe do pedido compartilhado com o Gestor  *(decidido pelo dono, 28/09; no ar)*
+
+Decisão (28/09/2026, DRY/KISS): o detalhe do pedido do Gestor e o da encomenda no PDV
+são **telas irmãs**. Entregue pela integração única de Encomendas (#1231, que juntou as
+frentes preservadas #1221 e #1222):
+
+- **Servidor:** um builder, um contrato: `order_queue.build_operator_order(order,
+  context="orders"|"pos")` (`OperatorOrderProjection`). O contexto decide as ações no
+  servidor: no `"pos"` só o que o balcão executa, mais o envelope `counter` (saldo,
+  entregar, editar, reagendar, cancelar). Testes em `test_order_detail_context.py`.
+- **Front:** `operator-kit/app/components/OperatorOrderDetail.vue` + presentation pura
+  (`presentation/orderDetail.ts`, tipo em `types/orderDetail.ts`) com as seções comuns
+  (resumo, contato, presente, cliente, fiscal, itens, observação, nota da cozinha,
+  histórico com comentário quando o servidor oferece `comment`). Slots `summary`,
+  `actions`, `after-profile`, `kitchen-note`; diálogos ficam em cada app; PIN pelo
+  `OperatorManagerAuth`.
+- **PDV:** ganhou cliente, fiscal e histórico com comentário (pela rota do Gestor). A
+  volta respeita `?back=` (só caminho interno de `/preorders`) ou o histórico.
+- **Testes na fonte (29/09):** vitest da presentation e do componente no
+  operator-kit; no PDV, cliente/fiscal, comentário e volta.
+
 ## Fora de escopo, registrado
 
 - Capacidade por janela de retirada (`pickup_slots` não tem) — só se o negócio pedir.

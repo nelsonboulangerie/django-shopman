@@ -318,6 +318,57 @@ describe("Detalhe — receber e entregar", () => {
   });
 });
 
+describe("Detalhe — as seções do Gestor, no balcão", () => {
+  it("cliente e nota fiscal aparecem como no Gestor, quando o servidor manda", async () => {
+    detail.customer_profile = {
+      orders_label: "12 pedidos", last_order_display: "há 3 dias", average_ticket_display: "",
+      favorite_product: "", segment_label: "", segment_tone: "", notes: "",
+      dietary_restrictions: "Sem lactose", birthday_display: "", is_birthday_today: false,
+    };
+    detail.fiscal_status_label = "NFC-e autorizada";
+    detail.fiscal_links = [{ label: "DANFE", href: "/danfe/NB-7" }];
+    const wrapper = await mount(DetailPage);
+
+    expect(wrapper.find("[data-customer-history]").text()).toBe("12 pedidos · última compra há 3 dias");
+    expect(wrapper.find("[data-customer-restrictions]").text()).toBe("Sem lactose");
+    expect(wrapper.find("[data-order-fiscal]").text()).toContain("NFC-e autorizada");
+  });
+
+  it("comenta no histórico pela rota do Gestor, com a base que o servidor mandou", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-order-comment] textarea").setValue("Cliente vem às 9h30");
+    await wrapper.find("[data-order-comment-submit]").trigger("click");
+    await flushPromises();
+
+    const [path, options] = call.mock.calls[0]!;
+    expect(path).toBe("/api/v1/backstage/orders/NB-7/comment/");
+    expect(options.body).toMatchObject({ note: "Cliente vem às 9h30", base_revision: "rev-comment" });
+    expect(options.body.idempotency_key).toBeTruthy();
+  });
+
+  it("sem a ação de comentar, o balcão não ganha o campo", async () => {
+    detail.actions = [];
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-order-comment]").exists()).toBe(false);
+  });
+
+  it("a volta leva ao recorte da lista de onde o operador veio", async () => {
+    const wrapper = await mount(DetailPage);
+    // Depois de montar: o `mountSuspended` passa pelo `router.replace` (o mock),
+    // que zera a query antes de a página existir.
+    route.query = { back: "/preorders?mode=week&date=2026-09-26&payment=to_receive" };
+    await wrapper.find("[data-preorder-back]").trigger("click");
+    expect(navigate).toHaveBeenCalledWith("/preorders?mode=week&date=2026-09-26&payment=to_receive");
+  });
+
+  it("uma volta para fora da seção é ignorada (não vira redirecionamento aberto)", async () => {
+    const wrapper = await mount(DetailPage);
+    route.query = { back: "https://exemplo.com/preorders" };
+    await wrapper.find("[data-preorder-back]").trigger("click");
+    expect(navigate).not.toHaveBeenCalledWith("https://exemplo.com/preorders");
+  });
+});
+
 describe("Detalhe — cancelar", () => {
   it("cancela pela rota do Gestor, com a revisão e quem está identificado", async () => {
     const wrapper = await mount(DetailPage);
