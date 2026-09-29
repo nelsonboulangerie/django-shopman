@@ -224,7 +224,11 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     await useOperatorLock(PERM).lock();
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/lock/",
-      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: { perm: PERM },
+      }),
     );
     expect(env.refresh).toHaveBeenCalled();
   });

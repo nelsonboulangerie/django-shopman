@@ -73,7 +73,7 @@ class SignInNotificationTests(TestCase):
         "estação nunca usada", que é o que o destaque deve pegar.
         """
         self._unlock_pin()
-        self.client.post("/api/v1/backstage/operator/lock/")
+        self.client.post("/api/v1/backstage/operator/lock/", {"perm": POS_PERM})
         self._unlock_pin()
 
         ultimo = UserNotification.objects.order_by("-pk").first()

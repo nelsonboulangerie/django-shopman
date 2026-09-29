@@ -73,7 +73,7 @@ class POSOperatorApiTests(TestCase):
         real como a pessoa, e o PIN é dele, individual. Sem `perm` e com a do PDV."""
         dono = self._superuser_with_pin_and_badge()
         for perm in (POS_PERM, ""):
-            self.client.post(LOCK)
+            self.client.post(LOCK, {"perm": POS_PERM})
             resp = self.client.post(UNLOCK, {"operator_id": dono.pk, "pin": "1234", "perm": perm})
             self.assertEqual(resp.status_code, 200, perm)
             self.assertEqual(resp.json()["operator"]["name"], "Admin")
@@ -113,7 +113,7 @@ class POSOperatorApiTests(TestCase):
         self.assertIn("operators", pos.json()["pos"])
         self.assertEqual(pos.json()["pos"]["auto_lock_seconds"], 60)
 
-        lock = self.client.post(LOCK)
+        lock = self.client.post(LOCK, {"perm": POS_PERM})
         self.assertEqual(lock.status_code, 200)
 
         # Depois de travar, a estação NÃO lê mais — e isso mudou de verdade.
@@ -133,15 +133,8 @@ class POSOperatorApiTests(TestCase):
     SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
     SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
 )
-class LockIsZoneWideLogoutTests(TestCase):
-    """Travar o PDV derruba o Gestor aberto no mesmo navegador — por construção.
-
-    A sessão de operador é UMA para toda a zona `.boulangerie.com.br`, e travar é
-    `logout()`. É por isso que o auto-lock do PDV (60 s, só enxerga a atividade do
-    próprio PDV) não pode disparar com o PDV fora da vista: ele desligava o Gestor
-    em uso ao lado. Este teste fixa a premissa do lado do servidor; o lado do PDV
-    está em ``surfaces/pos-nuxt/tests/posAutoLock.test.ts``.
-    """
+class LockIsScopedToStationCapabilityTests(TestCase):
+    """O cadeado do PDV não encerra a sessão compartilhada do Gestor."""
 
     API_HOST = "api.boulangerie.com.br"
 
@@ -156,7 +149,7 @@ class LockIsZoneWideLogoutTests(TestCase):
         op.user_permissions.add(Permission.objects.get(content_type__app_label="shop", codename="manage_orders"))
         self.op = User.objects.get(pk=op.pk)
 
-    def test_pdv_lock_expires_the_session_cookie_for_the_whole_operator_zone(self):
+    def test_pdv_lock_keeps_shared_session_and_gestor_alive(self):
         unlock = self.client.post(
             UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM}, HTTP_HOST=self.API_HOST,
         )
@@ -164,11 +157,45 @@ class LockIsZoneWideLogoutTests(TestCase):
         self.assertEqual(unlock.cookies[settings.SESSION_COOKIE_NAME]["domain"], ".boulangerie.com.br")
         self.assertEqual(self.client.get("/api/v1/backstage/orders/", HTTP_HOST=self.API_HOST).status_code, 200)
 
-        lock = self.client.post(LOCK, HTTP_HOST=self.API_HOST)
+        session_key = self.client.cookies[settings.SESSION_COOKIE_NAME].value
+        lock = self.client.post(LOCK, {"perm": POS_PERM}, HTTP_HOST=self.API_HOST)
 
         self.assertEqual(lock.status_code, 200)
-        deleted = lock.cookies[settings.SESSION_COOKIE_NAME]
-        self.assertEqual(deleted.value, "")
-        self.assertEqual(deleted["max-age"], 0)
-        self.assertEqual(deleted["domain"], ".boulangerie.com.br")
-        self.assertEqual(self.client.get("/api/v1/backstage/orders/", HTTP_HOST=self.API_HOST).status_code, 403)
+        self.assertEqual(self.client.cookies[settings.SESSION_COOKIE_NAME].value, session_key)
+        self.assertNotEqual(lock.cookies.get(settings.SESSION_COOKIE_NAME, {}).get("max-age"), 0)
+        self.assertEqual(self.client.get("/api/v1/backstage/orders/", HTTP_HOST=self.API_HOST).status_code, 200)
+        pos = self.client.get("/api/v1/backstage/pos/", HTTP_HOST=self.API_HOST)
+        self.assertEqual(pos.status_code, 403)
+        self.assertEqual(pos.json()["error"]["code"], "station_locked")
+
+        session = self.client.get(
+            "/api/v1/backstage/operator/session/",
+            {"perm": POS_PERM},
+            HTTP_HOST=self.API_HOST,
+        )
+        self.assertTrue(session.json()["locked"])
+        self.assertEqual(session.json()["operator"]["name"], "Ana")
+
+    def test_unlock_clears_only_the_requested_capability(self):
+        self.client.post(
+            UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM}, HTTP_HOST=self.API_HOST,
+        )
+        self.client.post(LOCK, {"perm": POS_PERM}, HTTP_HOST=self.API_HOST)
+
+        unlock = self.client.post(
+            UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM}, HTTP_HOST=self.API_HOST,
+        )
+
+        self.assertEqual(unlock.status_code, 200)
+        self.assertEqual(self.client.get("/api/v1/backstage/pos/", HTTP_HOST=self.API_HOST).status_code, 200)
+
+    def test_lock_requires_a_known_capability(self):
+        self.client.post(
+            UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM}, HTTP_HOST=self.API_HOST,
+        )
+
+        self.assertEqual(self.client.post(LOCK, HTTP_HOST=self.API_HOST).status_code, 400)
+        self.assertEqual(
+            self.client.post(LOCK, {"perm": "root.all"}, HTTP_HOST=self.API_HOST).status_code,
+            400,
+        )

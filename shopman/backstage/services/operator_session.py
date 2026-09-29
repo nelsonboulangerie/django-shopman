@@ -34,6 +34,11 @@ from django.conf import settings
 #: Chave em ``request.session`` que diz "esta sessão nasceu numa porta de operador".
 SESSION_MARKER = "shopman_operator_session"
 
+#: Capacidades travadas NESTA estação/navegador. A sessão continua autenticada:
+#: o valor só fecha as APIs da superfície que pediu o cadeado. Isso é o que
+#: permite travar o PDV sem derrubar o Gestor aberto na aba ao lado.
+LOCKED_CAPABILITIES_KEY = "shopman_locked_station_capabilities"
+
 
 def idle_seconds() -> int:
     """Quanto tempo a sessão de operador sobrevive sem uso."""
@@ -58,6 +63,49 @@ def start(request) -> None:
 def is_operator_session(request) -> bool:
     session = getattr(request, "session", None)
     return bool(session is not None and session.get(SESSION_MARKER))
+
+
+def locked_capabilities(request) -> frozenset[str]:
+    """Capacidades que esta estação manteve trancadas na sessão compartilhada."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return frozenset()
+    raw = session.get(LOCKED_CAPABILITIES_KEY, ())
+    if not isinstance(raw, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(str(code).strip() for code in raw if str(code).strip())
+
+
+def lock_capability(request, capability: str) -> None:
+    """Travar uma superfície sem encerrar a sessão Django da pessoa."""
+    code = str(capability or "").strip()
+    if not code:
+        raise ValueError("capability é obrigatória")
+    locked = set(locked_capabilities(request))
+    locked.add(code)
+    request.session[LOCKED_CAPABILITIES_KEY] = sorted(locked)
+
+
+def unlock_capability(request, capability: str | None) -> None:
+    """Liberar a superfície provada por PIN/crachá.
+
+    ``None`` mantém compatibilidade com o destrave sem ``perm``: como a pessoa
+    acabou de provar a própria identidade, todas as travas desta sessão podem
+    cair. Os apps atuais sempre enviam a capability explícita.
+    """
+    if not capability:
+        request.session.pop(LOCKED_CAPABILITIES_KEY, None)
+        return
+    locked = set(locked_capabilities(request))
+    locked.discard(str(capability).strip())
+    if locked:
+        request.session[LOCKED_CAPABILITIES_KEY] = sorted(locked)
+    else:
+        request.session.pop(LOCKED_CAPABILITIES_KEY, None)
+
+
+def is_capability_locked(request, capability: str) -> bool:
+    return str(capability or "").strip() in locked_capabilities(request)
 
 
 def renew_if_due(request) -> bool:

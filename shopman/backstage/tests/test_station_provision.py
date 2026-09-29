@@ -74,22 +74,29 @@ def test_o_gerente_transforma_o_dispositivo_em_estacao(client, gerente, terminal
     assert sessao["station"] == terminal.ref
 
 
-def test_a_estacao_sobrevive_a_saida_do_gerente(client, gerente, terminal):
-    """O ponto inteiro: provisionar uma vez, e o balcão abrir sozinho amanhã.
+def test_a_estacao_e_a_sessao_do_gestor_sobrevivem_ao_lock(client, gerente, terminal):
+    """O ponto inteiro: provisionar uma vez e travar só a superfície do balcão.
 
-    Se a confiança morresse com a sessão de quem provisionou, seria só um login
-    com outro nome — e alguém teria de trazer a senha toda manhã.
+    A confiança da estação e a sessão compartilhada do Gestor não podem morrer
+    quando o PDV é travado; apenas a capability do PDV volta à antessala.
     """
     client.force_login(gerente)
     client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
 
-    client.post(reverse("api-backstage-operator-lock"))  # o gerente sai
+    client.post(
+        reverse("api-backstage-operator-lock"),
+        {"perm": "cashman.operate_pos"},
+        content_type="application/json",
+    )
 
-    sessao = client.get(reverse("api-backstage-operator-session")).json()
+    sessao = client.get(
+        reverse("api-backstage-operator-session"),
+        {"perm": "cashman.operate_pos"},
+    ).json()
     assert sessao["locked"] is True
-    assert sessao["operator"] is None
+    assert sessao["operator"]["username"] == "marina"
     assert sessao["station"] == terminal.ref
-    # ...e a estação sozinha continua não autorizando nada.
+    # ...e apenas a superfície travada deixa de autorizar ações.
     assert client.get(POS_URL).status_code == 403
 
 
