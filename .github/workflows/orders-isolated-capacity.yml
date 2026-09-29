@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install existing project environment
@@ -96,7 +96,7 @@ jobs:
         run: |
           sudo journalctl -u "orders-capacity-backend-*" -u orders-capacity-nitro --no-pager > .orders-lab/ci-service-log.txt
           sudo systemctl stop "orders-capacity-backend-*" orders-capacity-nitro || true
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: orders-capacity-${{ github.sha }}
