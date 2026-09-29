@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from shopman.offerman.contrib.social.schema import gtin_is_valid
+from shopman.offerman import gtin_is_valid
 
 CATALOG_AUDIT_SCHEMA_VERSION = "shopman.catalog-day1-audit/v1"
 REQUIRED_COLUMNS = frozenset(
@@ -138,7 +138,7 @@ def database_catalog_snapshot() -> CatalogSnapshot:
 
     from shopman.buyman.models import Material
     from shopman.craftsman.models import Recipe
-    from shopman.offerman.contrib.social.schema import get_social_attributes
+    from shopman.offerman import get_social_attributes
     from shopman.offerman.models import CollectionItem, ListingItem, Product
 
     products: dict[str, dict[str, Any]] = {}
