@@ -203,6 +203,7 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-005 | Marketing/WhatsApp permanece ligado como está | `DECIDIDA` | 2026-10-31 |
 | D-006 | Pix simulado permanece no alpha por ora | `ADIADA` | 2026-10-15 |
 | D-007 | Postura de multi-dispositivo no mesmo balcão | `DECIDIDA` | 2026-12-31 |
+| D-008 | Autoria por linha na comanda: implementar | `DECIDIDA` | 2026-12-31 |
 
 ---
 
@@ -226,6 +227,33 @@ exigiria reprovisionamento manual se um dispositivo morresse.
 
 **Sequência definida:** CI primeiro (destravar `-n auto`), depois WP-3 → WP-1 → WP-4 → WP-2,
 **uma sessão executora, sequencial**, um branch por WP.
+
+---
+
+## D-008 · Autoria por linha na comanda: **implementar** (opção A)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-09-29 · **revisar_em:** 2026-12-31
+
+**Decisão:** em vez de remover da tela, **implementar** a autoria por linha.
+
+**O defeito que isso corrige:** a tela do PDV mostra "Lançado por / Editado por" em cada linha da
+comanda a partir de `Session.items[i]["meta"]["pos_authorship"]`. O campo **nunca é escrito por
+ninguém** — o único código que o toca é a leitura
+(`shopman/backstage/api/pos_concurrency.py:70-72`), o tipo
+(`surfaces/pos-nuxt/app/types/pos.ts:584`) e a renderização
+(`surfaces/pos-nuxt/app/components/PosCartPanel.vue:993-1017`). Em produção é sempre vazio. Os
+testes de componente passam porque alimentam a fixture à mão
+(`PosCartPanel.test.ts:523`, `:571`).
+
+**Racional do dono:** com **uma gaveta e várias mãos**, a responsabilização por linha é o que
+protege — é a mesma preocupação que originou a pergunta sobre a sessão de PDV (D-004).
+
+**Restrições de desenho (do WP-1):** um único escritor, no ponto que já é dono da identidade da
+linha (`shopman/shop/services/pos_intent.py:330-386`) — **não** no decorator `tab_command`;
+`created_*` imutável e `updated_*` a cada mudança; **snapshot do nome legível no momento do ato**
+(`created_label`/`updated_label`), porque renomear a pessoa depois não pode reescrever a história;
+identificador estável em `created_by`; chaves documentadas em `docs/reference/data-schemas.md`
+antes do uso.
 
 ---
 
