@@ -1,6 +1,6 @@
 # Go-live activation ledger
 
-Atualizado em: `2026-09-29T15:29:53Z`
+Atualizado em: `2026-09-29T15:39:07Z`
 
 Este e o registro canonico da passagem de cada WP e PR ate a operacao no ambiente
 Live. Ele nao contem credenciais, valores secretos, dados pessoais nem amostras de
@@ -89,24 +89,24 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `IN_QUEUE`; head `6cc9041ce2c1db900b7d540b2cc0d7a70ed6daf0`, auto-merge ligado |
-| Deploy | `PENDING_MERGE`; sem deploy ID |
-| Migration | `PENDING`; `backstage/0078` aditiva, aplicar pelo release apos merge |
+| Merge | `MERGED`; `eb0227690b885d46d79a9e1e84ab3890a0cc7f74` em `2026-09-29T15:30:52Z` |
+| Deploy | `DEPLOYED_PRE_GO_LIVE`; deployment `2418afe3-e47b-4686-abd8-7e47027ad451` ficou `ACTIVE` em `2026-09-29T15:37:45Z`; digest web `sha256:d8250d10371b1749861a63c7f31e14da15882e5a1d2d2ae71f2b779d9eb69975` |
+| Migration | `APPLIED`; release registrou `migration-safety: clear`, 1 pendente e 0 destrutivas; `backstage.0078_importbatch_provenance... OK` em `2026-09-29T15:35:09Z` |
 | Env/config/flag | `N/A` |
 | Valor desejado | Proveniencia sanitizada ativa; `--rebuild` bloqueado em producao; vendas Yooga restritas a `HistoricalSale*` |
-| Dependencia/gate | CI obrigatoria verde e merge antes de #1248 |
-| Smoke Live | `PENDING`; confirmar migration aplicada, ajuda do importador e invariancia operacional sem executar importacao real |
+| Dependencia/gate | `SATISFIED`; CI, merge, migration aditiva e smoke pre-go-live verdes; #1248 entrou na merge queue, posicao 2 |
+| Smoke Live | `PASSED`; Pre-go-live Smoke run `36591163320` verde apos o deployment (`/ready/`, menu, checkout anonimo e SSR); release concluiu `setup_groups: OK`; nenhuma importacao real foi executada |
 | Rollback | Reimplantar release anterior; preservar migration aditiva salvo rollback de banco revisado e explicitamente autorizado |
-| Evidencia | [PR #1244](https://github.com/nelsonboulangerie/django-shopman/pull/1244) |
-| Ultima atualizacao | `2026-09-29T14:09:57Z` |
-| Estado/DONE | `IN_PROGRESS`; nao DONE ate merge, migration, deploy e smoke Live |
+| Evidencia | [PR #1244](https://github.com/nelsonboulangerie/django-shopman/pull/1244); [Deploy Images run 36590773802](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36590773802); [Pre-go-live Smoke run 36591163320](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36591163320); release deployment `2418afe3-e47b-4686-abd8-7e47027ad451` |
+| Ultima atualizacao | `2026-09-29T15:39:07Z` |
+| Estado/DONE | `DONE`; merge, deploy, migration segura e smoke pre-go-live comprovados; nenhuma carga historica ou operacional foi executada |
 
 ### Gate de catalogo Day-1, somente leitura / PR #1248
 
 | Campo | Estado |
 |---|---|
 | Owner | `execute_proddata_program` |
-| Merge | `WAITING_PREDECESSOR`; head `8be4766e6`; auto-merge suspenso ate #1244 integrar; falha de import boundary corrigida pela API publica do Offerman e CI reexecutando |
+| Merge | `IN_QUEUE`; head `8be4766e6`; #1244 integrado; merge queue posicao 2, aguardando checks |
 | Deploy | `PENDING_MERGE`; sem deploy ID |
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
