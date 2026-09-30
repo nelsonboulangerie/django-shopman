@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -191,6 +191,61 @@ test-framework: test-shop test-storefront test-backstage ## Testes do framework 
 test-shop: ## Orquestrador
 	@echo "── Shop ──"
 	$(PYTHON) -m pytest shopman/shop/tests -q -n auto
+
+# ── Shard do shop ─────────────────────────────────────────────────────────
+# Mesmo desenho do backstage logo abaixo, pelo mesmo motivo: com o backstage
+# fatiado, o `test-shop` virou o caminho crítico do Runtime Gate. Na fila de
+# merge de 30/09 o job levou 18min12s (#1280) e 20min00s (#1279), contra
+# 17min30s e 19min18s do `Backstage rest`, o segundo colocado.
+#
+# Critério da divisão: TEMPO por arquivo, medido. Uma rodada local inteira com
+# `--junitxml` (30/09, 10.569 testes) somou ~1.336s de teste, sem contar a
+# criação do banco de cada worker. Não há penhasco como no backstage: o arquivo
+# mais pesado vale 93s (7%). Os 15 abaixo, os mais pesados em ordem, somam ~672s
+# e ficam num shard; os outros 452 arquivos somam ~662s e ficam no outro. São
+# seeds completos, migrações revertidas e reaplicadas, varreduras do repositório
+# e a leva de estresse da sugestão.
+#
+# Conferido por coleta: 420 + 10.149 = 10.569, exatamente o que o alvo inteiro
+# coleta, sem id repetido. Relógio local (30/09, uma rodada por vez, duas
+# rodadas): `heavy` 161s e 167s, `rest` 176s e 180s. Uma rodada anterior, com a
+# máquina mais carregada, deu 402s para o `heavy` — o aviso do backstage vale
+# aqui também.
+#
+# ⚠️ Arquivo novo cai no `rest` por construção. Se um dia o `rest` voltar a ser
+# o caminho crítico, meça de novo (a mesma rodada com `--junitxml`) e mova os
+# pesados para cá; olhe o CI para o relógio, não a máquina local.
+#
+# ⚠️ A mesma garantia de união e disjunção do backstage: um alvo é `<lista>`, o
+# outro é `<tudo> --ignore=<lista>`. Arquivo renomeado ou apagado sem sair da
+# lista reprova ALTO no shard `heavy` (`pytest caminho/que/nao/existe.py` é erro).
+#
+# O `test-shop` acima continua rodando TUDO numa invocação só, para `make test`
+# e para quem roda local. Os dois alvos abaixo existem para a matriz do CI.
+SHOP_HEAVY_TESTS := \
+	shopman/shop/tests/test_admin.py \
+	shopman/shop/tests/test_apply_grocery_catalog.py \
+	shopman/shop/tests/test_apply_product_brands.py \
+	shopman/shop/tests/test_deploy_component_selection.py \
+	shopman/shop/tests/test_external_adapter_debug_gate.py \
+	shopman/shop/tests/test_import_boundaries.py \
+	shopman/shop/tests/test_marketing_approval.py \
+	shopman/shop/tests/test_marketing_delivery_aggregate.py \
+	shopman/shop/tests/test_marketing_delivery_attempts.py \
+	shopman/shop/tests/test_marketing_delivery_recovery.py \
+	shopman/shop/tests/test_marketing_outbox.py \
+	shopman/shop/tests/test_pos_cash_ledger.py \
+	shopman/shop/tests/test_seed_rule_configs.py \
+	shopman/shop/tests/test_setup_operators.py \
+	shopman/shop/tests/test_suggestion_stress.py
+
+test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard 1/2 do CI)
+	@echo "── Shop (arquivos pesados) ──"
+	$(PYTHON) -m pytest $(SHOP_HEAVY_TESTS) -q -n auto
+
+test-shop-rest: ## Shop — todo o resto (shard 2/2 do CI)
+	@echo "── Shop (resto) ──"
+	$(PYTHON) -m pytest shopman/shop/tests -q -n auto $(addprefix --ignore=,$(SHOP_HEAVY_TESTS))
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
