@@ -359,7 +359,7 @@ mergeados hoje estão em `main` e **nenhum está no ar**. **Go-live é impossív
 
 | Tentativa | Resultado |
 |---|---|
-| `doctl apps create-deployment` (contexto `shopman-spec-update`) | `a124f184` → **ERROR 9/29** |
+| `doctl apps create-deployment` (contexto `shopman-do-app-admin`) | `a124f184` → **ERROR 9/29** |
 | `doctl apps create-deployment --force-rebuild` | `ff76afbf` → **ERROR 9/29** |
 | As 4 tags que o spec referencia existem no DOCR? | **Sim** — `web` (189 MB), `storefront` (79 MB), `operator-floor`, `operator-office` |
 
@@ -367,9 +367,13 @@ Ou seja: **não é transitório, não é cache de build, não é imagem ausente 
 deploy.** O passo `build` falha de forma determinística com erro do provedor. **Escalar para o
 suporte da DO** — os recursos do nosso lado estão esgotados.
 
-⚠️ O contexto `default` do `doctl` **não tem token** (`access token is required`); quem tem
-escrita é o **`shopman-spec-update`**. Use `doctl --context shopman-spec-update`, e **apenas**
-`create-deployment` — nunca `apps update` (ver D-009).
+⚠️ O contexto `default` do `doctl` **não tem token** (`access token is required`), e isso é
+**deliberado**: um default com token ou lê mentira (se for cego a bancos) ou escreve sem querer (se
+tiver escrita). **Default que falha alto é o default correto** — ele obriga a dizer o que se quer.
+Quem tem escrita é o **`shopman-do-app-admin`** (era `shopman-spec-update`; renomeado em 30/09/2026
+porque o nome antigo nomeava o comando perigoso — `apps update`). Use
+`doctl --context shopman-do-app-admin`, e **apenas** `create-deployment` — nunca `apps update`
+(ver D-009).
 
 **⛔ Não é possível abrir o chamado programaticamente** (verificado em 2026-09-30):
 `doctl` **não tem** subcomando de support/ticket (ausente da árvore de comandos), e
