@@ -426,17 +426,16 @@ envs:
   scope: RUN_TIME
   value: '8932087'
   type: GENERAL
-# Os consumers globais e a via unitária de publicação permanecem desligados.
-# Canários reais exigem janela aprovada e configuração temporária no App
-# Platform; o blueprint versionado nunca deve deixá-los pré-armados. O segredo
-# HMAC permanece somente no App Platform.
+# Os consumers globais da outbox e da entrega estão LIGADOS no app vivo e o
+# arquivo acompanha o vivo (reconciliação de 30/09/2026). A via unitária de
+# canário continua desligada. O segredo HMAC permanece somente no App Platform.
 - key: SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED
   scope: RUN_TIME
@@ -550,7 +549,7 @@ envs:
 # connection são independentes; a chave do ingresso é exclusiva do Concierge.
 - key: SHOPMAN_CONCIERGE_ENABLED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE
   scope: RUN_TIME
@@ -603,14 +602,15 @@ envs:
 # não ampliam identidade; lista vazia fecha a connection.
 - key: CONCIERGE_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
-  value: '4605528796186498,4685528796186498,1962036908'
+  value: '4605528796186498'
   type: GENERAL
-# Prazo da observação (captura passiva): 30 dias, o teto aceito, durante o
-# aprendizado (decisão do dono, 23/09/2026); depois encurta. O valor novo vale
-# também para o já guardado: cleanup_concierge_observations realinha o prazo.
+# Prazo da observação (captura passiva): 30 dias era o teto aceito durante o
+# aprendizado (decisão do dono, 23/09/2026); o app vivo já encurtou para 7. O
+# valor novo vale também para o já guardado: cleanup_concierge_observations
+# realinha o prazo.
 - key: CONCIERGE_OBSERVATION_RETENTION_DAYS
   scope: RUN_TIME
-  value: '30'
+  value: '7'
   type: GENERAL
 # Observacao passiva ja configurada no app vivo. Estas chaves precisam morar no
 # blueprint para nao desaparecerem num update integral do App Platform.
@@ -636,7 +636,6 @@ envs:
   type: GENERAL
 - key: CONCIERGE_OBSERVATION_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
-  value: ''
   type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
