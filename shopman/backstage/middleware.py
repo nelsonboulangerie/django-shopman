@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 from django.shortcuts import redirect
 
 from shopman.backstage.services import admin_session, operator_session
 from shopman.shop.models import Shop
+
+logger = logging.getLogger(__name__)
 
 
 class OnboardingMiddleware:
@@ -53,6 +57,36 @@ class OnboardingMiddleware:
             return redirect(f"{self.SETUP_PATH}add/")
 
         return self.get_response(request)
+
+
+class ActingDeviceMiddleware:
+    """Declara, para a requisição, qual dispositivo está agindo.
+
+    Os escritores únicos das trilhas (o livro do caixa, os eventos da comanda)
+    carimbam o dispositivo sozinhos, sem depender de chamador nenhum lembrar
+    (``shopman.utils.acting_device``). Este middleware só diz COMO descobri-lo:
+    o ``TrustedDevice.pk`` da estação que o navegador apresentou, o MESMO que a
+    trilha de acesso grava (``station_trust.station_device_id``). Preguiçoso:
+    só resolve se algo for gravado, e uma vez por requisição.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from shopman.utils.acting_device import acting_device
+
+        def resolve() -> str:
+            from shopman.backstage.station_trust import station_device_id
+
+            try:
+                return station_device_id(request)
+            except Exception:  # pragma: no cover - a trilha nunca derruba o ato
+                logger.warning("acting_device.station_lookup_failed", exc_info=True)
+                return ""
+
+        with acting_device(resolve):
+            return self.get_response(request)
 
 
 class SessionRenewalMiddleware:

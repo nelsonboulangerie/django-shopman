@@ -15,6 +15,7 @@ from shopman.cashman.exceptions import CashError
 from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.cashman.services import ledger
 from shopman.cashman.signals import entry_recorded, shift_closed, shift_opened
+from shopman.utils import acting_device
 
 Kind = Entry.Kind
 
@@ -75,7 +76,8 @@ def open_shift(*, operator, terminal: Terminal | None = None, float_q: int = 0, 
         # float_q == 0: nada a lançar; o livro começa vazio e o saldo é zero.
         if float_q > 0:
             float_entry = Entry.objects.create(
-                shift=shift, operator=operator, at=shift.opened_at, kind=Kind.FLOAT_IN, amount_q=float_q
+                shift=shift, operator=operator, at=shift.opened_at, kind=Kind.FLOAT_IN, amount_q=float_q,
+                payload=acting_device.stamp({}),
             )
             transaction.on_commit(lambda: entry_recorded.send(sender=Entry, entry=float_entry))
     return shift
@@ -109,10 +111,10 @@ def close_shift(shift: Shift, *, counted_q: int, actor, notes: str = "", at=None
             at=now,
             kind=Kind.COUNT,
             amount_q=counted_q - expected_q,
-            payload={
+            payload=acting_device.stamp({
                 "counted_q": counted_q,
                 "notes": str(notes or "").strip(),
-            },
+            }),
         )
         locked.status = Shift.Status.CLOSED
         locked.closed_at = now

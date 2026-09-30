@@ -477,15 +477,15 @@ ReturnHandler quando existe registro de devolução; não recebe todos os itens 
 
 ---
 
-## SignInEvent.data
+## orderman.SessionEvent.payload — chave transversal
 
-Contexto de uma linha da trilha de acesso (`backstage/services/sign_in_audit.record`, escritor único).
+O vocabulário de cada `type` pertence a quem emite (`Session.emit_event`). Uma chave vale para todos:
 
-| Chave | Tipo | Quem escreve | Quem lê | Descrição |
-|-------|------|-------------|---------|-----------|
-| `user_agent` | `string` | `sign_in_audit.record` | aviso ao dono da conta, Admin | Cabeçalho `User-Agent`, cortado em 300 caracteres |
-| `path` | `string` | `sign_in_audit.record` | Admin | Caminho da requisição que autenticou |
-| `station_device_id` | `string` | `sign_in_audit.record`, via `station_trust.station_device_id` | Admin, auditoria | **Qual dispositivo**: o `TrustedDevice.pk` (UUID) da estação confiável que este navegador apresentou. `station_ref` (coluna) diz o BALCÃO; dois tablets no mesmo `Terminal.ref` dão o mesmo `station_ref` e `station_device_id` diferentes. Ausente fora da loja e quando o navegador apresenta mais de um vínculo (mesma regra do `station_ref`: a ordem dos cookies nunca escolhe) |
+| Chave | Tipo | Quem escreve | Descrição |
+|-------|------|-------------|-----------|
+| `station_device_id` | `str` (UUID) | `Session.emit_event`, sozinho, via `shopman.utils.acting_device` | O `TrustedDevice.pk` da estação que agiu, o MESMO de `SignInEvent.data` e `cashman.Entry.payload`. O que o chamador puser nessa chave é descartado. Ausente fora de estação. Não entra no export de conta do cliente (`account_export` lê lista fechada de campos) |
+
+---
 
 ## Order.snapshot
 
@@ -1840,6 +1840,8 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 **não** repete valor. Guarda de imutabilidade igual à do `stockman.Move`
 (`update()`/`delete()` levantam); imutabilidade real no banco não é prometida.
 
+⚠️ **`station_device_id` vale para TODO `kind`** e não é escrito por chamador nenhum: os três escritores do livro (`ledger.record`, e `float_in`/`count` em `shifts.open_shift`/`close_shift`) carimbam sozinhos, via `shopman.utils.acting_device`, o dispositivo que a requisição declarou (`backstage.middleware.ActingDeviceMiddleware` → `station_trust.station_device_id`, o `TrustedDevice.pk`). O que o chamador puser nessa chave é descartado. Ausente quando nenhum dispositivo agiu: worker, comando, seed, ou requisição fora de uma estação. É o mesmo identificador de `SignInEvent.data.station_device_id`, e é o que dá dono a uma falta na gaveta quando dois tablets dividem o turno. Não sai em projeção: o X/Z e a antesala leem chaves nomeadas do payload, nunca ele inteiro.
+
 ⚠️ **Um pedido entra uma vez por turno, por tipo.** `UniqueConstraint` parcial em
 `(shift, order_ref)` para `sale` e para `cod_settled` (`order_ref` vazio fica de
 fora: não há pedido a que amarrar). Dois submits do mesmo fechamento — retry de
@@ -2081,6 +2083,7 @@ achado a linha**, e por isso não vira coluna.
 | `revoked_sign_in_event_id` | `int` | na linha `outcome=revoked`, qual acesso foi repudiado |
 | `sessions_revoked` | `int` | quantas sessões caíram |
 | `requested_by` | `str` | quem pediu a revogação (é sempre o dono da conta — a API recusa o resto) |
+| `station_device_id` | `str` (UUID) | **qual dispositivo**: o `TrustedDevice.pk` da estação confiável que o navegador apresentou (`station_trust.station_device_id`). A coluna `station_ref` diz o BALCÃO; dois tablets no mesmo terminal dão o mesmo `station_ref` e `station_device_id` diferentes. É a MESMA chave e o MESMO valor que o livro do caixa (`cashman.Entry.payload`) e os eventos da comanda (`orderman.SessionEvent.payload`) gravam: é por ela que se cruza "quem entrou neste dispositivo" com "o que ele lançou". Ausente fora da loja e quando o navegador apresenta mais de um vínculo (a ordem dos cookies nunca escolhe) |
 
 `anomalies` mora no JSON e não numa coluna de propósito: é resultado de uma
 **regra editável** (`RuleConfig` `sign_in_highlight`), e virar coluna congelaria

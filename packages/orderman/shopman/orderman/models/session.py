@@ -8,6 +8,7 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from shopman.orderman.ids import generate_line_id
+from shopman.utils import acting_device
 from shopman.utils.monetary import monetary_mult
 from shopman.utils.refs import RefField
 
@@ -392,7 +393,9 @@ class Session(models.Model):
 
         from ._sequenced_event import create_sequenced_event
 
-        event_payload = payload or {}
+        # O dispositivo que agiu, carimbado pelo escritor único e não pelos
+        # chamadores (ver ``shopman.utils.acting_device``).
+        event_payload = acting_device.stamp(payload) if isinstance(payload, dict) or payload is None else payload
         with transaction.atomic():
             persisted = type(self).objects.select_for_update().get(pk=self.pk)
             if persisted.is_anonymized:
