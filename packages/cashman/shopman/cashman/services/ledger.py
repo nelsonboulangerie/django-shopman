@@ -19,6 +19,7 @@ from django.utils import timezone
 from shopman.cashman.exceptions import CashError
 from shopman.cashman.models import Entry, Shift
 from shopman.cashman.signals import entry_recorded
+from shopman.utils import acting_device
 
 Kind = Entry.Kind
 
@@ -105,7 +106,11 @@ def record(
     if kind in Entry.APPROVAL_REQUIRED and approved_by is None:
         raise CashError("APPROVAL_REQUIRED", f"{Kind(kind).label} exige a assinatura de quem autorizou.", {"kind": kind})
 
-    payload = dict(payload or {})
+    # O dispositivo que agiu entra AQUI, no escritor único, e não pelos
+    # chamadores: o que dependesse de cada um lembrar sumiria em silêncio no
+    # primeiro caminho novo. Quem diz qual é a requisição (``acting_device``),
+    # nunca o corpo; o que vier do chamador nessa chave é descartado.
+    payload = acting_device.stamp(dict(payload or {}))
     _validate_payload(kind, payload)
 
     with transaction.atomic():

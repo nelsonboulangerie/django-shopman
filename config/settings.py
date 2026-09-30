@@ -390,6 +390,9 @@ MIDDLEWARE = [
     # Admin 2FA gate (no-op unless SHOPMAN_ADMIN_REQUIRE_2FA) — after OTPMiddleware.
     "shopman.backstage.middleware_2fa.AdminTwoFactorMiddleware",
     "shopman.shop.middleware.APIVersionHeaderMiddleware",
+    # Qual dispositivo age nesta requisição, para o livro do caixa e os eventos
+    # da comanda carimbarem sozinhos (shopman.utils.acting_device).
+    "shopman.backstage.middleware.ActingDeviceMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = [
