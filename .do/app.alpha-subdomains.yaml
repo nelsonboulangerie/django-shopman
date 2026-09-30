@@ -249,10 +249,6 @@ envs:
   scope: RUN_TIME
   value: '.boulangerie.com.br'
   type: GENERAL
-- key: SHOPMAN_REQUIRE_ACTIVE_OPERATOR
-  scope: RUN_TIME
-  value: 'true'
-  type: GENERAL
 - key: SHOPMAN_ORDERS_BASE_URL
   scope: RUN_TIME
   value: 'https://gestor.boulangerie.com.br'
