@@ -2,13 +2,48 @@
 
 > Separar dois conceitos que hoje são o mesmo objeto. Prompt auto-contido.
 
-**Status**: Aprovado pelo dono como WP próprio (17/09/2026), não iniciado
+**Status**: Entregue no PR #1249 (merge `b9ee08f43`, commit `366c13b00`, 29/09/2026). Resta a prova em runtime, ver "Estado real"
 **Dependências**: nenhuma. Convive com #769, #775 e #804, que mitigaram sintomas sem tocar a causa
-**Severidade**: 🟠 Média hoje (mitigado, mas volta em qualquer configuração nova) → 🔴 Alta com mais de uma estação por navegador
+**Severidade**: resolvida no código pelo #1249; era 🟠 Média (🔴 Alta com mais de uma estação por navegador)
 
 ---
 
-## O problema, em uma frase
+## Estado real (29/09/2026)
+
+Travar a estação **não é mais `logout()`**. O #1249 trocou a sessão encerrada por
+uma **trava por capability dentro da sessão**:
+
+- `shopman/backstage/services/operator_session.py` guarda as capabilities
+  travadas na chave de sessão `shopman_locked_station_capabilities`
+  (`lock_capability`, `unlock_capability`, `is_capability_locked`);
+- `OperatorLockView` (`shopman/backstage/api/operations.py`) exige `perm` no
+  corpo e trava só aquela capability; a identidade autenticada continua viva;
+- o gate (`shopman/backstage/api/permissions.py`) devolve `station_locked`
+  apenas para as APIs da capability travada. O Gestor aberto no mesmo
+  navegador segue respondendo;
+- PIN/crachá destrava a capability pedida; o `operator-kit`
+  (`useOperatorLock.ts`) envia `perm` ao travar e ao destravar;
+- o teste que fixava o logout da zona inteira foi **invertido**:
+  `test_api_operator_pin.py::test_pdv_lock_keeps_shared_session_and_gestor_alive`,
+  mais `test_unlock_clears_only_the_requested_capability` e
+  `test_lock_requires_a_known_capability`.
+
+Das perguntas abaixo, o #1249 respondeu a **1** (a trava mora na sessão Django,
+não em `Terminal`: sem migração, e não é queryable por loja) e a **3** (destrava
+quem provar PIN/crachá com a capability). As perguntas **2, 4 e 5** não foram
+tratadas explicitamente no PR. Com o fim do `logout()`, o que o turno deixou na
+sessão agora **fica** nela ao travar, o oposto do comportamento que a pergunta 2
+descrevia.
+
+**Pendente:** a prova em runtime pedida em "Como saber que deu certo" (dois apps
+no mesmo navegador, travar um, observar o outro). O PR registra só testes
+automatizados.
+
+O texto a partir daqui é o diagnóstico de 17/09, mantido como histórico.
+
+---
+
+## O problema, em uma frase (até o #1249)
 
 **Travar o PDV é `logout()` no Django, e a sessão é uma só para toda a zona
 `.boulangerie.com.br`.** Proteger o balcão obriga a derrubar o Gestor.
