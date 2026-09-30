@@ -253,12 +253,29 @@ this persists.` — **erro da própria DigitalOcean, não do nosso código.** A 
 produção; `menu/` continua 3,37 s com `cf-cache-status: BYPASS`; home SSR 3,06–3,72 s. Os 10 PRs
 mergeados hoje estão em `main` e **nenhum está no ar**. **Go-live é impossível enquanto isto durar.**
 
-**Ação:** `doctl apps create-deployment 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f` (token com escrita).
-Se falhar igual, tentar com `--force-rebuild`; persistindo, abrir chamado no suporte da DO —
-o erro é do provedor e persiste há mais de 12 h.
+**Ação tentada em 2026-09-30 12:08–12:10 UTC — e o resultado importa:**
 
-⚠️ O token de `doctl` disponível para agentes é **somente-leitura** (`403 You are not authorized`
-em `create-deployment`). A ação exige credencial do dono.
+| Tentativa | Resultado |
+|---|---|
+| `doctl apps create-deployment` (contexto `shopman-spec-update`) | `a124f184` → **ERROR 9/29** |
+| `doctl apps create-deployment --force-rebuild` | `ff76afbf` → **ERROR 9/29** |
+| As 4 tags que o spec referencia existem no DOCR? | **Sim** — `web` (189 MB), `storefront` (79 MB), `operator-floor`, `operator-office` |
+
+Ou seja: **não é transitório, não é cache de build, não é imagem ausente e não é credencial de
+deploy.** O passo `build` falha de forma determinística com erro do provedor. **Escalar para o
+suporte da DO** — os recursos do nosso lado estão esgotados.
+
+⚠️ O contexto `default` do `doctl` **não tem token** (`access token is required`); quem tem
+escrita é o **`shopman-spec-update`**. Use `doctl --context shopman-spec-update`, e **apenas**
+`create-deployment` — nunca `apps update` (ver D-009).
+
+**Chamado ao suporte da DO — conteúdo:** app `shopman-nelson` (id `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`).
+Todo deployment desde 2026-09-29 21:31 UTC falha no passo `build` com
+`InternalError: An internal error occurred`. Deployment ativo é `c4fce115` (automated rollback).
+Reproduzido manualmente às 12:08 e 12:10 UTC (deployments `a124f184` e `ff76afbf`), inclusive com
+`--force-rebuild`. As imagens DOCR referenciadas pelo spec (`shopman:web`, `shopman:storefront`,
+`shopman:operator-floor`, `shopman:operator-office`) existem no registry. Pedimos investigação do
+motivo do `build` falhar para este app.
 
 ---
 
