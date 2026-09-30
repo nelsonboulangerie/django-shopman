@@ -10,6 +10,13 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+    operatorSecurityHeaders: true,
+    // Sem exceção de CSP: o leitor de código (@zxing) vem do próprio bundle, a foto
+    // da nota vira `blob:` (já na base) e nada sai para outro host.
+    // Exceção de Permissions-Policy, decisão do dono em 29/09/2026 (SEC-SURF-001):
+    // a câmera lê o QR ou o código de barras da NF (`openInvoiceScanner`, via
+    // getUserMedia em `pages/index.vue`), só nesta origem.
+    operatorPermissionsAllow: { camera: "self" },
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome
