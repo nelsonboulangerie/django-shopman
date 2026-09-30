@@ -79,8 +79,11 @@ em silêncio.
   `operator-kit` (P1, #780, no `main` desde 17/09). Sem elas a saúde agregada reprovava
   (medido antes do #780: KDS 404, Central 200 em HTML) e o deploy dos grupos não ficaria
   verde.
-- **Rollback:** reaplicar o spec anterior (8 services). As imagens por app seguem sendo
-  publicadas (`OPERATOR_PER_APP_IMAGES` em `deploy-images.yml`) até 14 dias de prova.
+- **Rollback:** reaplicar o spec anterior (8 services), depois de republicar as imagens
+  por app do topo (dispatch do Deploy Images com `per_app_images=true`). Elas foram
+  publicadas a cada push de 17/09 a 30/09/2026 e deixaram de ser em 30/09
+  (`OPERATOR_PER_APP_IMAGES: "false"`): nenhum spec, vivo ou em `.do/`, as referencia,
+  e nenhum deployment foi causado por tag por app depois de 17/09 15:43 UTC.
 
 ## Prova exigida para encerrar a janela de 14 dias
 

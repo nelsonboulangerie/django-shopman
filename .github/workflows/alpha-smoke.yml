@@ -189,14 +189,55 @@ jobs:
             --name published-components --dir manifesto
           cat manifesto/published.json
 
-      - name: Esperar a DigitalOcean trocar os contêineres
+      # ⚠️ Dois modos de implantação, e o manifesto diz qual foi. Com
+      # `deploy_on_push` ligado no spec vivo, cada tag cria o próprio deployment e
+      # a correlação é pelo digest (`cause_details.docr_push`). No modo de
+      # deployment ÚNICO, o Deploy Images cria um deployment manual depois de
+      # publicar tudo: esse não carrega digest, e esperar por digest daria
+      # "ausente" para sempre. Aí a correlação é pelo id que o próprio run gravou,
+      # e o Deploy Images só fica verde depois de vê-lo ACTIVE.
+      - name: Como este run implantou
+        id: modo
         if: github.event_name == 'workflow_run'
+        run: |
+          dep=$(jq -r '.deployment.id // empty' manifesto/published.json)
+          echo "deployment=${dep}" >> "$GITHUB_OUTPUT"
+          echo "modo: $(jq -r '.deploy_mode // "deploy_on_push"' manifesto/published.json)" \
+               "deployment: ${dep:-<por tag>}"
+
+      - name: Esperar a DigitalOcean trocar os contêineres
+        if: >-
+          github.event_name == 'workflow_run' &&
+          steps.modo.outputs.deployment == ''
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_APP_NAME: ${{ vars.DO_APP_NAME }}
         run: |
           python3 scripts/wait_for_do_deployment.py \
             --manifest manifesto/published.json
+
+      # SUPERSEDED também serve: um deployment posterior o substituiu, e com o
+      # Deploy Images serializado ele carrega este commit. ERROR/CANCELED não:
+      # as asserções mediriam a versão anterior e ficariam verdes.
+      - name: Conferir o deployment único do run
+        if: >-
+          github.event_name == 'workflow_run' &&
+          steps.modo.outputs.deployment != ''
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DEP_ID: ${{ steps.modo.outputs.deployment }}
+        run: |
+          set -euo pipefail
+          app=$(jq -r '.deployment.app_id' manifesto/published.json)
+          fase=$(curl -fsS --max-time 30 -H "Authorization: Bearer ${DO_TOKEN}" \
+            "https://api.digitalocean.com/v2/apps/${app}/deployments/${DEP_ID}" \
+            | jq -r '.deployment.phase')
+          echo "deployment ${DEP_ID}: ${fase}"
+          case "${fase}" in
+            ACTIVE|SUPERSEDED) ;;
+            *) echo "::error::o deployment ${DEP_ID} deste run está ${fase}:" \
+                    "o que ele publicou NÃO está no ar."; exit 1 ;;
+          esac
 
       # O probe não afirma nada sobre deploy — exercita credencial, API e
       # parsing antes do merge, que é o que pegou o `syntax error` da primeira
