@@ -137,7 +137,10 @@ class Promotion(models.Model):
 
     def applies_to_channel(self, channel_ref: str) -> bool:
         """A promoção vale neste canal? Vazio = todos (mesma régua do RuleConfig)."""
-        refs = list(self.channels.values_list("ref", flat=True))
+        # ``.all()`` usa o prefetch de ``channels`` quando houver (o cardápio
+        # carrega todas as promoções com ele); ``values_list`` o ignorava e fazia
+        # uma consulta por promoção.
+        refs = [channel.ref for channel in self.channels.all()]
         return not refs or channel_ref in refs
 
 

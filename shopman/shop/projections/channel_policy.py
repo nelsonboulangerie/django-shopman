@@ -128,14 +128,12 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
 
 
 def _resolve_channel_ref_and_overrides(channel_or_ref: Any) -> tuple[str, dict[str, Any]]:
-    from shopman.shop.models import Channel, Shop
+    from shopman.shop.models import Shop
+    from shopman.shop.request_memo import channel_by_ref
 
     if isinstance(channel_or_ref, str):
         channel_ref = channel_or_ref
-        try:
-            channel = Channel.objects.get(ref=channel_ref)
-        except Channel.DoesNotExist:
-            channel = None
+        channel = channel_by_ref(channel_ref)
     else:
         channel = channel_or_ref
         channel_ref = str(getattr(channel, "ref", "") or "")

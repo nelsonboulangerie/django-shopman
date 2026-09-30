@@ -17,7 +17,7 @@ def test_shell_projection_never_builds_catalog_or_order_history(rf, monkeypatch)
     def heavy_path_called(*_args, **_kwargs):
         raise AssertionError("the global shell entered a home-only heavy path")
 
-    monkeypatch.setattr(home, "build_catalog", heavy_path_called)
+    monkeypatch.setattr(home, "build_featured_items", heavy_path_called)
     monkeypatch.setattr(home, "_reorder_context", heavy_path_called)
 
     payload = projection_data(home.build_shell(rf.get("/api/v1/storefront/shell/")))
@@ -37,7 +37,7 @@ def test_shell_endpoint_returns_global_state_without_home_catalog(client, monkey
     def heavy_path_called(*_args, **_kwargs):
         raise AssertionError("shell endpoint rebuilt the catalog")
 
-    monkeypatch.setattr(home, "build_catalog", heavy_path_called)
+    monkeypatch.setattr(home, "build_featured_items", heavy_path_called)
 
     response = client.get("/api/v1/storefront/shell/")
 

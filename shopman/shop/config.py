@@ -7,6 +7,7 @@ Cascata: canal → loja → defaults.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 
 QUALITY_OK_GRADE_REFS = ("excellent", "standard")
@@ -426,7 +427,8 @@ class ChannelConfig:
           2. Shop.defaults (nível loja, Admin-configurável)
           3. Channel.config (nível canal, Admin-configurável)
         """
-        from shopman.shop.models import Channel, Shop
+        from shopman.shop.models import Shop
+        from shopman.shop.request_memo import channel_by_ref
 
         base = cls.defaults()
 
@@ -435,18 +437,15 @@ class ChannelConfig:
         if shop and shop.defaults:
             base = deep_merge(base, shop.defaults)
 
-        # Nível canal
+        # Nível canal — a linha é lida uma vez por request (``request_memo``);
+        # a cópia impede que o config montado aqui compartilhe listas com ela.
         if isinstance(channel_or_ref, str):
-            channel_ref = channel_or_ref
-            try:
-                channel = Channel.objects.get(ref=channel_ref)
-            except Channel.DoesNotExist:
-                channel = None
+            channel = channel_by_ref(channel_or_ref)
         else:
             channel = channel_or_ref
 
         if channel and channel.config:
-            base = deep_merge(base, channel.config)
+            base = deep_merge(base, copy.deepcopy(channel.config))
 
         config = cls.from_dict(base)
         config.validate()

@@ -312,17 +312,39 @@ def published_products_by_collection(
         )
         return [(active_collection.ref, products)]
 
+    # Visão completa: UMA leitura de produtos e UMA de vínculos com coleção, e o
+    # agrupamento em Python. Eram três consultas por coleção ativa (produto +
+    # dois prefetches), 27 no cardápio de nove coleções, relendo os mesmos
+    # produtos a cada volta. A ordem continua sendo a do banco: a posição de cada
+    # produto em ``order_by("name")`` desempata o ``sort_order`` do vínculo, com a
+    # collation do banco, e não com a comparação de string do Python.
+    from shopman.offerman.models import CollectionItem
+
+    products = list(base.order_by("name").distinct())
+    if not products:
+        return []
+    name_rank = {p.pk: index for index, p in enumerate(products)}
+    by_pk = {p.pk: p for p in products}
+
+    links_by_collection: dict[Any, list[tuple[int, int, Any]]] = {}
+    has_any_collection: set[Any] = set()
+    for collection_id, product_id, sort_order in CollectionItem.objects.filter(
+        product_id__in=list(by_pk),
+    ).values_list("collection_id", "product_id", "sort_order"):
+        has_any_collection.add(product_id)
+        links_by_collection.setdefault(collection_id, []).append(
+            (sort_order, name_rank[product_id], product_id),
+        )
+
     groups: list[tuple[str | None, list[Any]]] = []
     for collection in active_collections():
-        products = list(
-            base.filter(collection_items__collection=collection)
-            .order_by("collection_items__sort_order", "name")
-            .distinct()
-        )
-        if products:
-            groups.append((collection.ref, products))
+        links = sorted(links_by_collection.get(collection.pk, ()))
+        if links:
+            groups.append((collection.ref, [by_pk[product_id] for _, _, product_id in links]))
 
-    uncategorized = list(base.exclude(collection_items__isnull=False).order_by("name").distinct())
+    # Sem coleção nenhuma (nem inativa): mesmo critério do antigo
+    # ``exclude(collection_items__isnull=False)``.
+    uncategorized = [p for p in products if p.pk not in has_any_collection]
     if uncategorized:
         groups.append((None, uncategorized))
     return groups

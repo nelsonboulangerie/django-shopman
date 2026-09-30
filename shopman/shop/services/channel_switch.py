@@ -213,9 +213,9 @@ def ensure_accepting_orders(channel_ref: str, *, now: datetime | None = None) ->
 
 
 def is_channel_active(channel_ref: str, *, now: datetime | None = None) -> bool:
-    from shopman.shop.models import Channel
+    from shopman.shop.request_memo import channel_by_ref
 
-    channel = Channel.objects.filter(ref=channel_ref).only("ref", "is_active", "config").first()
+    channel = channel_by_ref(channel_ref)
     return channel is not None and effective_active(channel, now=now)
 
 
