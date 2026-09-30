@@ -13,6 +13,7 @@ from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 
 from shopman.backstage.services import pos as pos_service
+from shopman.backstage.tests.support import trust_station
 
 REPORT_URL = "/api/v1/backstage/pos/cash/report/"
 
@@ -76,6 +77,8 @@ class POSCashReportTests(TestCase):
         _grant(self.operator, "operate_pos", "audit_shift")
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
+        # O X é da gaveta da ESTAÇÃO: este cliente é o balcão ``pdv-main``.
+        trust_station(self.client, self.terminal.ref)
         self.manager_approval = _manager_approval()
         # Fechar a gaveta é da gerência (decisão do dono, 21/08/2026): o caixa
         # abre e opera, quem conta no fim é quem fecha o dia.
@@ -301,11 +304,56 @@ class POSCashReportTests(TestCase):
         self.assertEqual(x["sales_count"], 0)
         self.assertEqual(x["sales_by_method"], [])
 
-        # E a leitura da OUTRA gaveta traz a venda dela — mesma requisição, ref
-        # diferente. Sem isto, "ignora a outra" poderia estar apenas quebrado.
-        outro = self.client.get(REPORT_URL, {"terminal_ref": other_terminal.ref}).json()["report"]["x_reading"]
+        # E a leitura da OUTRA gaveta traz a venda dela, lida da estação DELA.
+        # Sem isto, "ignora a outra" poderia estar apenas quebrado.
+        from django.test import Client
+
+        totem = Client()
+        totem.force_login(self.operator)
+        trust_station(totem, other_terminal.ref)
+        outro = totem.get(REPORT_URL).json()["report"]["x_reading"]
         self.assertEqual(outro["shift_id"], other_shift.pk)
         self.assertEqual(outro["sales_count"], 1)
+
+    # ── a URL não escolhe a gaveta (WP-4) ──────────────────────────────
+
+    def test_pedir_o_x_de_outro_terminal_pela_url_e_recusado(self) -> None:
+        """Mesma regra de toda mutação de dinheiro: a URL confere, nunca escolhe."""
+        Terminal.objects.create(ref="pdv-2", label="PDV 2", channel_ref=self.terminal.channel_ref)
+        self._open_shift()
+
+        resp = self.client.get(REPORT_URL, {"terminal_ref": "pdv-2"})
+
+        self.assertEqual(resp.status_code, 409)
+        body = resp.json()
+        self.assertEqual(body["error"]["code"], "pos_terminal_mismatch")
+        self.assertEqual(body["field"], "terminal_ref")
+        self.assertEqual(body["errors"], {"terminal_ref": [body["detail"]]})
+        self.assertNotIn("report", body)
+
+    def test_o_x_da_propria_estacao_funciona_com_e_sem_o_param(self) -> None:
+        shift = self._open_shift()
+
+        com = self.client.get(REPORT_URL, {"terminal_ref": self.terminal.ref})
+        sem = self.client.get(REPORT_URL)
+
+        self.assertEqual(com.status_code, 200)
+        self.assertEqual(sem.status_code, 200)
+        self.assertEqual(com.json()["report"]["x_reading"]["shift_id"], shift.pk)
+        self.assertEqual(sem.json()["report"]["x_reading"]["shift_id"], shift.pk)
+
+    def test_sem_estacao_nao_ha_leitura(self) -> None:
+        """Fora do balcão a leitura não cai no "primeiro terminal por ref"."""
+        from django.test import Client
+
+        de_fora = Client()
+        de_fora.force_login(self.operator)
+        self._open_shift()
+
+        resp = de_fora.get(REPORT_URL, {"terminal_ref": self.terminal.ref})
+
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["error"]["code"], "pos_station_required")
 
     # ── leituras Z (turnos fechados) + histórico ───────────────────────
 

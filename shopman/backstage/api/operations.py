@@ -4940,11 +4940,41 @@ class POSCashReportView(APIView):
     required_permission = "cashman.audit_shift"
 
     def get(self, request):
-        report = build_cash_session_report(
-            operator=request.user,
-            terminal_ref=str(request.query_params.get("terminal_ref") or ""),
-        )
+        terminal_ref, refusal = _terminal_da_leitura(request)
+        if refusal is not None:
+            return refusal
+        report = build_cash_session_report(operator=request.user, terminal_ref=terminal_ref)
         return Response({"report": projection_data(report)})
+
+
+def _terminal_da_leitura(request) -> tuple[str, Response | None]:
+    """A gaveta da leitura X é a da ESTAÇÃO; a URL só confere.
+
+    Mesma regra de ``_terminal_do_pedido`` (o corpo/URL nunca escolhe a gaveta),
+    lida do query param porque o relatório é GET. Divergência ou estação sem
+    terminal ativo: 409, com os mesmos códigos.
+    """
+    from shopman.cashman.models import Terminal
+
+    ref = station_trust.station_ref(request)
+    asserted = str(request.query_params.get("terminal_ref") or "").strip()
+    if ref and asserted and asserted != ref:
+        code = "pos_terminal_mismatch"
+        message = "O caixa informado não corresponde a este dispositivo. Atualize o balcão."
+    elif ref and Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return ref, None
+    else:
+        code = "pos_station_required"
+        message = "Vincule este dispositivo a um único terminal ativo antes de operar."
+    return "", Response(
+        {
+            "detail": message,
+            "field": "terminal_ref",
+            "errors": {"terminal_ref": [message]},
+            "error": {"code": code, "message": message, "field": "terminal_ref", "focus": "cash", "recovery": message},
+        },
+        status=409,
+    )
 
 
 # ── POS tab (comanda) endpoints ───────────────────────────────────────
