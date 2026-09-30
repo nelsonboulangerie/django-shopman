@@ -13,10 +13,25 @@
 | Frente | Estado | Evidência |
 |---|---|---|
 | **Frente 0 — destravar CI** | ✅ **MERGEADA** | PR #1275 · merge `c97f56c24` em `origin/main`. Commits `8583d1f4b` (`-n auto` em `test-shop` e `test-storefront` + `uuid1`→UUID v1 fixo) e `e27ea6b47` (3 testes de log deixaram de depender da ordem). Nenhum arquivo de `.github/` tocado. |
-| **WP-3 — higiene** | ✅ **NA FILA** | PR #1276 · flag fantasma confirmada (grep: nenhum consumidor) · `WP-LOCK-01` corrigido |
-| **WP-1 — autoria + rastro** | ✅ **NA FILA** | PR #1278 · commit `776478628` · `pos_intent.stamp_line_authorship` (:426) como escritor único, chamado de `pos.py:2566` (`_replace_session_ops`, com 3 chamadores: `:628`, `:1428`, `:1468`). Nenhuma atribuição direta a `session.items` nos services. |
-| **WP-4** | próximo | — |
-| WP-2 · WP-5 · **WP-6** | pendentes | WP-6 é novo — ver abaixo |
+| **WP-3 — higiene** | ✅ **EM MAIN** | PR #1276 · flag fantasma confirmada (grep: nenhum consumidor) · `WP-LOCK-01` corrigido |
+| **WP-1 — autoria + rastro** | ✅ **EM MAIN** | PR #1278 · commit `776478628` · `pos_intent.stamp_line_authorship` (:426) como escritor único, chamado de `pos.py:2566` (`_replace_session_ops`, com 3 chamadores: `:628`, `:1428`, `:1468`). Nenhuma atribuição direta a `session.items` nos services. |
+| **WP-4 — X/Z terminal** | ✅ **EM MAIN** | PR #1279 |
+| **WP-2 — visibilidade** | ✅ **EM MAIN** | PR #1280 · itens 1-4; o Admin não precisou ser separado porque já revogava |
+| **WP-6 — device no dinheiro** | 🔄 **NA FILA** | PR #1281 · `ledger.py` (`acting_device.stamp` dentro de `record()`), `shifts.py` (fundo de troco e contagem) e `Session.emit_event`. Id = `TrustedDevice.pk` via `station_trust.station_device_id`, **mesma chave `station_device_id` nas três trilhas** |
+| WP-5 | **parado** | trava por dispositivo — só quando a concierge/atendimento estiver desenhado |
+
+**A fila do caixa está fechada: 5 dos 6 PRs já estão em `main`** (verificado por
+`git merge-base --is-ancestor` contra `origin/main`), e o sexto está na fila.
+
+**O que a fila entrega, para a pergunta original do dono:** as três trilhas passam a se cruzar pela
+mesma chave `station_device_id` — acesso (`SignInEvent`), comanda (`pos_authorship`) e dinheiro
+(`cashman.Entry.payload`). O teste `test_cash_device_trail.py` prova a **junção**, não só a
+presença do campo. E o dispositivo vem da **requisição**, nunca do corpo: o que o chamador mandar
+nessa chave é descartado, então **o cliente não forja o próprio device id** — propriedade que não
+foi pedida e fecha spoofing de trilha.
+
+**Regra de desenho que ficou provada e vale para as próximas frentes:** invariante de auditoria
+mora no **escritor único**, não no chamador. O comentário em `ledger.py` registra o motivo.
 
 **Ganho medido da Frente 0 na CI (PR #1275):** `test-shop` **20–30 min → 15,7 min**; gate total
 **23–31 → 22,5 min**. O gate cai pouco porque `test-shop` **continua sendo o caminho crítico** — ele
