@@ -70,9 +70,42 @@ P3 + P8 + P4 feitos, **nada em `packages/`**. Medição **local** (a de produç�
 E existe um teste que **falha se a home voltar a chamar `build_catalog`** — **não desfaça esse teste**.
 De carona: a promoção ignorava o prefetch dos canais e fazia 1 consulta por promoção.
 
-⚠️ **Ainda NÃO medido em produção.** E o `menu/` privado segue **~3,3–4,5 s** (medido em 30/09
-22:00 UTC: `projection;dur=3874 · availability;dur=1370 · db;dur=437`). O ganho real desta frente é
-desconhecido até o deploy.
+**MEDIDO EM PRODUÇÃO** (30/09, medianas de 5 amostras; deploy `405e3f25` ACTIVE às 23:17 UTC,
+causa `manual` — **o caminho por push funciona**):
+
+| | antes | depois |
+|---|---|---|
+| `home/` TTFB | 3,13 s | **~1,29 s** ✅ |
+| `menu/` TTFB | 2,63 s | 2,51 s |
+| `menu/` projection | 2.292 ms | 2.155 ms |
+| `menu/` availability | 1.395 ms | 1.294 ms |
+| `menu/` db | 396 ms | 292 ms |
+| `menu/` query_count | 83 | **55** |
+
+O `response_bytes` ficou **idêntico** (136.681 B antes e depois) — prova em produção de que o JSON
+não mudou. E a produção tinha **83** consultas, não as 93 da bancada.
+
+**O `menu/` quase não caiu (−6% de tempo, com −34% de consultas)** porque o que resta é a
+**disponibilidade: ~1,3 s, 60% da projeção**. Isso é o **P2, no Core** — é o próximo grande ganho.
+
+---
+
+## ⛔ P7 — NÃO FAÇA (provado perigoso em 30/09)
+
+A recomendação de aplicar `_quantity__gt=0` em `tracked_skus`
+(`packages/stockman/.../services/availability.py:432`) **estava ERRADA** — veio do relatório 13 e foi
+refutada por quem tentou executá-la.
+
+Com o filtro, **um SKU esgotado deixa de ser "rastreado"** (o quant zerado nunca é apagado), e o gate
+aprova SKU não rastreado com disponível `999999` — **venderia sem limite justamente o que acabou de
+esgotar**. O executor provou na bancada e deixou a trava
+`shopman/shop/tests/test_sold_out_sku_stays_tracked.py`, que reprova com o filtro aplicado.
+**Não remova essa trava e não reaplique o filtro.** Resolver isso exige a frente do Core.
+
+## ❌ P9 — NÃO VALE A PENA (medido)
+
+O laço por item custa **~1,5 ms por request**, não os 100–250 ms que o relatório 13 estimou.
+Medido com profiler. O custo real está na disponibilidade.
 
 🔎 **Descoberta fora do escopo, para a próxima frente:** **com sacola**, `home/` e `menu/` fazem
 **~200 consultas**, e o custo está na **projeção da sacola**, não no catálogo. Isso **não** está no
