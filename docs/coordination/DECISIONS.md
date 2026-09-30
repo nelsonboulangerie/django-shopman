@@ -234,6 +234,37 @@ exigiria reprovisionamento manual se um dispositivo morresse.
 
 ## B-001 · O alpha está sem deploy desde 29/09 21:31 UTC
 
+### ✅ Descoberta decisiva (2026-09-30 17:20 UTC) — o `build` só falha quando precisa puxar imagem
+
+| Causa do deployment | Passo `build` |
+|---|---|
+| `restarting app` (deployment `9df9b42c`) | **SUCCESS** — e o deployment ficou **ACTIVE** às 17:15:30 |
+| `image tag X pushed` (todos os demais) | **ERROR 9/29** |
+
+Isso isola o defeito: não é o app, não é o spec, não é o código. **É o caminho de puxar imagem
+num deployment novo.**
+
+**Verificado e descartado, um por um:** imagens íntegras (4 manifestos 200, blobs 307; método no
+bloco abaixo) · não é transitório (10+ tentativas em 14 h) · não é cache de build
+(`--force-rebuild` falha igual) · não é incidente global (status da DO: "All Systems Operational",
+0 incidentes) · não é garbage collection travada (nenhuma ativa, nenhuma no histórico) · não é tag
+ausente · não é credencial de criação (os deployments nascem `PENDING_BUILD` normalmente).
+
+**Mudança de estado conseguida:** `doctl apps restart` tirou o app do estado *automated rollback*.
+Hoje ele roda `9df9b42c` (causa "restarting app", ACTIVE, build e deploy SUCCESS) — mais saudável,
+**mas com código antigo**: as rotas do PR #1285 dão 404 e a home não tem o `Server-Timing` do #1283.
+
+**Caminho recomendado:** trocar as **tags mutáveis por digest imutável** pela **UI do console**, que
+preserva os segredos. Digests já verificados:
+`web` `sha256:9b9f67e3…` · `storefront` `sha256:9a8c6734…` · `operator-floor` `sha256:19cea762…` ·
+`operator-office` `sha256:eed9460d…` (8 componentes no total).
+
+⚠️ **NUNCA faça `doctl apps update --spec` com o spec obtido de `doctl apps spec get`.** Os valores
+SECRET voltam **criptografados** (`EV[…]`) e o DO rejeita:
+`secret env value must not be encrypted before app is created`. **É quase certamente a explicação
+do incidente em que as variáveis de ambiente foram zeradas.** Para mexer no spec, use a UI do
+console — que trata os segredos — ou forneça os valores em texto puro.
+
 - **Estado:** `BLOQUEADA` · **Dono:** Pablo (credencial) · **revisar_em:** 2026-10-01
 
 **O que está acontecendo.** O deployment **ATIVO** é `c4fce115`, criado em **2026-09-29 21:31:37 UTC**,
