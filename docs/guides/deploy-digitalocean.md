@@ -254,10 +254,24 @@ redeploya sozinho. O `doctl` aqui serve apenas para mudança de env/spec/topolog
 (ver abaixo), nunca para subir código.
 
 Aplicar o spec do repo por cima do app vivo é proibido. Para topologia futura,
-capture o spec vivo e edite esse arquivo capturado:
+capture o spec vivo e edite esse arquivo capturado.
+
+> ⛔ **Pré-condição de QUALQUER `apps update`:** rode
+> `make deploy-spec-drift context=shopman-spec-update` imediatamente antes.
+> Ele tem que sair **[OK]**, e **exit 2 ("leitura cega") não é OK**.
+>
+> O contexto importa tanto quanto o comando. O token de deploy
+> (`shopman-alpha-deploy`) não tem escopo de database, e com ele o `apps spec get`
+> devolve o `databases` só com `name`, sem dar erro. Foi essa leitura, mandada de
+> volta num `apps update` (deployment `ded45b84`, 29/09/2026 21:47 UTC), que fez todo
+> deploy novo morrer em `Creating database` com InternalError, por 21 horas.
+> Capture o spec vivo **com o mesmo contexto** que passou no drift-check. Ver
+> [conferir-spec-digitalocean.md](../runbooks/conferir-spec-digitalocean.md).
 
 ```bash
-doctl apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
+make deploy-spec-drift context=shopman-spec-update   # tem que sair [OK]
+doctl --context shopman-spec-update apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
+# Confira que `databases` veio com cluster_name/engine/version (não só `name`).
 # Edite /tmp/spec-vivo-*.yaml preservando os SECRET/EV[...] existentes.
 # Valide contra o app existente; spec validate reprova EV[...] de spec vivo.
 doctl apps propose --spec /tmp/spec-vivo-YYYY-MM-DD.yaml --app <app-id>
@@ -381,8 +395,9 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
    `*.ondigitalocean.app` do app (o painel mostra o alvo ao adicionar cada domínio).
 2. **Spec/template:** troque `STORE_DOMAIN` pelo domínio real em uma cópia de
    `.do/app.subdomains.yaml` e valide o template com `doctl apps spec validate`.
-   Para app vivo existente, não aplique esse template direto: capture o spec
-   vivo com `apps spec get`, porte apenas os deltas, preserve `SECRET/EV[...]`,
+   Para app vivo existente, não aplique esse template direto: rode
+   `make deploy-spec-drift context=shopman-spec-update`, capture o spec
+   vivo com `apps spec get` no mesmo contexto (token que lê databases), porte apenas os deltas, preserve `SECRET/EV[...]`,
    valide com `doctl apps propose --spec /tmp/spec-vivo.yaml --app <APP_ID>` e
    só então faça `apps update` sobre o spec vivo editado.
 3. **Knob único:** `SHOPMAN_STOREFRONT_BASE_URL=https://seudominio.com` (apex) vira **todos**

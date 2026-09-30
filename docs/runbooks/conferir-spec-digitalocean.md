@@ -2,10 +2,15 @@
 
 > # ⛔ NUNCA rode `doctl apps update --spec` sem passar o drift-check antes.
 >
-> `make deploy-spec-drift` tem que sair **[OK]**. Se a saída listar qualquer
-> coisa em **SUMIRIAM**, não rode o update: traga a coisa para o arquivo
-> primeiro. Isto vale para env, **domínio** e **regra de ingress** — as três
-> somem do mesmo jeito.
+> `make deploy-spec-drift context=shopman-spec-update` tem que sair **[OK]**,
+> imediatamente antes do update. Se a saída listar qualquer coisa em
+> **SUMIRIAM**, não rode o update: traga a coisa para o arquivo primeiro. Isto
+> vale para env, **domínio**, **regra de ingress**, **banco anexado** e
+> **componente**: todos somem do mesmo jeito.
+>
+> **Exit 2 com "leitura cega" não é OK.** O contexto do doctl não lê databases,
+> e qualquer spec capturado com ele sai com o `databases` mutilado. Troque de
+> contexto; não prossiga.
 
 ## A armadilha
 
@@ -49,7 +54,11 @@ O script (`scripts/check_do_spec_drift.py`) é **somente leitura**: chama
 - **✅ esperado** — diferença **declarada** no próprio script, com a razão
   junto. Não conta como drift. Ver a seção de diferenças legítimas abaixo.
 
-Ele compara **env de app, env de serviço, domínios e regras de ingress**. As
+Ele compara **env de app, env de serviço, domínios, regras de ingress, bancos
+anexados (`databases`, campo a campo) e, por componente, imagem
+(`registry_type`, `repository`, `tag`/`digest`, `deploy_on_push`) e
+dimensionamento (`instance_count`, `instance_size_slug`)**. Bancos e componentes
+entraram em 30/09/2026 (ver a seção do incidente abaixo). As
 duas últimas entraram em 08/09/2026, depois que o arquivo versionado passou uma
 semana dizendo "OK" enquanto trazia `alpha.nelsonboulangerie.com.br` — domínio
 morto desde o corte de 01/09 — como PRIMARY, e deixava `backup.boulangerie.com.br`
@@ -69,6 +78,36 @@ doctl apps spec get <app-id> > /tmp/vivo.yaml
 > **Valor de segredo nunca é comparado nem impresso.** No spec do vivo ele vem
 > cifrado (`EV[1:...]`) e no versionado não existe por política — comparar
 > daria "divergente" sempre, e imprimir seria vazar.
+
+## O incidente de 29-30/09/2026: `databases` mutilado, 21 horas sem deploy
+
+Às 21:47:34 UTC de 29/09 um `apps update` (deployment `ded45b84`) reduziu o
+bloco `databases` do vivo a `- name: postgres` / `- name: cache`, perdendo
+`cluster_name`, `engine`, `version`, `production`, `db_name` e `db_user`. Todo
+deployment novo passou a morrer em `build.components.postgres` ("Creating
+database") com **InternalError, sem mensagem**. Só `apps restart` passava,
+porque clona o deployment anterior. Corrigido em 30/09 às 18:21 UTC
+(deployment `3a3b0053`), devolvendo o bloco.
+
+**O mecanismo, medido em 30/09:** com o contexto `shopman-alpha-deploy`,
+`doctl apps spec get` devolve **hoje**, com o app já corrigido, o `databases`
+exatamente nesse formato mutilado. O token de deploy não tem escopo de
+database, e o App Platform **apaga os campos na leitura em vez de recusar**.
+Com `shopman-spec-update` o bloco vem inteiro. Um `spec get` com o token de
+deploy seguido de `apps update` reproduz o incidente sem ninguém editar nada.
+(É o mecanismo mais provável; o comando exato de 29/09 não ficou registrado.)
+
+Por isso o script:
+
+- **recusa a leitura (exit 2, "leitura cega")** quando o contexto não lista
+  databases, em vez de acusar drift falso num app sadio;
+- compara `databases` **contra o versionado**, campo a campo (o `cache`
+  Valkey legitimamente não tem `db_name`/`db_user`), e reprova com
+  "databases MUTILADO" quando a entrada do vivo tem só `name`.
+
+`shopman/shop/tests/test_do_spec_drift_check.py` reconstitui o caso
+(`test_real_case_mutilated_databases_block_fails_naming_postgres`) e roda na CI
+com o resto do `test-shop`.
 
 ## Como trazer uma chave do painel para o arquivo
 
@@ -194,5 +233,6 @@ O que **é** gate de CI é a metade que não precisa saber o que está no ar:
 `alpha.`/`staging.`, que declare domínio sem rota, ou que nomeie o host do
 cofre sem o domínio correspondente — e
 `shopman/shop/tests/test_do_spec_drift_check.py` prova que o próprio
-drift-check enxerga domínio e ingress, e que a allowlist de diferença esperada
+drift-check enxerga domínio, ingress, bancos anexados (incluindo a reconstituição
+do bloco mutilado de 29/09) e imagem/dimensionamento de componente, e que a allowlist de diferença esperada
 nunca cobre a direção que apaga.

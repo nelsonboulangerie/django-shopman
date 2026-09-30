@@ -172,10 +172,16 @@ Para inspecionar ou preparar mudanca futura de dominios/topologia, primeiro
 salvar o spec vivo:
 
 ```bash
-doctl --context shopman-alpha-deploy apps spec get \
+doctl --context shopman-spec-update apps spec get \
   40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --format yaml \
   > /tmp/shopman-alpha-live-spec.yaml
 ```
+
+⛔ Não capture com `--context shopman-alpha-deploy`: aquele token não lê
+databases, e o spec sai com `databases` só com `name`. Mandado de volta num
+`apps update`, isso derrubou todo deploy por 21 horas em 29-30/09/2026. Antes de
+qualquer `apps update`: `make deploy-spec-drift context=shopman-spec-update`
+tem que sair [OK].
 
 Nao aplicar `.do/app.alpha-subdomains.yaml` diretamente com
 `doctl apps update --spec`. Esse comando faz replace do spec inteiro e pode
