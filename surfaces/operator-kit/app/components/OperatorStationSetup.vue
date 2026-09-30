@@ -8,9 +8,11 @@
 // É oferta, não parede: no PC pessoal do gestor a resposta certa é "agora não", e
 // obrigar a escolher um terminal ali criaria uma estação onde não há balcão —
 // uma chave da antessala solta num notebook que sai de casa.
+import { stationTerminalHint } from "../presentation/stationOccupancy";
+
 const emit = defineEmits<{ (e: "done"): void; (e: "dismiss"): void }>();
 
-const { terminals, allowed, loaded, busy, error, load, provision } = useStationProvision();
+const { terminals, allowed, loaded, busy, error, confirmFor, load, provision } = useStationProvision();
 const escolhido = ref("");
 
 onMounted(async () => {
@@ -20,16 +22,20 @@ onMounted(async () => {
 
 // O `ref` do terminal vira a segunda linha da opção: dois balcões podem ter
 // rótulo parecido, e é o ref que desempata na hora de dizer qual máquina é esta.
+// Ao lado dele, o que já está no balcão: outros dispositivos e caixa aberto.
 const terminalOptions = computed(() =>
   terminals.value.map((terminal) => ({
     value: terminal.ref,
     label: terminal.label,
-    hint: terminal.ref,
+    hint: stationTerminalHint(terminal),
   })),
 );
 
+// A segunda palavra só vale para o balcão que o servidor avisou.
+const pedeConfirmacao = computed(() => Boolean(confirmFor.value) && confirmFor.value === escolhido.value);
+
 async function confirmar() {
-  if (await provision(escolhido.value)) emit("done");
+  if (await provision(escolhido.value, { confirm: pedeConfirmacao.value })) emit("done");
 }
 </script>
 
@@ -57,13 +63,18 @@ async function confirmar() {
           :disabled="busy"
           :options="terminalOptions"
         />
-        <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
+        <p
+          v-if="error"
+          class="text-sm"
+          :class="pedeConfirmacao ? 'text-warning' : 'text-destructive'"
+          role="alert"
+        >{{ error }}</p>
       </div>
 
       <div class="grid gap-2">
         <UiButton size="lg" :disabled="busy || !escolhido" @click="confirmar">
           <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-5" />
-          {{ busy ? "Iniciando…" : "É este balcão" }}
+          {{ busy ? "Iniciando…" : pedeConfirmacao ? "Usar este balcão também" : "É este balcão" }}
         </UiButton>
         <UiButton variant="ghost" size="lg" :disabled="busy" @click="emit('dismiss')">
           Agora não

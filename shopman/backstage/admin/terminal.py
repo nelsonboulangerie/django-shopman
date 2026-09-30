@@ -501,6 +501,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         "drawer_install_display",
         "print_destination_display",
         "station_identity_display",
+        "station_devices_display",
     )
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
@@ -544,7 +545,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         (
             "Identificação desta estação",
             {
-                "fields": ("station_mode", "station_operator", "station_identity_display"),
+                "fields": ("station_mode", "station_operator", "station_identity_display", "station_devices_display"),
                 "description": (
                     "O painel de parede da Produção não tem ninguém para digitar PIN, "
                     "então ele age em nome de uma conta. Vale SÓ para a Produção: o "
@@ -601,6 +602,42 @@ class TerminalAdmin(_CashmanTerminalAdmin):
             f"age como {conta.get_full_name() or conta.username} ({conta.username}), só na Produção",
         )
     station_identity_display.short_description = "Identidade resolvida agora"
+
+    def station_devices_display(self, obj):
+        """Os dispositivos que respondem por este balcão agora, e onde revogá-los.
+
+        Vários no mesmo terminal é postura decidida (D-007): dividem gaveta e
+        turno. A revogação mora na lista de dispositivos, já filtrada por este
+        terminal; revogar um derruba só ele.
+        """
+        if obj is None or not obj.pk:
+            return "Salve o terminal primeiro."
+        from django.urls import reverse
+
+        from shopman.backstage.station_trust import active_station_devices
+
+        dispositivos = active_station_devices(obj.ref)
+        url = (
+            reverse("admin:doorman_trusteddevice_changelist")
+            + f"?subject_type__exact=station&subject_id={obj.ref}&is_active__exact=1"
+        )
+        if not dispositivos:
+            return format_html("{} {}", unfold_badge("nenhum dispositivo", "base"), unfold_link(url, "Ver a lista"))
+        from django.utils import timezone
+
+        def _linha(device) -> str:
+            nome = device.label or (device.user_agent or "sem identificação")[:60]
+            if device.last_used_at is None:
+                return f"{nome} · nunca usado"
+            return f"{nome} · usado em {timezone.localtime(device.last_used_at):%d/%m %H:%M}"
+
+        linhas = format_html("".join("<li>{}</li>" for _ in dispositivos), *[_linha(d) for d in dispositivos])
+        badge = unfold_badge(
+            "1 dispositivo" if len(dispositivos) == 1 else f"{len(dispositivos)} dispositivos",
+            "green" if len(dispositivos) == 1 else "orange",
+        )
+        return format_html("{} <ul>{}</ul> {}", badge, linhas, unfold_link(url, "Revogar na lista de dispositivos"))
+    station_devices_display.short_description = "Dispositivos neste balcão"
 
     def print_destination_display(self, obj):
         """A MESMA resposta que a estação vai receber na hora de imprimir.

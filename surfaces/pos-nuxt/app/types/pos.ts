@@ -289,6 +289,11 @@ export interface POSCashRuntimeProjection {
   default_float_q?: number;
   /** "R$ 200,00"; "" quando não configurado. */
   default_float_display?: string;
+  /**
+   * Dispositivos com confiança válida NESTE balcão. Vários no mesmo terminal
+   * dividem gaveta e turno (D-007). Informação, não bloqueio.
+   */
+  station_devices?: number;
 }
 
 export interface POSAddressAutocompleteProjection {

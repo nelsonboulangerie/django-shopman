@@ -34,6 +34,7 @@ import {
   openShiftTile,
   sessionActionTiles,
   sessionScreenState,
+  stationDevicesNotice,
 } from "~/presentation/cash";
 import type { SessionTile } from "~/presentation/cash";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
@@ -86,6 +87,8 @@ const screen = computed(() => {
 const cashRuntime = computed(() => pos.value?.cash_runtime ?? null);
 // Ausente vale `false`: contrato mudo não abre porta de dinheiro.
 const canAuditCash = computed(() => cashRuntime.value?.can_audit_cash === true);
+// Vários dispositivos neste balcão (D-007): diz quantos e se o caixa já abriu.
+const sharedStationNotice = computed(() => stationDevicesNotice(cashRuntime.value));
 
 // Cada ato é um CARD, e o formulário (ou a lista) mora num diálogo que nasce
 // recolhido. Ver o formulário é uma escolha, e a escolha é o que separa "abri a
@@ -586,6 +589,14 @@ async function confirmClose() {
                 <PosSessionTile :tile="shiftTile" @select="selectTile" />
               </li>
             </ul>
+            <p
+              v-if="sharedStationNotice"
+              class="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+              data-shared-station
+            >
+              <Icon name="lucide:monitor-smartphone" class="mt-0.5 size-4 shrink-0 text-warning" />
+              <span>{{ sharedStationNotice }}</span>
+            </p>
           </section>
 
           <!-- PRECISA DE VOCÊ: só existe com pendência, um card por natureza,
