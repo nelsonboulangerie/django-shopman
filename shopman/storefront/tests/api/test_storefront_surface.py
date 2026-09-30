@@ -37,13 +37,17 @@ def test_api_storefront_menu_returns_projection_contract(client):
     assert cart_checkout["reason"] == "Sacola vazia."
 
 
-def test_api_storefront_menu_sets_csrf_cookie(client):
+def test_api_storefront_cart_is_the_only_read_that_sets_csrf_cookie(client):
+    """O token só serve para mutação: quem precisa dele busca na sacola."""
     _seed_surface()
 
-    resp = client.get("/api/v1/storefront/menu/")
+    menu = client.get("/api/v1/storefront/menu/")
+    cart = client.get("/api/v1/storefront/cart/")
 
-    assert resp.status_code == 200
-    assert "csrftoken" in resp.cookies
+    assert menu.status_code == 200
+    assert "csrftoken" not in menu.cookies
+    assert cart.status_code == 200
+    assert "csrftoken" in cart.cookies
 
 
 def test_api_storefront_catalog_does_not_rebuild_cart(client, monkeypatch):
@@ -79,7 +83,7 @@ def test_api_storefront_checkout_returns_projection_contract(client):
     if data["pickup_slots"]:
         slot = data["pickup_slots"][0]
         assert {"ref", "label", "starts_at", "enabled", "reason", "is_earliest"}.issubset(slot)
-    assert "csrftoken" in resp.cookies
+    assert "csrftoken" not in resp.cookies
 
 
 def test_api_storefront_checkout_projection_requires_login_for_anonymous_cart(client):
@@ -118,8 +122,8 @@ def test_api_cart_sku_qty_accepts_authenticated_session_with_csrf_header():
     client = DjangoClient(enforce_csrf_checks=True)
     client.force_login(user)
 
-    menu = client.get("/api/v1/storefront/menu/")
-    token = menu.cookies["csrftoken"].value
+    cart = client.get("/api/v1/storefront/cart/")
+    token = cart.cookies["csrftoken"].value
     add = client.put(
         f"/api/v1/cart/skus/{product.sku}/",
         data=json.dumps({"qty": 1}),
@@ -137,8 +141,8 @@ def test_api_cart_sku_qty_requires_origin_or_referer_for_secure_authenticated_se
     client = DjangoClient(enforce_csrf_checks=True)
     client.force_login(user)
 
-    menu = client.get("/api/v1/storefront/menu/", secure=True)
-    token = menu.cookies["csrftoken"].value
+    cart = client.get("/api/v1/storefront/cart/", secure=True)
+    token = cart.cookies["csrftoken"].value
     missing_referer = client.put(
         f"/api/v1/cart/skus/{product.sku}/",
         data=json.dumps({"qty": 1}),

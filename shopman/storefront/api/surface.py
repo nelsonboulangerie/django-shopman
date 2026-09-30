@@ -53,6 +53,7 @@ from shopman.storefront.services.cart_mutations import (
 
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
+from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
 from .serializers import DetailSerializer, SetSkuQtySerializer
 
 logger = logging.getLogger(__name__)
@@ -276,7 +277,6 @@ def _skipped_reorder_items(skipped: list[str]) -> list[dict]:
         responses={200: OpenApiResponse(description="Home projection plus cart projection.")},
     ),
 )
-@method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontHomeView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/home/"""
 
@@ -299,7 +299,6 @@ class StorefrontHomeView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Global shell state plus cart projection.")},
     ),
 )
-@method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontShellView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/shell/ — estado global sem reconstruir catálogo."""
 
@@ -325,7 +324,7 @@ class StorefrontShellView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
 )
-class StorefrontLegalView(ServerTimingMixin, APIView):
+class StorefrontLegalView(PublicReadMixin, ServerTimingMixin, APIView):
     """GET /api/v1/storefront/legal/ — o que as páginas de Termos e Privacidade AFIRMAM.
 
     A lista de operadores e a data saem daqui, e não do `.vue`, porque texto que copia a
@@ -340,7 +339,7 @@ class StorefrontLegalView(ServerTimingMixin, APIView):
         return Response({"legal": projection_data(build_legal())})
 
 
-class StorefrontSiteView(ServerTimingMixin, APIView):
+class StorefrontSiteView(PublicReadMixin, ServerTimingMixin, APIView):
     """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
 
     permission_classes = [AllowAny]
@@ -448,7 +447,6 @@ class StorefrontSkuRedirectsView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Catalog projection plus cart projection.")},
     ),
 )
-@method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontMenuView(APIView):
     """GET /api/v1/storefront/menu/"""
 
@@ -528,6 +526,22 @@ class StorefrontCatalogView(StorefrontMenuView):
     include_cart = False
 
 
+class StorefrontPublicHomeView(PublicEdgeCacheMixin, StorefrontHomeView):
+    """GET /api/v1/storefront/public/home/ — a home do visitante sem sessão, cacheável.
+
+    Recusa cookie: o corpo é o do anônimo por construção, igual para todos. O BFF
+    manda para cá só quem chega sem sessão (ver ``public_cache``).
+    """
+
+
+class StorefrontPublicShellView(PublicEdgeCacheMixin, StorefrontShellView):
+    """GET /api/v1/storefront/public/shell/ — o shell do visitante sem sessão, cacheável."""
+
+
+class StorefrontPublicCatalogView(PublicEdgeCacheMixin, StorefrontCatalogView):
+    """GET /api/v1/storefront/public/catalog/[<coleção>/] — o catálogo sem sessão, cacheável."""
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
@@ -538,7 +552,6 @@ class StorefrontCatalogView(StorefrontMenuView):
         },
     ),
 )
-@method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontProductView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/products/{sku}/"""
 
@@ -568,7 +581,13 @@ class StorefrontProductView(ServerTimingMixin, APIView):
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontCartView(ServerTimingMixin, APIView):
-    """GET /api/v1/storefront/cart/"""
+    """GET /api/v1/storefront/cart/
+
+    É a ÚNICA leitura que ainda entrega o ``csrftoken``, e de propósito: quem vai
+    mutar e ainda não tem o token (o ``useShopmanCsrfHeaders`` do navegador e o
+    ``ensureDjangoCsrfCookie`` do BFF) busca-o aqui. As demais leituras deixaram
+    de carimbar o cookie, que só serve para mutação.
+    """
 
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -584,7 +603,6 @@ class StorefrontCartView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Checkout projection for API-first storefront clients.")},
     ),
 )
-@method_decorator(ensure_csrf_cookie, name="dispatch")
 class StorefrontCheckoutView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/checkout/"""
 

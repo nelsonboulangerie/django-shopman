@@ -6,6 +6,7 @@ from django.http import HttpResponse, HttpResponseNotModified
 from django.utils.http import parse_etags
 from django.views import View
 
+from shopman.storefront.api.public_cache import carries_credentials
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import (
     candidate_enabled,
@@ -38,16 +39,6 @@ def _request_head_bytes(request) -> int:
     for name, value in request.headers.items():
         total += len(name.encode("utf-8")) + len(value.encode("utf-8")) + 4
     return total
-
-
-def _has_credentials(request) -> bool:
-    credential_headers = (
-        "Cookie",
-        "Authorization",
-        "Proxy-Authorization",
-        "X-SSL-Client-Cert",
-    )
-    return any(request.headers.get(name) for name in credential_headers) or bool(request.GET)
 
 
 def _if_none_match_matches(header: str, current_etag: str) -> bool:
@@ -93,7 +84,7 @@ class CatalogStructureSnapshotView(View):
         configured_limits = limits()
         if _request_head_bytes(request) > int(configured_limits["max_request_head_bytes"]):
             return _problem(431, "Cabeçalhos acima do limite.")
-        if _has_credentials(request):
+        if carries_credentials(request):
             return _problem(400, "Este endpoint público não aceita credenciais nem parâmetros.")
         if_none_match = request.headers.get("If-None-Match", "")
         if len(if_none_match.encode("utf-8")) > int(configured_limits["max_request_identifier_bytes"]):
