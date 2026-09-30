@@ -30,6 +30,10 @@ INSTRUMENTED_READS = (
     "/api/v1/storefront/products/PAO-FRANCES/",
     "/api/v1/storefront/cart/",
     "/api/v1/storefront/checkout/",
+    # gêmeas públicas (cache de borda): o header vai junto para a borda
+    "/api/v1/storefront/public/home/",
+    "/api/v1/storefront/public/shell/",
+    "/api/v1/storefront/public/catalog/",
     # os que já tinham, para travar que o formato é um só
     "/api/v1/storefront/menu/",
     "/api/v1/storefront/catalog/",

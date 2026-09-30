@@ -81,6 +81,38 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
   return { cookie: mergedCookie, token: token ? decodeURIComponent(token) : '' }
 }
 
+// Leituras com GÊMEA pública no Django (`storefront/public/…`), cacheável na borda.
+// A Cloudflare ignora `Vary: Cookie`, então público e privado não podem dividir
+// URL: a gêmea recusa cookie, e o corpo dela é o do anônimo para todos. Ver
+// shopman/storefront/api/public_cache.py.
+const PUBLIC_TWIN_PATH = /^\/api\/v1\/storefront\/(home|shell|catalog(?:\/[-a-zA-Z0-9_]+)?)\/?$/
+// O Django identifica o cliente só pela sessão (SESSION_COOKIE_NAME, travado em
+// shopman/storefront/tests/api/test_public_edge_cache.py). Sem ela, é anônimo.
+const DJANGO_SESSION_COOKIE = 'sessionid'
+
+function cookieNames (cookie: string | undefined): string[] {
+  return (cookie || '')
+    .split(';')
+    .map(part => part.trim().split('=')[0] || '')
+    .filter(Boolean)
+}
+
+/**
+ * Para onde vai uma leitura que pode ser servida pela borda: a gêmea pública,
+ * ou `null` (fica na rota privada de sempre).
+ *
+ * Só GET/HEAD, sem query string e SEM cookie de sessão. Quem tem sessão (logado,
+ * ou anônimo que já montou sacola) nunca vai para a gêmea: o que é dele não
+ * existe lá.
+ */
+export function publicTwinPath (method: string, fullPath: string, cookie: string | undefined, hasQuery: boolean): string | null {
+  if (method !== 'GET' && method !== 'HEAD') return null
+  if (hasQuery) return null
+  if (cookieNames(cookie).includes(DJANGO_SESSION_COOKIE)) return null
+  const match = PUBLIC_TWIN_PATH.exec(fullPath)
+  return match ? `/api/v1/storefront/public/${match[1]}/` : null
+}
+
 /**
  * O caminho tenta ESCAPAR do prefixo em que foi admitido?
  *
@@ -126,10 +158,18 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl)
   const method = event.method || 'GET'
   const isUnsafeMethod = UNSAFE_METHODS.has(method.toUpperCase())
-  const normalizedPath = fullPath.endsWith('/') ? fullPath : `${fullPath}/`
+  const query = getQuery(event)
+  const twinPath = publicTwinPath(
+    method.toUpperCase(),
+    fullPath,
+    getRequestHeader(event, 'cookie'),
+    Object.keys(query).length > 0
+  )
+  const upstreamPath = twinPath || fullPath
+  const normalizedPath = upstreamPath.endsWith('/') ? upstreamPath : `${upstreamPath}/`
   const target = withQuery(
     `${djangoBaseUrl}${normalizedPath}`,
-    getQuery(event)
+    query
   )
   const djangoOrigin = new URL(djangoBaseUrl).origin
 
@@ -144,7 +184,8 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   // Authenticated API responses must never become a shared-cache snapshot.
   setResponseHeader(event, 'cache-control', 'private, no-store')
 
-  let cookie = getRequestHeader(event, 'cookie')
+  // A gêmea pública recusa cookie: nada do visitante vai junto.
+  let cookie = twinPath ? undefined : getRequestHeader(event, 'cookie')
   if (cookie) headers.cookie = cookie
 
   const contentType = getRequestHeader(event, 'content-type')

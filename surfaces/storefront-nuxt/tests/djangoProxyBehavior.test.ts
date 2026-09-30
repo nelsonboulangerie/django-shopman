@@ -6,7 +6,7 @@ import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import { createEvent, type H3Event } from 'h3'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { proxyDjangoPath } from '../server/utils/djangoProxy'
+import { proxyDjangoPath, publicTwinPath } from '../server/utils/djangoProxy'
 
 interface RawCall {
   url: string
@@ -75,6 +75,59 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(options.headers.cookie).toContain('sessionid=s1')
     // (o passthrough do corpo é coberto no e2e do WP-S5: o mock de stream do
     // IncomingMessage não entrega body de forma confiável sob vitest.)
+  })
+
+  describe('gêmea pública (cache de borda)', () => {
+    it.each([
+      ['/api/v1/storefront/home', `${DJANGO}/api/v1/storefront/public/home/`],
+      ['/api/v1/storefront/shell/', `${DJANGO}/api/v1/storefront/public/shell/`],
+      ['/api/v1/storefront/catalog', `${DJANGO}/api/v1/storefront/public/catalog/`],
+      ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`]
+    ])('GET sem sessão de %s vai para a gêmea, sem cookie nenhum', async (path, expected) => {
+      const { event } = makeEvent({ path, headers: { cookie: 'csrftoken=tok; _ga=x' } })
+
+      await proxyDjangoPath(event, path)
+
+      expect(calls[0]!.url).toBe(expected)
+      expect(calls[0]!.options.headers.cookie).toBeUndefined()
+    })
+
+    it('quem tem sessão fica na rota privada, com o cookie dele', async () => {
+      const { event } = makeEvent({
+        path: '/api/v1/storefront/home/',
+        headers: { cookie: 'csrftoken=tok; sessionid=s1' }
+      })
+
+      await proxyDjangoPath(event, '/api/v1/storefront/home/')
+
+      expect(calls[0]!.url).toBe(`${DJANGO}/api/v1/storefront/home/`)
+      expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
+    })
+
+    it('query string e rotas sem gêmea ficam na rota de sempre', async () => {
+      for (const path of [
+        '/api/v1/storefront/home/?channel=whatsapp',
+        '/api/v1/storefront/menu/',
+        '/api/v1/storefront/cart/',
+        '/api/v1/storefront/products/PAO/'
+      ]) {
+        const { event } = makeEvent({ path })
+        await proxyDjangoPath(event, path.split('?')[0]!)
+      }
+
+      expect(calls.map(call => call.url)).toEqual([
+        `${DJANGO}/api/v1/storefront/home/?channel=whatsapp`,
+        `${DJANGO}/api/v1/storefront/menu/`,
+        `${DJANGO}/api/v1/storefront/cart/`,
+        `${DJANGO}/api/v1/storefront/products/PAO/`
+      ])
+    })
+
+    it('mutação nunca vai para a gêmea', () => {
+      expect(publicTwinPath('POST', '/api/v1/storefront/home/', undefined, false)).toBeNull()
+      expect(publicTwinPath('GET', '/api/v1/storefront/home/', undefined, false)).toBe('/api/v1/storefront/public/home/')
+      expect(publicTwinPath('GET', '/api/v1/storefront/home/', 'xsessionid=1', false)).toBe('/api/v1/storefront/public/home/')
+    })
   })
 
   it('não força origin/referer nem CSRF em GET (método safe)', async () => {
