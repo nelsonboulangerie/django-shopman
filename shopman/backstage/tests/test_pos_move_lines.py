@@ -29,6 +29,10 @@ class POSMoveTabLinesTests(TestCase):
         Channel.objects.create(ref="pdv", name="Balcão", is_active=True)
         POSTab.objects.create(ref="00001007", label="1007")
         POSTab.objects.create(ref="00001008", label="1008")
+        # A comanda carimba quem lançou cada linha: o operador precisa existir.
+        from django.contrib.auth import get_user_model
+
+        get_user_model().objects.create_user(username="alice", password="x")
         from shopman.offerman.models import Product
 
         Product.objects.create(sku="POS-A", name="A", base_price_q=1000, is_published=True, is_sellable=True)

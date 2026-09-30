@@ -4,6 +4,7 @@ import type {
   Action,
   POSAddressAutocompleteProjection,
   POSCartItem,
+  POSLineAuthorship,
   POSCheckoutCapabilities,
   POSCloseSaleResponse,
   POSCustomerLookupProjection,
@@ -74,6 +75,7 @@ import {
 } from "~/presentation/customerDecision";
 import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptContact";
 import { closeGuardNotice } from "~/presentation/closeGuard";
+import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import { toast } from "vue-sonner";
 
@@ -2511,14 +2513,17 @@ export function usePosSale(deps: PosSaleDeps) {
       if (tabConflict.value) throw new Error("Confira a versão atual da comanda antes de salvar.");
       const body = buildPosSaleIntent(state, checkoutContract.value?.intent_version);
       const savedContent = JSON.stringify({ ...body, expected_revision: undefined });
-      let saved: { revision?: string } | undefined;
+      type SavedTab = { revision?: string; line_authors?: Record<string, POSLineAuthorship> };
+      let saved: SavedTab | undefined;
       try {
-        saved = await action.call<{ revision?: string }>(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), { body });
+        saved = await action.call<SavedTab>(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), { body });
       } catch (error) {
         if ([409, 422].includes(httpError(error).status)) tabConflict.value = true;
         throw error;
       }
       cart.expectedRevision = saved?.revision || cart.expectedRevision;
+      // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
+      applyLineAuthors(cart.items, saved?.line_authors);
       unsaved.value = savedContent !== JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
       if (!quiet) await refresh();
     };

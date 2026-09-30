@@ -64,6 +64,43 @@ class SignInAuditTests(TestCase):
         # De QUE balcão: é o eixo do corte de aviso ("estação desconhecida").
         self.assertEqual(evento.station_ref, "pdv-main")
 
+    def test_dois_dispositivos_no_mesmo_balcao_se_distinguem_na_trilha(self):
+        """``station_ref`` diz o BALCÃO; o dispositivo é ``data.station_device_id``.
+
+        Dois tablets no mesmo terminal davam a mesma linha na trilha, e "o
+        tablet do fundo" não tinha como ser responsabilizado.
+        """
+        from django.test import Client
+        from shopman.doorman.models import TrustedDevice
+
+        outro = Client()
+        trust_station(outro, "pdv-main")
+
+        self.client.post(UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM})
+        outro.post(UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM})
+
+        eventos = list(SignInEvent.objects.order_by("created_at", "pk"))
+        self.assertEqual(len(eventos), 2)
+        self.assertEqual({e.station_ref for e in eventos}, {"pdv-main"})
+        dispositivos = [e.data.get("station_device_id") for e in eventos]
+        self.assertNotEqual(dispositivos[0], dispositivos[1])
+        self.assertEqual(
+            set(dispositivos),
+            {str(pk) for pk in TrustedDevice.objects.filter(subject_id="pdv-main").values_list("pk", flat=True)},
+        )
+
+    def test_fora_da_loja_nao_ha_dispositivo_na_trilha(self):
+        from django.test import RequestFactory
+
+        request = RequestFactory().post(LOGIN)  # sem cookie de estação
+        sign_in_audit.record(
+            user=self.op, method=SignInMethod.PASSWORD, request=request, notify_owner=False
+        )
+
+        evento = SignInEvent.objects.get()
+        self.assertEqual(evento.station_ref, "")
+        self.assertNotIn("station_device_id", evento.data)
+
     def test_cracha_desconhecido_recusado_tambem_vira_linha(self):
         """Sem conta a nomear, e é justamente esse o fato interessante.
 

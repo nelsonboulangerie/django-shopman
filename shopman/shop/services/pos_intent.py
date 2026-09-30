@@ -387,6 +387,116 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
     return items
 
 
+#: Onde a autoria mora na linha da sessão (``items[].meta``). Ver
+#: ``docs/reference/data-schemas.md``.
+POS_AUTHORSHIP_META_KEY = "pos_authorship"
+
+
+@dataclass(frozen=True)
+class PosLineAuthor:
+    """Quem pratica o ato sobre a linha.
+
+    ``id`` é o ``User.pk`` como texto (estável: sobrevive a renomear a pessoa);
+    ``label`` é o nome legível NO MOMENTO do ato, congelado na linha.
+    """
+
+    id: str
+    label: str
+
+
+def pos_line_author(operator_username: str) -> PosLineAuthor:
+    """Resolve o operador da requisição. Sem ``User``, recusa: autoria sem dono é
+    promessa vazia, e a tela diria "Lançado por" alguém que ninguém sabe quem é."""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    username = str(operator_username or "").strip()
+    user = User.objects.filter(**{User.USERNAME_FIELD: username}).first() if username else None
+    if user is None:
+        raise PosIntentError(
+            code="operator_unidentified",
+            message="Operador não identificado. Entre de novo com seu PIN ou crachá.",
+            focus="search",
+            status=403,
+            recovery="Identifique-se no PDV antes de alterar a comanda.",
+        )
+    return PosLineAuthor(id=str(user.pk), label=user.get_full_name().strip() or user.get_username())
+
+
+def stamp_line_authorship(items: list[dict], *, previous_items: list[dict], author: PosLineAuthor, at: str) -> None:
+    """O ÚNICO escritor da autoria por linha: carimba ``items[i]["pos_authorship"]``.
+
+    Compara cada linha do payload com a da sessão pelo ``line_id``. Linha nova
+    ganha ``created_*``; linha cujo conteúdo que o operador controla mudou ganha
+    ``updated_*`` e PRESERVA ``created_*``; linha igual carrega o carimbo que já
+    tinha. Linha que existia sem carimbo não ganha ``created_*`` inventado.
+    """
+    previous = {
+        str(item.get("line_id")): item for item in (previous_items or []) if item.get("line_id")
+    }
+    for item in items:
+        before = previous.get(str(item.get("line_id") or ""))
+        if before is None:
+            item[POS_AUTHORSHIP_META_KEY] = {
+                "created_by": author.id,
+                "created_label": author.label,
+                "created_at": at,
+            }
+            continue
+        stamp = dict((before.get("meta") or {}).get(POS_AUTHORSHIP_META_KEY) or {})
+        if _payload_line_content(item) != _session_line_content(before):
+            stamp.update({"updated_by": author.id, "updated_label": author.label, "updated_at": at})
+        if stamp:
+            item[POS_AUTHORSHIP_META_KEY] = stamp
+
+
+def _qty_key(value) -> str:
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        return str(Decimal(str(value)).normalize())
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+
+
+def _weighed_input(raw) -> dict | None:
+    """Só o que o operador digitou; o peso resolvido é do catálogo."""
+    if not isinstance(raw, dict):
+        return None
+    entry = raw.get("entry")
+    field = "label_q" if entry == "label" else "weight_g"
+    return {"entry": entry, field: raw.get(field)}
+
+
+def _discount_input(raw) -> dict | None:
+    if not isinstance(raw, dict) or not raw:
+        return None
+    return {"type": raw.get("type"), "value": float(raw.get("value") or 0), "reason": raw.get("reason") or ""}
+
+
+def _payload_line_content(item: dict) -> tuple:
+    weighed = _weighed_input(item.get("weighed"))
+    return (
+        str(item.get("sku") or ""),
+        None if weighed else _qty_key(item.get("qty", 1)),
+        str(item.get("notes") or "").strip(),
+        _discount_input(item.get("discount")),
+        weighed,
+    )
+
+
+def _session_line_content(item: dict) -> tuple:
+    meta = item.get("meta") or {}
+    weighed = _weighed_input(meta.get("weighed"))
+    return (
+        str(item.get("sku") or ""),
+        None if weighed else _qty_key(item.get("qty", 1)),
+        str(meta.get("notes") or "").strip(),
+        _discount_input(meta.get("manual_discount")),
+        weighed,
+    )
+
+
 def _weighed(raw, field: str) -> dict | None:
     """O que o operador tem em mãos para a linha vendida por peso.
 

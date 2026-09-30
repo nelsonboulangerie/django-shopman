@@ -30,7 +30,12 @@ from shopman.shop.services import payment as payment_service
 from shopman.shop.services import sessions as session_service
 from shopman.shop.services import weighed_sale
 from shopman.shop.services.cancellation import cancel
-from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION, PosIntentError, parse_pos_sale_intent
+from shopman.shop.services.pos_intent import (
+    POS_AUTHORSHIP_META_KEY,
+    POS_SALE_INTENT_VERSION,
+    PosIntentError,
+    parse_pos_sale_intent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2163,6 +2168,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         # de pricing carimba na venda: sem _list_q na sessao, a review fica
         # sem regua para o "maior desconto ganha" e sem preco para carimbar.
         meta["_list_q"] = int(item["unit_price_q"])
+        # Só copia: quem escreve é ``pos_intent.stamp_line_authorship``.
+        authorship = item.get(POS_AUTHORSHIP_META_KEY)
+        if authorship:
+            meta[POS_AUTHORSHIP_META_KEY] = dict(authorship)
         if meta:
             op["meta"] = meta
         ops.append(op)
@@ -2550,6 +2559,16 @@ def _replace_session_ops(
     linha velha casando os SKUs — o que só funcionava com uma linha por SKU e
     quebrava calado assim que houvesse duas.
     """
+    from shopman.shop.services.pos_intent import pos_line_author, stamp_line_authorship
+
+    # A autoria por linha nasce aqui, antes do remove+readd: é o único ponto por
+    # onde salvar, fechar e editar encomenda passam com a sessão anterior em mãos.
+    stamp_line_authorship(
+        payload.get("items") or [],
+        previous_items=session.items or [],
+        author=pos_line_author(operator_username),
+        at=timezone.now().isoformat(),
+    )
     ops = [
         {"op": "remove_line", "line_id": item["line_id"]}
         for item in (session.items or [])

@@ -2753,6 +2753,8 @@ def build_open_tab(session: Session) -> dict:
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
             "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+            # Quem lançou e quem editou (``pos_intent.stamp_line_authorship``).
+            "authorship": (item.get("meta") or {}).get("pos_authorship") or None,
         }
         for item in (session.items or [])
         if not _is_delivery_fee_item(item)

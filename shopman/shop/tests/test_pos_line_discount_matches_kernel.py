@@ -9,6 +9,7 @@ contava, em TODA venda com desconto de linha perdedor.
 """
 
 import pytest
+from django.contrib.auth import get_user_model
 
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.pos import _payload_line_discounts_q
@@ -94,6 +95,8 @@ class TestOGateMedeOMesmoDinheiroQueAReview:
         from shopman.shop.models import Channel
 
         Channel.objects.create(ref="pdv", name="Balcão", is_active=True)
+        # A comanda carimba quem lançou cada linha: o operador precisa existir.
+        get_user_model().objects.create_user(username="alice", password="x")
         Product.objects.create(
             sku="BATARD", name="Batard", base_price_q=1300,
             is_published=True, is_sellable=True,
