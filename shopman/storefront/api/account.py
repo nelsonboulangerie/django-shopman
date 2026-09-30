@@ -31,6 +31,7 @@ from shopman.storefront.identity import (
     knows_only_the_number,
 )
 from shopman.storefront.intents.types import AddressIntent
+from shopman.storefront.observability import ServerTimingMixin
 from shopman.storefront.presentation.account import (
     FOOD_PREFERENCE_OPTIONS,
     NOTIFICATION_CHANNELS,
@@ -431,7 +432,7 @@ def _contact_taken_response(exc) -> Response:
         },
     ),
 )
-class ProfileView(APIView):
+class ProfileView(ServerTimingMixin, APIView):
     """
     GET /api/v1/account/profile/  → customer profile.
     PATCH /api/v1/account/profile/ → update first_name / last_name / email / birthday.
@@ -534,7 +535,7 @@ class ProfileView(APIView):
         )
 
 
-class AccountSummaryView(APIView):
+class AccountSummaryView(ServerTimingMixin, APIView):
     """GET /api/v1/account/summary/ — customer memory projection for Nuxt."""
 
     permission_classes = [AllowAny]
@@ -669,7 +670,7 @@ def _stock_alert_preferences(customer) -> list[dict]:
         responses={201: AddressSerializer, 400: DetailSerializer, 401: DetailSerializer},
     ),
 )
-class AddressListView(APIView):
+class AddressListView(ServerTimingMixin, APIView):
     """
     GET/POST /api/v1/account/addresses/
 
@@ -820,7 +821,7 @@ class AddressDetailView(APIView):
         responses={200: OrderHistoryItemSerializer(many=True), 401: DetailSerializer},
     ),
 )
-class OrderHistoryView(APIView):
+class OrderHistoryView(ServerTimingMixin, APIView):
     """
     GET /api/v1/account/orders/
 
@@ -865,7 +866,7 @@ class OrderHistoryView(APIView):
         })
 
 
-class ActiveOrderCountView(APIView):
+class ActiveOrderCountView(ServerTimingMixin, APIView):
     """GET /api/v1/account/orders/active/ — compact badge count."""
 
     permission_classes = [AllowAny]
@@ -1066,7 +1067,7 @@ def _devices_copy() -> dict:
     }
 
 
-class AccountDeviceListView(APIView):
+class AccountDeviceListView(ServerTimingMixin, APIView):
     """GET/DELETE /api/v1/account/devices/ — trusted devices for current customer."""
 
     permission_classes = [AllowAny]
@@ -1122,7 +1123,7 @@ class AccountDeviceDetailView(APIView):
         return response
 
 
-class AccountAccessListView(APIView):
+class AccountAccessListView(ServerTimingMixin, APIView):
     """GET/DELETE /api/v1/account/accesses/ — acessos ativos e recentes."""
 
     permission_classes = [AllowAny]
@@ -1570,7 +1571,7 @@ class AccountDeleteView(APIView):
         return response
 
 
-class FavoriteListView(APIView):
+class FavoriteListView(ServerTimingMixin, APIView):
     """GET /api/v1/account/favorites/ — the customer's favorite products as cards."""
 
     permission_classes = [AllowAny]
@@ -1665,7 +1666,7 @@ def _serialize_passkey(passkey, *, is_current: bool = False) -> dict:
     }
 
 
-class AccountPasskeyListView(APIView):
+class AccountPasskeyListView(ServerTimingMixin, APIView):
     """GET/DELETE /api/v1/account/passkeys/ — as passkeys da pessoa.
 
     ⚠️ Exige identidade FORTE, como o cadastro. Uma sessão que só conhece o número não pode

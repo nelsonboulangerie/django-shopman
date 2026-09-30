@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.services import remote_mutations
+from shopman.storefront.observability import ServerTimingMixin
 from shopman.storefront.presentation.order_tracking import build_order_tracking
 from shopman.storefront.services import orders as order_service
 
@@ -137,7 +138,7 @@ def _tracking_payload(order) -> dict:
         responses={200: OrderTrackingSerializer, 404: DetailSerializer},
     ),
 )
-class OrderTrackingView(APIView):
+class OrderTrackingView(ServerTimingMixin, APIView):
     """
     GET /api/v1/tracking/{ref}/
 

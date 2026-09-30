@@ -26,6 +26,7 @@ from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
 from shopman.storefront.observability import (
+    ServerTimingMixin,
     capture_catalog_timing,
     catalog_stage,
     log_catalog_observation,
@@ -276,7 +277,7 @@ def _skipped_reorder_items(skipped: list[str]) -> list[dict]:
     ),
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class StorefrontHomeView(APIView):
+class StorefrontHomeView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/home/"""
 
     permission_classes = [AllowAny]
@@ -299,7 +300,7 @@ class StorefrontHomeView(APIView):
     ),
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class StorefrontShellView(APIView):
+class StorefrontShellView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/shell/ — estado global sem reconstruir catálogo."""
 
     permission_classes = [AllowAny]
@@ -324,7 +325,7 @@ class StorefrontShellView(APIView):
         responses={200: OpenApiResponse(description="Search/share metadata, business data and public FAQ.")},
     ),
 )
-class StorefrontLegalView(APIView):
+class StorefrontLegalView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/legal/ — o que as páginas de Termos e Privacidade AFIRMAM.
 
     A lista de operadores e a data saem daqui, e não do `.vue`, porque texto que copia a
@@ -339,7 +340,7 @@ class StorefrontLegalView(APIView):
         return Response({"legal": projection_data(build_legal())})
 
 
-class StorefrontSiteView(APIView):
+class StorefrontSiteView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/site/ — o que busca e cartão de link precisam saber."""
 
     permission_classes = [AllowAny]
@@ -402,7 +403,7 @@ def _gone_products() -> dict:
         responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
     ),
 )
-class StorefrontSkuRedirectsView(APIView):
+class StorefrontSkuRedirectsView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
 
     A URL do produto é o SKU, e o catálogo trocou de código duas vezes
@@ -538,7 +539,7 @@ class StorefrontCatalogView(StorefrontMenuView):
     ),
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class StorefrontProductView(APIView):
+class StorefrontProductView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/products/{sku}/"""
 
     permission_classes = [AllowAny]
@@ -566,7 +567,7 @@ class StorefrontProductView(APIView):
     ),
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class StorefrontCartView(APIView):
+class StorefrontCartView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/cart/"""
 
     permission_classes = [AllowAny]
@@ -584,7 +585,7 @@ class StorefrontCartView(APIView):
     ),
 )
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class StorefrontCheckoutView(APIView):
+class StorefrontCheckoutView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/checkout/"""
 
     permission_classes = [AllowAny]
