@@ -269,6 +269,13 @@ suporte da DO** — os recursos do nosso lado estão esgotados.
 escrita é o **`shopman-spec-update`**. Use `doctl --context shopman-spec-update`, e **apenas**
 `create-deployment` — nunca `apps update` (ver D-009).
 
+**⛔ Não é possível abrir o chamado programaticamente** (verificado em 2026-09-30):
+`doctl` **não tem** subcomando de support/ticket (ausente da árvore de comandos), e
+`GET`/`POST https://api.digitalocean.com/v2/support/tickets` devolve
+`404 {"id":"not_found","message":"Your request could not be routed."}` — a DigitalOcean não expõe
+criação de chamado na API pública. **O chamado tem de ser aberto no console**
+(`cloud.digitalocean.com` → Support → Create ticket). Não perca tempo com a API.
+
 **Chamado ao suporte da DO — conteúdo:** app `shopman-nelson` (id `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`).
 Todo deployment desde 2026-09-29 21:31 UTC falha no passo `build` com
 `InternalError: An internal error occurred`. Deployment ativo é `c4fce115` (automated rollback).
