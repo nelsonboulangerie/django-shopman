@@ -1,0 +1,40 @@
+{
+  "_leia": [
+    "Checks obrigatórios da branch protection de `main`, copiados da API do GitHub.",
+    "O GitHub é a fonte; este arquivo é o espelho versionado. Mudou lá, atualize aqui.",
+    "scripts/check_canonical_docs.py reprova se algum contexto daqui deixar de ser produzido",
+    "por um job de workflow que rode em pull_request E merge_group: check obrigatório AUSENTE",
+    "trava todos os PRs para sempre, inclusive o que fez a troca.",
+    "Conferir contra o vivo: python scripts/check_canonical_docs.py --live-required-checks"
+  ],
+  "branch": "main",
+  "read_at": "2026-09-30T08:47:34Z",
+  "command": "gh api repos/nelsonboulangerie/django-shopman/branches/main/protection/required_status_checks",
+  "strict": false,
+  "app_id": 15368,
+  "contexts": [
+    "Testes (test-backstage)",
+    "Browser QA (Nuxt store + Django operator)",
+    "Quality + deploy contract",
+    "Docker deploy image",
+    "PostgreSQL + Redis runtime stress gate",
+    "operator-kit",
+    "storefront-nuxt",
+    "pos-nuxt",
+    "kds-nuxt",
+    "orders-nuxt",
+    "production-nuxt",
+    "hub-nuxt",
+    "marketing-nuxt",
+    "purchase-nuxt",
+    "bi-nuxt",
+    "Testes (test-cores)",
+    "Testes (test-counter-agent)",
+    "Testes (test-shop)",
+    "Testes (test-storefront)",
+    "Storefront E2E (Playwright)",
+    "Admin/Unfold gate",
+    "Admin CSP (production settings)",
+    "Gate da meia-correção"
+  ]
+}
