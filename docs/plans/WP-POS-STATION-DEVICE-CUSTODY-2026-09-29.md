@@ -13,8 +13,21 @@
 | Frente | Estado | Evidência |
 |---|---|---|
 | **Frente 0 — destravar CI** | ✅ **MERGEADA** | PR #1275 · merge `c97f56c24` em `origin/main`. Commits `8583d1f4b` (`-n auto` em `test-shop` e `test-storefront` + `uuid1`→UUID v1 fixo) e `e27ea6b47` (3 testes de log deixaram de depender da ordem). Nenhum arquivo de `.github/` tocado. |
-| WP-3 | próximo | — |
-| WP-1 · WP-4 · WP-2 · WP-5 | pendentes | — |
+| **WP-3 — higiene** | ✅ **NA FILA** | PR #1276 · flag fantasma confirmada (grep: nenhum consumidor) · `WP-LOCK-01` corrigido |
+| **WP-1 — autoria + rastro** | ✅ **NA FILA** | PR #1278 · commit `776478628` · `pos_intent.stamp_line_authorship` (:426) como escritor único, chamado de `pos.py:2566` (`_replace_session_ops`, com 3 chamadores: `:628`, `:1428`, `:1468`). Nenhuma atribuição direta a `session.items` nos services. |
+| **WP-4** | próximo | — |
+| WP-2 · WP-5 · **WP-6** | pendentes | WP-6 é novo — ver abaixo |
+
+**Ganho medido da Frente 0 na CI (PR #1275):** `test-shop` **20–30 min → 15,7 min**; gate total
+**23–31 → 22,5 min**. O gate cai pouco porque `test-shop` **continua sendo o caminho crítico** — ele
+termina apenas 6,8 min antes do fim. `test-storefront` fica com `-n auto` (ganho dentro do ruído;
+reverter custaria um PR para ganho zero) — **se aparecer teste intermitente do storefront em
+paralelo, o primeiro suspeito é essa linha**.
+
+**Qualidade observada no WP-1 (vale preservar em quem mexer depois):** `stamp_line_authorship`
+recusa **inventar** `created_*` para linha que já existia sem carimbo — não fabrica história. E
+`pos.py:2171` tem o comentário "Só copia: quem escreve é `pos_intent.stamp_line_authorship`", ou
+seja, o segundo caminho **defere** ao escritor único em vez de duplicar a verdade.
 
 **Nota da Frente 0 (vale para quem for medir):** o `--collect-only -n auto` **não** serve como prova
 de coleta paralela — o xdist não sobe workers nesse modo. A prova é a execução completa. E o ganho
@@ -176,6 +189,30 @@ com estado honesto.
 
 **Por que por último.** É o único com desenho real e o único que mexe em auth. Os quatro anteriores
 já entregam a auditoria e a visibilidade.
+
+---
+
+## WP-6 · O dispositivo no rastro do DINHEIRO (P0 — criado em 2026-09-29)
+
+**Por que existe.** O WP-1 pôs o dispositivo na trilha de **acesso** (`sign_in_audit`) e a autoria
+por linha na comanda. Mas **não** pôs o dispositivo onde o dinheiro é lançado:
+`cashman.Entry.payload` e `SessionEvent`. Esses caminhos passam pelo `operations.py`, que ficou
+**fora do escopo do WP-1 por decisão minha**, para não colidir com WP-2 e WP-4. A lacuna é de
+planejamento, não de execução.
+
+**Por que é o item que mais importa.** A pergunta original do dono é sobre **fraude na gaveta**.
+Sem o dispositivo no lançamento do caixa, continua verdade que *dois tablets no mesmo balcão são
+indistinguíveis na trilha* — e o livro responsabiliza pessoa + terminal, nunca o aparelho.
+
+**Mudança.** Gravar a identidade do `TrustedDevice` no payload dos movimentos de caixa e dos
+eventos de sessão, pelos caminhos que já existem. **Zero migração** (JSONField). Documentar as
+chaves em `docs/reference/data-schemas.md` antes de usar.
+
+**Sequência.** Depois do **WP-4**, que também mexe em `operations.py`. **Nunca em paralelo** com
+WP-2 ou WP-4 — é o mesmo arquivo quente.
+
+**Prova de pronto.** Dois lançamentos de caixa feitos de dispositivos diferentes carregam device
+ids diferentes; e o mesmo lançamento continua legível para quem não tem permissão de auditoria.
 
 ---
 
