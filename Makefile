@@ -423,9 +423,9 @@ deploy-drift: ## Confere o registry contra o main — quem ficou para trás? (le
 
 # ⚠️ NÃO é alvo de CI: exige credencial da DigitalOcean, que a CI não tem (nem
 # deve ter). É conferência de MÃO, obrigatória antes de qualquer `apps update`.
-deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; roda ANTES de apps update)
+deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; ANTES de apps update; context=<ctx do doctl que lê databases>)
 	@echo "── Drift do spec do App Platform ──"
-	$(PYTHON) scripts/check_do_spec_drift.py $(if $(spec),--spec $(spec),)
+	$(PYTHON) scripts/check_do_spec_drift.py $(if $(spec),--spec $(spec),) $(if $(context),--context $(context),)
 
 canonical-docs: ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"

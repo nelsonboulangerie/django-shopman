@@ -208,3 +208,194 @@ def test_main_fails_when_only_a_non_env_section_diverges(tmp_path, capsys, secti
     code = drift.main(["--spec", str(spec_path), "--live-spec", str(live_path)])
     assert code == 1
     assert "SUMIRIAM" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Bancos anexados: o incidente de 29-30/09/2026
+# ---------------------------------------------------------------------------
+
+#: O bloco do arquivo versionado, idêntico ao `.do/app.alpha-subdomains.yaml`.
+_DATABASES_FULL = [
+    {
+        "cluster_name": "shopman-staging-postgres",
+        "db_name": "shopman",
+        "db_user": "shopman",
+        "engine": "PG",
+        "name": "postgres",
+        "production": True,
+        "version": "16",
+    },
+    {
+        "cluster_name": "shopman-staging-cache",
+        "engine": "VALKEY",
+        "name": "cache",
+        "production": True,
+        "version": "8",
+    },
+]
+
+#: O que o `apps update` do deployment ded45b84 deixou no vivo (29/09 21:47 UTC).
+_DATABASES_MUTILATED = [{"name": "postgres"}, {"name": "cache"}]
+
+
+def test_real_case_mutilated_databases_block_fails_naming_postgres(tmp_path, capsys):
+    """Reconstituição do incidente: o vivo com `databases` reduzido a `name`.
+
+    Por 21 horas todo deploy morreu em `Creating database` com InternalError,
+    e o drift-check, que não olhava `databases`, teria dito OK para o bloco.
+    """
+    import yaml
+
+    base = {"name": "app", "envs": [_env("A", "1")]}
+    live_path = tmp_path / "vivo.yaml"
+    spec_path = tmp_path / "versionado.yaml"
+    live_path.write_text(yaml.safe_dump({**base, "databases": _DATABASES_MUTILATED}), encoding="utf-8")
+    spec_path.write_text(yaml.safe_dump({**base, "databases": _DATABASES_FULL}), encoding="utf-8")
+
+    code = drift.main(["--spec", str(spec_path), "--live-spec", str(live_path)])
+    out = capsys.readouterr().out
+
+    assert code == 1
+    assert "[FAIL]" in out
+    assert "databases MUTILADO" in out
+    postgres_lines = [line for line in out.splitlines() if "databases postgres" in line]
+    assert postgres_lines, out
+    assert any("cluster_name='shopman-staging-postgres'" in line for line in postgres_lines)
+    assert any("db_name='shopman'" in line for line in postgres_lines)
+
+
+def test_healthy_databases_block_is_clean():
+    live = drift.database_index({"databases": _DATABASES_FULL})
+    assert drift.compare_records(live, dict(live), label="databases", unit="bancos") == []
+    assert drift.mutilated_databases(live, live) == []
+
+
+def test_cache_without_db_name_is_not_drift():
+    """Compara contra o versionado, não contra um conjunto fixo de campos."""
+    index = drift.database_index({"databases": _DATABASES_FULL})
+    assert "db_name" not in index["cache"]
+    assert drift.compare_records(index, dict(index), label="databases", unit="bancos") == []
+
+
+def test_single_database_field_lost_in_the_live_app_fails():
+    live_block = [dict(_DATABASES_FULL[0]), dict(_DATABASES_FULL[1])]
+    del live_block[0]["cluster_name"]
+    problems = drift.compare_records(
+        drift.database_index({"databases": live_block}),
+        drift.database_index({"databases": _DATABASES_FULL}),
+        label="databases",
+        unit="bancos",
+    )
+    assert any("postgres" in line and "cluster_name" in line for line in problems)
+
+
+def test_database_only_in_the_live_app_is_reported_as_deleting():
+    problems = drift.compare_records(
+        drift.database_index({"databases": _DATABASES_FULL}),
+        drift.database_index({"databases": _DATABASES_FULL[:1]}),
+        label="databases",
+        unit="bancos",
+    )
+    assert any("SUMIRIAM" in line for line in problems)
+    assert any(line.strip() == "cache" for line in problems)
+
+
+def test_blind_token_refuses_instead_of_reporting_false_drift(tmp_path, capsys, monkeypatch):
+    """Token sem escopo de database lê o bloco mutilado num app sadio.
+
+    Medido em 30/09: o contexto de deploy devolve `databases` só com `name`
+    mesmo depois da correção. O check recusa a leitura (2) em vez de acusar.
+    """
+    import yaml
+
+    spec_path = tmp_path / "versionado.yaml"
+    spec_path.write_text(
+        yaml.safe_dump({"name": "app", "databases": _DATABASES_FULL}), encoding="utf-8"
+    )
+    monkeypatch.setattr(drift, "app_id_for", lambda name, context=None: "uuid")
+    monkeypatch.setattr(
+        drift,
+        "fetch_live_spec",
+        lambda app_id, context=None: {"name": "app", "databases": _DATABASES_MUTILATED},
+    )
+    monkeypatch.setattr(drift, "token_reads_databases", lambda context=None: False)
+
+    assert drift.main(["--spec", str(spec_path)]) == 2
+    assert "leitura cega" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Componentes: imagem e dimensionamento
+# ---------------------------------------------------------------------------
+
+
+def _component(name: str, tag: str = "web", **extra) -> dict:
+    return {
+        "name": name,
+        "instance_count": 1,
+        "instance_size_slug": "apps-s-1vcpu-1gb",
+        "image": {
+            "registry_type": "DOCR",
+            "repository": "shopman",
+            "tag": tag,
+            "deploy_on_push": {"enabled": True},
+            **extra,
+        },
+    }
+
+
+def test_registry_filled_by_the_platform_is_not_drift():
+    live = {"services": [_component("web", registry="nelsonboulangerie")]}
+    versioned = {"services": [_component("web")]}
+    assert (
+        drift.compare_records(
+            drift.component_index(live), drift.component_index(versioned), label="c", unit="c"
+        )
+        == []
+    )
+
+
+def test_image_tag_divergence_is_reported():
+    problems = drift.compare_records(
+        drift.component_index({"workers": [_component("directive-worker", tag="web-old")]}),
+        drift.component_index({"workers": [_component("directive-worker", tag="web")]}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("workers/directive-worker" in line and "image.tag" in line for line in problems)
+
+
+@pytest.mark.parametrize("field", ["instance_count", "instance_size_slug"])
+def test_sizing_lost_in_the_live_app_fails(field):
+    live_component = _component("web")
+    del live_component[field]
+    problems = drift.compare_records(
+        drift.component_index({"services": [live_component]}),
+        drift.component_index({"services": [_component("web")]}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("services/web" in line and field in line for line in problems)
+
+
+def test_component_only_in_the_live_app_is_reported_as_deleting():
+    problems = drift.compare_records(
+        drift.component_index({"workers": [_component("ifood-poll-worker")]}),
+        drift.component_index({}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("SUMIRIAM" in line for line in problems)
+    assert any("workers/ifood-poll-worker" in line for line in problems)
+
+
+def test_deploy_on_push_turned_off_is_a_divergence():
+    live_component = _component("web")
+    live_component["image"]["deploy_on_push"] = {"enabled": False}
+    problems = drift.compare_records(
+        drift.component_index({"services": [live_component]}),
+        drift.component_index({"services": [_component("web")]}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("deploy_on_push" in line for line in problems)

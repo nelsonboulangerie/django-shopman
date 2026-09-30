@@ -19,6 +19,16 @@ com a lista na frente. É de propósito somente-leitura: um script que
     python scripts/check_do_spec_drift.py --app-id <uuid>
     python scripts/check_do_spec_drift.py --spec .do/app.subdomains.yaml
     python scripts/check_do_spec_drift.py --live-spec /tmp/vivo.yaml   # sem doctl
+    python scripts/check_do_spec_drift.py --context shopman-spec-update
+
+Compara envs (de app e por serviço), domínios, ingress, bancos anexados
+(``databases``, campo a campo) e, por componente, imagem (registry_type,
+repository, tag/digest, deploy_on_push) e dimensionamento (instance_count,
+instance_size_slug).
+
+⚠️ O token precisa LER databases. Sem o escopo, o App Platform devolve o bloco
+só com ``name`` — o formato que derrubou os deploys em 29-30/09/2026 — e o
+script recusa a leitura (sai 2) em vez de acusar drift falso.
 
 Saída: chaves só no vivo (**as que sumiriam**), chaves só no versionado (as que
 nasceriam), e divergência de valor/escopo/tipo nas que existem dos dois lados.
@@ -75,9 +85,13 @@ def load_spec(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def app_id_for(name: str) -> str | None:
+def doctl(*args: str, context: str | None = None) -> list[str]:
+    return ["doctl", *(["--context", context] if context else []), *args]
+
+
+def app_id_for(name: str, *, context: str | None = None) -> str | None:
     result = subprocess.run(
-        ["doctl", "apps", "list", "--format", "ID,Spec.Name", "--no-header"],
+        doctl("apps", "list", "--format", "ID,Spec.Name", "--no-header", context=context),
         capture_output=True,
         text=True,
         check=False,
@@ -91,9 +105,9 @@ def app_id_for(name: str) -> str | None:
     return None
 
 
-def fetch_live_spec(app_id: str) -> dict:
+def fetch_live_spec(app_id: str, *, context: str | None = None) -> dict:
     result = subprocess.run(
-        ["doctl", "apps", "spec", "get", app_id],
+        doctl("apps", "spec", "get", app_id, context=context),
         capture_output=True,
         text=True,
         check=False,
@@ -101,6 +115,26 @@ def fetch_live_spec(app_id: str) -> dict:
     if result.returncode != 0:
         raise RuntimeError(f"doctl apps spec get falhou: {result.stderr.strip()}")
     return yaml.safe_load(result.stdout) or {}
+
+
+def token_reads_databases(*, context: str | None = None) -> bool:
+    """O token enxerga os bancos gerenciados?
+
+    Medido em 30/09/2026: com o token de deploy (sem escopo de database), o
+    ``doctl apps spec get`` devolve o bloco ``databases`` só com ``name`` — o
+    MESMO formato mutilado que derrubou os deploys por 21 horas. O App
+    Platform apaga os campos na leitura em vez de recusar. Com o token certo o
+    bloco vem inteiro. Sem esta pergunta, o check acusaria a mutilação num app
+    sadio — e, pior, quem salvar essa leitura e mandar de volta num
+    ``apps update`` reproduz o incidente.
+    """
+    result = subprocess.run(
+        doctl("databases", "list", "--format", "ID", "--no-header", context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def env_index(spec: dict) -> dict[str, dict]:
@@ -154,6 +188,109 @@ def ingress_index(spec: dict) -> dict[str, str]:
         path = (match.get("path") or {}).get("prefix") or "/"
         out[f"{host} {path}"] = (rule.get("component") or {}).get("name") or "?"
     return out
+
+
+#: Seções de componente do spec. `doctl apps update` troca a lista inteira de
+#: cada uma: componente que só existe no vivo é DESLIGADO.
+COMPONENT_SECTIONS = ("services", "workers", "jobs", "static_sites", "functions")
+
+#: Campos da imagem que decidem O QUE sobe. `registry` fica de fora: para DOCR
+#: o App Platform o preenche sozinho no vivo (`nelsonboulangerie`) e o arquivo
+#: não o declara — comparar daria divergência eterna sem mudar nada.
+IMAGE_FIELDS = ("registry_type", "repository", "tag", "digest")
+
+#: O essencial do componente que, se sumir, muda o que roda ou quanto roda.
+COMPONENT_FIELDS = ("instance_count", "instance_size_slug")
+
+
+def database_index(spec: dict) -> dict[str, dict]:
+    """Bancos anexados por `name` → todos os campos da entrada.
+
+    O caso que ensinou (29/09/2026, deployment ded45b84): um `apps update`
+    reduziu as duas entradas a `- name: postgres` / `- name: cache`. Todo deploy
+    novo passou a morrer em `Creating database` com InternalError, sem mensagem,
+    por 21 horas — só `apps restart` passava, porque clona o deployment
+    anterior. Nem toda entrada tem todos os campos (o `cache` Valkey não tem
+    `db_name`/`db_user`), então o que conta é o versionado, não uma lista fixa.
+    """
+    out: dict[str, dict] = {}
+    for entry in spec.get("databases", []) or []:
+        name = entry.get("name")
+        if name:
+            out[name] = {key: value for key, value in entry.items() if key != "name"}
+    return out
+
+
+def component_index(spec: dict) -> dict[str, dict]:
+    """Componentes por `"<seção>/<nome>"` → imagem e dimensionamento.
+
+    A tag da imagem é o que o `deploy_on_push` assina: tag trocada no vivo
+    (ou no arquivo) faz o componente rodar outra imagem sem que ninguém veja.
+    """
+    out: dict[str, dict] = {}
+    for section in COMPONENT_SECTIONS:
+        for component in spec.get(section, []) or []:
+            fields: dict = {}
+            image = component.get("image") or {}
+            for field in IMAGE_FIELDS:
+                if field in image:
+                    fields[f"image.{field}"] = image[field]
+            if "deploy_on_push" in image:
+                fields["image.deploy_on_push"] = bool((image["deploy_on_push"] or {}).get("enabled"))
+            for field in COMPONENT_FIELDS:
+                if field in component:
+                    fields[field] = component[field]
+            out[f"{section}/{component.get('name') or '?'}"] = fields
+    return out
+
+
+def compare_records(
+    live: dict[str, dict], versioned: dict[str, dict], *, label: str, unit: str
+) -> list[str]:
+    """Compara registros com campos (banco → campos, componente → campos).
+
+    Campo presente no arquivo e AUSENTE no vivo é problema, não "nasceria":
+    é a forma exata da mutilação de 29/09, em que a entrada existia dos dois
+    lados e o vivo tinha perdido tudo menos o `name`.
+    """
+    problems: list[str] = []
+
+    only_live = sorted(set(live) - set(versioned))
+    if only_live:
+        problems.append(f"  ⛔ SUMIRIAM no `apps update` — {unit} no vivo e NÃO no arquivo ({label}):")
+        problems.extend(f"       {key}" for key in only_live)
+
+    only_versioned = sorted(set(versioned) - set(live))
+    if only_versioned:
+        problems.append(f"  ➕ nasceriam — {unit} no arquivo e não no vivo ({label}):")
+        problems.extend(f"       {key}" for key in only_versioned)
+
+    for key in sorted(set(live) & set(versioned)):
+        left, right = live[key], versioned[key]
+        missing_live = sorted(set(right) - set(left))
+        if missing_live:
+            problems.append(
+                f"  ⛔ {label} {key}: o VIVO perdeu campos que o arquivo declara — "
+                + ", ".join(f"{field}={right[field]!r}" for field in missing_live)
+            )
+        only_live_fields = sorted(set(left) - set(right))
+        if only_live_fields:
+            problems.append(
+                f"  ⛔ {label} {key}: SUMIRIAM no `apps update` — campos só no vivo: "
+                + ", ".join(f"{field}={left[field]!r}" for field in only_live_fields)
+            )
+        for field in sorted(set(left) & set(right)):
+            if left[field] != right[field]:
+                problems.append(
+                    f"  ⚠️ {label} {key}: `{field}` diverge — vivo={left[field]!r} "
+                    f"versionado={right[field]!r}"
+                )
+    return problems
+
+
+def mutilated_databases(live: dict[str, dict], versioned: dict[str, dict]) -> list[str]:
+    """Entradas de banco que no vivo têm só `name` e no arquivo têm campos."""
+    return sorted(name for name, fields in live.items() if not fields and versioned.get(name))
 
 
 def env_type(entry: dict) -> str:
@@ -252,6 +389,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="arquivo com o spec do vivo já baixado (pula o doctl)",
     )
+    parser.add_argument(
+        "--context",
+        default=None,
+        help="contexto do doctl (o token precisa ler databases; ver o runbook)",
+    )
     args = parser.parse_args(argv)
 
     spec_path = Path(args.spec)
@@ -267,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         live = load_spec(Path(args.live_spec))
         origin = args.live_spec
     else:
-        app_id = args.app_id or app_id_for(versioned.get("name", ""))
+        app_id = args.app_id or app_id_for(versioned.get("name", ""), context=args.context)
         if not app_id:
             print(
                 f"app '{versioned.get('name')}' não encontrado via doctl.\n"
@@ -276,11 +418,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         try:
-            live = fetch_live_spec(app_id)
+            live = fetch_live_spec(app_id, context=args.context)
         except RuntimeError as exc:
             print(str(exc), file=sys.stderr)
             return 2
         origin = f"app {app_id}"
+        if versioned.get("databases") and not token_reads_databases(context=args.context):
+            # Leitura cega: o vivo viria sem os campos do banco e o check
+            # acusaria a mutilação num app sadio. Recusar é mais honesto que
+            # um FAIL falso — e o aviso é o próprio incidente de 29/09.
+            print(
+                "⛔ leitura cega: o token deste contexto do doctl NÃO lê databases.\n"
+                "   Com ele, `apps spec get` devolve `databases` só com `name` — e mandar\n"
+                "   essa leitura de volta num `apps update` quebra todo deploy novo\n"
+                "   (InternalError em `Creating database`, 29-30/09/2026).\n"
+                "   Rode com um contexto que leia databases: --context <ctx> (make: context=<ctx>).",
+                file=sys.stderr,
+            )
+            return 2
 
     # `relative_to` estoura para caminho fora do repo, e conferir um spec salvo
     # em /tmp é justamente o que se faz ao comparar duas versões do arquivo.
@@ -295,6 +450,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(
         f"domínios        : vivo={len(domain_index(live))} versionado={len(domain_index(versioned))}"
+    )
+    print(
+        f"bancos anexados : vivo={len(database_index(live))} "
+        f"versionado={len(database_index(versioned))}"
+    )
+    print(
+        f"componentes     : vivo={len(component_index(live))} "
+        f"versionado={len(component_index(versioned))}"
     )
 
     problems, expected = compare(
@@ -328,6 +491,26 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
+    live_databases, versioned_databases = database_index(live), database_index(versioned)
+    mutilated = mutilated_databases(live_databases, versioned_databases)
+    if mutilated:
+        problems.append(
+            "  ⛔ databases MUTILADO no vivo — só `name` em: "
+            + ", ".join(mutilated)
+            + ". Todo deploy novo morre em `Creating database` (InternalError, sem"
+            " mensagem); só `apps restart` passa. Foi o incidente de 29-30/09/2026."
+        )
+    problems.extend(
+        compare_records(
+            live_databases, versioned_databases, label="databases", unit="bancos anexados"
+        )
+    )
+    problems.extend(
+        compare_records(
+            component_index(live), component_index(versioned), label="componente", unit="componentes"
+        )
+    )
+
     if expected:
         print("\nDiferenças declaradas como esperadas (não são drift):")
         for line in expected:
@@ -343,8 +526,8 @@ def main(argv: list[str] | None = None) -> int:
         print(line)
     print(
         "\n⛔ NÃO rode `doctl apps update --spec` enquanto houver linha em SUMIRIAM:\n"
-        "   o update substitui o spec inteiro, não faz merge. Env, DOMÍNIO e regra\n"
-        "   de ingress somem do mesmo jeito. Traga a coisa para o arquivo primeiro\n"
+        "   o update substitui o spec inteiro, não faz merge. Env, DOMÍNIO, regra\n"
+        "   de ingress, banco anexado e componente somem do mesmo jeito. Traga a coisa para o arquivo primeiro\n"
         "   (segredo entra como `type: SECRET` SEM `value` — o valor cifrado que já\n"
         "   está no painel permanece).\n"
         "   Ver docs/runbooks/conferir-spec-digitalocean.md."
