@@ -68,7 +68,8 @@ DEFAULT_SPEC = REPO_ROOT / ".do" / "app.alpha-subdomains.yaml"
 #: não tolerada em silêncio.
 #:
 #: ⚠️ Só vale para o lado "nasceriam". Chave que existe no vivo e não no arquivo
-#: **apaga** no update, e para essa direção não há allowlist nenhuma.
+#: **apaga** no update; essa direção tem declaração própria e mais estreita
+#: (``EXPECTED_ONLY_LIVE``), e esta lista nunca a cobre.
 EXPECTED_ONLY_VERSIONED: dict[str, str] = {
     "FOCUS_NFE_ENVIRONMENT": (
         "declarada explícita no arquivo; o vivo não a tem e cai no default do "
@@ -79,6 +80,35 @@ EXPECTED_ONLY_VERSIONED: dict[str, str] = {
         "Sem DSN o settings.py não inicializa o Sentry."
     ),
 }
+
+
+#: Chaves que existem NOS DOIS LADOS com valores diferentes **de propósito**:
+#: chave → ``(valor no vivo, valor no arquivo, razão)``.
+#:
+#: Os dois valores ficam presos na declaração, não só a chave. Declarar a chave
+#: sozinha calaria qualquer valor que ela viesse a ter — e aí a lista viraria um
+#: jeito de silenciar drift de verdade. Se um dos lados mudar para um valor que
+#: não é o declarado, a divergência volta a acusar.
+_PUBLICATION_ARMED_IN_THE_PANEL = (
+    "a publicação é ARMADA NO PAINEL pela operação. O template de deploy nunca "
+    "pré-arma publicação pública (test_deploy_templates_never_prearm_publication_canary). "
+    "O arquivo fica em `false` de propósito; o vivo fica em `true` por decisão de operação."
+)
+EXPECTED_VALUE_DIVERGENCE: dict[str, tuple[str, str, str]] = {
+    "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
+    "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
+    "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
+}
+
+#: Chaves que existem SÓ NO VIVO e cuja remoção pelo ``apps update`` é o
+#: resultado QUERIDO, com a razão.
+#:
+#: ⚠️ É a direção que apaga, então a entrada aqui é afirmação forte: "esta
+#: chave pode sumir, e sumir é o que se quer". Serve só para a chave que já
+#: saiu do arquivo de propósito e cuja remoção do vivo está pendente. Feita a
+#: remoção, a entrada sai daqui — declaração velha esconde a volta da chave.
+#: (A primeira, ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR``, saiu do vivo em 30/09/2026.)
+EXPECTED_ONLY_LIVE: dict[str, str] = {}
 
 
 def load_spec(path: Path) -> dict:
@@ -336,13 +366,19 @@ def compare(
     *,
     label: str,
     expected_only_versioned: dict[str, str] | None = None,
+    expected_only_live: dict[str, str] | None = None,
+    expected_value_divergence: dict[str, tuple[str, str, str]] | None = None,
 ) -> tuple[list[str], list[str]]:
     """`(problemas, esperado)`. Problemas vazios significa "os dois lados batem"."""
     problems: list[str] = []
     expected: list[str] = []
     declared = expected_only_versioned or {}
+    declared_live = expected_only_live or {}
+    declared_values = expected_value_divergence or {}
 
-    only_live = sorted(set(live) - set(versioned))
+    only_live = sorted(key for key in set(live) - set(versioned) if key not in declared_live)
+    for key in sorted(key for key in set(live) - set(versioned) if key in declared_live):
+        expected.append(f"  ✅ {key}: só no vivo, sai no update de propósito — {declared_live[key]}")
     only_versioned = sorted(key for key in set(versioned) - set(live) if key not in declared)
     for key in sorted(key for key in set(versioned) - set(live) if key in declared):
         expected.append(f"  ✅ {key}: só no arquivo, de propósito — {declared[key]}")
@@ -371,7 +407,20 @@ def compare(
             problems.append(
                 f"  ⚠️ {key}: `type` diverge — vivo={env_type(left)} versionado={env_type(right)}"
             )
-        for field in ("value", "scope"):
+        declared_value = declared_values.get(key)
+        if (
+            declared_value
+            and left.get("value") != right.get("value")
+            and (left.get("value"), right.get("value")) == declared_value[:2]
+        ):
+            expected.append(
+                f"  ✅ {key}: vivo={left.get('value')!r} versionado={right.get('value')!r}, "
+                f"de propósito — {declared_value[2]}"
+            )
+            fields: tuple[str, ...] = ("scope",)
+        else:
+            fields = ("value", "scope")
+        for field in fields:
             if left.get(field) != right.get(field):
                 problems.append(
                     f"  ⚠️ {key}: `{field}` diverge — vivo={left.get(field)!r} "
@@ -465,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
         env_index(versioned),
         label="envs de app",
         expected_only_versioned=EXPECTED_ONLY_VERSIONED,
+        expected_only_live=EXPECTED_ONLY_LIVE,
+        expected_value_divergence=EXPECTED_VALUE_DIVERGENCE,
     )
 
     live_services, versioned_services = service_env_index(live), service_env_index(versioned)

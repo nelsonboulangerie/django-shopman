@@ -10,9 +10,13 @@ propósito — `FOCUS_NFE_ENVIRONMENT` e `SENTRY_DSN` —, e um relatório que n
 fecha limpo deixa de ser lido. Elas são **declaradas** como esperadas, com a
 razão junto; o que não está declarado continua acusando.
 
-⚠️ A allowlist só vale para o lado "nasceriam". Na direção que apaga
-(existe no vivo, não no arquivo) não há allowlist nenhuma, e este arquivo
-prova isso.
+⚠️ A allowlist de "só no arquivo" só vale para o lado "nasceriam". Na direção
+que apaga (existe no vivo, não no arquivo) a declaração é outra, por chave, e
+este arquivo prova que uma não cobre a outra.
+
+Terceiro caso: a chave existe dos dois lados com valores diferentes de
+propósito (a publicação pública é armada no painel; o arquivo nunca pré-arma).
+A declaração prende os DOIS valores: qualquer outro par continua acusando.
 
 O script vive fora da árvore do pacote, então é carregado por caminho.
 """
@@ -85,6 +89,101 @@ def test_allowlist_never_covers_the_direction_that_deletes():
     assert expected == []
     assert any("SUMIRIAM" in line for line in problems)
     assert any("SENTRY_DSN" in line for line in problems)
+
+
+# ---------------------------------------------------------------------------
+# Divergência de valor declarada, e remoção declarada
+# ---------------------------------------------------------------------------
+
+
+def _compare_app_envs(live: dict, versioned: dict):
+    return drift.compare(
+        live,
+        versioned,
+        label="envs de app",
+        expected_only_versioned=drift.EXPECTED_ONLY_VERSIONED,
+        expected_only_live=drift.EXPECTED_ONLY_LIVE,
+        expected_value_divergence=drift.EXPECTED_VALUE_DIVERGENCE,
+    )
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
+    ],
+)
+def test_publication_armed_in_the_panel_is_not_drift(key):
+    problems, expected = _compare_app_envs({key: _env(key, "true")}, {key: _env(key, "false")})
+    assert problems == []
+    assert len(expected) == 1
+    assert key in expected[0]
+    assert "ARMADA NO PAINEL" in expected[0]
+
+
+def test_undeclared_value_divergence_still_reports():
+    """Sem esta prova, a declaração nova viraria um jeito de calar drift."""
+    problems, expected = _compare_app_envs(
+        {"SHOPMAN_MARKETING_MEDIA_HOSTS": _env("SHOPMAN_MARKETING_MEDIA_HOSTS", "a.example")},
+        {"SHOPMAN_MARKETING_MEDIA_HOSTS": _env("SHOPMAN_MARKETING_MEDIA_HOSTS", "b.example")},
+    )
+    assert expected == []
+    assert any("SHOPMAN_MARKETING_MEDIA_HOSTS" in line and "`value` diverge" in line for line in problems)
+
+
+@pytest.mark.parametrize(
+    ("live_value", "versioned_value"),
+    [
+        ("false", "true"),  # o arquivo passou a pré-armar: é o que a guarda proíbe
+        ("yes", "false"),  # o vivo mudou para um valor que ninguém declarou
+    ],
+)
+def test_declared_key_with_another_value_pair_still_reports(live_value, versioned_value):
+    key = "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED"
+    problems, expected = _compare_app_envs(
+        {key: _env(key, live_value)}, {key: _env(key, versioned_value)}
+    )
+    assert expected == []
+    assert any(key in line and "`value` diverge" in line for line in problems)
+
+
+def test_declared_value_divergence_does_not_hide_scope_divergence():
+    key = "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED"
+    live_entry = _env(key, "true")
+    live_entry["scope"] = "RUN_AND_BUILD_TIME"
+    problems, _ = _compare_app_envs({key: live_entry}, {key: _env(key, "false")})
+    assert any(key in line and "`scope` diverge" in line for line in problems)
+
+
+def test_declared_removal_from_the_live_app_is_not_drift():
+    key = "FLAG_QUE_SAIU"
+    problems, expected = drift.compare(
+        {key: _env(key, "true")},
+        {},
+        label="envs de app",
+        expected_only_live={key: "saiu do arquivo; nenhum código lê"},
+    )
+    assert problems == []
+    assert len(expected) == 1
+    assert key in expected[0]
+    assert "nenhum código lê" in expected[0]
+
+
+def test_ghost_flag_is_no_longer_declared_after_leaving_the_live_app():
+    """Removida do vivo em 30/09/2026; se voltar ao painel, tem de acusar."""
+    key = "SHOPMAN_REQUIRE_ACTIVE_OPERATOR"
+    problems, expected = _compare_app_envs({key: _env(key, "true")}, {})
+    assert expected == []
+    assert any("SUMIRIAM" in line for line in problems)
+
+
+def test_undeclared_key_only_in_the_live_app_still_deletes():
+    problems, expected = _compare_app_envs({"EMAIL_HOST": _env("EMAIL_HOST", "smtp.x")}, {})
+    assert expected == []
+    assert any("SUMIRIAM" in line for line in problems)
+    assert any("EMAIL_HOST" in line for line in problems)
 
 
 # ---------------------------------------------------------------------------
