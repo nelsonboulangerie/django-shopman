@@ -55,19 +55,41 @@ O cache de borda resolveu o **anônimo**. O que **não** foi resolvido é o cust
 `O(linhas de stockman_quant)`, não O(SKUs). **Análise completa e medida:**
 `docs/reports/go-live-acceleration-20260929/13-hot-path-projecao.md` — não refaça.
 
-Ordem sugerida (P1 e P6 já foram feitos):
+### ATUALIZAÇÃO 2026-09-30 ~22:00 UTC — parte segura ENTREGUE (PR #1295, na fila)
+
+P3 + P8 + P4 feitos, **nada em `packages/`**. Medição **local** (a de produção sai depois do deploy):
+
+| | antes | depois |
+|---|---|---|
+| `menu/` consultas | 93 | **65** |
+| `home/` consultas | 97 | **57** |
+| `shell/` consultas | 4 | 2 |
+| consultas a `shop_channel` | menu 9 / home 11 | **2 / 2** |
+
+**Contrato do `home/` provado intacto:** 0 diferenças em **14.513 campos** contra 5 payloads do main.
+E existe um teste que **falha se a home voltar a chamar `build_catalog`** — **não desfaça esse teste**.
+De carona: a promoção ignorava o prefetch dos canais e fazia 1 consulta por promoção.
+
+⚠️ **Ainda NÃO medido em produção.** E o `menu/` privado segue **~3,3–4,5 s** (medido em 30/09
+22:00 UTC: `projection;dur=3874 · availability;dur=1370 · db;dur=437`). O ganho real desta frente é
+desconhecido até o deploy.
+
+🔎 **Descoberta fora do escopo, para a próxima frente:** **com sacola**, `home/` e `menu/` fazem
+**~200 consultas**, e o custo está na **projeção da sacola**, não no catálogo. Isso **não** está no
+relatório 13.
+
+Ordem sugerida (P1, P6, P3, P8 e P4 já foram feitos):
 
 | # | Ação | Ganho | Risco |
 |---|---|---|---|
-| **P3** | `home/` para de construir o catálogo para guardar 3 cards (`home.py:379`) | **−2,0 a −2,5 s** | médio-baixo |
-| **P8** | Memo de `ChannelConfig.for_channel`/`is_channel_active` por request | −5 consultas · limpa 100.974 seq scans/dia | baixo |
-| **P4** | `published_products_by_collection`: 1 consulta + agrupamento Python | −27 consultas | baixo |
 | **P7/P9** | `tracked_skus` com `_quantity__gt=0` · higiene do laço por item | −100 a −250 ms | baixo |
-| **P2** | Disponibilidade 1× por request (waitlist re-chama o batch por data; bundle faz 3ª passada) | **−0,9 a −1,3 s** | **ALTO — é Core** |
+| **P2** | Disponibilidade 1× por request (waitlist re-chama o batch por data; bundle faz 3ª passada) | **−0,9 a −1,3 s** — `availability` mede ~1,4 s em produção | **ALTO — é Core** |
+| **NOVO** | Projeção da sacola (~200 consultas com sacola) | não medido | a medir |
 | P5 | Cortar duplicação do payload (120 cópias de card; 85 KB de 135 KB são `sections`) | −100 a −200 ms | médio (BE+FE atômico) |
 
-**Comece por P3 + P8 + P4** — são os maiores com menor risco, e não tocam `packages/`.
-**P2 toca o Core** e exige revisão e `make test-stockman`.
+**Antes de atacar: MEÇA a produção depois que o #1295 entrar.** O ganho de P3+P8+P4 pode já ter
+comido parte de P2 — e não se otimiza o que não se mediu.
+**P2 toca o Core** e exige revisão própria e `make test-stockman`.
 
 ## 5. Outras frentes abertas (não começadas)
 
