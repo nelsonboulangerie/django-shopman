@@ -140,6 +140,25 @@ def station_device_id(request) -> str:
     return next(iter(devices)) if len(devices) == 1 else ""
 
 
+def active_station_devices(terminal_ref: str) -> list:
+    """Os dispositivos com confiança VÁLIDA neste terminal, do mais recente ao mais antigo.
+
+    Vários dispositivos no mesmo balcão é postura decidida (D-007): dividem a
+    gaveta e o turno. Isto não recusa nada; é o que torna isso visível.
+    """
+    from shopman.doorman.models import TrustedDevice
+
+    ref = str(terminal_ref or "").strip()
+    if not ref:
+        return []
+    return [device for device in TrustedDevice.active_for(SubjectType.STATION, ref) if device.is_valid]
+
+
+def presented_station_device_ids(request) -> set:
+    """Os ``TrustedDevice.pk`` que ESTE navegador apresentou como estação."""
+    return {device.pk for _nome, device in _present_station_bindings(request)}
+
+
 def _station_cookie_names(request) -> list[str]:
     """Cookies que se apresentam como estação, válidos ou não.
 

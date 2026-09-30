@@ -273,6 +273,11 @@ class POSCashRuntimeProjection:
     # contagem cega para quem conta.
     default_float_q: int = 0
     default_float_display: str = ""  # "R$ 200,00"; "" quando não configurado
+    # Quantos dispositivos têm confiança válida NESTE balcão (D-007: vários no
+    # mesmo terminal, com visibilidade). É informação, não estado: não bloqueia
+    # nada e não é o `terminal_occupied` de volta. Com a custódia na gaveta, dois
+    # tablets dividem turno e livro, e quem está num deles precisa saber disso.
+    station_devices: int = 0
 
 
 @dataclass(frozen=True)
@@ -2037,6 +2042,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
     # Dono (ver setup_groups). Quem conta às cegas não pode conferir o gabarito.
     audita = bool(operator is not None and can_audit_cash(operator))
     default_float_q = _default_float_q(terminal)
+    station_devices = _station_devices(runtime.terminal_ref)
 
     if cash_shift is None:
         return POSCashRuntimeProjection(
@@ -2050,6 +2056,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
             can_audit_cash=audita,
             default_float_q=default_float_q,
             default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
+            station_devices=station_devices,
         )
     return POSCashRuntimeProjection(
         has_open_shift=True,
@@ -2068,7 +2075,18 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         account_balances=account_balances(),
         default_float_q=default_float_q,
         default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
+        station_devices=station_devices,
     )
+
+
+def _station_devices(terminal_ref: str) -> int:
+    from shopman.backstage.station_trust import active_station_devices
+
+    try:
+        return len(active_station_devices(terminal_ref))
+    except Exception:
+        logger.debug("pos_station_devices_lookup_failed", exc_info=True)
+        return 0
 
 
 def _default_float_q(terminal) -> int:

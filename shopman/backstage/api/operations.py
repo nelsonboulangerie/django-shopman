@@ -1078,13 +1078,21 @@ class StationProvisionView(APIView):
     required_permission = station_trust.PROVISION_PERM
 
     def get(self, request):
+        from shopman.cashman import services as cash
         from shopman.cashman.models import Terminal
 
+        # A ocupação de cada balcão: vários dispositivos no mesmo terminal dividem
+        # a gaveta e o turno (D-007). Quem escolhe o balcão precisa ver isso.
         return Response(
             {
                 "station": station_trust.station_ref(request),
                 "terminals": [
-                    {"ref": t.ref, "label": t.label or t.ref}
+                    {
+                        "ref": t.ref,
+                        "label": t.label or t.ref,
+                        "active_devices": len(station_trust.active_station_devices(t.ref)),
+                        "has_open_shift": cash.open_shift_for_terminal(t) is not None,
+                    }
                     for t in Terminal.objects.filter(is_active=True).order_by("ref")
                 ],
             }
@@ -1093,7 +1101,8 @@ class StationProvisionView(APIView):
     def post(self, request):
         from shopman.cashman.models import Terminal
 
-        ref = str((request.data or {}).get("terminal_ref") or "").strip()
+        body = request.data or {}
+        ref = str(body.get("terminal_ref") or "").strip()
         if not Terminal.objects.filter(ref=ref, is_active=True).exists():
             # Um ref inexistente gravaria uma confiança que nunca resolve terminal:
             # o dispositivo passaria no gate e cairia no `Terminal.default()`, que é a
@@ -1102,6 +1111,12 @@ class StationProvisionView(APIView):
                 {"detail": "Terminal não encontrado.", "error": {"code": "terminal_unknown"}},
                 status=400,
             )
+        # Balcão com outro dispositivo: avisa e pede confirmação, nunca recusa (D-007).
+        # O próprio navegador reprovisionando não conta como "outro".
+        proprios = station_trust.presented_station_device_ids(request)
+        outros = [d for d in station_trust.active_station_devices(ref) if d.pk not in proprios]
+        if outros and str(body.get("confirm") or "").strip().lower() not in {"1", "true", "yes", "sim"}:
+            return _terminal_shared_response(ref, len(outros))
         resposta = Response({"ok": True, "station": ref})
         station_trust.provision(request, resposta, ref)
         return resposta
@@ -1113,6 +1128,30 @@ class StationProvisionView(APIView):
         resposta = Response({"ok": True, "station": ""})
         station_trust.revoke(request, resposta, ref)
         return resposta
+
+
+def _terminal_shared_response(terminal_ref: str, others: int) -> Response:
+    """409 que pede a segunda palavra: o balcão já tem outro dispositivo."""
+    outros = "1 outro dispositivo" if others == 1 else f"{others} outros dispositivos"
+    message = (
+        f"Este balcão já tem {outros}. Todos vão usar a mesma gaveta e o mesmo turno de caixa. "
+        "Confirme para iniciar este dispositivo no mesmo balcão."
+    )
+    return Response(
+        {
+            "detail": message,
+            "field": "confirm",
+            "errors": {"confirm": [message]},
+            "error": {
+                "code": "station_terminal_shared",
+                "message": message,
+                "field": "confirm",
+                "recovery": "Confirme, ou escolha outro balcão.",
+                "context": {"terminal_ref": terminal_ref, "other_devices": others},
+            },
+        },
+        status=409,
+    )
 
 
 class OperatorPinResetView(APIView):

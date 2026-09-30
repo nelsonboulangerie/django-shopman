@@ -512,3 +512,21 @@ export function endOfDayTiles(input: {
   }
   return tiles;
 }
+
+/**
+ * O aviso de balcão compartilhado na antesala do caixa.
+ *
+ * Vários dispositivos no mesmo terminal é postura decidida (D-007): dividem a
+ * gaveta e o turno. Com um só, não há o que dizer (`""`). Com dois ou mais, a
+ * tela diz quantos e, se a gaveta já está aberta, que o caixa já foi aberto, e
+ * que o que se vende aqui entra no mesmo turno. Informação, nunca bloqueio: o
+ * `terminal_occupied` saiu de propósito quando a custódia passou à gaveta.
+ */
+export function stationDevicesNotice(runtime: POSCashRuntimeProjection | null | undefined): string {
+  const devices = runtime?.station_devices ?? 0;
+  if (devices < 2) return "";
+  const shared = `Há ${devices} dispositivos neste balcão, na mesma gaveta.`;
+  return runtime?.has_open_shift
+    ? `${shared} Caixa já aberto: o que for vendido aqui entra no mesmo turno.`
+    : shared;
+}

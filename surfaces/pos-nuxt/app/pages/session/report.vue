@@ -14,7 +14,7 @@ const action = usePosAction();
 // terminal ativo), e o write-side da sessão dá a porta da segunda via do
 // comprovante de movimento.
 const { pos, actions, refresh: refreshPos } = await usePosTerminal();
-const { report, pending, accessDenied, refresh } = await useCashReport({
+const { report, pending, accessDenied, stationRefusal, refresh } = await useCashReport({
   terminalRef: () => pos.value?.terminal_ref || "",
 });
 const { busy, canPrintReceipt, reprintMovementReceipt } = usePosCashSession({
@@ -78,6 +78,16 @@ async function goToCashSession() {
           Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a
           apuração é a gestão.
         </p>
+        <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
+      </section>
+
+      <!-- Balcão errado (409 da estação): o operador precisa saber ONDE está. -->
+      <section v-else-if="stationRefusal" class="grid gap-2 rounded-md border bg-card p-4" data-station-refusal>
+        <div class="flex items-center gap-2">
+          <Icon name="lucide:monitor-x" class="size-4 text-warning" />
+          <h2 class="text-base font-semibold">{{ stationRefusal.title }}</h2>
+        </div>
+        <p class="text-sm text-muted-foreground">{{ stationRefusal.message }}</p>
         <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
       </section>
 

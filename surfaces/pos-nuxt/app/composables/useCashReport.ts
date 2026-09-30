@@ -1,4 +1,5 @@
 import type { CashSessionReportResponse } from "~/types/cashReport";
+import { cashReportStationRefusal } from "~/presentation/cashReport";
 
 /**
  * Relatório da sessão de caixa na antesala (/session/report): leitura X do
@@ -30,6 +31,12 @@ export async function useCashReport(options: { terminalRef?: () => string } = {}
     const status = (error.value as { statusCode?: number } | null)?.statusCode;
     return status === 401 || status === 403;
   });
+  // 409 da fronteira da estação: balcão errado não é "deu erro".
+  const stationRefusal = computed(() => {
+    const failure = error.value as { statusCode?: number; data?: { error?: { code?: unknown } } } | null;
+    const code = failure?.data?.error?.code;
+    return cashReportStationRefusal(failure?.statusCode, typeof code === "string" ? code : "");
+  });
 
-  return { report, pending, error, accessDenied, refresh };
+  return { report, pending, error, accessDenied, stationRefusal, refresh };
 }

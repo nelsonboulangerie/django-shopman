@@ -55,3 +55,34 @@ export function readingTitle(reading: Pick<ShiftReading, "status" | "shift_id">)
     ? `Leitura X · turno #${reading.shift_id}`
     : `Leitura Z · turno #${reading.shift_id}`;
 }
+
+/** O que a tela do relatório diz quando o servidor recusa a leitura pela estação. */
+export interface CashReportStationRefusal {
+  title: string;
+  message: string;
+}
+
+/**
+ * A leitura X é da gaveta da ESTAÇÃO: o servidor recusa com 409 quando o balcão
+ * pedido não é o deste dispositivo (`pos_terminal_mismatch`) ou quando o
+ * dispositivo não é um balcão (`pos_station_required`). Nenhum dos dois é
+ * "deu erro": o operador precisa saber que está no balcão errado.
+ */
+export function cashReportStationRefusal(status: number | undefined, code: string): CashReportStationRefusal | null {
+  if (status !== 409) return null;
+  if (code === "pos_terminal_mismatch") {
+    return {
+      title: "Este relatório é de outro balcão",
+      message:
+        "Este dispositivo está ligado a um balcão diferente do que a tela pediu. A leitura X mostra só a gaveta do balcão onde você está. Volte à sessão de caixa e abra o relatório de novo.",
+    };
+  }
+  if (code === "pos_station_required") {
+    return {
+      title: "Este dispositivo não é um balcão",
+      message:
+        "A leitura X é da gaveta de um balcão, e este dispositivo não foi iniciado como balcão. Abra o relatório no dispositivo do balcão.",
+    };
+  }
+  return null;
+}

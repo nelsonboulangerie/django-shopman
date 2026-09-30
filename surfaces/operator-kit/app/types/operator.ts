@@ -33,6 +33,11 @@ export interface OperatorEligibleResponse {
 export interface StationTerminal {
   ref: string;
   label: string;
+  /** Dispositivos com confiança válida neste balcão. Vários no mesmo terminal
+   *  dividem a gaveta e o turno (D-007): a tela mostra, não recusa. */
+  active_devices?: number;
+  /** A gaveta deste balcão já tem turno de caixa aberto. */
+  has_open_shift?: boolean;
 }
 
 /** O que a tela de provisionamento precisa: que estação este dispositivo é hoje

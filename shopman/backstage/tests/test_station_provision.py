@@ -281,3 +281,97 @@ def test_um_dispositivo_ja_provisionado_nao_precisa_de_gerente_para_pedir_PIN(cl
     assert sessao.status_code == 200
     assert sessao.json()["station"] == terminal.ref
     assert station_trust.PROVISION_PERM == "cashman.manage_operators"
+
+
+# ── Vários dispositivos no mesmo balcão, com visibilidade (D-007, WP-2) ──────
+
+
+def test_segundo_dispositivo_no_mesmo_balcao_pede_confirmacao(client, gerente, terminal):
+    """Não recusa (D-007): avisa, e só passa com a segunda palavra."""
+    trust_station(Client(), terminal.ref)
+    client.force_login(gerente)
+
+    sem = client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+
+    assert sem.status_code == 409
+    corpo = sem.json()
+    assert corpo["error"]["code"] == "station_terminal_shared"
+    assert corpo["field"] == "confirm"
+    assert corpo["errors"] == {"confirm": [corpo["detail"]]}
+    assert "1 outro dispositivo" in corpo["detail"]
+    assert corpo["error"]["context"] == {"terminal_ref": terminal.ref, "other_devices": 1}
+    assert len(station_trust.active_station_devices(terminal.ref)) == 1
+
+    com = client.post(
+        STATION_URL, {"terminal_ref": terminal.ref, "confirm": True}, content_type="application/json"
+    )
+
+    assert com.status_code == 200
+    assert len(station_trust.active_station_devices(terminal.ref)) == 2
+
+
+def test_reprovisionar_o_proprio_dispositivo_nao_pede_confirmacao(client, gerente, terminal):
+    client.force_login(gerente)
+    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+
+    de_novo = client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+
+    assert de_novo.status_code == 200
+
+
+def test_a_lista_de_terminais_traz_a_ocupacao(client, gerente, terminal):
+    from shopman.backstage.services import pos as pos_service
+
+    Terminal.objects.create(ref="pdv-2", label="Balcão do fundo")
+    trust_station(Client(), terminal.ref)
+    trust_station(Client(), terminal.ref)
+    pos_service.open_cash_shift(operator=gerente, terminal_ref=terminal.ref)
+    client.force_login(gerente)
+
+    terminais = {t["ref"]: t for t in client.get(STATION_URL).json()["terminals"]}
+
+    assert terminais["pdv-main"]["active_devices"] == 2
+    assert terminais["pdv-main"]["has_open_shift"] is True
+    assert terminais["pdv-2"]["active_devices"] == 0
+    assert terminais["pdv-2"]["has_open_shift"] is False
+
+
+def test_revogar_um_dispositivo_do_balcao_derruba_so_ele(terminal):
+    trust_station(Client(), terminal.ref)
+    trust_station(Client(), terminal.ref)
+    um, outro = station_trust.active_station_devices(terminal.ref)
+
+    um.revoke()
+
+    assert [d.pk for d in station_trust.active_station_devices(terminal.ref)] == [outro.pk]
+
+
+def test_admin_do_terminal_lista_os_dispositivos_e_leva_a_revogacao(terminal):
+    from django.contrib import admin as django_admin
+
+    admin_do_terminal = django_admin.site._registry[Terminal]
+    assert "2 dispositivos" not in str(admin_do_terminal.station_devices_display(terminal))
+
+    trust_station(Client(), terminal.ref)
+    trust_station(Client(), terminal.ref)
+    html = str(admin_do_terminal.station_devices_display(terminal))
+
+    assert "2 dispositivos" in html
+    assert html.count("<li>") == 2
+    assert "subject_type__exact=station" in html and f"subject_id={terminal.ref}" in html
+
+
+def test_o_caixa_do_balcao_diz_quantos_dispositivos_ha(terminal):
+    """A projeção do caixa informa N; é informação, não o `terminal_occupied` de volta."""
+    from shopman.backstage.projections.pos import POSCashRuntimeProjection, _cash_runtime_projection
+    from shopman.backstage.services.pos_terminal import runtime_profile
+
+    trust_station(Client(), terminal.ref)
+    trust_station(Client(), terminal.ref)
+
+    runtime = runtime_profile(terminal)
+    projecao = _cash_runtime_projection(None, runtime, None, terminal=terminal)
+
+    assert projecao.station_devices == 2
+    assert projecao.status == "closed"
+    assert "terminal_occupied" not in POSCashRuntimeProjection.__dataclass_fields__

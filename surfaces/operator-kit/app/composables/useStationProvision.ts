@@ -8,7 +8,7 @@
 // operadores não vê a oferta. É de propósito que a tela dependa da resposta do
 // servidor em vez de adivinhar pela permissão — a permissão mora lá.
 import type { StationProvisionState, StationTerminal } from "../types/operator";
-import { httpErrorMessage } from "../utils/httpError";
+import { httpErrorCode, httpErrorMessage } from "../utils/httpError";
 
 const ROTA = "/api/v1/backstage/operator/station/";
 
@@ -19,6 +19,10 @@ export function useStationProvision() {
   const loaded = ref(false);
   const busy = ref(false);
   const error = ref("");
+  // O balcão escolhido já tem outro dispositivo: o servidor pede a segunda
+  // palavra (D-007: vários no mesmo terminal, com visibilidade, nunca recusa).
+  // Guarda o ref para a confirmação não depender de a escolha continuar igual.
+  const confirmFor = ref("");
 
   async function load(): Promise<void> {
     try {
@@ -36,15 +40,19 @@ export function useStationProvision() {
 
   /** Provisiona e devolve `true` no sucesso. Quem chama decide o que fazer com a
    *  tela; recarregar é o normal, porque toda leitura muda de mundo. */
-  async function provision(terminalRef: string): Promise<boolean> {
+  async function provision(terminalRef: string, options: { confirm?: boolean } = {}): Promise<boolean> {
     if (busy.value || !terminalRef) return false;
     busy.value = true;
     error.value = "";
+    confirmFor.value = "";
     try {
-      await $fetch(ROTA, { method: "POST", body: { terminal_ref: terminalRef } });
+      const body: Record<string, unknown> = { terminal_ref: terminalRef };
+      if (options.confirm) body.confirm = true;
+      await $fetch(ROTA, { method: "POST", body });
       station.value = terminalRef;
       return true;
     } catch (err) {
+      if (httpErrorCode(err) === "station_terminal_shared") confirmFor.value = terminalRef;
       error.value = httpErrorMessage(err, "Não foi possível iniciar este dispositivo.");
       return false;
     } finally {
@@ -52,5 +60,5 @@ export function useStationProvision() {
     }
   }
 
-  return { terminals, station, allowed, loaded, busy, error, load, provision };
+  return { terminals, station, allowed, loaded, busy, error, confirmFor, load, provision };
 }
