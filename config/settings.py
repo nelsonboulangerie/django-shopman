@@ -369,6 +369,9 @@ MIDDLEWARE = [
     # phase runs AFTER Session/CSRF middleware set their cookies.
     "shopman.shop.middleware.OperatorSessionDomainMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Memo por request da linha Channel (ChannelConfig.for_channel, is_channel_active,
+    # política de superfície). Some no fim do request; ver shopman/shop/request_memo.py.
+    "shopman.shop.request_memo.RequestMemoMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "csp.middleware.CSPMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

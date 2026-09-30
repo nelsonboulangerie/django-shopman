@@ -18,7 +18,7 @@ from shopman.shop.address_location_config import (
 )
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
-from shopman.storefront.presentation.catalog import CatalogItemProjection, build_catalog
+from shopman.storefront.presentation.catalog import CatalogItemProjection, build_featured_items
 from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
@@ -281,7 +281,7 @@ def build_shell(
 ) -> StorefrontShellProjection:
     """Build only the state shared by every storefront route.
 
-    Deliberately excludes ``build_catalog`` and ``_reorder_context``. Those are
+    Deliberately excludes ``build_featured_items`` and ``_reorder_context``. Those are
     home-page concerns and are orders of magnitude more expensive than the
     identity, brand, operational status and copy needed by the global shell.
     """
@@ -389,8 +389,7 @@ def build_shell(
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
     shell = build_shell(request, cart_has_items=cart_has_items)
     last_ref, last_items = _reorder_context(request)
-    catalog = build_catalog(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
-    featured = tuple((catalog.featured or catalog.items)[:3])
+    featured = build_featured_items(channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3)
 
     return HomeProjection(
         omotenashi=shell.omotenashi,

@@ -388,17 +388,57 @@ def build_catalog_items_for_skus(
     ]
     if not ordered:
         return ()
+    return _build_cards(ordered, channel_ref=channel_ref, request=request)
 
+
+def build_featured_items(
+    *,
+    channel_ref: str,
+    request: HttpRequest | None = None,
+    limit: int = 3,
+) -> tuple[CatalogItemProjection, ...]:
+    """Os ``limit`` primeiros cards de ``build_catalog(...).featured or .items``.
+
+    O rail da home guarda três cards; montar o cardápio inteiro (preço,
+    disponibilidade, seções, dinâmicas de todos os produtos) para descartar o
+    resto custava o mesmo request do ``menu/``. Aqui a escolha é a mesma, na
+    mesma ordem (coleções ativas, depois sem coleção; destaque = ``popular_skus``,
+    senão os primeiros), e só os escolhidos viram card, pelo mesmo montador.
+    """
+    all_products = [
+        product
+        for _col_ref, products in _fetch_products_by_collection(
+            listing_ref=channel_ref,
+            active_collection=None,
+        )
+        for product in products
+    ]
+    if not all_products:
+        return ()
+    popular = popular_skus(limit=5)
+    chosen = [p for p in all_products if p.sku in popular][:limit] or all_products[:limit]
+    return _build_cards(chosen, channel_ref=channel_ref, request=request, popular=popular)
+
+
+def _build_cards(
+    products: list[Any],
+    *,
+    channel_ref: str,
+    request: HttpRequest | None,
+    popular: set[str] | None = None,
+) -> tuple[CatalogItemProjection, ...]:
+    """Cards de uma lista explícita de produtos, com o contexto do request."""
     config = ChannelConfig.for_channel(channel_ref)
     low_stock_threshold = Decimal(str(config.stock.low_stock_threshold))
-    popular = popular_skus(limit=5)
+    if popular is None:
+        popular = popular_skus(limit=5)
     ft_hint, sub_hint = session_pricing_hints(request)
     tier_hint, segment_hint = customer_pricing_hints(request)
     qty_in_cart_by_sku = _cart_qty_by_sku(request)
 
     return tuple(
         _build_items(
-            ordered,
+            products,
             channel_ref=channel_ref,
             popular=popular,
             session_total_q=sub_hint,
