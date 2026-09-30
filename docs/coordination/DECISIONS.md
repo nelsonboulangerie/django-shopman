@@ -204,6 +204,8 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-006 | Pix simulado permanece no alpha por ora | `ADIADA` | 2026-10-15 |
 | D-007 | Postura de multi-dispositivo no mesmo balcão | `DECIDIDA` | 2026-12-31 |
 | D-008 | Autoria por linha na comanda: implementar | `DECIDIDA` | 2026-12-31 |
+| D-009 | Deploy na DO: só `create-deployment`, **nunca** `apps update` de arquivo | `DECIDIDA` | 2026-12-31 |
+| B-001 | Alpha SEM DEPLOY desde 29/09 21:31 UTC | `BLOQUEADA` | 2026-10-01 |
 
 ---
 
@@ -227,6 +229,70 @@ exigiria reprovisionamento manual se um dispositivo morresse.
 
 **Sequência definida:** CI primeiro (destravar `-n auto`), depois WP-3 → WP-1 → WP-4 → WP-2,
 **uma sessão executora, sequencial**, um branch por WP.
+
+---
+
+## B-001 · O alpha está sem deploy desde 29/09 21:31 UTC
+
+- **Estado:** `BLOQUEADA` · **Dono:** Pablo (credencial) · **revisar_em:** 2026-10-01
+
+**O que está acontecendo.** O deployment **ATIVO** é `c4fce115`, criado em **2026-09-29 21:31:37 UTC**,
+cuja causa registrada é `automated rollback after failed deployment of b991ce46`. Desde então,
+**todo** deployment falhou:
+
+```
+2026-09-30 10:34 ERROR 9/29   09:43 ERROR 9/29   09:17 ERROR 9/29   07:32 ERROR 9/29
+2026-09-30 04:05 ERROR 9/29   02:56 ERROR 9/29   02:29 ERROR 9/29   (+ CANCELED 0/29)
+```
+
+O passo que falha é **`build`**, com `InternalError: An internal error occurred. Contact support if
+this persists.` — **erro da própria DigitalOcean, não do nosso código.** A imagem existe: a tag
+`web` foi publicada às 10:33:58 e o deployment nasceu 9 s depois.
+
+**Impacto medido (2026-09-30 11:25 UTC):** as rotas novas do cache de borda respondem **404** em
+produção; `menu/` continua 3,37 s com `cf-cache-status: BYPASS`; home SSR 3,06–3,72 s. Os 10 PRs
+mergeados hoje estão em `main` e **nenhum está no ar**. **Go-live é impossível enquanto isto durar.**
+
+**Ação:** `doctl apps create-deployment 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f` (token com escrita).
+Se falhar igual, tentar com `--force-rebuild`; persistindo, abrir chamado no suporte da DO —
+o erro é do provedor e persiste há mais de 12 h.
+
+⚠️ O token de `doctl` disponível para agentes é **somente-leitura** (`403 You are not authorized`
+em `create-deployment`). A ação exige credencial do dono.
+
+---
+
+## D-009 · Deploy na DO: só `create-deployment`, nunca `apps update` de arquivo
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (operação) · **Data:** 2026-09-30 · **revisar_em:** 2026-12-31
+
+**Contexto.** O dono relatou que uma tentativa parecida com um redeploy **"acabou zerando as
+variáveis de ambiente lá na DO"**. A verificação encontrou a explicação e a regra que a previne.
+
+**A distinção que importa** (conferida em `doctl apps create-deployment --help`):
+- `doctl apps create-deployment <app-id>` aceita **apenas** `--force-rebuild`, `--format`,
+  `--no-header`, `--wait`. **Não há flag de spec.** Ele republica a partir do spec que já está
+  **no servidor**, e por isso **não pode zerar variável de ambiente**.
+- **O perigo é `doctl apps update`** (e `create-deployment --upsert`), que envia um **spec
+  inteiro** e **substitui a configuração viva**. O suspeito do incidente é aplicar
+  `.do/app.subdomains.yaml`, que é **blueprint, não o spec vivo** — ele tem `STORE_DOMAIN` no
+  lugar do domínio real (`docs/runbooks/conferir-spec-digitalocean.md:158-163`). Aplicá-lo
+  trocaria cada env por placeholder ou ausência. Já houve incidente análogo registrado em
+  `.do/app.alpha-subdomains.yaml` ("`alpha.` e `staging.` estão MORTOS… já aconteceu uma vez,
+  por um update feito a partir de snapshot velho").
+
+**Regra.** Para republicar: **`create-deployment`, e só.** `apps update` a partir de arquivo exige
+conferir o spec vivo na hora (`doctl apps spec get`) e diff contra o arquivo antes — nunca aplicar
+o blueprint.
+
+**Backup feito antes de qualquer tentativa:** `/tmp/shopman-live-spec-ANTES-REDEPLOY-20260930-1204.yaml`
+(40.666 B, 167 chaves, 8 componentes). Contém valores SECRET: **não versionar**.
+
+**Achado colateral — drift entre o spec vivo e o versionado:** 167 chaves no vivo contra 176 no
+`.do/app.alpha-subdomains.yaml`. Faltam no vivo, ao menos:
+- `SHOPMAN_BFF_PROXY_SECRET` — **de segurança**: é ele que prova ao Django que o pedido veio do BFF,
+  para o IP gravado ser o do cliente. Sem ele, rate limit e auditoria por IP ficam errados.
+- `FOCUS_NFE_ENVIRONMENT` — ausente, então cai no default `homologacao`.
 
 ---
 
