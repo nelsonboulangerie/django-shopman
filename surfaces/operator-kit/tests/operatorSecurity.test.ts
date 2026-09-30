@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   mergeVaryHeader,
   OPERATOR_CONTENT_SECURITY_POLICY,
+  OPERATOR_PERMISSIONS_POLICY,
   operatorBaselineContentSecurityPolicy,
+  operatorBaselinePermissionsPolicy,
   operatorResponseHeaders,
 } from "../server/utils/operatorSecurity";
 
@@ -70,16 +72,31 @@ describe("operator-kit — exceção de CSP por app e por diretiva", () => {
   });
 
   it("recusa diretiva que não aceita exceção", () => {
-    expect(() =>
-      operatorBaselineContentSecurityPolicy({ "script-src": ["https://cdn.example.com"] } as never),
-    ).toThrow(/script-src/);
+    for (const directive of ["default-src", "style-src", "worker-src", "frame-src", "form-action", "base-uri"]) {
+      expect(() =>
+        operatorBaselineContentSecurityPolicy({ [directive]: ["https://cdn.example.com"] } as never),
+      ).toThrow(new RegExp(directive));
+    }
     expect(() =>
       operatorBaselineContentSecurityPolicy({ "frame-ancestors": ["https:"] } as never),
     ).toThrow(/frame-ancestors/);
   });
 
   it("recusa origem que desliga a política", () => {
-    for (const source of ["*", "'unsafe-eval'", "http:", "data:", "http://192.168.0.10:47811", "https://*"]) {
+    for (const source of [
+      "*",
+      "'unsafe-eval'",
+      "http:",
+      "data:",
+      "http://192.168.0.10:47811",
+      "https://*",
+      "https://*.com",
+      "https://*.com.br",
+      "https://*.co.uk",
+      "https://*.*.example.com",
+      "https://maps.*.com",
+      "http://*.example.com",
+    ]) {
       expect(() => operatorBaselineContentSecurityPolicy({ "img-src": [source] })).toThrow();
     }
   });
@@ -95,7 +112,100 @@ describe("operator-kit — exceção de CSP por app e por diretiva", () => {
     );
   });
 
+  it("aceita curinga de subdomínio sobre domínio fixo nas diretivas extensíveis", () => {
+    const csp = operatorBaselineContentSecurityPolicy({
+      "img-src": ["https://*.gstatic.com"],
+      "connect-src": ["https://*.googleapis.com", "https://*.nelsonboulangerie.com.br"],
+      "font-src": ["https://*.gstatic.com"],
+    });
+    expect(csp).toContain("img-src 'self' data: blob: https://*.gstatic.com");
+    expect(csp).toContain("connect-src 'self' https://*.googleapis.com https://*.nelsonboulangerie.com.br");
+    expect(csp).toContain("font-src 'self' data: https://*.gstatic.com");
+  });
+
   it("o middleware repassa a exceção declarada no runtimeConfig", () => {
     expect(middlewareSource).toContain("config.operatorCspAllow");
+  });
+});
+
+describe("operator-kit: exceção de script-src, mais estreita que as outras", () => {
+  it("aceita host https explícito e curinga de subdomínio de domínio fixo", () => {
+    const csp = operatorBaselineContentSecurityPolicy({
+      "script-src": ["https://maps.googleapis.com", "https://*.gstatic.com"],
+    });
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://maps.googleapis.com https://*.gstatic.com;");
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-eval/);
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  it("recusa em script-src o que as outras diretivas aceitam e o que desliga a política", () => {
+    for (const source of [
+      "https:",
+      "*",
+      "'unsafe-eval'",
+      "'unsafe-inline'",
+      "'unsafe-hashes'",
+      "'wasm-unsafe-eval'",
+      "http:",
+      "http://maps.googleapis.com",
+      "http://127.0.0.1:*",
+      "http://localhost:47811",
+      "https://localhost",
+      "https://*",
+      "https://*.com",
+      "https://*.com.br",
+      "data:",
+      "blob:",
+    ]) {
+      expect(() => operatorBaselineContentSecurityPolicy({ "script-src": [source] }), source).toThrow(
+        /script-src/,
+      );
+    }
+  });
+});
+
+describe("operator-kit: exceção de Permissions-Policy por app e por recurso", () => {
+  it("sem exceção declarada, o header é byte a byte o de base", () => {
+    const base =
+      "browsing-topics=(), camera=(), geolocation=(), microphone=(), payment=(), screen-wake-lock=(self), usb=()";
+    expect(OPERATOR_PERMISSIONS_POLICY).toBe(base);
+    expect(operatorBaselinePermissionsPolicy()).toBe(base);
+    expect(operatorBaselinePermissionsPolicy(null)).toBe(base);
+    expect(operatorBaselinePermissionsPolicy({})).toBe(base);
+    expect(operatorResponseHeaders({ pathname: "/", secure: true })["Permissions-Policy"]).toBe(base);
+  });
+
+  it("abre só o recurso declarado, e só para a própria origem", () => {
+    expect(operatorBaselinePermissionsPolicy({ camera: "self" })).toBe(
+      "browsing-topics=(), camera=(self), geolocation=(), microphone=(), payment=(), screen-wake-lock=(self), usb=()",
+    );
+    const headers = operatorResponseHeaders({
+      pathname: "/",
+      secure: true,
+      permissionsAllow: { camera: "self" },
+    });
+    expect(headers["Permissions-Policy"]).toContain("camera=(self)");
+    expect(headers["Permissions-Policy"]).toContain("geolocation=()");
+    expect(headers["Permissions-Policy"]).toContain("microphone=()");
+  });
+
+  it("recusa recurso fora da lista de base", () => {
+    for (const feature of ["fullscreen", "autoplay", "clipboard-read", "serial"]) {
+      expect(() => operatorBaselinePermissionsPolicy({ [feature]: "self" } as never)).toThrow(
+        new RegExp(feature),
+      );
+    }
+  });
+
+  it("recusa valor que não seja self", () => {
+    for (const value of ["*", "https://example.com", "(self)", "self https://example.com", "", true]) {
+      expect(() => operatorBaselinePermissionsPolicy({ camera: value } as never), String(value)).toThrow(
+        /camera/,
+      );
+    }
+  });
+
+  it("o middleware repassa a exceção declarada no runtimeConfig", () => {
+    expect(middlewareSource).toContain("config.operatorPermissionsAllow");
   });
 });

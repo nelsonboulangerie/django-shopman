@@ -112,13 +112,27 @@ branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao
 porque ainda não tem dois consumidores comprovados.
 
 A CSP de base do kit só abre por app e por diretiva, em `runtimeConfig.operatorCspAllow`
-(SEC-SURF-001, item 5). Aceitam exceção apenas `img-src`, `connect-src`, `font-src` e
-`media-src`; `script-src`, `frame-ancestors` e as demais nunca abrem. A origem precisa
-ser `https:`, um host `https://` explícito ou a loopback do próprio dispositivo
-(`http://127.0.0.1:*`, `http://localhost:*`). `*` e `'unsafe-*'` levantam erro. Sem a
-chave, a política é a de base. Cada exceção leva no `nuxt.config` o comentário com a
-função que a exige. Hoje só o Pedidos declara exceções: foto de produto de host externo
-e o agente de impressão do balcão.
+(SEC-SURF-001, item 5). Aceitam exceção apenas `img-src`, `connect-src`, `font-src`,
+`media-src` e `script-src`; `frame-ancestors`, `frame-src`, `default-src`, `style-src`,
+`worker-src` e as demais nunca abrem. Nas quatro primeiras, a origem precisa ser `https:`,
+um host `https://` explícito, um curinga de subdomínio sobre domínio fixo
+(`https://*.googleapis.com`) ou a loopback do próprio dispositivo (`http://127.0.0.1:*`,
+`http://localhost:*`). Em `script-src` o funil é mais estreito: só host `https://`
+explícito com domínio (`https://maps.googleapis.com`) ou curinga de subdomínio sobre
+domínio fixo; `https:`, loopback, `data:` e `blob:` são recusados ali. Em qualquer
+diretiva, `*`, `https://*`, curinga sobre sufixo público (`https://*.com`,
+`https://*.com.br`) e `'unsafe-*'` levantam erro. Sem a chave, a política é a de base.
+
+A `Permissions-Policy` segue o mesmo desenho em `runtimeConfig.operatorPermissionsAllow`
+(ex.: `{ camera: "self" }`): só recursos da lista de base (`browsing-topics`, `camera`,
+`geolocation`, `microphone`, `payment`, `screen-wake-lock`, `usb`), e só com o valor
+`"self"`; `*` ou outra origem levantam erro. Sem a chave, o header é byte a byte o de base.
+
+Cada exceção leva no `nuxt.config` o comentário com a função que a exige, e a decisão do
+dono que a autorizou. Hoje declaram exceções: Pedidos e Shopman Apps (foto de produto e
+ícone de app de host externo, agente de impressão do balcão), PDV (Google Maps do
+autocompletar de endereço, ViaCEP, foto de produto, agente do balcão) e Compras (câmera
+para ler a NF).
 
 ## Identidade do app (`app-identity.json`)
 

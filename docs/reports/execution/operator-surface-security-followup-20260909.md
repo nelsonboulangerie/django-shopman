@@ -18,7 +18,8 @@ deploy, staging, produção ou rollout para outras surfaces está autorizado.
 | `kds-nuxt` | ligado | nenhuma | onda A concluída |
 | `bi-nuxt` | ligado | nenhuma | onda A concluída |
 | `hub-nuxt` | ligado | `img-src https:` (ícone de cada app na origem dele), decisão do dono em 29/09/2026 | onda A com exceção declarada |
-| `pos-nuxt`, `purchase-nuxt` | desligado | a inventariar (Maps, ViaCEP) | onda B pendente |
+| `pos-nuxt` | ligado | `script-src https://maps.googleapis.com` e `connect-src https://maps.googleapis.com https://places.googleapis.com` (autocompletar de endereço, Google Maps), `connect-src https://viacep.com.br` (endereço pelo CEP), `img-src https:` (foto do produto) e `connect-src` loopback (agente do dispositivo), por decisão do dono em 29/09/2026; `Permissions-Policy` de base (o PDV não usa geolocalização) | onda B com exceções declaradas |
+| `purchase-nuxt` | ligado | nenhuma; `Permissions-Policy` com `camera=(self)` (leitura da NF pela câmera), por decisão do dono em 29/09/2026 | onda B com exceção declarada |
 | `storefront-nuxt` | fora do kit | fora do kit | item separado |
 
 **Cozinha e B.I.** O inventário de `app/`, `server/` e `nuxt.config.ts` não achou
@@ -33,6 +34,29 @@ foi recusado por `connect-src` nas duas, como controle negativo.
 e o Shopman Apps mora em `central.<zona>`. Com o envelope ligado num build de teste, a
 política de base recusou esses ícones (`img-src 'self' data: blob:`) e o tile caiu no
 Lucide de reserva. Não quebra a tela, mas tira o ícone real, que é função escrita no código. O dono escolheu, em 29/09/2026, a mesma regra do Pedidos: `img-src https:`, declarada no `nuxt.config` do app com o motivo.
+
+**PDV e Compras (onda B).** O kit passou a aceitar `script-src` por app, mais estreito
+que as outras diretivas: só host `https://` explícito ou curinga de subdomínio sobre
+domínio fixo (`https://*.googleapis.com`), nunca `https:`, loopback, `*` ou `'unsafe-*'`.
+O curinga de subdomínio passou a valer também em `img-src`, `connect-src`, `font-src` e
+`media-src`, e a `Permissions-Policy` ganhou exceção por app
+(`runtimeConfig.operatorPermissionsAllow`), só para recurso da lista de base e só com
+`self`. No PDV, o inventário achou quatro recursos fora da origem: a Maps JS API
+(bootstrap e pedaços da biblioteca Places, todos em `maps.googleapis.com`, mais o
+`gen_204?csp_test=true` da própria API), as sugestões e os detalhes do endereço
+(`places.googleapis.com`, Places API New), o ViaCEP e o agente do balcão; nenhuma
+chamada a `navigator.geolocation`. No Chromium headless, com o build de produção, a
+carga completa do Maps (bootstrap com `language`/`region`, `importLibrary("places")` e
+`fetchAutocompleteSuggestions`, que chegou ao Google e voltou "API key not valid" pela
+chave fictícia) não gerou violação; `/`, `/session`, `/preorders` e `/display` também
+não. O Maps só de autocompletar não pediu `font-src`, `style-src` externo, `worker-src`,
+`frame-src` nem `'unsafe-eval'`, por isso nenhum deles abriu. Script de
+`example.com` e de `maps.gstatic.com` foram recusados por `script-src-elem`, e
+`fetch("https://example.com/")` por `connect-src`, como controle negativo. No Compras,
+o leitor de código (@zxing) vem do próprio bundle e a foto da nota vira `blob:`: a CSP
+fica a de base. Com câmera fictícia, `getUserMedia({ video: true })` abriu no Compras e
+foi recusado no PDV (`NotAllowedError`, `camera=()`); sem câmera, os dois respondem
+`NotFoundError`.
 
 ## Achado confirmado no código
 

@@ -23,6 +23,37 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+    operatorSecurityHeaders: true,
+    // Exceções da CSP do kit, uma por função real (SEC-SURF-001). Decisão do dono em
+    // 29/09/2026: o PDV carrega o Google Maps; foto de produto e agente do balcão
+    // repetem a regra já aprovada para o Pedidos.
+    operatorCspAllow: {
+      // Autocompletar de endereço da entrega (`usePosGoogleMaps`): o bootstrap da
+      // Maps JS API e os pedaços que ele carrega (`maps-api-v3/…`, biblioteca Places)
+      // vêm todos deste host. Host explícito, sem curinga.
+      "script-src": ["https://maps.googleapis.com"],
+      // - maps.googleapis.com: a Maps JS API fala com a própria origem (autenticação
+      //   da chave e telemetria da biblioteca);
+      // - places.googleapis.com: as sugestões e os detalhes do endereço (Places API
+      //   New, `fetchAutocompleteSuggestions` e `fetchFields` em
+      //   `PosAddressAutocomplete`);
+      // - viacep.com.br: a busca do endereço pelo CEP no mesmo campo;
+      // - loopback: a gaveta e a impressora saem pelo agente do dispositivo, que vive
+      //   no próprio balcão (`useCounterAgent`, DEFAULT_AGENT_URL
+      //   http://127.0.0.1:47811). Quem chama é o navegador; nada fica aberto para
+      //   fora da máquina.
+      "connect-src": [
+        "https://maps.googleapis.com",
+        "https://places.googleapis.com",
+        "https://viacep.com.br",
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+      ],
+      // A foto do produto no tile e na pesagem vem de host externo (o gestor pode
+      // colar a URL de qualquer site); a mesma regra cobre o QR do Pix quando a
+      // cobrança o devolve por URL e as imagens da Maps JS API (maps.gstatic.com).
+      "img-src": ["https:"],
+    },
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome

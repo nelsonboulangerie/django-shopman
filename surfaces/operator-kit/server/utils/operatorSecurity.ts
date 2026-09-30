@@ -34,19 +34,51 @@ export const OPERATOR_CONTENT_SECURITY_POLICY = OPERATOR_CSP_DIRECTIVES.map(
 
 // Exceção de CSP é por app e por diretiva (SEC-SURF-001, item 5): o app declara
 // em `runtimeConfig.operatorCspAllow` só a origem que uma função real exige.
-// Diretivas de execução e de enquadramento nunca abrem, e fontes que desligam a
-// política (`*`, `'unsafe-*'`, esquemas genéricos além de `https:`) são recusadas.
+// Diretivas de enquadramento, de formulário e de base nunca abrem, e fontes que
+// desligam a política (`*`, `'unsafe-*'`, esquemas genéricos além de `https:`)
+// são recusadas. `script-src` abre mais estreito que as outras: só host `https://`
+// explícito ou curinga de subdomínio de um domínio fixo, nunca `https:` nem loopback.
 export const OPERATOR_CSP_EXTENSIBLE_DIRECTIVES = Object.freeze([
   "connect-src",
   "font-src",
   "img-src",
   "media-src",
+  "script-src",
 ] as const);
 
 export type OperatorCspDirective = (typeof OPERATOR_CSP_EXTENSIBLE_DIRECTIVES)[number];
 export type OperatorCspAllow = Partial<Record<OperatorCspDirective, readonly string[]>>;
 
-const ALLOWED_SOURCE = /^(https:|https:\/\/[a-z0-9.-]+(:\d+)?|http:\/\/(127\.0\.0\.1|localhost)(:(\d+|\*))?)$/i;
+const PORT = String.raw`(:\d+)?`;
+const EXPLICIT_HTTPS_HOST = String.raw`https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*` + PORT;
+// Curinga só de subdomínio e só sobre um domínio com dois rótulos ou mais:
+// `https://*.googleapis.com` passa; `https://*`, `https://*.com` e `https://*.*.com` não.
+const SUBDOMAIN_WILDCARD = String.raw`https:\/\/\*\.([a-z0-9-]+(\.[a-z0-9-]+)+)` + PORT;
+const LOOPBACK = String.raw`http:\/\/(127\.0\.0\.1|localhost)(:(\d+|\*))?`;
+
+const SOURCE_PATTERN = new RegExp(`^(https:|${EXPLICIT_HTTPS_HOST}|${SUBDOMAIN_WILDCARD}|${LOOPBACK})$`, "i");
+const SCRIPT_SOURCE_PATTERN = new RegExp(
+  String.raw`^(https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+` + PORT + `|${SUBDOMAIN_WILDCARD})$`,
+  "i",
+);
+const WILDCARD_BASE = new RegExp(`^${SUBDOMAIN_WILDCARD}$`, "i");
+
+// Segundo nível de sufixo público de país (`com.br`, `co.uk`): o curinga sobre ele
+// abriria o domínio de qualquer um, então não conta como domínio fixo.
+const PUBLIC_SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "gob", "gov", "mil", "net", "org"]);
+
+function wildcardOverPublicSuffix(source: string): boolean {
+  const match = WILDCARD_BASE.exec(source);
+  if (!match?.[1]) return false;
+  const labels = match[1].toLowerCase().split(".");
+  const [first, tld] = labels;
+  return labels.length === 2 && tld !== undefined && tld.length === 2 && PUBLIC_SECOND_LEVEL.has(first ?? "");
+}
+
+function operatorCspSourceAccepted(directive: OperatorCspDirective, source: string): boolean {
+  const pattern = directive === "script-src" ? SCRIPT_SOURCE_PATTERN : SOURCE_PATTERN;
+  return pattern.test(source) && !wildcardOverPublicSuffix(source);
+}
 
 export function operatorBaselineContentSecurityPolicy(allow?: OperatorCspAllow | null): string {
   if (!allow || Object.keys(allow).length === 0) return OPERATOR_CONTENT_SECURITY_POLICY;
@@ -55,7 +87,7 @@ export function operatorBaselineContentSecurityPolicy(allow?: OperatorCspAllow |
       throw new Error(`CSP: a diretiva ${directive} não aceita exceção por app.`);
     }
     for (const source of sources ?? []) {
-      if (!ALLOWED_SOURCE.test(source)) {
+      if (!operatorCspSourceAccepted(directive as OperatorCspDirective, source)) {
         throw new Error(`CSP: a origem ${source} não é aceita em ${directive}.`);
       }
     }
@@ -67,18 +99,51 @@ export function operatorBaselineContentSecurityPolicy(allow?: OperatorCspAllow |
   }).join("; ");
 }
 
-export const OPERATOR_PERMISSIONS_POLICY = [
-  "browsing-topics=()",
-  "camera=()",
-  "geolocation=()",
-  "microphone=()",
-  "payment=()",
-  "screen-wake-lock=(self)",
-  "usb=()",
-].join(", ");
+const OPERATOR_PERMISSIONS_DIRECTIVES: ReadonlyArray<readonly [string, string]> = [
+  ["browsing-topics", "()"],
+  ["camera", "()"],
+  ["geolocation", "()"],
+  ["microphone", "()"],
+  ["payment", "()"],
+  ["screen-wake-lock", "(self)"],
+  ["usb", "()"],
+];
+
+export const OPERATOR_PERMISSIONS_POLICY = OPERATOR_PERMISSIONS_DIRECTIVES.map(
+  ([feature, allowlist]) => `${feature}=${allowlist}`,
+).join(", ");
+
+// Exceção de Permissions-Policy também é por app e por recurso: o app declara em
+// `runtimeConfig.operatorPermissionsAllow` (ex.: `{ camera: "self" }`) só o recurso
+// que uma função real usa. Só recursos da lista de base, e só para a própria origem:
+// `*` ou outra origem levantam erro. Sem a chave, o header é o de base.
+export type OperatorPermissionsFeature =
+  | "browsing-topics"
+  | "camera"
+  | "geolocation"
+  | "microphone"
+  | "payment"
+  | "screen-wake-lock"
+  | "usb";
+export type OperatorPermissionsAllow = Partial<Record<OperatorPermissionsFeature, "self">>;
+
+export function operatorBaselinePermissionsPolicy(allow?: OperatorPermissionsAllow | null): string {
+  if (!allow || Object.keys(allow).length === 0) return OPERATOR_PERMISSIONS_POLICY;
+  const known = OPERATOR_PERMISSIONS_DIRECTIVES.map(([feature]) => feature);
+  for (const [feature, value] of Object.entries(allow)) {
+    if (!known.includes(feature)) {
+      throw new Error(`Permissions-Policy: o recurso ${feature} não aceita exceção por app.`);
+    }
+    if (value !== "self") {
+      throw new Error(`Permissions-Policy: ${feature} só abre para a própria origem ("self").`);
+    }
+  }
+  return OPERATOR_PERMISSIONS_DIRECTIVES.map(([feature, allowlist]) =>
+    allow[feature as OperatorPermissionsFeature] === "self" ? `${feature}=(self)` : `${feature}=${allowlist}`,
+  ).join(", ");
+}
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
-  "Permissions-Policy": OPERATOR_PERMISSIONS_POLICY,
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
@@ -116,9 +181,11 @@ export function operatorResponseHeaders(options: {
   secure: boolean;
   existingVary?: string | number | string[];
   cspAllow?: OperatorCspAllow | null;
+  permissionsAllow?: OperatorPermissionsAllow | null;
 }): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Security-Policy": operatorBaselineContentSecurityPolicy(options.cspAllow),
+    "Permissions-Policy": operatorBaselinePermissionsPolicy(options.permissionsAllow),
     ...SECURITY_HEADERS,
   };
 
@@ -148,6 +215,7 @@ export function requestIsHttps(event: H3Event): boolean {
 export function applyOperatorBaselineSecurityHeaders(
   event: H3Event,
   cspAllow?: OperatorCspAllow | null,
+  permissionsAllow?: OperatorPermissionsAllow | null,
 ): void {
   const pathname = getRequestURL(event).pathname;
   const headers = operatorResponseHeaders({
@@ -155,6 +223,7 @@ export function applyOperatorBaselineSecurityHeaders(
     secure: requestIsHttps(event),
     existingVary: getResponseHeader(event, "vary"),
     cspAllow,
+    permissionsAllow,
   });
   setResponseHeaders(event, headers);
 }
