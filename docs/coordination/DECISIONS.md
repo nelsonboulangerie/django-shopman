@@ -276,6 +276,32 @@ escrita é o **`shopman-spec-update`**. Use `doctl --context shopman-spec-update
 criação de chamado na API pública. **O chamado tem de ser aberto no console**
 (`cloud.digitalocean.com` → Support → Create ticket). Não perca tempo com a API.
 
+### 🔎 Pista mais forte (2026-09-30 12:30 UTC) — camadas possivelmente ausentes
+
+`doctl registry repository list-manifests shopman` mostra assimetria exata entre as imagens que
+funcionam e as do caminho que falha:
+
+| Imagem | Comprimido | Descomprimido |
+|---|---|---|
+| `web` | **189,08 MB** | 666,23 MB |
+| `storefront` | **79,02 MB** | 199,40 MB |
+| `operator-floor` | **0 B** | 195,94 MB |
+| `operator-office` | **0 B** | 193 MB |
+| (per-app: `purchase`, `production`, `hub`, `orders`, `marketing`) | **0 B** | 173–196 MB |
+
+Manifesto com descomprimido conhecido e comprimido zerado é assinatura de camada que não subiu —
+e o spec referencia **justamente** `operator-floor` e `operator-office`.
+
+⚠️ **Não está provado.** A alternativa é que o DO reporte `0 B` para manifestos com camadas
+deduplicadas (as imagens de operador compartilham base; `web`/`storefront` são únicas). O teste
+decisivo seria ler o manifesto pelo registry v2 e conferir os blobs, e **não consegui extrair o
+token do `doctl`** (0 caracteres em duas tentativas).
+
+**Teste que decide, e é nosso:** republicar `operator-floor` e `operator-office` pelo
+`deploy-images.yml` (`workflow_dispatch`, `components=operator-floor,operator-office`). Tamanho
+normal + deploy passando ⇒ a causa é nossa e o suporte era desnecessário. `0 B` de novo ⇒ é do
+registry/provedor e o chamado se sustenta.
+
 **Chamado ao suporte da DO — conteúdo:** app `shopman-nelson` (id `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`).
 Todo deployment desde 2026-09-29 21:31 UTC falha no passo `build` com
 `InternalError: An internal error occurred`. Deployment ativo é `c4fce115` (automated rollback).
