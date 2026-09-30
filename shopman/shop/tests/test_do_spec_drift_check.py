@@ -158,12 +158,25 @@ def test_declared_value_divergence_does_not_hide_scope_divergence():
 
 
 def test_declared_removal_from_the_live_app_is_not_drift():
-    key = "SHOPMAN_REQUIRE_ACTIVE_OPERATOR"
-    problems, expected = _compare_app_envs({key: _env(key, "true")}, {})
+    key = "FLAG_QUE_SAIU"
+    problems, expected = drift.compare(
+        {key: _env(key, "true")},
+        {},
+        label="envs de app",
+        expected_only_live={key: "saiu do arquivo; nenhum código lê"},
+    )
     assert problems == []
     assert len(expected) == 1
     assert key in expected[0]
-    assert "b8df875f4" in expected[0]
+    assert "nenhum código lê" in expected[0]
+
+
+def test_ghost_flag_is_no_longer_declared_after_leaving_the_live_app():
+    """Removida do vivo em 30/09/2026; se voltar ao painel, tem de acusar."""
+    key = "SHOPMAN_REQUIRE_ACTIVE_OPERATOR"
+    problems, expected = _compare_app_envs({key: _env(key, "true")}, {})
+    assert expected == []
+    assert any("SUMIRIAM" in line for line in problems)
 
 
 def test_undeclared_key_only_in_the_live_app_still_deletes():

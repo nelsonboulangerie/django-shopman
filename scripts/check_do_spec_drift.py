@@ -107,12 +107,8 @@ EXPECTED_VALUE_DIVERGENCE: dict[str, tuple[str, str, str]] = {
 #: chave pode sumir, e sumir é o que se quer". Serve só para a chave que já
 #: saiu do arquivo de propósito e cuja remoção do vivo está pendente. Feita a
 #: remoção, a entrada sai daqui — declaração velha esconde a volta da chave.
-EXPECTED_ONLY_LIVE: dict[str, str] = {
-    "SHOPMAN_REQUIRE_ACTIVE_OPERATOR": (
-        "saiu do arquivo em b8df875f4; nenhum código lê esta chave. A remoção do "
-        "ambiente vivo está pendente (spec do vivo editado à mão, só esta linha)."
-    ),
-}
+#: (A primeira, ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR``, saiu do vivo em 30/09/2026.)
+EXPECTED_ONLY_LIVE: dict[str, str] = {}
 
 
 def load_spec(path: Path) -> dict:
