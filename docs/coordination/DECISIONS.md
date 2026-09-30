@@ -276,7 +276,34 @@ escrita é o **`shopman-spec-update`**. Use `doctl --context shopman-spec-update
 criação de chamado na API pública. **O chamado tem de ser aberto no console**
 (`cloud.digitalocean.com` → Support → Create ticket). Não perca tempo com a API.
 
-### 🔎 Pista mais forte (2026-09-30 12:30 UTC) — camadas possivelmente ausentes
+### ❌ Pista das camadas — REFUTADA em 2026-09-30 12:40 UTC (não persiga isto)
+
+**O que foi testado e como** (método reutilizável, sem `docker` e sem o token da API):
+`doctl registry docker-config` (funciona mesmo quando não se consegue extrair o token da API) dá a
+credencial do registry; o desafio `WWW-Authenticate` aponta para
+`https://api.digitalocean.com/v2/registry/auth`; trocando ali por um token de pull e consultando a
+API v2 do registry, lê-se o manifesto real e testa-se o blob.
+
+**Resultado — as quatro imagens do spec estão íntegras:**
+
+| Tag | Manifesto | Camadas | Soma real das camadas | Blob da 1a camada |
+|---|---|---|---|---|
+| `web` | 200 | 16 | 189.066.796 B | 307 (existe) |
+| `storefront` | 200 | — | — | — |
+| `operator-floor` | 200 | 12 | 71.400.223 B | 307 (existe) |
+| `operator-office` | 200 | — | — | — |
+
+`307` é redirect para o storage do blob: se o blob não existisse, seria `404`.
+
+**Portanto: o `0 B` que o `doctl registry repository list-manifests` mostra em várias imagens é
+artefato de relatório, não imagem quebrada.** `operator-floor` tem 71 MB de camadas, não zero.
+**Não republicar nada por causa disso, e não citar o `0 B` no chamado** — mandaria o suporte atrás
+de uma pista falsa. A causa do `build` falhar continua **desconhecida** e é do lado do provedor
+ou do spec, não das imagens.
+
+---
+
+### 🔎 Hipótese original (mantida só como histórico) — camadas possivelmente ausentes
 
 `doctl registry repository list-manifests shopman` mostra assimetria exata entre as imagens que
 funcionam e as do caminho que falha:
