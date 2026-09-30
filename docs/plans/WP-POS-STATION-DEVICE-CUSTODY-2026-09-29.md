@@ -126,10 +126,18 @@ cada requisição** (`packages/doorman/.../models/device_trust.py:208-212`) e na
 
 **Mudança.**
 1. No provisionamento, se o terminal já tem vínculo ativo: **avisar e exigir confirmação**
-   (ou recusar, se a resposta a D-004b for "(a)").
+   (`confirm=true`). **Não recusar** — D-007 = postura (b), vários dispositivos com visibilidade.
+   A lista de terminais (`operations.py:1083-1091`) passa a trazer ocupação por terminal.
 2. Na projeção do caixa, mostrar **"há N dispositivos neste balcão"** e **"caixa já aberto"**.
 3. No Admin de terminais, listar e permitir revogar dispositivos
-   (`TrustedDevice.active_for("station", ref)` — dados prontos, zero migração).
+   (`TrustedDevice.active_for("station", ref)` — **já existe**, `packages/doorman/shopman/doorman/models/device_trust.py:215`;
+   dados prontos, zero migração).
+4. **Tratar o 409 do WP-4 na tela do X/Z.** O front só trata 401/403 como acesso negado, então o
+   409 novo (`pos_terminal_mismatch`) cai como erro genérico. É pequeno e é o mesmo assunto
+   (fronteira da estação), por isso mora aqui e não num PR próprio.
+
+**Nota sobre dimensão:** se o item 3 fizer o diff crescer demais, separe-o e relate — a frente que
+importa é a visibilidade para quem está no balcão (itens 1, 2 e 4).
 
 **Prova de pronto.** Dois provisionamentos no mesmo ref → o segundo vê o aviso; a tela do caixa
 mostra N=2; revogar um derruba só ele.
