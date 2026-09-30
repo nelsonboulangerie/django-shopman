@@ -8,6 +8,27 @@
 > `15-gaveta-custodia-multidispositivo.md` — ambos com prova em runtime.
 > Contexto e decisão do dono: `docs/coordination/DECISIONS.md` **D-004**.
 
+## Progresso
+
+| Frente | Estado | Evidência |
+|---|---|---|
+| **Frente 0 — destravar CI** | ✅ **MERGEADA** | PR #1275 · merge `c97f56c24` em `origin/main`. Commits `8583d1f4b` (`-n auto` em `test-shop` e `test-storefront` + `uuid1`→UUID v1 fixo) e `e27ea6b47` (3 testes de log deixaram de depender da ordem). Nenhum arquivo de `.github/` tocado. |
+| WP-3 | próximo | — |
+| WP-1 · WP-4 · WP-2 · WP-5 | pendentes | — |
+
+**Nota da Frente 0 (vale para quem for medir):** o `--collect-only -n auto` **não** serve como prova
+de coleta paralela — o xdist não sobe workers nesse modo. A prova é a execução completa. E o ganho
+local medido foi `test-shop` 9:16 → 5:52; em `test-storefront` o ganho ficou dentro do ruído
+(1:40 → 1:30, com uma rodada de 2:08), então **esse alvo está sob observação**: se a CI não mostrar
+ganho, a linha dele deve ser revertida para não pagar risco de coleta paralela por nada.
+
+**Achado colateral:** três testes de log (`test_otp_sms_comtele.py` ×2, `test_business_hours_grita.py`)
+falhavam **no ponto de partida**, isolados, em série e em paralelo — passavam só quando um teste
+anterior ligava a propagação do logger. Eram verdes na CI por **ordem de execução**, não por
+correção. Corrigidos com o padrão que o repo já usa; nada foi marcado `skip` ou `xfail`.
+
+---
+
 ## Por que este conjunto existe
 
 Uma gaveta física, vários dispositivos. A custódia é do **terminal**, e o código **preserva de
