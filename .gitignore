@@ -64,3 +64,5 @@ var/
 *.cer
 .env.*
 !.env.example
+
+.dsh-worktrees/
