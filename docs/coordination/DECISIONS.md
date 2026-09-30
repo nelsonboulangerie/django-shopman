@@ -232,6 +232,40 @@ exigiria reprovisionamento manual se um dispositivo morresse.
 
 ---
 
+## 🎯 B-001 · CAUSA RAIZ ENCONTRADA (2026-09-30 ~18:00 UTC)
+
+**O `build` não falha ao puxar imagem. Ele falha ao CRIAR O BANCO.**
+
+Passo que falha, texto exato: `deployment.progress.steps[0].steps[1].steps[8]`, nome
+`build.components.postgres`, `message_base: "Creating database"`, componente `postgres`.
+Em `859fccb3` falham **dois** passos: `postgres` **e** `cache`.
+
+**A causa: o spec vivo perdeu o bloco `databases`.**
+
+| | `databases` |
+|---|---|
+| Spec do repo (`.do/app.alpha-subdomains.yaml:1254-1266`) | `cluster_name`, `db_name`, `db_user`, `engine`, `production`, `version` |
+| **Spec vivo hoje** | `- name: postgres` e `- name: cache` — **só isso** |
+
+**Quando quebrou:** deployment `ded45b84`, **2026-09-29 21:47:34 UTC**, causa `app spec updated`
+(`UPDATE_SPEC`), conta `pablondrina@gmail.com`. O mesmo update também **reordenou as variáveis de
+ambiente** (`DJANGO_SECRET_KEY`, `STRIPE_*`, `EFI_*` mudaram de posição) — **é a explicação do
+incidente em que as envs foram zeradas.** Foi um `apps update` com um spec que não era o vivo.
+
+**Por que `restart` funciona e deploy novo não:** o deployment de sucesso (`9df9b42c`) tem
+`cloned_from: c4fce115` — ele **copia** o deployment anterior, que ainda tinha o bloco completo.
+Um deployment novo tenta provisionar o banco a partir do spec mutilado e falha.
+
+**⚠️ Antes do `ded45b84` havia OUTRO bloqueio, ainda sem diagnóstico.** De 29/09 19:15 a 21:29, os
+deployments falhavam com `release: DeployContainerExitNonZero` — o job `release` (migrate,
+setup_groups, bootstrap) saindo com código diferente de zero. Consertar o bloco `databases` deve
+trazer **esse** erro de volta. Ele é o próximo da fila.
+
+**Correção:** devolver o bloco ao spec vivo. **Pela UI do console** (que trata os segredos), não por
+`apps update` de arquivo — essa é a regra D-009, e foi um `apps update` que causou isto.
+
+---
+
 ## B-001 · O alpha está sem deploy desde 29/09 21:31 UTC
 
 ### ✅ Descoberta decisiva (2026-09-30 17:20 UTC) — o `build` só falha quando precisa puxar imagem
