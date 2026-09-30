@@ -293,7 +293,9 @@ jobs:
     #
     # O backstage saiu desta matriz e virou dois shards logo abaixo: ele era o
     # caminho crítico do gate inteiro (12min26s a 12min55s, contra ~5 min do
-    # segundo colocado). Aqui ficaram as suítes que já respondem em minutos.
+    # segundo colocado). O shop saiu depois, pelo mesmo motivo (18min12s e
+    # 20min00s na fila de 30/09). Aqui ficaram as suítes que já respondem em
+    # minutos.
     timeout-minutes: 35
     strategy:
       # `fail-fast: false` de propósito: quando duas frentes quebram, quero ver
@@ -301,7 +303,7 @@ jobs:
       # mais um ciclo inteiro para descobri-la.
       fail-fast: false
       matrix:
-        suite: [test-cores, test-shop, test-storefront, test-counter-agent]
+        suite: [test-cores, test-storefront, test-counter-agent]
 
     steps:
       - name: Checkout
@@ -324,13 +326,13 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
         run: |
-          if [ "${{ matrix.suite }}" = "test-shop" ] || [ "${{ matrix.suite }}" = "test-storefront" ]; then
+          if [ "${{ matrix.suite }}" = "test-storefront" ]; then
             export PYTEST_ADDOPTS="--cov=shopman --cov-report= --cov-append --cov-fail-under=0"
           fi
           make ${{ matrix.suite }}
 
       - name: Publicar cobertura do shard
-        if: matrix.suite == 'test-shop' || matrix.suite == 'test-storefront'
+        if: matrix.suite == 'test-storefront'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.suite }}
@@ -410,9 +412,75 @@ jobs:
           # dependente) faria a branch protection ler "skipped" como verde.
           [ "$resultado" = "success" ] || exit 1
 
+  # ── O shop roda em DOIS shards, sob um nome só ─────────────────────────
+  # Mesmo contrato do backstage acima: `Testes (test-shop)` é check
+  # OBRIGATÓRIO em `main` (lista versionada em .github/required-status-checks.json,
+  # conferida pelo scripts/check_canonical_docs.py), então os shards correm em
+  # jobs próprios, não obrigatórios, e um agregador com o NOME ANTIGO reprova
+  # por eles. A divisão (os 15 arquivos mais pesados × o resto) e a medição que
+  # a desenha moram no Makefile, junto de SHOP_HEAVY_TESTS.
+  tests-shop-shards:
+    name: Shop ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [heavy, rest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: test-shop-${{ matrix.shard }}
+        timeout-minutes: 30
+        env:
+          COVERAGE_FILE: .coverage.shop-${{ matrix.shard }}
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+        run: make test-shop-${{ matrix.shard }}
+
+      - name: Publicar cobertura do shard
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shop-${{ matrix.shard }}
+          path: .coverage.shop-${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
+  # trocar o contexto obrigatório antes.
+  tests-shop:
+    name: Testes (test-shop)
+    runs-on: ubuntu-latest
+    needs: tests-shop-shards
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Os dois shards do shop passaram
+        run: |
+          resultado='${{ needs.tests-shop-shards.result }}'
+          echo "shards: $resultado"
+          # Igualdade com `success`, não lista de falhas: `failure`,
+          # `cancelled` e `skipped` reprovam sem enumerar (ver o agregador do
+          # backstage acima).
+          [ "$resultado" = "success" ] || exit 1
+
   coverage-gate:
     name: Coverage Gate
-    needs: [tests, tests-backstage-shards]
+    needs: [tests, tests-backstage-shards, tests-shop-shards]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -421,9 +489,11 @@ jobs:
         env:
           TESTS_RESULT: ${{ needs.tests.result }}
           BACKSTAGE_RESULT: ${{ needs.tests-backstage-shards.result }}
+          SHOP_RESULT: ${{ needs.tests-shop-shards.result }}
         run: |
           test "$TESTS_RESULT" = "success"
           test "$BACKSTAGE_RESULT" = "success"
+          test "$SHOP_RESULT" = "success"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -436,7 +506,8 @@ jobs:
       - name: Instalar coverage
         run: python -m pip install 'coverage[toml]>=7.6,<8.0'
 
-      - name: Baixar todos os quatro shards
+      # storefront + backstage (seed, rest) + shop (heavy, rest) = 5
+      - name: Baixar todos os cinco shards
         uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
@@ -446,7 +517,7 @@ jobs:
       - name: Combinar, publicar e aplicar o piso de 75%
         run: |
           count=$(find coverage-data -type f -name '.coverage.*' | wc -l | tr -d ' ')
-          test "$count" = "4"
+          test "$count" = "5"
           python -m coverage combine coverage-data
           python -m coverage report --fail-under=75 | tee coverage.txt
           python -m coverage xml -o coverage.xml
