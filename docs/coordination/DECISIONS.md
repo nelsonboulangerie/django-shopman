@@ -232,6 +232,43 @@ exigiria reprovisionamento manual se um dispositivo morresse.
 
 ---
 
+## ✅ B-001 RESOLVIDO — 2026-09-30 18:21 UTC
+
+**Deployment `3a3b0053-82c6-4a4a-b1c1-5e5e8c45718e` atingiu ACTIVE 29/29 às 18:21:28 UTC.**
+O app voltou a deployar depois de **~21 horas** congelado.
+
+**A correção:** devolver o bloco `databases` ao spec vivo (só `name` → os 6 campos), aplicado por
+`doctl apps update --spec` com o spec obtido de `spec get`. **Diff: 2 linhas removidas, 12
+adicionadas — e nada mais.** Segredos **intactos**: 31 de 31 idênticos, 167 envs com mesmo valor,
+tipo, scope e ordem. Nenhum rollback necessário.
+
+⚠️ **Contra a expectativa, o bloqueio anterior NÃO voltou.** O `release: DeployContainerExitNonZero`
+(de 29/09 19:15–21:29) não reapareceu: `postgres`, `cache` **e** o job `release` passaram. **A causa
+daquela falha anterior continua desconhecida** e resolveu sozinha — fica registrado como
+**não explicado**, não como "corrigido".
+
+**Efeito medido no cliente (home SSR, a queixa nº1):**
+
+| | Antes (29–30/09) | Depois (steady state) |
+|---|---|---|
+| `/` (home) | 3,06–4,49 s | **0,65–1,18 s** |
+| `/menu` | 3,79 s | **0,56–0,60 s** |
+| `/sacola` | — | **0,31–0,78 s** |
+| `/finalizar` | — | **0,38–0,87 s** |
+| `/conta` | — | **0,42–0,71 s** |
+
+**O que ainda NÃO está resolvido:** a rota **privada** `/api/v1/storefront/menu/` continua ~3,3 s
+(`projection;dur=2718, availability;dur=1679, db;dur=613`). Ela não é cacheável por desenho (estado
+de sessão). É a Onda 1 do `GO-LIVE-ACCELERATION-PLAN`: a disponibilidade calculada 4× por request,
+o `home/` que constrói o catálogo inteiro, os índices ausentes. **O ganho de hoje veio de servir o
+anônimo pela borda, não de o backend ter ficado rápido.**
+
+**Método que valeu a pena registrar:** para inspecionar imagens do DOCR sem `docker` e sem o token
+da API, use `doctl registry docker-config` + o intercâmbio de token em
+`api.digitalocean.com/v2/registry/auth`.
+
+---
+
 ## 🎯 B-001 · CAUSA RAIZ ENCONTRADA (2026-09-30 ~18:00 UTC)
 
 **O `build` não falha ao puxar imagem. Ele falha ao CRIAR O BANCO.**
