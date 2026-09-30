@@ -89,7 +89,8 @@ database") com **InternalError, sem mensagem**. Só `apps restart` passava,
 porque clona o deployment anterior. Corrigido em 30/09 às 18:21 UTC
 (deployment `3a3b0053`), devolvendo o bloco.
 
-**O mecanismo, medido em 30/09:** com o contexto `shopman-alpha-deploy`,
+**O mecanismo, medido em 30/09:** com o contexto `shopman-alpha-deploy` (removido
+do doctl local no mesmo dia, depois desta medição),
 `doctl apps spec get` devolve **hoje**, com o app já corrigido, o `databases`
 exatamente nesse formato mutilado. O token de deploy não tem escopo de
 database, e o App Platform **apaga os campos na leitura em vez de recusar**.

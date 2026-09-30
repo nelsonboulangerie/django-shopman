@@ -32,7 +32,7 @@ da decisão de GO.
 O 403 do pré-flight R8 era uma limitação do contexto usado, não evidência
 de ausência de backup:
 
-- `shopman-alpha-deploy` continua sem `database:read` e recebe 403 em
+- `shopman-alpha-deploy` (contexto removido do doctl local em 30/09/2026) continua sem `database:read` e recebe 403 em
   `GET /v2/databases`;
 - o contexto já existente `shopman-spec-update` acessa os mesmos apps e possui
   leitura de databases/backups; nenhum token ou valor secreto foi exibido;

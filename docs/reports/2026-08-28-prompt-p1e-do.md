@@ -1,5 +1,14 @@
 # PROMPT — P1-E: aplicar env NUXT_PUBLIC_DJANGO_BASE_URL no App Platform (alpha) + rebuild
 
+> ⛔ **SUPERADO (30/09/2026). Não execute.** Este prompt manda usar o contexto
+> doctl `shopman-alpha-deploy`, que foi removido: o token dele não tem
+> `database:read`, e a DigitalOcean **apaga os campos de `databases` na leitura sem
+> dar erro**. Um `spec get` com ele, aplicado de volta, congelou todo deploy por
+> 21 h em 29-30/09. Hoje: `--context shopman-spec-update` e, antes de qualquer
+> `apps update`, `make deploy-spec-drift context=shopman-spec-update` saindo [OK]
+> (`scripts/check_do_spec_drift.py` recusa leitura cega com exit 2). Mantido só
+> como registro histórico.
+
 Você é o Claude Code com acesso ao repo Django Shopman (/Users/pablovalentini/Dev/Claude/django-shopman) e ao contexto DO (doctl --context shopman-alpha-deploy).
 
 ## Contexto

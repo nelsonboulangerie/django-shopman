@@ -1,5 +1,14 @@
 # INSTRUÇÃO COMPLETA — Fechamento da revisão alpha do Gestor de Pedidos (28/08/2026)
 
+> ⛔ **SUPERADO (30/09/2026). Não execute.** Este prompt manda usar o contexto
+> doctl `shopman-alpha-deploy`, que foi removido: o token dele não tem
+> `database:read`, e a DigitalOcean **apaga os campos de `databases` na leitura sem
+> dar erro**. Um `spec get` com ele, aplicado de volta, congelou todo deploy por
+> 21 h em 29-30/09. Hoje: `--context shopman-spec-update` e, antes de qualquer
+> `apps update`, `make deploy-spec-drift context=shopman-spec-update` saindo [OK]
+> (`scripts/check_do_spec_drift.py` recusa leitura cega com exit 2). Mantido só
+> como registro histórico.
+
 Você é Claude Code no repositório Django Shopman (/Users/pablovalentini/Dev/Claude/django-shopman). A revisão alpha foi concluída; as correções estão numa branch JÁ PUSHADA para o origin. Falta executar, na ordem: (1) abrir o PR dos lotes 1–3, (2) aplicar o P1-E no App Platform (DO), (3) executar o WP-P2E, (4) validar pós-merge no alpha. Siga os passos abaixo; em caso de dúvida ou bloqueio, pare e reporte — não invente.
 
 ## Antes de tudo — leitura obrigatória

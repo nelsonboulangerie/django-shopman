@@ -111,6 +111,11 @@ para ler a connection string do cluster novo.
 > Não gere outro token apenas para listar backups. Isso não prova que o contexto
 > tenha os escopos de criação/conexão necessários para o ensaio.
 
+> **30/09/2026:** o contexto `shopman-alpha-deploy` foi **removido** do doctl
+> local (token cego para databases e, pior, era o default). Use
+> `--context shopman-spec-update` explícito; o default agora é o contexto vazio
+> `default`, que falha alto.
+
 ---
 
 ## 2. Antes de um deploy com migração de risco
