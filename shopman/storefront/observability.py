@@ -67,6 +67,30 @@ def capture_catalog_timing() -> Iterator[CatalogTiming]:
         _current.reset(token)
 
 
+class ServerTimingMixin:
+    """Carimba ``Server-Timing`` numa view de leitura, no MESMO formato do cardápio.
+
+    O valor do header é ser comparável entre rotas: por isso reusa
+    ``capture_catalog_timing`` e os cinco nomes de ``CatalogTiming``, sem formato
+    próprio. ``projection`` é a view inteira; ``availability`` e
+    ``personalization`` aparecem quando a view passa por ``build_catalog`` (a
+    home passa); ``db`` é a soma do SQL do request. Só leitura (GET/HEAD):
+    mutação não é o que este header mede.
+
+    Não use em view que já abre a própria captura (cardápio, Continuum): a
+    captura aninhada contaria o SQL duas vezes.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.method not in ("GET", "HEAD"):
+            return super().dispatch(request, *args, **kwargs)
+        with capture_catalog_timing() as timing:
+            with catalog_stage("projection"):
+                response = super().dispatch(request, *args, **kwargs)
+        response["Server-Timing"] = timing.server_timing()
+        return response
+
+
 def log_catalog_observation(**fields) -> None:
     """Loga somente métricas agregadas; nunca payload, SKU, sessão ou pessoa."""
     safe = {

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+from shopman.storefront.observability import ServerTimingMixin
 from shopman.storefront.presentation import build_catalog_items_for_skus, get_channel_listing_ref
 from shopman.storefront.services import catalog as catalog_service
 
@@ -32,7 +33,7 @@ class ProductCursorPagination(CursorPagination):
         responses={200: ProductListItemSerializer(many=True)},
     ),
 )
-class ProductListView(APIView):
+class ProductListView(ServerTimingMixin, APIView):
     """
     GET /api/v1/catalog/products/
 
@@ -86,7 +87,7 @@ class ProductListView(APIView):
         responses={200: ProductListItemSerializer},
     ),
 )
-class ProductDetailView(APIView):
+class ProductDetailView(ServerTimingMixin, APIView):
     """
     GET /api/v1/catalog/products/{sku}/
 
@@ -121,7 +122,7 @@ class ProductDetailView(APIView):
         responses={200: CollectionSerializer(many=True)},
     ),
 )
-class CollectionListView(APIView):
+class CollectionListView(ServerTimingMixin, APIView):
     """
     GET /api/v1/catalog/collections/
 
