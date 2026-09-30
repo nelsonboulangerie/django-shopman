@@ -35,9 +35,19 @@ Na baseline de 2026-09-29, deployment de código não é exclusivamente manual:
 
 1. merge em `main` dispara o workflow **Deploy Images**;
 2. imagens alteradas são publicadas no DOCR e registradas em manifesto;
-3. componentes com `deploy_on_push=true` iniciam o deployment na DigitalOcean;
+3. componentes com `deploy_on_push=true` iniciam o deployment na DigitalOcean,
+   um por tag publicada (até quatro por run);
 4. **Pre-go-live Smoke** espera o deployment correspondente ficar `ACTIVE` e
    verifica `/ready/`, menu, checkout não mutante e SSR.
+
+O job `manifest` do Deploy Images já sabe o outro modo, que é UM deployment
+por run: com `deploy_on_push` desligado em todos os componentes de imagem do
+spec vivo, ele cria um deployment depois de publicar tudo
+(`POST /v2/apps/{id}/deployments`), espera `ACTIVE` e grava o id no
+manifesto, que o smoke então confere. O modo é lido do spec vivo a cada run.
+Para ligar, nesta ordem: segredo `DIGITALOCEAN_APP_DEPLOY_TOKEN` (escopo
+`app` read+update) no repositório, depois `deploy_on_push: false` nos oito
+componentes de imagem do spec vivo, editado a partir do spec vivo.
 
 `Deploy Images` verde prova publicação; só o smoke posterior prova que o
 deployment correspondente chegou ao ambiente. Nenhum dos dois autoriza
