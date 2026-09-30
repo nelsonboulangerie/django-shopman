@@ -11,7 +11,8 @@ dados de clientes. Nao mantenha outro ledger em paralelo.
 O alvo atual e o **ambiente vivo de pre-go-live**, ainda operado com integracoes
 staging/mock/sandbox ate o cutover comercial. Ele e o app DigitalOcean
 `shopman-nelson` (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`), acessado pelo contexto
-operacional `shopman-alpha-deploy`, mas atende os hosts publicos finais:
+`doctl` `shopman-spec-update` (o antigo `shopman-alpha-deploy` foi removido em
+30/09/2026: token cego para databases), mas atende os hosts publicos finais:
 
 - loja: `https://www.nelsonboulangerie.com.br`;
 - API: `https://api.boulangerie.com.br`;

@@ -261,7 +261,8 @@ capture o spec vivo e edite esse arquivo capturado.
 > Ele tem que sair **[OK]**, e **exit 2 ("leitura cega") não é OK**.
 >
 > O contexto importa tanto quanto o comando. O token de deploy
-> (`shopman-alpha-deploy`) não tem escopo de database, e com ele o `apps spec get`
+> (antigo contexto `shopman-alpha-deploy`, removido do doctl local em 30/09/2026;
+> o mesmo escopo vive no segredo do GitHub) não tem escopo de database, e com ele o `apps spec get`
 > devolve o `databases` só com `name`, sem dar erro. Foi essa leitura, mandada de
 > volta num `apps update` (deployment `ded45b84`, 29/09/2026 21:47 UTC), que fez todo
 > deploy novo morrer em `Creating database` com InternalError, por 21 horas.

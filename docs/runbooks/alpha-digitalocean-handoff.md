@@ -71,7 +71,11 @@ Estado aplicado:
 - App Platform: `shopman-nelson`.
 - App ID preservado: `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 - Projeto DigitalOcean: `Shopman Alpha`.
-- Contexto `doctl` com token nesta maquina: `shopman-alpha-deploy`.
+- Contexto `doctl` com token nesta maquina: `shopman-spec-update` (le e escreve
+  o spec, inclusive o bloco `databases`). O antigo `shopman-alpha-deploy` foi
+  removido do doctl local em 30/09/2026: era token cego (sem `database:read`) e
+  era o default silencioso. O default do doctl agora e o contexto vazio
+  `default`, que falha alto sem `--context`.
 - Contexto `shopman-alpha-write`: nao existe.
 - Default ingress nao mudou com o rename:
   `https://shopman-staging-cdjpy.ondigitalocean.app`.
@@ -161,12 +165,18 @@ app id: 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
 spec versionado: .do/app.alpha-subdomains.yaml
 ```
 
-Para subir codigo novo:
+Para subir codigo novo: push no `main`. O workflow `Deploy Images` publica as
+imagens e cria o deployment (segredo `DIGITALOCEAN_APP_DEPLOY_TOKEN`, nao o doctl local). Deployment
+manual, so se o CI estiver fora:
 
 ```bash
-doctl --context shopman-alpha-deploy apps create-deployment \
+doctl --context shopman-spec-update apps create-deployment \
   40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --wait
 ```
+
+⛔ O token de leitura do deploy (`registry` + `app:read`) responde **403** em
+`apps create-deployment`, e ele era o contexto default desta maquina ate
+30/09/2026. Sempre passe `--context` explicito.
 
 Para inspecionar ou preparar mudanca futura de dominios/topologia, primeiro
 salvar o spec vivo:
@@ -177,8 +187,9 @@ doctl --context shopman-spec-update apps spec get \
   > /tmp/shopman-alpha-live-spec.yaml
 ```
 
-⛔ Não capture com `--context shopman-alpha-deploy`: aquele token não lê
-databases, e o spec sai com `databases` só com `name`. Mandado de volta num
+⛔ Não capture com um token sem `database:read` (era o caso do antigo
+`shopman-alpha-deploy`, removido desta máquina em 30/09/2026): a DO não dá erro,
+**apaga os campos na leitura**, e o spec sai com `databases` só com `name`. Mandado de volta num
 `apps update`, isso derrubou todo deploy por 21 horas em 29-30/09/2026. Antes de
 qualquer `apps update`: `make deploy-spec-drift context=shopman-spec-update`
 tem que sair [OK].
