@@ -212,9 +212,25 @@ planejamento, não de execução.
 Sem o dispositivo no lançamento do caixa, continua verdade que *dois tablets no mesmo balcão são
 indistinguíveis na trilha* — e o livro responsabiliza pessoa + terminal, nunca o aparelho.
 
-**Mudança.** Gravar a identidade do `TrustedDevice` no payload dos movimentos de caixa e dos
-eventos de sessão, pelos caminhos que já existem. **Zero migração** (JSONField). Documentar as
-chaves em `docs/reference/data-schemas.md` antes de usar.
+**Onde gravar.** `packages/cashman/shopman/cashman/services/ledger.py:36` — `record()` **já** é o
+escritor único do livro e **já recebe** `operator` explicitamente do chamador. O dispositivo deve
+entrar pelo mesmo caminho, como irmão de `operator` (parâmetro próprio ou chave em `payload` — a
+escolha é do executor). `payload` é JSONField: **zero migração**.
+
+⚠️ **A restrição que importa:** a trilha **não pode depender de seis chamadores lembrarem de
+preencher uma chave**. O repo tem esse princípio escrito ("invariante não pode depender do chamador
+lembrar de um campo", `shopman/storefront/api/serializers.py:47-61`). Se o dispositivo puder
+sumir em silêncio por um caminho, não é trilha — é decoração.
+
+⚠️ **O mesmo identificador nos dois rastros.** O WP-1 já gravou o dispositivo na trilha de
+**acesso** (`sign_in_audit`). O WP-6 **tem de usar o mesmo identificador**, senão as duas trilhas
+não se cruzam e não se consegue responder "quem entrou neste tablet lançou o quê nesta gaveta".
+Reuse `TrustedDevice.active_for` / `_present_station_bindings`, não invente um segundo id.
+
+**Também:** `SessionEvent` (o WP-1 não o alcançou).
+
+**Teste obrigatório:** um lançamento de caixa feito pelo POS carrega o device id — provado por
+teste que passa pelo caminho HTTP, não por chamada direta ao serviço.
 
 **Sequência.** Depois do **WP-4**, que também mexe em `operations.py`. **Nunca em paralelo** com
 WP-2 ou WP-4 — é o mesmo arquivo quente.
