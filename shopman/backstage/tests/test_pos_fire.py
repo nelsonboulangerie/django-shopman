@@ -21,6 +21,10 @@ class POSFireTabTests(TestCase):
         Shop.objects.create(name="Test Shop", brand_name="Test")
         Channel.objects.create(ref="pdv", name="Balcão", is_active=True)
         POSTab.objects.create(ref="00002001", label="2001")
+        # A comanda carimba quem lançou cada linha: o operador precisa existir.
+        from django.contrib.auth import get_user_model
+
+        get_user_model().objects.create_user(username="alice", password="x")
         # Catch-all picking station (no collections) keeps routing trivial.
         KDSInstance.objects.create(ref="cozinha", name="Cozinha", type="picking")
         from shopman.offerman.models import Product
@@ -460,7 +464,7 @@ class POSFireTabTests(TestCase):
         from django.contrib.auth import get_user_model
         from shopman.cashman import services as cash
 
-        alice = get_user_model().objects.create_user(username="alice", password="x")
+        alice = get_user_model().objects.get(username="alice")
         shift = cash.open_shift(operator=alice, float_q=0)
         pos_service.close_sale(
             channel_ref="pdv",

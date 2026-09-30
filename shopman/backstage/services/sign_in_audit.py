@@ -108,6 +108,19 @@ def _station_ref(request) -> str:
         return ""
 
 
+def _station_device_id(request) -> str:
+    """Qual DISPOSITIVO (``TrustedDevice.pk``), ou ``""`` fora da loja."""
+    if request is None:
+        return ""
+    try:
+        from shopman.backstage.station_trust import station_device_id
+
+        return station_device_id(request)
+    except Exception:  # pragma: no cover - trilha nunca derruba um login
+        logger.warning("sign_in_audit.station_device_lookup_failed", exc_info=True)
+        return ""
+
+
 def record(*, user=None, username: str = "", method: str = "", outcome: str = "",
            request=None, notify_owner: bool = True, **contexto):
     """Gravar uma linha na trilha. Devolve o ``SignInEvent``, ou ``None``.
@@ -140,6 +153,9 @@ def record(*, user=None, username: str = "", method: str = "", outcome: str = ""
             caminho = getattr(request, "path", "") or ""
             if caminho:
                 dados["path"] = caminho[:200]
+            dispositivo = _station_device_id(request)
+            if dispositivo:
+                dados["station_device_id"] = dispositivo
 
         evento = SignInEvent.objects.create(
             user=user if (user is not None and getattr(user, "pk", None)) else None,

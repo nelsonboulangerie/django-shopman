@@ -40,11 +40,13 @@ def casa(db):
     )
     Product.objects.create(sku="PAO", name="Pão", base_price_q=1500, is_published=True, is_sellable=True)
     Customer.objects.create(ref="CLI-ANA", first_name="Ana", phone="+5543999990000")
+    # A comanda carimba quem lançou cada linha: o operador precisa existir.
+    User.objects.create_user("marina", password="x", is_staff=True)
 
 
 @pytest.fixture
 def operator():
-    user = User.objects.create_user("marina", password="x", is_staff=True)
+    user = User.objects.get(username="marina")
     for codename in ("operate_pos", "manage_orders"):
         user.user_permissions.add(Permission.objects.get(codename=codename))
     return user

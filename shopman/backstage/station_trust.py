@@ -126,6 +126,20 @@ def station_ref(request) -> str:
     return next(iter(refs)) if len(refs) == 1 else ""
 
 
+def station_device_id(request) -> str:
+    """O ``TrustedDevice.pk`` da estação desta requisição, ou ``""``.
+
+    ``station_ref`` diz o BALCÃO; dois tablets no mesmo terminal dão o mesmo
+    ref. Este é o DISPOSITIVO. Mesma regra de inequívoco: dois vínculos, nenhum.
+    """
+    devices = {
+        str(device.pk)
+        for nome, device in _present_station_bindings(request)
+        if nome == station_cookie_name(device.subject_id)
+    }
+    return next(iter(devices)) if len(devices) == 1 else ""
+
+
 def _station_cookie_names(request) -> list[str]:
     """Cookies que se apresentam como estação, válidos ou não.
 
