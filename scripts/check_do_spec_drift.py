@@ -19,7 +19,7 @@ com a lista na frente. É de propósito somente-leitura: um script que
     python scripts/check_do_spec_drift.py --app-id <uuid>
     python scripts/check_do_spec_drift.py --spec .do/app.subdomains.yaml
     python scripts/check_do_spec_drift.py --live-spec /tmp/vivo.yaml   # sem doctl
-    python scripts/check_do_spec_drift.py --context shopman-spec-update
+    python scripts/check_do_spec_drift.py --context shopman-do-app-admin
 
 Compara envs (de app e por serviço), domínios, ingress, bancos anexados
 (``databases``, campo a campo) e, por componente, imagem (registry_type,

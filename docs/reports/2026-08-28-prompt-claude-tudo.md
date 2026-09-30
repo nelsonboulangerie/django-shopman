@@ -4,8 +4,8 @@
 > doctl `shopman-alpha-deploy`, que foi removido: o token dele não tem
 > `database:read`, e a DigitalOcean **apaga os campos de `databases` na leitura sem
 > dar erro**. Um `spec get` com ele, aplicado de volta, congelou todo deploy por
-> 21 h em 29-30/09. Hoje: `--context shopman-spec-update` e, antes de qualquer
-> `apps update`, `make deploy-spec-drift context=shopman-spec-update` saindo [OK]
+> 21 h em 29-30/09. Hoje: `--context shopman-do-app-admin` e, antes de qualquer
+> `apps update`, `make deploy-spec-drift context=shopman-do-app-admin` saindo [OK]
 > (`scripts/check_do_spec_drift.py` recusa leitura cega com exit 2). Mantido só
 > como registro histórico.
 

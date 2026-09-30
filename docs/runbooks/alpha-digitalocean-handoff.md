@@ -71,8 +71,8 @@ Estado aplicado:
 - App Platform: `shopman-nelson`.
 - App ID preservado: `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 - Projeto DigitalOcean: `Shopman Alpha`.
-- Contexto `doctl` com token nesta maquina: `shopman-spec-update` (le e escreve
-  o spec, inclusive o bloco `databases`). O antigo `shopman-alpha-deploy` foi
+- Contexto `doctl` com token nesta maquina: `shopman-do-app-admin` (le e escreve
+  o spec, inclusive o bloco `databases`). Ele se chamava `shopman-spec-update` ate 30/09/2026; foi renomeado para nomear o papel, nao o comando perigoso (`apps update`), com o mesmo token. O antigo `shopman-alpha-deploy` foi
   removido do doctl local em 30/09/2026: era token cego (sem `database:read`) e
   era o default silencioso. O default do doctl agora e o contexto vazio
   `default`, que falha alto sem `--context`.
@@ -170,7 +170,7 @@ imagens e cria o deployment (segredo `DIGITALOCEAN_APP_DEPLOY_TOKEN`, nao o doct
 manual, so se o CI estiver fora:
 
 ```bash
-doctl --context shopman-spec-update apps create-deployment \
+doctl --context shopman-do-app-admin apps create-deployment \
   40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --wait
 ```
 
@@ -182,7 +182,7 @@ Para inspecionar ou preparar mudanca futura de dominios/topologia, primeiro
 salvar o spec vivo:
 
 ```bash
-doctl --context shopman-spec-update apps spec get \
+doctl --context shopman-do-app-admin apps spec get \
   40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --format yaml \
   > /tmp/shopman-alpha-live-spec.yaml
 ```
@@ -191,7 +191,7 @@ doctl --context shopman-spec-update apps spec get \
 `shopman-alpha-deploy`, removido desta máquina em 30/09/2026): a DO não dá erro,
 **apaga os campos na leitura**, e o spec sai com `databases` só com `name`. Mandado de volta num
 `apps update`, isso derrubou todo deploy por 21 horas em 29-30/09/2026. Antes de
-qualquer `apps update`: `make deploy-spec-drift context=shopman-spec-update`
+qualquer `apps update`: `make deploy-spec-drift context=shopman-do-app-admin`
 tem que sair [OK].
 
 Nao aplicar `.do/app.alpha-subdomains.yaml` diretamente com

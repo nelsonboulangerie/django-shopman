@@ -59,7 +59,9 @@ evidência informa outro instante.
 
 O ambiente observado está vivo e recebeu a baseline auditada. A cadeia
 `main → Deploy Images → deploy_on_push → deployment ACTIVE → Pre-go-live Smoke`
-foi comprovada. Isso é **produção técnica de software** no sentido de haver um
+foi comprovada. (Desde 30/09/2026 o elo `deploy_on_push` virou UM deployment
+criado pelo próprio Deploy Images, `deploy_mode: single_deployment`; ver
+[deploy.md](../guides/deploy.md).) Isso é **produção técnica de software** no sentido de haver um
 serviço acessível e operado; não significa lançamento oficial, tráfego aprovado
 ou autorização para efeitos externos.
 

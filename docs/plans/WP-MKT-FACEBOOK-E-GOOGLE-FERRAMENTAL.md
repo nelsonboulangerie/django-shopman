@@ -22,7 +22,7 @@ Leitura obrigatória antes de mexer: [marketing-surface-contract.md](../referenc
   falhou por "plataforma desligada" **sai sozinho** quando a flag liga.
 - **A flag vive só no app VIVO.** O spec versionado fica `false`:
   `test_deploy_templates_never_prearm_publication_canary` reprova `true` ali. Mudar o vivo =
-  contexto doctl `shopman-spec-update`, sempre a partir de `doctl apps spec get` desse contexto
+  contexto doctl `shopman-do-app-admin`, sempre a partir de `doctl apps spec get` desse contexto
   (o spec lido pelo contexto de deploy vem SEM os detalhes dos bancos e derrubaria Postgres e
   cache). Conferir depois: contagem de `type: SECRET` igual e `cluster_name` presentes.
 - **Nada público sai sem o "pode publicar" do dono**, com prévia (foto, texto, destino) na mão.

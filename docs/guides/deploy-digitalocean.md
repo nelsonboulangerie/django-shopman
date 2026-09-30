@@ -51,8 +51,19 @@ Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
   os nove Nuxt em `/health/live` (sem chamar o Django). `/ready/` e `/health/ready`
   ficam para smoke e diagnóstico.
 
-O deploy é por **imagens**: o workflow `.github/workflows/deploy-images.yml`
-builda no GitHub Actions e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`, tag por componente); o App Platform assina cada tag com `deploy_on_push` — **publicar a tag nova É o deploy** (merge em `main` = deploy no alpha; build seletivo por componente; `concurrency` sem cancel serializa merges seguidos).
+O deploy é por **imagens**, e o deployment é **um por run**: o workflow
+`.github/workflows/deploy-images.yml` builda no GitHub Actions só os componentes
+alterados e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`,
+tag por componente). Publicar a tag **não** dispara nada: `deploy_on_push` está
+desligado nos oito componentes de imagem do app vivo. Depois que o manifesto prova
+que tudo foi publicado, o job `manifest` cria **um** deployment
+(`POST /v2/apps/{id}/deployments`, causa `manual`, segredo
+`DIGITALOCEAN_APP_DEPLOY_TOKEN`), espera `ACTIVE` e grava no manifesto
+`deploy_mode: single_deployment` com o id; o **Pre-go-live Smoke** confere esse
+deployment. Merge em `main` continua sendo deploy no alpha (~6 min);
+`concurrency` sem cancel serializa merges seguidos. O modo é lido do spec vivo a
+cada run: ligado em todos volta ao modo antigo (um deployment por tag); ligado
+só em parte dos componentes, o run falha.
 
 O `.do/app.alpha-subdomains.yaml` é o **spec de registro/espelho de referência**, NÃO a fonte aplicada. ⚠️ **Nunca** use `doctl apps update --spec` com esse arquivo para subir código: sobrescreve o spec vivo e pode apagar variáveis encriptadas que existem apenas no painel. Para mudança real de env/spec no App Platform, parta de `doctl apps spec get <APP_ID>`, edite preservando os secrets e só então aplique com `doctl apps update`. Atenção: envs `RUN_AND_BUILD_TIME` (ex.: `NUXT_PUBLIC_*`) são assadas no bundle client — mudá-las exige REBUILD da imagem do componente (redeploy), não basta env runtime.
 
@@ -251,15 +262,16 @@ O usuário `shopman` precisa ter permissão de criação no schema `public` do b
 `migrate` com `permission denied for schema public`.
 
 Para subir código novo, **não use doctl**: o merge em `main` dispara o workflow
-`deploy-images.yml` (build → DOCR → tag → `deploy_on_push`) e o App Platform
-redeploya sozinho. O `doctl` aqui serve apenas para mudança de env/spec/topologia
+`deploy-images.yml` (build → DOCR → tag → um deployment criado pelo próprio
+workflow, `deploy_mode: single_deployment`). O `doctl` aqui serve apenas para mudança de env/spec/topologia
 (ver abaixo), nunca para subir código.
 
 Aplicar o spec do repo por cima do app vivo é proibido. Para topologia futura,
 capture o spec vivo e edite esse arquivo capturado.
 
 > ⛔ **Pré-condição de QUALQUER `apps update`:** rode
-> `make deploy-spec-drift context=shopman-spec-update` imediatamente antes.
+> `make deploy-spec-drift context=shopman-do-app-admin` imediatamente antes.
+> (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`), com o mesmo token.)
 > Ele tem que sair **[OK]**, e **exit 2 ("leitura cega") não é OK**.
 >
 > O contexto importa tanto quanto o comando. O token de deploy
@@ -272,8 +284,8 @@ capture o spec vivo e edite esse arquivo capturado.
 > [conferir-spec-digitalocean.md](../runbooks/conferir-spec-digitalocean.md).
 
 ```bash
-make deploy-spec-drift context=shopman-spec-update   # tem que sair [OK]
-doctl --context shopman-spec-update apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
+make deploy-spec-drift context=shopman-do-app-admin   # tem que sair [OK]
+doctl --context shopman-do-app-admin apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
 # Confira que `databases` veio com cluster_name/engine/version (não só `name`).
 # Edite /tmp/spec-vivo-*.yaml preservando os SECRET/EV[...] existentes.
 # Valide contra o app existente; spec validate reprova EV[...] de spec vivo.
@@ -399,7 +411,7 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 2. **Spec/template:** troque `STORE_DOMAIN` pelo domínio real em uma cópia de
    `.do/app.subdomains.yaml` e valide o template com `doctl apps spec validate`.
    Para app vivo existente, não aplique esse template direto: rode
-   `make deploy-spec-drift context=shopman-spec-update`, capture o spec
+   `make deploy-spec-drift context=shopman-do-app-admin`, capture o spec
    vivo com `apps spec get` no mesmo contexto (token que lê databases), porte apenas os deltas, preserve `SECRET/EV[...]`,
    valide com `doctl apps propose --spec /tmp/spec-vivo.yaml --app <APP_ID>` e
    só então faça `apps update` sobre o spec vivo editado.

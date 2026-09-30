@@ -50,8 +50,8 @@ preserve secrets e configuração atual.
 4. Confirmar `/ready/`, `/health/`, menu, SSR, login e superfícies do escopo.
 5. Relacionar manifesto, deployment e smoke na matriz.
 
-O fluxo normal da baseline é `main → Deploy Images → deploy_on_push →
-Pre-go-live Smoke`. Um deploy manual excepcional precisa de registro e da mesma
+O fluxo normal é `main → Deploy Images (publica e cria UM deployment,
+`deploy_mode: single_deployment`) → Pre-go-live Smoke`. Um deploy manual excepcional precisa de registro e da mesma
 rastreabilidade; não pode produzir uma segunda fonte de verdade.
 
 ## 4. Canário autorizado

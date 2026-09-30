@@ -73,8 +73,9 @@ Para a baseline auditada, o fluxo hospedado é:
 1. merge autorizado em `main` dispara o workflow **Deploy Images**;
 2. o workflow publica no DOCR somente os componentes alterados e produz um
    manifesto do run;
-3. os componentes do app DigitalOcean têm `deploy_on_push` ativo e trocam os
-   contêineres ao receber as imagens;
+3. com `deploy_on_push` desligado nos oito componentes de imagem (desde
+   30/09/2026), o próprio workflow cria UM deployment por run e grava
+   `deploy_mode: single_deployment` no manifesto;
 4. o workflow **Pre-go-live Smoke** baixa o manifesto, espera um deployment
    DigitalOcean posterior ficar `ACTIVE` e só então verifica `/ready/`, menu,
    checkout não mutante e SSR.
