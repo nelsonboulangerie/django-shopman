@@ -78,6 +78,9 @@ Superfícies canônicas:
 
 - `availability_for_sku(...)`
 - `availability_for_skus(...)`
+- `availability_for_skus_on_dates(...)` — a mesma leitura para várias datas
+  numa varredura só (hoje + fornadas da fila de espera); cada data devolve o
+  mesmo que `availability_for_skus(target_date=data)`
 - `promise_decision_for_sku(...)`
 - `GET /api/stockman/availability/`
 - `GET /api/stockman/availability/bulk/`

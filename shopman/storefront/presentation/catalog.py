@@ -648,17 +648,9 @@ def _availability_states(
     # ListingItem can pause only the web surface while keeping the card visible.
     listing_sellable = catalog_context.listing_sellable_map(skus, channel_ref)
 
-    # Availability for the storefront scope.
-    avail_map = _batch_availability(skus, channel_ref)
-
-    # Bundles nao tem quant proprio: sua disponibilidade e o min() dos
-    # componentes (o mais escasso limita), senao o card mostraria "Disponivel"
-    # com um componente esgotado. Sobrescreve o raw do bundle antes de resolver.
+    # Availability for the storefront scope (bundles já resolvidos).
     bundle_skus = [p.sku for p in products if getattr(p, "is_bundle", False)]
-    if bundle_skus:
-        avail_map.update(
-            catalog_context.bundle_availability_for_skus(bundle_skus, channel_ref=channel_ref)
-        )
+    avail_map = _batch_availability(skus, channel_ref, bundle_skus=bundle_skus)
 
     states: dict[str, _AvailabilityState] = {}
     for p in products:
@@ -746,11 +738,39 @@ def _active_storefront_promotions(channel_ref: str) -> list[Any]:
     return catalog_context.active_promotions(channel_ref)
 
 
-def _batch_availability(skus: list[str], channel_ref: str) -> dict[str, dict | None]:
+def _batch_availability(
+    skus: list[str],
+    channel_ref: str,
+    *,
+    bundle_skus: list[str] | tuple[str, ...] = (),
+) -> dict[str, dict | None]:
     """Wrapper around ``stockman.availability_for_skus`` that stays silent
     when stockman isn't wired up (keeps projections callable in minimal envs).
+
+    Bundles nao tem quant proprio: sua disponibilidade e o min() dos
+    componentes (o mais escasso limita), senao o card mostraria "Disponivel"
+    com um componente esgotado. O raw do bundle sobrescreve o do mapa, e os
+    componentes entram na MESMA leitura de estoque do cardápio (o pronto de
+    hoje), em vez de uma segunda.
     """
-    return catalog_context.availability_for_skus(skus, channel_ref=channel_ref)
+    bundle_components = (
+        catalog_context.bundle_components_for_skus(list(bundle_skus)) if bundle_skus else {}
+    )
+    avail_map, today_raw = catalog_context.availability_and_today_for_skus(
+        skus,
+        channel_ref=channel_ref,
+        also_today=catalog_context.bundle_component_skus(bundle_components),
+    )
+    if bundle_skus:
+        avail_map.update(
+            catalog_context.bundle_availability_for_skus(
+                list(bundle_skus),
+                channel_ref=channel_ref,
+                expanded=bundle_components,
+                today_availability=today_raw,
+            )
+        )
+    return avail_map
 
 
 def _build_sections(
