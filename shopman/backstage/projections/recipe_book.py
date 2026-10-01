@@ -274,6 +274,10 @@ class RecipeStepProjection:
     target_seconds: int | None
     #: ``target_seconds`` para ler: "45 min", "1 h 30 min". Vazio sem tempo alvo.
     target_display: str
+    #: Temperatura da etapa em °C (inteira ou com uma casa decimal). ``None`` sem temperatura.
+    temperature_celsius: float | None
+    #: ``temperature_celsius`` para ler: "230 °C", "24,5 °C". Vazio sem temperatura.
+    temperature_display: str
     #: Anotação prática da etapa. Vazio quando não há.
     note: str
 
@@ -389,7 +393,7 @@ class CriterionAverageProjection:
 
 @dataclass(frozen=True)
 class VersionRatingProjection:
-    """The 0 to 5 rating of one closed version: averages per criterion and overall."""
+    """The 0 to 5 rating of one version: averages per criterion and overall."""
 
     version_number: int
     version_ref: str
@@ -430,8 +434,7 @@ class RecipeEntryDetailProjection:
     external_references: tuple[ExternalReferenceProjection, ...]
     #: Os critérios ATIVOS, na ordem do Admin: o que a tela de avaliar pergunta.
     rating_criteria: tuple[RatingCriterionProjection, ...]
-    #: Uma por versão FECHADA (publicada ou substituída), mais nova primeiro.
-    #: Rascunho não recebe nota e não aparece aqui.
+    #: Uma por versão (rascunho incluído, D24), mais nova primeiro.
     ratings: tuple[VersionRatingProjection, ...]
 
 
@@ -991,13 +994,11 @@ def _ratings_count_display(count: int) -> str:
 def build_version_ratings(
     ref: str, versions: list[RecipeVersion], *, operator_ref: str = "", criteria=None
 ) -> tuple[VersionRatingProjection, ...]:
-    """A nota de cada versão FECHADA (mais nova primeiro); a de quem pede vem em ``my_score``."""
+    """A nota de cada versão (mais nova primeiro); a de quem pede vem em ``my_score``."""
     criteria = recipe_ratings.active_criteria() if criteria is None else criteria
     summaries = recipe_ratings.summaries(ref, operator_ref=operator_ref, criteria=criteria)
     projections = []
     for version in sorted(versions, key=lambda item: item.number, reverse=True):
-        if version.status == RecipeVersion.Status.DRAFT:
-            continue
         summary = summaries.get(version.number)
         averages = {item.criterion_id: item for item in summary.criteria} if summary else {}
         projections.append(VersionRatingProjection(
@@ -1032,14 +1033,25 @@ def _seconds_display(seconds: int | None) -> str:
     return " ".join(part for part in parts if part)
 
 
+def _celsius_display(celsius: float | None) -> str:
+    """``230`` → ``"230 °C"``; ``24.5`` → ``"24,5 °C"``. Vazio sem temperatura."""
+    if celsius is None:
+        return ""
+    number = int(celsius) if float(celsius).is_integer() else celsius
+    return f"{str(number).replace('.', ',')} °C"
+
+
 def _step_projection(step: dict) -> RecipeStepProjection:
     """Uma etapa gravada (sempre objeto: o ``clean`` da versão normaliza)."""
     seconds = step.get("target_seconds")
+    celsius = step.get("temperature_celsius")
     return RecipeStepProjection(
         name=step["name"],
         instructions=step.get("instructions", ""),
         target_seconds=seconds,
         target_display=_seconds_display(seconds),
+        temperature_celsius=celsius,
+        temperature_display=_celsius_display(celsius),
         note=step.get("note", ""),
     )
 

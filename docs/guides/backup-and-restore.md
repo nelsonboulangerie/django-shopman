@@ -99,7 +99,8 @@ arquivo que as contenha, use `--only` com as abas curadas.
 Entram as ~32 entidades registradas (a lista viva sai de
 `export_backup --only nada` — o erro lista todas): catálogo Offerman completo
 (produtos com `metadata` fiscal/social e `keywords`, listings, preços,
-coleções, componentes), receitas, fornecedores/insumos/conversões/custos,
+coleções, componentes), receitas (fichas, inventário com versões e fontes, e a
+nota das receitas: critérios e avaliações), fornecedores/insumos/conversões/custos,
 canais, regras, promoções/cupons, zonas de entrega, copy, templates, campanhas,
 de-paras do B.I., vocabulário de consumo e salão.
 

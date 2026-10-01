@@ -53,8 +53,6 @@ class RecipeBookError(CraftError):
         "ENTRY_WITHOUT_SKU": "A receita precisa de um SKU de saída para ser publicada.",
         "ITEM_WITHOUT_SKU": "Todo ingrediente precisa de um insumo associado para publicar.",
         "VERSION_NOT_DRAFT": "Só um rascunho pode ser editado ou publicado.",
-        "VERSION_IMMUTABLE": "Versão publicada ou substituída é história: o conteúdo dela não muda.",
-        "VERSION_UNDELETABLE": "Versão publicada ou substituída é história: não se apaga.",
         "PART_WITHOUT_FORMULA": "A parte não tem fórmula conhecida; publique a receita da parte antes.",
         "PART_EXCEEDS_BASE": "A parte contém mais de um ingrediente do que a receita base declara.",
         "ENTRY_ARCHIVED": "A receita está arquivada.",

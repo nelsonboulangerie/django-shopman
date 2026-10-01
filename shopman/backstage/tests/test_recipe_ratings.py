@@ -1,9 +1,9 @@
-"""Nota de receita (D7): critérios editáveis no Admin e a nota 0 a 5 por versão fechada.
+"""Nota de receita (D7): critérios editáveis no Admin e a nota 0 a 5 por versão.
 
 ``PUT /api/v1/backstage/recipes/<ref>/versions/<n>/rating/`` grava a avaliação
 do operador (uma por operador e versão; avaliar de novo substitui), exige uma
-nota inteira de 0 a 5 para cada critério ativo, recusa rascunho (409) e pede só
-a leitura do inventário. A receita traz, por versão fechada, as médias por
+nota inteira de 0 a 5 para cada critério ativo, aceita rascunho (D24) e pede só
+a leitura do inventário. A receita traz, por versão, as médias por
 critério e a geral, só dos critérios ativos, e a nota de quem pediu; o
 inventário traz a média geral da versão atual.
 """
@@ -111,8 +111,8 @@ def test_operators_rate_a_version_and_the_entry_carries_the_averages(client, ana
 
     body = response.json()
     assert [item["name"] for item in body["entry"]["rating_criteria"]] == ["Sabor", "Textura", "Aparência"]
-    # Só versão fechada aparece: a v3 é rascunho.
-    assert [item["version_number"] for item in body["entry"]["ratings"]] == [2, 1]
+    # Toda versão aparece, o rascunho v3 incluído (D24).
+    assert [item["version_number"] for item in body["entry"]["ratings"]] == [3, 2, 1]
     rating = _rating_of(body, 2)
     assert rating["version_ref"] == "baguete@2"
     assert rating["ratings_count"] == 2
@@ -155,11 +155,27 @@ def test_who_rated_and_when_is_recorded(client, ana, entry, criteria):
     assert rating.version_ref == "baguete@1"
 
 
-def test_a_draft_is_not_rated(client, ana, entry, criteria):
+def test_a_draft_is_rated_too(client, ana, entry, criteria):
+    """D24 (dono, 01/10/2026): o rascunho também recebe nota."""
     client.force_login(ana)
-    response = _rate(client, 3, _scores(criteria, 5, 5, 5))
-    assert response.status_code == 409, response.content
-    assert "publique" in response.json()["detail"]
+    response = _rate(client, 3, _scores(criteria, 5, 4, 3))
+    assert response.status_code == 200, response.content
+    rating = _rating_of(response.json(), 3)
+    assert rating["ratings_count"] == 1
+    assert rating["overall_display"] == "4"
+
+
+def test_deleting_a_version_takes_its_ratings_along(client, ana, entry, criteria):
+    """Versão apagada (D11) leva a nota; o rascunho novo, com o mesmo número, nasce sem nota."""
+    client.force_login(ana)
+    assert _rate(client, 3, _scores(criteria, 5, 5, 5)).status_code == 200
+    assert _rate(client, 2, _scores(criteria, 1, 1, 1)).status_code == 200
+    RecipeVersion.objects.get(entry=entry, number=3).delete()
+    assert list(RecipeVersionRating.objects.values_list("version_number", flat=True)) == [2]
+    reborn = _version(entry, RecipeVersion.Status.DRAFT)
+    assert reborn.number == 3
+    assert _rating_of(client.get(f"{LIST_URL}baguete/").json(), 3)["ratings_count"] == 0
+    RecipeEntry.objects.filter(pk=entry.pk).delete()
     assert not RecipeVersionRating.objects.exists()
 
 

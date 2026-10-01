@@ -2,11 +2,14 @@
 
 Cada etapa é um objeto::
 
-    {"name": "Fermentação", "instructions": "Até dobrar de volume.", "target_seconds": 5400, "note": "..."}
+    {"name": "Fermentação", "instructions": "Até dobrar de volume.", "target_seconds": 5400,
+     "temperature_celsius": 26, "note": "..."}
 
 ``name`` é obrigatório; ``instructions`` (o modo de fazer), ``target_seconds``
-(tempo alvo, inteiro maior que zero) e ``note`` (anotação prática) são
-opcionais e só ficam gravados quando têm conteúdo.
+(tempo alvo, inteiro maior que zero), ``temperature_celsius`` (temperatura da
+etapa em °C, inteira ou com uma casa decimal, preenchida só na receita que
+precisa: forno, massa, câmara) e ``note`` (anotação prática) são opcionais e só
+ficam gravados quando têm conteúdo.
 
 ``normalize_steps`` é o funil: os ``clean()`` das duas tabelas passam por ele,
 o ``Recipe.save`` chama ``full_clean`` e o ``RecipeVersion.save`` normaliza as
@@ -22,13 +25,15 @@ tela de execução lê as etapas: levá-las ao chão de fábrica é decisão à 
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import ValidationError
 
 #: Chaves que uma etapa pode ter, na ordem em que são gravadas.
-STEP_KEYS = ("name", "instructions", "target_seconds", "note")
+STEP_KEYS = ("name", "instructions", "target_seconds", "temperature_celsius", "note")
 
 
 def _invalid(number: int, message: str) -> ValidationError:
@@ -62,6 +67,10 @@ def _normalize_step(step: Any, number: int) -> dict:
             raise _invalid(number, "o tempo alvo precisa ser um número inteiro de segundos maior que zero.")
         out["target_seconds"] = seconds
 
+    celsius = step.get("temperature_celsius")
+    if celsius is not None:
+        out["temperature_celsius"] = _celsius(celsius, number)
+
     note = step.get("note")
     if note is not None:
         if not isinstance(note, str):
@@ -69,6 +78,26 @@ def _normalize_step(step: Any, number: int) -> dict:
         if note.strip():
             out["note"] = note.strip()
     return out
+
+
+def _celsius(value: Any, number: int) -> int | float:
+    """Temperatura em °C: número inteiro ou com UMA casa decimal (``24`` ou ``24.5``).
+
+    Número, não texto (``"230 °C"`` é recusado, como o tempo alvo). Valor com
+    casa decimal zerada vira inteiro (``24.0`` grava ``24``). Mais de uma casa é
+    recusado em vez de arredondado em silêncio.
+    """
+    message = "a temperatura precisa ser um número em °C, inteiro ou com uma casa decimal."
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _invalid(number, message)
+    if isinstance(value, int):
+        return value
+    if not math.isfinite(value):
+        raise _invalid(number, message)
+    tenths = Decimal(str(value)) * 10
+    if tenths != tenths.to_integral_value():
+        raise _invalid(number, message)
+    return int(value) if value.is_integer() else value
 
 
 def normalize_steps(value: Any) -> list[dict]:
@@ -85,7 +114,7 @@ def steps_from_names(names: Iterable[str], previous: Iterable[dict] = ()) -> lis
 
     Para editores que só mexem nos nomes (o textarea do Admin, uma linha por
     etapa): renomear, reordenar ou apagar uma linha não pode apagar as
-    instruções, o tempo e a anotação das outras. Nome repetido casa com a
+    instruções, o tempo, a temperatura e a anotação das outras. Nome repetido casa com a
     próxima etapa ainda não usada daquele nome.
     """
     pool: dict[str, list[dict]] = {}

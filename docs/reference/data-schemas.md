@@ -1598,7 +1598,7 @@ backup anterior à migração restaura na forma nova. A migração `craftsman/00
 reescreveu o que estava gravado como texto.
 
 ```
-[{"name": str, "instructions"?: str, "target_seconds"?: int, "note"?: str}]
+[{"name": str, "instructions"?: str, "target_seconds"?: int, "temperature_celsius"?: int | float, "note"?: str}]
 ```
 
 | Chave | Tipo | Descrição |
@@ -1606,15 +1606,16 @@ reescreveu o que estava gravado como texto.
 | `name` | `string` (obrigatório) | Nome da etapa: "Mistura", "Fermentação", "Forno". |
 | `instructions` | `string` | O modo de fazer da etapa. Ausente quando vazio. |
 | `target_seconds` | `int` > 0 | Tempo alvo da etapa, em segundos. Ausente quando não informado. **Não é o `target_seconds` do KDS** (`projections/kds.py`, SLA do chamado): mesmo nome, outro conceito. |
+| `temperature_celsius` | `int` ou `float` (uma casa decimal) | Temperatura da etapa em °C (forno, massa, câmara), D19 de 01/10/2026. Opcional: só na receita que precisa. Número, nunca texto; `24.0` grava `24`; mais de uma casa decimal é recusado. Ausente quando não informada. Nenhum valor vem do rascunho `processo-das-massas-proposta-2026-09-05.md` (D20, trava em `shop/tests/test_seed_sem_processo_das_massas.py`). |
 | `note` | `string` | Anotação prática da etapa. Ausente quando vazia. |
 
 Texto puro na entrada é atalho aceito (`"Mistura"` → `{"name": "Mistura"}`); chave fora das
-quatro, nome vazio, tempo que não seja inteiro positivo ou texto que não seja texto é recusado
+cinco, nome vazio, tempo que não seja inteiro positivo, temperatura que não seja número ou texto que não seja texto é recusado
 apontando a etapa ("Etapa 2: ...").
 
 - **Escrito por:** `publish_version` (copia `RecipeVersion.steps` → `Recipe.steps`, é o escritor
   da ficha pela ADR-027); a API do inventário (`backstage.services.recipe_book._steps`); o
-  textarea "Etapas" do Admin, que edita só os nomes e preserva instruções, tempo e anotação da
+  textarea "Etapas" do Admin, que edita só os nomes e preserva instruções, tempo, temperatura e anotação da
   etapa de mesmo nome (`recipe_steps.steps_from_names`); o seed (lista de nomes, normalizada pelo
   `clean`).
 - **Lido por:** as telas do inventário de receitas no app de Produção (`/recipes/<ref>`,
@@ -1639,23 +1640,25 @@ apontando a etapa ("Etapa 2: ...").
 
 ## RecipeEntry.meta
 
-A receita do inventário (a linhagem). Diferente da `RecipeVersion` publicada, a `RecipeEntry`
-muda: o que é da receita e não de uma fórmula congelada mora aqui.
+A receita do inventário (a linhagem): o que é da receita inteira, e não de uma versão, mora aqui.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `external_references` | `list[{title, url?, note?}]` | `backstage.services.recipe_book.patch_entry` (`PATCH recipes/<ref>/` com a lista inteira; forma em `backstage.services.recipe_external_references.validate`) | `RecipeEntryDetailProjection.external_references` (via `recipe_external_references.read`) | Referências externas (D6, 01/10/2026): livro + página, vídeo, artigo. `title` obrigatório (até 200); `url` só `http`/`https` com host (até 500); `note` até 500; no máximo 30 por receita. Chave vazia não se grava; lista vazia apaga a chave. Da receita, não da versão: a fonte vale para todas as versões, e a versão publicada é imutável (#1308). A leitura descarta link fora da forma (gravado à mão pelo Admin). Anexo de arquivo não mora aqui. |
+| `external_references` | `list[{title, url?, note?}]` | `backstage.services.recipe_book.patch_entry` (`PATCH recipes/<ref>/` com a lista inteira; forma em `backstage.services.recipe_external_references.validate`) | `RecipeEntryDetailProjection.external_references` (via `recipe_external_references.read`) | Fontes (D6, 01/10/2026; na tela, bloco "Fontes", D24): livro + página, vídeo, artigo. A chave segue `external_references`: `sources` colidiria com `RecipeVersion.source` (como a versão foi capturada), e na tela "Referência" é a faixa da literatura. `title` obrigatório (até 200); `url` só `http`/`https` com host (até 500); `note` até 500; no máximo 30 por receita. Chave vazia não se grava; lista vazia apaga a chave. Da receita, não da versão: a fonte vale para todas as versões. Viaja no cofre dentro do `meta` da aba `recipe_entries`. A leitura descarta link fora da forma (gravado à mão pelo Admin). Anexo de arquivo não mora aqui. |
 
 A nota 0 a 5 por critério (D7) **não** mora em JSON: é registro próprio
 (`backstage.RecipeVersionRating` + `RecipeVersionRatingScore`, critérios em
-`backstage.RecipeRatingCriterion`), apontando para a versão fechada por `entry_ref` +
-`version_number`.
+`backstage.RecipeRatingCriterion`), apontando para a versão (rascunho incluído, D24) por
+`entry_ref` + `version_number`. Apagar a versão apaga as notas dela
+(`recipe_ratings.forget_deleted_version`). Critérios e avaliações entram no cofre (D24): abas
+`recipe_rating_criteria` (chave `name`) e `recipe_version_ratings` (chave `entry_ref` +
+`version_number` + `operator_ref`, com a coluna `scores` = `{"<nome do critério>": nota}`).
 
 ## RecipeVersion.meta
 
-Versão publicada ou substituída é imutável no modelo (`save()`, `.update()` e exclusão recusam;
-só o restore do cofre reescreve, por `restoring_recipe_versions()`), então estas chaves são
-evidência: nascem na publicação (ou no bootstrap) e não mudam mais.
+Estas chaves nascem na publicação (ou no bootstrap). Versão publicada ou substituída se edita e
+se apaga como qualquer registro (D11, dono, 01/10/2026: "o padeiro pode fazer o que quiser"); a
+`execution_digest` não é trava, é a régua do "fora de sincronia" entre a versão e a ficha.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|

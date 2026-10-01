@@ -11,10 +11,9 @@ from io import StringIO
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.db import transaction
 from shopman.craftsman import craft
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion, restoring_recipe_versions
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.services import recipe_book
 
 pytestmark = pytest.mark.django_db
@@ -557,11 +556,12 @@ class TestBootstrap:
         assert "0 criadas, 3 puladas" in out.getvalue()
 
 
-# ── Versão fechada é história ────────────────────────────────────────────────
+# ── Versão fechada: o padeiro pode fazer o que quiser (D11) ─────────────────
 
 
-class TestClosedVersionIsImmutable:
-    """A trava mora no modelo: vale para o shell, o seed, o Admin e o ``.update()``."""
+class TestClosedVersionIsEditable:
+    """D11 (dono, 01/10/2026): publicada ou substituída, a versão se edita e se apaga
+    pelos caminhos normais do ORM, inclusive em cascata ao apagar a receita."""
 
     @pytest.fixture
     def published(self, entry, draft):
@@ -573,7 +573,6 @@ class TestClosedVersionIsImmutable:
         ("formula", flour_formula(water=999)),
         ("yield_quantity", Decimal("2")),
         ("yield_unit", "g"),
-        ("steps", ["Outra coisa"]),
         ("origin", {"text": "reescrita"}),
         ("source", {"kind": "import"}),
         ("notes", "nota nova"),
@@ -582,79 +581,48 @@ class TestClosedVersionIsImmutable:
         ("created_by", "outra pessoa"),
         ("meta", {}),
     ])
-    def test_save_refuses_content_change(self, published, field, value):
+    def test_save_writes_content_change(self, published, field, value):
         setattr(published, field, value)
-        with pytest.raises(RecipeBookError) as exc:
-            published.save()
-        assert exc.value.code == "VERSION_IMMUTABLE"
-        assert exc.value.data["fields"] == [field]
-
-    def test_save_with_update_fields_is_refused_too(self, published):
-        published.notes = "só este campo"
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            published.save(update_fields=["notes"])
-
-    def test_save_refuses_moving_to_another_entry(self, published):
-        other = recipe_book.create_entry(ref="outra", name="Outra", output_sku="OUTRA")
-        published.entry = other
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            published.save()
-
-    def test_save_refuses_going_back_to_draft(self, published):
-        published.status = RecipeVersion.Status.DRAFT
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            published.save()
-
-    def test_update_in_bulk_refuses_content_and_any_status_but_superseded(self, published):
-        versions = RecipeVersion.objects.filter(pk=published.pk)
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            versions.update(formula=flour_formula(water=999))
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            versions.update(status=RecipeVersion.Status.DRAFT)
-        published.refresh_from_db()
-        assert published.formula == flour_formula()
-        assert published.status == RecipeVersion.Status.PUBLISHED
-
-    def test_unchanged_save_and_the_supersede_still_pass(self, entry, published):
         published.save()
+        published.refresh_from_db()
+        assert getattr(published, field) == value
+
+    def test_steps_change_is_saved_in_the_canonical_shape(self, published):
+        published.steps = ["Outra coisa"]
+        published.save()
+        published.refresh_from_db()
+        assert published.steps == [{"name": "Outra coisa"}]
+
+    def test_update_in_bulk_writes_content_and_status(self, published):
+        versions = RecipeVersion.objects.filter(pk=published.pk)
+        versions.update(formula=flour_formula(water=999), status=RecipeVersion.Status.DRAFT)
+        published.refresh_from_db()
+        assert published.formula == flour_formula(water=999)
+        assert published.status == RecipeVersion.Status.DRAFT
+
+    def test_superseded_version_is_editable_too(self, entry, published):
         second = recipe_book.create_version(entry, formula=flour_formula(water=720), yield_quantity="1.72",
                                             yield_unit="kg")
         recipe_book.publish_version(second)
-        published.refresh_from_db()
-        assert published.status == RecipeVersion.Status.SUPERSEDED
         superseded = RecipeVersion.objects.get(pk=published.pk)
-        superseded.notes = "reescrevendo a história"
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            superseded.save()
+        assert superseded.status == RecipeVersion.Status.SUPERSEDED
+        superseded.notes = "anotação depois de substituída"
+        superseded.save()
+        superseded.refresh_from_db()
+        assert superseded.notes == "anotação depois de substituída"
 
-    def test_drafts_stay_free(self, draft):
-        draft.notes = "rascunho muda"
-        draft.save()
-        RecipeVersion.objects.filter(pk=draft.pk).update(label="à vontade")
-        draft.refresh_from_db()
-        assert (draft.notes, draft.label) == ("rascunho muda", "à vontade")
-        draft.delete()
-        assert not RecipeVersion.objects.filter(pk=draft.pk).exists()
+    def test_delete_works_on_every_orm_path(self, entry, published):
+        published.delete()
+        assert not RecipeVersion.objects.filter(pk=published.pk).exists()
+        second = recipe_book.create_version(entry, formula=flour_formula(), yield_quantity="1.7",
+                                            yield_unit="kg")
+        recipe_book.publish_version(second)
+        RecipeVersion.objects.filter(pk=second.pk).delete()
+        assert not RecipeVersion.objects.filter(pk=second.pk).exists()
 
-    def test_delete_is_refused_on_every_orm_path(self, entry, published):
-        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
-            published.delete()
-        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
-            RecipeVersion.objects.filter(pk=published.pk).delete()
-        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
-            RecipeEntry.objects.filter(pk=entry.pk).delete()
-        assert RecipeVersion.objects.filter(pk=published.pk).exists()
-
-    def test_only_the_named_restore_path_rewrites(self, published):
-        published.notes = "conteúdo do cofre"
-        with restoring_recipe_versions():
-            published.save()
-        published.refresh_from_db()
-        assert published.notes == "conteúdo do cofre"
-        # Fechado o bloco, a trava volta.
-        published.notes = "fora do restore"
-        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-            published.save()
+    def test_deleting_the_entry_cascades_to_published_versions(self, entry, published):
+        RecipeEntry.objects.filter(pk=entry.pk).delete()
+        assert not RecipeVersion.objects.filter(pk=published.pk).exists()
 
 
 # ── Ficha em sincronia ───────────────────────────────────────────────────────

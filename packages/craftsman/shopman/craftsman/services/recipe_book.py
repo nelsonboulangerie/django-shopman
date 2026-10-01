@@ -193,7 +193,7 @@ def create_version(entry, *, formula: dict, yield_quantity, yield_unit: str, ori
 
 def update_draft(version, *, formula: dict | None = None, yield_quantity=None, yield_unit: str | None = None,
                  steps: list[dict | str] | None = None, notes: str | None = None, label: str | None = None):
-    """Edita um rascunho. Versão publicada ou substituída é imutável."""
+    """Edita um rascunho, o fluxo do inventário. Versão fechada muda por versão nova (ou pelo ORM, D11)."""
     from shopman.craftsman.models import RecipeVersion
 
     if version.status != RecipeVersion.Status.DRAFT:

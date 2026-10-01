@@ -411,6 +411,7 @@ async function confirmArchive() {
                   <li v-for="(step, index) in selected.steps" :key="index">
                     <span class="font-medium">{{ step.name }}</span>
                     <span v-if="step.target_display" class="text-muted-foreground"> · {{ step.target_display }}</span>
+                    <span v-if="step.temperature_display" class="text-muted-foreground"> · {{ step.temperature_display }}</span>
                     <p v-if="step.instructions" class="whitespace-pre-line text-muted-foreground">{{ step.instructions }}</p>
                     <p v-if="step.note" class="whitespace-pre-line text-xs text-muted-foreground">{{ step.note }}</p>
                   </li>

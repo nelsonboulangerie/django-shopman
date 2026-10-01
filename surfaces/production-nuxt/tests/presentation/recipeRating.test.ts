@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   RATING_SCALE,
   initialScores,
-  isRateable,
   missingCriteria,
   overallLabel,
   ratingFor,
@@ -35,14 +34,10 @@ describe("recipe rating", () => {
     expect(RATING_SCALE).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
-  it("finds the rating of a version; a draft is not rateable", () => {
+  it("finds the rating of a version", () => {
     expect(ratingFor([RATED], 2)).toBe(RATED);
     expect(ratingFor([RATED], 3)).toBeNull();
     expect(ratingFor([RATED], null)).toBeNull();
-    expect(isRateable({ status: "published" })).toBe(true);
-    expect(isRateable({ status: "superseded" })).toBe(true);
-    expect(isRateable({ status: "draft" })).toBe(false);
-    expect(isRateable(null)).toBe(false);
   });
 
   it("starts from my own scores, zero included", () => {
