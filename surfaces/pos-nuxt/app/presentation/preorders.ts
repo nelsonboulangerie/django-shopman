@@ -1,8 +1,9 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, os modos Dia | Semana com ‹ › e a data, os filtros em
-// chips combináveis e o "Imprimir N vias" do que está visível. O estado inteiro
+// buscar" sempre no topo, os modos Dia | Semana com ‹ › e a data, os filtros
+// combináveis numa linha (a `FilterBar` do kit) e o "Imprimir N vias" do que
+// está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
 // mesmo lugar e para o kiosk guardar o favorito.
 //
@@ -17,6 +18,7 @@
 // achar que ela sumiu.
 
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type {
   PreorderCard,
   PreorderDay,
@@ -206,9 +208,15 @@ export function listSummary(count: number, totalDisplay: string): string {
   return count > 0 ? `${preorderCountLabel(count)} · ${totalDisplay}` : "";
 }
 
-/** O cabeçalho da coluna da grade: "seg 28/09". Hoje diz que é hoje. */
-export function dayColumnTitle(day: PreorderDay): string {
-  return day.is_today ? `Hoje ${day.day_display}` : `${day.weekday_display} ${day.day_display}`;
+/**
+ * O cabeçalho da coluna da grade: "Ter 29/09". Hoje diz que é hoje SEM perder
+ * o dia da semana: "Hoje, ter 29/09". A maiúscula é daqui, não do CSS
+ * (`capitalize` faria "Hoje, Ter").
+ */
+export function dayColumnTitle(day: Pick<PreorderDay, "is_today" | "weekday_display" | "day_display">): string {
+  const weekday = `${day.weekday_display} ${day.day_display}`.trim();
+  if (day.is_today) return `Hoje, ${weekday}`;
+  return weekday.charAt(0).toUpperCase() + weekday.slice(1);
 }
 
 /** O período vazio, por extenso. */
@@ -384,6 +392,54 @@ export function filterChips(cards: readonly FilterCard[], filters: PreorderFilte
   };
 }
 
+// ── Os filtros na barra de uma linha (a `FilterBar` do operator-kit) ────────
+//
+// A barra é genérica: dimensões com opções e contagem, e o estado como listas.
+// "Todas" não é opção dela: filtro ausente É "Todas", e o X do chip (ou tocar
+// de novo na opção escolhida) volta para lá. O estado da tela continua o de
+// sempre (`PreorderFilters`, na URL); aqui só se traduz entre os dois.
+
+const FILTER_LABELS: Record<keyof PreorderFilters, string> = {
+  fulfillment: "Recebimento",
+  pay: "Pagamento",
+  print: "Via Pedido",
+};
+
+/** "A conferir" só vira opção quando já está escolhido (pelo aviso próprio), para o chip dizer o que filtra. */
+const CHECK_OPTION_LABEL = "A conferir";
+
+export function filterDimensions(cards: readonly FilterCard[], filters: PreorderFilters): FilterDimension[] {
+  const chips = filterChips(cards, filters);
+  const options = <K extends string>(list: FilterChip<K>[]) => list
+    .filter((chip) => chip.key !== "all")
+    .map(({ key, label, count }) => ({ value: key, label, count }));
+  const pay = options(chips.pay);
+  if (filters.pay === "check") pay.push({ value: "check", label: CHECK_OPTION_LABEL, count: checkCount(cards, filters) });
+  return [
+    { id: "fulfillment", label: FILTER_LABELS.fulfillment, type: "single-select", options: options(chips.fulfillment) },
+    { id: "pay", label: FILTER_LABELS.pay, type: "single-select", options: pay },
+    { id: "print", label: FILTER_LABELS.print, type: "single-select", options: options(chips.print) },
+  ];
+}
+
+/** O estado da tela → o da barra (o que é "Todas" fica de fora). */
+export function toActiveFilters(filters: PreorderFilters): ActiveFilters {
+  const active: ActiveFilters = {};
+  for (const key of Object.keys(FILTER_LABELS) as (keyof PreorderFilters)[]) {
+    if (filters[key] !== "all") active[key] = [filters[key]];
+  }
+  return active;
+}
+
+/** O estado da barra → o da tela. Valor desconhecido cai em "Todas", nunca em erro. */
+export function fromActiveFilters(active: ActiveFilters): PreorderFilters {
+  return {
+    fulfillment: oneOf(active.fulfillment, FULFILLMENT_FILTERS, "all"),
+    pay: parsePaymentFilter(active.pay),
+    print: oneOf(active.print, PRINT_FILTERS, "all"),
+  };
+}
+
 /** Quantas estão com o pagamento a conferir, com os outros filtros como estão. */
 export function checkCount(cards: readonly FilterCard[], filters: PreorderFilters): number {
   return cards.filter((c) => c.payment_state === "check" && matchesFulfillment(c, filters.fulfillment) && matchesPrint(c, filters.print)).length;
@@ -442,7 +498,15 @@ export function printPlan(list: Pick<PreorderListResponse, "date_from" | "date_t
 
 // ── Cliente veio buscar ─────────────────────────────────────────────────────
 
-export const SEARCH_PLACEHOLDER = "Cliente veio buscar? Nome, telefone, CPF, endereço ou número";
+/**
+ * O que se digita: exatamente o que a busca do servidor compara
+ * (`backstage/projections/preorders._matches`). O título "Cliente veio
+ * buscar?" já está ao lado; o campo não o repete.
+ */
+export const SEARCH_PLACEHOLDER = "Nome, telefone, CPF ou CNPJ, endereço ou número do pedido";
+
+/** O nome do campo para o leitor de tela: o título e o que se digita, numa frase. */
+export const SEARCH_LABEL = "Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço ou número do pedido";
 
 /** Busca com uma letra casa com meia agenda: a tela pede mais antes de perguntar. */
 export const SEARCH_MIN_CHARS = 2;

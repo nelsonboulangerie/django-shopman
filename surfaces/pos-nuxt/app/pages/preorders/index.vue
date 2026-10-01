@@ -10,9 +10,12 @@
 //   Dia | Semana        — as abas da barra. ‹ › anda um dia ou uma semana, e a
 //                         data escolhe o dia (a semana é a que o contém, de
 //                         segunda a domingo). Tocar no dia da grade abre o Dia.
-//   Filtros             — chips combináveis: recebimento, pagamento, Via Pedido.
-//   Imprimir N vias     — o lote da Via Pedido do que está VISÍVEL. A tela de
-//                         lote ("Via Pedido – painel") morreu aqui.
+//   Filtros             — numa linha (a `FilterBar` do kit, tamanho de toque),
+//                         combináveis: recebimento, pagamento, Via Pedido. Ficam
+//                         no mesmo quadro do período, abaixo do ‹ ›.
+//   Imprimir N vias     — o lote da Via Pedido do que está VISÍVEL, na mesma
+//                         linha dos filtros. A tela de lote ("Via Pedido –
+//                         painel") morreu aqui.
 //
 // O estado inteiro mora na URL (`presentation/preorders.parseView`): a volta do
 // detalhe cai no mesmo lugar, e o kiosk guarda o favorito.
@@ -22,6 +25,7 @@ import { batchNotice, canPrintBatch, isoDate, printCtaLabel } from "~/presentati
 import { preorderDetailPath } from "~/presentation/preorderDetail";
 import {
   PREORDERS_SCOPE_NOTE,
+  SEARCH_LABEL,
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
   canSearch,
@@ -166,38 +170,32 @@ function refreshAll() {
     @refresh="refreshAll"
   >
     <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
+    <!-- Uma linha no desktop: o título diz a tarefa, o campo diz o que se digita. -->
     <section
-      class="grid gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 shadow-sm sm:p-4"
+      class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5 shadow-sm"
       aria-labelledby="preorders-search-title"
       data-preorders-search-block
     >
-      <div class="flex items-start gap-3">
-        <span class="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary" aria-hidden="true">
-          <Icon name="lucide:package-search" class="size-5" />
-        </span>
-        <div class="min-w-0">
-          <h1 id="preorders-search-title" class="font-semibold leading-tight">Cliente veio buscar?</h1>
-          <p class="mt-0.5 text-sm text-muted-foreground">Ache a encomenda sem precisar saber o dia.</p>
-        </div>
-      </div>
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <UiInput
-          ref="searchField"
-          v-model="typed"
-          type="search"
-          inputmode="search"
-          autocomplete="off"
-          class="h-12 min-w-0 flex-1 text-base shadow-sm"
-          :placeholder="SEARCH_PLACEHOLDER"
-          :aria-label="SEARCH_PLACEHOLDER"
-          data-preorders-search
-          @keydown.enter.prevent="openSingle"
-        />
-        <label class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
-          <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
-          Incluir concluídas
-        </label>
-      </div>
+      <h1 id="preorders-search-title" class="flex shrink-0 items-center gap-2 font-semibold leading-tight">
+        <Icon name="lucide:package-search" class="size-5 text-primary" aria-hidden="true" />
+        Cliente veio buscar?
+      </h1>
+      <UiInput
+        ref="searchField"
+        v-model="typed"
+        type="search"
+        inputmode="search"
+        autocomplete="off"
+        class="h-11 min-w-[min(100%,18rem)] flex-1 bg-background text-base shadow-sm"
+        :placeholder="SEARCH_PLACEHOLDER"
+        :aria-label="SEARCH_LABEL"
+        data-preorders-search
+        @keydown.enter.prevent="openSingle"
+      />
+      <label class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
+        <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
+        Incluir concluídas
+      </label>
     </section>
 
     <!-- ── O RESULTADO DA BUSCA toma o lugar do período. ── -->
@@ -294,8 +292,10 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
-      <section class="grid gap-3 rounded-md border bg-card p-3 shadow-sm sm:p-4" aria-labelledby="preorders-period-title">
-        <div class="flex flex-wrap items-start justify-between gap-3">
+      <!-- O PERÍODO e, logo abaixo, os FILTROS com o LOTE: um quadro só, porque o
+           resumo, os filtros e o "Imprimir N vias" falam do mesmo recorte. -->
+      <section class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm" aria-labelledby="preorders-period-title">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
           <UiButton variant="outline" size="icon" :aria-label="steps.prev" data-period-prev @click="update({ date: stepDate(view, -1) })">
             <Icon name="lucide:chevron-left" class="size-5" />
@@ -316,15 +316,42 @@ function refreshAll() {
             Voltar para hoje
           </UiButton>
           </div>
-          <div v-if="summary" class="grid justify-items-start gap-0.5 sm:justify-items-end sm:text-right" data-preorders-summary>
+          <p class="flex min-w-[min(100%,14rem)] flex-1 items-start gap-1.5 text-xs text-muted-foreground" data-preorders-scope>
+            <Icon name="lucide:info" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>{{ PREORDERS_SCOPE_NOTE }}</span>
+          </p>
+          <div v-if="summary" class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:justify-end" data-preorders-summary>
             <p class="text-sm tabular-nums text-muted-foreground">{{ summary }}</p>
             <p v-if="toReceive" class="text-sm font-semibold tabular-nums text-foreground" data-preorders-to-receive>{{ toReceive }}</p>
           </div>
         </div>
-        <p class="flex items-start gap-2 border-t pt-3 text-sm text-muted-foreground">
-          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span>{{ PREORDERS_SCOPE_NOTE }}</span>
-        </p>
+
+        <!-- FILTROS à esquerda, o LOTE à direita, na mesma linha: "Imprimir N vias" imprime o que se vê. -->
+        <PosPreorderFilters
+          v-if="list && list.count"
+          v-model="filters"
+          :cards="allCards"
+          class="border-t pt-2"
+          role="group"
+          aria-label="Refinar e imprimir encomendas"
+        >
+          <template #actions>
+            <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+              <p v-if="!tickets.hasPrinter.value" class="max-w-64 text-right text-xs text-muted-foreground" data-preorders-no-printer>
+                {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
+              </p>
+              <UiButton
+                :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
+                :loading="tickets.printing.value"
+                data-preorders-print
+                @click="printVisible"
+              >
+                <Icon name="lucide:printer" class="size-4" />
+                {{ printCtaLabel(printCount) }}
+              </UiButton>
+            </div>
+          </template>
+        </PosPreorderFilters>
       </section>
 
       <section
@@ -364,25 +391,6 @@ function refreshAll() {
         </section>
 
         <template v-else>
-          <!-- FILTROS à esquerda, o LOTE à direita: "Imprimir N vias" imprime o que se vê. -->
-          <section class="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-card p-3" aria-label="Refinar e imprimir encomendas">
-            <PosPreorderFilters v-model="filters" :cards="allCards" class="min-w-0 flex-1" />
-            <div class="grid shrink-0 justify-items-end gap-1">
-              <UiButton
-                :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
-                :loading="tickets.printing.value"
-                data-preorders-print
-                @click="printVisible"
-              >
-                <Icon name="lucide:printer" class="size-4" />
-                {{ printCtaLabel(printCount) }}
-              </UiButton>
-              <p v-if="!tickets.hasPrinter.value" class="max-w-72 text-right text-xs text-muted-foreground" data-preorders-no-printer>
-                {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
-              </p>
-            </div>
-          </section>
-
           <p
             v-if="notice"
             class="flex items-start gap-2 rounded-md border p-3 text-sm"
@@ -430,16 +438,19 @@ function refreshAll() {
                 :class="weekDay.is_today ? 'border-primary/60 ring-1 ring-primary/10' : 'border-border'"
                 :data-week-day="weekDay.date"
               >
+                <!-- Hoje: o cabeçalho ganha fundo da cor primária e diz "Hoje, ter 29/09";
+                     o dia da semana nunca some. -->
                 <button
                   type="button"
-                  class="grid min-h-11 gap-1 rounded-md border-b border-border pb-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  class="grid min-h-11 gap-1 rounded-md border-b pb-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  :class="weekDay.is_today ? '-mx-1 -mt-1 border-primary/30 bg-primary/10 px-2 pt-2 hover:bg-primary/15' : 'border-border hover:bg-accent'"
                   :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
+                  :aria-current="weekDay.is_today ? 'date' : undefined"
                   data-week-day-open
                   @click="openDay(weekDay.date)"
                 >
-                  <span class="flex items-center justify-between gap-2 text-sm font-semibold capitalize" :class="weekDay.is_today ? 'text-primary' : ''">
+                  <span class="text-sm font-semibold" :class="weekDay.is_today ? 'text-primary' : ''" data-week-day-title>
                     {{ dayColumnTitle(weekDay) }}
-                    <span v-if="weekDay.is_today" class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium normal-case text-primary">Hoje</span>
                   </span>
                   <span class="text-xs tabular-nums text-muted-foreground" data-week-day-total>
                     <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>

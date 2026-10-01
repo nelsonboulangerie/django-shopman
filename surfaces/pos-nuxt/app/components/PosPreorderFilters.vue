@@ -1,81 +1,67 @@
 <script setup lang="ts">
-// Os filtros das Encomendas, em chips combináveis com a contagem de cada um:
-// Recebimento (Todas · Retiradas · Entregas), Pagamento (Todas · A receber ·
-// Pagas, e "Na conta da casa" quando existe) e Via Pedido (Todas · Falta
-// imprimir). Um toque troca a lista; a contagem de cada chip é a do que ele
-// mostraria com os outros filtros como estão (`presentation/preorders`).
+// Os filtros das Encomendas numa linha só: a `FilterBar` do operator-kit, no
+// tamanho de toque do balcão (44 px). "Filtrar" abre Recebimento (Retiradas ·
+// Entregas), Pagamento (A receber · Pagas, e "Na conta da casa" quando existe)
+// e Via Pedido (Falta imprimir), cada opção com a contagem do que ela mostraria
+// com os outros filtros como estão (`presentation/preorders`). O filtro ligado
+// vira chip com X; sem chip, é "Todas". Combinam entre si.
 //
-// Pagamento a conferir não é chip escondido: é aviso próprio, com o gesto de
+// À direita da mesma linha mora o que age sobre o visível (o slot `actions`:
+// o "Imprimir N vias" da tela).
+//
+// Pagamento a conferir não é opção escondida: é aviso próprio, com o gesto de
 // ver só elas — "não sei" nunca some dentro de "a receber" ou de "pagas".
 import {
   checkCount,
   checkPaymentNotice,
-  filterChips,
+  filterDimensions,
+  fromActiveFilters,
+  toActiveFilters,
   type PreorderFilters,
 } from "~/presentation/preorders";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import type { PreorderCard } from "~/types/preorders";
 
 const props = defineProps<{ cards: readonly PreorderCard[] }>();
 const filters = defineModel<PreorderFilters>({ required: true });
 
-const chips = computed(() => filterChips(props.cards, filters.value));
+const dimensions = computed(() => filterDimensions(props.cards, filters.value));
+const active = computed<ActiveFilters>({
+  get: () => toActiveFilters(filters.value),
+  set: (next) => { filters.value = fromActiveFilters(next); },
+});
 const notice = computed(() => checkPaymentNotice(checkCount(props.cards, filters.value)));
 
-const GROUPS = [
-  { key: "fulfillment", label: "Recebimento" },
-  { key: "pay", label: "Pagamento" },
-  { key: "print", label: "Via Pedido" },
-] as const;
-
-function choose(group: keyof PreorderFilters, value: string) {
-  filters.value = { ...filters.value, [group]: value };
+function toggleCheck() {
+  filters.value = { ...filters.value, pay: filters.value.pay === "check" ? "all" : "check" };
 }
 </script>
 
 <template>
-  <div class="grid gap-3" data-preorders-filters>
-    <div class="flex items-center gap-2 text-sm font-semibold">
-      <Icon name="lucide:list-filter" class="size-4 text-muted-foreground" aria-hidden="true" />
-      Mostrar
-    </div>
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <div
-        v-for="group in GROUPS"
-        :key="group.key"
-        class="grid content-start gap-1.5"
+  <div class="grid gap-2" data-preorders-filters>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <FilterBar
+        v-model="active"
+        :dimensions="dimensions"
+        label="Filtrar"
+        touch
+        class="min-w-0 flex-1"
         role="group"
-        :aria-label="`Filtrar por ${group.label}`"
-        :data-preorders-filter="group.key"
-      >
-        <span class="text-xs font-medium text-muted-foreground">{{ group.label }}</span>
-        <div class="flex flex-wrap gap-1.5">
-          <UiFilterChip
-            v-for="chip in chips[group.key]"
-            :key="chip.key"
-            :active="filters[group.key] === chip.key"
-            :count="chip.count"
-            :aria-pressed="filters[group.key] === chip.key"
-            :aria-label="`${group.label}, ${chip.label}: ${chip.count}`"
-            :data-preorders-filter-chip="`${group.key}:${chip.key}`"
-            @click="choose(group.key, chip.key)"
-          >
-            {{ chip.label }}
-          </UiFilterChip>
-        </div>
-      </div>
+        aria-label="Filtrar encomendas"
+      />
+      <slot name="actions" />
     </div>
     <div
       v-if="notice || filters.pay === 'check'"
-      class="flex flex-wrap items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+      class="flex flex-wrap items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
       data-preorders-check-notice
     >
-      <Icon name="lucide:circle-help" class="mt-0.5 size-4 shrink-0" />
+      <Icon name="lucide:circle-help" class="size-4 shrink-0" />
       <span class="min-w-0 flex-1">{{ notice || "Mostrando só as encomendas com o pagamento a conferir." }}</span>
       <UiButton
         variant="outline"
-        size="sm"
         data-preorders-check-toggle
-        @click="choose('pay', filters.pay === 'check' ? 'all' : 'check')"
+        @click="toggleCheck"
       >
         {{ filters.pay === "check" ? "Mostrar todas" : "Mostrar só essas" }}
       </UiButton>
