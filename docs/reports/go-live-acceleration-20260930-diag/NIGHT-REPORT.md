@@ -48,7 +48,7 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 
 | Frente | PR | Estado |
 |---|---|---|
-| Seguimento do #1323: margem da vitrine ao devolver sobra | — | em andamento; com margem 2, reduzir depois de uma quebra ainda pode deixar 0 reservado (já existia antes) |
+| Seguimento do #1323: margem da vitrine ao devolver sobra | #1324 | na fila; revisão independente: seguro (fuzz de 500 cenários). Limite declarado: com dois quants e a validade preferindo o outro, a unidade ainda pode se perder (pede mudança no Core; não vende a mais) |
 | NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
 
