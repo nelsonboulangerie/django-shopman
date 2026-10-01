@@ -127,6 +127,26 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
 
+# Motivos de recusa e cancelamento do Gestor, na ordem e nos grupos que o dono
+# aprovou em 01/10/2026 (D4). O cliente lê cada um como «Motivo: <texto>.»: por
+# isso nenhum termina em ponto (``validate_cancellation_presets`` recusa).
+# Mesma lista em shop/migrations/0085_motivos_de_recusa_aprovados.py, que leva o
+# banco já semeado até ela; ``test_cancellation_presets`` confere que as duas
+# não divergem.
+CANCELLATION_PRESETS = [
+    {"label": "Item indisponível no momento", "group": "Produto"},
+    {"label": "Sem um dos ingredientes hoje", "group": "Produto"},
+    {"label": "Pagamento não aprovado", "group": "Pagamento"},
+    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento"},
+    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato"},
+    {"label": "Não conseguimos falar com você", "group": "Endereço e contato"},
+    {"label": "Alta demanda neste horário", "group": "Capacidade"},
+    {"label": "Sem entregador disponível neste horário", "group": "Capacidade"},
+    {"label": "Fora do horário de atendimento", "group": "Horário"},
+    {"label": "Você pediu o cancelamento", "group": "Cliente"},
+    {"label": "Pedido em duplicidade", "group": "Duplicidade"},
+]
+
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
 # dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
 # sanitária: a readiness de produção só libera quando cada valor tiver sido
@@ -1363,11 +1383,10 @@ class Command(BaseCommand):
                     *BRAND_PROFILES
                 ],
                 **SEARCH_FIELDS,
-                "cancellation_presets": [
-                    "Item indisponível no momento",
-                    "Sem um dos ingredientes hoje",
-                    "Problema técnico no preparo",
-                    "Fora do horário de atendimento"],
+                # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
+                # banco já semeado ao estado novo sem reseed:
+                # shop/migrations/0085_motivos_de_recusa_aprovados.py.
+                "cancellation_presets": CANCELLATION_PRESETS,
                 "kitchen_note_tags": [
                     "Bem assado",
                     "Pouco assado",

@@ -397,19 +397,63 @@ class OperatorOrderPresetTests(TestCase):
     def test_detail_projection_exposes_store_cancellation_presets(self) -> None:
         from django.core.cache import cache
 
-        from shopman.backstage.projections.order_queue import build_operator_order
+        from shopman.backstage.projections.order_queue import CancellationPresetGroupProjection, build_operator_order
         from shopman.shop.models import Shop
 
+        # Lista simples de strings (formato anterior aos grupos) continua válida.
         Shop.objects.create(
             name="Loja Teste",
-            cancellation_presets=["Item indisponível", "  ", "Problema técnico"],
+            cancellation_presets=["Item indisponível", "  ", "Fora de área"],
         )
         cache.clear()  # Shop.load() memoizes the singleton
 
         proj = build_operator_order(_order("PRESET-1", "new"))
 
-        # Blank entries are dropped; the rest are exposed in order for the gestor.
-        self.assertEqual(proj.cancellation_presets, ("Item indisponível", "Problema técnico"))
+        # Blank entries are dropped; the rest are exposed in order, under one
+        # group without heading.
+        self.assertEqual(
+            proj.cancellation_presets,
+            (CancellationPresetGroupProjection(label="", presets=("Item indisponível", "Fora de área")),),
+        )
+
+    def test_detail_projection_groups_presets_in_stored_order(self) -> None:
+        from django.core.cache import cache
+
+        from shopman.backstage.projections.order_queue import (
+            CancellationPresetGroupProjection,
+            build_operator_order,
+        )
+        from shopman.shop.models import Shop
+
+        Shop.objects.create(
+            name="Loja Teste",
+            cancellation_presets=[
+                {"label": "Item indisponível no momento", "group": "Produto"},
+                {"label": "Pagamento não aprovado", "group": "Pagamento"},
+                {"label": "Sem um dos ingredientes hoje", "group": "Produto"},
+                {"label": "  ", "group": "Produto"},
+                "Pedido em duplicidade",
+                {"group": "Sem motivo"},
+                42,
+            ],
+        )
+        cache.clear()
+
+        proj = build_operator_order(_order("PRESET-G", "new"))
+
+        # Grupo aparece onde está o seu primeiro motivo; dentro dele a ordem é a
+        # gravada; vazio e forma desconhecida somem sem derrubar a projeção.
+        self.assertEqual(
+            proj.cancellation_presets,
+            (
+                CancellationPresetGroupProjection(
+                    label="Produto",
+                    presets=("Item indisponível no momento", "Sem um dos ingredientes hoje"),
+                ),
+                CancellationPresetGroupProjection(label="Pagamento", presets=("Pagamento não aprovado",)),
+                CancellationPresetGroupProjection(label="", presets=("Pedido em duplicidade",)),
+            ),
+        )
 
     def test_detail_projection_exposes_store_kitchen_note_tags(self) -> None:
         from django.core.cache import cache

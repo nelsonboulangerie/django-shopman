@@ -1327,6 +1327,38 @@ mecânica do `LoyaltyConfig`): defaults sensatos, `deep_merge` com
 
 ---
 
+## Shop.cancellation_presets
+
+Motivos prontos que o operador escolhe com um toque ao **recusar** ou **cancelar** um
+pedido no Gestor (canais que não são iFood; o iFood usa a lista de códigos dele).
+
+**Campo**: `Shop.cancellation_presets` (JSONField, `shopman/shop/models/shop.py`).
+**Escrito por**: Admin → Loja → Pedidos e entrega → "Motivos de cancelamento e recusa"; `seed`
+(`CANCELLATION_PRESETS`); migração `shop.0085` (leva a lista velha do seed até a aprovada).
+**Lido por**: `backstage.projections.order_queue._cancellation_presets` →
+`OperatorOrderProjection.cancellation_presets` → `OrderReasonDialog.vue`.
+
+Lista; cada item é **um dos dois**:
+
+| Forma | Exemplo | Significado |
+|---|---|---|
+| `string` | `"Pedido em duplicidade"` | Motivo sem grupo (chip sem cabeçalho). |
+| `{"label": str, "group": str}` | `{"label": "Pagamento não aprovado", "group": "Pagamento"}` | Motivo sob o cabeçalho `group`. Só essas duas chaves. |
+
+- **Ordem**: a da lista é a da tela. Os grupos aparecem na ordem do primeiro motivo de cada
+  um; dentro do grupo, a ordem gravada. Motivos sem grupo formam um bloco sem cabeçalho.
+- **Projeção** (`CancellationPresetGroupProjection`): `[{label, presets: [str]}]`, `label`
+  vazio = sem cabeçalho. Vazio e forma desconhecida são descartados; a leitura nunca derruba
+  a projeção.
+- ⚠️ **O cliente lê o motivo como `Motivo: <motivo>.`** (`services/notification.py`,
+  `{status_note}` de `order_cancelled`/`order_rejected`). Por isso **nenhum motivo termina
+  em pontuação** (`.,;:!?…`): `validate_cancellation_presets` recusa no model e no Admin.
+- No Admin, cada linha é `Grupo | Motivo` (ou só `Motivo`).
+- O chip **"Outros"** do Gestor não é motivo e não mora aqui: ele limpa a escolha e abre o
+  texto livre, e com ele selecionado não se envia texto vazio.
+
+---
+
 ## Shop.integrations
 
 Seleção de adapters por tipo. Sobreescreve `settings.py` sem exigir redeploy.

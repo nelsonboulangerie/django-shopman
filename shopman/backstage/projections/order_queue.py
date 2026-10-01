@@ -138,6 +138,14 @@ class AwaitingWorkOrderProjection:
 
 
 @dataclass(frozen=True)
+class CancellationPresetGroupProjection:
+    """Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
+
+    label: str
+    presets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EquipmentOptionProjection:
     """Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo)."""
 
@@ -446,7 +454,7 @@ class OperatorOrderProjection:
     gift_recipient_phone: str
     gift_message: str
     gift_hide_values: bool
-    cancellation_presets: tuple[str, ...]
+    cancellation_presets: tuple[CancellationPresetGroupProjection, ...]
     kitchen_note_tags: tuple[str, ...]
     # Quem é este cliente (WP-360): recorrência, recência, ticket, favorito e o
     # que o cadastro sabe. ``None`` quando o pedido não tem cliente identificado
@@ -985,21 +993,32 @@ def _courier_block(order: Order) -> dict | None:
         return None
 
 
-def _cancellation_presets() -> tuple[str, ...]:
-    """Store-configured reject/cancel justification presets (Admin/Unfold).
+def _cancellation_presets() -> tuple[CancellationPresetGroupProjection, ...]:
+    """Store-configured reject/cancel justification presets (Admin/Unfold), grouped.
 
     The operator injects one with a tap in the gestor; the chosen text is sent to
     the customer in the cancellation notification. Read from the Shop singleton;
-    never fails the projection.
+    never fails the projection. Order is the stored order: groups appear where
+    their first preset is, presets keep their order inside the group. Presets
+    without a group form groups with an empty ``label`` (no heading).
     """
     try:
         from shopman.shop.models import Shop
+        from shopman.shop.models.shop import cancellation_preset_entries
 
-        presets = Shop.load().cancellation_presets or []
+        entries = cancellation_preset_entries(Shop.load().cancellation_presets or [])
     except Exception:
         logger.debug("orders.cancellation_presets_read_failed", exc_info=True)
         return ()
-    return tuple(str(p).strip() for p in presets if str(p).strip())
+    grouped: dict[str, list[str]] = {}
+    for group, label in entries:
+        bucket = grouped.setdefault(group, [])
+        if label not in bucket:
+            bucket.append(label)
+    return tuple(
+        CancellationPresetGroupProjection(label=group, presets=tuple(presets))
+        for group, presets in grouped.items()
+    )
 
 
 def _kitchen_note_tags() -> tuple[str, ...]:
