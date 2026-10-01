@@ -423,14 +423,25 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 
 ## Media
 
-Arquivos estáticos ficam resolvidos pelo build + WhiteNoise. Arquivos de mídia
-enviados por usuários/admin ainda não devem depender do filesystem efêmero da
-App Platform para piloto público. Para comércio real, a próxima decisão é:
-DigitalOcean Spaces/S3-compatible storage ou outro storage persistente para
-`MEDIA_ROOT`.
+Arquivos estáticos ficam resolvidos pelo build + WhiteNoise. Arquivos de usuário
+(foto de receita, anexos) não podem morar no disco da App Platform: o contêiner
+não tem disco persistente e o arquivo some no próximo deploy.
 
-Até essa decisão, staging técnico deve usar apenas assets versionados/seedados
-ou aceitar que uploads manuais sejam descartáveis.
+Decisão (D-010, 01/10/2026): **Cloudflare R2**, fora da DO. O código lê a flag
+`SHOPMAN_MEDIA_STORAGE` (vazia = disco local, como sempre; `r2` = R2) e, com
+`r2`, exige `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` e
+`R2_SECRET_ACCESS_KEY` (opcional `R2_URL_EXPIRE_SECONDS`, padrão 3600). Faltando
+alguma, o boot cai listando o que falta. Ver `config/media_storage.py` e
+[settings.md](../reference/settings.md#arquivos-de-usuário-cloudflare-r2).
+
+Essas envs **não** estão nos specs versionados de `.do/` de propósito: o vivo
+ainda não as tem, e o drift acusaria. Quando o dono entregar bucket e token
+([passo a passo](../runbooks/r2-passo-a-passo-do-dono.md)), elas entram no
+painel da DO como segredo (Encrypt) em App-Level Environment Variables (valem
+para web, workers e release), e só então, com a palavra dele, `SHOPMAN_MEDIA_STORAGE=r2`. Depois de
+ligado no vivo, acrescente as chaves aos specs versionados com `EV[...]`.
+
+Até lá, uploads manuais seguem descartáveis.
 
 ## Critério de Pronto
 

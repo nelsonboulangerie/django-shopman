@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from config.media_storage import media_storage
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv(Path(BASE_DIR) / ".env")
@@ -572,10 +574,11 @@ _staticfiles_storage_backend = os.environ.get("DJANGO_STATICFILES_STORAGE") or (
     if not DEBUG
     else "django.contrib.staticfiles.storage.StaticFilesStorage"
 )
+# Arquivos de USUÁRIO: disco local por padrão; Cloudflare R2 com
+# SHOPMAN_MEDIA_STORAGE=r2 (D6, 01/10/2026). Ligado sem credencial, o boot cai com
+# ImproperlyConfigured listando as envs que faltam. Ver config/media_storage.py.
 STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
+    "default": media_storage(),
     "staticfiles": {
         "BACKEND": _staticfiles_storage_backend,
     },

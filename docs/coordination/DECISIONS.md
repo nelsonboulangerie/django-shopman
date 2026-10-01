@@ -542,3 +542,33 @@ capacidade de testar): **Pix → `payment_efi` com `EFI_SANDBOX=true`** +
 `SHOPMAN_EXPOSE_MOCK_CAPTURE=false`. `mock_capture_allowed`
 (`shopman/shop/services/payment.py:1891-1919`) exige que o adapter efetivo do método **seja** o
 simulado, então o botão fecha **por construção** e o alpha passa a ensaiar o adapter real.
+
+---
+
+## D-010 · Cloudflare R2 para arquivos de usuário
+
+- **Estado:** `EM_EXECUCAO` · **Dono:** Pablo (operação) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-15
+
+**Contexto.** O contêiner da DigitalOcean não tem disco persistente e o spec não declara volume
+nem Spaces: arquivo salvo hoje some no próximo deploy, e a foto que o `/recipes/new` manda
+evapora (`docs/reports/go-live-acceleration-20260930-diag/PENDING-DECISIONS.md`, D6). As
+opções eram DO Spaces, volume, ou só links externos (este último já entrou no #1332).
+
+**Decisão do dono:** Cloudflare R2 (fala a API do S3) para os arquivos de usuário. Não é
+componente novo na DO, e respeita a regra da casa sobre custo da conta DO.
+
+**Consequência.**
+- O código está pronto e **desligado**: `SHOPMAN_MEDIA_STORAGE` vazio ou `local` mantém o disco
+  de hoje; `SHOPMAN_MEDIA_STORAGE=r2` troca `STORAGES["default"]` por `S3Storage` no endpoint
+  `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`, região `auto`.
+- Envs lidas: `SHOPMAN_MEDIA_STORAGE`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY` e, opcional, `R2_URL_EXPIRE_SECONDS` (padrão 3600).
+- Bucket **privado**, link assinado com validade (o R2 não tem ACL por objeto); arquivo com o
+  mesmo nome não sobrescreve. Ligado sem credencial, o boot cai com `ImproperlyConfigured`
+  listando o que falta, nunca volta em silêncio ao disco.
+- O estático segue no WhiteNoise, sem mudança.
+- Ligar no alpha pede: o dono criar bucket e token (`docs/runbooks/r2-passo-a-passo-do-dono.md`),
+  colar os segredos no painel da DO, e a palavra dele para pôr a flag em `r2`.
+
+**Prova.** PR `feat/storage-r2-desligado`; `config/settings.py:581` (`"default": media_storage()`),
+`config/media_storage.py:55-103`, testes em `shopman/shop/tests/test_media_storage.py`.
