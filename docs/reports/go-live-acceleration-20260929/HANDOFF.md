@@ -55,19 +55,74 @@ O cache de borda resolveu o **anônimo**. O que **não** foi resolvido é o cust
 `O(linhas de stockman_quant)`, não O(SKUs). **Análise completa e medida:**
 `docs/reports/go-live-acceleration-20260929/13-hot-path-projecao.md` — não refaça.
 
-Ordem sugerida (P1 e P6 já foram feitos):
+### ATUALIZAÇÃO 2026-09-30 ~22:00 UTC — parte segura ENTREGUE (PR #1295, na fila)
+
+P3 + P8 + P4 feitos, **nada em `packages/`**. Medição **local** (a de produção sai depois do deploy):
+
+| | antes | depois |
+|---|---|---|
+| `menu/` consultas | 93 | **65** |
+| `home/` consultas | 97 | **57** |
+| `shell/` consultas | 4 | 2 |
+| consultas a `shop_channel` | menu 9 / home 11 | **2 / 2** |
+
+**Contrato do `home/` provado intacto:** 0 diferenças em **14.513 campos** contra 5 payloads do main.
+E existe um teste que **falha se a home voltar a chamar `build_catalog`** — **não desfaça esse teste**.
+De carona: a promoção ignorava o prefetch dos canais e fazia 1 consulta por promoção.
+
+**MEDIDO EM PRODUÇÃO** (30/09, medianas de 5 amostras; deploy `405e3f25` ACTIVE às 23:17 UTC,
+causa `manual` — **o caminho por push funciona**):
+
+| | antes | depois |
+|---|---|---|
+| `home/` TTFB | 3,13 s | **~1,29 s** ✅ |
+| `menu/` TTFB | 2,63 s | 2,51 s |
+| `menu/` projection | 2.292 ms | 2.155 ms |
+| `menu/` availability | 1.395 ms | 1.294 ms |
+| `menu/` db | 396 ms | 292 ms |
+| `menu/` query_count | 83 | **55** |
+
+O `response_bytes` ficou **idêntico** (136.681 B antes e depois) — prova em produção de que o JSON
+não mudou. E a produção tinha **83** consultas, não as 93 da bancada.
+
+**O `menu/` quase não caiu (−6% de tempo, com −34% de consultas)** porque o que resta é a
+**disponibilidade: ~1,3 s, 60% da projeção**. Isso é o **P2, no Core** — é o próximo grande ganho.
+
+---
+
+## ⛔ P7 — NÃO FAÇA (provado perigoso em 30/09)
+
+A recomendação de aplicar `_quantity__gt=0` em `tracked_skus`
+(`packages/stockman/.../services/availability.py:432`) **estava ERRADA** — veio do relatório 13 e foi
+refutada por quem tentou executá-la.
+
+Com o filtro, **um SKU esgotado deixa de ser "rastreado"** (o quant zerado nunca é apagado), e o gate
+aprova SKU não rastreado com disponível `999999` — **venderia sem limite justamente o que acabou de
+esgotar**. O executor provou na bancada e deixou a trava
+`shopman/shop/tests/test_sold_out_sku_stays_tracked.py`, que reprova com o filtro aplicado.
+**Não remova essa trava e não reaplique o filtro.** Resolver isso exige a frente do Core.
+
+## ❌ P9 — NÃO VALE A PENA (medido)
+
+O laço por item custa **~1,5 ms por request**, não os 100–250 ms que o relatório 13 estimou.
+Medido com profiler. O custo real está na disponibilidade.
+
+🔎 **Descoberta fora do escopo, para a próxima frente:** **com sacola**, `home/` e `menu/` fazem
+**~200 consultas**, e o custo está na **projeção da sacola**, não no catálogo. Isso **não** está no
+relatório 13.
+
+Ordem sugerida (P1, P6, P3, P8 e P4 já foram feitos):
 
 | # | Ação | Ganho | Risco |
 |---|---|---|---|
-| **P3** | `home/` para de construir o catálogo para guardar 3 cards (`home.py:379`) | **−2,0 a −2,5 s** | médio-baixo |
-| **P8** | Memo de `ChannelConfig.for_channel`/`is_channel_active` por request | −5 consultas · limpa 100.974 seq scans/dia | baixo |
-| **P4** | `published_products_by_collection`: 1 consulta + agrupamento Python | −27 consultas | baixo |
 | **P7/P9** | `tracked_skus` com `_quantity__gt=0` · higiene do laço por item | −100 a −250 ms | baixo |
-| **P2** | Disponibilidade 1× por request (waitlist re-chama o batch por data; bundle faz 3ª passada) | **−0,9 a −1,3 s** | **ALTO — é Core** |
+| **P2** | Disponibilidade 1× por request (waitlist re-chama o batch por data; bundle faz 3ª passada) | **−0,9 a −1,3 s** — `availability` mede ~1,4 s em produção | **ALTO — é Core** |
+| **NOVO** | Projeção da sacola (~200 consultas com sacola) | não medido | a medir |
 | P5 | Cortar duplicação do payload (120 cópias de card; 85 KB de 135 KB são `sections`) | −100 a −200 ms | médio (BE+FE atômico) |
 
-**Comece por P3 + P8 + P4** — são os maiores com menor risco, e não tocam `packages/`.
-**P2 toca o Core** e exige revisão e `make test-stockman`.
+**Antes de atacar: MEÇA a produção depois que o #1295 entrar.** O ganho de P3+P8+P4 pode já ter
+comido parte de P2 — e não se otimiza o que não se mediu.
+**P2 toca o Core** e exige revisão própria e `make test-stockman`.
 
 ## 5. Outras frentes abertas (não começadas)
 
