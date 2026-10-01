@@ -291,7 +291,7 @@ envs:
   type: GENERAL
 - key: DATABASE_CONN_MAX_AGE
   scope: RUN_TIME
-  value: '60'
+  value: '0'
   type: GENERAL
 - key: DATABASE_DISABLE_SERVER_SIDE_CURSORS
   scope: RUN_TIME
