@@ -25,8 +25,14 @@ BATCH_SIZE = 500
 
 
 def _as_objects(steps, *, label):
+    if steps is None:
+        return []
+    if not isinstance(steps, list):
+        # Texto solto aqui viraria uma etapa por LETRA no laço abaixo; objeto,
+        # uma etapa por chave. Nenhum dos dois é etapa: para gritando.
+        raise ValueError(f"{label}: etapas não são lista ({type(steps).__name__}: {steps!r}).")
     out = []
-    for index, step in enumerate(steps or []):
+    for index, step in enumerate(steps):
         if isinstance(step, dict):
             out.append(step)
         elif isinstance(step, str):

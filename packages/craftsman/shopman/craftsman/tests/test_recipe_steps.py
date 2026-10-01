@@ -231,5 +231,13 @@ class TestMigration:
         with pytest.raises(ValueError, match="etapa 2"):
             self.migration._as_objects(["Mistura", 42], label="Recipe 7")
 
+    def test_steps_that_are_not_a_list_stop_the_migration(self):
+        # Texto solto viraria uma etapa por letra; objeto, uma por chave.
+        with pytest.raises(ValueError, match="não são lista"):
+            self.migration._as_objects("Mistura, Forno", label="Recipe 7")
+        with pytest.raises(ValueError, match="não são lista"):
+            self.migration._as_objects({"name": "Mistura"}, label="Recipe 7")
+        assert self.migration._as_objects(None, label="x") == []
+
     def test_backwards_keeps_the_names(self):
         assert self.migration._as_names([{"name": "Sova", "note": "x"}, {"name": "Forno"}], label="x") == ["Sova", "Forno"]
