@@ -27,6 +27,7 @@ export type {
   FormulaWarningProjection,
   IngredientOptionProjection,
   KindOptionProjection,
+  QualityShareProjection,
   RecipeBookAccessProjection,
   RecipeBookListProjection,
   RecipeCaptureDraftProjection,
@@ -36,8 +37,11 @@ export type {
   RecipeEntryCardProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeUsageProjection,
   RecipeVersionProjection,
   ReferenceRangeProjection,
+  UsageCaveatProjection,
+  VersionUsageProjection,
 } from "~/generated/recipeBookContract";
 
 // ── Vocabulário estreitado (o backend manda `str`) ──────────────────────────
@@ -77,6 +81,16 @@ export type FormulaUnit = "g" | "kg" | "ml" | "L" | "un";
 export type PartKind = "preferment" | "autolyse" | "soaker" | "old_dough";
 
 export type YieldUnit = "kg" | "g" | "un" | "L" | "ml";
+
+/** `RecipeUsageProjection.bake_loss_basis`: "" = receita sem ficha ativa. */
+export type BakeLossBasis = "" | "house_default" | "estimated" | "weighed";
+
+/** Avisos que viajam com o uso por versão: o que os números NÃO medem. */
+export type UsageCaveatCode =
+  | "loss_is_residual"
+  | "unversioned_not_attributed"
+  | "bake_loss_house_default"
+  | "bake_loss_estimated";
 
 // ── Payload de escrita: `RecipeVersion.formula` (§3) ────────────────────────
 

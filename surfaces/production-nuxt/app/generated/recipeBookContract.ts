@@ -127,6 +127,50 @@ export interface RecipeVersionProjection {
   origin: Record<string, unknown>;
 }
 
+/** A warning that travels with the usage numbers (what they do NOT measure). */
+export interface UsageCaveatProjection {
+  code: string;
+  message: string;
+}
+
+/** Units of one quality grade among a version's executed batches. */
+export interface QualityShareProjection {
+  grade_ref: string;
+  label: string;
+  quantity_display: string;
+  share_display: string;
+}
+
+/** What the house produced with one version (or with no version stamp). */
+export interface VersionUsageProjection {
+  version_ref: string;
+  version_number: number | null;
+  is_versioned: boolean;
+  label: string;
+  batches: number;
+  batches_display: string;
+  planned_display: string;
+  finished_display: string;
+  loss_display: string;
+  yield_pct: string;
+  yield_display: string;
+  avg_loss: string;
+  avg_loss_display: string;
+  loss_pct_display: string;
+  summary_display: string;
+  quality: QualityShareProjection[];
+}
+
+/** Executed batches of a recipe entry, by version, read from the work orders. */
+export interface RecipeUsageProjection {
+  date_from: string;
+  date_to: string;
+  bake_loss_basis: string;
+  caveats: UsageCaveatProjection[];
+  versions: VersionUsageProjection[];
+  unversioned: VersionUsageProjection | null;
+}
+
 /** A recipe entry with its versions (newest first). */
 export interface RecipeEntryDetailProjection {
   ref: string;
@@ -141,6 +185,7 @@ export interface RecipeEntryDetailProjection {
   ficha_ref: string;
   execution_in_sync: boolean;
   versions: RecipeVersionProjection[];
+  usage: RecipeUsageProjection;
 }
 
 /** One ingredient row of a version comparison. */
