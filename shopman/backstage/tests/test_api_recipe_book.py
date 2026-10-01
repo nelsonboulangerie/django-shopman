@@ -368,17 +368,27 @@ def test_patch_draft_steps_accepts_text_and_objects_and_serves_objects(client, e
         "Autólise",
         "",
         {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400, "note": ""},
+        {"name": "Fermentação", "temperature_celsius": 24.5},
+        {"name": "Forno", "target_seconds": 1500, "temperature_celsius": 230},
     ]
     response = _patch(client, url, {"steps": steps})
     assert response.status_code == 200, response.content
+    no_temperature = {"temperature_celsius": None, "temperature_display": ""}
     assert response.json()["version"]["steps"] == [
-        {"name": "Autólise", "instructions": "", "target_seconds": None, "target_display": "", "note": ""},
+        {"name": "Autólise", "instructions": "", "target_seconds": None, "target_display": "", **no_temperature,
+         "note": ""},
         {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400,
-         "target_display": "1 h 30 min", "note": ""},
+         "target_display": "1 h 30 min", **no_temperature, "note": ""},
+        {"name": "Fermentação", "instructions": "", "target_seconds": None, "target_display": "",
+         "temperature_celsius": 24.5, "temperature_display": "24,5 °C", "note": ""},
+        {"name": "Forno", "instructions": "", "target_seconds": 1500, "target_display": "25 min",
+         "temperature_celsius": 230, "temperature_display": "230 °C", "note": ""},
     ]
     assert RecipeVersion.objects.get(entry=entry, number=1).steps == [
         {"name": "Autólise"},
         {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400},
+        {"name": "Fermentação", "temperature_celsius": 24.5},
+        {"name": "Forno", "target_seconds": 1500, "temperature_celsius": 230},
     ]
 
 
@@ -391,6 +401,9 @@ def test_patch_draft_refuses_an_invalid_step_naming_it(client, editor, entry):
     assert body["field"] == "steps"
     assert body["detail"].startswith("Etapa 2:")
     assert _patch(client, url, {"steps": {"name": "Sova"}}).json()["field"] == "steps"
+    refused = _patch(client, url, {"steps": [{"name": "Forno", "temperature_celsius": "230 °C"}]})
+    assert refused.status_code == 400
+    assert refused.json()["detail"].startswith("Etapa 1: a temperatura")
 
 
 def test_patch_draft_then_publish_makes_it_immutable(client, editor, entry):

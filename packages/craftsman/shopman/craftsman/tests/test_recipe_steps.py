@@ -43,6 +43,22 @@ class TestNormalize:
             {"name": "Forno"},
         ]
 
+    @pytest.mark.parametrize("given, stored", [
+        (230, 230),
+        (24.5, 24.5),
+        (26.0, 26),
+        (-18, -18),
+        (0, 0),
+    ])
+    def test_temperature_is_an_optional_typed_celsius(self, given, stored):
+        """D19 (dono, 01/10/2026): temperatura em °C, inteira ou decimal, só na receita que precisar."""
+        [step] = normalize_steps([{"name": "Forno", "temperature_celsius": given}])
+        assert step == {"name": "Forno", "temperature_celsius": stored}
+        assert type(step["temperature_celsius"]) is type(stored)
+
+    def test_without_temperature_the_key_is_not_stored(self):
+        assert normalize_steps([{"name": "Forno", "temperature_celsius": None}]) == [{"name": "Forno"}]
+
     def test_none_and_tuple(self):
         assert normalize_steps(None) == []
         assert normalize_steps(("Mistura",)) == [{"name": "Mistura"}]
@@ -56,6 +72,12 @@ class TestNormalize:
         ([{"name": "Sova", "target_seconds": "600"}], "tempo alvo"),
         ([{"name": "Sova", "target_seconds": 1.5}], "tempo alvo"),
         ([{"name": "Sova", "target_seconds": True}], "tempo alvo"),
+        ([{"name": "Forno", "temperature_celsius": "230 °C"}], "temperatura"),
+        ([{"name": "Forno", "temperature_celsius": "230"}], "temperatura"),
+        ([{"name": "Forno", "temperature_celsius": True}], "temperatura"),
+        ([{"name": "Forno", "temperature_celsius": 24.55}], "temperatura"),
+        ([{"name": "Forno", "temperature_celsius": float("nan")}], "temperatura"),
+        ([{"name": "Forno", "temperature_celsius": float("inf")}], "temperatura"),
         ([{"name": "Sova", "instructions": 42}], "instruções"),
         ([{"name": "Sova", "note": ["x"]}], "anotação"),
         ([42], "texto ou um objeto"),
@@ -81,6 +103,13 @@ class TestStepsFromNames:
             {"name": "Forno"},
             {"name": "Sova", "instructions": "Até o ponto de véu.", "note": "A masseira nova esquenta mais."},
             {"name": "Autólise", "target_seconds": 2400},
+        ]
+
+    def test_renaming_others_keeps_the_temperature(self):
+        previous = normalize_steps([{"name": "Forno", "target_seconds": 1500, "temperature_celsius": 230}])
+        assert steps_from_names(["Pesagem", "Forno"], previous) == [
+            {"name": "Pesagem"},
+            {"name": "Forno", "target_seconds": 1500, "temperature_celsius": 230},
         ]
 
     def test_repeated_name_matches_the_next_unused_step(self):

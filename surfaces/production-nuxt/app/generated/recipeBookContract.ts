@@ -114,6 +114,8 @@ export interface RecipeStepProjection {
   instructions: string;
   target_seconds: number | null;
   target_display: string;
+  temperature_celsius: number | null;
+  temperature_display: string;
   note: string;
 }
 
@@ -207,7 +209,7 @@ export interface CriterionAverageProjection {
   my_score: number | null;
 }
 
-/** The 0 to 5 rating of one closed version: averages per criterion and overall. */
+/** The 0 to 5 rating of one version: averages per criterion and overall. */
 export interface VersionRatingProjection {
   version_number: number;
   version_ref: string;

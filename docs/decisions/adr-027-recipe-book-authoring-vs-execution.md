@@ -60,8 +60,11 @@ Duas opções foram consideradas:
 ## Consequências
 
 **Positivas** — a ficha de execução fica intocada e continua sagrada; rascunho e receita
-sem SKU não vazam para planejamento nem para o estoque; versão é história de verdade
-(imutável, com origem); a matemática tem um dono e um teste; a superfície não faz conta.
+sem SKU não vazam para planejamento nem para o estoque; versão é história com origem
+(emenda D11, 01/10/2026: o dono decidiu que "o padeiro pode fazer o que quiser", e versão
+publicada ou substituída se edita e se apaga como qualquer registro; publicar continua sendo
+o único escritor da ficha, e a impressão digital continua denunciando a ficha fora de
+sincronia); a matemática tem um dono e um teste; a superfície não faz conta.
 
 **Negativas** — dois modelos para "receita" exigem disciplina de vocabulário (na tela:
 **receita** = entry, **versão** = version, **ficha** = Recipe de execução); a ficha e a

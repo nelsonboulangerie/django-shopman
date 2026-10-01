@@ -87,6 +87,10 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     rtat = Product.objects.get(sku="RTAT")
     assert (rtat.name, rtat.base_price_q) == ("Ratatouille 90g", 1800)
     assert "price_tbd" not in rtat.metadata
+    # D20: as etapas das massas no seed são só nomes; o rascunho de 05/09 não entra.
+    from shopman.shop.tests.test_seed_sem_processo_das_massas import assert_seed_steps_are_not_the_proposal
+
+    assert_seed_steps_are_not_the_proposal()
 
     croissant_history = [
         item

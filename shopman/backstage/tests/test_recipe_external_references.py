@@ -1,4 +1,4 @@
-"""Referências externas da receita (D6): ``PATCH recipes/<ref>/`` com ``external_references``.
+"""Fontes da receita (D6; "Fontes" na tela, D24): ``PATCH recipes/<ref>/`` com ``external_references``.
 
 Moram em ``RecipeEntry.meta["external_references"]``, são da receita (não da
 versão), a lista inteira se substitui, a forma é validada na porta (título
@@ -96,7 +96,7 @@ def test_editor_adds_and_removes_references_and_the_rest_of_meta_survives(client
 
 
 def test_references_belong_to_the_entry_not_to_the_published_version(client, editor, entry):
-    """Acrescentar referência depois de publicar não toca a versão (imutável, #1308)."""
+    """Acrescentar fonte depois de publicar não toca a versão: a fonte é da receita inteira."""
     version = craftsman.create_version(
         entry, formula={"anchor": {"kind": "total"}, "items": [], "parts": []}, yield_quantity=1, yield_unit="g",
     )

@@ -116,10 +116,10 @@ describe("useRecipeEntry", () => {
 
   it("a refused rating toasts the server message", async () => {
     env.fetchData.value = { entry: ENTRY };
-    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "Rascunho não recebe nota: publique a versão antes de avaliar." } });
+    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "Nenhum critério de nota ativo. Ative um no Admin." } });
     const result = await useRecipeEntry("pao-campanha").rateVersion(3, { "1": 5 });
     expect(result.ok).toBe(false);
-    expect(env.sonner.error).toHaveBeenCalledWith("Rascunho não recebe nota: publique a versão antes de avaliar.");
+    expect(env.sonner.error).toHaveBeenCalledWith("Nenhum critério de nota ativo. Ative um no Admin.");
   });
 
   it("encodes the ref in the URL", async () => {

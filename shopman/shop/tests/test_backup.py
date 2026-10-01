@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 from django.core.management import CommandError, call_command
-from django.db import transaction
 from shopman.buyman.models import Material, Supplier, SupplierMaterialCost
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.offerman.models import Listing, ListingItem, Product
@@ -164,7 +163,7 @@ def recipe_book(curated):
 
 
 def test_recipe_book_versions_survive_restore(recipe_book, tmp_path):
-    """O registro imutável das receitas atravessa o cofre: sem estas abas, só a
+    """O histórico das receitas atravessa o cofre: sem estas abas, só a
     ficha (a última publicada) voltava, e o histórico de versões se perdia."""
     path = _export_xlsx(tmp_path)
 
@@ -192,35 +191,33 @@ def test_recipe_book_versions_survive_restore(recipe_book, tmp_path):
 
 
 def _lose_recipe_book() -> None:
-    """Perda de dado de verdade: por baixo do ORM, que recusa apagar versão fechada."""
-    for model in (RecipeVersion, RecipeEntry):
-        model._base_manager.all()._raw_delete(model._base_manager.db)
+    """Perda de dado: apagar a receita leva as versões em cascata (D11, o padeiro pode)."""
+    RecipeEntry.objects.all().delete()
 
 
-def _tamper_version(entry, number: int, **values) -> None:
-    """Adulteração por baixo do ORM (o ``save()`` e o ``.update()`` recusam)."""
-    RecipeVersion._base_manager.filter(entry=entry, number=number).update(**values)
+def _rewrite_version(entry, number: int, **values) -> None:
+    RecipeVersion.objects.filter(entry=entry, number=number).update(**values)
 
 
-def test_recipe_version_rewrite_outside_restore_is_refused(recipe_book):
-    """A trava do Craftsman vale para todo caminho do ORM; o restore é a única porta."""
-    from shopman.craftsman.exceptions import RecipeBookError
-
-    with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-        RecipeVersion.objects.filter(entry=recipe_book, number=1).update(formula=_formula(999))
+def test_closed_versions_edit_and_delete_like_any_record(recipe_book):
+    """D11: versão publicada ou substituída se edita e se apaga por qualquer caminho do ORM."""
+    RecipeVersion.objects.filter(entry=recipe_book, number=1).update(formula=_formula(999))
     first = RecipeVersion.objects.get(entry=recipe_book, number=1)
-    first.formula = _formula(999)
-    with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
-        first.save()
-    with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
-        RecipeEntry.objects.all().delete()  # a cascata também passa pela trava
-    first.refresh_from_db()
-    assert first.formula == _formula(650)
+    assert first.formula == _formula(999)
+    current = RecipeVersion.objects.get(entry=recipe_book, number=2)
+    current.notes = "o padeiro reescreveu"
+    current.save()
+    current.refresh_from_db()
+    assert current.notes == "o padeiro reescreveu"
+    first.delete()
+    assert not RecipeVersion.objects.filter(entry=recipe_book, number=1).exists()
+    RecipeEntry.objects.all().delete()  # a cascata leva a versão publicada junto
+    assert RecipeVersion.objects.count() == 0
 
 
 def test_recipe_version_rewritten_in_place_is_restored(recipe_book, tmp_path):
     path = _export_xlsx(tmp_path)
-    _tamper_version(recipe_book, 1, formula=_formula(999), steps=[])
+    _rewrite_version(recipe_book, 1, formula=_formula(999), steps=[])
 
     call_command("import_backup", str(path), "--apply", stdout=StringIO())
 

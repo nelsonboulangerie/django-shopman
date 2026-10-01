@@ -1,27 +1,18 @@
-// Nota da receita (0 a 5 por critério, por versão fechada) — lógica pura da tela.
+// Nota da receita (0 a 5 por critério, por versão, rascunho incluído) — lógica pura da tela.
 // Os critérios vêm do servidor (editáveis no Admin); a tela não conhece nenhum
 // pelo nome. A média chega pronta (`average_display`, `overall_display`).
-import type {
-  RatingCriterionProjection,
-  RecipeVersionProjection,
-  VersionRatingProjection,
-} from "~/types/recipeBook";
+import type { RatingCriterionProjection, VersionRatingProjection } from "~/types/recipeBook";
 
 /** A escala inteira, na ordem dos botões. */
 export const RATING_SCALE: readonly number[] = [0, 1, 2, 3, 4, 5] as const;
 
-/** A nota da versão `number`, ou `null` (rascunho não tem). */
+/** A nota da versão `number`, ou `null` (ninguém avaliou ainda). */
 export function ratingFor(
   ratings: readonly VersionRatingProjection[],
   number: number | null | undefined,
 ): VersionRatingProjection | null {
   if (!number) return null;
   return ratings.find((rating) => rating.version_number === number) ?? null;
-}
-
-/** Só versão fechada recebe nota: rascunho ainda muda. */
-export function isRateable(version: Pick<RecipeVersionProjection, "status"> | null | undefined): boolean {
-  return !!version && version.status !== "draft";
 }
 
 /** O ponto de partida do formulário: a nota que este operador já deu, critério a critério. */

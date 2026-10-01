@@ -1,4 +1,4 @@
-// Referências externas da receita (livros, vídeos, artigos) — lógica pura da tela.
+// Fontes da receita (`external_references`: livros, vídeos, artigos) — lógica pura da tela.
 // Moram em `RecipeEntry.meta["external_references"]` e se gravam pelo PATCH da
 // receita com a lista INTEIRA: adicionar e remover é montar a lista nova aqui e
 // mandar. A validação que vale é a do servidor (`recipe_external_references`);

@@ -86,7 +86,7 @@ def _text(data: dict, key: str, *, default: str = "") -> str:
 def _steps(value: Any, *, field: str = "steps") -> list[dict]:
     """Etapas na forma única (``shopman.craftsman.recipe_steps``).
 
-    Aceita objeto ``{name, instructions?, target_seconds?, note?}`` ou texto puro
+    Aceita objeto ``{name, instructions?, target_seconds?, temperature_celsius?, note?}`` ou texto puro
     (vira ``{"name": ...}``); um texto só é lido uma etapa por linha. Linha
     vazia é sobra de textarea e sai; objeto inválido é recusado apontando a etapa.
     """
