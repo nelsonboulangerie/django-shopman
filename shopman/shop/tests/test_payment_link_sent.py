@@ -326,12 +326,22 @@ class TestCadeiaDoPdv:
         assert "console" not in chain, "o console sempre 'dá certo' e engole a cadeia"
 
 
-def _deliver(order, *, outcomes: dict[str, bool]):
-    """Roda a cadeia semeada com os backends de pé e devolve quem foi tentado."""
+def _deliver(order, *, outcomes: dict[str, bool], receipt: bool = True):
+    """Roda a cadeia semeada com os backends de pé e devolve quem foi tentado.
+
+    ``receipt``: o aceite volta com identificador do provedor. Sem ele, o
+    ``payment_link_sent`` (aviso crítico) segue a cadeia; ver
+    ``docs/reference/comprovante-de-entrega.md``.
+    """
     backend = SimpleNamespace(is_available=lambda: True)
 
     def _notify(*, event, recipient, context, backend):
-        return SimpleNamespace(success=outcomes.get(backend, True), error=None if outcomes.get(backend, True) else "down")
+        ok = outcomes.get(backend, True)
+        return SimpleNamespace(
+            success=ok,
+            error=None if ok else "down",
+            message_id=f"id-{backend}" if ok and receipt else None,
+        )
 
     with patch("shopman.shop.notifications.get_backend", return_value=backend):
         with patch.object(notification_svc, "notify", side_effect=_notify) as mock_notify:
@@ -360,6 +370,12 @@ class TestACadeiaPulaQuemNaoTemDestinatario:
         success, _, used = _deliver(_order(phone=None, email="joyce@casa.com"), outcomes={})
         assert success is True
         assert used == ["email"]
+
+    def test_whatsapp_sem_comprovante_segue_para_o_sms(self):
+        """O ManyChat responde "ok" sem id: no link de pagamento isso não encerra a cadeia."""
+        success, _, used = _deliver(_order(), outcomes={}, receipt=False)
+        assert success is True
+        assert used == ["manychat", "sms"]
 
     def test_whatsapp_fora_do_ar_cai_no_sms_quando_nao_ha_email(self):
         success, _, used = _deliver(_order(), outcomes={"manychat": False})

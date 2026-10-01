@@ -48,7 +48,13 @@ def build_pos_payment_delivery(order) -> dict:
     reason_code = str(evidence.get("reason") or "")
     if state == "accepted":
         when = _when(evidence.get("recorded_at"))
-        notice = f"Envio aceito pelo {channel_label or 'serviço'}{(' às ' + when) if when else ''}. Leitura não confirmada."
+        at = f" às {when}" if when else ""
+        # "Entregue" só com comprovante do provedor (D3). Ver
+        # docs/reference/comprovante-de-entrega.md.
+        if evidence.get("proof") == notification.PROOF_RECEIPT and evidence.get("message_id"):
+            notice = f"Entregue pelo {channel_label or 'serviço'}{at}, com comprovante. Leitura não confirmada."
+        else:
+            notice = f"Aceito pelo {channel_label or 'serviço'}{at}, sem comprovante de entrega."
         status = "accepted"
     elif state in {"started", "unknown"}:
         status = "unknown" if state == "unknown" else "sending"

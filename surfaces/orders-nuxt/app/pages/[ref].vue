@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
+import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vue";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
@@ -323,6 +324,8 @@ const { denied: stationLocked } = useStationLock();
           @dispatch="courierDispatch"
           @cancel="courierCancel"
         />
+        <!-- comprovante de entrega dos avisos ao cliente (D3) -->
+        <OrderNotificationReceipts :receipts="order.notification_receipts" />
       </template>
 
       <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->

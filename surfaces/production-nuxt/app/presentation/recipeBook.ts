@@ -404,14 +404,15 @@ function stepInput(step: RecipeStepInput | RecipeStepProjection): RecipeStepInpu
   const out: RecipeStepInput = { name: step.name };
   if (step.instructions) out.instructions = step.instructions;
   if (step.target_seconds) out.target_seconds = step.target_seconds;
+  if (typeof step.temperature_celsius === "number") out.temperature_celsius = step.temperature_celsius;
   if (step.note) out.note = step.note;
   return out;
 }
 
 /**
  * Etapas em textarea: uma linha por etapa (vazias fora). O textarea só edita
- * nomes; a etapa que continua com o MESMO nome guarda instruções, tempo alvo e
- * anotação que já tinha (`previous`). Nome repetido casa com o próximo ainda
+ * nomes; a etapa que continua com o MESMO nome guarda instruções, tempo alvo,
+ * temperatura e anotação que já tinha (`previous`). Nome repetido casa com o próximo ainda
  * não usado (espelho de `recipe_steps.steps_from_names` no Craftsman).
  */
 export function stepsFromText(

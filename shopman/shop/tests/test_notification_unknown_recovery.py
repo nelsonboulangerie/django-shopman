@@ -172,8 +172,14 @@ def test_legacy_failed_notice_does_not_authorize_a_new_key(context):
 def test_email_acceptance_requires_a_sent_message(context, monkeypatch, count, accepted):
     from shopman.shop.adapters import notification_email
 
-    monkeypatch.setattr(notification_email, "send_mail", Mock(return_value=count))
-    assert notification_email.send("synthetic@example.invalid", "order_ready", {}) is accepted
+    monkeypatch.setattr(notification_email, "_send_mail_with_id", Mock(return_value=count))
+    result = notification_email.send("synthetic@example.invalid", "order_ready", {})
+    if accepted:
+        # Aceite do SMTP vem com o Message-ID: é o comprovante do e-mail.
+        assert result["success"] is True
+        assert result["message_id"].startswith("<") and result["message_id"].endswith(">")
+    else:
+        assert result is False
 
 
 def test_manychat_flow_lookup_failure_is_observable_without_exception_payload():

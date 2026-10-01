@@ -182,6 +182,16 @@ class NotificationSendHandler:
                 message.payload = fresh.payload
 
         if success:
+            delivery = payload.get("notification_delivery") or {}
+            # Aviso crítico que terminou a cadeia aceito, mas SEM comprovante em
+            # canal nenhum: saiu, e ninguém sabe se chegou. Não reenviamos
+            # sozinhos (seria a terceira mensagem); o operador confirma.
+            if (
+                delivery.get("critical")
+                and delivery.get("status") == "accepted"
+                and delivery.get("proof") != notification_svc.PROOF_RECEIPT
+            ):
+                self._escalate(order_ref, template, None, no_receipt=True)
             return
         if (payload.get("notification_delivery") or {}).get("status") in {"started", "unknown"}:
             self._escalate(order_ref, template, None, unknown=True)
@@ -207,7 +217,15 @@ class NotificationSendHandler:
             unknown_reason="acceptance_unconfirmed" if effect_state == "unknown" else None,
         )
 
-    def _escalate(self, order_ref: str, template: str, last_error: str | None, *, unknown: bool = False) -> None:
+    def _escalate(
+        self,
+        order_ref: str,
+        template: str,
+        last_error: str | None,
+        *,
+        unknown: bool = False,
+        no_receipt: bool = False,
+    ) -> None:
         """Cria OperatorAlert quando entrega de notificação é exaurida."""
         try:
             from shopman.shop.adapters import alert as alert_adapter
@@ -221,11 +239,14 @@ class NotificationSendHandler:
                 order_ref=order_ref or "",
             ):
                 return
-            alert_adapter.create(
-                "notification_failed",
-                "error",
-                (
-                    # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
+            # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
+            if no_receipt:
+                message = (
+                    f"O aviso '{template}' do pedido {order_ref} foi aceito pelo provedor, mas nenhum canal "
+                    "devolveu comprovante de entrega. Confirme com o cliente que ele recebeu."
+                )
+            else:
+                message = (
                     (
                         f"Não dá para saber se o aviso '{template}' chegou ao cliente do pedido {order_ref}. "
                         "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
@@ -234,7 +255,11 @@ class NotificationSendHandler:
                         "5 tentativas. Se for importante, fale com o cliente pelo WhatsApp do pedido."
                     )
                     + f" Último erro: {last_error or 'desconhecido'}"
-                ),
+                )
+            alert_adapter.create(
+                "notification_failed",
+                "error",
+                message,
                 order_ref=order_ref or "",
             )
             logger.warning(

@@ -141,21 +141,28 @@ o iOS conserva assets da instalação antiga.
 Com `registerType: 'prompt'` o worker novo fica em espera até todas as janelas do
 app fecharem, e o app instalado que fica dias aberto (o iOS suspende em vez de
 fechar) nunca fecha todas. O mecanismo é porte do `operator-kit` (17/09/2026), sem
-a aplicação automática:
+a aplicação automática por ociosidade:
 
 - **Registro** no plugin `app/plugins/pwaRegistration.client.ts`, e não num
   componente: vale também quando o Nuxt renderiza `error.vue`.
 - **Sonda** (`usePwaUpdateCheck`): `registration.update()` no boot, a cada 30 min
   e ao voltar do segundo plano, ganhar foco ou reconectar (piso de 60 s entre as
   oportunistas). Régua em `app/presentation/pwaRuntime.ts`.
-- **Aviso persistente** (`PwaUpdatePrompt`, montado em `app.vue` e `error.vue`):
-  fica na tela enquanto houver worker em espera, sem botão de fechar. Cala no
-  checkout, no pedido e no login (o toque recarrega a página) e sem rede, e volta
-  na tela seguinte.
-- **Nunca automático:** o worker em espera só recebe `skipWaiting` pelo toque em
-  **Atualizar**. Não habilite `autoUpdate`, não chame `skipWaiting()` no
-  carregamento e não porte o auto-reload ocioso do kit: o cliente pode estar
-  escolhendo endereço, digitando o código de acesso ou pagando.
+- **A loja FORÇA a versão nova** (decisão do dono, D9, 01/10/2026), por duas
+  portas, as duas em `PwaUpdatePrompt` (montado em `app.vue` e `error.vue`):
+  1. **Navegação:** com versão nova em espera, trocar de tela recarrega a página
+     no destino.
+  2. **Aviso que bloqueia:** fora das telas protegidas, a tela fica coberta por um
+     aviso sem fechar, com um único botão, **Atualizar**.
+- **Nunca durante o pagamento:** no checkout (`/finalizar`), no pedido
+  (`/pedido/<ref>`) e no login (`/entrar`, `/a`) nada recarrega e nada bloqueia,
+  porque o cliente pode estar digitando endereço, pagando ou digitando o código
+  de acesso. Sem rede também não. A lista é `pwaUpdateRouteProtected` e a trava
+  é `tests/components/pwaUpdatePrompt.test.ts`.
+- **Sem recarga por ociosidade:** o worker em espera só recebe `skipWaiting` por
+  um gesto do cliente (navegar ou tocar em **Atualizar**). Não habilite
+  `autoUpdate`, não chame `skipWaiting()` no carregamento e não porte o
+  auto-reload ocioso do kit.
 - **Versão:** `public.appVersion` (`NUXT_PUBLIC_APP_VERSION`, senão
   `SOURCE_VERSION`, senão `local`) vai como `app_version` no relatório de erro do
   cliente.
@@ -168,4 +175,4 @@ worker novo ativo) é provado pelo `tests/e2e/pwa.spec.ts`, que roda no gate.
 1. Rode `npm run build` e `npm run preview`.
 2. Abra o app e espere `navigator.serviceWorker.ready` no console do navegador.
 3. Faça outro build com uma alteração visível e recarregue a página.
-4. Quando aparecer “Nova versão disponível”, toque em **Atualizar**.
+4. Quando aparecer “A loja tem uma versão nova”, toque em **Atualizar**.

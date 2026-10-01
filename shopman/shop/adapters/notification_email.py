@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import logging
 import smtplib
+from email.utils import make_msgid, parseaddr
 from typing import Any
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
@@ -76,7 +77,40 @@ def _render_html(template: str, context: dict[str, Any]) -> str | None:
         return None
 
 
-def send(recipient: str, template: str, context: dict | None = None, **config) -> bool:
+def _message_id_for(from_email: str) -> str:
+    """Message-ID com o domínio do remetente, para achar a mensagem nos Enviados."""
+    domain = parseaddr(str(from_email or ""))[1].rpartition("@")[2].strip() or None
+    return make_msgid(domain=domain)
+
+
+def _send_mail_with_id(
+    *,
+    subject: str,
+    message: str,
+    from_email: str,
+    recipient_list: list[str],
+    html_message: str | None,
+    message_id: str,
+) -> int:
+    """``send_mail`` do Django, com o ``Message-ID`` escolhido por nós.
+
+    O ``send_mail`` não aceita cabeçalho, e sem o ``Message-ID`` em mãos não há
+    o que mostrar como comprovante. Mesma conexão (alias ``default`` de
+    ``MAILERS``), mesmo ``fail_silently=False``.
+    """
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=message,
+        from_email=from_email,
+        to=recipient_list,
+        headers={"Message-ID": message_id},
+    )
+    if html_message:
+        email.attach_alternative(html_message, "text/html")
+    return email.send(fail_silently=False)
+
+
+def send(recipient: str, template: str, context: dict | None = None, **config) -> bool | dict:
     """
     Send an email notification.
 
@@ -86,7 +120,11 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         context: Template variables.
 
     Returns:
-        True if sent successfully, False otherwise.
+        ``{"success": True, "message_id": <Message-ID>}`` quando o servidor SMTP
+        aceitou a mensagem; ``False`` quando recusou. O ``Message-ID`` é o
+        comprovante de que o servidor de e-mail assumiu a entrega (resposta 250),
+        não de que a mensagem chegou à caixa de entrada nem de que foi lida
+        (``docs/reference/comprovante-de-entrega.md``).
     """
     from shopman.shop.adapters._notification_templates import (
         db_template,
@@ -124,17 +162,20 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"
     )
 
+    message_id = _message_id_for(from_email)
     try:
-        count = send_mail(
+        count = _send_mail_with_id(
             subject=subject,
             message=body,
             from_email=from_email,
             recipient_list=[recipient],
             html_message=html_body,
-            fail_silently=False,
+            message_id=message_id,
         )
         logger.info("Email result: template=%s accepted=%s", template, count == 1)
-        return count == 1
+        if count != 1:
+            return False
+        return {"success": True, "message_id": message_id}
     except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
             smtplib.SMTPDataError, smtplib.SMTPAuthenticationError,
             smtplib.SMTPConnectError, smtplib.SMTPHeloError) as exc:

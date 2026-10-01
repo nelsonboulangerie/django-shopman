@@ -8,11 +8,13 @@ Dois desenhos da casa, juntos:
   "Aparência"; o gestor renomeia, reordena ou desativa. Critério não se apaga
   (há notas apontando para ele): desativa-se, e a nota antiga fica no histórico.
 - A **nota** é de uma VERSÃO, como a reputação por versão (#1310): a receita
-  muda entre versões, e a nota da v1 não diz nada da v2. Versão publicada é
-  imutável (#1308), então a nota é um registro SEPARADO que aponta para ela,
-  nunca um campo dela. O apontamento é por ``entry_ref`` + ``version_number``
-  (o carimbo ``<ref>@<n>``), como a Favorita (#1319) aponta por ``entry_ref``:
-  só versão fechada recebe nota, e versão fechada nunca some nem renumera.
+  muda entre versões, e a nota da v1 não diz nada da v2. É um registro SEPARADO
+  que aponta para ela, nunca um campo dela (o Core não conhece nota). O
+  apontamento é por ``entry_ref`` + ``version_number`` (o carimbo ``<ref>@<n>``),
+  como a Favorita (#1319) aponta por ``entry_ref``. Rascunho também recebe nota
+  (D24). Apagar a versão apaga as notas dela
+  (``services.recipe_ratings.forget_deleted_version``, ligado no ``apps.py``), para que o próximo rascunho, que pode herdar o mesmo número, não
+  nasça com a nota de outra fórmula.
 
 Uma nota por operador e versão: avaliar de novo substitui a anterior (a
 conta da média não pesa quem avalia mais vezes). Quem avaliou e quando ficam

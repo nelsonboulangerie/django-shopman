@@ -4,7 +4,7 @@
 // proxy) e reconciliam por refresh: PATCH da entry (nome/kind/SKU/notas/arquivar),
 // POST de versão (cópia em rascunho), PATCH do rascunho e POST publish. A estrela
 // do operador (useRecipeFavorite) acende no lugar, sem refazer a lente. As
-// referências externas (livros, vídeos, artigos) vão no PATCH da entry com a lista
+// fontes (`external_references`: livros, vídeos, artigos) vão no PATCH da entry com a lista
 // inteira; a nota da versão (0 a 5 por critério) é um PUT em versions/<n>/rating/.
 // Erro no dialeto canônico: a mensagem vai ao toast e o `field` volta para a tela acender.
 import type {
@@ -108,7 +108,7 @@ export function useRecipeEntry(entryRef: string) {
   const saveReferences = (references: ExternalReferenceInput[]) =>
     act(
       () => $fetch<RecipeEntryResponse>(base, { method: "PATCH", body: { external_references: references } }),
-      "Não foi possível salvar as referências.",
+      "Não foi possível salvar as fontes.",
     );
 
   const rateVersion = (number: number, scores: Record<string, number>) =>

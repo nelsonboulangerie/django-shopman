@@ -86,8 +86,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PWA_MANUAL_DONE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já adicionei")},
     },
+    # Aviso que BLOQUEIA a tela até o toque (D9): a mensagem tira a dúvida que o
+    # bloqueio cria, "vou perder a sacola?". A sacola mora no servidor e sobrevive.
     "PWA_UPDATE_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Nova versão disponível")},
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="A loja tem uma versão nova",
+                message="Atualize para continuar. Sua sacola fica guardada.",
+            )
+        },
     },
     "PWA_UPDATE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Atualizar")},

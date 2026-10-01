@@ -1,10 +1,15 @@
-"""Referências externas da receita: livros, vídeos e artigos de onde ela veio (D6).
+"""Fontes da receita: livros, vídeos e artigos de onde ela veio (D6; na tela, "Fontes", D24).
+
+O identificador continua ``external_references`` (em inglês, "references" é a
+bibliografia): ``sources`` colidiria com ``RecipeVersion.source``, que diz como a
+versão foi capturada (nota, foto, ficha). Na tela a palavra é "Fontes", porque
+"Referência" já é a faixa da literatura na lente da fórmula.
 
 Moram em ``RecipeEntry.meta["external_references"]`` (``docs/reference/
 data-schemas.md``), uma lista de ``{title, url?, note?}``. São da RECEITA, não
 da versão: o livro de onde a baguete veio continua sendo a fonte quando a
-hidratação muda na v3, e a versão publicada é imutável (#1308), então uma
-referência acrescentada depois da publicação não teria onde morar nela.
+hidratação muda na v3, e uma fonte acrescentada depois da publicação vale
+para a receita inteira, não para uma versão só.
 
 A forma é validada aqui, na porta (o Core guarda o JSON sem interpretar):
 lista de objetos, título obrigatório, link só ``http``/``https``, tamanhos
@@ -64,19 +69,19 @@ def validate(value: Any) -> list[dict]:
     if value is None:
         return []
     if not isinstance(value, list):
-        raise _fail("As referências precisam ser uma lista.")
+        raise _fail("As fontes precisam ser uma lista.")
     if len(value) > MAX_REFERENCES:
-        raise _fail(f"No máximo {MAX_REFERENCES} referências por receita.")
+        raise _fail(f"No máximo {MAX_REFERENCES} fontes por receita.")
     cleaned: list[dict] = []
     for index, item in enumerate(value):
         if not isinstance(item, dict):
-            raise _fail("Cada referência precisa ser um objeto com título.", index=index)
+            raise _fail("Cada fonte precisa ser um objeto com título.", index=index)
         unknown = sorted(set(item) - _ALLOWED_KEYS)
         if unknown:
-            raise _fail(f"Campo desconhecido na referência: {', '.join(unknown)}.", index=index, key=unknown[0])
+            raise _fail(f"Campo desconhecido na fonte: {', '.join(unknown)}.", index=index, key=unknown[0])
         title = _text(item.get("title"), index=index, key="title", limit=MAX_TITLE, label="O título")
         if not title:
-            raise _fail("Dê um título à referência (o livro, o vídeo ou o artigo).", index=index, key="title")
+            raise _fail("Dê um título à fonte (o livro, o vídeo ou o artigo).", index=index, key="title")
         url = _text(item.get("url"), index=index, key="url", limit=MAX_URL, label="O link")
         if url and not is_web_url(url):
             raise _fail("O link precisa começar com http:// ou https://.", index=index, key="url")

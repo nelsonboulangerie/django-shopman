@@ -12,7 +12,8 @@ class BackstageConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
-        from django.db.models.signals import pre_save
+        from django.db.models.signals import pre_delete, pre_save
+        from shopman.craftsman.models import RecipeVersion
         from shopman.orderman.models import Fulfillment, Order
 
         from shopman.backstage.services.delivery_devices import guard_dispatch
@@ -20,6 +21,13 @@ class BackstageConfig(AppConfig):
         for model in (Order, Fulfillment):
             pre_save.connect(guard_dispatch, sender=model, weak=False,
                              dispatch_uid=f"backstage.delivery_device.{model.__name__}")
+
+        # A nota da receita aponta para a versão por ``<ref>@<n>``; versão
+        # apagada leva a nota junto (D11 + D24).
+        from shopman.backstage.services.recipe_ratings import forget_deleted_version
+
+        pre_delete.connect(forget_deleted_version, sender=RecipeVersion, weak=False,
+                           dispatch_uid="backstage.recipe_rating.forget_deleted_version")
 
         # "Não tenho o produto para oferecer": o que muda essa resposta é
         # estoque ou reserva. Reserva que expira por varredura em massa não

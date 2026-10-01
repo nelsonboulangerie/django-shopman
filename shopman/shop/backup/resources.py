@@ -28,13 +28,7 @@ from shopman.buyman.models import (
     Supplier,
     SupplierMaterialCost,
 )
-from shopman.craftsman.models import (
-    Recipe,
-    RecipeEntry,
-    RecipeItem,
-    RecipeVersion,
-    restoring_recipe_versions,
-)
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.guestman.models import PriceTier
 from shopman.offerman.models import (
     Collection,
@@ -355,16 +349,11 @@ class CurrentVersionFlag(fields.Field):
 
 
 class RecipeVersionResource(resources.ModelResource):
-    """O registro imutável das receitas: cada fórmula congelada, com etapas e origem.
+    """O histórico das receitas: cada fórmula versionada, com etapas e origem.
 
     Sem esta aba, só a ``Recipe`` (a última publicada) sobrevivia a um restore, e
     o histórico de versões se perdia. ``published_at`` viaja; ``created_at`` não
     (regra do cofre), então a cronologia da linha do tempo é a de publicação.
-
-    Versão publicada ou substituída recusa reescrita no ``save()`` (Craftsman).
-    Restaurar é justamente devolver a ela o conteúdo exportado, inclusive por
-    cima de uma versão adulterada no banco, então o save desta aba, e só ele,
-    roda dentro de ``restoring_recipe_versions()``.
     """
 
     entry = _fk(RecipeEntry, "ref", "entry")
@@ -373,10 +362,6 @@ class RecipeVersionResource(resources.ModelResource):
     class Meta(NaturalKeyMeta):
         model = RecipeVersion
         import_id_fields = ("entry", "number")
-
-    def do_instance_save(self, instance, is_create):
-        with restoring_recipe_versions():
-            super().do_instance_save(instance, is_create)
 
     def after_save_instance(self, instance, row, **kwargs):
         if not kwargs.get("dry_run") and str(row.get("is_current") or "").strip() in ("1", "True", "true"):

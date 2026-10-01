@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Nota da versão selecionada: a média de cada critério e a geral, e o botão de
 // avaliar (0 a 5 por critério ativo). Os critérios são do Admin; a tela não
-// conhece nenhum pelo nome. Rascunho não recebe nota: ainda muda. Avaliar de novo
+// conhece nenhum pelo nome. Rascunho também recebe nota (D24). Avaliar de novo
 // substitui a nota anterior deste operador. Basta ler o inventário para avaliar.
 import type { EntryActionResult } from "~/composables/useRecipeEntry";
 import type {
@@ -12,7 +12,6 @@ import type {
 import {
   RATING_SCALE,
   initialScores,
-  isRateable,
   missingCriteria,
   overallLabel,
   ratingFor,
@@ -28,7 +27,6 @@ const props = defineProps<{
 }>();
 
 const rating = computed(() => ratingFor(props.ratings, props.version?.number));
-const rateable = computed(() => isRateable(props.version));
 
 const open = ref(false);
 const scores = ref<Record<string, number | null>>({});
@@ -64,7 +62,7 @@ async function confirmRate() {
         Nota da versão {{ version.number }}
       </h3>
       <UiButton
-        v-if="rateable && criteria.length"
+        v-if="criteria.length"
         type="button"
         class="ml-auto"
         variant="outline"
@@ -75,8 +73,7 @@ async function confirmRate() {
       </UiButton>
     </div>
 
-    <p v-if="!rateable" class="text-sm text-muted-foreground">Rascunho não recebe nota. Publique a versão para avaliar.</p>
-    <p v-else-if="!criteria.length" class="text-sm text-muted-foreground">Nenhum critério de nota ativo. Ative um no Admin.</p>
+    <p v-if="!criteria.length" class="text-sm text-muted-foreground">Nenhum critério de nota ativo. Ative um no Admin.</p>
     <template v-else>
       <p class="text-sm">
         <b class="tabular-nums">{{ overallLabel(rating) }}</b>

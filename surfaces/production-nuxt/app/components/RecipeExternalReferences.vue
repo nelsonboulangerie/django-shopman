@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Referências da receita: livros, vídeos e artigos de onde ela veio. São da
+// Fontes da receita (o identificador é `external_references`): livros, vídeos e artigos de onde ela veio. São da
 // receita, não da versão (valem para todas). Ler é de todos; adicionar e remover
 // pede `can_edit`. Grava pela lista inteira (PATCH da receita), e quem recusa de
 // verdade é o servidor; a tela só não manda o que ele certamente recusaria.
@@ -56,7 +56,7 @@ async function confirmRemove() {
   <section class="rounded-md border bg-card p-3" aria-labelledby="recipe-references-title">
     <div class="mb-2 flex items-center gap-2">
       <h3 id="recipe-references-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Referências
+        Fontes
       </h3>
       <UiButton
         v-if="canEdit && !full"
@@ -91,8 +91,8 @@ async function confirmRemove() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          :aria-label="`Remover a referência ${reference.title}`"
-          :title="`Remover a referência ${reference.title}`"
+          :aria-label="`Remover a fonte ${reference.title}`"
+          :title="`Remover a fonte ${reference.title}`"
           :disabled="busy"
           @click="removeIndex = index"
         >
@@ -100,13 +100,13 @@ async function confirmRemove() {
         </UiButton>
       </li>
     </ul>
-    <p v-else class="text-sm text-muted-foreground">Nenhuma referência ainda.</p>
+    <p v-else class="text-sm text-muted-foreground">Nenhuma fonte ainda.</p>
 
     <!-- ── Adicionar ─────────────────────────────────────────────────────── -->
     <UiDialog :open="addOpen" @update:open="(v) => (addOpen = v)">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Adicionar referência</UiDialogTitle>
+          <UiDialogTitle>Adicionar fonte</UiDialogTitle>
           <UiDialogDescription>Um livro, um vídeo ou um artigo de onde a receita veio.</UiDialogDescription>
         </UiDialogHeader>
         <form class="grid gap-3" @submit.prevent="confirmAdd">
@@ -154,8 +154,8 @@ async function confirmRemove() {
     <UiDialog :open="removing !== null" @update:open="(v) => { if (!v) removeIndex = null; }">
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Remover a referência</UiDialogTitle>
-          <UiDialogDescription>"{{ removing?.title }}" sai das referências desta receita.</UiDialogDescription>
+          <UiDialogTitle>Remover a fonte</UiDialogTitle>
+          <UiDialogDescription>"{{ removing?.title }}" sai das fontes desta receita.</UiDialogDescription>
         </UiDialogHeader>
         <UiDialogFooter>
           <UiButton type="button" variant="outline" @click="removeIndex = null">

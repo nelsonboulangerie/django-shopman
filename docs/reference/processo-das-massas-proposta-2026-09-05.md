@@ -1,3 +1,8 @@
+> 🛑 **RASCUNHO NÃO VALIDADO.** Proposta do Claude de 05/09/2026; o dono vai revisar
+> massa por massa no chat. **Não é dado da casa** (decisão D20, 01/10/2026). Nada daqui
+> entra no seed, no banco nem em caminho de dado de produção; a trava é
+> `shopman/shop/tests/test_seed_sem_processo_das_massas.py`.
+
 # Processo das 11 massas (proposta de 05/09/2026, NÃO validada pela casa)
 
 > ⚠️ **Leia isto antes de usar qualquer número abaixo.** Esta é a única tabela de
@@ -29,8 +34,8 @@ a premissa também é do artifact, e vale conferir junto com o número.
 - **Serve** como roteiro de conversa com o dono e com a padaria: uma linha por etapa,
   para alguém riscar e corrigir com o número verdadeiro.
 - **Não serve** para popular `Recipe.steps` / `RecipeVersion.steps`, nem `target_seconds`,
-  nem qualquer campo de temperatura (que hoje não existe, e cuja criação é decisão
-  pendente, não desta tabela). O formato das etapas gravadas está em
+  nem `temperature_celsius` (o campo opcional de temperatura da etapa existe desde a
+  decisão D19, de 01/10/2026, e se preenche com o número do padeiro, nunca desta tabela). O formato das etapas gravadas está em
   [`packages/craftsman/shopman/craftsman/recipe_steps.py`](../../packages/craftsman/shopman/craftsman/recipe_steps.py);
   a modelagem de receita, em [`RECIPE-MODELING-BRIEF.md`](../plans/RECIPE-MODELING-BRIEF.md).
 - **Vocabulário:** cada linha é uma **etapa** (decisão do dono, 01/10/2026; ver

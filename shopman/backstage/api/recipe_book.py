@@ -59,7 +59,7 @@ _MSG_VIEW = "O inventário de receitas exige backstage.operate_production."
 _MSG_EDIT = "Alterar o inventário de receitas exige shop.manage_production."
 
 #: Códigos do Craftsman que são conflito de ESTADO, não de campo: 409, não 400.
-_STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED", recipe_ratings.DRAFT_NOT_RATEABLE, "NO_ACTIVE_CRITERIA")
+_STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED", "NO_ACTIVE_CRITERIA")
 
 _KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
 

@@ -2,10 +2,9 @@
 
 O desenho mora em ``shopman.backstage.models.recipe_rating``. Aqui:
 
-- ``rate`` grava (ou substitui) a avaliação de UM operador sobre UMA versão
-  FECHADA, com uma nota inteira de 0 a 5 para CADA critério ativo, nem mais nem
-  menos. Rascunho não recebe nota: ainda muda, e a nota ficaria descrevendo
-  uma fórmula que não existe mais.
+- ``rate`` grava (ou substitui) a avaliação de UM operador sobre UMA versão,
+  rascunho incluído (D24, dono, 01/10/2026), com uma nota inteira de 0 a 5 para
+  CADA critério ativo, nem mais nem menos.
 - ``summaries`` lê, por versão, a contagem de avaliações e as médias por
   critério e geral, só dos critérios ATIVOS (critério desativado sai da média;
   a nota antiga fica guardada). A média geral é a média de todas as notas dos
@@ -28,9 +27,6 @@ from shopman.craftsman.models import RecipeVersion
 from shopman.backstage.models import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
 from shopman.backstage.models.recipe_rating import RATING_MAX, RATING_MIN
 from shopman.backstage.services.exceptions import RecipeBookServiceError
-
-#: Código de estado (409): a versão ainda é rascunho.
-DRAFT_NOT_RATEABLE = "VERSION_DRAFT_NOT_RATEABLE"
 
 
 def _fail(detail: str, *, field_name: str = "scores", code: str = "INVALID_PAYLOAD") -> RecipeBookServiceError:
@@ -76,11 +72,6 @@ def rate(operator_ref: str, version: RecipeVersion, scores: Any) -> RecipeVersio
     """Grava a avaliação do operador sobre a versão. Avaliar de novo substitui a anterior."""
     if not operator_ref:
         raise _fail("Avaliação sem operador.", field_name="operator")
-    if version.status == RecipeVersion.Status.DRAFT:
-        raise _fail(
-            "Rascunho não recebe nota: publique a versão antes de avaliar.",
-            field_name="version", code=DRAFT_NOT_RATEABLE,
-        )
     criteria = active_criteria()
     if not criteria:
         raise _fail("Nenhum critério de nota ativo. Ative um no Admin.", code="NO_ACTIVE_CRITERIA")
@@ -96,6 +87,19 @@ def rate(operator_ref: str, version: RecipeVersion, scores: Any) -> RecipeVersio
         for criterion_id, score in cleaned.items()
     )
     return rating
+
+
+def forget_deleted_version(sender, instance: RecipeVersion, **kwargs) -> None:
+    """``pre_delete`` da ``RecipeVersion``: a nota sai junto com a versão.
+
+    Versão se apaga (D11), e o número volta a ser usado: ``create_version``
+    numera por último + 1, então apagar o rascunho v3 e criar outro dá outro
+    v3. Sem esta limpeza, o rascunho novo nasceria com a nota da fórmula
+    apagada. Vale também na cascata ao apagar a receita.
+    """
+    RecipeVersionRating.objects.filter(
+        entry_ref=instance.entry.ref, version_number=instance.number,
+    ).delete()
 
 
 # ── Leitura ──────────────────────────────────────────────────────────────────

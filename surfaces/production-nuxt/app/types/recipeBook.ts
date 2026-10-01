@@ -148,6 +148,7 @@ export interface RecipeStepInput {
   name: string;
   instructions?: string;
   target_seconds?: number | null;
+  temperature_celsius?: number | null;
   note?: string;
 }
 

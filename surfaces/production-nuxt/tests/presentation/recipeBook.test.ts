@@ -354,14 +354,18 @@ describe("steps and unmatched", () => {
     expect(stepsToText([{ name: "a" }, { name: "b" }])).toBe("a\nb");
   });
 
-  it("keeps instructions, target time and note of a step whose name stays", () => {
+  it("keeps instructions, target time, temperature and note of a step whose name stays", () => {
+    const blank = { temperature_celsius: null, temperature_display: "" };
     const previous = [
-      { name: "Sova", instructions: "Até o ponto de véu.", target_seconds: 600, target_display: "10 min", note: "" },
-      { name: "Forno", instructions: "", target_seconds: null, target_display: "", note: "Vapor no início." },
+      { name: "Sova", instructions: "Até o ponto de véu.", target_seconds: 600, target_display: "10 min", ...blank, note: "" },
+      {
+        name: "Forno", instructions: "", target_seconds: null, target_display: "",
+        temperature_celsius: 230, temperature_display: "230 °C", note: "Vapor no início.",
+      },
     ];
     expect(stepsFromText("Autólise\nForno\nSova", previous)).toEqual([
       { name: "Autólise" },
-      { name: "Forno", note: "Vapor no início." },
+      { name: "Forno", temperature_celsius: 230, note: "Vapor no início." },
       { name: "Sova", instructions: "Até o ponto de véu.", target_seconds: 600 },
     ]);
   });
@@ -369,9 +373,16 @@ describe("steps and unmatched", () => {
   it("copies projected steps into the write shape, without display fields or blanks", () => {
     expect(
       stepsForPayload([
-        { name: "Sova", instructions: "Até o véu.", target_seconds: 600, target_display: "10 min", note: "" },
+        {
+          name: "Sova", instructions: "Até o véu.", target_seconds: 600, target_display: "10 min",
+          temperature_celsius: null, temperature_display: "", note: "",
+        },
+        {
+          name: "Câmara", instructions: "", target_seconds: null, target_display: "",
+          temperature_celsius: 0, temperature_display: "0 °C", note: "",
+        },
       ]),
-    ).toEqual([{ name: "Sova", instructions: "Até o véu.", target_seconds: 600 }]);
+    ).toEqual([{ name: "Sova", instructions: "Até o véu.", target_seconds: 600 }, { name: "Câmara", temperature_celsius: 0 }]);
   });
 
   it("unmatchedItems lists lens rows without a matched sku", () => {
