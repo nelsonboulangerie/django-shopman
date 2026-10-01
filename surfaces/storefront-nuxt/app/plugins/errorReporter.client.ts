@@ -30,7 +30,7 @@ export default defineNuxtPlugin(nuxtApp => {
     sent += 1
 
     // Fire-and-forget: telemetria nunca pode quebrar a experiência.
-    void $fetch(endpoint, { method: 'POST', body: payload, credentials: 'include' }).catch(() => null)
+    void $fetch(endpoint, { method: 'POST', body: payload, credentials: 'include' }).catch(() => null) // silêncio-deliberado: o relatório de erro não tem a quem relatar a própria falha
   }
 
   nuxtApp.hook('vue:error', error => report(error, 'vue:error'))
