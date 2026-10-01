@@ -134,3 +134,16 @@ preciso. (b) Carimbar retroativamente as versões antigas com a impressão digit
 Isso certificaria fichas que já podem ter sido editadas por fora.
 **Recomendação:** (a). Para as antigas, publicar de novo cada receita que importa, em vez de
 carimbar.
+
+## D12 — Conexão nova com Postgres e Redis a cada request (custo fixo de ~200 ms+)
+
+**Contexto (medido nesta madrugada).** Sob daphne/ASGI cada request roda numa thread nova e abre
+conexão nova com o Postgres (38 conexões para 38 requests na bancada) e com o Redis. A rota
+`shell/` faz 4 consultas e 6–8 ms de banco, mas gasta 267–304 ms de projeção em produção (~10 ms
+local). É ~60% do que sobra no `catalog/`. O turno só MEDE: o PR da frente Onda 2b põe `connect`,
+`cache` e `gc` no Server-Timing. Não mexeu em conexões.
+
+**Opções (decidir com o número do Server-Timing novo na mão).** 1) Pool de conexões do Django
+(Django 5.1+, exige `psycopg[pool]`), com tamanho compatível com o PgBouncer (pool 5 hoje).
+2) Ajustar `CONN_MAX_AGE` (efeito limitado sob ASGI). 3) Servir as rotas síncronas por WSGI (gunicorn).
+**Recomendação:** 1, depois de 24 h de `connect;dur` medido, com teste de carga no alpha.

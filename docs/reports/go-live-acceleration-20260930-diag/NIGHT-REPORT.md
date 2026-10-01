@@ -18,18 +18,23 @@
 | **F4** consultas da sacola | #1304 | ✅ mergeado | −62 consultas por request com sacola; payload idêntico (A/B, 15 pares) |
 | **O3a** link de pagamento no balcão | #1306 | ✅ mergeado | `link` só em Encomendas: trava no servidor + botão some no Balcão |
 | **O1** nome+sobrenome no login WhatsApp | #1305 | ✅ mergeado | Divide na entrada, guarda o texto cru; backfill é decisão sua (D8) |
-| **O5A** etapas das receitas estruturadas | #1307 | 🛠️ checks | `steps` com modo de fazer/tempo/nota; nota do item chega à ficha |
+| **O5A** etapas das receitas estruturadas | #1307 | 🚦 na fila | `steps` com modo de fazer/tempo/nota; nota do item chega à ficha |
 | **F3** P2 disponibilidade (Core) | #1309 | ✅ mergeado, **medido no ar** | `/catalog/`: disponibilidade 853 → 396 ms, TTFB 1,79 → 1,44 s; revisão independente: seguro |
-| **O6.2/3** versão imutável + ficha em sincronia | #1308 | 🚦 na fila | Versão publicada não muda nem se apaga; restore do cofre por caminho nomeado (D11) |
-| **O8** reputação por versão (leitura) | #1310 | 🛠️ checks | Produção agregada por `version_ref`, com os avisos de perda no dado |
-| **PWA-E2E** check "PWA — storefront" | — | 🛠️ em andamento | O e2e novo do #1301 reprova na fila; apurando se é defeito real ou teste |
+| **O6.2/3** versão imutável + ficha em sincronia | #1308 | ✅ mergeado | Versão publicada não muda nem se apaga; restore do cofre por caminho nomeado (D11) |
+| **O8** reputação por versão (leitura) | #1310 | ✅ mergeado | Produção agregada por `version_ref`, com os avisos de perda no dado |
+| **PWA-E2E** "Atualizar" do app instalado travava | #1311 | 🚦 na fila | **Defeito real**: o spinner do botão buscava ícone pela rede no meio da troca de worker; ícones empacotados + trava |
+| **Ícones nos apps de operador** | — | 🛠️ em andamento | Mesmo gatilho do #1311 nos 8 apps de operador |
+| **Sitemap** lê a gêmea pública | #1312 | 🚦 checks | Tira o único consumidor do `menu/` lento (O2); 40 SKUs e 8 coleções idênticos |
+| **Onda 2a** catálogo fora da disponibilidade | #1314 | 🛠️ checks | 36 → 15 ms na bancada, payload idêntico (≈ −350 ms estimado no ar) |
+| **Onda 2b** Server-Timing `connect`/`cache`/`gc` + memo do `Shop` | #1313 | 🛠️ checks | Só mede o custo fixo por request; pool de conexões é decisão (D12) |
+| **FUSO** testes que quebram 21h–24h | — | 🛠️ em andamento | 2 testes reprovaram na janela UTC≠local; apurando teste × código |
 | O2 rota `/menu` | — | ✅ não mexer | Veredito: não procede |
 
 **Precisa de você (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):**
 🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D3 link "entregue" sem entrega (ManyChat) ·
 D1 botão "Adicionar" inerte até carregar · D4 motivos de rejeição · D5 modo de fazer das receitas ·
 D6 storage de anexos · D7 critérios da nota · D8 backfill de nomes · D9 PWA forçar versão nova ·
-D10 trilho de sugestão no `shell/` · D11 versão de receita não se apaga.
+D10 trilho de sugestão no `shell/` · D11 versão de receita não se apaga · D12 pool de conexões.
 
 **Produção:** no ar a cada verificação (monitor a cada 90 s). Deploys da noite saindo pelo
 `deploy-images.yml`, causa `manual`, sem intervenção. Nenhuma escrita no spec vivo.
