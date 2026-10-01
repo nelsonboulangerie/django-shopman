@@ -49,7 +49,7 @@ pedido: é a loja inteira por conversa. O escopo, nas palavras do dono:
 
 | Fase | O que entra | Depende de |
 |---|---|---|
-| **Fase 1 (go-live)** | FAQ e informação de produto; triagem com escalonamento classificado e resumido (proposta na D32); consulta de pedido do próprio cliente; o que não cabe no chat vai para a equipe ou para o site | triagem construída; identidade ligada; flow do ManyChat em toda mensagem; chave da Anthropic; ver "Como ligar" |
+| **Fase 1 (go-live)** | FAQ e informação de produto; triagem com escalonamento classificado e resumido (D32 decidida; implementada, D-018); consulta de pedido do próprio cliente; o que não cabe no chat vai para a equipe ou para o site | triagem construída; identidade ligada; flow do ManyChat em toda mensagem; chave da Anthropic; ver "Como ligar" |
 | **Fase 2** | Pedido completo no chat (sacola, endereço, pagamento, recap e confirmação) | uma forma de dar autoridade de compra a um ingresso sem identificador de mensagem (ver "Limitação de frente"), ou um identificador verificado do provedor |
 | **Futuro** | "O pedido de sempre" proativo, no momento certo | template aprovado na Meta (fora da janela de 24 horas); regra de quando procurar; opt-in de marketing |
 
@@ -73,74 +73,81 @@ Medido sobre `origin/main` em `1f1ff5afb`. **NOSSO** = código da casa;
 | 4a | Endereço | **PARCIAL** | [FATO] Composição de endereço por texto, pin e cadastro (`shopman/storefront/concierge/address.py:120`, `:142`, `:158`, `:200`); geocodificação pela chave do Maps (`.do/app.alpha-subdomains.yaml:788-790`). Mutação: cai na mesma trava do item 3 | [FATO] Campos de pin ainda não mapeados no flow (`whatsapp-concierge.md:60`) |
 | 4b | Forma de pagamento | **PARCIAL (bloqueado pelo provedor)** | [FATO] `place_order` com Pix ou cartão (`tools.py:1204`); mesma trava do item 3 | Nada específico |
 | 4c | Avisos e confirmações | **PARCIAL** | [FATO] Notificações transacionais saem por ManyChat → e-mail → SMS (cadeia descrita neste plano, "Canal de venda"); recibo de envio crítico só comprova por e-mail (D27, #1339) | [FATO] Fora da janela de 24 horas só sai template aprovado (`shopman/shop/checks.py:910-913`); 27 templates com copy de referência, estado na Meta a conferir (`docs/reference/whatsapp-templates-meta.md:3-13`) |
-| 5 | Triagem: responder o simples, escalar o resto classificado e resumido | **INEXISTENTE** como o dono descreveu | [FATO] `grep -rniE "triage\|triagem" shopman packages config surfaces` só acha o quadro do Gestor de pedidos (`shopman/backstage/projections/order_queue.py:201`, `surfaces/orders-nuxt/app/pages/index.vue:29-120`), nada de mensagem. O que existe: (a) regex com 4 causas que só decide o handoff (`shopman/storefront/concierge/handoff.py:16-49`, chamada em `service.py:895-903`); (b) o modelo **não** consegue escalar: não há ferramenta de handoff no catálogo (`tools.py:1948-1960`) e o prompt manda não tentar (`prompt.py:67`); (c) o alerta ao operador é genérico, sem resumo: "Atendimento solicitado; sincronização ..." (`service.py:1302-1307`, `:1425-1437`); (d) `Conversation.summary` existe (`shopman/shop/models/concierge.py:60`) e nenhum código escreve nele; (e) o piloto de intenções tem 12 categorias definidas com o dono em 23/09 (`intent_pilot.py:58-91`) e só mede classificadores, não roteia | [FATO] O handoff liga o campo `concierge_handoff` no ManyChat e a equipe responde no Live Chat (este plano, "Arquitetura"); retorno ao bot fechado (`CONCIERGE_HUMAN_RETURN_ENABLED=false`, `.do/app.alpha-subdomains.yaml:585-588`; `service.py:1340`) |
+| 5 | Triagem: responder o simples, escalar o resto classificado e resumido | **IMPLEMENTADA (02/10, D-018)**, desligada com o Concierge | [FATO] `shopman/storefront/concierge/triage.py` (tabela intenção → destino, regra local, modelo opcional, resumo); ligada no turno antes do modelo de resposta (`service.py`, `run_turn`); grava `envelope["triage"]` em cada entrada, `flags["triage"]` e `summary` na conversa; cartão `concierge_handoff` no sino do Gestor (público `orders`, `shopman/backstage/models/alerts.py`, `ORDER_TYPES`) e `concierge_other_desk` no Admin. Ver [Triagem](#triagem-decidida-em-02102026-e-implementada) | [FATO] O handoff liga o campo `concierge_handoff` no ManyChat e a equipe responde no Live Chat; retorno ao bot fechado (`CONCIERGE_HUMAN_RETURN_ENABLED=false`) |
 | 6 | "O pedido de sempre" no momento certo | **INEXISTENTE** (proativo) | [FATO] Só reativo: `last_order` quando o cliente já está conversando (`tools.py:1419`). Não há regra de "quando procurar" | [FATO] Mensagem que a casa inicia é fora da janela: exige template aprovado (`checks.py:910-913`) |
 
-**Onde o operador vê hoje.** [FATO] O alerta `concierge_handoff` tem público
-`operations` (não está em `ORDER_TYPES`, `shopman/backstage/models/alerts.py:318-332`,
-`:390-396`). O sino do Gestor de pedidos (`scope=orders`) só mostra alerta de
-público `orders` ou preso a um pedido (`shopman/backstage/services/alerts.py:69-70`).
-[INFERÊNCIA] Logo, um pedido de atendimento de quem ainda não tem pedido no chat
-só aparece no Admin (`/admin/shop/conversation/<id>/change/`) e no e-mail de
-alerta, não no Gestor.
+**Onde o operador vê.** [FATO] Desde a D-018, o alerta `concierge_handoff` tem público
+`orders` (`shopman/backstage/models/alerts.py`, `ORDER_TYPES`) e aparece no sino do Gestor de
+pedidos mesmo quando a conversa não tem pedido (`shopman/backstage/services/alerts.py`, recorte
+`orders`). Vaga, parceria e fornecedor geram `concierge_other_desk`, de público `operations`: ficam
+no Admin (alertas e o filtro "triagem" da conversa) e não chegam ao sino.
 
-## Triagem: PROPOSTA para o dono corrigir
+## Triagem: DECIDIDA em 02/10/2026 e implementada
 
-> ⚠️ **PROPOSTA, não decisão.** Nada disto está no código. Decisão pendente:
-> [D32 em PENDING-DECISIONS](../reports/go-live-acceleration-20260930-diag/PENDING-DECISIONS.md#d32-concierge-a-proposta-de-triagem).
-> O vocabulário reaproveita as 12 intenções que nasceram da conversa com o dono
-> em 23/09 (`shopman/storefront/concierge/intent_pilot.py:58-91`), que já são dado
-> editável no Admin.
+> ✅ **Decisão do dono, 02/10/2026:** *"aprovo a triagem"* (D32, opção 1;
+> [D-018](../coordination/DECISIONS.md)). Implementada sem redesenho em
+> `shopman/storefront/concierge/triage.py`. O vocabulário são as 12 intenções combinadas com o
+> dono em 23/09 (`intent_pilot.DEFAULT_INTENTS`, dado editável no Admin para o rótulo) e as três
+> urgências `now` (agora), `today` (hoje), `can_wait` (pode esperar). Nenhuma categoria nova.
 
-**1. O que responde sozinho** (sem pessoa), sempre com a fonte canônica:
+**Como classifica.** A triagem roda em todo turno, antes do modelo de resposta, na mesma porta
+onde rodava a regex de handoff (`service.run_turn`). Duas camadas:
 
-- `hours_delivery`: horário, endereço, retirada, se entrega, taxa por faixa.
-- `house_info`: como funciona a casa, formas de pagamento, pet, estacionamento.
-- `product_question` sem alergia: o que tem hoje, preço, disponibilidade, descrição.
-- `order_status` do próprio cliente, quando a identidade está ligada.
-- `order` simples: na fase 1 o Concierge orienta e manda o link da loja; na fase 2
-  monta no chat.
+1. **Regra local, sempre** (sem rede): a política de handoff de sempre
+   (`handoff.classify_handoff_request`) para pessoa, reclamação, encomenda especial e alergia, e
+   expressões para as outras oito intenções. Quando nada casa, a intenção é `product_question`
+   com fonte `default` (o bot responde, como respondia).
+2. **Modelo, quando ligado** (`CONCIERGE_TRIAGE_WITH_MODEL`, padrão ligado, com
+   `AI_ASSIST_API_KEY`; modelo `CONCIERGE_TRIAGE_MODEL`, vazio = o mesmo do Concierge): propõe
+   intenção, urgência e o resumo. Resposta fora das 12 intenções ou das 3 urgências é descartada;
+   falha de rede vira regra local.
 
-**2. Como classifica.** Cada mensagem recebe **uma intenção principal** das 12 e
-uma **urgência** (`agora`, `hoje`, `pode esperar`). A classificação roda antes do
-modelo de resposta, na mesma porta onde hoje roda a regex
-(`service.py:895-903`), e fica gravada na mensagem. As sensíveis (`complaint`,
-`allergy`, `human`) **sempre** escalam, mesmo que o modelo saiba responder.
+O sensível reconhecido pela regra local (pessoa, reclamação, alergia, encomenda especial) vence o
+modelo. O sensível proposto pelo modelo também escala.
 
-**3. O que escala** (para uma pessoa, com o bot calado naquela conversa):
+**Mapeamento intenção → destino** (a tabela aprovada, em `triage.ROUTES`):
 
-| Intenção | Escala para | Urgência padrão |
+| Intenção | Destino | Urgência padrão |
 |---|---|---|
-| `human` (pediu pessoa) | atendimento | agora |
-| `complaint` | atendimento (gerente) | agora |
-| `allergy` | atendimento | agora |
-| `special_order` (evento, volume) | encomendas | hoje |
-| `order` que o chat não fecha (fase 1) | atendimento | agora |
-| `job` | RH / dono | pode esperar |
-| `partnership` | marketing / dono | pode esperar |
-| `supplier_offer` | compras | pode esperar |
-| qualquer uma após 2 tentativas sem resposta útil | atendimento | agora |
+| `hours_delivery` (horário, endereço, retirada, entrega) | responde sozinho | hoje |
+| `house_info` (como funciona a casa) | responde sozinho | pode esperar |
+| `product_question` (sem alergia) | responde sozinho | hoje |
+| `order_status` | responde sozinho | agora |
+| `order` (pedido simples; fase 1 com o link da loja) | responde sozinho | agora |
+| `human` | equipe, sino do Gestor | agora |
+| `complaint` | equipe, sino do Gestor | agora |
+| `allergy` | equipe, sino do Gestor | agora |
+| `special_order` | equipe, sino do Gestor | hoje |
+| `order` que o chat não fecha | equipe, sino do Gestor | agora |
+| `job`, `partnership`, `supplier_offer` | outra mesa (Admin, sem sino) | pode esperar |
+| qualquer uma após 2 tentativas sem resposta útil | equipe, sino do Gestor | agora |
 
-`job`, `partnership` e `supplier_offer` **não** acordam o balcão: entram numa fila
-de "outra mesa", lida no dia.
+O modelo pode mudar a urgência das intenções que o bot responde e de `special_order`; nunca a das
+sensíveis (sempre agora) nem a da outra mesa (sempre pode esperar).
 
-**4. O que o operador vê.** Um cartão por conversa escalada, com:
+**Onde a proposta não dizia, o lado seguro (escalar ou não acordar ninguém):**
 
-- intenção e urgência (o rótulo da intenção, não o código);
-- **resumo em uma ou duas linhas**, escrito pelo modelo e gravado em
-  `Conversation.summary` (o campo já existe): o que a pessoa quer, o que o bot já
-  respondeu, o que falta;
-- nome e telefone quando a identidade está ligada; último pedido, se houver;
-- um botão que abre a conversa (hoje o Admin) e outro que devolve ao bot quando o
-  retorno estiver ligado.
+- **"Pedido que o chat não fecha"** virou regra: na fase 1 (turno sem autoridade comercial), o
+  segundo turno SEGUIDO com intenção `order` vai para a equipe, agora. O primeiro recebe resposta
+  (o link da loja). Com autoridade comercial (fase 2), o chat fecha e não escala.
+- **"2 tentativas sem resposta útil"** virou: duas falhas seguidas do modelo de resposta
+  (`consecutive_failures >= 2`) vão para a equipe, agora, em vez de repetir "indisponível".
+- **Outra mesa também cala o bot** (handoff no ManyChat): quem escreve não é cliente, e a resposta
+  é de uma pessoa da casa.
+- **Fora do expediente** nada toca ninguém: o cartão espera no sino. Não estava na proposta.
 
-**Onde:** no sino do Gestor de pedidos, para `human`, `complaint`, `allergy`,
-`order` e `special_order` (hoje o alerta não chega lá, ver acima); no Admin e no
-e-mail diário para `job`, `partnership` e `supplier_offer`.
+**O que o operador vê.** Um cartão por conversa escalada (`triage.alert_message`): a intenção (o
+rótulo do Admin) e a urgência, o resumo de uma ou duas linhas, o nome do cliente e o último pedido
+quando há, e onde responder (Live Chat do ManyChat), com o caminho da transcrição no Admin. O
+resumo fica em `Conversation.summary`; a triagem da última mensagem, em `flags["triage"]`
+(chaves em `docs/reference/data-schemas.md`). No Admin da conversa: coluna e filtro "triagem"
+(Com a equipe, Outra mesa, Respondida pelo Concierge). O resumo do modelo e o da regra local
+saem sem documento, número longo, dado financeiro e contato; endereço, alergia e pedido ficam,
+porque são o que a equipe precisa ler.
 
-**Perguntas para o dono corrigir:** as 12 intenções bastam? a tabela de destino
-está certa (quem é "atendimento" na casa hoje)? o resumo vai no sino do Gestor ou
-num app próprio? fora do expediente, o que escala espera a manhã ou toca alguém?
+**O que ficou de fora:** botão no cartão que abre a conversa no Admin (o Gestor só abre caminhos
+do próprio app; o caminho vai no texto) e botão "devolver ao bot" no cartão (retorno fechado,
+`CONCIERGE_HUMAN_RETURN_ENABLED=false`; a ação existe no Admin).
 
 ## Limitação de frente: ManyChat e a janela de 24 horas
 
@@ -194,9 +201,13 @@ NÃO VERIFICADO):
 `shopman/storefront/concierge/service.py:79-98`, `:835-844` e
 `webhook.py:97-129`):
 
+0. **Conferir antes:** `manage.py concierge_check --live` no app (ver
+   "Verificação"). Desligado, ele só informa o modo; ligado, lista o que falta.
 1. **`CONCIERGE_OPERATION_MODE=observe` → `assist`.** É o primeiro portão: em
    `observe`, `disabled_reason()` devolve `observation_only` mesmo com o switch
-   ligado (`service.py:89-91`). [FATO] Os modos são exclusivos: a observação
+   ligado (`shopman/storefront/concierge/service.py:90-91`). **Em `observe`, ligar
+   `SHOPMAN_CONCIERGE_ENABLED` não muda nada**: o webhook continua respondendo
+   `disabled` e nenhum turno roda. Por isso o modo vem primeiro. [FATO] Os modos são exclusivos: a observação
    passiva só grava com `operation_mode == "observe"` (`service.py:187-188`).
    [INFERÊNCIA] Trocar para `assist` **encerra a coleta** que alimenta o piloto de
    intenções; a amostra já guardada some no prazo de 7 dias (`:611-614`).
@@ -221,8 +232,10 @@ NÃO VERIFICADO):
 
 **Checklist antes de ligar (fase 1).**
 
-- [ ] Triagem construída conforme a D32 decidida (classificação, resumo em
-      `Conversation.summary`, alerta com resumo no lugar certo).
+- [x] Triagem construída conforme a D32 decidida (D-018: classificação, resumo em
+      `Conversation.summary`, cartão no sino do Gestor, outra mesa no Admin).
+- [ ] `manage.py concierge_check --live` sem pendência no app (system check
+      `SHOPMAN_W022`/`SHOPMAN_W023` limpo no release).
 - [ ] Decidir o que acontece com a observação passiva (item 1 acima).
 - [ ] `AI_ASSIST_API_KEY` e `CONCIERGE_API_KEY` com valor no app vivo
       (NÃO VERIFICADO; `.do/app.alpha-subdomains.yaml:545-547`, `:558-560`).
@@ -237,32 +250,26 @@ NÃO VERIFICADO):
 - [ ] Rotina de contenção conhecida: desligar `SHOPMAN_CONCIERGE_ENABLED` ou
       `CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE` (`whatsapp-concierge.md:242-246`).
 
-## Verificação: os dois comandos
+## Verificação: o que confere o Concierge
 
 | Comando | Onde | O que compara |
 |---|---|---|
-| `manage.py manychat_flows --check` | `shopman/shop/management/commands/manychat_flows.py:39-56`, `:84-117` | Lista os flows da conta pela API (`getFlows`) e confere se cada `NotificationTemplate.whatsapp_flow_ns` configurado ainda existe no ManyChat. Sem `MANYCHAT_API_TOKEN`, para com erro (`:61-66`) |
-| system check `check_whatsapp_flow_coverage` | `shopman/shop/checks.py:906-1003` (`@register(deploy=True)`) | Se há campanha ativa de **Marketing** com WhatsApp e nenhum template ativo com flow para `announcement_published`, avisa `SHOPMAN_W014` (`:947`, `:1000`); com flow, avisa `SHOPMAN_W020` quando o modo de Marketing está em ensaio ou bloqueado (`:968`, `:986`) |
+| `manage.py manychat_flows --check` | `shopman/shop/management/commands/manychat_flows.py` | Lista os flows da conta pela API (`getFlows`) e confere se cada `NotificationTemplate.whatsapp_flow_ns` configurado ainda existe no ManyChat. **Não cobre o Concierge** (e diz isso na saída) |
+| system check `check_whatsapp_flow_coverage` | `shopman/shop/checks.py` (`@register(deploy=True)`) | Só campanhas de **Marketing** (fora do go-live): `SHOPMAN_W014`, `SHOPMAN_W020`. **Não cobre o Concierge** |
+| system check `check_concierge_readiness` | `shopman/storefront/checks.py` (`@register(deploy=True)`) | **Cobre o Concierge** (D-018). Desligado: silêncio, o deploy de hoje passa limpo. Ligado: `SHOPMAN_W022` quando ele não vai responder (modo `observe` ou desconhecido, contrato diferente de 3, sem `AI_ASSIST_API_KEY`, sem conexão ativa, coorte vazia) e `SHOPMAN_W023` quando falta peça do ManyChat (`CONCIERGE_API_KEY`, `MANYCHAT_API_TOKEN`, campo de atendimento humano, fuso da janela). Só Warning: tudo isso já falha fechado em runtime, e um Error derrubaria o `check --deploy` do release (a lição do W020) |
+| `manage.py concierge_check [--live]` | `shopman/storefront/management/commands/concierge_check.py` | O mesmo check, legível, com saída 1 quando há pendência; com `--live`, pergunta ao ManyChat (`getCustomFields`) se o campo de atendimento humano existe |
 
-[FATO] **Nenhum dos dois cobre o Concierge.** O primeiro confere templates de
-notificação; o segundo, campanhas de Marketing (que ficam fora do go-live). O
-flow do Concierge (External Request, campo `concierge_handoff`) não tem
-verificação automática; a conferência é o ensaio manual do checklist.
+[FATO] O que nenhum comando enxerga: se o flow do ManyChat chama o External Request em **toda**
+mensagem. A API do ManyChat não expõe o conteúdo do flow; essa conferência continua sendo o ensaio
+manual do checklist.
 
-**Saída real ao rodar localmente (01/10/2026, worktree deste PR):**
-
-- `.venv/bin/python manage.py manychat_flows --check` →
-  `AssertionError: SECRET_KEY must be set in production (DJANGO_SECRET_KEY env var)`
-  (`config/settings.py:2378`), exit 1.
-- Com `DJANGO_SETTINGS_MODULE=config.settings_test DATABASE_URL=` →
-  `ModuleNotFoundError: No module named 'shopman.utils.names'`, exit 1. Causa: o
-  `.venv` carrega `packages/*` da árvore principal (editable installs), que está
-  atrás do `main`; a trava de isolamento desta sessão recusou definir
-  `PYTHONPATH` para apontar os pacotes para a worktree.
-- O system check não foi rodado pelo mesmo motivo. Mesmo rodando, sem
-  `MANYCHAT_API_TOKEN` o primeiro comando para em `manychat_flows.py:61-66`, e o
-  check precisa do banco do staging para dizer algo útil. **NÃO VERIFICADO no
-  staging.**
+**Saída real ao rodar localmente (01/10/2026, `config.settings_test`, sem banco migrado):**
+com `SHOPMAN_CONCIERGE_ENABLED=true`, `CONCIERGE_OPERATION_MODE=observe` e
+`CONCIERGE_CONTRACT_VERSION=3`, `manage.py concierge_check` sai com
+`CommandError: 3 pendência(s) no Concierge.` e lista `SHOPMAN_W022` para o modo `observe`
+("o Concierge só observa e não responde ninguém"), para a falta de `AI_ASSIST_API_KEY` e para a
+falta de conexão ativa. Desligado, só informa o modo e sai com 0. **NÃO VERIFICADO no app vivo**:
+o `--live` precisa do `MANYCHAT_API_TOKEN`, que só existe lá.
 
 ## Objetivo
 
