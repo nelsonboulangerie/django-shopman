@@ -294,6 +294,58 @@ class RecipeVersionProjection:
 
 
 @dataclass(frozen=True)
+class UsageCaveatProjection:
+    """A warning that travels with the usage numbers (what they do NOT measure)."""
+
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class QualityShareProjection:
+    """Units of one quality grade among a version's executed batches."""
+
+    grade_ref: str
+    label: str
+    quantity_display: str
+    share_display: str
+
+
+@dataclass(frozen=True)
+class VersionUsageProjection:
+    """What the house produced with one version (or with no version stamp)."""
+
+    version_ref: str
+    version_number: int | None
+    is_versioned: bool
+    label: str
+    batches: int
+    batches_display: str
+    planned_display: str
+    finished_display: str
+    loss_display: str
+    yield_pct: str
+    yield_display: str
+    avg_loss: str
+    avg_loss_display: str
+    loss_pct_display: str
+    summary_display: str
+    quality: tuple[QualityShareProjection, ...]
+
+
+@dataclass(frozen=True)
+class RecipeUsageProjection:
+    """Executed batches of a recipe entry, by version, read from the work orders."""
+
+    date_from: str
+    date_to: str
+    bake_loss_basis: str
+    caveats: tuple[UsageCaveatProjection, ...]
+    versions: tuple[VersionUsageProjection, ...]
+    unversioned: VersionUsageProjection | None
+
+
+@dataclass(frozen=True)
 class RecipeEntryDetailProjection:
     """A recipe entry with its versions (newest first)."""
 
@@ -313,6 +365,7 @@ class RecipeEntryDetailProjection:
     #: digital do conteúdo, que pega a ficha editada pelo Admin.
     execution_in_sync: bool
     versions: tuple[RecipeVersionProjection, ...]
+    usage: RecipeUsageProjection
 
 
 @dataclass(frozen=True)
@@ -792,6 +845,7 @@ def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
         versions=tuple(build_recipe_version(version, kind=entry.kind) for version in versions),
+        usage=build_recipe_usage(entry.ref),
     )
 
 
@@ -841,6 +895,166 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
         formula=wire_formula(version.formula),
         origin=dict(version.origin or {}),
     )
+
+
+# ── Uso real por versão (reputação, fatia 1) ─────────────────────────────────
+
+USAGE_CAVEAT_MESSAGES: dict[str, str] = {
+    "loss_is_residual": (
+        "A perda é o que entrou na fornada menos o que saiu dela, pela conta e não pela balança: "
+        "massa na bacia, aparas e peça não anotada entram todas aqui."
+    ),
+    "unversioned_not_attributed": (
+        "Fornada sem carimbo de versão (ficha nunca publicada pelo inventário, ou planejada antes "
+        "da publicação) fica em \"Sem versão\" e não conta para versão nenhuma."
+    ),
+    "bake_loss_house_default": (
+        "A perda de forno desta ficha não foi declarada: vale o padrão da casa, uma estimativa "
+        "que nunca passou pela balança."
+    ),
+    "bake_loss_estimated": "A perda de forno desta ficha foi declarada, mas ninguém a pesou.",
+}
+
+UNVERSIONED_LABEL = "Sem versão"
+
+
+def build_recipe_usage(ref: str, *, date_from=None, date_to=None) -> RecipeUsageProjection:
+    """As fornadas EXECUTADAS da receita, por versão, num intervalo de datas (inclusivo).
+
+    Lê as ``WorkOrder`` (não os ``DayClosing``): fornada concluída, agrupada pelo
+    ``version_ref`` congelado no plano. Rendimento = concluído ÷ planejado das
+    executadas; perda = soma do resíduo ``(iniciado ou planejado) − concluído``.
+
+    Os avisos vão no dado (``caveats``), e a ordem é a da linha do tempo (versão
+    mais nova primeiro), **nunca** por perda: a perda é resíduo contábil, e
+    ordenar por ela ordenaria por quem anota melhor. Fornada sem carimbo, ou com
+    carimbo que não é desta receita, cai em ``unversioned`` e não é atribuída.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.services.closing import VERSION_CAVEATS, aggregate_by_version
+
+    work_orders = WorkOrder.objects.filter(recipe__ref=ref, finished__isnull=False)
+    if date_from is not None:
+        work_orders = work_orders.filter(target_date__gte=date_from)
+    if date_to is not None:
+        work_orders = work_orders.filter(target_date__lte=date_to)
+
+    by_number: dict[int, dict] = {}
+    unversioned: dict | None = None
+    for row in aggregate_by_version(work_orders):
+        number = _own_version_number(row["version_ref"], ref)
+        if number is None:
+            unversioned = _merge_usage_rows(unversioned, row)
+        else:
+            by_number[number] = _merge_usage_rows(by_number.get(number), row)
+
+    grade_labels = _quality_grade_labels()
+    basis = _bake_loss_basis(ref)
+    codes = list(VERSION_CAVEATS)
+    if basis in ("house_default", "estimated"):
+        codes.append(f"bake_loss_{basis}")
+    return RecipeUsageProjection(
+        date_from=date_from.isoformat() if date_from else "",
+        date_to=date_to.isoformat() if date_to else "",
+        bake_loss_basis=basis,
+        caveats=tuple(UsageCaveatProjection(code=code, message=USAGE_CAVEAT_MESSAGES[code]) for code in codes),
+        versions=tuple(
+            _version_usage(by_number[number], number=number, ref=ref, grade_labels=grade_labels)
+            for number in sorted(by_number, reverse=True)
+        ),
+        unversioned=(
+            _version_usage(unversioned, number=None, ref=ref, grade_labels=grade_labels)
+            if unversioned is not None
+            else None
+        ),
+    )
+
+
+def _own_version_number(version_ref: str, ref: str) -> int | None:
+    """O número da versão quando o carimbo é DESTA receita; ``None`` senão (sem versão)."""
+    if not version_ref:
+        return None
+    try:
+        stamped_ref, number = parse_version_ref(version_ref)
+    except ValueError:
+        return None
+    return number if stamped_ref == ref else None
+
+
+_USAGE_SUM_KEYS = ("executed", "executed_planned", "executed_started", "finished", "loss")
+
+
+def _merge_usage_rows(acc: dict | None, row: dict) -> dict:
+    if acc is None:
+        return {**{key: row[key] for key in _USAGE_SUM_KEYS}, "quality": dict(row.get("quality") or {})}
+    for key in _USAGE_SUM_KEYS:
+        acc[key] += row[key]
+    for grade, qty in (row.get("quality") or {}).items():
+        acc["quality"][grade] = acc["quality"].get(grade, _ZERO) + qty
+    return acc
+
+
+def _version_usage(row: dict, *, number: int | None, ref: str, grade_labels: dict[str, tuple[int, str]]) -> VersionUsageProjection:
+    batches = int(row["executed"])
+    planned, started, finished, loss = (
+        row["executed_planned"], row["executed_started"], row["finished"], row["loss"],
+    )
+    yield_pct = (finished / planned * 100) if planned else None
+    avg_loss = (loss / batches) if batches else None
+    loss_pct = (loss / started * 100) if started else None
+    batches_display = f"{batches} fornada" if batches == 1 else f"{batches} fornadas"
+    avg_loss_display = f"{_number(avg_loss)} por fornada" if avg_loss is not None else ""
+    summary = batches_display
+    if yield_pct is not None:
+        summary += f"; rendimento médio {_pct_display(yield_pct)}"
+    if avg_loss_display:
+        summary += f"; perda média {avg_loss_display}"
+
+    quality = row.get("quality") or {}
+    graded_total = sum(quality.values(), _ZERO)
+    # Ordem da ESCALA (melhor grau primeiro), fixa — nunca pelo volume.
+    grades = sorted(quality, key=lambda grade: (-grade_labels.get(grade, (0, ""))[0], grade))
+    return VersionUsageProjection(
+        version_ref=f"{ref}@{number}" if number is not None else "",
+        version_number=number,
+        is_versioned=number is not None,
+        label=f"Versão {number}" if number is not None else UNVERSIONED_LABEL,
+        batches=batches,
+        batches_display=batches_display,
+        planned_display=_number(planned),
+        finished_display=_number(finished),
+        loss_display=_number(loss),
+        yield_pct=_plain_number(yield_pct),
+        yield_display=_pct_display(yield_pct),
+        avg_loss=_plain_number(avg_loss),
+        avg_loss_display=avg_loss_display,
+        loss_pct_display=_pct_display(loss_pct),
+        summary_display=summary,
+        quality=tuple(
+            QualityShareProjection(
+                grade_ref=grade,
+                label=grade_labels.get(grade, (0, grade))[1] or grade,
+                quantity_display=_number(quality[grade]),
+                share_display=_pct_display(quality[grade] / graded_total * 100) if graded_total else "",
+            )
+            for grade in grades
+        ),
+    )
+
+
+def _quality_grade_labels() -> dict[str, tuple[int, str]]:
+    from shopman.shop.models import QualityGrade
+
+    return {grade.ref: (grade.rank, grade.label) for grade in QualityGrade.objects.all()}
+
+
+def _bake_loss_basis(ref: str) -> str:
+    """Espécie da perda de forno da ficha ATIVA desta receita; ``""`` sem ficha."""
+    from shopman.shop.services.unit_weight_from_recipe import bake_loss_basis
+
+    recipe = Recipe.objects.filter(ref=ref, is_active=True).first()
+    return bake_loss_basis(recipe) if recipe is not None else ""
 
 
 # ── Comparação ───────────────────────────────────────────────────────────────
