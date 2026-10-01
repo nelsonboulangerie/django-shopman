@@ -9,7 +9,7 @@ balcão.
 from __future__ import annotations
 
 import base64
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 from unittest.mock import patch
 
@@ -35,9 +35,23 @@ pytestmark = pytest.mark.django_db
 _READER = "shopman.shop.adapters.purchase_invoice_nfe.read_invoice"
 
 
-def _purchase(*, start=-1, end=1) -> dict:
-    data = base64.b64encode(synthetic_certificate(pfx=True, start=start, end=end)).decode()
+def _purchase(*, start=-1, end=1, now=None) -> dict:
+    data = base64.b64encode(synthetic_certificate(pfx=True, start=start, end=end, now=now)).decode()
     return {"certificate_pfx_base64": data, "certificate_password": ""}
+
+
+def _brasilia(hour, minute, second=0, *, day=30, month=9):
+    """Um instante no relógio da loja (``TIME_ZONE``), em 2026.
+
+    O padrão é 30/09/2026, o dia em que o CI ficou vermelho perto da meia-noite.
+    Entre 21h e 24h de Brasília a data UTC já é a do dia seguinte: é a janela em
+    que contar dias em UTC mentiria para o gestor.
+
+    Devolve o instante em UTC, como o ``timezone.now()`` de verdade: congelar
+    com o fuso de Brasília embutido faria ``now.date()`` acertar por acaso e
+    esconderia justamente o defeito que estes testes procuram.
+    """
+    return timezone.make_aware(datetime(2026, month, day, hour, minute, second)).astimezone(UTC)
 
 
 def _run(*, at=None) -> None:
@@ -55,6 +69,7 @@ def _certificate_alerts():
 # ── cada marco ───────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("hour,minute", [(12, 0), (23, 30)], ids=["12h00", "23h30"])
 @pytest.mark.parametrize(
     "end,severity,phrase",
     [
@@ -66,17 +81,53 @@ def _certificate_alerts():
         (1, "critical", "vence amanhã"),
     ],
 )
-def test_cada_marco_de_antecedencia_vira_um_alerta(end, severity, phrase):
-    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=end)):
-        _run()
+def test_cada_marco_de_antecedencia_vira_um_alerta(end, severity, phrase, hour, minute):
+    # Um relógio só: o certificado nasce e o comando roda no MESMO instante. Com
+    # dois (o da fixture e o do comando), a meia-noite local entre eles fazia o
+    # "daqui a 7 dias" sair 6 (CI do #1312, perto das 00:00 de Brasília).
+    now = _brasilia(hour, minute)
+    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=end, now=now)):
+        _run(at=now)
 
     [alert] = _certificate_alerts()
     assert alert.severity == severity
     assert alert.message.startswith("O e-CNPJ A1 de Compras vence ")
     assert phrase in alert.message
-    expires_on = timezone.localtime(timezone.now() + timedelta(days=end)).date()
+    # A data é a do calendário da loja: às 23:30 de 30/09 o vencimento em 7 dias
+    # é 07/10, embora em UTC já seja 08/10.
+    expires_on = date(2026, 9, 30) + timedelta(days=end)
     assert f"{expires_on:%d/%m/%Y}" in alert.message
     assert "Renove o e-CNPJ A1" in alert.message
+
+
+def test_a_contagem_e_pelo_calendario_da_loja_entre_21h_e_24h():
+    """23:30 de 30/09 em Brasília já é 01/10 em UTC: os dias contam pelo da loja.
+
+    O certificado vence às 20:00 de 07/10 (23:00 UTC). Pelo calendário da loja
+    faltam 7 dias; contando datas UTC (01/10 a 07/10) seriam 6.
+    """
+    now = _brasilia(23, 30)
+    expires_at = _brasilia(20, 0, day=7, month=10)
+    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=7, now=expires_at - timedelta(days=7))):
+        _run(at=now)
+
+    [alert] = _certificate_alerts()
+    assert alert.message.startswith("O e-CNPJ A1 de Compras vence em 07/10/2026, daqui a 7 dias.")
+
+
+def test_passada_a_meia_noite_o_dia_ja_virou():
+    """A mensagem que o CI do #1312 viu era a CERTA para o instante em que rodou.
+
+    O certificado nasceu às 23:59:59 de 30/09 e o comando rodou às 00:00:01 de
+    01/10: dali até 07/10 são 6 dias. O defeito era do teste, que lia o relógio
+    duas vezes; o produto conta o calendário da loja.
+    """
+    born = _brasilia(23, 59, 59)
+    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=7, now=born)):
+        _run(at=_brasilia(0, 0, 1, day=1, month=10))
+
+    [alert] = _certificate_alerts()
+    assert alert.message.startswith("O e-CNPJ A1 de Compras vence em 07/10/2026, daqui a 6 dias.")
 
 
 def test_longe_do_vencimento_nao_avisa():
@@ -104,7 +155,7 @@ def test_vencido_e_critico_e_diz_que_venceu(tmp_path):
 
 def test_o_marco_nao_dispara_todo_dia_e_o_seguinte_dispara():
     now = timezone.now()
-    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=30)):
+    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=30, now=now)):
         _run(at=now)
         _run(at=now + timedelta(days=1))  # ainda no marco de 30 dias
         _run(at=now + timedelta(days=2))
@@ -162,14 +213,17 @@ def test_compras_desligada_nao_vira_pendencia():
 
 def test_a_prontidao_mostra_a_data_de_vencimento(tmp_path):
     path = tmp_path / "efi.pem"
-    path.write_bytes(synthetic_certificate(end=45))
-    expires_on = timezone.localtime(timezone.now() + timedelta(days=45)).date()
+    # Um relógio só (ver o teste dos marcos): a data esperada sai do MESMO
+    # instante em que o certificado nasce.
+    now = timezone.now()
+    path.write_bytes(synthetic_certificate(end=45, now=now))
+    expires_on = timezone.localtime(now + timedelta(days=45)).date()
     with override_settings(SHOPMAN_EFI={"certificate_path": str(path)}):
         projection = efi_pix_readiness().as_projection()
     assert projection["certificate_expires_on"] == expires_on.isoformat()
     assert f"Certificado válido até {expires_on:%d/%m/%Y}." in projection["message"]
 
-    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=45)):
+    with override_settings(SHOPMAN_PURCHASE_NFE=_purchase(end=45, now=now)):
         projection = purchase_nfe_readiness().as_projection()
     assert projection["certificate_expires_on"] == expires_on.isoformat()
 
