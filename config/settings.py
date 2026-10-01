@@ -519,10 +519,12 @@ if _redis_url:
 
     CACHES = {
         "default": {
-            # Native Django Redis backend keeps the runtime aligned with
-            # Django 6. django-ratelimit 4.1 has a stale allowlist and emits
-            # W001 for this backend, silenced below after our own Redis check.
-            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            # O RedisCache nativo do Django, com UM pool de conexões por
+            # processo (shopman/shop/cache.py): sob ASGI o nativo monta pool
+            # novo por request e paga conexão (e TLS) a cada request.
+            # django-ratelimit 4.1 tem allowlist velha e emite W001 para este
+            # backend, silenciado abaixo depois do nosso próprio check de Redis.
+            "BACKEND": "shopman.shop.cache.SharedPoolRedisCache",
             "LOCATION": _redis_url,
         }
     }

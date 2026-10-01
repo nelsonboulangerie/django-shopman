@@ -466,7 +466,9 @@ def _runtime_lines() -> list[CheckLine]:
         lines.append(CheckLine("FAIL", "cache roundtrip", cache_detail or cache_backend or "failed"))
 
     redis_url_set = bool(os.environ.get("REDIS_URL", "").strip())
-    if redis_url_set and cache_backend == "django.core.cache.backends.redis.RedisCache":
+    from shopman.shop.cache import is_redis_cache_backend
+
+    if redis_url_set and is_redis_cache_backend(cache_backend):
         lines.append(CheckLine("OK", "redis runtime", "REDIS_URL set and native Django Redis cache active"))
     else:
         lines.append(

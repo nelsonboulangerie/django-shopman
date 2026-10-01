@@ -20,8 +20,9 @@ Contrato atual:
   depois, sera uma decisao explicita. Django Tasks nao fornece worker de
   execucao por si so.
 - **Django 6.1**: runtime canônico em `Django>=6.1,<6.2`. Redis usa
-  `django.core.cache.backends.redis.RedisCache`; nao ha dependencia de pacote
-  externo para cache Redis. `django-ratelimit 4.1` ainda emite um warning de
+  `shopman.shop.cache.SharedPoolRedisCache`, o `RedisCache` nativo do Django com
+  um pool de conexoes por processo (sob ASGI o nativo monta pool novo por request);
+  nao ha dependencia de pacote externo para cache Redis. `django-ratelimit 4.1` ainda emite um warning de
   allowlist para esse backend, silenciado no settings depois do check proprio
   `SHOPMAN_E006`.
 - **Node.js**: `>=22` para ferramentas frontend/QA. O CI fixa Node 24 no gate
@@ -62,7 +63,8 @@ Redis e o cache compartilhado do Shopman. Ele e usado para:
 
 Quando `REDIS_URL` esta definido, `config/settings.py` configura:
 
-- `CACHES["default"]` com `django.core.cache.backends.redis.RedisCache`;
+- `CACHES["default"]` com `shopman.shop.cache.SharedPoolRedisCache` (o
+  `RedisCache` do Django com um `ConnectionPool` por processo, ver o modulo);
 - `EVENTSTREAM_REDIS` derivado da mesma URL, para que `send_event` alcance
   listeners conectados a qualquer worker.
 
@@ -108,7 +110,7 @@ fechado quando:
 - `DATABASE_URL` nao esta definido ou nao aponta para PostgreSQL;
 - o banco nao responde a uma query real;
 - `REDIS_URL` nao esta definido;
-- o cache default nao usa `django.core.cache.backends.redis.RedisCache`;
+- o cache default nao e Redis (`shopman.shop.cache.REDIS_CACHE_BACKENDS`);
 - o cache Redis nao completa set/get/delete;
 - `EVENTSTREAM_REDIS` nao esta configurado para fanout SSE multi-worker.
 

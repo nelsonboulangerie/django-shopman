@@ -49,9 +49,12 @@ def _failures() -> list[str]:
         failures.append("REDIS_URL is not set; runtime gate requires shared Redis.")
 
     cache_backend = settings.CACHES.get("default", {}).get("BACKEND", "")
-    expected_cache = "django.core.cache.backends.redis.RedisCache"
-    if cache_backend != expected_cache:
-        failures.append(f"default cache backend is {cache_backend!r}; expected {expected_cache!r}.")
+    from shopman.shop.cache import REDIS_CACHE_BACKENDS, is_redis_cache_backend
+
+    if not is_redis_cache_backend(cache_backend):
+        failures.append(
+            f"default cache backend is {cache_backend!r}; expected one of {sorted(REDIS_CACHE_BACKENDS)!r}."
+        )
 
     key = f"runtime-gate:{uuid.uuid4().hex}"
     try:
