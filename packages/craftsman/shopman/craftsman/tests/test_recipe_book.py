@@ -282,6 +282,47 @@ class TestPublish:
         assert Recipe.objects.filter(ref="massa-tradicao").exists() is False
 
 
+
+class TestOMesmoInsumoEmDuasLinhas:
+    """Água da massa + água da bassinage (o mesmo SKU): a ficha tem uma linha por
+    insumo (``unique(recipe, input_sku)``), então a publicação SOMA as duas, e a
+    fornada consome a soma."""
+
+    @staticmethod
+    def _bassinage(entry, parts=None):
+        formula = flour_formula(water=650, parts=parts)
+        formula["items"].append(
+            {"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid", "quantity": 50, "unit": "g"},
+        )
+        return recipe_book.create_version(entry, formula=formula, yield_quantity="1.72", yield_unit="kg")
+
+    def test_the_sheet_gets_the_sum_of_the_two_lines(self, entry):
+        recipe = recipe_book.publish_version(self._bassinage(entry))
+        water = recipe.items.get(input_sku="AGUA-FILTRADA")
+        assert (water.quantity, water.unit) == (Decimal("700"), "g")
+        assert sum(item.quantity for item in recipe.items.all()) == Decimal("1720")
+
+    def test_with_a_part_the_sheet_gets_what_is_left_of_both(self, entry, published_levain):
+        recipe = recipe_book.publish_version(
+            self._bassinage(entry, parts=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+        )
+        assert {item.input_sku: item.quantity for item in recipe.items.all()} == {
+            "FARINHA-ANACONDA-PREMIUM": Decimal("800"),
+            "AGUA-FILTRADA": Decimal("500"),  # 650 + 50 − 200 do levain
+            "SAL-REFINADO": Decimal("20"),
+            "LEVAIN": Decimal("400"),
+        }
+
+    def test_the_batch_consumes_the_sum(self, entry):
+        from shopman.craftsman.models import WorkOrderItem
+
+        recipe = recipe_book.publish_version(self._bassinage(entry))
+        work_order = craft.plan(recipe, Decimal("1.72"))
+        craft.finish(work_order, Decimal("1.72"))
+        water = work_order.items.get(kind=WorkOrderItem.Kind.CONSUMPTION, item_ref="AGUA-FILTRADA")
+        assert water.quantity == Decimal("700")
+
+
 # ── Partes ───────────────────────────────────────────────────────────────────
 
 

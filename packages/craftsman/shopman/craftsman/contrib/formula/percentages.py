@@ -429,6 +429,7 @@ def _read_items(items: list[dict], warnings: list[FormulaWarning]) -> list[dict]
             ))
         item["grams"] = grams
         item["key"] = _item_key(raw)
+        item["line"] = index
         read.append(item)
     return read
 
@@ -496,7 +497,9 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
     items = tuple(_to_analysis_item(it, anchor_total) for it in base)
 
     # Mistura final: começa igual à base e vai perdendo o que as partes levam.
-    remaining: dict[str, Decimal | None] = {it["key"]: it["grams"] for it in base}
+    # As partes descontam por INSUMO: o mesmo SKU em duas linhas (a água da massa
+    # e a da bassinage) é um estoque só para o levain tirar a água dele.
+    remaining = _grams_by_key(base)
     base_by_key = {it["key"]: it for it in base}
     parts: list[FormulaPartAnalysis] = []
     prefermented_flour = _ZERO
@@ -605,17 +608,17 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
 
     # O que sobrou de cada item depois das partes; resíduo de arredondamento
     # (inclusive o "-0" do Decimal) vira zero, não linha negativa na tela.
-    remaining = {
+    remaining = _remaining_by_line(base, {
         key: (_ZERO if grams is not None and abs(grams) < _BOM_RESIDUE_G else grams)
         for key, grams in remaining.items()
-    }
+    })
     final_mix = tuple(
-        _final_mix_item(it, remaining[it["key"]], anchor_total)
+        _final_mix_item(it, remaining[it["line"]], anchor_total)
         for it in base
     )
     factor_at_cap = Decimal(1) - (old_dough_cap / _HUNDRED) if old_dough_cap else Decimal(1)
     final_mix_at_cap = tuple(
-        _final_mix_item(it, None if remaining[it["key"]] is None else remaining[it["key"]] * factor_at_cap, anchor_total)
+        _final_mix_item(it, None if remaining[it["line"]] is None else remaining[it["line"]] * factor_at_cap, anchor_total)
         for it in base
     )
 
@@ -643,6 +646,43 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
     )
 
 
+def _grams_by_key(base: list[dict]) -> dict[str, Decimal | None]:
+    """Grama de cada insumo somando as linhas dele; ``None`` se nenhuma linha tem peso."""
+    totals: dict[str, Decimal | None] = {}
+    for item in base:
+        key, grams = item["key"], item["grams"]
+        if grams is None:
+            totals.setdefault(key, None)
+        else:
+            totals[key] = (totals.get(key) or _ZERO) + grams
+    return totals
+
+
+def _remaining_by_line(base: list[dict], remaining_by_key: dict[str, Decimal | None]) -> dict[int, Decimal | None]:
+    """O que sobrou do insumo, de volta a cada LINHA da fórmula.
+
+    O que as partes levaram de um insumo sai das linhas dele na ordem da
+    fórmula, a primeira primeiro: o levain tira a água da água da massa, e a
+    bassinage (escrita depois) fica inteira. Linha sem peso (contagem sem
+    grama por unidade) fica ``None``, como sempre ficou.
+    """
+    taken = {
+        key: (total - remaining_by_key[key]) if total is not None and remaining_by_key.get(key) is not None else _ZERO
+        for key, total in _grams_by_key(base).items()
+    }
+    out: dict[int, Decimal | None] = {}
+    for item in base:
+        grams = item["grams"]
+        if grams is None:
+            out[item["line"]] = None
+            continue
+        take = min(grams, max(taken[item["key"]], _ZERO))
+        taken[item["key"]] -= take
+        left = grams - take
+        out[item["line"]] = _ZERO if abs(left) < _BOM_RESIDUE_G else left
+    return out
+
+
 def _grams_of(quantity: Decimal, unit: str) -> Decimal | None:
     factor = _GRAMS_PER_UNIT.get(normalize_unit(unit) or "g")
     return None if factor is None else quantity * factor
@@ -663,7 +703,7 @@ def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysi
                total_mass: Decimal, old_dough_cap: Decimal | None) -> list[dict]:
     bom: list[dict] = []
     for item in base:
-        grams = remaining[item["key"]]
+        grams = remaining[item["line"]]
         quantity = _quantity_in_own_unit(item, grams)
         if grams is not None and grams < _BOM_RESIDUE_G:
             continue
