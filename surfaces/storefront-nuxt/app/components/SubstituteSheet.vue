@@ -18,15 +18,25 @@ const open = computed({
 })
 
 const itemName = computed(() => cartIssue.value?.name || 'este item')
+// Item de OUTRA data: não é falta de estoque, é outro pedido (na loja online cada
+// pedido tem uma data só). A frase vem pronta do servidor; a folha não a reescreve.
+const isOtherDate = computed(() => cartIssue.value?.error_code === 'cart_date_mismatch')
+// `available_qty` é o TETO da linha (absoluto). O botão só aparece quando ele
+// avança a linha; já no teto, a folha diz isso em vez de oferecer o mesmo número.
 const availableQty = computed(() => cartIssue.value?.available_qty ?? null)
-const hasAvailable = computed(() => availableQty.value != null && availableQty.value > 0)
+const hasAvailable = computed(() => issueAdvancesLine(cartIssue.value))
+const lineQty = computed(() => cartIssue.value?.line_qty ?? null)
+const atLineCeiling = computed(() =>
+  !hasAvailable.value && lineQty.value != null && lineQty.value > 0
+  && availableQty.value != null && availableQty.value > 0
+)
 const substitutes = computed(() => cartIssue.value?.substitutes ?? [])
 // Planejado = há próximo lote conhecido. Enquadra a escassez como pré-reserva
 // ("garantir o seu"), não como "esgotou". A reserva é o planned-hold do carrinho.
 const isPlanned = computed(() => !!cartIssue.value?.is_planned)
 // Esgotado honesto e assinável (WP-3): oferece "Me avise quando disponível" no lugar
 // de um beco sem saída. O StockNotifyButton já faz o POST para o sku do item.
-const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable)
+const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable && !atLineCeiling.value)
 // Intro dos substitutos e headlines de escassez vêm do registro omotenashi (Kintsugi);
 // o fallback cobre só o intervalo até o payload chegar.
 const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Que tal um destes no lugar?')
@@ -34,6 +44,8 @@ const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Q
 // Sem saldo, o aviso é o mesmo para todo mundo: o cliente nunca sabe se o item
 // esgotou, se a casa o pausou ou se ele saiu do canal (AVAILABILITY-PLAN §2).
 const title = computed(() => {
+  if (isOtherDate.value) return cartIssue.value?.title || 'Isso fica para outro pedido'
+  if (atLineCeiling.value) return 'Não dá para levar mais'
   if (isPlanned.value && cartIssue.value?.planned_offer_title) return cartIssue.value.planned_offer_title
   if (hasAvailable.value) return 'Ajuste a quantidade'
   return cartIssue.value?.shortage_title || 'Ficou indisponível enquanto você escolhia.'
@@ -43,15 +55,24 @@ const title = computed(() => {
 // parede, com o único botão ("Tentar de novo") refazendo a mutação que acabou de falhar
 // pelo mesmo motivo.
 const description = computed(() => {
+  if (isOtherDate.value) return cartIssue.value?.detail || ''
+  if (atLineCeiling.value) {
+    return isPlanned.value
+      ? `Todas as unidades de ${itemName.value} desta fornada já estão na sua sacola.`
+      : `Todas as unidades de ${itemName.value} que temos agora já estão na sua sacola.`
+  }
   if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message
   if (hasAvailable.value) return `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
   if (substitutes.value.length) return `${itemName.value} está indisponível agora. Veja boas alternativas.`
   if (isNotifiable.value) return `${itemName.value} acabou agora. Dá para avisarmos você quando voltar.`
   return `${itemName.value} acabou agora, e não temos substituto para oferecer hoje.`
 })
+// Linha que já existe: o número é o TOTAL que ela passa a ter, e o rótulo diz
+// isso. "Pré-reservar 4 unidades" com 2 já na sacola leria como mais quatro.
 const primaryQtyLabel = computed(() => {
   const n = formatCount(availableQty.value!, 'unidade', 'unidades')
-  return isPlanned.value ? `Pré-reservar ${n}` : `Levar ${n}`
+  const total = lineQty.value != null && lineQty.value > 0 ? ' no total' : ''
+  return isPlanned.value ? `Pré-reservar ${n}${total}` : `Levar ${n}${total}`
 })
 
 function useAvailable () {
@@ -103,10 +124,23 @@ function chooseSubstitute (sub: typeof substitutes.value[number]) {
         </ul>
       </div>
 
+      <!-- Outra data: o item é de outro pedido. A saída é terminar este (a sacola);
+           o cardápio "de hoje" mentiria sobre a data. -->
+      <UiButton
+        v-else-if="isOtherDate"
+        variant="outline"
+        size="lg"
+        class="w-full"
+        to="/sacola"
+        @click="open = false"
+      >
+        Ver minha sacola
+      </UiButton>
+
       <!-- Beco fechado: sem saldo, sem substituto e sem aviso. Refazer a mesma mutação
            falharia de novo pelo mesmo motivo — a saída é o cardápio de hoje. -->
       <UiButton
-        v-else-if="!hasAvailable && !isNotifiable"
+        v-else-if="!hasAvailable && !isNotifiable && !atLineCeiling"
         variant="outline"
         size="lg"
         class="w-full"

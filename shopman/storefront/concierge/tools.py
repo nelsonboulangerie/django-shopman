@@ -624,7 +624,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
     os substitutos que o Stockman sugere. Preço vem do listing, nunca do texto.
     """
     from shopman.shop.services import cart as cart_service
-    from shopman.shop.services.cart import CartUnavailableError
+    from shopman.shop.services.cart import CartDateMismatchError, CartUnavailableError
 
     sku = str(sku or "").strip()
     if not sku:
@@ -694,11 +694,22 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
                 unit_price_q=int(item.base_price_q),
                 name=item.name,
             )
+    except CartDateMismatchError as exc:
+        from shopman.storefront.presentation import present_cart_date_mismatch
+
+        copy = present_cart_date_mismatch(name=item.name, cart_date=exc.cart_date, item_date=exc.item_date)
+        return _error(
+            exc.error_code,
+            copy["detail"],
+            sku=sku,
+            requested_qty=_quantity_value(qty),
+            cart_date=exc.cart_date.isoformat(),
+            item_date=exc.item_date.isoformat(),
+        )
     except CartUnavailableError as exc:
-        # Ao AJUSTAR uma linha, a reserva confere só o acréscimo: o saldo que volta
-        # exclui o que esta sacola já segura. Para o cliente, o que existe é a soma.
-        held_qty = Decimal(str(existing.get("qty") or 0)) if existing is not None else Decimal(0)
-        available_total = Decimal(str(exc.available_qty)) + held_qty
+        # ``available_qty`` já é o TETO da linha (o que ela segura + o livre),
+        # tanto no ajuste quanto na linha nova: é o que existe para o cliente.
+        available_total = Decimal(str(exc.available_qty))
         substitutes = []
         for sub in exc.substitutes or []:
             if isinstance(sub, dict):

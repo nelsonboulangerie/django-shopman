@@ -1,14 +1,18 @@
 import { applySkuQty, substituteSwapPlan } from '~/presentation/cart'
 import type { CartMutationResponse, CartProjection, ProductMutationMeta, Action, SubstituteProjection } from '~/types/shopman'
 
-interface CartIssue {
+export interface CartIssue {
   title: string
   detail: string
   error_code: string
   sku: string
   name: string
   requested_qty: number | null
+  // Teto da LINHA (o que ela já segura + o livre), absoluto: é até onde o botão
+  // "Levar N" leva a linha. Na linha nova coincide com o livre.
   available_qty: number | null
+  // Quanto a linha tinha antes do pedido recusado (null = linha nova).
+  line_qty: number | null
   is_paused: boolean
   // Esgotado honesto e assinável: habilita o CTA "Me avise quando disponível" (WP-3).
   isNotifiable: boolean
@@ -108,6 +112,16 @@ function emptyCart (): CartProjection {
   }
 }
 
+/** O teto do 409 só vira ação quando AVANÇA a linha. Teto igual ao que a
+ *  linha já tem seria um botão que não faz nada; abaixo dela, encolheria a
+ *  sacola de quem pediu mais. */
+export function issueAdvancesLine (issue: Pick<CartIssue, 'available_qty' | 'line_qty'> | null | undefined): boolean {
+  const ceiling = issue?.available_qty
+  if (ceiling == null || ceiling <= 0) return false
+  const lineQty = issue?.line_qty
+  return lineQty == null || ceiling > lineQty
+}
+
 function numberOrNull (value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -161,6 +175,7 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
     name: fallbackName,
     requested_qty: numberOrNull(d.requested_qty),
     available_qty: numberOrNull(d.available_qty),
+    line_qty: numberOrNull(d.line_qty),
     is_paused: !!d.is_paused,
     isNotifiable: Boolean(d.is_notifiable),
     isNotifySubscribed: Boolean(d.is_notify_subscribed),
@@ -402,9 +417,9 @@ export function useCartState () {
 
   async function acceptAvailableQty () {
     const mutation = lastMutation.value
-    const availableQty = cartIssue.value?.available_qty
-    if (!mutation || availableQty == null) return null
-    return setSkuQty(mutation.meta, availableQty)
+    const issue = cartIssue.value
+    if (!mutation || !issue || !issueAdvancesLine(issue)) return null
+    return setSkuQty(mutation.meta, issue.available_qty!)
   }
 
   function dismissCartIssue () {

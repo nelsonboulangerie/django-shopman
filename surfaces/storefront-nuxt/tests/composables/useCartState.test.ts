@@ -190,6 +190,47 @@ describe('useCartState', () => {
     expect(lastCall?.[1]?.body).toEqual({ qty: 2 })
   })
 
+  it('adjust refusal: the button takes the line up to its ceiling, never the free delta', async () => {
+    // Fornada de 4, sacola com 2, pediu 6: o 409 traz o TETO da linha (4).
+    fetchMock
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'INSUFFICIENT_AVAILABLE', sku: 'CROISSANT', requested_qty: 6, available_qty: 4, line_qty: 2, is_planned: true }))
+      .mockResolvedValueOnce({ cart: serverCart() })
+      .mockResolvedValueOnce({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty: 4 }], items_count: 4 }) })
+    const store = await loadStore()
+
+    await expect(store.setSkuQty(meta, 6)).rejects.toThrow()
+    expect(store.cartIssue.value?.available_qty).toBe(4)
+    expect(store.cartIssue.value?.line_qty).toBe(2)
+
+    await store.acceptAvailableQty()
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.body).toEqual({ qty: 4 })
+  })
+
+  it('adjust refusal at the ceiling never shrinks the line', async () => {
+    // Linha com 4, pediu 5, nada além: teto 4 = linha. Nenhuma mutação sai.
+    fetchMock
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'INSUFFICIENT_AVAILABLE', sku: 'CROISSANT', requested_qty: 5, available_qty: 4, line_qty: 4 }))
+      .mockResolvedValueOnce({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty: 4 }], items_count: 4 }) })
+    const store = await loadStore()
+
+    await expect(store.setSkuQty(meta, 5)).rejects.toThrow()
+    const callsBefore = fetchMock.mock.calls.length
+
+    const res = await store.acceptAvailableQty()
+    expect(res).toBeNull()
+    expect(fetchMock.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('issueAdvancesLine only offers a ceiling above the line', async () => {
+    const { issueAdvancesLine } = await import('~/composables/useCartState')
+    expect(issueAdvancesLine({ available_qty: 3, line_qty: null })).toBe(true)
+    expect(issueAdvancesLine({ available_qty: 4, line_qty: 2 })).toBe(true)
+    expect(issueAdvancesLine({ available_qty: 4, line_qty: 4 })).toBe(false)
+    expect(issueAdvancesLine({ available_qty: 1, line_qty: 2 })).toBe(false)
+    expect(issueAdvancesLine({ available_qty: 0, line_qty: null })).toBe(false)
+    expect(issueAdvancesLine({ available_qty: null, line_qty: null })).toBe(false)
+  })
+
   it('addSubstitute swaps the out-of-stock item for an alternative', async () => {
     fetchMock
       .mockRejectedValueOnce(fetchError(409, {

@@ -34,16 +34,71 @@ class CartUnavailableError(Exception):
         error_code: str,
         is_planned: bool = False,
         planned_target_date=None,
+        line_qty: int | None = None,
     ):
         super().__init__(f"unavailable: sku={sku} qty={requested_qty} avail={available_qty}")
         self.sku = sku
         self.requested_qty = requested_qty
+        # O TETO da linha: o máximo que ela pode ter (o que ela já segura + o
+        # livre). Absoluto, porque a ação de 1 toque da tela é "levar a linha
+        # até N". Na linha nova o teto é o livre; no ajuste de uma linha que já
+        # tem reserva, mandar só o livre fazia o botão oferecer o que o cliente
+        # já tinha (sacola 2, fornada 4, pediu 6: "Levar 2") ou até encolher a
+        # linha (linha 4, pediu 5: "Levar 2").
         self.available_qty = available_qty
         self.is_paused = is_paused
         self.substitutes = substitutes
         self.error_code = error_code
         self.is_planned = is_planned
         self.planned_target_date = planned_target_date
+        # Quanto a linha tinha antes do pedido recusado (``None`` = linha nova).
+        # A tela só oferece o teto quando ele AVANÇA a linha.
+        self.line_qty = line_qty
+
+
+class CartDateMismatchError(CartUnavailableError):
+    """O item cairia em outra data, e na loja online cada pedido tem uma data só.
+
+    Não é falta de estoque: o item existe, só que para outro dia. A sacola
+    recusa e a tela diz que ele é de OUTRO pedido.
+    """
+
+    error_code_value = "cart_date_mismatch"
+
+    def __init__(self, *, sku: str, requested_qty: int, cart_date, item_date):
+        super().__init__(
+            sku=sku,
+            requested_qty=requested_qty,
+            available_qty=0,
+            is_paused=False,
+            substitutes=[],
+            error_code=self.error_code_value,
+        )
+        self.cart_date = cart_date
+        self.item_date = item_date
+
+
+def _refuse_a_second_date(*, session_key: str, sku: str, requested_qty: int, new_hold_id: str | None) -> None:
+    """Loja online: um pedido, uma data (decisão do dono, 01/10/2026).
+
+    A reserva da fila ancora na data da FORNADA e a de pronta-entrega em HOJE;
+    sem esta régua a sacola juntava as duas e o pedido nascia com duas
+    promessas. A data da sacola é a das reservas que ela já tinha; a mutação
+    que acabou de reservar para OUTRA data levanta, e o ``transaction.atomic``
+    de quem chamou desfaz a reserva recém-criada. Sacola sem reserva datada
+    (vazia, só café sob demanda, só SKU não rastreado) aceita qualquer data.
+
+    Este módulo é a sacola dos canais REMOTOS (loja, concierge, recompra,
+    oferta). O balcão não passa por aqui.
+    """
+    before, new = availability.session_hold_dates_around(session_key, new_hold_id)
+    if before and new - before:
+        raise CartDateMismatchError(
+            sku=sku,
+            requested_qty=requested_qty,
+            cart_date=min(before),
+            item_date=min(new - before),
+        )
 
 
 def lock_cart_session(*, session_key: str, channel_ref: str):
@@ -132,6 +187,7 @@ def add_item(
         session_key=resolved_key,
         channel_ref=channel_ref,
     )
+    _refuse_a_second_date(session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_id)
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
@@ -187,14 +243,27 @@ def update_qty(
             channel_ref=channel_ref,
         )
         if not result["ok"]:
+            # A recusa não toca na reserva que existia: o teto da linha é o que
+            # ela segura mais o livre que o ``check`` do acréscimo leu.
+            free = Decimal(str(result["available_qty"]))
+            ceiling = availability.session_line_held_qty(session_key, line_sku) + free
+            line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
+            line_qty = Decimal(str(line["qty"])) if line is not None else None
             raise CartUnavailableError(
                 sku=line_sku,
                 requested_qty=qty,
-                available_qty=Decimal(str(result["available_qty"])),
+                available_qty=_whole(ceiling),
                 is_paused=result["is_paused"],
                 substitutes=result["substitutes"],
                 error_code=result["error_code"],
                 is_planned=result.get("is_planned", False),
+                line_qty=_whole(line_qty) if line_qty is not None else None,
+            )
+        if result["hold_ids"] and not result["released_ids"]:
+            # Só o acréscimo pode trazer data nova; reduzir (que solta antes de
+            # devolver a sobra) nunca falha.
+            _refuse_a_second_date(
+                session_key=session_key, sku=line_sku, requested_qty=qty, new_hold_id=result["hold_ids"][0],
             )
 
     availability.bump_session_hold_expiry(session_key)
@@ -233,6 +302,12 @@ def remove_item(
         channel_ref=channel_ref,
         ops=[{"op": "remove_line", "line_id": line_id}],
     )
+
+
+def _whole(value: Decimal):
+    """Quantidade de sacola como a tela a lê: inteiro quando é inteiro."""
+    value = Decimal(str(value))
+    return int(value) if value == value.to_integral_value() else value
 
 
 def get_line(*, session_key: str, channel_ref: str, line_id: str) -> dict | None:
@@ -564,10 +639,14 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str)
     )
     if result["ok"]:
         return result.get("hold_id")
+    # No ``add`` o número é o livre; na linha nova (o caso da loja) ele é o
+    # teto, porque nada é dela ainda. Inteiro quando é inteiro: o ``Decimal``
+    # cru saía como "3.000" no JSON, e a folha da loja, que só aceita número,
+    # sumia com o botão "Levar N".
     raise CartUnavailableError(
         sku=sku,
         requested_qty=qty,
-        available_qty=Decimal(str(result["available_qty"])),
+        available_qty=_whole(result["available_qty"]),
         is_paused=result["is_paused"],
         substitutes=result["substitutes"],
         error_code=result["error_code"],
