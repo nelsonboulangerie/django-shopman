@@ -155,9 +155,13 @@ def create_entry(*, ref: str, name: str, kind: str = "other", output_sku: str = 
 
 
 def create_version(entry, *, formula: dict, yield_quantity, yield_unit: str, origin: dict | None = None,
-                   source: dict | None = None, steps: list[str] | None = None, notes: str = "",
+                   source: dict | None = None, steps: list[dict | str] | None = None, notes: str = "",
                    label: str = "", created_by: str = ""):
-    """Cria um rascunho com ``number`` = último + 1."""
+    """Cria um rascunho com ``number`` = último + 1.
+
+    ``steps`` passa pelo funil de ``shopman.craftsman.recipe_steps`` no ``clean``
+    da versão: texto puro vira ``{"name": ...}``.
+    """
     from shopman.craftsman.models import RecipeVersion
 
     if entry.is_archived:
@@ -188,7 +192,7 @@ def create_version(entry, *, formula: dict, yield_quantity, yield_unit: str, ori
 
 
 def update_draft(version, *, formula: dict | None = None, yield_quantity=None, yield_unit: str | None = None,
-                 steps: list[str] | None = None, notes: str | None = None, label: str | None = None):
+                 steps: list[dict | str] | None = None, notes: str | None = None, label: str | None = None):
     """Edita um rascunho. Versão publicada ou substituída é imutável."""
     from shopman.craftsman.models import RecipeVersion
 
@@ -287,7 +291,12 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis, default_item_meta: 
 
     # O meta da linha: o perfil do insumo que o orquestrador conhece embaixo, o
     # que a ficha já tinha por cima (alérgenos e nutrição editados à mão vencem).
-    existing_meta = {item.input_sku: dict(item.meta or {}) for item in recipe.items.all()}
+    # A ``note`` é a exceção: ela é da fórmula, e a versão publicada é quem diz
+    # se ela existe. Nota apagada na fórmula não sobrevive na ficha.
+    existing_meta = {
+        item.input_sku: {key: value for key, value in (item.meta or {}).items() if key != "note"}
+        for item in recipe.items.all()
+    }
     for sku, defaults in (default_item_meta or {}).items():
         existing_meta[sku] = {**dict(defaults or {}), **existing_meta.get(sku, {})}
     recipe.items.all().delete()
@@ -345,7 +354,7 @@ def execution_digest(recipe) -> str:
     payload = {
         "output_sku": recipe.output_sku,
         "batch_size": _digest_number(recipe.batch_size),
-        "steps": list(recipe.steps or []),
+        "steps": [_digest_step(step) for step in recipe.steps or []],
         "items": items,
     }
     canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str)
@@ -381,6 +390,17 @@ def execution_in_sync(version, recipe) -> bool:
     if not expected:
         return True
     return expected == execution_digest(recipe)
+
+
+def _digest_step(step: dict):
+    """A etapa na impressão digital: só o nome entra como o nome; com mais, o objeto.
+
+    A digital nasceu (#1308) quando a etapa era texto, e a ``craftsman/0015``
+    reescreveu ``"Mistura"`` como ``{"name": "Mistura"}``. Reduzir a etapa que só
+    tem nome ao próprio nome mantém válida a digital guardada antes da migração;
+    instruções, tempo e anotação entram (o ``sort_keys`` deixa a ordem fixa).
+    """
+    return step["name"] if set(step) == {"name"} else step
 
 
 def _digest_number(value) -> str:
@@ -485,6 +505,11 @@ def _merge_bom_lines(bom, entry, version) -> list[dict]:
                 )
             current["quantity"] = quantize(current["quantity"] + copy["quantity"])
             current["is_optional"] = current["is_optional"] and copy["is_optional"]
+            # Duas linhas do mesmo insumo viram uma: as duas notas seguem juntas.
+            note = copy["meta"].get("note")
+            if note and note != current["meta"].get("note"):
+                previous = current["meta"].get("note")
+                current["meta"] = {**current["meta"], "note": f"{previous}; {note}" if previous else note}
             continue
         merged[sku] = copy
     return list(merged.values())

@@ -105,6 +105,15 @@ export interface FormulaLensProjection {
   warnings: FormulaWarningProjection[];
 }
 
+/** One production step of a version (``shopman.craftsman.recipe_steps``). */
+export interface RecipeStepProjection {
+  name: string;
+  instructions: string;
+  target_seconds: number | null;
+  target_display: string;
+  note: string;
+}
+
 /** A frozen formula version of a recipe entry. */
 export interface RecipeVersionProjection {
   id: number;
@@ -121,7 +130,7 @@ export interface RecipeVersionProjection {
   created_at_display: string;
   published_at_display: string;
   notes: string;
-  steps: string[];
+  steps: RecipeStepProjection[];
   lens: FormulaLensProjection;
   formula: Record<string, unknown>;
   origin: Record<string, unknown>;

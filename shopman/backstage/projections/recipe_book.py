@@ -256,6 +256,20 @@ class FormulaLensProjection:
 
 
 @dataclass(frozen=True)
+class RecipeStepProjection:
+    """One production step of a version (``shopman.craftsman.recipe_steps``)."""
+
+    name: str
+    #: O modo de fazer da etapa. Vazio quando não foi escrito.
+    instructions: str
+    target_seconds: int | None
+    #: ``target_seconds`` para ler: "45 min", "1 h 30 min". Vazio sem tempo alvo.
+    target_display: str
+    #: Anotação prática da etapa. Vazio quando não há.
+    note: str
+
+
+@dataclass(frozen=True)
 class RecipeVersionProjection:
     """A frozen formula version of a recipe entry."""
 
@@ -273,7 +287,7 @@ class RecipeVersionProjection:
     created_at_display: str
     published_at_display: str
     notes: str
-    steps: tuple[str, ...]
+    steps: tuple[RecipeStepProjection, ...]
     lens: FormulaLensProjection
     formula: dict
     origin: dict
@@ -835,6 +849,28 @@ def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
     )
 
 
+def _seconds_display(seconds: int | None) -> str:
+    """``5400`` → ``"1 h 30 min"``; ``45`` → ``"45 s"``. Vazio sem tempo."""
+    if not seconds:
+        return ""
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    parts = [f"{hours} h" if hours else "", f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
+    return " ".join(part for part in parts if part)
+
+
+def _step_projection(step: dict) -> RecipeStepProjection:
+    """Uma etapa gravada (sempre objeto: o ``clean`` da versão normaliza)."""
+    seconds = step.get("target_seconds")
+    return RecipeStepProjection(
+        name=step["name"],
+        instructions=step.get("instructions", ""),
+        target_seconds=seconds,
+        target_display=_seconds_display(seconds),
+        note=step.get("note", ""),
+    )
+
+
 def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionProjection:
     """Uma versão congelada, com a lente sobre a sua fórmula."""
     source = version.source if isinstance(version.source, dict) else {}
@@ -854,7 +890,7 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
         created_at_display=_datetime_display(version.created_at),
         published_at_display=_datetime_display(version.published_at),
         notes=version.notes or "",
-        steps=tuple(str(step) for step in (version.steps or [])),
+        steps=tuple(_step_projection(step) for step in (version.steps or [])),
         lens=build_formula_lens(version.formula or {}, kind),
         formula=wire_formula(version.formula),
         origin=dict(version.origin or {}),

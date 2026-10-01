@@ -24,6 +24,7 @@ from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 from shopman.craftsman.exceptions import RecipeBookError
+from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.utils.refs import RefField
 
 
@@ -234,8 +235,7 @@ class RecipeVersion(models.Model):
         super().clean()
         if self.yield_quantity is not None and self.yield_quantity <= 0:
             raise ValidationError({"yield_quantity": _("Deve ser maior que zero.")})
-        if self.steps and not isinstance(self.steps, list):
-            raise ValidationError({"steps": _("Deve ser uma lista de nomes de etapas.")})
+        self.steps = normalize_steps(self.steps)
         try:
             validate_formula(self.formula)
         except RecipeBookError as exc:
@@ -246,6 +246,9 @@ class RecipeVersion(models.Model):
         return self.version_ref if self.entry_id else f"@{self.number}"
 
     def save(self, *args, **kwargs):
+        # A versão não roda full_clean no save (o service roda), mas as etapas
+        # passam pelo funil sempre: nenhum caminho grava a forma antiga.
+        self.steps = normalize_steps(self.steps)
         if not self._state.adding and self.pk is not None and not _restoring_versions.get():
             self._refuse_rewrite(kwargs.get("update_fields"))
         return super().save(*args, **kwargs)

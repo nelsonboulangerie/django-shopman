@@ -659,6 +659,11 @@ def _final_mix_item(item: dict, grams: Decimal | None, anchor: Decimal | None) -
     return _to_analysis_item(item, anchor, grams=grams, quantity=_quantity_in_own_unit(item, grams))
 
 
+def _note_meta(note: Any) -> dict:
+    text = note.strip() if isinstance(note, str) else ""
+    return {"note": text} if text else {}
+
+
 def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysis],
                total_mass: Decimal, old_dough_cap: Decimal | None) -> list[dict]:
     bom: list[dict] = []
@@ -679,7 +684,9 @@ def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysi
             # insumo cadastrado em litro na hora de publicar.
             "density_g_per_ml": to_decimal(item.get("density_g_per_ml")),
             "is_optional": False,
-            "meta": {},
+            # A anotação prática do item ("a farinha do bairro pede 2% mais água")
+            # chega à ficha: sem isso ela morria no ato de publicar.
+            "meta": _note_meta(item.get("note")),
         })
     for part in parts:
         if part.kind == "old_dough":
@@ -941,6 +948,8 @@ def validate_formula(formula: Any) -> None:
         for optional in ("grams_per_unit", "density_g_per_ml"):
             if item.get(optional) not in (None, ""):
                 _require_positive(item.get(optional), f"{path}.{optional}")
+        if item.get("note") is not None and not isinstance(item.get("note"), str):
+            raise _invalid(f"{path}.note", "A anotação do ingrediente precisa ser texto.")
 
     parts = formula.get("parts", [])
     if parts is None:

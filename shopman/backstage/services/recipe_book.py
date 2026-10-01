@@ -20,6 +20,7 @@ from django.db import transaction
 from django.utils.text import slugify
 from shopman.craftsman.exceptions import RecipeBookError
 from shopman.craftsman.models import RecipeEntry, RecipeVersion
+from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
 from shopman.backstage.services.exceptions import (
@@ -81,15 +82,25 @@ def _text(data: dict, key: str, *, default: str = "") -> str:
     return value.strip()
 
 
-def _steps(value: Any, *, field: str = "steps") -> list[str]:
+def _steps(value: Any, *, field: str = "steps") -> list[dict]:
+    """Etapas na forma única (``shopman.craftsman.recipe_steps``).
+
+    Aceita objeto ``{name, instructions?, target_seconds?, note?}`` ou texto puro
+    (vira ``{"name": ...}``); um texto só é lido uma etapa por linha. Linha
+    vazia é sobra de textarea e sai; objeto inválido é recusado apontando a etapa.
+    """
     if value is None:
         return []
     if isinstance(value, str):
         value = value.splitlines()
     if not isinstance(value, list):
-        raise _fail("As etapas precisam ser uma lista de textos.", field=field)
-    steps = [str(step).strip() for step in value if str(step or "").strip()]
-    return steps
+        raise _fail("As etapas precisam ser uma lista.", field=field)
+    value = [step for step in value if not (isinstance(step, str) and not step.strip())]
+    try:
+        return normalize_steps(value)
+    except ValidationError as exc:
+        _, detail = _first_validation_message(exc)
+        raise _fail(detail, field=field) from exc
 
 
 def _kind(value: Any, *, allow_empty: bool) -> str:

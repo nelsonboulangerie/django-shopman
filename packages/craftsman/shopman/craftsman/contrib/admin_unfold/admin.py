@@ -33,6 +33,7 @@ from shopman.craftsman.models import (
     WorkOrderEvent,
     WorkOrderItem,
 )
+from shopman.craftsman.recipe_steps import steps_from_names
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import (
     BaseModelAdmin,
@@ -210,7 +211,7 @@ class RecipeAdminForm(forms.ModelForm):
         self.fields["batch_size"].help_text = _(
             "Quantidade produzida pela ficha técnica base; usada para escalar insumos."
         )
-        self.fields["steps_text"].initial = "\n".join(self.instance.steps or [])
+        self.fields["steps_text"].initial = "\n".join(step["name"] for step in self.instance.steps or [])
         self.fields["max_started_minutes"].initial = meta.get("max_started_minutes")
         self.fields["capacity_per_day"].initial = meta.get("capacity_per_day")
         self.fields["requires_batch_tracking"].initial = bool(meta.get("requires_batch_tracking"))
@@ -239,7 +240,9 @@ class RecipeAdminForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        instance.steps = self.cleaned_data.get("steps_text") or []
+        # O textarea só edita os nomes: instruções, tempo e anotação da etapa que
+        # continua com o mesmo nome ficam onde estavam.
+        instance.steps = steps_from_names(self.cleaned_data.get("steps_text") or [], instance.steps or [])
         meta = dict(instance.meta or {})
         _set_meta_value(meta, "max_started_minutes", self.cleaned_data.get("max_started_minutes"))
         _set_meta_value(meta, "capacity_per_day", _json_decimal(self.cleaned_data.get("capacity_per_day")))

@@ -117,7 +117,7 @@ async function continueToEditor() {
     formula,
     yield_quantity: draftYieldQuantity.value.trim() || "1",
     yield_unit: draftYieldUnit.value,
-    steps: draft.steps ?? [],
+    steps: (draft.steps ?? []).map((name) => ({ name })),
     notes: "",
     label: draftSource.value === "photo" ? "Lida de foto" : "Lida de anotação",
     origin: {
