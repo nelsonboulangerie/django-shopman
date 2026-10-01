@@ -44,6 +44,10 @@
    `{name, instructions?, target_seconds?, note?}` (`craftsman/recipe_steps.py`), com tempo alvo
    por etapa; temperatura e o vínculo etapa × parte seguem sem casa, e nenhuma tela de execução
    lê as etapas.
+   A única tabela de tempo e temperatura por etapa que existe (11 massas, 92 etapas) é a
+   **proposta do agente** de 05/09, resgatada em
+   [`processo-das-massas-proposta-2026-09-05.md`](../reference/processo-das-massas-proposta-2026-09-05.md):
+   não é medição da casa e não entra no seed.
 6. **O destino "banco vivo pelo cofre"** (§6) depende de o `export_backup`/`import_backup`
    carregar `RecipeEntry`/`RecipeVersion`, o que ainda não acontece.
 
@@ -184,3 +188,5 @@ Linhas de MEMO, coluna espelho e varredura de fim de dia foram todas cortadas co
    e para a pasta autolisada, que não estoca?
 4. Tempos e temperaturas por parte — o dono adiou ("discutiremos em seguida") e depois pediu
    proposta. Onde eles moram: `Recipe.steps` enriquecido, ou estrutura própria?
+   A proposta feita (05/09, não validada) está em
+   [`processo-das-massas-proposta-2026-09-05.md`](../reference/processo-das-massas-proposta-2026-09-05.md).
