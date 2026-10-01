@@ -1163,11 +1163,16 @@ def _reconcile_simple(
     if new_qty > current_total:
         delta = new_qty - current_total
         if target_date is None:
-            # O acréscimo ancora como uma reserva nova (``reserve``): pronta-
-            # entrega primeiro, e só quando ela não cobre o delta, a data da
-            # fornada. Sem isto o hold nascia para HOJE e a sacola que entrou
-            # na fila de amanhã não conseguia crescer dentro da própria fornada.
-            target_date = waitlist.reserve_target_date(sku, delta, channel_ref=channel_ref)
+            # O acréscimo entra no MESMO dia que a linha já promete: a sacola
+            # que está na fila da fornada de amanhã cresce dentro dela, e a de
+            # pronta-entrega cresce dentro de hoje (uma linha, uma data). Sem
+            # reserva viva, ancora como uma reserva nova (``reserve``). Sem
+            # isto o hold nascia para HOJE e a linha da fila não crescia nunca.
+            target_date = (
+                adapter.hold_target_date(existing[-1][0])
+                if existing
+                else waitlist.reserve_target_date(sku, delta, channel_ref=channel_ref)
+            )
 
         listing_error = _reserve_listing_gate_error(
             sku,

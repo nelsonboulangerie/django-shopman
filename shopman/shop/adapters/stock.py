@@ -714,6 +714,17 @@ def hold_state(hold_id: str) -> str | None:
     return Hold.objects.filter(pk=pk).values_list("status", flat=True).first()
 
 
+def hold_target_date(hold_id: str) -> date | None:
+    """A data que o hold promete (hoje, ou o dia da fornada). ``None`` se não existe."""
+    from shopman.stockman import Hold
+
+    try:
+        pk = int(str(hold_id).split(":")[1])
+    except (AttributeError, IndexError, ValueError):
+        return None
+    return Hold.objects.filter(pk=pk).values_list("target_date", flat=True).first()
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 

@@ -177,3 +177,24 @@ class TestTodayStockAdjustments:
         assert sum(h.quantity for h in holds) == Decimal("1")
         assert {h.target_date for h in holds} == {date.today()}
         assert _line_qty(client, product.sku) == 1
+
+
+class TestOneLineOneDate:
+    def test_growing_a_ready_line_never_splits_it_across_days(self, client, channel, product):
+        """Linha de pronta-entrega cresce dentro de HOJE; a fornada não entra pela porta dos fundos.
+
+        O número que cabe (e se a linha deveria poder virar "parte hoje, parte
+        amanhã") é decisão de produto; o invariante aqui é que a linha promete
+        um dia só e que a reserva bate com a linha, seja qual for a resposta.
+        """
+        _ensure_listing_item(channel, product, price_q=90)
+        _enable_waitlist(channel)
+        _receive_today(product, "2")
+        _plan_tomorrow(product, "4")
+
+        assert _set_qty(client, product.sku, 2).status_code == 200
+        _set_qty(client, product.sku, 4)
+
+        holds = _active_holds(product.sku)
+        assert {h.target_date for h in holds} == {date.today()}
+        assert sum(h.quantity for h in holds) == Decimal(_line_qty(client, product.sku))
