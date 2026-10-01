@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
@@ -70,6 +71,21 @@ def _unit_count_label(qty: int) -> str:
 def _cart_payload(request) -> dict:
     cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
     return projection_data(cart)
+
+
+def _cart_payload_after_mutation(request) -> dict:
+    """A sacola da resposta de uma mutação que JÁ terminou, lendo o estoque uma vez.
+
+    A sacola e o trilho de sugestão leem a disponibilidade dos mesmos SKUs; num
+    GET o memo de estoque (``stock_reads_scope``) junta essas leituras, mas um
+    request que muta não tem memo, de propósito: a decisão de reservar nunca
+    se apoia em leitura guardada. Aqui a mutação já voltou (com a escrita feita
+    e, sem transação por fora, o commit e o ``on_commit`` também), então o memo
+    abre só para montar a resposta: toda leitura dele é posterior à escrita, e
+    qualquer escrita durante a montagem o desliga, como em qualquer GET.
+    """
+    with stock_reads_scope():
+        return _cart_payload(request)
 
 
 def _stock_reason(exc) -> str:
@@ -1097,5 +1113,5 @@ class CartSkuQtyView(APIView):
         return Response({
             **mutation,
             "summary": summary,
-            "cart": _cart_payload(request),
+            "cart": _cart_payload_after_mutation(request),
         })

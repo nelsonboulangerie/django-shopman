@@ -212,6 +212,121 @@ class TestObservingTheOutage:
         assert ShelfOutage.objects.filter(sku="PAO", ended_at__isnull=True).count() == 1
 
 
+class TestObservingOncePerTransaction:
+    """Um SKU mexido N vezes na mesma transação é observado UMA vez depois do commit.
+
+    O PUT da sacola grava a reserva duas ou mais vezes (solta a antiga, cria a
+    nova), e cada gravação agendava a sua observação: o mesmo SKU era observado
+    em sequência, lendo a disponibilidade em cada canal que vende, e a segunda
+    leitura via o estado da primeira. A que fica é a primeira agendada, e ela
+    roda depois do mesmo commit.
+    """
+
+    @pytest.fixture
+    def observed(self, monkeypatch):
+        calls: list[str] = []
+        real = shelf_outages.observe
+
+        def spy(sku, **kwargs):
+            calls.append(sku)
+            return real(sku, **kwargs)
+
+        monkeypatch.setattr(shelf_outages, "observe", spy)
+        return calls
+
+    def test_two_writes_of_the_same_sku_observe_once(self, vitrine, canal, pao, apos_commit, observed):
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            _receber(quant, 5)
+            _vender(quant, 5)
+            Hold.objects.create(
+                sku="PAO", quant=quant, quantity=Decimal("1"),
+                target_date=timezone.localdate(),
+                expires_at=timezone.now() + timedelta(hours=1),
+            )
+
+        assert observed == ["PAO"]
+        # A observação que ficou leu o estado final: a falta abriu.
+        assert ShelfOutage.objects.get(sku="PAO", channel_ref="web").is_open
+
+    def test_each_sku_is_observed(self, vitrine, canal, pao, apos_commit, observed):
+        Product.objects.create(
+            sku="BOLO", name="Bolo", unit="un", base_price_q=100,
+            is_sellable=True, availability_policy="stock_only",
+        )
+        pao_quant = Quant.objects.create(sku="PAO", position=vitrine)
+        bolo_quant = Quant.objects.create(sku="BOLO", position=vitrine)
+        with apos_commit():
+            _receber(pao_quant, 2)
+            _receber(bolo_quant, 2)
+            _vender(pao_quant, 1)
+
+        assert sorted(observed) == ["BOLO", "PAO"]
+
+    def test_the_next_transaction_observes_again(self, vitrine, canal, pao, apos_commit, observed):
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            _receber(quant, 5)
+        with apos_commit():
+            _vender(quant, 5)
+
+        assert observed == ["PAO", "PAO"]
+        assert ShelfOutage.objects.get(sku="PAO", channel_ref="web").is_open
+
+    def test_a_rolled_back_savepoint_does_not_swallow_the_observation(
+        self, vitrine, canal, pao, apos_commit, observed
+    ):
+        """O primeiro agendamento foi desfeito com o savepoint: o seguinte vale."""
+        from django.db import transaction
+
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            try:
+                with transaction.atomic():
+                    _receber(quant, 5)
+                    raise RuntimeError("desfaz")
+            except RuntimeError:
+                pass
+            _receber(quant, 2)
+
+        assert observed == ["PAO"]
+
+    def test_a_rolled_back_savepoint_keeps_the_observation_made_before_it(
+        self, vitrine, canal, pao, apos_commit, observed
+    ):
+        """O agendamento de fora sobrevive ao savepoint desfeito e observa o que ficou."""
+        from django.db import transaction
+
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            _receber(quant, 2)
+            try:
+                with transaction.atomic():
+                    _vender(quant, 2)
+                    raise RuntimeError("desfaz")
+            except RuntimeError:
+                pass
+
+        assert observed == ["PAO"]
+        assert not ShelfOutage.objects.filter(sku="PAO", ended_at__isnull=True).exists()
+
+    def test_a_released_savepoint_still_counts_as_scheduled(
+        self, vitrine, canal, pao, apos_commit, observed
+    ):
+        """Savepoint que fechou bem segue a transação de fora: não precisa de outra observação."""
+        from django.db import transaction
+
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            with transaction.atomic():
+                _receber(quant, 2)
+            with transaction.atomic():
+                _vender(quant, 2)
+
+        assert observed == ["PAO"]
+        assert ShelfOutage.objects.get(sku="PAO", channel_ref="web").is_open
+
+
 class TestReconciliation:
     def test_expired_reservation_is_noticed_by_the_sweep(self, vitrine, canal, pao, apos_commit):
         """Reserva que expira sai por update em massa, sem signal.

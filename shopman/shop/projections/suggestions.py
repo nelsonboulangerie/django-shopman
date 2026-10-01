@@ -226,12 +226,14 @@ def _pairing_pool(cart_skus: set[str], rule: dict, *, cart_products) -> list[str
     }
     values.update(_catalog_facts(everyone))
 
+    # O lado da sacola não depende do candidato: vale uma vez por pareamento.
+    live = _pairings_the_cart_satisfies(pairings, cart_skus, values)
     weighted: list[tuple[float, str]] = []
     for product in products:
         weight = sum(
             float(p.get("weight", 1))
-            for p in pairings
-            if _pairing_reason(p, product.sku, cart_skus, values, product)
+            for p, _ in live
+            if _candidate_side(p, product.sku, values) is not None
         )
         if weight > 0:
             weighted.append((weight, product.sku))
@@ -345,6 +347,8 @@ def _score(
 
     affinity = _affinity_map(cart_skus, set(products))
     same_role = _same_role_as_cart(set(products), cart_skus, distinct_refs, values)
+    # O lado da sacola não depende do candidato: vale uma vez por pareamento.
+    live = _pairings_the_cart_satisfies(pairings, cart_skus, values)
 
     ranked: list[tuple[bool, Suggestion]] = []
     for sku, product in products.items():
@@ -368,11 +372,11 @@ def _score(
             reasons.append(f"affinity:{partner}")
 
         paired = False
-        for pairing in pairings:
-            reason = _pairing_reason(pairing, sku, cart_skus, values, product)
-            if reason:
+        for pairing, cart_side in live:
+            candidate_side = _candidate_side(pairing, sku, values)
+            if candidate_side is not None:
                 score += float(pairing.get("weight", 1))
-                reasons.append(reason)
+                reasons.append(_reason_code(cart_side, candidate_side))
                 paired = True
 
         if not reasons:
@@ -404,20 +408,37 @@ def _score(
     return [suggestion for _, suggestion in ranked]
 
 
-def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
-    """O código do motivo, se este pareamento casa; ``None`` se não casa.
+def _pairings_the_cart_satisfies(pairings, cart_skus, values) -> list[tuple[dict, str]]:
+    """``(pareamento, lado da sacola)`` dos pareamentos cujo ``when`` a sacola satisfaz.
 
     ``when`` fala da SACOLA: cada condição tem de ser satisfeita por algum item
     dela (``[sabor=salgado, natureza=bebida]`` = "tem salgado E tem bebida",
     em itens diferentes ou no mesmo). ``when_absent`` também fala da sacola:
     nenhum item pode satisfazer nenhuma daquelas condições ("ainda não tem
-    bebida"). ``suggest`` fala do CANDIDATO: ele tem de satisfazer todas.
+    bebida"). ``suggest`` fala do CANDIDATO (:func:`_candidate_side`): ele tem
+    de satisfazer todas. O motivo (:func:`_reason_code`) junta os dois lados.
 
     O motivo nomeia o valor que **de fato casou**, não o primeiro que a regra
     declarou. Com ``in: [acompanhamento, bebida]``, oferecer um café e explicar
     "→ acompanhamento" seria uma explicação errada — e explicação errada é pior
     que explicação nenhuma, porque o gestor ajusta a regra errada.
+
+    O lado da sacola não depende do candidato, então é avaliado uma vez por
+    pareamento. O pool e a pontuação refaziam a pergunta inteira para cada
+    candidato: com 5 itens e o catálogo do seed, ~2.200 avaliações de
+    pareamento por request, quase todas repetindo a mesma pergunta sobre a
+    mesma sacola.
     """
+    live: list[tuple[dict, str]] = []
+    for pairing in pairings:
+        cart_side = _cart_side(pairing, cart_skus, values)
+        if cart_side is not None:
+            live.append((pairing, cart_side))
+    return live
+
+
+def _cart_side(pairing, cart_skus, values) -> str | None:
+    """Os rótulos do ``when`` que a sacola satisfaz, ou ``None`` (inclui ``when_absent``)."""
     when_parts: list[str] = []
     for condition in _conditions(pairing.get("when")):
         hit = None
@@ -434,7 +455,11 @@ def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
     for condition in _conditions(pairing.get("when_absent")):
         if any(_hit(condition, cart_sku, values) is not None for cart_sku in cart_skus):
             return None
+    return "+".join(when_parts)
 
+
+def _candidate_side(pairing, sku, values) -> str | None:
+    """Os rótulos do ``suggest`` que o candidato satisfaz, ou ``None``."""
     suggest_parts: list[str] = []
     for condition in _conditions(pairing.get("suggest")):
         hit = _hit(condition, sku, values)
@@ -443,8 +468,11 @@ def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
         suggest_parts.append(hit)
     if not suggest_parts:
         return None
+    return "+".join(suggest_parts)
 
-    return f"pairing:{'+'.join(when_parts)}→{'+'.join(suggest_parts)}"
+
+def _reason_code(cart_side: str, candidate_side: str) -> str:
+    return f"pairing:{cart_side}→{candidate_side}"
 
 
 #: Chaves reservadas em ``values`` para o que o Offerman já guarda e não é

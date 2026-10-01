@@ -16,12 +16,17 @@ ao banco.
 
 O ``Shop.load()`` também passa por aqui: era o campeão de idas ao Redis do
 cardápio (6 de 10 ``GET`` por request, todos da mesma chave ``shop_singleton``).
+Também passam o ``ChannelConfig`` montado das leituras de estoque
+(:func:`channel_config`) e o registro de atributos
+(``services.attributes.registry``).
 
 Leituras de estoque têm um memo à parte, mais estreito (:func:`stock_reads_scope`):
 
 - só existe em request **GET/HEAD**. Mutação (PUT da sacola, checkout, PDV) lê
   sempre do banco, como antes: a decisão de reservar nunca se apoia em leitura
-  guardada, e a resposta montada depois da mutação vê o estado novo;
+  guardada. A única exceção é a resposta do PUT da sacola, que abre o memo
+  DEPOIS que a mutação voltou (``storefront.api.surface``), só para a montagem
+  da sacola: toda leitura ali é posterior à escrita;
 - qualquer escrita SQL dentro do request (INSERT, UPDATE, DELETE, o que não for
   ``SELECT``), em qualquer conexão, **esvazia e desliga** o memo até o fim do
   request. Vale também para ``QuerySet.update()`` e SQL cru, que não disparam
@@ -74,6 +79,13 @@ def clear() -> None:
         store.clear()
 
 
+def forget(key: Any) -> None:
+    """Esquece só ``key``: a próxima leitura dela neste request recalcula."""
+    store = _store.get()
+    if store is not None:
+        store.pop(key, None)
+
+
 def channel_by_ref(channel_ref: str):
     """A linha ``Channel`` de ``channel_ref`` (ou ``None``), lida uma vez por request.
 
@@ -86,6 +98,31 @@ def channel_by_ref(channel_ref: str):
         return Channel.objects.filter(ref=channel_ref).first()
 
     return memoized(("channel", channel_ref), load)
+
+
+def channel_config(channel_ref: str):
+    """O ``ChannelConfig`` de ``channel_ref`` montado uma vez por request.
+
+    ``ChannelConfig.for_channel`` monta a cascata inteira a cada chamada (cópia
+    profunda do ``Shop.defaults`` e do ``Channel.config``, ``from_dict`` e
+    ``validate``), e o caminho da disponibilidade pedia o MESMO config três vezes
+    por leitura de estoque: o recorte do canal duas vezes (cardápio e fila) e o
+    aspecto da fila uma. As entradas da cascata já são lidas uma vez por request
+    (a linha do canal e o ``Shop``), então guardar o resultado montado não muda a
+    resposta, e ele cai junto com elas quando o request grava ``Channel`` ou
+    ``Shop``.
+
+    Só leitura, como :func:`channel_by_ref`: quem precisa devolver um pedaço
+    mutável (lista, sub-config) entrega uma cópia. Quem quer um config para
+    mexer chama ``ChannelConfig.for_channel``, que continua montando um novo.
+    """
+
+    def load():
+        from shopman.shop.config import ChannelConfig
+
+        return ChannelConfig.for_channel(channel_ref)
+
+    return memoized(("channel_config", channel_ref), load)
 
 
 def _is_read_only_sql(sql: str) -> bool:
@@ -102,7 +139,8 @@ def _is_read_only_sql(sql: str) -> bool:
 def stock_reads_scope() -> Iterator[None]:
     """Abre o memo de leituras de estoque (ver o docstring do módulo).
 
-    Quem abre é :class:`RequestMemoMiddleware`, e só em GET/HEAD. Fora deste
+    Quem abre é :class:`RequestMemoMiddleware`, e só em GET/HEAD; e a resposta
+    do PUT da sacola, depois que a mutação voltou. Fora deste
     escopo :func:`stock_bucket` devolve ``None`` e toda leitura vai ao banco.
     """
     store: dict[Any, Any] = {}

@@ -30,12 +30,52 @@ def on_hold_for_shelf_outage(sender, instance, **kwargs) -> None:
         _observe_after_commit(sku)
 
 
+class _ObserveAfterCommit:
+    """O ``observe(sku)`` agendado para depois do commit.
+
+    É objeto, e não ``lambda``, para que o agendamento seguinte do MESMO SKU na
+    mesma transação se reconheça (ver :func:`_observe_after_commit`).
+    """
+
+    __slots__ = ("done", "sku")
+
+    def __init__(self, sku: str) -> None:
+        self.sku = sku
+        self.done = False
+
+    def __call__(self) -> None:
+        from shopman.backstage.services import shelf_outages
+
+        self.done = True
+        shelf_outages.observe(self.sku)
+
+
 def _observe_after_commit(sku: str) -> None:
+    """Agenda ``observe(sku)`` para depois do commit, UMA vez por transação.
+
+    Mexer numa linha da sacola grava a reserva mais de uma vez (solta a antiga,
+    cria a nova), e cada gravação agendava a sua observação: depois do commit o
+    mesmo SKU era observado em sequência, lendo a disponibilidade em cada canal
+    que vende, e as leituras seguintes viam exatamente o estado da primeira e
+    não abriam nem fechavam nada. Medido no seed (01/10): 90 das 289 consultas
+    do PUT que sobe uma linha de 1 para 3, e 270 das 478 do que desce de 3 para 1.
+
+    A observação já agendada vale pela nova quando ainda está pendente nesta
+    conexão: ela roda depois do mesmo commit e lê o estado já gravado. Rollback
+    de savepoint não engana a regra, porque o Django tira da fila o callback
+    registrado dentro do savepoint desfeito; o que ainda está na fila roda no
+    commit junto com o que seria agendado agora. Fora de transação o
+    ``on_commit`` roda na hora, como sempre.
+    """
     from django.db import transaction
 
-    from shopman.backstage.services import shelf_outages
-
-    transaction.on_commit(lambda: shelf_outages.observe(sku))
+    connection = transaction.get_connection()
+    if connection.in_atomic_block and any(
+        isinstance(func, _ObserveAfterCommit) and func.sku == sku and not func.done
+        for _sids, func, *_rest in connection.run_on_commit
+    ):
+        return
+    transaction.on_commit(_ObserveAfterCommit(sku))
 
 
 #: Os lançamentos que mudam o estado de um pedido de troco. O pedido não tem

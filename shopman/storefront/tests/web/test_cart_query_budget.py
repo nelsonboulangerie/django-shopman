@@ -59,6 +59,11 @@ BEBIDAS = ["CAFE", "SUCO", "CHA"]
 #: laço antes de subir o número.
 CART_PROJECTION_CEILING = 34
 CART_OVERHEAD_CEILING = 40
+#: O PUT de uma linha numa sacola de 2 itens. Medido em 01/10/2026 (Onda 2c):
+#: 88 consultas; eram 96, com a resposta lendo o estoque duas vezes (linhas e
+#: trilho de sugestão). Sob a transação do teste o ``on_commit`` não roda, então
+#: a observação de falta na prateleira (backstage) fica fora desta conta.
+PUT_CEILING = 90
 
 
 @pytest.fixture
@@ -170,8 +175,10 @@ def test_cart_adds_a_bounded_cost_to_menu_and_home(catalog, path):
 def test_put_answers_with_the_state_after_the_mutation(catalog):
     """O PUT muda a sacola e responde com ela: nada do que ele devolve é leitura de antes.
 
-    Request que muta não abre o memo de estoque (só GET/HEAD abrem), então a
-    resposta do PUT é o que um GET logo depois vê.
+    Request que muta não abre o memo de estoque durante a mutação (só GET/HEAD
+    abrem no middleware). A resposta abre o memo DEPOIS que a mutação voltou
+    (``_cart_payload_after_mutation``), então toda leitura dela é posterior à
+    escrita, e a resposta do PUT é o que um GET logo depois vê.
     """
     client = _client_with_cart(PAES[:2])
     for qty in (4, 1):
@@ -186,3 +193,33 @@ def test_put_answers_with_the_state_after_the_mutation(catalog):
         assert put.json()["cart"] == fresh.json()["cart"]
         line = next(line for line in put.json()["cart"]["items"] if line["sku"] == PAES[0])
         assert line["qty"] == qty
+
+
+def test_put_reads_the_stock_once_to_answer(catalog):
+    """Depois da mutação, a sacola e o trilho de sugestão dividem UMA leitura do Stockman.
+
+    Antes (01/10, Onda 2c) a resposta do PUT lia o estoque duas vezes: o trilho
+    lia candidatos e sacola, e as linhas da sacola liam os mesmos SKUs de novo.
+    A leitura da própria mutação (a reserva) é anterior à escrita e não entra
+    nesta conta: ela continua indo ao banco, sempre.
+    """
+    from unittest.mock import patch
+
+    from shopman.stockman.services import availability as stockman_availability
+
+    client = _client_with_cart(PAES[:2])
+    real = stockman_availability.availability_for_skus_on_dates
+    with (
+        patch.object(stockman_availability, "availability_for_skus_on_dates", wraps=real) as reads,
+        CaptureQueriesContext(connection) as ctx,
+    ):
+        put = client.put(
+            f"/api/v1/cart/skus/{PAES[0]}/",
+            data=json.dumps({"qty": 3}),
+            content_type="application/json",
+        )
+    assert put.status_code == 200, put.content[:300]
+    assert put.json()["cart"]["upsell"] is not None
+    assert reads.call_count == 1, f"a resposta do PUT leu o estoque {reads.call_count} vezes"
+    queries = len(ctx.captured_queries)
+    assert queries <= PUT_CEILING, f"o PUT fez {queries} consultas (teto {PUT_CEILING})"

@@ -810,3 +810,48 @@ def test_catalog_conditions_stay_out_of_gates():
         ComplementRule.validate_params({"pairings": [
             {"when": {"all": []}, "suggest": {"attr": "natureza", "value": "bebida"}},
         ]})
+
+
+# --- custo: o lado da sacola é um só (01/10) --------------------------------
+
+
+def test_the_cart_side_of_a_pairing_is_asked_once_per_suggestion(listing, monkeypatch):
+    """O ``when`` fala da sacola, não do candidato: uma avaliação por pareamento.
+
+    O pool e a pontuação refaziam o lado da sacola para cada candidato (~2.200
+    avaliações por request com 5 itens no seed). Agora cada pareamento é
+    avaliado contra a sacola uma vez no pool e uma na pontuação, com quantos
+    candidatos houver, e o motivo continua nomeando os dois lados.
+    """
+    from shopman.shop.projections import suggestions
+
+    _product("PAO", "Pão", listing=listing, natureza="comida", sabor="neutro")
+    for index in range(4):
+        _product(f"ACOMP-{index}", f"Acompanhamento {index}", listing=listing, natureza="acompanhamento")
+        _product(f"BEB-{index}", f"Bebida {index}", listing=listing, natureza="bebida")
+    pairings = [
+        {"when": {"attr": "natureza", "value": "comida"},
+         "suggest": {"attr": "natureza", "value": "acompanhamento"}, "weight": 5},
+        {"when": {"attr": "natureza", "value": "comida"},
+         "when_absent": {"attr": "natureza", "value": "bebida"},
+         "suggest": {"attr": "natureza", "value": "bebida"}, "weight": 1},
+        {"when": {"attr": "natureza", "value": "bebida"},
+         "suggest": {"attr": "natureza", "value": "comida"}, "weight": 1},
+    ]
+    _rule({"pairings": pairings})
+
+    cart_side = suggestions._cart_side
+    asked: list[dict] = []
+
+    def counting(pairing, cart_skus, values):
+        asked.append(pairing)
+        return cart_side(pairing, cart_skus, values)
+
+    monkeypatch.setattr(suggestions, "_cart_side", counting)
+    found = suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL, limit=20)
+
+    assert len(found) == 8
+    # Pool e pontuação: cada um pergunta à sacola uma vez por pareamento.
+    assert len(asked) == 2 * len(pairings)
+    assert found[0].reasons == ("pairing:natureza=comida→natureza=acompanhamento",)
+    assert found[-1].reasons == ("pairing:natureza=comida→natureza=bebida",)
