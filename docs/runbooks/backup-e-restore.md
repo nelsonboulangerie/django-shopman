@@ -116,6 +116,14 @@ para ler a connection string do cluster novo.
 > `--context shopman-spec-update` explícito; o default agora é o contexto vazio
 > `default`, que falha alto.
 
+> **01/10/2026:** nesta máquina restam só dois contextos, `default` (vazio) e
+> **`shopman-do-app-admin`**. `shopman-spec-update` e `shopman-alpha-deploy` **não
+> existem mais**: onde este runbook disser contexto, é
+> `--context shopman-do-app-admin`. Ele tem `database:read` e
+> `database:view_credentials` (lista backups, lê a connection string) e **não**
+> tem `database:create` nem `database:delete`: o `fork` devolve 403 (medido,
+> ver [Ensaio de 01/10/2026](#ensaio-de-01102026)).
+
 ---
 
 ## 2. Antes de um deploy com migração de risco
@@ -129,8 +137,12 @@ Migração aditiva volta por redeploy da versão anterior e não precisa disto.
 
 ```bash
 # leitura pura; não escreve nada, não migra nada
-DATABASE_URL='postgresql://…' make migrations-pending
+DJANGO_DEBUG=true DATABASE_URL='postgresql://…' make migrations-pending
 ```
+
+O `DJANGO_DEBUG=true` não é enfeite: sem ele as travas de produção do settings
+recusam a máquina local antes de o alvo ler qualquer coisa (detalhe e variante
+para worktree no passo 3 da seção 3).
 
 A connection string sai no painel da DO (cluster → **Connection details**) ou,
 com token de escopo `database:view_credentials`, em
@@ -241,8 +253,13 @@ transforma "a DO faz backup" em "nós sabemos restaurar". Faça **contra o alpha
 ### Passo 0 — token com escopo (uma vez)
 
 Gere em **API → Tokens** um token com `database:read`, `database:create`,
-`database:view_credentials`, `regions:read`, `sizes:read`, `actions:read`. Sem
+`database:view_credentials`, `regions:read`, `sizes:read`, `actions:read` (e
+`database:delete` para o passo 4). Sem
 isso, faça tudo pelo painel — é o mesmo procedimento, clicando.
+
+⚠️ O contexto `shopman-do-app-admin` (o único que existe em 01/10/2026) **não
+basta**: lê backups e credenciais, mas o `fork` volta `403 You are not authorized
+to perform this operation`. Ou um token com os escopos acima, ou o painel.
 
 ### Passo 1 — anotar a verdade do cluster de origem
 
@@ -260,10 +277,11 @@ Anote também o **instante UTC** deste momento — é o alvo do PITR.
 ### Passo 2 — criar o cluster restaurado
 
 ```bash
-doctl databases list                       # pegue o uuid de shopman-staging-postgres
-doctl databases backups <cluster-id>       # confirme que há backup recente
+doctl --context shopman-do-app-admin databases list               # uuid de shopman-staging-postgres
+doctl --context shopman-do-app-admin databases backups <cluster-id>  # confirme que há backup recente
 
-doctl databases fork shopman-restore-drill \
+# o fork pede database:create, que shopman-do-app-admin NÃO tem (403 em 01/10/2026)
+doctl --context <contexto com database:create> databases fork shopman-restore-drill \
   --restore-from-cluster-id <cluster-id> \
   --restore-from-timestamp "2026-09-23 14:05:00 +0000 UTC" \
   --wait
@@ -281,10 +299,16 @@ cluster from a backup" → escolher *latest transaction* ou *point in time* →
 read-only em vez do primário, ou a conta bateu no limite de 10 clusters
 ([restore-from-backups](https://docs.digitalocean.com/products/databases/postgresql/how-to/restore-from-backups/)).
 
-**Dimensione o cluster de ensaio no menor plano** (1 GiB / 1 vCPU) — o ensaio
-não precisa aguentar carga. Ele tem 22 conexões de backend
-([limits](https://docs.digitalocean.com/products/databases/postgresql/details/limits/)),
-suficiente para um `psql` e um `manage.py`.
+**O plano do cluster de ensaio NÃO é escolha pelo `doctl`.** `doctl databases
+fork` aceita só `--restore-from-cluster-id`, `--restore-from-timestamp` e
+`--wait` (conferido no `--help` em 01/10/2026): não há `--size`, `--region` nem
+`--num-nodes`, e o cluster novo **herda o plano da origem**. Para o alpha isso
+não custa nada a mais, porque a origem (`shopman-staging-postgres`) já está no
+menor plano, `db-s-1vcpu-1gb` (1 GiB / 1 vCPU, 22 conexões de backend,
+[limits](https://docs.digitalocean.com/products/databases/postgresql/details/limits/)).
+Ensaiar a partir do cluster de produção, se ele estiver em plano maior, custa o
+plano maior. Se o painel oferecer escolha de plano na tela de restauração, use o
+menor (NÃO VERIFICADO: em 01/10/2026 ninguém abriu essa tela).
 
 ### Passo 3 — conferir que o dado voltou
 
@@ -299,6 +323,20 @@ do passo 1**. O que tem que bater:
 - [ ] `count(*)` de `django_migrations` igual, e as cinco últimas idênticas;
 - [ ] o Django concorda que o schema está em dia:
       ```bash
+      DJANGO_DEBUG=true \
+      DATABASE_URL='<connection string do cluster novo>' make migrations-pending
+      ```
+      ⚠️ **Sem `DJANGO_DEBUG=true` ele não roda.** Com `DATABASE_URL` de um
+      Postgres de verdade e sem DEBUG, o settings arma as travas de produção e
+      cai em cascata, uma por vez: `DJANGO_SECRET_KEY`, depois
+      `DJANGO_ALLOWED_HOSTS`, depois `DOORMAN['ACCESS_LINK_API_KEY']` (medido em
+      01/10/2026). O alvo só lê o grafo de migração e a tabela
+      `django_migrations`, então DEBUG ligado aqui não expõe nada. Dentro de uma
+      worktree, acrescente o `PYTHONPATH` com a worktree e cada `packages/*`
+      (o `.venv` da raiz aponta os pacotes para o checkout principal):
+      ```bash
+      PP="$PWD"; for d in "$PWD"/packages/*/; do PP="$PP:$d"; done
+      PYTHONPATH="$PP" DJANGO_DEBUG=true \
       DATABASE_URL='<connection string do cluster novo>' make migrations-pending
       ```
       Deve dizer **0 migração(ões) pendente(s)**. Se disser mais que zero, o
@@ -339,16 +377,81 @@ prorata horária antes de confirmar (fork-clusters).
 
 Duas ressalvas honestas:
 
-- Se o fork nascer **no mesmo plano do cluster de origem** em vez do menor, o
-  custo é o daquele plano. Em 29/09/2026 o
-  `shopman-staging-postgres` estava em `db-s-1vcpu-1gb`; confira novamente na
-  tela antes de confirmar e escolha o menor plano explicitamente.
+- Pelo `doctl` o fork nasce **sempre no plano do cluster de origem** (não há
+  `--size`), então o custo é o daquele plano. Em 29/09 e em 01/10/2026 o
+  `shopman-staging-postgres` estava em `db-s-1vcpu-1gb`, o menor: o ensaio
+  contra o alpha custa a primeira linha da tabela.
 - A conversão hora↔mês acima é aritmética sobre os dois números da página de
   pricing (0,02254 × 672 h = 15,15), não uma frase da DO.
 
 Isto atende a regra de custo da casa: **nenhum componente novo na DO sem provar
 necessidade**. O cluster de ensaio é temporário por definição, custa centavos, e
 o passo 4 é parte do procedimento — não uma boa intenção.
+
+---
+
+## Ensaio de 01/10/2026
+
+Dois ensaios no mesmo dia. **Só o segundo aconteceu, e ele NÃO substitui o
+primeiro.**
+
+**Origem.** `shopman-staging-postgres` (id `dd2ca658-…`), PostgreSQL 16, `nyc3`,
+`db-s-1vcpu-1gb`, banco `shopman` com 190 MB, oito ou mais backups diários
+listados. Verdade da origem às **12:50:21 UTC** (passo 1):
+
+| Consulta | Valor |
+|---|---|
+| `count(*)` de `orderman_order` | 4815 |
+| último pedido | `PDV-260930-R62`, `created_at` 2026-09-30 21:42:31 UTC |
+| `count(*)` de `django_migrations` | 306 |
+| as cinco últimas | backstage `0080_recipe_rating` · shop `0085_motivos_de_recusa_aprovados` · craftsman `0016_step_advanced_label` · backstage `0079_operatorrecipefavorite` · craftsman `0015_steps_as_objects` |
+
+### 1. Pelo fork (o ensaio de verdade): NÃO FEITO
+
+```
+doctl --context shopman-do-app-admin databases fork shopman-restore-drill-20261001 \
+  --restore-from-cluster-id dd2ca658-… \
+  --restore-from-timestamp "2026-10-01 12:50:21 +0000 UTC"
+→ 403 You are not authorized to perform this operation
+  (request 7e4f8976-de04-4a99-9269-a12e5219ff44)
+```
+
+O contexto tem só `database:read` e `database:view_credentials`; falta
+`database:create` (e `database:delete`, para descartar no passo 4). **Depende
+do dono:** um token com os escopos do passo 0, ou o mesmo procedimento pelo
+painel. Enquanto isso não acontecer, o item "restore ensaiado em destino
+isolado" do [pré-flight](go-live-preflight.md) segue aberto: o que se provou
+abaixo é que o **dado** é legível e restaurável, não que **nós sabemos
+restaurar o cluster** (PITR, host novo, reapontar o app).
+
+### 2. Lógico (complemento): FEITO, bate com a origem
+
+1. `pg_dump -Fc --no-owner --no-acl` pela conexão **direta** (porta `25060`,
+   banco `shopman`). **Nunca pelo pool** (`25061`): o PgBouncer em modo
+   transaction herda o `search_path=''` do `pg_dump` e derruba o
+   `directive-worker` (ver o CLAUDE.md da raiz). 104 s, dump de 7,1 MB.
+2. `pg_restore -j4` num PostgreSQL 16 local descartável: 23 s, zero erro.
+3. As quatro consultas do passo 1 contra o restaurado: **as quatro batem** com
+   a tabela acima (o `created_at` só muda de fuso na exibição).
+4. `make migrations-pending` contra o restaurado (com `DJANGO_DEBUG=true` e o
+   `PYTHONPATH` da worktree, como no passo 3):
+   `0 migração(ões) pendente(s), 0 com operação destrutiva`.
+5. Banco local e arquivo de dump apagados em seguida.
+
+Tempo total: cerca de 2,5 min. Custo na DO: zero (nenhum recurso criado).
+
+### O que doeu, e já está corrigido acima
+
+- `make migrations-pending` com `DATABASE_URL` de um Postgres real caiu em
+  cascata nas travas de produção do settings (`DJANGO_SECRET_KEY`, depois
+  `DJANGO_ALLOWED_HOSTS`, depois `DOORMAN['ACCESS_LINK_API_KEY']`). Passou com
+  `DJANGO_DEBUG=true`; dentro de worktree, também com `PYTHONPATH`. Seções 2.1
+  e passo 3 trazem o comando que funciona.
+- O runbook mandava "dimensionar o cluster de ensaio no menor plano" como se
+  fosse escolha: pelo `doctl` não é (sem `--size`), o fork herda o plano da
+  origem. Passo 2 e "Custo do ensaio" corrigidos.
+- Os contextos `shopman-spec-update` e `shopman-alpha-deploy` citados acima não
+  existem mais; o único é `shopman-do-app-admin` (nota de 01/10 na seção 1).
 
 ---
 
@@ -366,7 +469,7 @@ o passo 4 é parte do procedimento — não uma boa intenção.
 
 | O quê | Por quê |
 |---|---|
-| **Gerar o token com escopo de database** | Credencial dele; os tokens desta máquina dão 403 em `doctl databases`. |
+| **Gerar o token com escopo de database** | Credencial dele; o único contexto desta máquina (`shopman-do-app-admin`) lê backups e credenciais, mas dá 403 no `fork` (sem `database:create`/`database:delete`, medido em 01/10/2026). |
 | **Aplicar o spec** (`doctl apps update`) para a trava sair do papel | Muda o ambiente vivo. ⚠️ Use `apps spec get` **com escopo de banco** como base e preserve os `EV[…]`: um spec reenviado sem os valores atuais [quebra o deploy inteiro](conferir-spec-digitalocean.md). |
 | **Declarar `SHOPMAN_MIGRATION_BACKUP_REF`** antes de um deploy destrutivo | É a declaração de que o ponto de restauração foi anotado — é a palavra dele, não um default. |
 | **Declarar `SHOPMAN_GO_LIVE=true`** no cutover | Arma a política do ADR-015 no ambiente. Item do [go-live-cutover](go-live-cutover.md) §6. |

@@ -49,6 +49,29 @@ autorização.
 
 ## 4. Integrações externas
 
+> ⛔ **Pix real ensaiado ANTES da virada, não no dia dela.** Efí, Stripe e Focus
+> são as últimas chaves a **LIGAR**, não as últimas a **ENSAIAR**.
+>
+> - [ ] **Ensaio do Pix real no alpha:** Pix em `payment_efi` com
+>   `EFI_SANDBOX=true` **e** `SHOPMAN_EXPOSE_MOCK_CAPTURE=false`. Com isso o
+>   botão público "Simular pagamento" (o cliente quita o próprio pedido) fecha
+>   **por construção**: `mock_capture_allowed`
+>   (`shopman/shop/services/payment.py`) exige que o adapter efetivo do método
+>   seja o simulado. Não basta desligar só a flag: perde-se o ensaio. Prova
+>   esperada: um Pix de sandbox cobrado, webhook recebido, pedido pago pelo
+>   caminho real, e a tela de Pix sem o botão.
+> - [ ] **Rotacionar `EFI_WEBHOOK_TOKEN` antes de ligar a Efí de produção**
+>   (D22, [PENDING-DECISIONS](../reports/go-live-acceleration-20260930-diag/PENDING-DECISIONS.md)):
+>   o token atual é de sandbox e, em produção, é a autenticação única do
+>   webhook. Rotacionar = trocar o segredo e recadastrar a URL na Efí.
+> - [ ] Stripe (`sk_test_`/webhook de teste) e Focus (homologação) exercidos
+>   no alpha pelo caminho real antes de trocar para as chaves de produção.
+>
+> Origem: D-006 em [DECISIONS](../coordination/DECISIONS.md) (Pix simulado
+> permanece no alpha por decisão do dono, aceitável em alpha e **bloqueador em
+> produção**). Enquanto este item não estiver `VERIFICADO`, o cutover para na
+> regra de parada.
+
 Para cada integração aprovada no escopo v1:
 
 - [ ] nome da credencial declarado no secret store correto;
