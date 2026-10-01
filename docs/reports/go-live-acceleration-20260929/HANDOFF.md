@@ -17,16 +17,16 @@
 |---|---|---|
 | 0: destravar o #1330 (check `operator-kit` vermelho: a trava "clique nunca inerte" pegou o `chooseOther` do `OrderReasonDialog.vue`, async só pelo `nextTick`; NÃO era CodeQL) | #1330 | ✅ mergeado |
 | 1: mapa WP-DATA-E-PROMESSA (só documento) | #1335 | ✅ mergeado |
-| 2: receitas D11, D19, D20, D24 | #1338 | FILA_1338 |
-| 3: recibo de envio crítico (D3) | #1339 | FILA_1339 |
+| 2: receitas D11, D19, D20, D24 | #1338 | ✅ mergeado |
+| 3: recibo de envio crítico (D3) | #1339 | ✅ mergeado |
 | 4: checks obrigatórios conferidos contra o vivo, proposta de corte, Pix no checklist, ensaio de restore | #1336 | ✅ mergeado |
 | 5: loja, data da sacola na resolução | sem PR | **espera o dono** (D25: P1 a P3 do mapa) |
-| 6: loja, versão nova forçada (D9) e trilho no `shell/` (D10) | PR_F6 | ESTADO_F6 |
+| 6: loja, versão nova forçada (D9) e trilho no `shell/` (D10) | #1341 | ✅ mergeado; o trilho NÃO saiu do `shell/` (a `/sacola` o exibe na primeira pintura): D31 |
 | 7: R2 pronto e desligado (D6) | #1337 | ✅ mergeado; ligar é do dono (D30) |
 | 8: `DATABASE_CONN_MAX_AGE=0` no spec vivo (D21) | spec vivo + #1334 | ✅ feito e mergeado |
 
 Decisões novas registradas: `docs/coordination/DECISIONS.md` D-011 a D-016. Perguntas novas ao
-dono: `PENDING-DECISIONS.md` D25 a D30.
+dono: `PENDING-DECISIONS.md` D25 a D31.
 
 ### 0.2 Frente 8, como foi feita (não refaça)
 
@@ -58,7 +58,7 @@ O botão público que deixa o cliente marcar o próprio pedido como pago (Pix no
 ### 0.5 O que depende do dono
 
 D25 (data e promessa, destrava a Frente 5) · D26 (editar publicada no app) · D27 (mais eventos
-críticos, alerta frequente) · D28 (corte de escopo) · D29 (token para o fork) · D30 (R2) · e as
+críticos, alerta frequente) · D28 (corte de escopo) · D29 (token para o fork) · D30 (R2) · D31 (trilho do `shell/`) · e as
 abertas de antes: D2, D8, D18 (b, d, e), D22, D23.
 
 ### 0.6 Em voo que não é deste turno

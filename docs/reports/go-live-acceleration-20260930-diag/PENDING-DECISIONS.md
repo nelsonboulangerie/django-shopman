@@ -26,7 +26,8 @@
 |---|---|
 | D3 | ✅ Recibo de envio crítico (#1339). Perguntas restantes em D27 |
 | D6 | ✅ R2 pronto e desligado (#1337). O que falta é do dono: D30 |
-| D9, D10 | Em execução (PR_F6) |
+| D9 | ✅ Versão nova forçada, nunca no pagamento (#1341) |
+| D10 | Não removido: a `/sacola` exibe o trilho vindo do `shell/`. Pergunta em D31 |
 | D11 | ✅ Versão livre (#1338). Perguntas restantes em D26 |
 | D19, D20, D24 | ✅ (#1338) |
 | D21 | ✅ Aplicado no spec vivo, arquivos no #1334 |
@@ -387,4 +388,13 @@ passou: 104 s + 23 s, contagens batem, 0 migração pendente. Ele não substitui
 escrita só naquele bucket, colar `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` e
 `R2_SECRET_ACCESS_KEY` como segredo no painel da DO. Segredo nunca vai por chat.
 **Pergunta.** Depois disso, liga `SHOPMAN_MEDIA_STORAGE=r2` no alpha? **Recomendação:** sim.
+
+## D31 — Trilho de sugestão no `shell/`: aceitar que ele "pule" na sacola?
+
+**Contexto.** A sugestão da sacola (`cart.upsell`) vem no `shell/`, e a `/sacola` a mostra na primeira
+pintura (`surfaces/storefront-nuxt/app/app.vue:32`, `pages/sacola.vue:302`); a sacola própria só
+responde depois. Nenhuma outra tela exibe esse trilho (#1341, tabela tela a tela).
+**Opções.** 1) Manter (o `shell/` segue montando a sacola inteira, ~56 consultas com 1 item). 2) Tirar
+do `shell/`: a `/sacola` abre sem o trilho e ele aparece um instante depois.
+**Recomendação:** 1 até o go-live (omotenashi); 2 se o custo do `shell/` voltar a doer.
 

@@ -210,7 +210,7 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-012 | Receita: o padeiro pode fazer o que quiser (D11) | `DECIDIDA` | 2026-12-31 |
 | D-013 | Receita: temperatura opcional, 92 etapas são rascunho, nota e "Fontes" (D19, D20, D24) | `DECIDIDA` | 2026-12-31 |
 | D-014 | Recibo de envio crítico: reserva por e-mail e SMS só em evento crítico (D3) | `DECIDIDA` | 2026-10-31 |
-| D-015 | Loja: forçar a versão nova, nunca durante pagamento (D9); trilho fora do `shell/` só se ninguém o exibe (D10) | `EM_EXECUCAO` | 2026-10-31 |
+| D-015 | Loja: forçar a versão nova, nunca durante pagamento (D9); trilho fora do `shell/` só se ninguém o exibe (D10) | `DECIDIDA` | 2026-10-31 |
 | D-016 | Pix real se ENSAIA antes da virada; Efí, Stripe e Focus são as últimas a LIGAR | `DECIDIDA` | 2026-10-15 |
 | B-001 | Alpha SEM DEPLOY desde 29/09 21:31 UTC | `BLOQUEADA` | 2026-10-01 |
 
@@ -651,13 +651,17 @@ identificador: o `Message-ID` do e-mail é hoje o único comprovante. Explicaç�
 
 ## D-015 · Loja: forçar a versão nova (D9) e o trilho de sugestão no `shell/` (D10)
 
-- **Estado:** `EM_EXECUCAO` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-31
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-31
 
 **Decisão do dono.** D9: forçar. Versão nova aplicada na navegação e, fora de checkout, pedido e
 login, aviso que bloqueia a tela; nunca durante pagamento. D10: omotenashi primeiro; o trilho sai
 do `shell/` só se nenhuma tela que consome o `shell/` o exibe.
 
-**Prova.** PR_F6.
+**Prova.** PR #1341 (mergeado). Rotas protegidas em
+`surfaces/storefront-nuxt/app/presentation/pwaRuntime.ts:53-56` (`/finalizar`, `/pedido/<ref>`,
+`/entrar`, `/a`), travadas por `tests/pwaRuntime.test.ts` e `tests/components/pwaUpdatePrompt.test.ts`.
+D10: o trilho **não** saiu do `shell/`, porque a `/sacola` exibe `cart.upsell` vindo do `shell/` na
+primeira pintura (`app.vue:32`, `pages/sacola.vue:302`). Pela regra do dono, parou aí (D31).
 
 ---
 
