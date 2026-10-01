@@ -11,9 +11,10 @@ from io import StringIO
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.db import transaction
 from shopman.craftsman import craft
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion, restoring_recipe_versions
 from shopman.craftsman.services import recipe_book
 
 pytestmark = pytest.mark.django_db
@@ -513,6 +514,160 @@ class TestBootstrap:
         out = StringIO()
         call_command("bootstrap_recipe_book", stdout=out)
         assert "0 criadas, 3 puladas" in out.getvalue()
+
+
+# ── Versão fechada é história ────────────────────────────────────────────────
+
+
+class TestClosedVersionIsImmutable:
+    """A trava mora no modelo: vale para o shell, o seed, o Admin e o ``.update()``."""
+
+    @pytest.fixture
+    def published(self, entry, draft):
+        recipe_book.publish_version(draft, actor="pablo")
+        draft.refresh_from_db()
+        return draft
+
+    @pytest.mark.parametrize("field, value", [
+        ("formula", flour_formula(water=999)),
+        ("yield_quantity", Decimal("2")),
+        ("yield_unit", "g"),
+        ("steps", ["Outra coisa"]),
+        ("origin", {"text": "reescrita"}),
+        ("source", {"kind": "import"}),
+        ("notes", "nota nova"),
+        ("label", "rótulo novo"),
+        ("number", 7),
+        ("created_by", "outra pessoa"),
+        ("meta", {}),
+    ])
+    def test_save_refuses_content_change(self, published, field, value):
+        setattr(published, field, value)
+        with pytest.raises(RecipeBookError) as exc:
+            published.save()
+        assert exc.value.code == "VERSION_IMMUTABLE"
+        assert exc.value.data["fields"] == [field]
+
+    def test_save_with_update_fields_is_refused_too(self, published):
+        published.notes = "só este campo"
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            published.save(update_fields=["notes"])
+
+    def test_save_refuses_moving_to_another_entry(self, published):
+        other = recipe_book.create_entry(ref="outra", name="Outra", output_sku="OUTRA")
+        published.entry = other
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            published.save()
+
+    def test_save_refuses_going_back_to_draft(self, published):
+        published.status = RecipeVersion.Status.DRAFT
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            published.save()
+
+    def test_update_in_bulk_refuses_content_and_any_status_but_superseded(self, published):
+        versions = RecipeVersion.objects.filter(pk=published.pk)
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            versions.update(formula=flour_formula(water=999))
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            versions.update(status=RecipeVersion.Status.DRAFT)
+        published.refresh_from_db()
+        assert published.formula == flour_formula()
+        assert published.status == RecipeVersion.Status.PUBLISHED
+
+    def test_unchanged_save_and_the_supersede_still_pass(self, entry, published):
+        published.save()
+        second = recipe_book.create_version(entry, formula=flour_formula(water=720), yield_quantity="1.72",
+                                            yield_unit="kg")
+        recipe_book.publish_version(second)
+        published.refresh_from_db()
+        assert published.status == RecipeVersion.Status.SUPERSEDED
+        superseded = RecipeVersion.objects.get(pk=published.pk)
+        superseded.notes = "reescrevendo a história"
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            superseded.save()
+
+    def test_drafts_stay_free(self, draft):
+        draft.notes = "rascunho muda"
+        draft.save()
+        RecipeVersion.objects.filter(pk=draft.pk).update(label="à vontade")
+        draft.refresh_from_db()
+        assert (draft.notes, draft.label) == ("rascunho muda", "à vontade")
+        draft.delete()
+        assert not RecipeVersion.objects.filter(pk=draft.pk).exists()
+
+    def test_delete_is_refused_on_every_orm_path(self, entry, published):
+        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
+            published.delete()
+        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
+            RecipeVersion.objects.filter(pk=published.pk).delete()
+        with pytest.raises(RecipeBookError, match="VERSION_UNDELETABLE"), transaction.atomic():
+            RecipeEntry.objects.filter(pk=entry.pk).delete()
+        assert RecipeVersion.objects.filter(pk=published.pk).exists()
+
+    def test_only_the_named_restore_path_rewrites(self, published):
+        published.notes = "conteúdo do cofre"
+        with restoring_recipe_versions():
+            published.save()
+        published.refresh_from_db()
+        assert published.notes == "conteúdo do cofre"
+        # Fechado o bloco, a trava volta.
+        published.notes = "fora do restore"
+        with pytest.raises(RecipeBookError, match="VERSION_IMMUTABLE"):
+            published.save()
+
+
+# ── Ficha em sincronia ───────────────────────────────────────────────────────
+
+
+class TestExecutionInSync:
+    def test_a_freshly_published_sheet_is_in_sync(self, entry, draft):
+        recipe = recipe_book.publish_version(draft)
+        draft.refresh_from_db()
+        assert draft.meta["execution_digest"] == recipe_book.execution_digest(recipe)
+        assert recipe_book.execution_in_sync(draft, recipe) is True
+
+    def test_a_sheet_edited_from_outside_is_out_of_sync(self, entry, draft):
+        """A edição pelo Admin não mexe no carimbo; a impressão digital pega."""
+        recipe = recipe_book.publish_version(draft)
+        draft.refresh_from_db()
+        item = recipe.items.get(input_sku="SAL-REFINADO")
+        item.quantity = Decimal("25")
+        item.save()
+        assert recipe.meta["version_ref"] == draft.version_ref
+        assert recipe_book.execution_in_sync(draft, recipe) is False
+
+    def test_hand_edited_meta_and_order_do_not_count_as_drift(self, entry, draft):
+        recipe = recipe_book.publish_version(draft)
+        draft.refresh_from_db()
+        recipe.meta = {**recipe.meta, "shelf_life_days": 3}
+        recipe.save()
+        for order, item in enumerate(recipe.items.order_by("-sort_order")):
+            item.sort_order = order
+            item.meta = {**(item.meta or {}), "allergens": ["gluten"]}
+            item.save()
+        assert recipe_book.execution_in_sync(draft, recipe) is True
+
+    def test_an_older_version_is_not_the_one_on_the_sheet(self, entry, draft):
+        recipe_book.publish_version(draft)
+        second = recipe_book.create_version(entry, formula=flour_formula(water=720), yield_quantity="1.72",
+                                            yield_unit="kg")
+        recipe = recipe_book.publish_version(second)
+        draft.refresh_from_db()
+        second.refresh_from_db()
+        assert recipe_book.execution_in_sync(second, recipe) is True
+        assert recipe_book.execution_in_sync(draft, recipe) is False
+
+    def test_the_bootstrapped_version_is_the_sheet_until_someone_edits_it(self, seeded_sheets):
+        _, _, tradicao = seeded_sheets
+        version = recipe_book.bootstrap_entry_from_recipe(tradicao).current_version
+        assert recipe_book.execution_in_sync(version, tradicao) is True
+        tradicao.batch_size = Decimal("9.5")
+        tradicao.save()
+        assert recipe_book.execution_in_sync(version, tradicao) is False
+
+    def test_without_sheet_or_version_there_is_nothing_in_sync(self, draft):
+        assert recipe_book.execution_in_sync(None, None) is False
+        assert recipe_book.execution_in_sync(draft, None) is False
 
 
 # ── Snapshot da fornada ──────────────────────────────────────────────────────

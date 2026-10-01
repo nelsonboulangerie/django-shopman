@@ -93,55 +93,111 @@ def next_batch_availability_for_skus(
     if horizon <= today:
         return {}
     try:
-        from shopman.stockman.models import Quant
-        from shopman.stockman.services.availability import availability_for_skus
+        from shopman.stockman.services.availability import availability_for_skus_on_dates
 
-        from shopman.shop.adapters import stock as stock_adapter
-
-        scope = stock_adapter.get_channel_scope(channel_ref) if channel_ref else {}
-        kwargs = {
-            "safety_margin": int(scope.get("safety_margin") or 0),
-            "allowed_positions": scope.get("allowed_positions"),
-            "excluded_positions": scope.get("excluded_positions"),
-            "expiry_margin_days": int(scope.get("expiry_margin_days") or 0),
-            "include_nonconforming": bool(scope.get("sells_nonconforming", True)),
-            "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
-        }
-
-        candidate_dates = list(
-            Quant.objects.filter(
-                sku__in=unique_skus,
-                _quantity__gt=0,
-                target_date__gt=today,
-                target_date__lte=horizon,
-            )
-            .order_by("target_date")
-            .values_list("target_date", flat=True)
-            .distinct()
+        candidates = _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
+        if not candidates:
+            return {}
+        # Uma leitura do Stockman para TODAS as datas candidatas. Cada data
+        # devolve o mesmo que ``availability_for_skus(target_date=data)``, e a
+        # resposta de um SKU não depende dos outros SKUs do lote — então ler
+        # todos de uma vez e escolher depois é a mesma escolha do laço antigo
+        # (que relia o estoque inteiro por data, com os SKUs que restavam).
+        infos_by_date = availability_for_skus_on_dates(
+            unique_skus,
+            candidates,
+            **scope_kwargs(channel_ref),
         )
-        remaining = set(unique_skus)
-        result: dict[str, tuple[date, dict]] = {}
-        for candidate in candidate_dates:
-            if not remaining:
-                break
-            infos = availability_for_skus(
-                sorted(remaining),
-                target_date=candidate,
-                **kwargs,
-            )
-            for sku in tuple(remaining):
-                info = infos.get(sku) or {}
-                if Decimal(str(info.get("planned") or 0)) <= 0:
-                    continue
-                result[sku] = (candidate, info)
-                remaining.remove(sku)
-        return result
+        return first_batch_with_planned(unique_skus, candidates, infos_by_date)
     except Exception:
         logger.debug(
             "waitlist.next_batch_availability degraded; returning empty",
             exc_info=True,
         )
         return {}
+
+
+def scope_kwargs(channel_ref: str | None) -> dict:
+    """O recorte de estoque do canal nos parâmetros do Stockman, como a fila lê."""
+    from shopman.shop.adapters import stock as stock_adapter
+
+    scope = stock_adapter.get_channel_scope(channel_ref) if channel_ref else {}
+    return {
+        "safety_margin": int(scope.get("safety_margin") or 0),
+        "allowed_positions": scope.get("allowed_positions"),
+        "excluded_positions": scope.get("excluded_positions"),
+        "expiry_margin_days": int(scope.get("expiry_margin_days") or 0),
+        "include_nonconforming": bool(scope.get("sells_nonconforming", True)),
+        "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+    }
+
+
+def _candidate_batch_dates(skus: list[str], *, today: date, horizon: date) -> list[date]:
+    """Datas de fornada com saldo entre amanhã e o horizonte, em ordem."""
+    from shopman.stockman.models import Quant
+
+    return list(
+        Quant.objects.filter(
+            sku__in=skus,
+            _quantity__gt=0,
+            target_date__gt=today,
+            target_date__lte=horizon,
+        )
+        .order_by("target_date")
+        .values_list("target_date", flat=True)
+        .distinct()
+    )
+
+
+def candidate_batch_dates(skus: list[str], *, channel_ref: str | None = None) -> list[date]:
+    """Datas candidatas da fila de espera para estes SKUs; vazio com a fila desligada.
+
+    Mesma pergunta que :func:`next_batch_availability_for_skus` faz antes de
+    ler o estoque, exposta para quem quer ler HOJE e as fornadas numa
+    leitura só (o catálogo). Degrada para vazio, como a leitura inteira.
+    """
+    unique_skus = list(dict.fromkeys(sku for sku in skus if sku))
+    if not unique_skus:
+        return []
+    horizon = promise_horizon(channel_ref)
+    from django.utils import timezone
+
+    today = timezone.localdate()
+    if horizon <= today:
+        return []
+    try:
+        return _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
+    except Exception:
+        logger.debug("waitlist.candidate_batch_dates degraded; returning empty", exc_info=True)
+        return []
+
+
+def first_batch_with_planned(
+    skus: list[str],
+    candidate_dates: list[date],
+    infos_by_date: dict[date, dict[str, dict]],
+) -> dict[str, tuple[date, dict]]:
+    """Por SKU, a primeira data candidata em que ainda há fornada planejada líquida.
+
+    ``infos_by_date[data]`` é a leitura do Stockman naquela data. O ``dict``
+    escolhido é a capacidade inteira reservável naquela data — nunca a soma de
+    fornadas incompatíveis.
+    """
+    remaining = list(dict.fromkeys(sku for sku in skus if sku))
+    result: dict[str, tuple[date, dict]] = {}
+    for candidate in candidate_dates:
+        if not remaining:
+            break
+        infos = infos_by_date.get(candidate) or {}
+        still: list[str] = []
+        for sku in remaining:
+            info = infos.get(sku) or {}
+            if Decimal(str(info.get("planned") or 0)) <= 0:
+                still.append(sku)
+                continue
+            result[sku] = (candidate, info)
+        remaining = still
+    return result
 
 
 def next_batch_availability(

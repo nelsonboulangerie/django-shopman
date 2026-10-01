@@ -368,19 +368,64 @@ def availability_for_skus(
     scope gate (shelflife, batch expiry + margin, batch conformity, position
     allow/deny, target_date) via per-SKU Python filtering on top of a bulk
     quant fetch.
+
+    É :func:`availability_for_skus_on_dates` com uma data só: uma
+    implementação, para que a leitura de um dia e a de vários não possam
+    divergir.
     """
-    from types import SimpleNamespace
-
-    from shopman.stockman.models import Batch
-    from shopman.stockman.shelflife import is_valid_for_date
-
     if not skus:
         return {}
+    target = target_date or timezone.localdate()
+    return availability_for_skus_on_dates(
+        skus,
+        [target],
+        safety_margin,
+        allowed_positions=allowed_positions,
+        excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
+    )[target]
+
+
+def availability_for_skus_on_dates(
+    skus: list[str],
+    target_dates: list[date],
+    safety_margin: int = 0,
+    *,
+    allowed_positions: list[str] | None = None,
+    excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+) -> dict[date, dict[str, dict]]:
+    """
+    :func:`availability_for_skus` para várias datas numa varredura só.
+
+    Devolve ``{data: {sku: availability_dict}}``, e cada ``[data]`` é
+    exatamente o que ``availability_for_skus(skus, target_date=data, ...)``
+    devolvia quando cada data era uma leitura inteira. O que muda é o custo:
+    as linhas de ``Quant`` (o custo real desta leitura é materializar linha
+    em objeto, não o SQL) são lidas UMA vez, até a maior data, e cada data é
+    recortada em Python com as mesmas regras: ``target_date <= data``, lote
+    vencido com o corte da própria data, ``is_valid_for_date`` na própria
+    data. Os holds valem por quant e não dependem da data; o contrato de
+    oferta (validador de SKU) também não.
+
+    Quem pergunta "hoje e as próximas fornadas" (a fila de espera) fazia uma
+    leitura inteira por data candidata; aqui é uma.
+    """
+    from shopman.stockman.models import Batch
+
+    dates: list[date] = list(dict.fromkeys(target_dates))
+    if not skus or not dates:
+        return {target: {} for target in dates}
 
     zero = Decimal("0")
 
     today = timezone.localdate()
-    target = target_date or today
+    horizon = max(dates)
+    expiry_margin = timedelta(days=max(0, expiry_margin_days))
 
     # ── Query 1: orderable SKUs from the offering contract ───────────────────
     validator = get_sku_validator()
@@ -399,10 +444,15 @@ def availability_for_skus(
     # Expiry honors the channel's near-expiry margin (0 = only already
     # expired); conformity mirrors quants_eligible_for — the frozen markdown,
     # never an informational reason, drives the compatibility gate.
-    expiry_cutoff = target + timedelta(days=max(0, expiry_margin_days))
-    expired_refs_by_sku: dict[str, set[str]] = {}
-    for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=expiry_cutoff).values("sku", "ref"):
-        expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+    # O corte de validade depende da data (``data + margem``): lemos os lotes
+    # até o MAIOR corte, com a validade, e cada data aplica o seu.
+    expiring_batches: list[tuple[str, str, date]] = list(
+        Batch.objects.filter(
+            sku__in=skus,
+            expiry_date__lt=horizon + expiry_margin,
+        ).values_list("sku", "ref", "expiry_date")
+    )
+    nonconforming_refs_by_sku: dict[str, set[str]] = {}
     allowed_batch_refs_by_sku: dict[str, set[str]] | None = None
     if allowed_quality_grade_refs is not None:
         allowed_refs = tuple(allowed_quality_grade_refs)
@@ -414,27 +464,33 @@ def availability_for_skus(
             allowed_batch_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
     elif not include_nonconforming:
         for row in Batch.objects.filter(sku__in=skus).nonconforming().values("sku", "ref"):
-            expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+            nonconforming_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
 
-    # ── Query 3: planned SKUs (has future quants) ─────────────────────────────
-    planned_skus: set[str] = set(
-        Quant.objects.filter(
-            sku__in=skus,
-            target_date__gt=today,
-            target_date__lte=target,
-            _quantity__gt=0,
-        )
-        .values_list("sku", flat=True)
-        .distinct()
-    )
+    # ── Query 3: planned (sku, date) pairs — future quants with stock ─────────
+    # Sem recorte de posição, como sempre foi: ``is_planned`` diz se há
+    # fornada a caminho até a data, não se ela conta para este canal. Sem
+    # data futura pedida não há o que perguntar (a resposta seria vazia).
+    planned_dates_by_sku: dict[str, list[date]] = {}
+    if horizon > today:
+        for sku, planned_date in (
+            Quant.objects.filter(
+                sku__in=skus,
+                target_date__gt=today,
+                target_date__lte=horizon,
+                _quantity__gt=0,
+            )
+            .values_list("sku", "target_date")
+            .distinct()
+        ):
+            planned_dates_by_sku.setdefault(sku, []).append(planned_date)
 
     # ── Query 3b: which SKUs have ANY Quant at all (scope-independent) ────────
     tracked_skus: set[str] = set(Quant.objects.filter(sku__in=skus).values_list("sku", flat=True).distinct())
 
-    # ── Query 4: physical quants (current/past), select_related position ──────
+    # ── Query 4: quants up to the LATEST date, select_related position ────────
     quant_qs = (
         Quant.objects.filter(sku__in=skus)
-        .filter(Q(target_date__isnull=True) | Q(target_date__lte=target))
+        .filter(Q(target_date__isnull=True) | Q(target_date__lte=horizon))
         .filter(_quantity__gt=0)
         .select_related("position")
     )
@@ -443,7 +499,7 @@ def availability_for_skus(
     if excluded_positions:
         quant_qs = quant_qs.exclude(position__ref__in=excluded_positions)
 
-    # Fetch all matching quants
+    # Fetch all matching quants — once, for every date.
     all_quants = list(quant_qs)
 
     # ── Batch held amounts: one query across all quant PKs ────────────────────
@@ -463,11 +519,58 @@ def availability_for_skus(
         for row in rows:
             held_by_quant[row["quant_id"]] = row["total"] or zero
 
-    # ── Group quants by SKU and compute breakdown ─────────────────────────────
+    # ── Group quants by SKU ───────────────────────────────────────────────────
     quants_by_sku: dict[str, list] = {}
     for q in all_quants:
         quants_by_sku.setdefault(q.sku, []).append(q)
 
+    by_date: dict[date, dict[str, dict]] = {}
+    for target in dates:
+        cutoff = target + expiry_margin
+        excluded_refs_by_sku: dict[str, set[str]] = {}
+        for sku, ref, expiry_date in expiring_batches:
+            if expiry_date < cutoff:
+                excluded_refs_by_sku.setdefault(sku, set()).add(ref)
+        for sku, refs in nonconforming_refs_by_sku.items():
+            excluded_refs_by_sku.setdefault(sku, set()).update(refs)
+        by_date[target] = _availability_on_date(
+            skus,
+            target,
+            safety_margin=safety_margin,
+            orderable_skus=orderable_skus,
+            sku_infos=sku_infos,
+            shelflife_by_sku=shelflife_by_sku,
+            excluded_refs_by_sku=excluded_refs_by_sku,
+            allowed_batch_refs_by_sku=allowed_batch_refs_by_sku,
+            planned_dates_by_sku=planned_dates_by_sku,
+            tracked_skus=tracked_skus,
+            quants_by_sku=quants_by_sku,
+            held_by_quant=held_by_quant,
+        )
+    return by_date
+
+
+def _availability_on_date(
+    skus: list[str],
+    target: date,
+    *,
+    safety_margin: int,
+    orderable_skus: set[str],
+    sku_infos: dict,
+    shelflife_by_sku: dict[str, int | None],
+    excluded_refs_by_sku: dict[str, set[str]],
+    allowed_batch_refs_by_sku: dict[str, set[str]] | None,
+    planned_dates_by_sku: dict[str, list[date]],
+    tracked_skus: set[str],
+    quants_by_sku: dict[str, list],
+    held_by_quant: dict[int, Decimal],
+) -> dict[str, dict]:
+    """Uma data de :func:`availability_for_skus_on_dates`, sobre linhas já lidas."""
+    from types import SimpleNamespace
+
+    from shopman.stockman.shelflife import is_valid_for_date
+
+    zero = Decimal("0")
     result: dict[str, dict] = {}
 
     for sku in skus:
@@ -485,8 +588,8 @@ def availability_for_skus(
             )
             continue
 
-        expired_refs = expired_refs_by_sku.get(sku, set())
-        is_planned = sku in planned_skus
+        expired_refs = excluded_refs_by_sku.get(sku, set())
+        is_planned = any(planned_date <= target for planned_date in planned_dates_by_sku.get(sku, ()))
         availability_policy = sku_infos.get(sku).availability_policy if sku_infos.get(sku) is not None else "planned_ok"
 
         ready = Decimal("0")
@@ -503,6 +606,10 @@ def availability_for_skus(
         )
 
         for quant in quants_by_sku.get(sku, []):
+            # A leitura foi até a maior data pedida; esta data só vê o que
+            # chega até ela (o mesmo ``target_date <= target`` da consulta).
+            if quant.target_date is not None and quant.target_date > target:
+                continue
             if quant.batch and quant.batch in expired_refs:
                 continue
             if (

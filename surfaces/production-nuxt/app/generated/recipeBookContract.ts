@@ -183,6 +183,7 @@ export interface RecipeEntryDetailProjection {
   is_archived: boolean;
   current_version_number: number | null;
   ficha_ref: string;
+  execution_in_sync: boolean;
   versions: RecipeVersionProjection[];
   usage: RecipeUsageProjection;
 }

@@ -646,50 +646,149 @@ def availability_for_skus(
 ) -> dict[str, dict | None]:
     if not skus:
         return {}
-    try:
-        from django.utils import timezone
-        from shopman.stockman.services.availability import availability_for_skus as _availability_for_skus
+    if target_date is not None:
+        try:
+            from shopman.stockman.services.availability import availability_for_skus as _availability_for_skus
 
-        from shopman.shop.adapters import stock as stock_adapter
-        from shopman.shop.services import waitlist
-
-        scope = stock_adapter.get_channel_scope(channel_ref)
-        kwargs = {
-            "safety_margin": scope["safety_margin"],
-            "allowed_positions": scope["allowed_positions"],
-            "excluded_positions": scope.get("excluded_positions"),
-            "expiry_margin_days": scope.get("expiry_margin_days", 0),
-            "include_nonconforming": scope.get("sells_nonconforming", True),
-            "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
-        }
-        if target_date is not None:
             return _availability_for_skus(
                 skus,
                 target_date=target_date,
-                **kwargs,
+                **_channel_scope_kwargs(channel_ref),
             )
+        except Exception as exc:
+            logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)
+            return {}
+    return availability_and_today_for_skus(skus, channel_ref=channel_ref)[0]
+
+
+def _channel_scope_kwargs(channel_ref: str) -> dict:
+    from shopman.shop.adapters import stock as stock_adapter
+
+    scope = stock_adapter.get_channel_scope(channel_ref)
+    return {
+        "safety_margin": scope["safety_margin"],
+        "allowed_positions": scope["allowed_positions"],
+        "excluded_positions": scope.get("excluded_positions"),
+        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "include_nonconforming": scope.get("sells_nonconforming", True),
+        "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+    }
+
+
+def _same_scope_kwargs(left: dict, right: dict) -> bool:
+    """Iguais em valor E em tipo: ``0`` e ``0.0`` somam diferente com ``Decimal``."""
+    if left.keys() != right.keys():
+        return False
+    return all(
+        type(left[key]) is type(right[key]) and left[key] == right[key]
+        for key in left
+    )
+
+
+def availability_and_today_for_skus(
+    skus: list[str],
+    *,
+    channel_ref: str,
+    also_today: list[str] | tuple[str, ...] = (),
+) -> tuple[dict[str, dict | None], dict[str, dict]]:
+    """Disponibilidade do cardápio (hoje + fila de espera) e o pronto de HOJE cru.
+
+    Devolve ``(disponibilidade, hoje)``:
+
+    - ``disponibilidade`` é o que :func:`availability_for_skus` sem data
+      devolve: a leitura de hoje, com a próxima fornada da fila de espera
+      mesclada quando a fila está ligada;
+    - ``hoje`` é a leitura crua do Stockman para hoje, de ``skus`` e de
+      ``also_today`` — o que o bundle precisa dos componentes, sem pedir ao
+      Stockman uma segunda vez.
+
+    Hoje e as datas candidatas da fila saem de UMA leitura do Stockman
+    (:func:`availability_for_skus_on_dates`), em vez de uma leitura inteira
+    por data. As datas candidatas continuam sendo as dos ``skus`` do
+    cardápio: ``also_today`` só pega carona na leitura de hoje.
+    """
+    if not skus:
+        return {}, {}
+    try:
+        from django.utils import timezone
+        from shopman.stockman.services.availability import availability_for_skus_on_dates
+
+        from shopman.shop.services import waitlist
+
+        kwargs = _channel_scope_kwargs(channel_ref)
         today = timezone.localdate()
-        current = _availability_for_skus(
+        read_skus = list(dict.fromkeys([*skus, *(sku for sku in also_today if sku)]))
+
+        combined = _read_today_and_next_batches(
             skus,
-            target_date=today,
-            **kwargs,
-        )
-        next_batches = waitlist.next_batch_availability_for_skus(
-            skus,
+            read_skus,
             channel_ref=channel_ref,
+            today=today,
+            kwargs=kwargs,
         )
-        if not next_batches:
-            return current
-        return {
-            sku: _merge_waitlist_availability(
-                current.get(sku),
-                next_batches.get(sku, (None, None))[1],
+        if combined is not None:
+            current, next_batches = combined
+        else:
+            current = availability_for_skus_on_dates(read_skus, [today], **kwargs)[today]
+            next_batches = waitlist.next_batch_availability_for_skus(
+                skus,
+                channel_ref=channel_ref,
             )
-            for sku in skus
-        }
+        today_raw = {sku: current[sku] for sku in read_skus}
+        if not next_batches:
+            return {sku: current[sku] for sku in skus}, today_raw
+        return (
+            {
+                sku: _merge_waitlist_availability(
+                    current.get(sku),
+                    next_batches.get(sku, (None, None))[1],
+                )
+                for sku in skus
+            },
+            today_raw,
+        )
     except Exception as exc:
         logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)
-        return {}
+        return {}, {}
+
+
+def _read_today_and_next_batches(
+    skus: list[str],
+    read_skus: list[str],
+    *,
+    channel_ref: str,
+    today: date,
+    kwargs: dict,
+) -> tuple[dict[str, dict], dict[str, tuple[date, dict]]] | None:
+    """Hoje e as fornadas candidatas da fila numa leitura só do Stockman.
+
+    ``None`` manda o chamador pelo caminho de duas leituras (hoje e, à parte,
+    ``waitlist.next_batch_availability_for_skus``), que é o comportamento de
+    referência. Isso acontece quando a leitura única não é garantidamente a
+    mesma pergunta: sem canal, com o recorte do canal diferente tipo a tipo do
+    que a fila lê (ela normaliza para ``int``/``bool``), ou se a leitura das
+    datas futuras falhar — a fila degrada sozinha para vazio, e o pronto de
+    hoje não pode cair junto com ela.
+    """
+    from shopman.stockman.services.availability import availability_for_skus_on_dates
+
+    from shopman.shop.services import waitlist
+
+    if not channel_ref:
+        return None
+    candidates = waitlist.candidate_batch_dates(skus, channel_ref=channel_ref)
+    if not candidates:
+        # Fila desligada, ou nenhuma fornada no horizonte: não há o que mesclar.
+        return availability_for_skus_on_dates(read_skus, [today], **kwargs)[today], {}
+    try:
+        if not _same_scope_kwargs(waitlist.scope_kwargs(channel_ref), kwargs):
+            return None
+        by_date = availability_for_skus_on_dates(read_skus, [today, *candidates], **kwargs)
+        next_batches = waitlist.first_batch_with_planned(skus, candidates, by_date)
+    except Exception:
+        logger.debug("catalog_availability.single_read degraded; reading separately", exc_info=True)
+        return None
+    return by_date[today], next_batches
 
 
 def _merge_waitlist_availability(
@@ -791,20 +890,9 @@ def bundle_availability_from_components(
     }
 
 
-def bundle_availability_for_skus(
-    bundle_skus: list[str], *, channel_ref: str
-) -> dict[str, dict | None]:
-    """Availability for bundle SKUs, derived from their components' stock.
-
-    Um bundle nao tem quant proprio — sem isto o card resolveria para AVAILABLE
-    (``raw_avail is None`` → "confia no flag"), mostrando "Disponivel" mesmo com
-    um componente esgotado. Expande cada bundle, faz batch da disponibilidade dos
-    componentes e sintetiza o raw via ``bundle_availability_from_components``.
-    """
-    if not bundle_skus:
-        return {}
+def bundle_components_for_skus(bundle_skus: list[str]) -> dict[str, list[dict]]:
+    """Componentes de cada bundle (``expand_bundle``); falha de expansão vira lista vazia."""
     expanded: dict[str, list[dict]] = {}
-    component_skus: set[str] = set()
     for sku in bundle_skus:
         try:
             components = expand_bundle(sku)
@@ -812,15 +900,59 @@ def bundle_availability_for_skus(
             logger.warning("bundle_expand_failed sku=%s", sku, exc_info=True)
             components = []
         expanded[sku] = components
-        component_skus.update(str(c.get("sku") or "") for c in components if c.get("sku"))
+    return expanded
+
+
+def bundle_component_skus(expanded: dict[str, list[dict]]) -> list[str]:
+    """SKUs de componente de um ``bundle_components_for_skus``, ordenados e sem repetição."""
+    return sorted(
+        {
+            str(c.get("sku") or "")
+            for components in expanded.values()
+            for c in components
+            if c.get("sku")
+        }
+    )
+
+
+def bundle_availability_for_skus(
+    bundle_skus: list[str],
+    *,
+    channel_ref: str,
+    expanded: dict[str, list[dict]] | None = None,
+    today_availability: dict[str, dict] | None = None,
+) -> dict[str, dict | None]:
+    """Availability for bundle SKUs, derived from their components' stock.
+
+    Um bundle nao tem quant proprio — sem isto o card resolveria para AVAILABLE
+    (``raw_avail is None`` → "confia no flag"), mostrando "Disponivel" mesmo com
+    um componente esgotado. Expande cada bundle, faz batch da disponibilidade dos
+    componentes e sintetiza o raw via ``bundle_availability_from_components``.
+
+    ``expanded`` (de :func:`bundle_components_for_skus`) e ``today_availability``
+    (o pronto de hoje cru, de :func:`availability_and_today_for_skus`) deixam o
+    cardápio reaproveitar o que já leu: componente que já está em
+    ``today_availability`` não é lido de novo, e só o que falta vai ao Stockman.
+    """
+    if not bundle_skus:
+        return {}
+    if expanded is None:
+        expanded = bundle_components_for_skus(bundle_skus)
+    component_skus = bundle_component_skus(expanded)
 
     from django.utils import timezone
 
-    comp_avail = availability_for_skus(
-        sorted(component_skus),
-        channel_ref=channel_ref,
-        target_date=timezone.localdate(),
-    )
+    known = today_availability or {}
+    comp_avail: dict[str, dict | None] = {sku: known[sku] for sku in component_skus if sku in known}
+    missing = [sku for sku in component_skus if sku not in known]
+    if missing:
+        comp_avail.update(
+            availability_for_skus(
+                missing,
+                channel_ref=channel_ref,
+                target_date=timezone.localdate(),
+            )
+        )
 
     result: dict[str, dict | None] = {}
     for sku, components in expanded.items():
