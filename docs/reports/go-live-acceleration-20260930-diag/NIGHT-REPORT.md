@@ -2,7 +2,7 @@
 
 > Coordenador: Claude (sessão `turno-autonomo-coordenacao`). Briefing:
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` (#1297 + #1302).
-> **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D13).
+> **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D15).
 
 ## Em uma tela
 
@@ -10,7 +10,7 @@
 usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
 na `home/` privada desde ~04:26 UTC, em investigação.
 
-**Mergeado (22 PRs):**
+**Mergeado (21 PRs):**
 
 | Frente | PR | O que mudou para você |
 |---|---|---|
@@ -42,10 +42,11 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 | F4b disponibilidade reaproveitada no request | #1318 | revisão independente: seguro; conflito de texto resolvido, checks finais |
 | O8 Favorita por operador | #1319 | checks rodando |
 | NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
+| Drift compara `run_command` | #1320 | na fila; contra o vivo acusa só o D14 |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
 
 **Precisa de você** (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):
-🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D3 link "entregue" sem entrega (ManyChat) ·
+🔴 **D14 access log do `web` grava o token da Efí (spec vivo)** · 🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D15 picos entre Cloudflare e DO (chamado) · D3 link "entregue" sem entrega (ManyChat) ·
 D13 republicar fichas com insumo repetido · D12 conexão nova por request (pool) · D1 botão "Adicionar"
 inerte até carregar · D4 motivos de rejeição · D5 modo de fazer · D6 storage de anexos · D7 critérios
 da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `shell/` · D11 versão não se apaga.
@@ -60,9 +61,12 @@ da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `s
 - O log da origem mostra a `home/` terminada 1–2 s depois do início do request do cliente, mesmo
   quando o cliente esperou 27–35 s: a origem responde, e os bytes empacam entre ela e o cliente.
   Um request recebeu 13 de 19 KB em 40 s. Com URL diferente (`?probe=N`) não reproduziu.
-- Suspeita: borda (Cloudflare colapsando requests da mesma URL, ou bot management) ou ingress da DO.
-  A coincidência com o deploy das 04:25 (#1312/#1313) existe, mas os dois não mexem na `home/`.
-  Investigação só-leitura em andamento; nada foi alterado em infra.
+- **Conclusão da investigação só-leitura (D15):** não é o app. Banco/PgBouncer, loop do daphne e CPU
+  descartados com prova; o processo atendia outros requests no mesmo instante. A assinatura bate com
+  perda de pacote ou MTU no salto Cloudflare ↔ load balancer da DO (passa o que cabe na janela TCP
+  inicial, ~14 KB; um 525 de TLS Cloudflare → DO às 04:58). Próximo passo é chamado na DO (D15).
+- **Achado lateral de segurança (D14):** o `web` vivo roda sem `--access-log=/dev/null` e grava a URI
+  crua (token do webhook da Efí). O drift não comparava o comando; passa a comparar no #1320.
 - Os "000" de saúde durante a noite coincidem com cada troca de deployment: o `web` é **1 instância
   de 1 vCPU com um processo daphne**, então cada deploy dá alguns segundos de indisponibilidade.
 

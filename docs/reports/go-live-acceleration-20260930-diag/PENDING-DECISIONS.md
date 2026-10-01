@@ -154,7 +154,11 @@ A opção 3 provavelmente é componente novo na DO (regra dos US$ 100/mês).
 conexão nova), `cache` 65–170 ms em 3 a 7 chamadas (**~25 ms por chamada ao Redis**: é o maior
 custo fixo), `gc` em geral < 10 ms com picos de 265–325 ms. No `shell/` (7 ms de banco), connect
 + cache = ~110–150 ms dos ~150–200 ms de projeção.
-**Recomendação:** 4 e 5 primeiro (não mexem no PgBouncer); depois 1, com 24 h de `connect;dur`
+A investigação da madrugada confirmou na bancada com as versões de produção: sob ASGI,
+`CONN_MAX_AGE=60` não reaproveita nada; cada request abre um backend novo e o deixa `idle` até o GC.
+O cache Redis segue o mesmo padrão (o `CacheHandler` é por contexto), o que explica ~25 ms por
+chamada. Passo de risco baixo: `DATABASE_CONN_MAX_AGE=0` (fecha no fim do request em vez de no GC).
+**Recomendação:** `CONN_MAX_AGE=0`, 4 e 5 primeiro (não mexem no PgBouncer); depois 1, com 24 h de `connect;dur`
 medido e teste de carga no alpha.
 
 ## D13 — Republicar as fichas com o mesmo insumo em duas linhas (#1317)
@@ -170,3 +174,34 @@ afetadas no alpha, com a quantidade gravada e a certa. O turno não rodou contra
 2) Deixar como está até o reseed.
 **Recomendação:** 1. As fornadas já finalizadas baixaram insumo a menos no estoque; isso fica como
 está (corrigir ledger é outra decisão).
+
+## D14 — 🔴 Segurança: o `web` vivo grava access log com a URI crua (token da Efí)
+
+**Contexto.** O `run_command` vivo do `web` é `daphne -b 0.0.0.0 -p 8000 config.asgi:application`,
+sem o `--access-log=/dev/null` que o arquivo tem desde 01/09 (`15061ed3f`). O access log do daphne
+grava a URI inteira, inclusive o `?token=` do webhook da Efí; os logs da DO ficam acessíveis a quem
+lê o app. O verificador de drift não comparava comando; passa a comparar no #1320, e contra o vivo
+essa é a ÚNICA divergência hoje. O turno não procurou token no log nem mexeu no spec.
+
+**Opções.** 1) Aplicar o spec do arquivo (o drift mostra só esta linha, nada em SUMIRIAM):
+`make deploy-spec-drift context=shopman-do-app-admin` → backup do vivo → `apps update` → conferir os
+42 SECRET. 2) Editar só o comando do `web` no painel. Depois de qualquer uma: considerar rotacionar o
+token do webhook da Efí, se ele já tiver aparecido no log (procurar `token=` nos logs do `web`).
+**Recomendação:** 1, seguida da busca; rotacionar se achar.
+
+## D15 — Picos de 15–40 s entre a Cloudflare e a DO (não é o app)
+
+**Contexto (investigação só-leitura).** A origem responde a `home/` em 1–2 s, e o cliente espera
+27–40 s, com corpo truncado (13 de 19 KB) e até 520/525 da Cloudflare. O processo atendia outros
+requests no mesmo instante. Banco, loop do daphne e CPU foram descartados com prova. A assinatura
+bate com perda de pacote ou MTU no salto Cloudflare ↔ load balancer da DO: o que cabe na janela TCP
+inicial (~14 KB) passa; o que não cabe espera retransmissão. Um 525 (falha de TLS Cloudflare → DO)
+foi registrado às 04:58. A noite teve 17 deployments; cada troca derruba o `web` (1 instância) por
+segundos.
+
+**Opções.** 1) Abrir chamado na DO com os horários e o cf-ray `a438d03fcc9597d0-GRU` (520, 04:44:41
+UTC). Antes, um teste que separa: pares alternados de `shell/` (12 KB) e `home/` (19 KB) na mesma
+janela ruim. 2) Segunda instância do `web` (custo; regra dos US$ 100/mês), que também tiraria o
+blip de cada deploy. 3) Timeouts curtos de conexão no banco e no Redis (hoje não há), que viram
+travamento em erro rápido sem resolver a causa.
+**Recomendação:** 1 agora; 3 como higiene; 2 só com o go-live à vista.
