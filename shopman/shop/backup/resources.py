@@ -28,7 +28,7 @@ from shopman.buyman.models import (
     Supplier,
     SupplierMaterialCost,
 )
-from shopman.craftsman.models import Recipe, RecipeItem
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.guestman.models import PriceTier
 from shopman.offerman.models import (
     Collection,
@@ -316,6 +316,58 @@ class RecipeItemResource(resources.ModelResource):
         import_id_fields = ("recipe", "input_sku")
 
 
+class RecipeEntryResource(resources.ModelResource):
+    """A linhagem do inventário de receitas.
+
+    ``current_version`` fica fora desta aba: aponta para uma versão, que só
+    existe depois (tier maior). Quem a restaura é a coluna ``is_current`` da aba
+    ``recipe_versions``.
+    """
+
+    class Meta(NaturalKeyMeta):
+        model = RecipeEntry
+        import_id_fields = ("ref",)
+        exclude = NaturalKeyMeta.exclude + ("current_version",)
+
+
+class CurrentVersionFlag(fields.Field):
+    """``is_current``: marca a versão que é a ``current_version`` da receita."""
+
+    def __init__(self):
+        super().__init__(column_name="is_current", attribute=None, readonly=False)
+
+    def export(self, instance, **kwargs):
+        # Instância nova (restore) ainda não tem pk nem receita: não é a atual.
+        if instance.pk is None or instance.entry_id is None:
+            return ""
+        current = RecipeEntry.objects.filter(pk=instance.entry_id).values_list("current_version_id", flat=True).first()
+        return "1" if current == instance.pk else ""
+
+    def save(self, instance, row, is_m2m=False, **kwargs):
+        # A escrita real acontece em after_save_instance, com a versão salva.
+        return None
+
+
+class RecipeVersionResource(resources.ModelResource):
+    """O registro imutável das receitas: cada fórmula congelada, com etapas e origem.
+
+    Sem esta aba, só a ``Recipe`` (a última publicada) sobrevivia a um restore, e
+    o histórico de versões se perdia. ``published_at`` viaja; ``created_at`` não
+    (regra do cofre), então a cronologia da linha do tempo é a de publicação.
+    """
+
+    entry = _fk(RecipeEntry, "ref", "entry")
+    is_current = CurrentVersionFlag()
+
+    class Meta(NaturalKeyMeta):
+        model = RecipeVersion
+        import_id_fields = ("entry", "number")
+
+    def after_save_instance(self, instance, row, **kwargs):
+        if not kwargs.get("dry_run") and str(row.get("is_current") or "").strip() in ("1", "True", "true"):
+            RecipeEntry.objects.filter(pk=instance.entry_id).update(current_version=instance)
+
+
 # ---------------------------------------------------------------------------
 # buyman — fornecedores, insumos, conversões e custos
 # ---------------------------------------------------------------------------
@@ -385,6 +437,7 @@ def register_shop_resources() -> None:
         ("listings", ListingResource, 1),
         ("collections", CollectionResource, 1),
         ("recipes", RecipeResource, 1),
+        ("recipe_entries", RecipeEntryResource, 1),
         ("campaigns", CampaignResource, 1),
         ("material_conversions", MaterialConversionResource, 1),
         ("delivery_zones", DeliveryZoneResource, 1),
@@ -395,6 +448,7 @@ def register_shop_resources() -> None:
         ("collection_items", CollectionItemResource, 2),
         ("product_components", ProductComponentResource, 2),
         ("recipe_items", RecipeItemResource, 2),
+        ("recipe_versions", RecipeVersionResource, 2),
         ("supplier_material_costs", SupplierMaterialCostResource, 2),
         ("coupons", CouponResource, 3),
     ):
