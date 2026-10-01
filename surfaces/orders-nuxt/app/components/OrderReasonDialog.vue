@@ -3,17 +3,24 @@
 //   - Marketplace (iFood): a coded picker from the provider's live per-order list.
 //     The provider REQUIRES one of its codes; the picked description is mirrored into
 //     the customer-facing reason. (Mirrors what the board's Recusar dialog does.)
-//   - Other channels: store-configured presets (one tap) + free text.
+//   - Other channels: store-configured presets (one tap), grouped under the store's
+//     headings, + an "Outros" chip that hands the reason to the free text.
 // Presentational: the parent owns the fetch (reasons/loading) and the write action;
 // this component owns only the in-dialog input state and emits the chosen reason+code.
-import type { CancellationReason } from "~/types/orders";
+//
+// "Outros" is NOT a reason: the customer reads the reason as "Motivo: <reason>.", and
+// "Motivo: Outros." tells them nothing. Picking it clears the preset and focuses the
+// text; with "Outros" picked, an empty text never goes out (reject or cancel).
+import { nextTick } from "vue";
+
+import type { CancellationPresetGroupProjection, CancellationReason } from "~/types/orders";
 
 const props = defineProps<{
   open: boolean;
   mode: "reject" | "cancel";
   loading: boolean;
   reasons: CancellationReason[];
-  presets: string[];
+  presets: CancellationPresetGroupProjection[];
   busy: boolean;
   marketplace: boolean;
   error?: string;
@@ -28,13 +35,17 @@ const emit = defineEmits<{
 
 const reason = ref("");
 const code = ref("");
+const other = ref(false);
+const reasonInput = ref<HTMLTextAreaElement | null>(null);
 
 // Fresh state every time the dialog opens (a reused order ref must not leak its
 // previous pick).
 watch(
   () => props.open,
-  (open) => { if (open) { reason.value = ""; code.value = ""; } },
+  (open) => { if (open) { reason.value = ""; code.value = ""; other.value = false; } },
 );
+
+const presetGroups = computed(() => props.presets.filter((group) => group.presets.length));
 
 const dirty = computed(() => props.open && Boolean(reason.value.trim() || code.value));
 watch(dirty, value => emit("dirty-change", value), { immediate: true });
@@ -49,8 +60,10 @@ const canConfirm = computed(() => {
   if (props.loading || props.error) return false;
   if (isMarketplace.value) return props.reasons.some((r) => r.code === code.value);
   // Free text: a reject needs a reason (the customer is told why); a cancel may go
-  // out with the generic fallback, so an empty reason is allowed.
-  return props.mode === "cancel" || reason.value.trim() !== "";
+  // out with the generic fallback, so an empty reason is allowed, unless the
+  // operator picked "Outros", which promises a written reason.
+  if (other.value || props.mode === "reject") return reason.value.trim() !== "";
+  return true;
 });
 
 function onCodeChange() {
@@ -60,8 +73,18 @@ function onCodeChange() {
 }
 
 function applyPreset(text: string) {
+  other.value = false;
   reason.value = text;
 }
+
+async function chooseOther() {
+  other.value = true;
+  reason.value = "";
+  await nextTick();
+  reasonInput.value?.focus();
+}
+
+const presetPressed = (text: string) => !other.value && reason.value === text;
 
 function submit() {
   if (!canConfirm.value || props.busy) return;
@@ -106,28 +129,55 @@ const description = computed(() =>
         <option v-for="r in reasons" :key="r.code" :value="r.code">{{ r.description }}</option>
       </UiNativeSelect>
 
-      <!-- Other channels: one-tap presets (Admin/Unfold) + free text -->
+      <!-- Other channels: one-tap presets (Admin/Unfold), grouped, + "Outros" + free text -->
       <template v-else>
-        <div v-if="presets.length" class="flex flex-wrap gap-1.5">
-          <button
-            v-for="(preset, i) in presets"
-            :key="i"
-            type="button"
-            :aria-pressed="reason === preset"
-            class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
-            :class="reason === preset ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
-            @click="applyPreset(preset)"
+        <div v-if="presetGroups.length" class="space-y-2.5" data-testid="reason-presets">
+          <div
+            v-for="(group, gi) in presetGroups"
+            :key="gi"
+            role="group"
+            :aria-label="group.label || undefined"
+            data-testid="reason-preset-group"
           >
-            {{ preset }}
-          </button>
+            <p v-if="group.label" class="mb-1 text-xs font-semibold text-muted-foreground">{{ group.label }}</p>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="(preset, i) in group.presets"
+                :key="i"
+                type="button"
+                :aria-pressed="presetPressed(preset)"
+                class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
+                :class="presetPressed(preset) ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
+                @click="applyPreset(preset)"
+              >
+                {{ preset }}
+              </button>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              :aria-pressed="other"
+              data-testid="reason-other"
+              class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
+              :class="other ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
+              @click="chooseOther"
+            >
+              Outros
+            </button>
+          </div>
         </div>
         <textarea
+          ref="reasonInput"
           v-model="reason"
           rows="3"
-          :placeholder="mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
+          :placeholder="other ? 'Escreva o motivo que o cliente vai ler…' : mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
           class="min-h-control min-w-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Motivo"
         />
+        <p v-if="other && !reason.trim()" class="text-xs text-muted-foreground" data-testid="reason-other-hint">
+          Com “Outros”, escreva o motivo antes de confirmar.
+        </p>
       </template>
 
       <UiDialogFooter>
