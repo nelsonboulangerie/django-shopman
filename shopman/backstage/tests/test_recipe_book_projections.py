@@ -303,6 +303,22 @@ def test_entry_detail_orders_versions_newest_first_and_names_the_sheet():
         build_recipe_entry("nao-existe")
 
 
+def test_entry_detail_says_whether_the_sheet_is_still_the_published_version():
+    """ADR-027: a ficha editada por fora (Admin) deixa de estar em sincronia."""
+    entry = craftsman.create_entry(ref="massa-tradicao", name="Massa Tradição", kind="bread", output_sku="MASSA-TRADICAO")
+    assert build_recipe_entry("massa-tradicao").execution_in_sync is False  # sem versão nem ficha
+
+    recipe = craftsman.publish_version(
+        craftsman.create_version(entry, formula=flour_formula(), yield_quantity="1.7", yield_unit="kg"),
+    )
+    assert build_recipe_entry("massa-tradicao").execution_in_sync is True
+
+    item = recipe.items.get(input_sku="AGUA-FILTRADA")
+    item.quantity = Decimal("750")
+    item.save()
+    assert build_recipe_entry("massa-tradicao").execution_in_sync is False
+
+
 def test_a_bootstrapped_sheet_reads_as_a_ficha_version():
     recipe = Recipe.objects.create(ref="massa-yudane", name="Yudane", output_sku="YUDANE", batch_size=Decimal("1.9"),
                                    meta={"output_unit": "kg"})

@@ -1548,7 +1548,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `requires_batch_tracking` | `bool` | admin de receitas (contrib Unfold) | `backstage.services.production` | Cria lote ao concluir a produção. |
 | `shelf_life_days` | `int` | admin de receitas (contrib Unfold) | `backstage.services.production` | Validade do lote produzido, em dias. |
 | `output_unit` | `string` | seed (pré-preparo), `publish_version` (inventário) | `Recipe._validate_mass_balance` | Unidade declarada da saída quando o SKU não está no catálogo (ADR-024 §R4: declarar, nunca deduzir). Liga o invariante de massa da ficha. |
-| `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`ficha_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-027). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
+| `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`execution_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-027). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
 | `mixer_loss_g` | `Decimal` (string) | seed/admin de receitas | `craftsman.services.yield_margin.mixer_loss_g_for` (via `craft.needs(..., yield_margin=True)`) | Filme de massa que fica na bacia da masseira, em gramas — **fixa por fornada**, não por peça. Ausente = `CRAFTSMAN["MIXER_LOSS_G"]` (150 g, **estimativa não auditada**). ⚠️ Chute cadastrado com prazo: o passo seguinte é o sistema aprender a perda real por ficha a partir do ledger (produzido menos consumido). Só entra na lista de separação; **nunca** no consumo do ledger. |
 | `bake_loss_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | `shop.services.unit_weight_from_recipe` | Perda de forno desta ficha, em % da massa crua. Ausente = padrão da casa (`ProductionConfig.weight.default_bake_loss_pct`, hoje 12), que sai rotulado `house_default` — **estimativa nunca auditada**: o número de 12% nunca passou pela balança com a peça pronta, e não pode virar verdade silenciosa na tela. Fora de `[0, 100)` é ignorado e cai no padrão. |
 | `bake_loss_source` | `string` | ficha (Admin/inventário) | idem | Espécie do número acima: `estimated` (default quando `bake_loss_pct` existe) \| `weighed`. **Só `weighed` com `bake_loss_weighed_by` E `bake_loss_weighed_at` conta como conferido** — declaração sem assinatura falha fechado e continua sendo estimativa. |
@@ -1565,6 +1565,17 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
 | `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+
+## RecipeVersion.meta
+
+Versão publicada ou substituída é imutável no modelo (`save()`, `.update()` e exclusão recusam;
+só o restore do cofre reescreve, por `restoring_recipe_versions()`), então estas chaves são
+evidência: nascem na publicação (ou no bootstrap) e não mudam mais.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `published_by` | `string` | `craftsman.services.recipe_book.publish_version` | linha do tempo do inventário | Quem publicou (o `actor`). |
+| `execution_digest` | `string` (sha256 hex) | `publish_version` (da ficha que acabou de escrever), `bootstrap_entry_from_recipe` (da ficha lida) | `craftsman.services.recipe_book.execution_in_sync` → `RecipeEntryDetailProjection.execution_in_sync` | Impressão digital do que a ficha manda produzir (`execution_digest`: `output_sku`, `batch_size`, `steps` e itens `input_sku`/`quantity`/`unit`/`is_optional`, sem ordem). Fica de fora o que se edita à mão por direito: nome, `Recipe.meta` e `RecipeItem.meta`. Ausente = versão publicada antes de 30/09/2026: a sincronia fala só pelo `version_ref` até a próxima publicação. |
 
 ## RecipeVersion.formula / .origin / .source
 

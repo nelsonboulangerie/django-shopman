@@ -38,6 +38,7 @@ from shopman.craftsman.services.recipe_book import (
     check_references,
     classify_ingredient,
     diff_versions,
+    execution_in_sync,
     item_grams,
     part_formulas_for,
     reference_for,
@@ -292,6 +293,11 @@ class RecipeEntryDetailProjection:
     is_archived: bool
     current_version_number: int | None
     ficha_ref: str
+    #: A ficha de execução ainda é a que a versão atual escreveu (ADR-027)?
+    #: ``False`` também quando não há ficha ou versão atual. A conta é do
+    #: Craftsman (``execution_in_sync``): carimbo ``version_ref`` + impressão
+    #: digital do conteúdo, que pega a ficha editada pelo Admin.
+    execution_in_sync: bool
     versions: tuple[RecipeVersionProjection, ...]
 
 
@@ -757,7 +763,7 @@ def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
         raise RecipeEntryNotFound(f"Receita '{ref}' não existe no inventário.")
     versions = list(entry.versions.order_by("-number"))
     names = _output_names({entry.output_sku} if entry.output_sku else set())
-    has_ficha = Recipe.objects.filter(ref=entry.ref, is_active=True).exists()
+    ficha = Recipe.objects.filter(ref=entry.ref, is_active=True).first()
     current = entry.current_version
     return RecipeEntryDetailProjection(
         ref=entry.ref,
@@ -769,7 +775,8 @@ def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
         notes=entry.notes or "",
         is_archived=entry.is_archived,
         current_version_number=current.number if current is not None else None,
-        ficha_ref=entry.ref if has_ficha else "",
+        ficha_ref=entry.ref if ficha is not None else "",
+        execution_in_sync=execution_in_sync(current, ficha),
         versions=tuple(build_recipe_version(version, kind=entry.kind) for version in versions),
     )
 

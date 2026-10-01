@@ -66,8 +66,9 @@ sem SKU não vazam para planejamento nem para o estoque; versão é história de
 **Negativas** — dois modelos para "receita" exigem disciplina de vocabulário (na tela:
 **receita** = entry, **versão** = version, **ficha** = Recipe de execução); a ficha e a
 versão publicada podem divergir se alguém editar a `Recipe` pelo Admin — o `version_ref`
-denuncia (a projection expõe se a ficha está em sincronia); o cofre (`export_backup`)
-ainda não carrega os modelos novos.
+sozinho não denuncia (o Admin não mexe nele); a impressão digital do conteúdo, guardada na
+versão ao publicar, pega (a projection expõe `execution_in_sync` desde 30/09/2026); o cofre
+(`export_backup`) carrega os modelos novos desde o PR #1303.
 
 ## Fora desta decisão
 
