@@ -307,6 +307,34 @@
 }
 
 @layer components {
+  /* Toque antes da hidratação (app/utils/earlyTap.ts): o script inline marca o
+     botão no mesmo quadro do toque, antes de o app existir. O ícone dá lugar a um
+     anel girando, desenhado só com CSS: nada de buscar ícone pela rede (#1311). */
+  [data-early-tap-pending] {
+    cursor: progress;
+  }
+  [data-early-tap-pending] > div {
+    display: none;
+  }
+  [data-early-tap-pending]::before {
+    content: "";
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: shop-early-tap-spin 0.8s linear infinite;
+  }
+  @keyframes shop-early-tap-spin {
+    to { transform: rotate(360deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-early-tap-pending]::before {
+      animation-duration: 2.4s;
+    }
+  }
+
   .shop-shell {
     @apply min-h-dvh min-w-0 bg-background text-foreground;
     overflow-x: clip;

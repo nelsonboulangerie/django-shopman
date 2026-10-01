@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import splashScreens from './pwa-splash-screens.json'
+import { EARLY_TAP_SCRIPT } from './app/utils/earlyTap'
 
 type AppleStartupImage = readonly [number, number, number, 'portrait' | 'landscape']
 
@@ -94,6 +95,12 @@ export default defineNuxtConfig({
         { rel: 'icon', href: '/pwa/favicon.ico?v=7', sizes: 'any' },
         { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png?v=7' },
         ...appleStartupLinks
+      ],
+      // Toque antes da hidratação é guardado e repetido quando o app fica pronto
+      // (app/utils/earlyTap.ts). Inline e no topo do <head>: precisa ouvir antes de
+      // o primeiro botão aparecer, e não pode esperar o bundle que ele cobre.
+      script: [
+        { key: 'early-tap', innerHTML: EARLY_TAP_SCRIPT, tagPosition: 'head', tagPriority: 'critical' }
       ]
     }
   },
