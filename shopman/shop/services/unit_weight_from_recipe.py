@@ -261,6 +261,18 @@ def weight_is_writable(product: Product) -> bool:
 # ──────────────────────────────────────────────────────────────────────
 
 
+def bake_loss_basis(recipe) -> str:
+    """De onde vem a perda de forno desta ficha: ``house_default``, ``estimated`` ou ``weighed``.
+
+    Falha fechado como ``UnitWeightDerivation.bake_loss_is_audited``: ``weighed``
+    sem quem pesou e quando é declaração não assinada e sai como ``estimated``.
+    """
+    _pct, source, by, at = _bake_loss(recipe)
+    if source == BAKE_LOSS_WEIGHED and not (by and at):
+        return BAKE_LOSS_ESTIMATED
+    return source
+
+
 def _bake_loss(recipe) -> tuple[Decimal, str, str, str]:
     """Perda de forno da ficha, com a espécie dela e quem a assinou.
 

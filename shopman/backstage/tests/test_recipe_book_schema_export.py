@@ -42,7 +42,7 @@ def test_render_reflects_contract_source() -> None:
 
 
 def test_every_projection_of_the_plan_is_exported() -> None:
-    """§7 lists nineteen shapes; the surface narrows every one of them."""
+    """§7 lists nineteen shapes, plus the four of the usage by version (report 06 §5.5)."""
     names = {dc.__name__ for dc in CONTRACT_DATACLASSES}
     assert names == {
         "RecipeEntryCardProjection",
@@ -55,6 +55,10 @@ def test_every_projection_of_the_plan_is_exported() -> None:
         "FormulaWarningProjection",
         "FormulaLensProjection",
         "RecipeVersionProjection",
+        "UsageCaveatProjection",
+        "QualityShareProjection",
+        "VersionUsageProjection",
+        "RecipeUsageProjection",
         "RecipeEntryDetailProjection",
         "RecipeCompareRowProjection",
         "RecipeCompareMetricProjection",
