@@ -39,6 +39,12 @@ TERMINAL_STATUSES = frozenset({"F", "N", "C"})
 #: Fases em que a corrida ainda pode ser cancelada (antes da coleta).
 CANCELLABLE_STATUSES = frozenset({"D", "G", "P", "A", "S"})
 
+#: User-Agent próprio. A borda da Machine recusa o padrão do `requests`
+#: (`python-requests/x.y`) com 403 e uma página HTML, nos dois ambientes; com qualquer
+#: outro, a chamada chega à API. Medido em 01/10/2026 com a chave de produção: o mesmo
+#: pedido devolveu 403 HTML como `python-requests/2.32.3` e JSON como `curl/8`.
+USER_AGENT = "Shopman/1.0 (+https://www.nelsonboulangerie.com.br)"
+
 
 class CourierError(Exception):
     """Falha na chamada à Machine.
@@ -120,7 +126,7 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
             params=params,
             json=json_body,
             auth=(cfg["username"], cfg["password"]),
-            headers={"api-key": cfg["api_key"]},
+            headers={"api-key": cfg["api_key"], "User-Agent": USER_AGENT},
             timeout=int(cfg.get("timeout") or 15),
         )
     except requests.RequestException as exc:
