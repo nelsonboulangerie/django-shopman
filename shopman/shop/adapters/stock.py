@@ -762,9 +762,11 @@ def get_channel_scope(channel_ref: str | None) -> dict:
 
         return availability_scope_for_channel(channel_ref)
 
-    from shopman.shop.config import ChannelConfig, quality_grade_refs_for_channel
+    from shopman.shop.config import quality_grade_refs_for_channel
+    from shopman.shop.request_memo import channel_config
 
-    cfg = ChannelConfig.for_channel(channel_ref)
+    # O config montado é o do request (só leitura): as listas saem copiadas.
+    cfg = channel_config(channel_ref)
     allowed_quality_grade_refs = quality_grade_refs_for_channel(
         channel_ref,
         sells_nonconforming=cfg.stock.sells_nonconforming,
@@ -772,8 +774,8 @@ def get_channel_scope(channel_ref: str | None) -> dict:
     sells_nonconforming = allowed_quality_grade_refs is None
     return {
         "safety_margin": cfg.stock.safety_margin,
-        "allowed_positions": cfg.stock.allowed_positions,
-        "excluded_positions": cfg.stock.excluded_positions,
+        "allowed_positions": _copied(cfg.stock.allowed_positions),
+        "excluded_positions": _copied(cfg.stock.excluded_positions),
         "expiry_margin_days": cfg.stock.expiry_margin_days,
         "sells_nonconforming": sells_nonconforming,
         # A configuração continua binária e simples. O orquestrador traduz a
@@ -783,6 +785,10 @@ def get_channel_scope(channel_ref: str | None) -> dict:
             None if allowed_quality_grade_refs is None else list(allowed_quality_grade_refs)
         ),
     }
+
+
+def _copied(values):
+    return None if values is None else list(values)
 
 
 def get_promise_decision(

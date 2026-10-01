@@ -24,6 +24,7 @@ comportamento é exatamente o de sempre.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import date, timedelta
 from decimal import Decimal
@@ -38,12 +39,17 @@ logger = logging.getLogger(__name__)
 
 
 def config(channel_ref: str | None = None):
-    """Resolve o aspecto ``waitlist`` na cascata canal ← loja ← hardcoded."""
+    """Resolve o aspecto ``waitlist`` na cascata canal ← loja ← hardcoded.
+
+    O config do canal é o montado uma vez por request (``request_memo``); o
+    aspecto sai copiado, para que quem o recebe não mexa no do request.
+    """
     from shopman.shop.config import ChannelConfig
+    from shopman.shop.request_memo import channel_config
 
     try:
         if channel_ref:
-            return ChannelConfig.for_channel(channel_ref).waitlist
+            return dataclasses.replace(channel_config(channel_ref).waitlist)
         return ChannelConfig().waitlist
     except Exception:
         logger.debug("waitlist.config degraded; using hardcoded defaults", exc_info=True)

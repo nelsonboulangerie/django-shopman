@@ -42,6 +42,7 @@ from shopman.shop.models.attributes import (
     AttributeSource,
     AttributeType,
 )
+from shopman.shop.request_memo import forget, memoized
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,18 @@ class AttributeError_(ValueError):
 
 
 def registry() -> tuple[AttributeDefinition, ...]:
-    """Definições ativas, em cache de uma hora (invalidado no save)."""
+    """Definições ativas, em cache de uma hora (invalidado no save).
+
+    Dentro de um request a tupla é lida do cache UMA vez (``request_memo``): o
+    cardápio pergunta o registro a cada ``get_many``/``for_purpose`` (3 vezes
+    sem sacola, 13 com o trilho de sugestão), e cada pergunta era uma ida ao
+    Redis com a tupla inteira desserializada de novo. As instâncias são
+    compartilhadas no request: só leitura, como o resto do memo.
+    """
+    return memoized(CACHE_KEY, _registry_from_cache)
+
+
+def _registry_from_cache() -> tuple[AttributeDefinition, ...]:
     cached = cache.get(CACHE_KEY)
     if cached is None:
         cached = tuple(AttributeDefinition.objects.active().order_by("ordering", "ref"))
@@ -94,6 +106,7 @@ def for_purpose(purpose: str) -> tuple[AttributeDefinition, ...]:
 def invalidate_cache(sender=None, **kwargs) -> None:
     """Handler de ``post_save``/``post_delete`` da definição."""
     cache.delete(CACHE_KEY)
+    forget(CACHE_KEY)
 
 
 # --- leitura ---------------------------------------------------------------
