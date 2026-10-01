@@ -1,7 +1,8 @@
 // Inventário de receitas — read-side da página /recipes.
 // GET /api/v1/backstage/recipes/ com `q`, `kind` e `archived=1`; o payload traz os
 // cartões, as opções de `kind` (chips) e o acesso. Criar uma entry (as três portas
-// de /recipes/new) é o único write daqui: POST recipes/ e navega para o editor.
+// de /recipes/new) é o write daqui: POST recipes/ e navega para o editor. A estrela
+// (useRecipeFavorite) acende o cartão no lugar, sem buscar a lista de novo.
 import type { Ref } from "vue";
 import type {
   EntryCreatePayload,
@@ -10,6 +11,7 @@ import type {
   RecipeEntryResponse,
 } from "~/types/recipeBook";
 import { bookQuery, errorField } from "~/presentation/recipeBook";
+import { useRecipeFavorite } from "~/composables/useRecipeFavorite";
 
 export interface CreateEntryResult {
   ok: boolean;
@@ -33,6 +35,27 @@ export function useRecipeBook(query: Ref<string>, kind: Ref<string>, archived: R
   const canEdit = computed(() => !!access.value?.can_edit);
   const forbidden = computed(() => httpError(error.value).status === 403);
 
+  const { setFavorite, isFavoriteBusy } = useRecipeFavorite();
+
+  /** Marca/desmarca e acende o cartão com o estado que o servidor devolveu. */
+  async function toggleFavorite(entryRef: string, next: boolean): Promise<boolean> {
+    const state = await setFavorite(entryRef, next);
+    if (state === null) return false;
+    const current = data.value;
+    if (current?.book) {
+      data.value = {
+        ...current,
+        book: {
+          ...current.book,
+          entries: current.book.entries.map((entry) =>
+            entry.ref === entryRef ? { ...entry, is_favorite: state } : entry,
+          ),
+        },
+      };
+    }
+    return true;
+  }
+
   const creating = ref(false);
 
   async function createEntry(payload: EntryCreatePayload): Promise<CreateEntryResult> {
@@ -55,5 +78,20 @@ export function useRecipeBook(query: Ref<string>, kind: Ref<string>, archived: R
     }
   }
 
-  return { book, entries, kinds, count, access, canEdit, forbidden, pending, error, refresh, creating, createEntry };
+  return {
+    book,
+    entries,
+    kinds,
+    count,
+    access,
+    canEdit,
+    forbidden,
+    pending,
+    error,
+    refresh,
+    creating,
+    createEntry,
+    toggleFavorite,
+    isFavoriteBusy,
+  };
 }

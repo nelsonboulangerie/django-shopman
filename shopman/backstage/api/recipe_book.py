@@ -10,6 +10,10 @@ ou ver a ficha); **escrever** é ``shop.manage_production`` (ou mudar a ficha),
 a mesma régua de "mexer acontece no app de Produção". A régua vive em
 ``resolve_recipe_book_access``; aqui só se pergunta.
 
+A estrela (``recipes/<ref>/favorite/``) é preferência do operador, não edição
+da receita: marcar e desmarcar pedem só a leitura, e a resposta de leitura
+traz ``is_favorite`` de quem pediu (o ``username``, o mesmo de ``_actor``).
+
 Erros no dialeto canônico ``{detail, field, errors}``: campo inválido é 400
 com ``field``; estado (versão que não é rascunho, receita arquivada) é 409;
 receita ou versão inexistente é 404; leitura por IA sem credencial é 503 e
@@ -35,6 +39,7 @@ from shopman.backstage.projections.recipe_book import (
     wire_formula,
 )
 from shopman.backstage.services import recipe_book as recipe_book_service
+from shopman.backstage.services import recipe_favorites
 from shopman.backstage.services.exceptions import (
     RecipeBookServiceError,
     RecipeEntryNotFound,
@@ -109,10 +114,10 @@ class _RecipeBookBase(APIView):
             raise NotFound(str(exc)) from exc
 
     def _entry_payload(self, ref: str) -> dict:
-        return projection_data(build_recipe_entry(ref))
+        return projection_data(build_recipe_entry(ref, operator_ref=_actor(self.request)))
 
     def _entry_and_version_payload(self, ref: str, number: int) -> dict:
-        entry = build_recipe_entry(ref)
+        entry = build_recipe_entry(ref, operator_ref=_actor(self.request))
         version = next((v for v in entry.versions if v.number == number), None)
         return {"entry": projection_data(entry), "version": projection_data(version)}
 
@@ -164,6 +169,7 @@ class RecipeBookListView(_RecipeBookBase):
             query=request.query_params.get("q", ""),
             kind=kind,
             archived=request.query_params.get("archived", "") in ("1", "true", "yes"),
+            operator_ref=_actor(request),
         )
         return Response({"book": projection_data(book), "access": projection_data(self.access)})
 
@@ -197,7 +203,7 @@ class RecipeBookListView(_RecipeBookBase):
 class RecipeEntryView(_RecipeBookBase):
     def get(self, request, ref: str):
         try:
-            entry = build_recipe_entry(ref)
+            entry = build_recipe_entry(ref, operator_ref=_actor(request))
         except RecipeEntryNotFound as exc:
             raise NotFound(str(exc)) from exc
         return Response({"entry": projection_data(entry), "access": projection_data(self.access)})
@@ -211,6 +217,35 @@ class RecipeEntryView(_RecipeBookBase):
         except RecipeBookServiceError as exc:
             return _service_error_response(exc)
         return Response({"entry": self._entry_payload(entry.ref)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Mark a recipe entry as a favorite of the current operator (idempotent)",
+        responses={200: OpenApiResponse(description="ref and is_favorite.")},
+    ),
+    delete=extend_schema(
+        tags=["backstage"],
+        summary="Unmark a favorite recipe entry of the current operator (idempotent)",
+        responses={200: OpenApiResponse(description="ref and is_favorite.")},
+    ),
+)
+class RecipeFavoriteView(_RecipeBookBase):
+    """A estrela do operador: marcar e desmarcar, os dois idempotentes.
+
+    É preferência de quem lê, então pede só a leitura do inventário (quem não
+    edita também escolhe as suas). Receita inexistente é 404; arquivada aceita a
+    estrela, porque arquivar não apaga o gosto de ninguém.
+    """
+
+    def post(self, request, ref: str):
+        entry = self._entry(ref)
+        return Response({"ref": entry.ref, "is_favorite": recipe_favorites.mark(_actor(request), entry.ref)})
+
+    def delete(self, request, ref: str):
+        entry = self._entry(ref)
+        return Response({"ref": entry.ref, "is_favorite": recipe_favorites.unmark(_actor(request), entry.ref)})
 
 
 @extend_schema_view(

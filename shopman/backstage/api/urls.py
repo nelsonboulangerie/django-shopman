@@ -257,6 +257,7 @@ from .recipe_book import (
     RecipeCaptureView,
     RecipeCompareView,
     RecipeEntryView,
+    RecipeFavoriteView,
     RecipeReferenceView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
@@ -427,6 +428,7 @@ urlpatterns = [
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
     path("recipes/<slug:ref>/", RecipeEntryView.as_view(), name="api-backstage-recipe"),
+    path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
     path(

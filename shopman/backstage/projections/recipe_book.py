@@ -45,6 +45,7 @@ from shopman.craftsman.services.recipe_book import (
     suggest_anchor_kind,
 )
 
+from shopman.backstage.services import recipe_favorites
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
@@ -147,6 +148,9 @@ class RecipeEntryCardProjection:
     hydration_display: str
     updated_at_display: str
     is_archived: bool
+    #: Estrela do operador que pediu a lista (``OperatorRecipeFavorite``): é
+    #: preferência dele, não atributo da receita; outro operador vê a sua.
+    is_favorite: bool
 
 
 @dataclass(frozen=True)
@@ -364,6 +368,8 @@ class RecipeEntryDetailProjection:
     #: Craftsman (``execution_in_sync``): carimbo ``version_ref`` + impressão
     #: digital do conteúdo, que pega a ficha editada pelo Admin.
     execution_in_sync: bool
+    #: Estrela do operador que abriu a receita (ver ``RecipeEntryCardProjection``).
+    is_favorite: bool
     versions: tuple[RecipeVersionProjection, ...]
     usage: RecipeUsageProjection
 
@@ -770,8 +776,15 @@ def _warning(warning: FormulaWarning) -> FormulaWarningProjection:
 # ── Inventário e receita ─────────────────────────────────────────────────────
 
 
-def build_recipe_book(*, query: str = "", kind: str = "", archived: bool = False) -> RecipeBookListProjection:
-    """O inventário: um cartão por receita, com filtro por texto, tipo e arquivadas."""
+def build_recipe_book(
+    *, query: str = "", kind: str = "", archived: bool = False, operator_ref: str = ""
+) -> RecipeBookListProjection:
+    """O inventário: um cartão por receita, com filtro por texto, tipo e arquivadas.
+
+    ``operator_ref`` acende a estrela das receitas que ESTE operador marcou; sem
+    ele (comando, seed, teste) nenhuma vem marcada. O filtro "Favoritas" é da
+    tela, sobre ``is_favorite``, como "Sem SKU" e "Com rascunho".
+    """
     entries_qs = (
         RecipeEntry.objects.filter(is_archived=bool(archived))
         .select_related("current_version")
@@ -793,11 +806,14 @@ def build_recipe_book(*, query: str = "", kind: str = "", archived: bool = False
     ficha_refs = set(
         Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
     )
-    cards = tuple(_card(entry, names, ficha_refs) for entry in entries)
+    favorites = recipe_favorites.favorite_refs(operator_ref)
+    cards = tuple(_card(entry, names, ficha_refs, favorites) for entry in entries)
     return RecipeBookListProjection(entries=cards, kinds=_kind_options(), count=len(cards))
 
 
-def _card(entry: RecipeEntry, names: dict[str, str], ficha_refs: set[str]) -> RecipeEntryCardProjection:
+def _card(
+    entry: RecipeEntry, names: dict[str, str], ficha_refs: set[str], favorites: set[str]
+) -> RecipeEntryCardProjection:
     current = entry.current_version
     formula = dict(current.formula or {}) if current is not None else {}
     anchor = formula.get("anchor") if isinstance(formula.get("anchor"), dict) else {}
@@ -820,11 +836,15 @@ def _card(entry: RecipeEntry, names: dict[str, str], ficha_refs: set[str]) -> Re
         hydration_display=hydration,
         updated_at_display=_date_display(entry.updated_at),
         is_archived=entry.is_archived,
+        is_favorite=entry.ref in favorites,
     )
 
 
-def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
-    """A receita com todas as versões (mais nova primeiro), cada uma com a lente calculada."""
+def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetailProjection:
+    """A receita com todas as versões (mais nova primeiro), cada uma com a lente calculada.
+
+    ``operator_ref`` diz de quem é a estrela (``is_favorite``); sem ele, apagada.
+    """
     entry = RecipeEntry.objects.filter(ref=ref).select_related("current_version").first()
     if entry is None:
         raise RecipeEntryNotFound(f"Receita '{ref}' não existe no inventário.")
@@ -844,6 +864,7 @@ def build_recipe_entry(ref: str) -> RecipeEntryDetailProjection:
         current_version_number=current.number if current is not None else None,
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
+        is_favorite=recipe_favorites.is_favorite(operator_ref, entry.ref),
         versions=tuple(build_recipe_version(version, kind=entry.kind) for version in versions),
         usage=build_recipe_usage(entry.ref),
     )

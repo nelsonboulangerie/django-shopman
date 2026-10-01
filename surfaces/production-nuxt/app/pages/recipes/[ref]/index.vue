@@ -4,11 +4,13 @@
 // linha do tempo das versões e as ações: nova versão (copia a selecionada em
 // rascunho), editar rascunho, publicar (diálogo com o que muda contra a atual),
 // comparar, associar SKU, arquivar. Ler é do gate do app; mexer pede `can_edit`.
+// A estrela (favorita) é preferência do operador: basta ler.
 import type { RecipeVersionProjection } from "~/types/recipeBook";
 import { isStale } from "~/presentation/production";
 import {
   KIND_OPTIONS,
   comparePath,
+  favoriteActionHint,
   formulaFromServed,
   statusBadgeVariant,
   stepsForPayload,
@@ -36,6 +38,8 @@ const {
   patchEntry,
   createVersion,
   publish,
+  toggleFavorite,
+  favoriteBusy,
 } = useRecipeEntry(entryRef);
 
 useHead({ title: computed(() => entry.value?.name || "Receita") });
@@ -287,6 +291,22 @@ async function confirmArchive() {
           </span>
 
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
+            <UiButton
+              type="button"
+              variant="outline"
+              size="sm"
+              :aria-pressed="entry.is_favorite"
+              :title="favoriteActionHint(entry.is_favorite)"
+              :disabled="favoriteBusy"
+              @click="toggleFavorite(!entry.is_favorite)"
+            >
+              <Icon
+                name="lucide:star"
+                class="size-4"
+                :class="entry.is_favorite ? 'fill-current text-primary' : ''"
+              />
+              Favorita
+            </UiButton>
             <UiButton
               v-if="canEdit"
               type="button"

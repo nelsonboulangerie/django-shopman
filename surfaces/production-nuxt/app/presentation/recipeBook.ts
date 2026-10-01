@@ -460,12 +460,14 @@ export function filterEntries(
   kind: string,
   onlyWithoutSku: boolean,
   onlyWithDraft: boolean,
+  onlyFavorites = false,
 ): RecipeEntryCardProjection[] {
   const needle = term.trim().toLowerCase();
   return entries.filter((entry) => {
     if (kind && entry.kind !== kind) return false;
     if (onlyWithoutSku && entry.output_sku) return false;
     if (onlyWithDraft && entry.draft_count <= 0) return false;
+    if (onlyFavorites && !entry.is_favorite) return false;
     if (!needle) return true;
     return (
       entry.name.toLowerCase().includes(needle) ||
@@ -474,6 +476,20 @@ export function filterEntries(
       entry.output_name.toLowerCase().includes(needle)
     );
   });
+}
+
+/**
+ * A estrela é um botão de alternar (`aria-pressed`): o nome acessível é fixo e
+ * diz DE QUAL receita (numa grade, "Favorita" sozinho não diz qual); a dica de
+ * mouse (`title`) diz o que o toque faz agora.
+ */
+export function favoriteToggleLabel(name: string): string {
+  const label = name.trim();
+  return label ? `Favorita: ${label}` : "Favorita";
+}
+
+export function favoriteActionHint(isFavorite: boolean): string {
+  return isFavorite ? "Tirar das favoritas" : "Marcar como favorita";
 }
 
 /** Query da lista — omite filtros vazios (URLs limpas). */

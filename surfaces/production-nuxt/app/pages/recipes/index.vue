@@ -3,9 +3,10 @@
 // chips por tipo, os dois toggles que importam ("sem SKU" = receita ainda só
 // conhecimento; "com rascunho" = alguém começou e não publicou) e as arquivadas
 // fora da vista por padrão. O cartão diz o que o gestor procura de relance: tipo,
-// SKU/produto, versão atual, hidratação. "Nova receita" só com `can_edit`.
+// SKU/produto, versão atual, hidratação. "Nova receita" só com `can_edit`. A estrela
+// é de cada operador (pede só a leitura), e "Favoritas" filtra as dele.
 import { isStale } from "~/presentation/production";
-import { filterEntries } from "~/presentation/recipeBook";
+import { favoriteActionHint, favoriteToggleLabel, filterEntries } from "~/presentation/recipeBook";
 
 useHead({ title: "Receitas" });
 
@@ -15,13 +16,28 @@ const kind = ref(typeof route.query.kind === "string" ? route.query.kind : "");
 const archived = ref(false);
 const onlyWithoutSku = ref(false);
 const onlyWithDraft = ref(false);
+const onlyFavorites = ref(false);
 
-const { entries, kinds, canEdit, forbidden, pending, error, refresh } = useRecipeBook(query, kind, archived);
+const { entries, kinds, canEdit, forbidden, pending, error, refresh, toggleFavorite, isFavoriteBusy } = useRecipeBook(
+  query,
+  kind,
+  archived,
+);
 
 const visible = computed(() =>
-  filterEntries(entries.value, query.value, kind.value, onlyWithoutSku.value, onlyWithDraft.value),
+  filterEntries(
+    entries.value,
+    query.value,
+    kind.value,
+    onlyWithoutSku.value,
+    onlyWithDraft.value,
+    onlyFavorites.value,
+  ),
 );
-const hasFilters = computed(() => !!query.value.trim() || !!kind.value || onlyWithoutSku.value || onlyWithDraft.value);
+const hasFilters = computed(
+  () =>
+    !!query.value.trim() || !!kind.value || onlyWithoutSku.value || onlyWithDraft.value || onlyFavorites.value,
+);
 const stale = computed(() => isStale({ error: !!error.value, hasData: entries.value.length > 0 }));
 
 function clearFilters() {
@@ -29,6 +45,7 @@ function clearFilters() {
   kind.value = "";
   onlyWithoutSku.value = false;
   onlyWithDraft.value = false;
+  onlyFavorites.value = false;
 }
 </script>
 
@@ -108,6 +125,10 @@ function clearFilters() {
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <input v-model="onlyFavorites" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
+            Favoritas
+          </label>
+          <label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input v-model="onlyWithoutSku" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Sem SKU
           </label>
@@ -175,54 +196,67 @@ function clearFilters() {
       </div>
 
       <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <NuxtLink
-          v-for="entry in visible"
-          :key="entry.ref"
-          :to="`/recipes/${entry.ref}`"
-          class="grid gap-2 rounded-md border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
-          :class="entry.is_archived ? 'opacity-70' : ''"
-        >
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="truncate font-bold">{{ entry.name }}</p>
-              <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
+        <!-- A estrela fica FORA do link (botão dentro de <a> não é HTML válido) e por cima do canto do cartão. -->
+        <div v-for="entry in visible" :key="entry.ref" class="relative">
+          <NuxtLink
+            :to="`/recipes/${entry.ref}`"
+            class="grid h-full gap-2 rounded-md border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
+            :class="entry.is_archived ? 'opacity-70' : ''"
+          >
+            <div class="flex items-start justify-between gap-2 pr-10">
+              <div class="min-w-0">
+                <p class="truncate font-bold">{{ entry.name }}</p>
+                <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
+              </div>
+              <UiBadge variant="outline" class="shrink-0 px-1.5 py-0 text-xs">{{ entry.kind_label }}</UiBadge>
             </div>
-            <UiBadge variant="outline" class="shrink-0 px-1.5 py-0 text-xs">{{ entry.kind_label }}</UiBadge>
-          </div>
 
-          <p class="flex items-center gap-1.5 text-sm">
-            <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
-            <template v-if="entry.output_sku">
-              <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
-              <span v-if="entry.output_name" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
-                entry.output_sku
-              }}</span>
-            </template>
-            <span v-else class="text-warning">Sem SKU</span>
-          </p>
+            <p class="flex items-center gap-1.5 text-sm">
+              <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
+              <template v-if="entry.output_sku">
+                <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
+                <span v-if="entry.output_name" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
+                  entry.output_sku
+                }}</span>
+              </template>
+              <span v-else class="text-warning">Sem SKU</span>
+            </p>
 
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span v-if="entry.current_version_number" class="tabular-nums">
-              Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
-              <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
-            </span>
-            <span v-else>Sem versão publicada</span>
-            <span v-if="entry.hydration_display" class="tabular-nums">
-              Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
-            </span>
-            <UiBadge v-if="entry.draft_count > 0" variant="warning" class="px-1.5 py-0 text-xs">
-              {{ entry.draft_count === 1 ? "Rascunho" : `${entry.draft_count} rascunhos` }}
-            </UiBadge>
-            <UiBadge v-if="entry.is_archived" variant="outline" class="px-1.5 py-0 text-xs">Arquivada</UiBadge>
-            <UiBadge v-if="!entry.has_ficha && entry.output_sku" variant="outline" class="px-1.5 py-0 text-xs"
-              >Sem ficha</UiBadge
-            >
-          </div>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span v-if="entry.current_version_number" class="tabular-nums">
+                Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
+                <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
+              </span>
+              <span v-else>Sem versão publicada</span>
+              <span v-if="entry.hydration_display" class="tabular-nums">
+                Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
+              </span>
+              <UiBadge v-if="entry.draft_count > 0" variant="warning" class="px-1.5 py-0 text-xs">
+                {{ entry.draft_count === 1 ? "Rascunho" : `${entry.draft_count} rascunhos` }}
+              </UiBadge>
+              <UiBadge v-if="entry.is_archived" variant="outline" class="px-1.5 py-0 text-xs">Arquivada</UiBadge>
+              <UiBadge v-if="!entry.has_ficha && entry.output_sku" variant="outline" class="px-1.5 py-0 text-xs"
+                >Sem ficha</UiBadge
+              >
+            </div>
 
-          <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
-            Atualizada {{ entry.updated_at_display }}
-          </p>
-        </NuxtLink>
+            <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
+              Atualizada {{ entry.updated_at_display }}
+            </p>
+          </NuxtLink>
+          <button
+            type="button"
+            class="absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-md outline-none transition hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+            :class="entry.is_favorite ? 'text-primary' : 'text-muted-foreground'"
+            :aria-pressed="entry.is_favorite"
+            :aria-label="favoriteToggleLabel(entry.name)"
+            :title="favoriteActionHint(entry.is_favorite)"
+            :disabled="isFavoriteBusy(entry.ref)"
+            @click="toggleFavorite(entry.ref, !entry.is_favorite)"
+          >
+            <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
+          </button>
+        </div>
       </div>
     </section>
   </main>

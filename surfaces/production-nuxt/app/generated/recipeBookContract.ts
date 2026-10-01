@@ -18,6 +18,7 @@ export interface RecipeEntryCardProjection {
   hydration_display: string;
   updated_at_display: string;
   is_archived: boolean;
+  is_favorite: boolean;
 }
 
 /** A recipe kind option (filter chip). */
@@ -193,6 +194,7 @@ export interface RecipeEntryDetailProjection {
   current_version_number: number | null;
   ficha_ref: string;
   execution_in_sync: boolean;
+  is_favorite: boolean;
   versions: RecipeVersionProjection[];
   usage: RecipeUsageProjection;
 }
