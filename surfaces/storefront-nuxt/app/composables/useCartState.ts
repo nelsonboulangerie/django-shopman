@@ -179,6 +179,16 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
 // não se perdem nem chegam fora de ordem no servidor; a fila sobrevive a erros.
 let mutationChain: Promise<unknown> = Promise.resolve()
 let queueDepth = 0
+// Época das mutações: sobe a cada mutação que NASCE. Uma leitura passiva da
+// sacola guarda a época do seu disparo e, se outra mutação nasceu enquanto ela
+// voava, a resposta é anterior à verdade e não pode ser gravada (lost update:
+// o item recém-adicionado sumia da tela e o cliente tocava de novo).
+let mutationEpoch = 0
+
+function beginMutation () {
+  queueDepth += 1
+  mutationEpoch += 1
+}
 
 function enqueueMutation<T> (run: () => Promise<T>): Promise<T> {
   const result = mutationChain.then(run)
@@ -264,12 +274,15 @@ export function useCartState () {
   }
 
   async function refreshCart () {
+    // A época vale a do DISPARO: conferir só `queueDepth` na chegada deixava passar
+    // a leitura que saiu antes de uma mutação que já drenou.
+    const epochAtDispatch = mutationEpoch
     const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/storefront/cart/'), {
       credentials: 'include'
     })
     // Reconciliação passiva (revert do otimista no catch, poll de holds): preserva
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
-    if (queueDepth === 0) setCartProjection(response.cart)
+    if (queueDepth === 0 && mutationEpoch === epochAtDispatch) setCartProjection(response.cart)
     return response.cart
   }
 
@@ -290,17 +303,24 @@ export function useCartState () {
     // Otimista: a linha muda na hora; o resumo fica pendente até a verdade do servidor.
     cart.value = applySkuQty(cart.value, meta, qty)
     bumpPending(meta.sku)
-    queueDepth += 1
+    beginMutation()
 
     try {
-      const response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
-        method: 'PUT',
-        headers: await csrfHeaders(),
-        body: { qty },
-        credentials: 'include'
-      })))
-      queueDepth -= 1
-      dropPending(meta.sku)
+      let response: CartMutationResponse
+      try {
+        response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
+          method: 'PUT',
+          headers: await csrfHeaders(),
+          body: { qty },
+          credentials: 'include'
+        })))
+      } finally {
+        // Um decremento só por mutação, venha resposta ou erro. Com o decremento
+        // repetido no catch, um erro DEPOIS da resposta descontava duas vezes, a
+        // fila ficava negativa e `queueDepth === 0` nunca mais reconciliava.
+        queueDepth -= 1
+        dropPending(meta.sku)
+      }
       if (queueDepth === 0) {
         // Drain da fila: a última resposta é a verdade mais recente.
         applyServerCart(response.cart)
@@ -310,8 +330,6 @@ export function useCartState () {
       }
       return response
     } catch (error: unknown) {
-      queueDepth -= 1
-      dropPending(meta.sku)
       if (queueDepth === 0) {
         try {
           await refreshCart()
@@ -347,21 +365,21 @@ export function useCartState () {
   }
 
   async function mutateCoupon (method: 'POST' | 'DELETE', body?: Record<string, unknown>) {
-    queueDepth += 1
+    beginMutation()
+    let response: { cart: CartProjection }
     try {
-      const response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/coupon/'), {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/coupon/'), {
         method,
         headers: await csrfHeaders(),
         body,
         credentials: 'include'
       })))
+    } finally {
+      // Mesmo contrato do setSkuQty: um decremento só, venha resposta ou erro.
       queueDepth -= 1
-      if (queueDepth === 0) applyServerCart(response.cart)
-      return response.cart
-    } catch (error) {
-      queueDepth -= 1
-      throw error
     }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response.cart
   }
 
   async function applyCoupon (coupon_code: string) {

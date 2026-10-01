@@ -228,6 +228,59 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(mutationHeaders['x-csrftoken']).toBe('seeded')
   })
 
+  it('carimba a duração da semente de CSRF em separado do total do BFF', async () => {
+    ;($fetch.raw as any)
+      .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
+      .mockResolvedValueOnce(upstream(200, { ok: true }))
+    const { event, res } = makeEvent({
+      method: 'PUT',
+      path: '/api/v1/cart/skus/X/',
+      headers: { 'content-type': 'application/json' },
+      body: '{"qty":1}'
+    })
+
+    await proxyDjangoPath(event, '/api/v1/cart/skus/X')
+
+    expect(String(res.getHeader('server-timing'))).toMatch(/csrf;dur=\d+\.\d{2}, bff;dur=\d+\.\d{2}/)
+  })
+
+  it('sem semente, nada de csrf;dur: só o primeiro pedido unsafe paga a semente', async () => {
+    const { event, res } = makeEvent({
+      method: 'PUT',
+      path: '/api/v1/cart/skus/X/',
+      headers: { cookie: 'csrftoken=t', 'content-type': 'application/json' },
+      body: '{"qty":1}'
+    })
+
+    await proxyDjangoPath(event, '/api/v1/cart/skus/X')
+
+    expect((($fetch.raw as any).mock.calls as unknown[]).length).toBe(1)
+    expect(String(res.getHeader('server-timing'))).not.toContain('csrf;dur')
+  })
+
+  it('semente de CSRF que cai na rede não derruba a mutação: ela segue sem token', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    ;($fetch.raw as any)
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(upstream(200, { cart: { items_count: 1 } }))
+    const { event, res } = makeEvent({
+      method: 'PUT',
+      path: '/api/v1/cart/skus/X/',
+      headers: { 'content-type': 'application/json' }, // navegador novo: sem cookie
+      body: '{"qty":1}'
+    })
+
+    const data = await proxyDjangoPath(event, '/api/v1/cart/skus/X')
+
+    expect(res.statusCode).toBe(200)
+    expect(data).toEqual({ cart: { items_count: 1 } })
+    const mutation = ($fetch.raw as any).mock.calls[1]
+    expect(mutation[0]).toBe(`${DJANGO}/api/v1/cart/skus/X/`)
+    expect(mutation[1].headers['x-csrftoken']).toBeUndefined()
+    expect(warn).toHaveBeenCalledOnce() // a falha é dita no log do BFF, não engolida
+    warn.mockRestore()
+  })
+
   it('apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado', async () => {
     vi.stubGlobal('useRuntimeConfig', () => ({ djangoBaseUrl: DJANGO, djangoProxySecret: 's3cr3t' }))
     const { event } = makeEvent({
