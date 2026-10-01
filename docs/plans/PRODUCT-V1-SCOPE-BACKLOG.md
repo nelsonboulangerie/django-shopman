@@ -31,9 +31,9 @@
 | **Canal: Loja online (retirada)** | Base pronta; manter no escopo | existente |
 | **Canal: PDV / balcão** | Base pronta; manter no escopo | existente |
 | **Canal: Entrega / delivery** | Ativa a frente de **endereço canônico** (busca/geo/ajuste no mapa); taxa por distância já existe | [ADDRESS-UX-PLAN](ADDRESS-UX-PLAN.md) |
-| **Canal: WhatsApp conversacional (ManyChat)** | ~70% já existe; falta wirear webhook + endpoints de pedido inbound. Plano: [MANYCHAT-CONVERSACIONAL-PLAN](MANYCHAT-CONVERSACIONAL-PLAN.md) | ROADMAP "Dívida Viva" |
+| **Canal: WhatsApp conversacional (Concierge)** | Plano canônico: [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (supera o MANYCHAT-CONVERSACIONAL-PLAN). Visão do dono e distância medida em 01/10/2026 estão lá; triagem é a D32 | ROADMAP "Dívida Viva"; dono (01/10/2026) |
 | **Sincronização com catálogos externos** | Feed pull Google/Meta e push Meta entregues; faltam homologação externa, vínculo do catálogo Meta ao WhatsApp e eventual push Google apenas se necessário. Plano: [CATALOG-SYNC-EXTERNO-PLAN](CATALOG-SYNC-EXTERNO-PLAN.md) | Revalidado (2026-09-29) |
-| **Media persistente (Spaces/S3)** | ⏳ **Agendada para imediatamente ANTES do go-live** (decisão Pablo 2026-06-27) — storage durável p/ fotos; filesystem efêmero perde imagem em redeploy. Não desenvolver agora | ROADMAP "Dívida Viva" |
+| **Media persistente (Cloudflare R2)** | Código pronto e desligado (#1337, D-010). Falta o dono criar bucket e token e colar as chaves na DO (D30); depois, `SHOPMAN_MEDIA_STORAGE=r2` | ROADMAP "Dívida Viva"; D6 |
 | **Shelf life perecível** | ✅ precedência (shelf_life × batch expiry = AND) explícita + travada por teste (2026-06-26). Resta só decisão de onde validar consistência de lote. Ver ROADMAP | ROADMAP "Dívida Viva" |
 | **Revisão reversa do PDV (Fase C)** | ✅ auditoria feita: [POS-FASE-C-REVISION](POS-FASE-C-REVISION.md). POS é maduro; 1 fix aplicado, resto = itens a verificar/decisões | `project_storefront_gaps_review` |
 | **Surface convergence** | Matar POS-HTMX legado; definir alvo do KDS (Nuxt vs HTMX) | [SURFACE-CONVERGENCE-PLAN](SURFACE-CONVERGENCE-PLAN.md) |
@@ -47,6 +47,8 @@
 | **Endereço — teleporte (WP-11 slice 3)** | Bloqueado em URL/campos do serviço; o fluxo base de endereço já cobre entrega |
 | **Customer rating** | Nice-to-have; hoje há `Order.data.customer_rating` mínimo |
 | **Mudar número de telefone** | Feature de borda ([CHANGE-PHONE-NUMBER-PLAN](CHANGE-PHONE-NUMBER-PLAN.md)) |
+| **Marketing** | Fora do go-live por decisão do dono (01/10/2026, D-017) |
+| **B.I.** | Fora do go-live por decisão do dono (01/10/2026, D-017) |
 
 ---
 
@@ -74,7 +76,12 @@ Cada frente ✅ precisa virar (ou já tem) plano executável antes de entrar.
 1. ✅ Corte v1 decidido (2026-06-26).
 2. Transformar cada frente ✅ em plano executável (ou reusar o existente),
    seguindo as ondas de sequenciamento acima.
-3. O go-live (no GO-LIVE-READINESS-PLAN) só dispara com **todas** as ✅ entregues.
+3. O go-live (no GO-LIVE-READINESS-PLAN) dispara com **todas** as ✅ entregues.
+   Decisão do dono em 01/10/2026 ([D-017](../coordination/DECISIONS.md)): a proposta de
+   corte (#1336) foi recusada; **ficam fora só Marketing e B.I.** Entram as onze frentes,
+   com destaque para a entrega por parceiro (TaOn/Machine) e o Concierge (WhatsApp
+   conversacional). Custo e dependência externa de cada frente em
+   [GO-LIVE-SCOPE-CUT-PROPOSTA](GO-LIVE-SCOPE-CUT-PROPOSTA.md).
 
 ---
 
