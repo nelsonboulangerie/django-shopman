@@ -35,6 +35,7 @@ import {
   splitDataUrl,
   statusBadgeVariant,
   statusTone,
+  stepsForPayload,
   stepsFromText,
   stepsToText,
   suggestedAnchor,
@@ -346,8 +347,28 @@ describe("formulaFromServed", () => {
 
 describe("steps and unmatched", () => {
   it("round-trips steps through the textarea, dropping blank lines", () => {
-    expect(stepsFromText("Autólise 40 min\n\n  Sova  \n")).toEqual(["Autólise 40 min", "Sova"]);
-    expect(stepsToText(["a", "b"])).toBe("a\nb");
+    expect(stepsFromText("Autólise 40 min\n\n  Sova  \n")).toEqual([{ name: "Autólise 40 min" }, { name: "Sova" }]);
+    expect(stepsToText([{ name: "a" }, { name: "b" }])).toBe("a\nb");
+  });
+
+  it("keeps instructions, target time and note of a step whose name stays", () => {
+    const previous = [
+      { name: "Sova", instructions: "Até o ponto de véu.", target_seconds: 600, target_display: "10 min", note: "" },
+      { name: "Forno", instructions: "", target_seconds: null, target_display: "", note: "Vapor no início." },
+    ];
+    expect(stepsFromText("Autólise\nForno\nSova", previous)).toEqual([
+      { name: "Autólise" },
+      { name: "Forno", note: "Vapor no início." },
+      { name: "Sova", instructions: "Até o ponto de véu.", target_seconds: 600 },
+    ]);
+  });
+
+  it("copies projected steps into the write shape, without display fields or blanks", () => {
+    expect(
+      stepsForPayload([
+        { name: "Sova", instructions: "Até o véu.", target_seconds: 600, target_display: "10 min", note: "" },
+      ]),
+    ).toEqual([{ name: "Sova", instructions: "Até o véu.", target_seconds: 600 }]);
   });
 
   it("unmatchedItems lists lens rows without a matched sku", () => {

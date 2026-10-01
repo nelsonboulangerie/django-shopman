@@ -132,7 +132,7 @@ class TestPublish:
         assert recipe.ref == "massa-tradicao"
         assert recipe.output_sku == "MASSA-TRADICAO"
         assert recipe.batch_size == Decimal("1.700")
-        assert recipe.steps == ["Mistura", "Fermentação", "Forno"]
+        assert recipe.steps == [{"name": "Mistura"}, {"name": "Fermentação"}, {"name": "Forno"}]
         assert recipe.is_active is True
         assert recipe.meta["version_ref"] == "massa-tradicao@1"
         assert recipe.meta["output_unit"] == "kg"

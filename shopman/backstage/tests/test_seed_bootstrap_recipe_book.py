@@ -56,7 +56,7 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     detail = build_recipe_entry("massa-tradicao")
     (version,) = detail.versions
     assert version.source_kind == "ficha"
-    assert version.steps == ("Pesagem", "Mistura", "Fermentação")
+    assert tuple(step.name for step in version.steps) == ("Pesagem", "Mistura", "Fermentação")
     assert {part.entry_ref for part in version.lens.parts} == {"creme-levain", "massa-pasta-autolizada"}
     assert all(part.has_formula for part in version.lens.parts)
     assert {item.sku for item in version.lens.bom} == {"PASTA-AUTOLIZADA", "LEVAIN", "SAL-REFINADO"}

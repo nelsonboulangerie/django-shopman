@@ -27,6 +27,7 @@ import {
   removeItem,
   removePart,
   setAnchor,
+  stepsForPayload,
   stepsFromText,
   stepsToText,
   totalMassOf,
@@ -225,7 +226,8 @@ function draftPatch() {
     formula: formula.value,
     yield_quantity: yieldQuantity.value.trim(),
     yield_unit: yieldUnit.value,
-    steps: stepsFromText(stepsText.value),
+    // O textarea edita nomes; o que o passo de mesmo nome já tinha segue junto.
+    steps: stepsFromText(stepsText.value, draft.value?.steps ?? []),
     notes: notes.value,
     label: label.value.trim(),
   };
@@ -264,7 +266,7 @@ async function startDraft() {
           formula: formulaFromServed(base.formula),
           yield_quantity: base.yield_quantity,
           yield_unit: base.yield_unit,
-          steps: [...base.steps],
+          steps: stepsForPayload(base.steps),
           notes: base.notes,
           label: "",
         }

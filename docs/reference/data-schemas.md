@@ -1541,7 +1541,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `steps` | `list[dict]` | seed/admin de receitas | KDS de produção | Passos do KDS: `[{name: string, target_seconds: int}]`. Fallback: campo legado `Recipe.steps`. |
+| ~~`steps`~~ | — | **REMOVIDA (30/09/2026)** | — | Esta linha descrevia passos com `target_seconds` "lidos pelo KDS de produção", e nada disso existia: nenhum código escrevia `meta["steps"]`, o KDS não lê receita, e o único leitor (`build_recipe_snapshot`) só copiava. As etapas moram no campo `Recipe.steps` (seção abaixo); o snapshot da fornada lê só dele. |
 | `max_started_minutes` | `int` | seed/admin de receitas | alertas/KDS produção | Tempo alvo total para WO em produção antes de atraso. Ausente = `production.alerts.default_max_started_minutes`. |
 | `capacity_per_day` | `int` | seed/admin de receitas | dashboard/relatórios | Capacidade diária nominal da receita. |
 | `production_lifecycle` | `string` | admin de receitas (contrib Unfold, campo provider-driven) | `dispatch_production` (`shop/production_lifecycle.py`) | Variante de lifecycle do orquestrador: `standard` (default, chave omitida) \| `forecast` \| `subcontract` (ADR-007). O campo só existe porque `CRAFTSMAN["PRODUCTION_LIFECYCLE_PROVIDER"]` aponta para `production_lifecycle_choices()` do orquestrador — pacote standalone não o renderiza. |
@@ -1556,6 +1556,44 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `bake_loss_weighed_at` | `string` (data ISO) | ficha (Admin/inventário) | idem | Quando pesou. Idem. |
 | `weight_slack_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | idem | Folga de segurança sobre o assado esperado, em %. Ausente = `ProductionConfig.weight.default_slack_pct` (hoje 5). É o que faz o anunciado ser **piso**: `anunciado = ⌊assado esperado × (1 − folga)⌋`, sempre para baixo. Fora de `[0, 100)` cai no padrão. |
 
+## Recipe.steps / RecipeVersion.steps
+
+Campos (não `meta`), `JSONField` de lista. Forma única, definida em
+`packages/craftsman/shopman/craftsman/recipe_steps.py` (`normalize_steps`) e aplicada pelo
+`clean()` das duas tabelas e no `save()` (o `Recipe.save` chama `full_clean`; o
+`RecipeVersion.save` normaliza as etapas). O cofre (`import_backup`) passa pelo mesmo funil, então
+backup anterior à migração restaura na forma nova. A migração `craftsman/0015`
+reescreveu o que estava gravado como texto.
+
+```
+[{"name": str, "instructions"?: str, "target_seconds"?: int, "note"?: str}]
+```
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `name` | `string` (obrigatório) | Nome da etapa: "Mistura", "Fermentação", "Forno". |
+| `instructions` | `string` | O modo de fazer da etapa. Ausente quando vazio. |
+| `target_seconds` | `int` > 0 | Tempo alvo da etapa, em segundos. Ausente quando não informado. **Não é o `target_seconds` do KDS** (`projections/kds.py`, SLA do chamado): mesmo nome, outro conceito. |
+| `note` | `string` | Anotação prática da etapa. Ausente quando vazia. |
+
+Texto puro na entrada é atalho aceito (`"Mistura"` → `{"name": "Mistura"}`); chave fora das
+quatro, nome vazio, tempo que não seja inteiro positivo ou texto que não seja texto é recusado
+apontando a etapa ("Etapa 2: ...").
+
+- **Escrito por:** `publish_version` (copia `RecipeVersion.steps` → `Recipe.steps`, é o escritor
+  da ficha pela ADR-027); a API do inventário (`backstage.services.recipe_book._steps`); o
+  textarea "Etapas" do Admin, que edita só os nomes e preserva instruções, tempo e anotação da
+  etapa de mesmo nome (`recipe_steps.steps_from_names`); o seed (lista de nomes, normalizada pelo
+  `clean`).
+- **Lido por:** as telas do inventário de receitas no app de Produção (`/recipes/<ref>`,
+  `/recipes/<ref>/edit`), via `RecipeStepProjection`; `build_recipe_snapshot`, que copia
+  `Recipe.steps` para `WorkOrder.meta["_recipe_snapshot"]["production"]["steps"]`, onde **ninguém
+  lê** (ordens planejadas antes da `craftsman/0015` guardam a lista de textos); e
+  `data_readiness/operational.py` (só conta: `missing_steps`).
+- ⚠️ **Nenhuma tela de execução lê as etapas.** KDS, Preparação (ticket de pesagem), etiqueta e
+  board não mostram o modo de fazer, e `target_seconds` não liga temporizador nenhum. Levar as
+  etapas ao chão de fábrica é decisão do dono, ainda aberta.
+
 ## RecipeItem.meta
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
@@ -1565,6 +1603,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
 | `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+| `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
 ## RecipeVersion.meta
 
@@ -1575,7 +1614,7 @@ evidência: nascem na publicação (ou no bootstrap) e não mudam mais.
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `published_by` | `string` | `craftsman.services.recipe_book.publish_version` | linha do tempo do inventário | Quem publicou (o `actor`). |
-| `execution_digest` | `string` (sha256 hex) | `publish_version` (da ficha que acabou de escrever), `bootstrap_entry_from_recipe` (da ficha lida) | `craftsman.services.recipe_book.execution_in_sync` → `RecipeEntryDetailProjection.execution_in_sync` | Impressão digital do que a ficha manda produzir (`execution_digest`: `output_sku`, `batch_size`, `steps` e itens `input_sku`/`quantity`/`unit`/`is_optional`, sem ordem). Fica de fora o que se edita à mão por direito: nome, `Recipe.meta` e `RecipeItem.meta`. Ausente = versão publicada antes de 30/09/2026: a sincronia fala só pelo `version_ref` até a próxima publicação. |
+| `execution_digest` | `string` (sha256 hex) | `publish_version` (da ficha que acabou de escrever), `bootstrap_entry_from_recipe` (da ficha lida) | `craftsman.services.recipe_book.execution_in_sync` → `RecipeEntryDetailProjection.execution_in_sync` | Impressão digital do que a ficha manda produzir (`execution_digest`: `output_sku`, `batch_size`, `steps` (etapa só com `name` entra como o nome, para a digital anterior à `craftsman/0015` seguir valendo) e itens `input_sku`/`quantity`/`unit`/`is_optional`, sem ordem). Fica de fora o que se edita à mão por direito: nome, `Recipe.meta` e `RecipeItem.meta`. Ausente = versão publicada antes de 30/09/2026: a sincronia fala só pelo `version_ref` até a próxima publicação. |
 
 ## RecipeVersion.formula / .origin / .source
 

@@ -84,7 +84,7 @@ class TestRecipeValidationI18n:
             steps=["Mistura", "Modelagem", "Forno"],
         )
         assert recipe.pk is not None
-        assert recipe.steps == ["Mistura", "Modelagem", "Forno"]
+        assert recipe.steps == [{"name": "Mistura"}, {"name": "Modelagem"}, {"name": "Forno"}]
 
 
 # ══════════════════════════════════════════════════════════════
