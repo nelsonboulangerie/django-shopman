@@ -5,6 +5,7 @@ import {
   collectionDisplayLabel,
   dynamicCollectionPublicSlug,
   filteredSections,
+  resolveCatalogSections,
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
@@ -74,7 +75,7 @@ const appliedFilterKeys = ref<string[]>([])
 // com aviso dietético, de forma transparente e reversível (contador de ocultos).
 const dietaryFilterOn = ref(false)
 
-const sections = computed(() => catalog.value?.sections || [])
+const sections = computed(() => resolveCatalogSections(catalog.value))
 const allItems = computed(() => catalog.value?.items || [])
 const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
 const favoriteRef = computed(() => catalog.value?.favorite_category_ref || '')

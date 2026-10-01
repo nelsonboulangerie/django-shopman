@@ -102,7 +102,7 @@ def catalog_structure_state_from_projection(data: dict[str, Any]) -> dict[str, A
             "icon": section.get("icon") or "",
             "description": section.get("description") or "",
             "category": section.get("category"),
-            "skus": [item["sku"] for item in section.get("items", [])],
+            "skus": list(section.get("skus") or []),
         })
     return {
         "items": items,

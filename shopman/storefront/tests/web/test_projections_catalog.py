@@ -240,7 +240,7 @@ class TestSections:
             None,
         )
         assert pao_section is not None
-        assert any(i.sku == product.sku for i in pao_section.items)
+        assert product.sku in pao_section.skus
 
     def test_uncategorized_section(self, listing, croissant):
         # croissant exists but is not attached to any collection.
@@ -248,7 +248,7 @@ class TestSections:
         proj = build_catalog(channel_ref="web")
         uncat = next((s for s in proj.sections if s.category is None), None)
         assert uncat is not None
-        assert any(i.sku == croissant.sku for i in uncat.items)
+        assert croissant.sku in uncat.skus
 
     def test_collection_filter_isolates_section(
         self, listing, collection, collection_item, product, croissant,
@@ -261,9 +261,54 @@ class TestSections:
         section = proj.sections[0]
         assert section.category is not None
         assert section.category.ref == "paes"
-        skus = {i.sku for i in section.items}
+        skus = set(section.skus)
         assert product.sku in skus
         assert croissant.sku not in skus  # croissant is uncategorized
+
+    def test_sections_carry_skus_and_every_section_sku_has_a_card_in_items(
+        self, listing, collection, collection_item, product, croissant, monkeypatch,
+    ):
+        """P5: a seção diz QUAIS cards mostra; o card mora uma vez só, em ``items``.
+
+        A superfície resolve o SKU pelo índice de ``items``. A dinâmica pode
+        resolver SKU que não está no cardápio (fora da listagem do canal): ele
+        não entra na seção, para nenhuma seção apontar para um card que a tela
+        não acha. E nenhuma seção carrega card inteiro no payload.
+        """
+        from shopman.shop import dynamic_collections as dyn
+        from shopman.shop.models import Shop
+        from shopman.storefront.api.projections import projection_data
+
+        _publish_on_listing(listing, product)
+        _publish_on_listing(listing, croissant)
+
+        class _Destaque:
+            meta = dyn.DynamicCollectionMeta(
+                ref="destaque-teste", label="Destaque", icon="star", description="",
+            )
+
+            def resolve(self, channel_ref, limit=20):
+                return [croissant.sku, "SKU-FORA-DO-CARDAPIO", product.sku]
+
+        monkeypatch.setitem(dyn._registry, "destaque-teste", _Destaque())
+        shop = Shop.load() or Shop.objects.create(name="Padaria Teste")
+        shop.defaults = {**(shop.defaults or {}), "menu": {"dynamic_collections": ["destaque-teste"]}}
+        shop.save()
+
+        proj = build_catalog(channel_ref="web")
+        dynamic = next(s for s in proj.sections if s.is_dynamic)
+        # Ordem da dinâmica preservada; o SKU sem card fica de fora.
+        assert dynamic.skus == (croissant.sku, product.sku)
+
+        item_skus = {item.sku for item in proj.items}
+        for section in proj.sections:
+            assert section.skus, section.ref
+            assert set(section.skus) <= item_skus, section.ref
+
+        data = projection_data(proj)
+        for section in data["sections"]:
+            assert "items" not in section
+            assert all(isinstance(sku, str) for sku in section["skus"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -432,7 +477,7 @@ class TestMultipleItemsInCollection:
             None,
         )
         assert pao_section is not None
-        skus = [i.sku for i in pao_section.items]
+        skus = list(pao_section.skus)
         assert product.sku in skus
         assert second.sku in skus
         second_item = _find_item(proj, second.sku)

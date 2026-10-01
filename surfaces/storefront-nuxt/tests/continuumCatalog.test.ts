@@ -5,6 +5,7 @@ import {
   installCatalogStructureSnapshot,
   isCatalogStructureSnapshot
 } from '../app/presentation/continuumCatalog'
+import { resolveCatalogSections } from '../app/presentation/menu'
 import type { CatalogStructureState, ContinuumSnapshot } from '../app/types/continuum'
 
 function snapshot (
@@ -79,7 +80,11 @@ describe('Continuum estrutural do cardápio', () => {
     expect(isCatalogStructureSnapshot(message)).toBe(true)
 
     const catalog = catalogFromStructureSnapshot(message)!
-    expect(catalog.sections[0]?.items[0]).toMatchObject({
+    // Mesma forma do payload canônico: a seção traz os SKUs, a tela resolve.
+    expect(catalog.sections[0]?.skus).toEqual(['PAO'])
+    const sections = resolveCatalogSections(catalog)
+    expect(sections[0]?.items[0]).toBe(catalog.items[0])
+    expect(sections[0]?.items[0]).toMatchObject({
       sku: 'PAO',
       name: 'Pão',
       price_display: '',
@@ -88,7 +93,7 @@ describe('Continuum estrutural do cardápio', () => {
       dietary_warnings: []
     })
     expect(catalog.items[0]).not.toHaveProperty('session')
-    expect(catalog.sections[0]?.items[0]?.base_price_q).toBe(0)
+    expect(sections[0]?.items[0]?.base_price_q).toBe(0)
   })
 
   it('rejeita equivocation e não deixa uma sequência antiga regredir a tela', () => {

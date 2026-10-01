@@ -4,6 +4,7 @@ import {
   buildSectionsBySku,
   collectionTargetForSearchOption,
   primarySectionBySku,
+  resolveCatalogSections,
   searchPanelView,
   type SearchListOption,
   uniqueItemsBySku
@@ -30,7 +31,7 @@ const query = ref(queryText(route.query.q))
 const baseFilters = ref<string[]>(parseFilters(route.query.filtro))
 
 const catalog = computed(() => data.value?.catalog || null)
-const sections = computed(() => catalog.value?.sections || [])
+const sections = computed(() => resolveCatalogSections(catalog.value))
 const uniqueItems = computed(() => uniqueItemsBySku(catalog.value?.items || []))
 const favoriteRef = computed(() => catalog.value?.favorite_category_ref || '')
 const normalizedQuery = computed(() => normalizeSearchText(query.value))

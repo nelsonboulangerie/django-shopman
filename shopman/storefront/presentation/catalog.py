@@ -142,10 +142,16 @@ class CatalogSectionProjection:
     - ``dynamic_ref`` populado = seção vinda de resolver dinâmico
       (``Destaques``, ``Recém saídos do forno``, etc.).
     - ``ref`` (sempre presente) identifica a seção no scroll-spy e na pill.
+    - ``skus`` diz quais cards a seção mostra, na ordem da seção. O card mora uma
+      vez só, em ``CatalogProjection.items``; a superfície resolve o SKU pelo
+      índice de ``items``. Repetir o card inteiro em cada seção era 62% do corpo
+      do cardápio (P5, relatório 13 de 29/09/2026). Todo SKU de seção está em
+      ``items`` por construção: a estática é fatia de ``items`` e a dinâmica só
+      aceita SKU que já tem card.
     """
 
     category: CategoryProjection | None
-    items: tuple[CatalogItemProjection, ...]
+    skus: tuple[str, ...]
     ref: str = ""
     label: str = ""
     icon: str = ""
@@ -303,8 +309,7 @@ def build_catalog(
     static_sections = _build_sections(items_flat, group_index, categories)
     # Dinâmicas só em visão full (sem filtro de coleção específica)
     if active_collection is None:
-        items_by_sku = {item.sku: item for item in items_flat}
-        dynamic_sections = _build_dynamic_sections(channel_ref, items_by_sku)
+        dynamic_sections = _build_dynamic_sections(channel_ref, {item.sku for item in items_flat})
         sections = dynamic_sections + static_sections
     else:
         sections = static_sections
@@ -786,14 +791,14 @@ def _build_sections(
     category_by_ref = {c.ref: c for c in categories}
     sections: list[CatalogSectionProjection] = []
     for col_ref, start, end in group_index:
-        slice_items = tuple(items_flat[start:end])
-        if not slice_items:
+        slice_skus = tuple(item.sku for item in items_flat[start:end])
+        if not slice_skus:
             continue
         category = category_by_ref.get(col_ref) if col_ref else None
         sections.append(
             CatalogSectionProjection(
                 category=category,
-                items=slice_items,
+                skus=slice_skus,
                 ref=category.ref if category else "outros",
                 label=category.name if category else "Outros",
                 icon=category.icon if category else "restaurant_menu",
@@ -804,7 +809,7 @@ def _build_sections(
 
 def _build_dynamic_sections(
     channel_ref: str,
-    items_by_sku: dict[str, CatalogItemProjection],
+    known_skus: set[str],
 ) -> tuple[CatalogSectionProjection, ...]:
     """Resolve dinâmicas configuradas em Shop.defaults['menu']['dynamic_collections']."""
     from shopman.shop import dynamic_collections as dyn
@@ -821,14 +826,15 @@ def _build_dynamic_sections(
         section = dyn.resolve(ref, channel_ref=channel_ref)
         if section is None:
             continue
-        # Reusa CatalogItemProjection já construídos (mesmo pricing/availability)
-        proj_items = tuple(items_by_sku[sku] for sku in section.skus if sku in items_by_sku)
-        if not proj_items:
+        # Só SKU que já tem card em ``items`` (mesmo pricing/availability): a
+        # seção dinâmica nunca aponta para um card que a superfície não acha.
+        section_skus = tuple(sku for sku in section.skus if sku in known_skus)
+        if not section_skus:
             continue
         sections.append(
             CatalogSectionProjection(
                 category=None,
-                items=proj_items,
+                skus=section_skus,
                 ref=section.meta.ref,
                 label=section.meta.label,
                 icon=section.meta.icon,

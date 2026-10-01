@@ -19,6 +19,7 @@ import catalogContractJson from '../../../contracts/projections/storefront_catal
 import productDetailContractJson from '../../../contracts/projections/storefront_product_detail.json'
 import {
   buildSectionsBySku,
+  resolveCatalogSections,
   tileBadge,
   uniqueItemsBySku,
 } from '../app/presentation/menu'
@@ -49,7 +50,7 @@ describe('contrato compartilhado: storefront_catalog', () => {
     const items = uniqueItemsBySku(catalogContract.items)
     expect(items.length).toBeGreaterThanOrEqual(4)
 
-    const sections = buildSectionsBySku(catalogContract.sections)
+    const sections = buildSectionsBySku(resolveCatalogSections(catalogContract))
     for (const item of items) {
       expect(sections.has(item.sku)).toBe(true)
     }
@@ -57,6 +58,28 @@ describe('contrato compartilhado: storefront_catalog', () => {
     const badges = items.map((item: CatalogItemProjection) => tileBadge(item))
     // Esgotado ganha selo; disponível não.
     expect(badges.some((badge) => badge !== null)).toBe(true)
+  })
+})
+
+describe('contrato compartilhado: seções por SKU (P5)', () => {
+  it('a seção traz só SKUs, e todo SKU de seção tem card em items', () => {
+    const itemSkus = new Set(catalogContract.items.map((item) => item.sku))
+    expect(catalogContract.sections.length).toBeGreaterThan(0)
+    for (const section of catalogContract.sections) {
+      expect(section).not.toHaveProperty('items')
+      expect(section.skus.length).toBeGreaterThan(0)
+      for (const sku of section.skus) expect(itemSkus.has(sku)).toBe(true)
+    }
+  })
+
+  it('resolvida, cada seção mostra os cards de items na ordem dos SKUs', () => {
+    const resolved = resolveCatalogSections(catalogContract)
+    resolved.forEach((section, index) => {
+      expect(section.items.map((item) => item.sku)).toEqual(catalogContract.sections[index]?.skus)
+      for (const card of section.items) {
+        expect(card).toBe(catalogContract.items.find((item) => item.sku === card.sku))
+      }
+    })
   })
 })
 
