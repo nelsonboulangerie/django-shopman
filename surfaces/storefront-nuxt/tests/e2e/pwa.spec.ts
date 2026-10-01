@@ -66,6 +66,11 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
   const original = await readFile(swPath, 'utf8')
   expect(original).toContain(SW_ORIGINAL)
 
+  // Ícone buscado na rede durante a troca é a causa provada do aviso que girava sem
+  // fim: ver o comentário do toque, abaixo.
+  const iconFetches: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/_nuxt_icon/')) iconFetches.push(request.url()) })
+
   try {
     await page.goto('/menu')
     // Primeira instalação: o worker ativa direto (não há outro em uso) e não há aviso.
@@ -88,10 +93,24 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
     await expect(prompt).toBeVisible()
 
     // Só o toque aplica: o worker novo assume e a página recarrega sem aviso.
+    //
+    // O toque NÃO pode buscar nada na rede. O Chromium ativa o worker em espera
+    // desligando o antigo; requisição da página que chega ao antigo ENQUANTO ele
+    // desliga o religa, e a ativação fica para quando ele ficar ocioso de novo (30 s
+    // sem requisição). Era o spinner do botão, buscado em `/api/_nuxt_icon` no
+    // instante do toque: a trilha da CI mostrava o worker antigo `stopping → stopped →
+    // starting` e o novo parado em "installed" até o fim. Por isso a trilha registra
+    // as versões do worker (CDP) e as requisições depois do toque.
     expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true)
     const trail: string[] = []
     page.on('console', message => trail.push(`console ${message.type()}: ${message.text()}`))
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) trail.push(`nav ${frame.url()}`) })
+    page.on('request', request => trail.push(`req ${request.method()} ${request.url()}`))
+    const cdp = await page.context().newCDPSession(page)
+    cdp.on('ServiceWorker.workerVersionUpdated', ({ versions }) => {
+      for (const version of versions) trail.push(`worker ${version.versionId} ${version.status}/${version.runningStatus}`)
+    })
+    await cdp.send('ServiceWorker.enable')
     const snapshot = () => page.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration()
       return {
@@ -101,6 +120,10 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
         controller: navigator.serviceWorker.controller?.state || null
       }
     }).catch(error => ({ error: String(error).slice(0, 120) }))
+    // O toque vem com a página assentada, como o de uma pessoa: a mesma janela de
+    // corrida existe para QUALQUER requisição da página (aqui, o prefetch de rotas do
+    // Nuxt, que corre logo depois da carga), e esta prova é sobre o que o TOQUE faz.
+    await page.waitForLoadState('networkidle')
     trail.push(`antes do toque ${JSON.stringify(await snapshot())}`)
     await prompt.getByRole('button', { name: 'Atualizar' }).click()
     // A página recarrega no meio da sonda: avaliação perdida na troca conta como "ainda não".
@@ -111,11 +134,13 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
         return 'active' in state && state.active === 'activated' && !state.waiting
       }, { timeout: 30_000 }).toBe(true)
     } catch (error) {
-      console.log(`trilha da troca de versão:\n${trail.slice(-40).join('\n')}`)
+      // Sem as linhas repetidas da sonda, a trilha cabe inteira: o começo é o que conta.
+      console.log(`trilha da troca de versão:\n${trail.filter((line, index) => line !== trail[index - 1]).join('\n')}`)
       throw error
     }
     // Recarregada com o worker novo no comando, não há mais versão em espera.
     await expect(prompt).toBeHidden({ timeout: 15_000 })
+    expect(iconFetches).toEqual([])
   } finally {
     await replaceServiceWorker(original)
   }
