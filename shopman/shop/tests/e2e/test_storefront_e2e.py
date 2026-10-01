@@ -170,6 +170,64 @@ class TestCustomerStore:
         page.wait_for_url(re.compile(r"/sacola$"), timeout=15_000)
         expect(page.get_by_text(product_name, exact=False).first).to_be_visible()
 
+    def test_03b_tap_before_hydration_is_replayed_once(self, page, browser, store_base_url):
+        """D1 (opção 3): o toque antes de o app hidratar não se perde.
+
+        O JavaScript da loja fica PRESO na rede enquanto o cliente toca duas vezes
+        no "Adicionar" que o servidor entregou. O botão tem de estar ativo, o toque
+        tem de aparecer girando na hora, e quando o app fica pronto a sacola recebe
+        UMA mutação, não zero (o toque morto de antes) nem duas.
+        """
+        sku = _seeded_sku(page, store_base_url)
+        assert sku
+        # Contexto novo, sem service worker: a visita ao cardápio acima instala o
+        # worker do PWA, e o que ele serve do cache não passa pelo `route`, então o
+        # bundle chegaria e a hidratação aconteceria antes do toque.
+        context = browser.new_context(service_workers="block")
+        page = context.new_page()
+        held = []
+        released = []
+
+        def hold_bundle(route):
+            if released:
+                route.continue_()
+            else:
+                held.append(route)
+
+        page.route(re.compile(r"/_nuxt/.+\.js(\?.*)?$"), hold_bundle)
+        mutations = []
+        page.on(
+            "request",
+            lambda request: mutations.append(request.url)
+            if "/api/v1/cart/skus/" in request.url and request.method == "PUT"
+            else None,
+        )
+        # `commit`, não `domcontentloaded`: script de módulo é adiado, e o
+        # DOMContentLoaded espera por ele. Com o bundle preso, o evento não vem.
+        page.goto(f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="commit")
+        page.wait_for_selector("button[data-early-tap]", state="attached")
+        add_button = page.locator("button[data-early-tap]").first
+        expect(add_button).to_be_enabled()
+        add_button.click()
+        add_button.click()
+        expect(add_button).to_have_attribute("data-early-tap-pending", "true")
+        assert held, "o bundle do app deveria estar preso na rede"
+        assert mutations == [], "nada pode ir à sacola antes de o app existir"
+
+        with page.expect_response(
+            lambda response: "/api/v1/cart/skus/" in response.url
+            and response.request.method == "PUT",
+            timeout=20_000,
+        ) as mutation:
+            released.append(True)
+            for route in held:
+                route.continue_()
+        assert mutation.value.status == 200
+        page.wait_for_load_state("networkidle")
+        assert len(mutations) == 1, f"esperava 1 mutação, vieram {len(mutations)}"
+        expect(page.locator("[data-early-tap-pending]")).to_have_count(0)
+        context.close()
+
     def test_04_checkout_surfaces_auth_gate(self, page, store_base_url):
         """Anonymous checkout surfaces the login guardrail (expected, not a bug).
 

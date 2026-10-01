@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
-// Clique nunca inerte — trava estática da layer e dos apps de operador.
+// Clique nunca inerte: trava estática da layer e dos apps de operador.
 //
 // Contrato na seção "Clique nunca inerte" do README. Irmã de
 // `surfaces/storefront-nuxt/tests/pendingActionGuardrails.test.ts`.

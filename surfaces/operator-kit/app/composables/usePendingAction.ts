@@ -6,7 +6,7 @@ export interface PendingActionOptions<Args extends unknown[]> {
 }
 
 /**
- * Clique nunca inerte — todo botão de ação assíncrona declara que está em andamento.
+ * Clique nunca inerte: todo botão de ação assíncrona declara que está em andamento.
  *
  * Contrato na seção "Clique nunca inerte" do README do kit. A loja tem cópia
  * espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`).
