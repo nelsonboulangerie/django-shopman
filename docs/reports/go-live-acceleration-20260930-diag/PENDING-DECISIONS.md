@@ -4,6 +4,103 @@
 > Nenhuma foi decidida durante a noite; o trabalho seguiu por outras frentes.
 
 
+## Atualização de 01/10 (manhã): o que já foi decidido e executado
+
+| # | Estado |
+|---|---|
+| D1 | ✅ Opção 3 decidida e feita (#1330) |
+| D2, D3, D8, D9, D10, D11 | seguem abertas, sem mudança |
+| D4 | ✅ Lista aprovada feita (#1328) |
+| D5 | ✅ "Etapa" feito (#1326). As três perguntas restantes viraram D19 |
+| D6 | ✅ Só "Referências externas" (#1332); upload fica para o R2 |
+| D7 | ✅ Critérios editáveis no Admin (#1332). Os detalhes viraram D24 |
+| D12 | ✅ Pool de Redis + GC (#1331). O degrau `CONN_MAX_AGE=0` virou D21 |
+| D13 | ✅ Nada a fazer: zero fichas afetadas no alpha |
+| D14 | ✅ Flag aplicada no spec vivo. A rotação do token virou D22 |
+| D15 | Medido sem sintoma; o chamado virou D23 |
+| D16 | ✅ (a) teto da linha e (b) 1 pedido = 1 data na loja (#1329). O que sobrou virou D17 e D18 |
+
+## D17 — Balcão: "1 linha = 1 data" NÃO existe hoje
+
+**Contexto.** A premissa era "a comanda pode ter linhas de datas diferentes, e isso já funciona". A
+apuração da Frente 2 mostrou outra coisa: a comanda tem **uma data por sessão**
+(`session.data["delivery_date"]`, `shopman/shop/services/pos.py`), `POSTab` não tem data e as linhas
+não carregam data; o PDV não reserva por linha. O `TestOneLineOneDate` é teste da **loja**.
+
+**Opções.** 1) Manter a comanda com uma data (como está). 2) Construir data por linha na comanda
+(atravessa cozinha, nota fiscal e fechamento do dia: frente própria, com desenho).
+**Recomendação:** 1 até o go-live; 2 só se a conta aberta por dias for uso real do balcão.
+
+## D18 — Loja: como o cliente fica sabendo que precisa de dois pedidos
+
+**Contexto.** Desde o #1329 a sacola recusa item de outra data com "Isso fica para outro pedido" e o
+botão "Ver minha sacola". O mínimo inequívoco está feito; o resto é desenho.
+
+**Perguntas.** (a) Quando avisar: ao adicionar (hoje), só no checkout, ou antes do toque (no card).
+(b) Oferecer "criar o segundo pedido" em um toque (guardar para depois, ou segunda sacola)?
+(c) Item que existe nas duas datas (pronto hoje e na fornada de amanhã) com a sacola em amanhã: hoje
+o pronto de hoje vence e a sacola recusa; ele deveria entrar na data da sacola?
+(d) Combo no 409 de ajuste mostra o livre do componente que faltou, não o teto: aceitar?
+(e) A recompra pula o item de outra data e o lista como "não entrou", sem dizer que é por data.
+**Recomendação:** (a) ao adicionar, como está; (c) sim, entrar na data da sacola (é o que o cliente
+espera); (b), (d), (e) depois do go-live.
+
+## D19 — Receitas: as três perguntas que sobraram do D5
+
+(a) Em 16/09 você decidiu que o operador só **lê** a etapa (não registra feito). Confirma?
+(b) **Tempo** está no modelo (`target_seconds`); **temperatura não existe em lugar nenhum**. Entra?
+Se entrar, é campo tipado (°C, afim, não fator) e precisa de valor seu: ver D20.
+(c) A anotação mora na **versão** (imutável depois de publicada). Confirma?
+**Recomendação:** (a) sim; (b) sim, opcional por etapa; (c) sim.
+
+## D20 — As 92 etapas resgatadas são proposta minha, não dado da casa
+
+**Contexto.** O processo das 11 massas foi para `docs/reference/processo-das-massas-proposta-2026-09-05.md`.
+O próprio artifact de origem diz "proposta minha, é a parte que eu menos sei". É a única tabela de
+temperatura que existe, mas nunca passou por você. **Pergunta:** quer revisar massa por massa (e aí
+vira dado), ou fica só como rascunho?
+
+## D21 — `DATABASE_CONN_MAX_AGE=0` (degrau 1 do D12): escrita no spec vivo
+
+**Contexto.** O spec vivo fixa `DATABASE_CONN_MAX_AGE="60"`; sob ASGI isso não reaproveita conexão
+e deixa backend ocioso até o GC (bancada: 15 ociosas depois de 100 requests; 33 a 102 com 8
+concorrentes; com 0, zero). O deploy não escreve spec, e este turno só tinha autorização para a
+Frente 1. **Pergunta:** aplicar (drift → backup → mudar a env → `apps update` → 42 SECRET)?
+**Recomendação:** sim. Risco baixo; não mexe no PgBouncer.
+
+## D22 — Rotacionar `EFI_WEBHOOK_TOKEN` antes de ligar a Efí de produção
+
+Não é opcional, é item de checklist. O token é de sandbox, mas é a mesma variável que vai para
+produção, onde é a autenticação **única** do webhook (sem mTLS, allowlist vazia). Rotacionar =
+trocar o segredo e recadastrar a URL na Efí (o `efi_webhook --soft` do release faz isso quando o
+adapter efetivo é a Efí). **Pergunta:** quando (no corte do Pix, ou já)?
+
+## D23 — Chamado na DO pelos picos da madrugada
+
+Hoje não reproduz (Frente 8). O chamado só serve para pedir o log do load balancer de 04:26–05:09
+UTC (520 com cf-ray `a438d03fcc9597d0-GRU` às 04:44:41, fora de qualquer troca; 525 às 04:58).
+Rascunho, se quiser abrir:
+
+> **Assunto:** 520/525 e respostas lentas ou truncadas entre o edge Cloudflare e o App Platform, app
+> 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f, 2026-10-01 04:26–05:09 UTC. Domínio `api.boulangerie.com.br`
+> (componente `web`, 1 instância). `GET /api/v1/storefront/home/` (~19 KB) teve respostas de 15 a 40 s,
+> corpo truncado (13 de 19 KB em 40 s), um 520 às 04:44:41 UTC (cf-ray a438d03fcc9597d0-GRU) e um 525 às
+> 04:58 UTC. O log da aplicação mostra a resposta concluída em 1–2 s; o 520 ocorreu fora de janela de
+> deploy. Hoje, 09:23–09:27 UTC, 400 requisições de teste não falharam. Pedimos os logs do load
+> balancer/ingress nessa janela: resets, timeouts de upstream e falhas de handshake TLS.
+
+**Pergunta:** abrir? **Recomendação:** só se voltar a acontecer;
+a segunda instância do `web` (custo) é a resposta estrutural e é sua.
+
+## D24 — Nota da receita: quatro detalhes de desenho (#1332)
+
+(a) Rascunho não recebe nota (rascunho pode ser apagado). (b) Avaliar de novo substitui a nota
+anterior do mesmo operador, para ninguém pesar mais na média por votar várias vezes; não há
+histórico de degustação. (c) Notas e critérios não entram no cofre (backup), como a Favorita; as
+referências entram (moram no `meta` da receita). (d) O bloco se chama "Referências", e a tela já usa
+"referência" para as faixas da literatura; a alternativa é "Fontes".
+**Recomendação:** manter as quatro como estão; trocar para "Fontes" se o operador confundir.
+
 ## D1 — Botão "Adicionar" esmaecido e inerte até a página carregar (bug B do segundo clique)
 
 **Contexto.** No `CartQuantityAction.vue` o botão nasce `disabled` no HTML do servidor e só liga
