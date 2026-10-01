@@ -4,7 +4,7 @@
 (RECIPE-INVENTORY-PLAN §6): o padeiro cola um texto em qualquer língua, ou tira
 uma foto do caderno, do livro ou da tela, e recebe de volta um rascunho
 estruturado (nome, rendimento, ingredientes com quantidade, unidade e papel,
-passos) para conferir e ajustar. Nada é gravado aqui: quem persiste é o editor,
+etapas) para conferir e ajustar. Nada é gravado aqui: quem persiste é o editor,
 depois que o padeiro olhou.
 
 Três limites escritos:
@@ -78,7 +78,7 @@ SYSTEM_PROMPT = (
     '"role": str, "note": str}], "steps": [str], "notes": str}\n'
     "\n"
     "Regras:\n"
-    "- Traduza nomes de ingrediente, passos e o nome da receita para português do Brasil. "
+    "- Traduza nomes de ingrediente, etapas e o nome da receita para português do Brasil. "
     "Em cada item, original_text é a linha como está na fonte, sem tradução.\n"
     "- language é o código ISO 639-1 da língua da fonte (pt, fr, en, ja...).\n"
     "- Unidades só entre g, kg, ml, L e un. Xícara, cup, tasse e カップ viram ml (cerca de 240 ml "
@@ -94,7 +94,7 @@ SYSTEM_PROMPT = (
     "beverage ou other.\n"
     "- Se a fonte está em porcentagem do padeiro (farinha 100%, água 70%...), converta para gramas "
     "sobre 1000 g de farinha total e diga isso em notes.\n"
-    "- Não invente ingrediente, quantidade nem passo que não estejam na fonte. O que não dá para "
+    "- Não invente ingrediente, quantidade nem etapa que não estejam na fonte. O que não dá para "
     "ler, deixe quantity null e explique em note.\n"
     "- Se a fonte tem mais de uma receita, transcreva a primeira e diga em notes que há outras.\n"
     "- Sem travessão e sem emoji nos textos."

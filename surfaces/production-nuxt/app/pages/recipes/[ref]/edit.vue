@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
-// editável (nome, insumo com busca, quantidade, unidade, papel), partes, passos e
+// editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
@@ -226,7 +226,7 @@ function draftPatch() {
     formula: formula.value,
     yield_quantity: yieldQuantity.value.trim(),
     yield_unit: yieldUnit.value,
-    // O textarea edita nomes; o que o passo de mesmo nome já tinha segue junto.
+    // O textarea edita nomes; o que a etapa de mesmo nome já tinha segue junto.
     steps: stepsFromText(stepsText.value, draft.value?.steps ?? []),
     notes: notes.value,
     label: label.value.trim(),
@@ -567,10 +567,10 @@ async function startDraft() {
             </ol>
           </div>
 
-          <!-- Passos e notas -->
+          <!-- Etapas e notas -->
           <div class="grid gap-3 rounded-md border bg-card p-3">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Passos (um por linha)
+              Etapas (uma por linha)
               <UiTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" />
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">

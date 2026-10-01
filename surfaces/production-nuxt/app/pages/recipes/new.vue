@@ -436,7 +436,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
             </div>
 
             <div v-if="capture.draft.value?.steps?.length" class="rounded-md border bg-card p-4">
-              <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos lidos</p>
+              <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas lidas</p>
               <ol class="list-decimal space-y-0.5 pl-5 text-sm">
                 <li v-for="(step, index) in capture.draft.value.steps" :key="index">{{ step }}</li>
               </ol>

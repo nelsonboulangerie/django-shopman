@@ -402,7 +402,7 @@ async function confirmArchive() {
               <FormulaLens :lens="selected.lens" />
 
               <div v-if="selected.steps.length" class="mt-4 rounded-md border bg-card p-4">
-                <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos</p>
+                <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas</p>
                 <ol class="list-decimal space-y-1 pl-5 text-sm">
                   <li v-for="(step, index) in selected.steps" :key="index">
                     <span class="font-medium">{{ step.name }}</span>
