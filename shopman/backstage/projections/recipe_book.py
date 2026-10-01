@@ -580,7 +580,7 @@ def _output_names(skus: set[str]) -> dict[str, str]:
         from shopman.offerman.models import Product
 
         names.update(Product.objects.filter(sku__in=skus).values_list("sku", "name"))
-    except Exception:
+    except Exception:  # silêncio-deliberado: nome é rótulo de tela; sem catálogo o SKU aparece cru e o log guarda o traceback
         logger.debug("recipe_book.product_names_unavailable", exc_info=True)
     missing = {sku for sku in skus if sku not in names}
     if missing:
@@ -588,7 +588,7 @@ def _output_names(skus: set[str]) -> dict[str, str]:
             from shopman.buyman.models import Material
 
             names.update(Material.objects.filter(sku__in=missing).values_list("sku", "name"))
-        except Exception:
+        except Exception:  # silêncio-deliberado: nome é rótulo de tela; sem cadastro de compra o SKU aparece cru e o log guarda o traceback
             logger.debug("recipe_book.material_names_unavailable", exc_info=True)
     return names
 
