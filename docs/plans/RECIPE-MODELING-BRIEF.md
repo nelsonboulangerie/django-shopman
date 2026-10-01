@@ -40,7 +40,10 @@
    consumida pela massa como item. O corte do dono segue valendo — **nada de varredura,
    validade ou posição efêmera** —, mas a pergunta de ela precisar de SKU com estoque não
    foi respondida.
-5. **Tempos e temperaturas por parte** (§7 Q4): `RecipeVersion.steps` segue `list[str]`.
+5. **Tempos e temperaturas por parte** (§7 Q4): desde 30/09/2026 a etapa é objeto
+   `{name, instructions?, target_seconds?, note?}` (`craftsman/recipe_steps.py`), com tempo alvo
+   por etapa; temperatura e o vínculo etapa × parte seguem sem casa, e nenhuma tela de execução
+   lê as etapas.
 6. **O destino "banco vivo pelo cofre"** (§6) depende de o `export_backup`/`import_backup`
    carregar `RecipeEntry`/`RecipeVersion`, o que ainda não acontece.
 

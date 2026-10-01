@@ -65,7 +65,8 @@ RecipeVersion                      # uma fórmula congelada
   formula        JSON (schema §3)
   origin         JSON — a receita COMO FOI INFORMADA (quantidades, unidades, texto), imutável
   source         JSON — {kind: manual|note|photo|ficha|import, text?, language?, image_name?, model?}
-  steps          list[str] (vai para Recipe.steps ao publicar)
+  steps          list[{name, instructions?, target_seconds?, note?}] (vai para Recipe.steps ao publicar;
+                 forma em craftsman/recipe_steps.py, ver data-schemas "Recipe.steps / RecipeVersion.steps")
   notes
   created_by, created_at, published_at (null)
   meta

@@ -80,7 +80,7 @@ def build_recipe_snapshot(recipe) -> dict:
         "production": {
             "requires_batch_tracking": bool((recipe.meta or {}).get("requires_batch_tracking")),
             "shelf_life_days": (recipe.meta or {}).get("shelf_life_days"),
-            "steps": list((recipe.meta or {}).get("steps") or recipe.steps or []),
+            "steps": list(recipe.steps or []),
         },
     }
 

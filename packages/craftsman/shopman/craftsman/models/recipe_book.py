@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from shopman.craftsman.exceptions import RecipeBookError
+from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.utils.refs import RefField
 
 
@@ -169,8 +170,7 @@ class RecipeVersion(models.Model):
         super().clean()
         if self.yield_quantity is not None and self.yield_quantity <= 0:
             raise ValidationError({"yield_quantity": _("Deve ser maior que zero.")})
-        if self.steps and not isinstance(self.steps, list):
-            raise ValidationError({"steps": _("Deve ser uma lista de nomes de etapas.")})
+        self.steps = normalize_steps(self.steps)
         try:
             validate_formula(self.formula)
         except RecipeBookError as exc:

@@ -49,7 +49,7 @@ def recipe(db, vitrine):
         name="Pão",
         output_sku=SKU,
         batch_size=Decimal("1"),
-        meta={"steps": ["Misturar", "Modelar", "Assar"]},
+        steps=["Misturar", "Modelar", "Assar"],
     )
 
 

@@ -36,6 +36,7 @@ export type {
   RecipeEntryCardProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeStepProjection,
   RecipeVersionProjection,
   ReferenceRangeProjection,
 } from "~/generated/recipeBookContract";
@@ -121,13 +122,24 @@ export interface Formula {
   parts: FormulaPart[];
 }
 
+/**
+ * Uma etapa como a API a recebe (`shopman/craftsman/recipe_steps.py`). Vazio
+ * e `null` saem no servidor; só `name` é obrigatório.
+ */
+export interface RecipeStepInput {
+  name: string;
+  instructions?: string;
+  target_seconds?: number | null;
+  note?: string;
+}
+
 /** Corpo de `POST recipes/<ref>/versions/` e do `version` de `POST recipes/`. */
 export interface VersionPayload {
   from_version?: number;
   formula: Formula;
   yield_quantity: string;
   yield_unit: string;
-  steps?: string[];
+  steps?: RecipeStepInput[];
   notes?: string;
   label?: string;
   origin?: Record<string, unknown>;
@@ -139,7 +151,7 @@ export interface DraftPatch {
   formula?: Formula;
   yield_quantity?: string;
   yield_unit?: string;
-  steps?: string[];
+  steps?: RecipeStepInput[];
   notes?: string;
   label?: string;
 }

@@ -332,7 +332,7 @@ def test_new_version_copied_from_another(client, editor, entry):
     body = response.json()
     assert body["version"]["number"] == 2
     assert body["version"]["status"] == "draft"
-    assert body["version"]["steps"] == ["Mistura", "Fermentação", "Forno"]
+    assert [step["name"] for step in body["version"]["steps"]] == ["Mistura", "Fermentação", "Forno"]
     assert body["version"]["yield_quantity"] == "1.7"
     assert [v["number"] for v in body["entry"]["versions"]] == [2, 1]
 
@@ -359,6 +359,38 @@ def test_new_version_refuses_unknown_source_kind_and_missing_from_version(client
     assert bad_source.json()["field"] == "source.kind"
     assert _post(client, f"{LIST_URL}{entry.ref}/versions/", {"from_version": 9}).status_code == 404
     assert _post(client, f"{LIST_URL}{entry.ref}/versions/", {"yield_quantity": "1", "yield_unit": "kg"}).json()["field"] == "formula"
+
+
+def test_patch_draft_steps_accepts_text_and_objects_and_serves_objects(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/1/"
+    steps = [
+        "Autólise",
+        "",
+        {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400, "note": ""},
+    ]
+    response = _patch(client, url, {"steps": steps})
+    assert response.status_code == 200, response.content
+    assert response.json()["version"]["steps"] == [
+        {"name": "Autólise", "instructions": "", "target_seconds": None, "target_display": "", "note": ""},
+        {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400,
+         "target_display": "1 h 30 min", "note": ""},
+    ]
+    assert RecipeVersion.objects.get(entry=entry, number=1).steps == [
+        {"name": "Autólise"},
+        {"name": "Sova", "instructions": "Até o ponto de véu.", "target_seconds": 5400},
+    ]
+
+
+def test_patch_draft_refuses_an_invalid_step_naming_it(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/1/"
+    response = _patch(client, url, {"steps": ["Mistura", {"name": "Sova", "target_seconds": "90 min"}]})
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "steps"
+    assert body["detail"].startswith("Etapa 2:")
+    assert _patch(client, url, {"steps": {"name": "Sova"}}).json()["field"] == "steps"
 
 
 def test_patch_draft_then_publish_makes_it_immutable(client, editor, entry):

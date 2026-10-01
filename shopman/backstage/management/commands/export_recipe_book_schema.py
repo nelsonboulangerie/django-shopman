@@ -38,6 +38,7 @@ from shopman.backstage.projections.recipe_book import (
     RecipeEntryCardProjection,
     RecipeEntryDetailProjection,
     RecipeReferenceProjection,
+    RecipeStepProjection,
     RecipeVersionProjection,
     ReferenceRangeProjection,
 )
@@ -56,6 +57,7 @@ CONTRACT_DATACLASSES = (
     FormulaMetricProjection,
     FormulaWarningProjection,
     FormulaLensProjection,
+    RecipeStepProjection,
     RecipeVersionProjection,
     RecipeEntryDetailProjection,
     RecipeCompareRowProjection,

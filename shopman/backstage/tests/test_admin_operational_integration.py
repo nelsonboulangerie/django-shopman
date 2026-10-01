@@ -723,11 +723,40 @@ class RecipeAdminSemanticsTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         recipe = form.save()
 
-        self.assertEqual(recipe.steps, ["Mistura", "Modelagem", "Forno"])
+        self.assertEqual(recipe.steps, [{"name": "Mistura"}, {"name": "Modelagem"}, {"name": "Forno"}])
         self.assertEqual(recipe.meta["max_started_minutes"], 90)
         self.assertEqual(recipe.meta["capacity_per_day"], "120")
         self.assertEqual(recipe.meta["requires_batch_tracking"], True)
         self.assertEqual(recipe.meta["shelf_life_days"], 1)
+
+    def test_recipe_admin_steps_textarea_keeps_what_a_step_with_the_same_name_had(self) -> None:
+        Product.objects.create(sku="CIABATTA", name="Ciabatta", unit="un")
+        recipe = Recipe.objects.create(
+            ref="ciabatta-v1", name="Ciabatta", output_sku="CIABATTA", batch_size=Decimal("12"),
+            steps=[{"name": "Mistura", "instructions": "Até o véu.", "target_seconds": 600}, "Forno"],
+        )
+        form = craftsman_admin.RecipeAdminForm(instance=recipe)
+        self.assertEqual(form.fields["steps_text"].initial, "Mistura\nForno")
+
+        form = craftsman_admin.RecipeAdminForm(
+            instance=recipe,
+            data={
+                "ref": "ciabatta-v1",
+                "name": "Ciabatta",
+                "is_active": "on",
+                "output_sku": "CIABATTA",
+                "batch_size": "12",
+                "steps_text": "Pesagem\nMistura\nForno",
+            },
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        recipe = form.save()
+        recipe.refresh_from_db()
+
+        self.assertEqual(
+            recipe.steps,
+            [{"name": "Pesagem"}, {"name": "Mistura", "instructions": "Até o véu.", "target_seconds": 600}, {"name": "Forno"}],
+        )
 
     def test_recipe_admin_assina_a_validade_e_invalida_a_assinatura_quando_muda(self) -> None:
         Product.objects.create(sku="CREME-TESTE", name="Creme teste", unit="kg")

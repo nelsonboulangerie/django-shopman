@@ -18,6 +18,8 @@ import type {
   RecipeCaptureDraftProjection,
   RecipeEntryCardProjection,
   RecipeKind,
+  RecipeStepInput,
+  RecipeStepProjection,
   VersionStatus,
 } from "~/types/recipeBook";
 
@@ -397,16 +399,44 @@ export function originLines(origin: Record<string, unknown> | null | undefined):
   return lines;
 }
 
-/** Passos em textarea: uma linha por passo (vazias fora). */
-export function stepsFromText(text: string): string[] {
+/** O que a etapa gravada tem além do nome, no formato de escrita da API. */
+function stepInput(step: RecipeStepInput | RecipeStepProjection): RecipeStepInput {
+  const out: RecipeStepInput = { name: step.name };
+  if (step.instructions) out.instructions = step.instructions;
+  if (step.target_seconds) out.target_seconds = step.target_seconds;
+  if (step.note) out.note = step.note;
+  return out;
+}
+
+/**
+ * Passos em textarea: uma linha por passo (vazias fora). O textarea só edita
+ * nomes; o passo que continua com o MESMO nome guarda instruções, tempo alvo e
+ * anotação que já tinha (`previous`). Nome repetido casa com o próximo ainda
+ * não usado (espelho de `recipe_steps.steps_from_names` no Craftsman).
+ */
+export function stepsFromText(
+  text: string,
+  previous: readonly (RecipeStepInput | RecipeStepProjection)[] = [],
+): RecipeStepInput[] {
+  const pool = new Map<string, (RecipeStepInput | RecipeStepProjection)[]>();
+  for (const step of previous) pool.set(step.name, [...(pool.get(step.name) ?? []), step]);
   return text
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((name) => {
+      const match = pool.get(name)?.shift();
+      return match ? stepInput(match) : { name };
+    });
 }
 
-export function stepsToText(steps: readonly string[]): string {
-  return steps.join("\n");
+export function stepsToText(steps: readonly { name: string }[]): string {
+  return steps.map((step) => step.name).join("\n");
+}
+
+/** Cópia de passos projetados para o corpo de uma versão nova. */
+export function stepsForPayload(steps: readonly RecipeStepProjection[]): RecipeStepInput[] {
+  return steps.map(stepInput);
 }
 
 /** Itens da lente ainda sem insumo casado — publicar exige todo `sku` (§3). */

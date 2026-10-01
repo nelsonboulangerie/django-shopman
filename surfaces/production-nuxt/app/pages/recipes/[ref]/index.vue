@@ -11,6 +11,7 @@ import {
   comparePath,
   formulaFromServed,
   statusBadgeVariant,
+  stepsForPayload,
   toneClass,
   unmatchedItems,
   versionRefLabel,
@@ -74,7 +75,7 @@ async function newVersion() {
     formula: formulaFromServed(base.formula),
     yield_quantity: base.yield_quantity,
     yield_unit: base.yield_unit,
-    steps: [...base.steps],
+    steps: stepsForPayload(base.steps),
     notes: base.notes,
     label: "",
   });
@@ -383,7 +384,12 @@ async function confirmArchive() {
               <div v-if="selected.steps.length" class="mt-4 rounded-md border bg-card p-4">
                 <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos</p>
                 <ol class="list-decimal space-y-1 pl-5 text-sm">
-                  <li v-for="(step, index) in selected.steps" :key="index">{{ step }}</li>
+                  <li v-for="(step, index) in selected.steps" :key="index">
+                    <span class="font-medium">{{ step.name }}</span>
+                    <span v-if="step.target_display" class="text-muted-foreground"> · {{ step.target_display }}</span>
+                    <p v-if="step.instructions" class="whitespace-pre-line text-muted-foreground">{{ step.instructions }}</p>
+                    <p v-if="step.note" class="whitespace-pre-line text-xs text-muted-foreground">{{ step.note }}</p>
+                  </li>
                 </ol>
               </div>
               <p v-if="selected.notes" class="mt-3 whitespace-pre-line text-sm text-muted-foreground">{{ selected.notes }}</p>

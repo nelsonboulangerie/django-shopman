@@ -15,6 +15,7 @@ from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.utils import units
 from shopman.utils.refs import RefField
 
@@ -35,7 +36,8 @@ class Recipe(models.Model):
     Define:
     - output_sku: o que produz (string ref, agnostico)
     - batch_size: rendimento base usado para escalar a ficha técnica
-    - steps: etapas de producao (referencia, nao tracking)
+    - steps: etapas de producao (referencia, nao tracking), na forma de
+      ``shopman.craftsman.recipe_steps``
     """
 
     ref = models.SlugField(
@@ -65,7 +67,10 @@ class Recipe(models.Model):
         default=list,
         blank=True,
         verbose_name=_("Etapas"),
-        help_text=_('Etapas de produção. Ex: ["Mistura", "Fermentação", "Modelagem", "Forno"]'),
+        help_text=_(
+            'Etapas de produção. Ex: [{"name": "Fermentação", "instructions": "Até dobrar de volume.", '
+            '"target_seconds": 5400}]'
+        ),
     )
     is_active = models.BooleanField(
         default=True,
@@ -114,14 +119,7 @@ class Recipe(models.Model):
         if self.is_active and self.output_sku:
             self._validate_unique_active_output_sku()
             _validate_output_sku_for_recipe(self.output_sku)
-        if self.steps and not isinstance(self.steps, list):
-            raise ValidationError({"steps": _("Deve ser uma lista de nomes de etapas.")})
-        if self.steps:
-            for i, s in enumerate(self.steps):
-                if not isinstance(s, str) or not s.strip():
-                    raise ValidationError(
-                        {"steps": _("Etapa %(step)s deve ser uma string não vazia.") % {"step": i + 1}}
-                    )
+        self.steps = normalize_steps(self.steps)
         self._validate_mass_balance()
 
     def _validate_mass_balance(self) -> None:

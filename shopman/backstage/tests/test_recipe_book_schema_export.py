@@ -42,9 +42,10 @@ def test_render_reflects_contract_source() -> None:
 
 
 def test_every_projection_of_the_plan_is_exported() -> None:
-    """§7 lists nineteen shapes; the surface narrows every one of them."""
+    """§7 lists nineteen shapes, plus the structured step (30/09/2026); the surface narrows every one."""
     names = {dc.__name__ for dc in CONTRACT_DATACLASSES}
     assert names == {
+        "RecipeStepProjection",
         "RecipeEntryCardProjection",
         "KindOptionProjection",
         "RecipeBookListProjection",
