@@ -24,6 +24,12 @@ describe('storefront performance guardrails', () => {
     expect(menu).toContain('lazy: import.meta.client || !canonicalOnServer')
   })
 
+  it('feeds the sitemap from the public catalog twin, not the personalized menu', () => {
+    const sitemap = source('server/routes/sitemap.xml.ts')
+    expect(sitemap).toContain('/api/v1/storefront/public/catalog/')
+    expect(sitemap).not.toContain('/api/v1/storefront/menu/')
+  })
+
   it('does not precache every iOS splash screen', () => {
     expect(source('nuxt.config.ts')).toContain("'pwa/apple-splash-*.png'")
   })
