@@ -4,12 +4,24 @@ Autoria e execução são duas coisas. A ``Recipe`` continua sendo a ficha de
 execução (o BOM que a fornada consome). O inventário é onde o padeiro escreve,
 padroniza, compara e versiona; **publicar** uma versão é o único caminho que
 escreve na ficha. Ver ``docs/plans/RECIPE-INVENTORY-PLAN.md`` §2.
+
+**Versão fechada é história, e o modelo recusa reescrevê-la.** Publicada ou
+substituída, a ``RecipeVersion`` não aceita mais mudança de conteúdo nem
+exclusão, venha de onde vier (serviço, shell, seed, Admin, ``.update()`` em
+massa, cascata da receita). O único caminho nomeado que reescreve uma versão
+fechada é o restore do cofre (:func:`restoring_recipe_versions`). SQL cru e o
+``_base_manager`` passam por baixo, como em qualquer trava de ORM.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 from shopman.craftsman.exceptions import RecipeBookError
 from shopman.craftsman.recipe_steps import normalize_steps
@@ -80,8 +92,59 @@ class RecipeEntry(models.Model):
         return self.name
 
 
+#: Ligado só dentro de :func:`restoring_recipe_versions`. ``ContextVar`` e não
+#: global de módulo: vale para a thread (e a corrotina) que abriu o restore, e
+#: para nenhuma outra requisição que esteja rodando ao lado.
+_restoring_versions: ContextVar[bool] = ContextVar("craftsman_restoring_recipe_versions", default=False)
+
+
+@contextmanager
+def restoring_recipe_versions() -> Iterator[None]:
+    """O único caminho que reescreve uma versão fechada: o restore do cofre.
+
+    Restaurar é exatamente devolver a uma versão publicada o conteúdo que ela
+    tinha quando foi exportada, inclusive por cima de uma versão adulterada no
+    banco. Fora deste bloco, a trava do ``save()`` e do ``.update()`` recusa.
+    Não abre a exclusão: restore não apaga.
+    """
+    token = _restoring_versions.set(True)
+    try:
+        yield
+    finally:
+        _restoring_versions.reset(token)
+
+
+class RecipeVersionQuerySet(models.QuerySet):
+    """``.update()`` em massa respeita a mesma trava do ``save()``.
+
+    Rascunho é livre. Em versão fechada, o único ``.update()`` aceito é o do
+    ``publish_version``: ``status`` para ``superseded``, e nada mais.
+    """
+
+    def update(self, **kwargs):
+        if not _restoring_versions.get():
+            other_fields = sorted(set(kwargs) - {"status"})
+            bad_status = "status" in kwargs and kwargs["status"] != RecipeVersion.Status.SUPERSEDED
+            if other_fields or bad_status:
+                closed = self.exclude(status=RecipeVersion.Status.DRAFT).first()
+                if closed is not None:
+                    raise RecipeBookError(
+                        "VERSION_IMMUTABLE",
+                        version_ref=str(closed),
+                        status=closed.status,
+                        fields=other_fields + (["status"] if bad_status else []),
+                    )
+        return super().update(**kwargs)
+
+
 class RecipeVersion(models.Model):
-    """Uma fórmula congelada de uma receita do inventário."""
+    """Uma fórmula congelada de uma receita do inventário.
+
+    Rascunho é editável. Publicada ou substituída, é história: ``save()``
+    recusa mudar qualquer campo (o único movimento é ``status`` de publicada
+    para substituída) e o ``pre_delete`` recusa a exclusão por qualquer caminho
+    do ORM. Ver o docstring do módulo.
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Rascunho")
@@ -148,6 +211,8 @@ class RecipeVersion(models.Model):
     published_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Publicada em"))
     meta = models.JSONField(default=dict, blank=True, verbose_name=_("Metadados"))
 
+    objects = models.Manager.from_queryset(RecipeVersionQuerySet)()
+
     class Meta:
         db_table = "crafting_recipe_version"
         verbose_name = _("versão de receita")
@@ -177,14 +242,56 @@ class RecipeVersion(models.Model):
             field = exc.data.get("field", "formula")
             raise ValidationError({"formula": f"{field}: {exc.message}"}) from exc
 
+    def __str__(self) -> str:
+        return self.version_ref if self.entry_id else f"@{self.number}"
+
     def save(self, *args, **kwargs):
         # A versão não roda full_clean no save (o service roda), mas as etapas
         # passam pelo funil sempre: nenhum caminho grava a forma antiga.
         self.steps = normalize_steps(self.steps)
-        super().save(*args, **kwargs)
+        if not self._state.adding and self.pk is not None and not _restoring_versions.get():
+            self._refuse_rewrite(kwargs.get("update_fields"))
+        return super().save(*args, **kwargs)
 
-    def __str__(self) -> str:
-        return self.version_ref if self.entry_id else f"@{self.number}"
+    def _refuse_rewrite(self, update_fields) -> None:
+        """Recusa mudar uma versão que o banco já guarda como fechada."""
+        written = None if update_fields is None else set(update_fields)
+        fields = [
+            field for field in self._meta.concrete_fields
+            if not field.primary_key
+            and (written is None or field.name in written or field.attname in written)
+        ]
+        stored = type(self)._base_manager.filter(pk=self.pk).values(
+            "status", *{field.attname for field in fields}
+        ).first()
+        if stored is None or stored["status"] == self.Status.DRAFT:
+            return
+        changed = []
+        for field in fields:
+            name = field.name
+            before = field.to_python(stored[field.attname])
+            after = field.to_python(getattr(self, field.attname))
+            if before == after:
+                continue
+            if name == "status" and before == self.Status.PUBLISHED and after == self.Status.SUPERSEDED:
+                continue
+            changed.append(name)
+        if changed:
+            raise RecipeBookError(
+                "VERSION_IMMUTABLE", version_ref=str(self), status=stored["status"], fields=changed,
+            )
+
+
+@receiver(pre_delete, sender=RecipeVersion, dispatch_uid="craftsman_recipe_version_undeletable")
+def _refuse_closed_version_delete(sender, instance, **kwargs):
+    """Versão fechada não se apaga, por caminho nenhum do ORM.
+
+    Um ``delete()`` no modelo não bastaria: ``.delete()`` em massa e a cascata
+    da ``RecipeEntry`` não passam por ele, e passam por este sinal. A coleta
+    roda numa transação, então a recusa não deixa nada apagado pela metade.
+    """
+    if instance.status != RecipeVersion.Status.DRAFT:
+        raise RecipeBookError("VERSION_UNDELETABLE", version_ref=str(instance), status=instance.status)
 
 
 def validate_formula(formula) -> None:

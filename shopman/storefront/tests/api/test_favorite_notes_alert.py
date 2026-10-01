@@ -89,7 +89,7 @@ def _customer(*, adult: bool = True, opted_in: bool = True, birthday: date | Non
 def _availability(raw):
     return patch(
         "shopman.storefront.presentation.catalog._batch_availability",
-        side_effect=lambda skus, channel_ref: dict.fromkeys(skus, raw),
+        side_effect=lambda skus, channel_ref, **_: dict.fromkeys(skus, raw),
     )
 
 

@@ -11,6 +11,8 @@ bootstrap lê a ficha e não a toca. Ver ``docs/plans/RECIPE-INVENTORY-PLAN.md``
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -67,6 +69,8 @@ __all__ = [
     "create_version",
     "derive_bom",
     "diff_versions",
+    "execution_digest",
+    "execution_in_sync",
     "item_grams",
     "looks_like_flour",
     "part_formulas_for",
@@ -257,8 +261,9 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
         )
         version.status = RecipeVersion.Status.PUBLISHED
         version.published_at = now
+        version.meta = {**(version.meta or {}), "execution_digest": execution_digest(recipe)}
         if actor:
-            version.meta = {**(version.meta or {}), "published_by": actor}
+            version.meta["published_by"] = actor
         version.save(update_fields=["status", "published_at", "meta"])
         entry.current_version = version
         entry.save(update_fields=["current_version", "updated_at"])
@@ -329,6 +334,80 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis, default_item_meta: 
     recipe.meta = {**(recipe.meta or {}), **version_meta}
     recipe.save()
     return recipe
+
+
+# ── Ficha em sincronia ───────────────────────────────────────────────────────
+
+
+def execution_digest(recipe) -> str:
+    """Impressão digital do que a ficha manda produzir: saída, rendimento, etapas e itens.
+
+    Fica de fora o que se edita à mão por direito na ficha sem desfazer a
+    publicação: nome, ``meta`` da ficha (validade, timers, perda de forno) e
+    ``meta`` dos itens (alérgenos, nutrição, densidade), além da ordem dos
+    itens. Quantidade entra normalizada (``1.000`` e ``1`` são o mesmo número).
+    """
+    items = sorted(
+        [item.input_sku, _digest_number(item.quantity), item.unit, bool(item.is_optional)]
+        for item in recipe.items.all()
+    )
+    payload = {
+        "output_sku": recipe.output_sku,
+        "batch_size": _digest_number(recipe.batch_size),
+        "steps": [_digest_step(step) for step in recipe.steps or []],
+        "items": items,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def execution_in_sync(version, recipe) -> bool:
+    """A ficha de execução ainda é a que esta versão escreveu (ADR-027)?
+
+    Dois testes, os dois têm de passar:
+
+    - **o carimbo**: ``Recipe.meta["version_ref"]`` aponta para esta versão. A
+      v1 do bootstrap não tem carimbo por construção (o bootstrap lê a ficha e
+      não a escreve), e vale pela origem: ``source.recipe_ref`` é esta ficha;
+    - **o conteúdo**: a :func:`execution_digest` da ficha hoje é a que a versão
+      guardou ao ser publicada. É o que pega a edição pelo Admin, que não mexe
+      no carimbo.
+
+    Versão publicada antes da impressão digital existir só tem o carimbo para
+    falar, e fala com ele até a próxima publicação.
+    """
+    if version is None or recipe is None:
+        return False
+    stamped = str((recipe.meta or {}).get("version_ref") or "")
+    if stamped:
+        if stamped != version.version_ref:
+            return False
+    else:
+        source = version.source if isinstance(version.source, dict) else {}
+        if not (source.get("kind") == "ficha" and source.get("recipe_ref") == recipe.ref):
+            return False
+    expected = str((version.meta or {}).get("execution_digest") or "")
+    if not expected:
+        return True
+    return expected == execution_digest(recipe)
+
+
+def _digest_step(step: dict):
+    """A etapa na impressão digital: só o nome entra como o nome; com mais, o objeto.
+
+    A digital nasceu (#1308) quando a etapa era texto, e a ``craftsman/0015``
+    reescreveu ``"Mistura"`` como ``{"name": "Mistura"}``. Reduzir a etapa que só
+    tem nome ao próprio nome mantém válida a digital guardada antes da migração;
+    instruções, tempo e anotação entram (o ``sort_keys`` deixa a ordem fixa).
+    """
+    return step["name"] if set(step) == {"name"} else step
+
+
+def _digest_number(value) -> str:
+    number = to_decimal(value)
+    if number is None:
+        return str(value)
+    return format(number.normalize(), "f")
 
 
 def _first_validation_message(exc: ValidationError) -> tuple[str, str]:
@@ -651,6 +730,8 @@ def bootstrap_entry_from_recipe(recipe):
             source={"kind": "ficha", "recipe_ref": recipe.ref},
             steps=list(recipe.steps or []),
             published_at=timezone.now(),
+            # A v1 É a ficha lida agora; a impressão digital é dela, sem escrever nela.
+            meta={"execution_digest": execution_digest(recipe)},
         )
         version.full_clean()
         version.save()

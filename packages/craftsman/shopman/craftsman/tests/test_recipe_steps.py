@@ -143,6 +143,23 @@ class TestPublish:
         work_order = craft.plan(recipe, 1)
         assert work_order.meta["_recipe_snapshot"]["production"]["steps"] == recipe.steps
 
+    def test_execution_digest_survives_the_migration_and_sees_the_method(self):
+        """Digital de etapa só com nome = digital da etapa-texto (anterior à 0015);
+        mudar instruções muda a digital, porque é conteúdo da ficha."""
+        import hashlib
+        import json
+
+        recipe = Recipe.objects.create(ref="pao", name="Pão", output_sku="PAO", batch_size=Decimal("1"),
+                                       steps=["Mistura", "Forno"])
+        legacy = {"output_sku": "PAO", "batch_size": "1", "steps": ["Mistura", "Forno"], "items": []}
+        canonical = json.dumps(legacy, ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str)
+        assert recipe_book.execution_digest(recipe) == hashlib.sha256(canonical.encode()).hexdigest()
+
+        before = recipe_book.execution_digest(recipe)
+        recipe.steps = [{"name": "Mistura", "instructions": "Até o véu."}, "Forno"]
+        recipe.save()
+        assert recipe_book.execution_digest(recipe) != before
+
     def test_the_item_note_reaches_the_sheet(self):
         formula = flour_formula()
         formula["items"][0]["note"] = "A farinha do bairro pede 2% mais água."
