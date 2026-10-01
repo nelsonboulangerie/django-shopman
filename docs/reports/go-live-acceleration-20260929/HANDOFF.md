@@ -1,17 +1,77 @@
 # HANDOFF — aceleração de go-live
 
 > 🚪 **Este é o documento de ENTRADA ÚNICA** da aceleração de go-live. Sessão nova (Claude, Codex,
-> DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0.2. O
+> DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Atualizado em 2026-10-01, ~09:35 UTC** (estado depois da Frente 0 do turno de 01/10).
-> As seções 1 a 5 são o registro de 30/09 e ficam como histórico: valem as armadilhas, não a fila.
+> **Atualizado em 2026-10-01, tarde (UTC)** (turno da tarde de 01/10, ordens do dono).
+> A seção 0 é o estado agora; "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
 
-## 0. Estado agora (01/10, depois da Frente 0)
+## 0. Estado agora (01/10, fim do turno da tarde)
 
-### 0.1 Onde as coisas estão
+### 0.1 O que entrou
+
+| Frente | PR | Estado |
+|---|---|---|
+| 0: destravar o #1330 (check `operator-kit` vermelho: a trava "clique nunca inerte" pegou o `chooseOther` do `OrderReasonDialog.vue`, async só pelo `nextTick`; NÃO era CodeQL) | #1330 | ✅ mergeado |
+| 1: mapa WP-DATA-E-PROMESSA (só documento) | #1335 | ✅ mergeado |
+| 2: receitas D11, D19, D20, D24 | #1338 | FILA_1338 |
+| 3: recibo de envio crítico (D3) | #1339 | FILA_1339 |
+| 4: checks obrigatórios conferidos contra o vivo, proposta de corte, Pix no checklist, ensaio de restore | #1336 | ✅ mergeado |
+| 5: loja, data da sacola na resolução | sem PR | **espera o dono** (D25: P1 a P3 do mapa) |
+| 6: loja, versão nova forçada (D9) e trilho no `shell/` (D10) | PR_F6 | ESTADO_F6 |
+| 7: R2 pronto e desligado (D6) | #1337 | ✅ mergeado; ligar é do dono (D30) |
+| 8: `DATABASE_CONN_MAX_AGE=0` no spec vivo (D21) | spec vivo + #1334 | ✅ feito e mergeado |
+
+Decisões novas registradas: `docs/coordination/DECISIONS.md` D-011 a D-016. Perguntas novas ao
+dono: `PENDING-DECISIONS.md` D25 a D30.
+
+### 0.2 Frente 8, como foi feita (não refaça)
+
+Drift `[OK]` antes, nada em SUMIRIAM → backup `spec get` (965 linhas, 42 `type: SECRET`) → uma linha
+(`133c133`, `DATABASE_CONN_MAX_AGE` `"60"` → `"0"`) → `apps update` → deployment `c4f07630` ACTIVE →
+`spec get` de novo: só a linha 133 difere, 42 SECRET idênticas chave a chave → drift `[FAIL]` só nessa
+env até o #1334 trazer o arquivo, depois `[OK]` → `/health/live/` e `/health/ready/` 200.
+`connect;dur` no `shell/` (n=10): média 42,5 ms antes, 37,4 ms depois (ruído; o ganho é não deixar
+backend ocioso). Depois de 30 requests concorrentes: 3 conexões ociosas no banco `shopman` (as do
+PgBouncer). Não havia contagem viva de "antes". Os workers também recebem 0 e reconectam por ciclo.
+
+### 0.3 Ensaio de restauração: o que foi e o que NÃO foi feito
+
+- **Fork (o de verdade): NÃO FEITO.** `doctl databases fork` → `403`; falta `database:create` no
+  `shopman-do-app-admin`. É do dono (D29). Continua portão duro.
+- **Lógico (complemento):** `pg_dump` pela conexão direta 25060 em 104 s (7,1 MB), `pg_restore -j4`
+  local em 23 s, 4815 pedidos, último `PDV-260930-R62`, 306 migrações: tudo bate; `make
+  migrations-pending` contra o restaurado: 0 pendente. Banco e dump locais apagados depois.
+  Runbook corrigido (`DJANGO_DEBUG=true`, fork herda o plano): `docs/runbooks/backup-e-restore.md`.
+
+### 0.4 ⚠️ Pix: última chave a LIGAR, não a ENSAIAR
+
+O botão público que deixa o cliente marcar o próprio pedido como pago (Pix no simulador, D-006)
+**continua aberto**, por decisão do dono. O ensaio do Pix real (`payment_efi` + `EFI_SANDBOX=true` +
+`SHOPMAN_EXPOSE_MOCK_CAPTURE=false`, que fecha o botão por construção) e a rotação do
+`EFI_WEBHOOK_TOKEN` (D22) têm de acontecer **ANTES** da virada. Está no
+`docs/runbooks/go-live-preflight.md` §4 e é regra de parada no `go-live-cutover.md` §0 (D-016).
+
+### 0.5 O que depende do dono
+
+D25 (data e promessa, destrava a Frente 5) · D26 (editar publicada no app) · D27 (mais eventos
+críticos, alerta frequente) · D28 (corte de escopo) · D29 (token para o fork) · D30 (R2) · e as
+abertas de antes: D2, D8, D18 (b, d, e), D22, D23.
+
+### 0.6 Em voo que não é deste turno
+
+- #1293 (docs: contexto doctl renomeado) em `CONFLICTING`, com check do Marketing vermelho; de 30/09.
+- #1257 (PDV: saldo de encomenda) com `operator-kit` vermelho (trava de links cross-app), de 29/09.
+- Drafts #1220 a #1223 (snapshots WIP de outras frentes).
+
+---
+
+## 0-manhã. Estado de 01/10 depois da Frente 0 (histórico)
+
+### 0m.1 Onde as coisas estão
 
 | O quê | Estado | Onde |
 |---|---|---|
@@ -23,7 +83,7 @@
 | D13 republicar fichas com insumo repetido | ✅ **nada a fazer**: no alpha, 72 receitas com versão atual e 74 versões no total, **zero** com o mesmo SKU em duas linhas (consulta só-leitura, conexão direta 25060) | — |
 | D15 picos Cloudflare ↔ DO | medido 01/10 09:23–09:27 UTC: **não reproduz** (400 requisições, 0 erro, 0 acima de 5 s; tamanho, encoding, IPv4/6 e H1/H2 descartados; H3 e outra rede não medidos). Deployments explicam no máximo 2 de 4 picos; o 520 das 04:44:41 caiu fora de troca. Chamado na DO só para pedir log da madrugada | NIGHT-REPORT |
 
-### 0.2 Ordem de leitura
+### 0m.2 Ordem de leitura
 
 1. **Este arquivo** (estado, em voo, armadilhas).
 2. `docs/reports/go-live-acceleration-20260930-diag/NIGHT-REPORT.md` (o que entrou no turno, medições de produção).
@@ -31,7 +91,7 @@
 4. `docs/reports/go-live-acceleration-20261001/` (D14, D4, D5, D16: diagnósticos com caminho:linha).
 5. Só para regras de convivência e deploy: `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` §1 a §5.
 
-### 0.3 D14, como foi fechado (não refaça)
+### 0m.3 D14, como foi fechado (não refaça)
 
 - `make deploy-spec-drift context=shopman-do-app-admin` acusava **uma** divergência: o `run_command`
   do `web` sem `--access-log=/dev/null` (a flag está em `.do/app.alpha-subdomains.yaml` desde 05/09).
@@ -47,7 +107,7 @@
   webhook (sem mTLS, allowlist de IP vazia). **Rotacionar é OBRIGATÓRIO antes de ligar a Efí de
   produção** (item de checklist do corte do Pix). Ver `d14-token-efi.md` §7.
 
-### 0.4 Turno de 01/10: frentes (atualizado ~10:35 UTC)
+### 0m.4 Turno de 01/10: frentes (atualizado ~10:35 UTC)
 
 | Frente | PR | Estado |
 |---|---|---|

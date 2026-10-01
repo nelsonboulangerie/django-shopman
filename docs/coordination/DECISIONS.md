@@ -205,6 +205,13 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-007 | Postura de multi-dispositivo no mesmo balcão | `DECIDIDA` | 2026-12-31 |
 | D-008 | Autoria por linha na comanda: implementar | `DECIDIDA` | 2026-12-31 |
 | D-009 | Deploy na DO: só `create-deployment`, **nunca** `apps update` de arquivo | `DECIDIDA` | 2026-12-31 |
+| D-010 | Cloudflare R2 para arquivos de usuário | `EM_EXECUCAO` | 2026-10-15 |
+| D-011 | `DATABASE_CONN_MAX_AGE=0` no spec vivo (D21) | `DECIDIDA` (aplicada) | 2026-12-31 |
+| D-012 | Receita: o padeiro pode fazer o que quiser (D11) | `DECIDIDA` | 2026-12-31 |
+| D-013 | Receita: temperatura opcional, 92 etapas são rascunho, nota e "Fontes" (D19, D20, D24) | `DECIDIDA` | 2026-12-31 |
+| D-014 | Recibo de envio crítico: reserva por e-mail e SMS só em evento crítico (D3) | `DECIDIDA` | 2026-10-31 |
+| D-015 | Loja: forçar a versão nova, nunca durante pagamento (D9); trilho fora do `shell/` só se ninguém o exibe (D10) | `EM_EXECUCAO` | 2026-10-31 |
+| D-016 | Pix real se ENSAIA antes da virada; Efí, Stripe e Focus são as últimas a LIGAR | `DECIDIDA` | 2026-10-15 |
 | B-001 | Alpha SEM DEPLOY desde 29/09 21:31 UTC | `BLOQUEADA` | 2026-10-01 |
 
 ---
@@ -572,3 +579,97 @@ componente novo na DO, e respeita a regra da casa sobre custo da conta DO.
 
 **Prova.** PR `feat/storage-r2-desligado`; `config/settings.py:581` (`"default": media_storage()`),
 `config/media_storage.py:55-103`, testes em `shopman/shop/tests/test_media_storage.py`.
+
+---
+
+## D-011 · `DATABASE_CONN_MAX_AGE=0` no spec vivo
+
+- **Estado:** `DECIDIDA` (aplicada) · **Dono:** Pablo (operação) · **Data:** 2026-10-01 · **revisar_em:** 2026-12-31
+
+**Decisão do dono:** autorizou a escrita no spec vivo para o degrau 1 do D12 (pergunta D21), com
+protocolo. É exceção autorizada à D-009 (que proíbe `apps update` **de arquivo**): o update foi
+feito a partir do próprio spec vivo, mudando uma linha, como no D14.
+
+**Prova.** Drift `[OK]` antes; backup do vivo; diff de uma linha (`133c133`, `"60"` → `"0"`);
+`apps update` → deployment `c4f07630` ACTIVE; 42 SECRET idênticas antes e depois (chave a chave);
+`/health/live/` e `/health/ready/` 200; `connect;dur` no `shell/` (n=10) 42,5 → 37,4 ms (ruído).
+Arquivos versionados seguiram no PR #1334 (mergeado), e o drift voltou a `[OK]`. Os workers
+recebem o mesmo 0 e reconectam por ciclo (já chamavam `close_old_connections()`).
+
+---
+
+## D-012 · Receita: o padeiro pode fazer o que quiser
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-12-31
+
+**Decisão do dono (D11):** versão publicada ou substituída volta a poder ser editada e apagada por
+qualquer caminho normal, inclusive em cascata. O cofre continua guardando as versões.
+
+**Prova.** PR #1338: as recusas do #1308 saíram de
+`packages/craftsman/shopman/craftsman/models/recipe_book.py`; a impressão digital do "fora de
+sincronia" fica; `restoring_recipe_versions()` saiu junto (sem trava não há o que destravar), e o
+backup restaura versões (`shopman/shop/tests/test_backup.py`). Emenda no ADR-027.
+
+---
+
+## D-013 · Receita: temperatura opcional, rascunho das massas, nota e "Fontes"
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-12-31
+
+**Decisão do dono.** D19: o operador só lê a etapa; temperatura é campo opcional da etapa, sem
+templates; anotação na versão. D20: as 92 etapas das 11 massas são rascunho do Claude, não dado
+da casa. D24: rascunho pode receber nota; avaliar de novo substitui a nota do mesmo operador;
+notas, critérios e fontes entram no backup; o bloco se chama "Fontes".
+
+**Prova.** PR #1338: `temperature_celsius` em `packages/craftsman/shopman/craftsman/recipe_steps.py:36`;
+aviso no topo de `docs/reference/processo-das-massas-proposta-2026-09-05.md` e trava em
+`shopman/shop/tests/test_seed_sem_processo_das_massas.py`; abas `recipe_rating_criteria` e
+`recipe_version_ratings` em `shopman/backstage/backup_resources.py:125` e `:159`. "Referência" já
+nomeava a faixa da literatura (`FormulaLens.vue`), por isso "Fontes"; a chave interna segue
+`external_references` porque `sources` colidiria com `RecipeVersion.source`.
+
+---
+
+## D-014 · Recibo de envio crítico
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-31
+
+**Decisão do dono (D3):** e-mail e SMS podem sair sozinhos como reserva quando o WhatsApp não
+confirmar, só em evento crítico, e é preciso recibo.
+
+**Consequência.** Aceite sem identificador do provedor deixa de ser entrega; em evento crítico a
+cadeia segue para o próximo canal, inclusive depois de resposta ambígua. Críticos hoje:
+`payment_link_sent` e `order_accepted` (`CRITICAL_NOTIFICATION_TEMPLATES`,
+`shopman/shop/services/notification.py:49`). O operador vê o recibo no detalhe do pedido do
+Gestor ("Avisos ao cliente"); crítico sem comprovante abre alerta. ManyChat e Comtele não devolvem
+identificador: o `Message-ID` do e-mail é hoje o único comprovante. Explicação para operador em
+`docs/reference/comprovante-de-entrega.md`.
+
+**Prova.** PR #1339.
+
+---
+
+## D-015 · Loja: forçar a versão nova (D9) e o trilho de sugestão no `shell/` (D10)
+
+- **Estado:** `EM_EXECUCAO` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-31
+
+**Decisão do dono.** D9: forçar. Versão nova aplicada na navegação e, fora de checkout, pedido e
+login, aviso que bloqueia a tela; nunca durante pagamento. D10: omotenashi primeiro; o trilho sai
+do `shell/` só se nenhuma tela que consome o `shell/` o exibe.
+
+**Prova.** PR_F6.
+
+---
+
+## D-016 · Pix real se ensaia antes da virada
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-15
+
+**Decisão do dono.** Efí, Stripe e Focus são as últimas chaves a **ligar**, não as últimas a
+**ensaiar**. O botão público de quitar o próprio pedido (Pix simulado, D-006) não fecha hoje, mas
+o ensaio do Pix real (`payment_efi` com `EFI_SANDBOX=true` + `SHOPMAN_EXPOSE_MOCK_CAPTURE=false`,
+que fecha o botão por construção) tem de acontecer ANTES da virada, junto da rotação do
+`EFI_WEBHOOK_TOKEN` (D22).
+
+**Prova.** Item no `docs/runbooks/go-live-preflight.md` §4 e regra de parada no
+`docs/runbooks/go-live-cutover.md` §0 (PR #1336, mergeado).
