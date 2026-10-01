@@ -17,6 +17,28 @@
 > submeter antes de continuar**: template aprovado com texto errado não se edita, reaprova,
 > e a fila da Meta leva 24-48h por rodada.
 
+> ## Catálogo lido no ManyChat em 01/10/2026
+>
+> Configurações > WhatsApp > Modelos de Mensagem, leitura da tela (sem API). São 20 modelos:
+> 19 aprovados, o `OTP` recusado (não faz falta: o código vai por SMS) e nenhum pendente.
+>
+> - **Aprovados deste pacote (14):** `pedido_recebido`, `pedido_recebido_fora_horario`,
+>   `pedido_confirmado`, `pedido_pronto_retirada`, `pedido_pronto_entrega`,
+>   `pedido_saiu_entrega`, `pedido_entregue` (⚠️ reclassificado como Marketing),
+>   `nota_fiscal_disponivel`, `pedido_cancelado`, `pedido_nao_confirmado`,
+>   `pedido_agendado_lembrete`, `pedido_nova_data`, `pedido_atualizado`, `pagamento_solicitado`.
+> - **Aprovados fora deste pacote (5):** `AutoReply`, `LateResponse`, `OrderConfirmation`,
+>   `product_available_alert`, `Unsold Bread` (os dois últimos Marketing).
+> - **Faltam submeter, texto já revisado pelo dono em 25/09 (11):** `pagamento_confirmado`,
+>   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, `pagamento_expirado`,
+>   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
+>   `reembolso_processado`, `pontos_fidelidade`.
+> - **Fora do go-live (Marketing) ou sem revisão de voz:** `saiu_do_forno`, `anuncio_novidade`,
+>   `pedido_compra` (fornecedor).
+>
+> No ManyChat a variável do corpo é um campo personalizado: `customer_name` é `cuf_14859629`,
+> `order_ref_short` é `cuf_15003507`, `status_note` é `cuf_15003511` (lidos nos aprovados).
+
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
 > Pesquisa de regras: Meta + BSPs, jun/2026. Medição contra o código: 02/09/2026;
@@ -43,8 +65,8 @@ acompanha. **Todo template novo nasce com `www.`.**
 > `menu.` depois dele. O site passou para `www.` em 17/09 e o parágrafo não acompanhou —
 > ficou uma nota de rodapé dizendo `www.` por cima de um item dizendo `menu.`. Como o
 > prefixo é **fixo dentro do template aprovado**, errá-lo não é edição de uma linha: é um
-> ciclo de re-submissão à Meta, vezes os **oito** templates cujo botão usa o prefixo fixo
-> (o nono, o `link_pagamento_enviado`, leva a URL da cobrança e não depende disto). Antes
+> ciclo de re-submissão à Meta, vezes cada template cujo botão usa o prefixo fixo (desde
+> 02/10/2026 o `link_pagamento_enviado` também usa). Antes
 > de submeter o primeiro botão, confira o spec vivo — não este parágrafo:
 >
 > ```
@@ -256,6 +278,11 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > saindo por SMS e e-mail.
 
 ### `pedido_entregue` — evento `order_delivered`
+> ⚠️ **A Meta reclassificou este template como MARKETING** (lido no ManyChat em 01/10/2026:
+> Configurações > WhatsApp > Modelos de Mensagem, `pedido_entregue`, categoria Marketing,
+> aprovado). Efeito: custa como Marketing, e quem recusou mensagem de marketing deixa de
+> recebê-lo. Os outros 17 aprovados seguem Utility.
+
 - Corpo: `Seu pedido {{1}} foi entregue. Esperamos que tenha gostado, {{2}}! Obrigada por nos prestigiar! 💛✨`
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Ana` (`customer_name`)
 - Sem botão.
@@ -318,7 +345,15 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Oi, {{1}}! Anotamos seu pedido {{2}} no valor de {{3}}. Pague até {{4}} para garantir. Depois disso liberamos a reserva.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`) · `{{4}}`=`hoje às 18h` (`payment_deadline`)
-- Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (`checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ✅ **O botão leva à tela do pedido, não à cobrança (decisão do dono, 02/10/2026).** A Meta
+> exige domínio fixo com a variável no fim, e o link do Stripe termina em `#…`, que corre o
+> risco de ser codificado no caminho. A tela do pedido já mostra o link de cobrança: para
+> `method == "link"` ela trata como checkout hospedado
+> (`surfaces/storefront-nuxt/app/presentation/payment.ts:15-16`) e desenha o botão "Pagar com
+> cartão" com `href=checkout_url` (`surfaces/storefront-nuxt/app/components/PaymentBlock.vue:53-62`).
+> O preço é um toque a mais; o mesmo do `pagamento_solicitado`.
 
 > ✅ **`{{4}}` nunca chega vazio — medido em 25/09/2026, não suposto.** Era a única
 > dependência de dado opcional do pacote, e o caminho foi percorrido inteiro: o
@@ -417,7 +452,6 @@ campo personalizado**. Sobram dois formatos:
 | Botão | Onde | Destino |
 |---|---|---|
 | `Acompanhar pedido` · `Ver pedido` · `Ver detalhes` · `Pagar pedido` · `Tentar de novo` · `Confirmar pedido` · `Confirmar recebimento` · `Ver nota fiscal` | a maioria | `…/pedido/{{n}}` + `order_ref` |
-| `Pagar pedido` (só no `link_pagamento_enviado`) | pedido do PDV | a URL da cobrança inteira (`checkout_url`) — sessão do gateway, não página da loja |
 | `Garantir já` | `produto_chegou`, `saiu_do_forno` | `…/produto/{{n}}` + **`product_sku`** |
 | `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
 | `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
