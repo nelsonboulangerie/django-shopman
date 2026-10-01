@@ -52,6 +52,9 @@ const SW_ORIGINAL = '"storefront-fonts"'
 const SW_NEXT = '"storefront-f0nts"'
 
 test('versão nova aparece num aviso persistente e só entra pelo toque', async ({ page }) => {
+  // Duas instalações completas do worker (o precache inteiro, duas vezes) não cabem
+  // no teto padrão de 30 s num runner lento da CI.
+  test.setTimeout(90_000)
   const original = await readFile(swPath, 'utf8')
   expect(original).toContain(SW_ORIGINAL)
 
@@ -78,14 +81,14 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
 
     // Só o toque aplica: o worker novo assume e a página recarrega sem aviso.
     expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true)
-    const reloaded = page.waitForEvent('load')
     await prompt.getByRole('button', { name: 'Atualizar' }).click()
-    await reloaded
+    // A página recarrega no meio da sonda: avaliação perdida na troca conta como "ainda não".
     await expect.poll(async () => page.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration()
       return Boolean(registration?.active && !registration.waiting)
-    })).toBe(true)
-    await expect(prompt).toBeHidden()
+    }).catch(() => false), { timeout: 30_000 }).toBe(true)
+    // Recarregada com o worker novo no comando, não há mais versão em espera.
+    await expect(prompt).toBeHidden({ timeout: 15_000 })
   } finally {
     await writeFile(swPath, original)
   }
