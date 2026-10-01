@@ -146,4 +146,27 @@ local). É ~60% do que sobra no `catalog/`. O turno só MEDE: o PR da frente Ond
 **Opções (decidir com o número do Server-Timing novo na mão).** 1) Pool de conexões do Django
 (Django 5.1+, exige `psycopg[pool]`), com tamanho compatível com o PgBouncer (pool 5 hoje).
 2) Ajustar `CONN_MAX_AGE` (efeito limitado sob ASGI). 3) Servir as rotas síncronas por WSGI (gunicorn).
-**Recomendação:** 1, depois de 24 h de `connect;dur` medido, com teste de carga no alpha.
+Mais duas, levantadas pela Onda 2b (#1313): 4) um pool de conexões Redis por processo (hoje
+cada request monta o seu: 7 conexões para 6 requests); 5) ajuste de coleta de lixo (`gc.freeze()`
+após o boot, ou limiares maiores). Na bancada, 3 de 40 requests pagaram 100–150 ms de GC completo.
+A opção 3 provavelmente é componente novo na DO (regra dos US$ 100/mês).
+**Medido no ar depois do #1313 (01/10 ~04:30 UTC, por request):** `connect` 30–65 ms (sempre 1
+conexão nova), `cache` 65–170 ms em 3 a 7 chamadas (**~25 ms por chamada ao Redis**: é o maior
+custo fixo), `gc` em geral < 10 ms com picos de 265–325 ms. No `shell/` (7 ms de banco), connect
++ cache = ~110–150 ms dos ~150–200 ms de projeção.
+**Recomendação:** 4 e 5 primeiro (não mexem no PgBouncer); depois 1, com 24 h de `connect;dur`
+medido e teste de carga no alpha.
+
+## D13 — Republicar as fichas com o mesmo insumo em duas linhas (#1317)
+
+**Contexto.** Até o #1317, fórmula com o mesmo SKU em duas linhas (ex.: água da massa + água da
+bassinage) gravava na ficha os gramas errados: 650 g + 50 g viravam 100 g; com levain, zero.
+O consumo de insumo das fornadas, o custo, os alérgenos e a nutrição saíram dessa ficha errada, e
+o "em sincronia" não acusa nada (a assinatura foi tirada da ficha errada). O #1317 conserta daqui
+para frente; o corpo dele traz um trecho só-leitura para `manage.py shell` que lista as receitas
+afetadas no alpha, com a quantidade gravada e a certa. O turno não rodou contra o alpha.
+
+**Opções.** 1) Rodar o trecho e republicar (nova versão a partir da atual) cada receita listada.
+2) Deixar como está até o reseed.
+**Recomendação:** 1. As fornadas já finalizadas baixaram insumo a menos no estoque; isso fica como
+está (corrigir ledger é outra decisão).

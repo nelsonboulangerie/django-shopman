@@ -1,155 +1,144 @@
 # NIGHT-REPORT — turno autônomo 30/09 → 01/10/2026
 
 > Coordenador: Claude (sessão `turno-autonomo-coordenacao`). Briefing:
-> `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` (PR #1297).
-> Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md).
+> `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` (#1297 + #1302).
+> **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D13).
 
 ## Em uma tela
 
-| Frente | PR | Estado | Uma linha |
-|---|---|---|---|
-| Briefing + HANDOFF | #1297 | ✅ mergeado | Só docs |
-| Briefing 6.2 + 5 diagnósticos | #1302 | ✅ mergeado | Só docs |
-| **F1** drift do spec (`deploy_on_push`) | #1291 | ✅ mergeado | Teste exige DESLIGADO, como o vivo |
-| **F2** `brace-expansion` no audit | #1298 | ✅ mergeado | "Marketing — cadeia completa" deixa de reprovar todo PR |
-| **F5** PWA travado | #1301 | ✅ mergeado | Sonda + aviso persistente do operator-kit; sem recarga automática (D9) |
-| **F6** segundo clique | #1300 | ✅ mergeado | Bugs A, C, D corrigidos; **B é decisão sua (D1)** |
-| **O6.1** cofre sem histórico de receitas | #1303 | ✅ mergeado | Única perda de dado da lista; versões entram no backup |
-| **F4** consultas da sacola | #1304 | ✅ mergeado | −62 consultas por request com sacola; payload idêntico (A/B, 15 pares) |
-| **O3a** link de pagamento no balcão | #1306 | ✅ mergeado | `link` só em Encomendas: trava no servidor + botão some no Balcão |
-| **O1** nome+sobrenome no login WhatsApp | #1305 | ✅ mergeado | Divide na entrada, guarda o texto cru; backfill é decisão sua (D8) |
-| **O5A** etapas das receitas estruturadas | #1307 | 🚦 na fila | `steps` com modo de fazer/tempo/nota; nota do item chega à ficha |
-| **F3** P2 disponibilidade (Core) | #1309 | ✅ mergeado, **medido no ar** | `/catalog/`: disponibilidade 853 → 396 ms, TTFB 1,79 → 1,44 s; revisão independente: seguro |
-| **O6.2/3** versão imutável + ficha em sincronia | #1308 | ✅ mergeado | Versão publicada não muda nem se apaga; restore do cofre por caminho nomeado (D11) |
-| **O8** reputação por versão (leitura) | #1310 | ✅ mergeado | Produção agregada por `version_ref`, com os avisos de perda no dado |
-| **PWA-E2E** "Atualizar" do app instalado travava | #1311 | 🚦 na fila | **Defeito real**: o spinner do botão buscava ícone pela rede no meio da troca de worker; ícones empacotados + trava |
-| **Ícones nos apps de operador** | — | 🛠️ em andamento | Mesmo gatilho do #1311 nos 8 apps de operador |
-| **Sitemap** lê a gêmea pública | #1312 | 🚦 checks | Tira o único consumidor do `menu/` lento (O2); 40 SKUs e 8 coleções idênticos |
-| **Onda 2a** catálogo fora da disponibilidade | #1314 | 🛠️ checks | 36 → 15 ms na bancada, payload idêntico (≈ −350 ms estimado no ar) |
-| **Onda 2b** Server-Timing `connect`/`cache`/`gc` + memo do `Shop` | #1313 | 🛠️ checks | Só mede o custo fixo por request; pool de conexões é decisão (D12) |
-| **FUSO** testes que quebram 21h–24h | — | 🛠️ em andamento | 2 testes reprovaram na janela UTC≠local; apurando teste × código |
-| O2 rota `/menu` | — | ✅ não mexer | Veredito: não procede |
+**Produção:** no ar a noite toda. Nenhuma escrita no spec vivo, nenhuma recuperação precisou ser
+usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
+na `home/` privada desde ~04:26 UTC, em investigação.
 
-**Precisa de você (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):**
+**Mergeado (22 PRs):**
+
+| Frente | PR | O que mudou para você |
+|---|---|---|
+| Briefing + 6.2 | #1297, #1302 | Docs da noite no main |
+| F1 drift do spec | #1291 | `make deploy-spec-drift` volta a poder ficar verde |
+| F2 audit `brace-expansion` | #1298 | "Marketing — cadeia completa" parou de reprovar todo PR |
+| **F3 disponibilidade num cálculo só** (Core) | #1309 | **`/catalog/` (página `/menu`): disponibilidade 853 → 396 ms, TTFB 1,79 → 1,44 s no ar** |
+| F4 consultas da sacola | #1304 | −62 consultas por request com sacola; payload idêntico |
+| Onda 2a catálogo fora da disponibilidade | #1314 | 36 → 15 ms na bancada (≈ −350 ms no ar, a medir); Destaques com até 5 min de atraso |
+| Onda 2b Server-Timing `connect`/`cache`/`gc` | #1313 | Custo fixo por request agora visível (ver D12) |
+| Sitemap pela gêmea pública | #1312 | O `menu/` lento ficou sem consumidor de produção |
+| **F5 PWA travado** | #1301 | App instalado sonda versão nova e avisa até atualizar |
+| **PWA "Atualizar" não aplicava** (defeito real) | #1311 | O spinner buscava ícone pela rede no meio da troca de worker |
+| Ícones empacotados nos 8 apps de operador | #1316 | Mesmo gatilho do #1311, fechado e travado por teste |
+| **F6 segundo clique** | #1300 | Bugs A, C, D; **B é sua (D1)** |
+| O1 nome/sobrenome no login WhatsApp | #1305 | Divide na entrada; backfill é seu (D8) |
+| O3a link de pagamento no balcão | #1306 | `link` só em Encomendas (servidor + tela) |
+| **O6.1 cofre sem histórico de receitas** | #1303 | Única perda de dado da lista: versões entram no backup |
+| O6.2/3 versão imutável + ficha em sincronia | #1308 | Versão publicada não muda nem se apaga (D11) |
+| O5A etapas estruturadas | #1307 | `steps` = `{name, instructions, target_seconds, note}`; migração 0015 aplicada no alpha |
+| O8 reputação por versão (leitura) | #1310 | Produção por `version_ref`, com os avisos de perda no dado |
+| **BOM: mesmo insumo em duas linhas** (Core) | #1317 | Ficha gravava 100 g de água em vez de 700 g; republicar é seu (D13) |
+| FUSO testes 21h–24h | #1315 | 2 testes que reprovavam perto da meia-noite; código estava certo |
+
+**Na fila / aberto:**
+
+| Frente | PR | Estado |
+|---|---|---|
+| F4b disponibilidade reaproveitada no request | #1318 | revisão independente: seguro; conflito de texto resolvido, checks finais |
+| O8 Favorita por operador | #1319 | checks rodando |
+| NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
+| (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
+
+**Precisa de você** (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):
 🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D3 link "entregue" sem entrega (ManyChat) ·
-D1 botão "Adicionar" inerte até carregar · D4 motivos de rejeição · D5 modo de fazer das receitas ·
-D6 storage de anexos · D7 critérios da nota · D8 backfill de nomes · D9 PWA forçar versão nova ·
-D10 trilho de sugestão no `shell/` · D11 versão de receita não se apaga · D12 pool de conexões.
-
-**Produção:** no ar a cada verificação (monitor a cada 90 s). Deploys da noite saindo pelo
-`deploy-images.yml`, causa `manual`, sem intervenção. Nenhuma escrita no spec vivo.
+D13 republicar fichas com insumo repetido · D12 conexão nova por request (pool) · D1 botão "Adicionar"
+inerte até carregar · D4 motivos de rejeição · D5 modo de fazer · D6 storage de anexos · D7 critérios
+da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `shell/` · D11 versão não se apaga.
 
 ---
 
-## Detalhe por frente
+## Observação de produção (não é queda)
 
-### Briefing (#1297)
-PR aberto do branch `dsh/handoff-onda1-e-p7-20260930` e enfileirado. Nenhum arquivo alterado.
+- Desde ~04:26 UTC a `home/` **privada** (cliente com sessão; a loja anônima usa a gêmea pública
+  cacheada e não sofre: `www` 0,6–0,8 s) tem picos de 15–40 s, timeouts e um 520 da Cloudflare,
+  intermitentes (às 05:02–05:07 cerca de metade dos requests; às 05:08–05:09, 16/16 normais).
+- O log da origem mostra a `home/` terminada 1–2 s depois do início do request do cliente, mesmo
+  quando o cliente esperou 27–35 s: a origem responde, e os bytes empacam entre ela e o cliente.
+  Um request recebeu 13 de 19 KB em 40 s. Com URL diferente (`?probe=N`) não reproduziu.
+- Suspeita: borda (Cloudflare colapsando requests da mesma URL, ou bot management) ou ingress da DO.
+  A coincidência com o deploy das 04:25 (#1312/#1313) existe, mas os dois não mexem na `home/`.
+  Investigação só-leitura em andamento; nada foi alterado em infra.
+- Os "000" de saúde durante a noite coincidem com cada troca de deployment: o `web` é **1 instância
+  de 1 vCPU com um processo daphne**, então cada deploy dá alguns segundos de indisponibilidade.
 
-### F1 — #1291 vermelho → corrigido
-- **Causa:** o PR desliga `deploy_on_push` nos 8 componentes de imagem, mas
-  `shopman/shop/tests/test_nuxt_deploy_config.py` (`assert_image`) ainda exigia `enabled is True`.
-  Derrubava `Testes (test-shop)` (obrigatório), `Shop rest` e `Coverage Gate`.
-- **Correção:** o teste passa a exigir que NÃO esteja ligado, com a mensagem apontando o
-  `deploy-images.yml` (um deployment por run). Docstring atualizada.
-- **Prova:** `pytest test_nuxt_deploy_config.py test_do_spec_drift_check.py` → `38 passed`.
-- Commit empurrado no próprio branch do #1291 (mesma frente); auto-merge já estava ligado.
+## Medições de produção
 
-### F2 — `brace-expansion` (#1298)
-- **Causa:** `npm audit --audit-level=high` do operator-kit reprova o check *Marketing — cadeia
-  completa* em todo PR. Os **10** locks de `surfaces/` tinham a versão vulnerável.
-- **Correção:** só as entradas `brace-expansion` (2.1.4→2.1.7, 5.0.9→5.0.12), com `balanced-match`
-  conferido por script no caminho de lookup de cada entrada.
-- **Por que não `npm audit fix`:** re-resolvia o lock inteiro em 6 apps (≈10 mil linhas, bindings
-  nativos do `@oxc-parser` sumindo porque a resolução roda no macOS). Descartado.
-- **Prova:** `npm audit --audit-level=high` OK nos 10; `npm ci` limpo no operator-kit e no
-  storefront; `check_surface_versions.py` ✓.
+| Quando (UTC) | Deployment | `catalog/` TTFB | availability | `home/` TTFB | Nota |
+|---|---|---|---|---|---|
+| 02:33 | `5462dcc7` | 1,79 s | 853 ms | 1,07 s | base (F4/F5/F6 no ar) |
+| 02:45 | `acbfc026` | **1,44 s** | **396 ms** | 1,13 s | F3 no ar |
+| 04:25 | `16676254` | 1,41–1,87 s | 370–440 ms | 1,2–2,2 s + picos | Server-Timing novo |
+
+Custo fixo por request (#1313, medido no ar): `connect` 30–65 ms (sempre 1 conexão nova),
+`cache` ~25 ms **por chamada** ao Redis (3–7 chamadas), `gc` normalmente < 10 ms com picos de 265–325 ms.
 
 ---
 
-## Saúde da produção (medições)
+## Detalhe das frentes
 
-| Hora (UTC) | Loja `www.nelsonboulangerie.com.br/` | API `/health/live/` | `/health/ready/` | Deployment ativo |
-|---|---|---|---|---|
-| 01/10 00:0x | 200 (2,5 s) | 200 | 200 | `405e3f25` manual, ACTIVE 30/09 23:12 |
+### F1 — #1291
+`test_nuxt_deploy_config.py` exigia `deploy_on_push` ligado; o PR desliga como o vivo. O teste passou a
+exigir desligado. 38 testes do spec/drift passam.
 
-### O6 fatia 1 — cofre (#1303)
-- **Defeito:** `shopman/shop/backup/resources.py` levava `Recipe`/`RecipeItem`, nada de
-  `RecipeEntry`/`RecipeVersion`. Restore devolvia a última ficha e perdia todo o histórico.
-- **Correção:** abas `recipe_entries` e `recipe_versions` (chave `entry__ref`+`number`; coluna
-  `is_current` restaura a `current_version`). Sem migração, sem `packages/`.
-- **Prova:** 2 testes novos (apaga tudo → restaura cada campo; versão reescrita → volta);
-  `test_backup.py` 16 passed, `_drive` 4, `_sheet_domain` 4, backstage `_backup_api` 3.
+### F2 — #1298
+Troca cirúrgica de `brace-expansion` nos 10 locks (2.1.4→2.1.7, 5.0.9→5.0.12). `npm audit fix` foi
+descartado: re-resolvia locks inteiros (≈10 mil linhas, bindings nativos sumindo).
 
-### F6 — segundo clique (#1300)
-- A: o navegador não faz mais a semente de CSRF antes do 1º clique (era um GET da sacola inteira
-  com erro engolido); a semente do BFF que cai na rede não derruba mais a mutação; `csrf;dur` no
-  `Server-Timing`. C: `refreshCart` descarta resposta anterior à mutação (época). D: decremento
-  único em `finally`. 6 testes novos vermelhos no código antigo, verdes agora.
-- B ficou de fora: muda o que o cliente vê na carga. → D1.
+### F3 — #1309 (Core)
+Uma leitura de estoque por request (eram 4). `availability_for_skus_on_dates` no Stockman;
+`availability_for_skus` é o caso de uma data. Prova: oráculo antigo congelado, 48 recortes × 6 datas,
+mutação (32 e 48 testes reprovam), JSON idêntico, digest do Continuum igual. **P7 não aplicado; trava
+intacta.** Revisão independente: "seguro".
 
-### F4 — consultas da sacola (#1304)
-| endpoint | sem sacola | 1 item antes → depois | 5 itens antes → depois |
-|---|---:|---:|---:|
-| `home/` | 45 | 166 → **104** | 199 → **134** |
-| `catalog/` (página `/menu`) | 66 | 72 → 72 | 72 → 72 |
-| `menu/` | 66 | 187 → **125** | 220 → **155** |
-| `shell/` | 3 | 118 → **56** | 151 → **86** |
-| `cart/` | 1 | 117 → **55** | 150 → **85** |
+### F4 — #1304 e F4b — #1318
+F4: `keywords.names()` do taggit 6.1 ignorava o prefetch (~55 consultas por sacola); uma leitura de
+`Product`; holds planejados em lote. `home/` com 1 item 166 → 104 consultas. F4b: memo por request
+(só GET/HEAD, desligado em qualquer escrita SQL) para catálogo, sacola e sugestão não recalcularem o
+mesmo SKU; `home/` com 6 itens 72 → 51. Revisão independente: mecanismo seguro.
 
-`catalog/` não monta a sacola (por isso não muda). Maior culpado: `keywords.names()` do taggit 6.1
-ignora o prefetch (~55 consultas por sacola). Prova: JSON idêntico, código velho × novo no mesmo
-processo e banco, 15 pares sacola × endpoint. Teste de orçamento novo trava o ganho. O que ainda
-cresce com a sacola é a fila de espera (`waitlist.py`), que é da F3.
+### Onda 2a — #1314 · Onda 2b — #1313 · Sitemap — #1312
+Ver tabela. A medição que originou as três: ~60% do que sobra no `catalog/` é custo fixo por request
+(conexão de banco e Redis novas a cada request sob ASGI), não código do catálogo → D12.
 
-### O3a — link no balcão (#1306)
-Trava `link_requires_order_mode` no `close_sale` (422, mesma frase na tela e no servidor); a
-projeção publica `sales_modes` por forma de pagamento e o PDV esconde o link no Balcão.
-`is_counter_takeaway` intocado. Fora: O3b (entrega pelo ManyChat, D3) e O3c (Stripe, D2).
+### F5 — #1301 · PWA real — #1311 · ícones — #1316
+F5 portou do operator-kit: registro do SW num plugin, sonda a cada 30 min, aviso persistente (some no
+checkout/pedido/login), `app_version` no relatório de erro. O e2e novo pegou um **defeito real**: o
+spinner do "Atualizar" buscava `line-md` pela rede no instante em que o Chromium desliga o worker
+antigo, o que o reinicia e adia a ativação. Ícones empacotados na loja (#1311) e nos 8 apps de operador
+(#1316), com teste-trava. Sem recarga automática (D9).
 
-### O1 — nome no login WhatsApp (#1305)
-Regra da casa (`split_full_name`) desceu para `packages/utils` (o guestman não pode importar do
-`shop`); as duas cópias do orquestrador foram apagadas. Divide no ponto único de escrita do
-ManyChat, nunca sobrescreve campo preenchido, guarda o texto cru em
-`metadata.manychat_name_raw`. `entrar.vue` manda nome e sobrenome. Limitação dita: "Ana Maria
-Silva" vira Ana / Maria Silva. Vale conferir em 1 minuto se o Flow do ManyChat manda a variável
-certa.
+### F6 — #1300
+A: sem semente de CSRF no navegador antes do 1º clique; semente do BFF que cai não derruba a mutação;
+`csrf;dur` no Server-Timing. C: `refreshCart` descarta resposta anterior à mutação. D: decremento em
+`finally`. B → D1.
 
-### F5 — PWA (#1301)
-Registro do SW num plugin (vale também na tela de erro), sonda a cada 30 min e ao voltar ao app,
-aviso persistente sem fechar (some no checkout, pedido e login), `app_version` no relatório de
-erro, e2e do fluxo inteiro. Fora: recarga automática (D9), timeouts de fetch (medir antes),
-registro de troca de versão (precisa endpoint). Ponto a conferir: se o build da loja na DO expõe
-`SOURCE_VERSION`; se não, `app_version` sai `local`.
+### O1 — #1305 · O3a — #1306
+O1: `split_full_name` desceu para `packages/utils`; divide no ponto único de escrita do ManyChat, guarda
+o texto cru, não sobrescreve campo preenchido. Vale conferir em 1 minuto se o Flow manda `{{Last Name}}`.
+O3a: `link_requires_order_mode` no `close_sale`; a projeção publica `sales_modes`; `is_counter_takeaway`
+intocado.
 
-### F3 — disponibilidade num cálculo só (#1309)
-Uma leitura de estoque por request (era 4: hoje, uma por data da fila, componentes de bundle).
-Stockman ganhou `availability_for_skus_on_dates`; `availability_for_skus` virou o caso de uma data,
-então não há duas implementações para divergir. Prova: oráculo antigo congelado, 48 recortes de
-canal × 6 datas campo a campo, mutação (32 e 48 testes reprovam), A/B de JSON idêntico, digest do
-Continuum inalterado. P7 NÃO aplicado; trava `test_sold_out_sku_stays_tracked.py` intacta. Revisão
-independente (outra sessão, só leitura): "seguro para mergear"; um ponto baixo: falha de banco na
-leitura conjunta agora derruba a disponibilidade de todo o cardápio, e não só do bundle (falha
-aberta, como já era).
+### Receitas — #1303, #1307, #1308, #1310, #1317
+- #1303 cofre: abas `recipe_entries` e `recipe_versions` (`is_current` restaura a atual).
+- #1308: versão fechada recusa reescrita e exclusão por qualquer caminho do ORM (inclusive cascata);
+  o restore do cofre usa um caminho nomeado (`restoring_recipe_versions()`); `execution_in_sync` na
+  projeção com impressão digital da ficha.
+- #1307: etapas estruturadas; migração `craftsman 0015` (aplicada no alpha às 04:51 sem erro; eu
+  acrescentei a guarda que para a migração se `steps` não for lista, em vez de virar uma etapa por letra).
+- #1310: produção por versão, com balde "sem versão" e avisos de perda contábil/estimada.
+- #1317: análise da fórmula sobrescrevia a linha anterior do mesmo SKU; a ficha recebe a soma certa.
 
-**Produção, medianas de 5 amostras, anônimo** (antes = deployment `5462dcc7`, depois = `acbfc026`):
-
-| endpoint | TTFB antes → depois | projection | availability |
-|---|---|---|---|
-| `catalog/` (página `/menu`) | 1,79 → **1,44 s** | 1.466 → 1.087 ms | 853 → **396 ms** |
-| `menu/` (só sitemap) | 2,14 → 1,86 s | 1.809 → 1.514 ms | 1.112 → 808 ms |
-| `home/` | 1,07 → 1,13 s (ruído) | 775 → 823 ms | 205 → 167 ms |
-
-O que ainda pesa no `catalog/`: ~650 ms da projeção fora da disponibilidade. Próximos candidatos:
-`tracked_skus` percorre todo o histórico de quants (trocar por `EXISTS` por SKU que mantenha o
-esgotado rastreado), `Product.is_bundle` faz 1 consulta por card, e o P1 (cache de borda para
-anônimo).
+### FUSO — #1315
+Os testes liam o relógio duas vezes e pegavam a meia-noite no meio. Código já usa o calendário da loja.
+Relógio congelado às 12h e 23h30 de Brasília, com prova por mutação.
 
 ## Divisão do trabalho
-- Coordenador (eu): briefing, F1, F2, relatório, fila de merge, saúde da produção.
-- Agente F5 (worktree própria, branch `night/f5-pwa-storefront`).
-- Agente F6 (worktree própria, branch `night/f6-segundo-clique`).
-- Agente F4 (`night/f4-sacola-consultas`), sem tocar arquivos da F3.
-- Agente O3a (`night/o3a-link-so-encomenda`) e agente O1 (`night/o1-nome-na-entrada`).
-- Eu fiz O6.1 (#1303) direto.
-- F3: depois, sozinha, nunca junto com F4.
+- Coordenador: briefing, F1, F2, O6.1, sitemap, conflitos do #1307, guarda da migração 0015, fila,
+  medições de produção, relatório.
+- Um agente por frente, cada um na sua worktree e no seu branch `night/*`; duas revisões
+  independentes (F3, F4b) antes do merge; um agente só de medição (catálogo) e um de investigação (picos).
