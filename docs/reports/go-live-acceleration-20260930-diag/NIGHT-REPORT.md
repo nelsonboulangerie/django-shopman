@@ -6,18 +6,21 @@
 
 ## Em uma tela
 
+**Resultado de performance, medido no ar (medianas, anônimo):** `catalog/` (a página `/menu`) TTFB
+**1,79 s → 1,08 s (−40%)**, projeção 1.466 → 748 ms; `home/` TTFB **1,07 s → 0,69 s**, projeção 775 → 392 ms.
+
 **Produção:** no ar a noite toda. Nenhuma escrita no spec vivo, nenhuma recuperação precisou ser
 usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
 na `home/` privada desde ~04:26 UTC, em investigação.
 
-**Mergeado (21 PRs):**
+**Mergeado (23 PRs):**
 
 | Frente | PR | O que mudou para você |
 |---|---|---|
 | Briefing + 6.2 | #1297, #1302 | Docs da noite no main |
 | F1 drift do spec | #1291 | `make deploy-spec-drift` volta a poder ficar verde |
 | F2 audit `brace-expansion` | #1298 | "Marketing — cadeia completa" parou de reprovar todo PR |
-| **F3 disponibilidade num cálculo só** (Core) | #1309 | **`/catalog/` (página `/menu`): disponibilidade 853 → 396 ms, TTFB 1,79 → 1,44 s no ar** |
+| **F3 disponibilidade num cálculo só** (Core) | #1309 | **`/catalog/` (página `/menu`): disponibilidade 853 → 396 ms, TTFB 1,79 → 1,44 s no ar** (com a Onda 2a e a F4b: **1,08 s**) |
 | F4 consultas da sacola | #1304 | −62 consultas por request com sacola; payload idêntico |
 | Onda 2a catálogo fora da disponibilidade | #1314 | 36 → 15 ms na bancada (≈ −350 ms no ar, a medir); Destaques com até 5 min de atraso |
 | Onda 2b Server-Timing `connect`/`cache`/`gc` | #1313 | Custo fixo por request agora visível (ver D12) |
@@ -34,13 +37,15 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 | O8 reputação por versão (leitura) | #1310 | Produção por `version_ref`, com os avisos de perda no dado |
 | **BOM: mesmo insumo em duas linhas** (Core) | #1317 | Ficha gravava 100 g de água em vez de 700 g; republicar é seu (D13) |
 | FUSO testes 21h–24h | #1315 | 2 testes que reprovavam perto da meia-noite; código estava certo |
+| F4b disponibilidade reaproveitada no request | #1318 | `home/` com 6 itens 72 → 51 consultas; revisão independente: seguro |
+| O8 Favorita por operador | #1319 | Estrela no inventário de receitas + filtro "Favoritas" |
 
 **Na fila / aberto:**
 
 | Frente | PR | Estado |
 |---|---|---|
-| F4b disponibilidade reaproveitada no request | #1318 | revisão independente: seguro; conflito de texto resolvido, checks finais |
-| O8 Favorita por operador | #1319 | checks rodando |
+| P5 payload do cardápio sem cards duplicados | #1321 | checks; −61% do corpo do `catalog/` |
+| Onda 2c miúdos de performance | — | em andamento |
 | NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
 | Drift compara `run_command` | #1320 | na fila; contra o vivo acusa só o D14 |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
@@ -77,6 +82,7 @@ da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `s
 | 02:33 | `5462dcc7` | 1,79 s | 853 ms | 1,07 s | base (F4/F5/F6 no ar) |
 | 02:45 | `acbfc026` | **1,44 s** | **396 ms** | 1,13 s | F3 no ar |
 | 04:25 | `16676254` | 1,41–1,87 s | 370–440 ms | 1,2–2,2 s + picos | Server-Timing novo |
+| 05:54 | main `95678415a` | **1,08 s** | **302 ms** | **0,69 s** | + Onda 2a, F4b, Favorita |
 
 Custo fixo por request (#1313, medido no ar): `connect` 30–65 ms (sempre 1 conexão nova),
 `cache` ~25 ms **por chamada** ao Redis (3–7 chamadas), `gc` normalmente < 10 ms com picos de 265–325 ms.
