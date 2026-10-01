@@ -59,6 +59,11 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
   let token = csrfTokenFromCookieHeader(cookie)
   if (token) return { cookie, token: decodeURIComponent(token) }
 
+  // A semente é um meio, não o pedido. Se ela cai (rede, timeout), a mutação
+  // segue sem token e quem decide é o Django: a sacola do anônimo não exige CSRF
+  // (DRF só cobra de sessão autenticada) e o endpoint que exige responde 403
+  // explícito. Derrubar o pedido aqui fazia o PRIMEIRO clique, o único que
+  // semeia, falhar por um passo que o segundo clique nem dá.
   const response = await $fetch.raw(`${djangoBaseUrl}/api/v1/storefront/cart/`, {
     method: 'GET',
     headers: {
@@ -66,7 +71,11 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
       ...(cookie ? { cookie } : {})
     },
     ignoreResponseError: true
+  }).catch((error: unknown) => {
+    console.warn('[bff] semente de CSRF falhou; a mutação segue sem token', error)
+    return null
   })
+  if (!response) return { cookie, token: '' }
 
   let mergedCookie = cookie
   const setCookie = response.headers.get('set-cookie')
@@ -229,8 +238,14 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   if (csrfCookie) headers['x-csrftoken'] = decodeURIComponent(csrfCookie)
   else if (clientCsrfHeader) headers['x-csrftoken'] = clientCsrfHeader
 
+  // Duração da semente, em separado do total: só o primeiro pedido unsafe de um
+  // navegador sem `csrftoken` paga esta ida a mais, e o `bff;dur` sozinho não
+  // distingue o clique 1 do clique 2.
+  let csrfSeedTiming = ''
   if (isUnsafeMethod && !headers['x-csrftoken']) {
+    const seedStarted = performance.now()
     const csrf = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie)
+    csrfSeedTiming = `csrf;dur=${Math.max(0, performance.now() - seedStarted).toFixed(2)}`
     cookie = csrf.cookie
     if (cookie) headers.cookie = cookie
     if (csrf.token) headers['x-csrftoken'] = csrf.token
@@ -257,7 +272,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   setResponseHeader(
     event,
     'server-timing',
-    upstreamServerTiming ? `${upstreamServerTiming}, ${bffTiming}` : bffTiming
+    [upstreamServerTiming, csrfSeedTiming, bffTiming].filter(Boolean).join(', ')
   )
 
   const setCookie = response.headers.get('set-cookie')
