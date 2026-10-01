@@ -57,13 +57,34 @@ function openingTags(template: string): string[] {
   return tags;
 }
 
+// Separa os blocos <script> do resto do SFC por índice, sem regex de tag
+// (o CodeQL trata regex de <script> como filtro de HTML; aqui só lemos fonte nossa).
+function splitScripts (source: string): { script: string, template: string } {
+  const lower = source.toLowerCase()
+  const scripts: string[] = []
+  let template = ""
+  let at = 0
+  while (true) {
+    const open = lower.indexOf("<script", at)
+    if (open === -1) break
+    const bodyStart = lower.indexOf(">", open) + 1
+    const close = lower.indexOf("</script", bodyStart)
+    if (bodyStart === 0 || close === -1) break
+    template += source.slice(at, open)
+    scripts.push(source.slice(bodyStart, close))
+    const end = lower.indexOf(">", close)
+    at = end === -1 ? source.length : end + 1
+  }
+  template += source.slice(at)
+  return { script: scripts.join('\n'), template }
+}
+
 function inertAsyncClicks(source: string): string[] {
-  const script = (source.match(/<script[^>]*>[\s\S]*?<\/script>/g) || []).join("\n");
+  const { script, template } = splitScripts(source);
   const asyncNames = new Set([
     ...[...script.matchAll(/async\s+function\s+(\w+)/g)].map((m) => m[1]!),
     ...[...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*async\b/g)].map((m) => m[1]!),
   ]);
-  const template = source.replace(/<script[\s\S]*?<\/script>/g, "");
   const inert = new Set<string>();
   for (const tag of openingTags(template)) {
     const click = tag.match(/@click(?:\.\w+)*="(?:void\s+)?(\w+)(?:\([^"]*\))?"/);
