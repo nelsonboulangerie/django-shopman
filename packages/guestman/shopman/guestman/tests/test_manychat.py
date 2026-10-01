@@ -380,3 +380,111 @@ class TestManychatWebhook:
         assert response.status_code == 400
         data = json.loads(response.content)
         assert "identificar este assinante" in data["error"]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Nome que chega numa caixa só (contato de WhatsApp)
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestManychatNameSplit:
+    """O login por WhatsApp divide o nome na entrada, com a regra do pedido."""
+
+    def _subscriber(self, **name):
+        return {"id": "mc-name-001", "whatsapp_id": "+5543999112233", **name}
+
+    def test_full_name_in_first_name_is_split_on_create(self):
+        customer, created = ManychatService.sync_subscriber(
+            self._subscriber(first_name="Pablo Valentini", last_name="")
+        )
+
+        assert created is True
+        assert (customer.first_name, customer.last_name) == ("Pablo", "Valentini")
+        assert customer.name == "Pablo Valentini"
+        # O texto cru fica guardado: a divisão é um palpite, e precisa ser reparável.
+        assert customer.metadata["manychat_name_raw"] == {
+            "first_name": "Pablo Valentini",
+            "last_name": "",
+        }
+
+    def test_rule_errs_on_the_surname_side(self):
+        customer, _ = ManychatService.sync_subscriber(
+            self._subscriber(first_name="Ana Maria Silva")
+        )
+
+        assert (customer.first_name, customer.last_name) == ("Ana", "Maria Silva")
+
+    def test_explicit_last_name_is_trusted_as_sent(self):
+        customer, _ = ManychatService.sync_subscriber(
+            self._subscriber(first_name="Ana Maria", last_name="Silva")
+        )
+
+        assert (customer.first_name, customer.last_name) == ("Ana Maria", "Silva")
+
+    def test_single_token_keeps_last_name_empty(self):
+        customer, _ = ManychatService.sync_subscriber(self._subscriber(first_name="Pablo"))
+
+        assert (customer.first_name, customer.last_name) == ("Pablo", "")
+
+    def test_no_name_stores_no_raw_name(self):
+        customer, _ = ManychatService.sync_subscriber(self._subscriber())
+
+        assert (customer.first_name, customer.last_name) == ("", "")
+        assert "manychat_name_raw" not in customer.metadata
+
+    def test_update_fills_only_empty_fields(self):
+        customer = Customer.objects.create(
+            ref="NAME-001", first_name="Paulinho", last_name="", phone="+5543999112233"
+        )
+
+        ManychatService.sync_customer(customer, self._subscriber(first_name="Pablo Valentini"))
+        customer.refresh_from_db()
+
+        # O nome que já estava fica; só o sobrenome vazio é completado.
+        assert (customer.first_name, customer.last_name) == ("Paulinho", "Valentini")
+        assert customer.metadata["manychat_name_raw"]["first_name"] == "Pablo Valentini"
+
+    def test_update_never_overwrites_filled_names(self):
+        customer = Customer.objects.create(
+            ref="NAME-002", first_name="Pablo", last_name="V.", phone="+5543999112233"
+        )
+
+        ManychatService.sync_customer(customer, self._subscriber(first_name="Pablo Valentini"))
+        customer.refresh_from_db()
+
+        assert (customer.first_name, customer.last_name) == ("Pablo", "V.")
+        assert "manychat_name_raw" not in customer.metadata
+
+    def test_update_fills_both_when_empty(self):
+        customer = Customer.objects.create(
+            ref="NAME-003", first_name="", last_name="", phone="+5543999112233"
+        )
+
+        ManychatService.sync_customer(customer, self._subscriber(first_name="Pablo Valentini"))
+        customer.refresh_from_db()
+
+        assert (customer.first_name, customer.last_name) == ("Pablo", "Valentini")
+
+    def test_legacy_full_name_record_is_not_doubled(self):
+        """Cadastro gravado antes da divisão não vira "Pablo Valentini Valentini"."""
+        customer = Customer.objects.create(
+            ref="NAME-004", first_name="Pablo Valentini", last_name="", phone="+5543999112233"
+        )
+
+        ManychatService.sync_customer(customer, self._subscriber(first_name="Pablo Valentini"))
+        customer.refresh_from_db()
+
+        assert (customer.first_name, customer.last_name) == ("Pablo Valentini", "")
+        assert customer.name == "Pablo Valentini"
+        assert "manychat_name_raw" not in customer.metadata
+
+    def test_existing_subscriber_resync_splits_into_empty_last_name(self):
+        """O caminho do login com assinante já conhecido (achado pelo ID do ManyChat)."""
+        ManychatService.sync_subscriber(self._subscriber(first_name="Pablo"))
+
+        customer, created = ManychatService.sync_subscriber(
+            self._subscriber(first_name="Pablo Valentini")
+        )
+
+        assert created is False
+        assert (customer.first_name, customer.last_name) == ("Pablo", "Valentini")
