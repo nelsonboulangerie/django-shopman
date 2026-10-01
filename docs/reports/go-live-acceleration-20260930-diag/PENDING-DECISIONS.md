@@ -119,3 +119,18 @@ sacola) monta a sacola inteira com o trilho de sugestão: depois do #1304, 56 co
 onde ela aparece na tela). 3) Tirar de `shell/` e `home/`.
 **Recomendação:** 2, se o front confirmar que o `shell/` não exibe a sugestão. Muda contrato com o
 front, por isso é sua.
+
+## D11 — Versão de receita publicada não se apaga mais; e as versões antigas sem "impressão digital" (#1308)
+
+**Contexto.** Com o #1308, versão publicada ou substituída não muda nem se apaga por nenhum caminho
+do ORM, nem em cascata ao apagar a receita. Hoje nenhuma tela ou API apaga receita, então nada do
+dia a dia muda. Mas a regra da casa antes do go-live é "dado sintético se APAGA". Apagar uma
+receita de teste com versão publicada agora exige um comando explícito, que ainda não existe. Além
+disso, as versões publicadas antes do #1308 não têm a impressão digital da ficha. Para elas, o
+"fora de sincronia" só compara o carimbo `version_ref` e não pega edição feita pelo Admin.
+
+**Opções.** (a) Manter assim; criar um comando `purge_recipe_entry --apply` só quando for
+preciso. (b) Carimbar retroativamente as versões antigas com a impressão digital da ficha ATUAL.
+Isso certificaria fichas que já podem ter sido editadas por fora.
+**Recomendação:** (a). Para as antigas, publicar de novo cada receita que importa, em vez de
+carimbar.
