@@ -7,6 +7,9 @@ export default defineNuxtPlugin(nuxtApp => {
 
   const apiPath = useShopmanApiPath()
   const endpoint = apiPath('/api/v1/storefront/client-error/')
+  // Sem a versão, um erro de cliente preso num bundle velho é indistinguível de um
+  // erro novo: é o campo que responde "quantos estão travados, e em qual versão".
+  const appVersion = String(useRuntimeConfig().public.appVersion ?? '')
 
   // Anti-flood: dedupe por chave numa janela e um teto de envios por sessão —
   // um erro em loop não vira uma enxurrada de POSTs.
@@ -17,7 +20,7 @@ export default defineNuxtPlugin(nuxtApp => {
   function report (error: unknown, kind: string, source = 'client') {
     if (sent >= MAX_PER_SESSION) return
     const url = import.meta.client ? window.location?.pathname : undefined
-    const payload = buildClientErrorReport(error, { kind, url, source })
+    const payload = buildClientErrorReport(error, { kind, url, source, appVersion })
     if (!payload.message) return
 
     const key = reportKey(payload)

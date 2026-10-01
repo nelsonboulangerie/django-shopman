@@ -46,6 +46,13 @@ describe('buildClientErrorReport', () => {
   it('respects an explicit source (e.g. bff)', () => {
     expect(buildClientErrorReport(new Error('x'), { kind: 'k', source: 'bff' }).source).toBe('bff')
   })
+
+  it('carries the build version, truncated like the server allow-list', () => {
+    expect(buildClientErrorReport(new Error('x'), { kind: 'k', appVersion: 'abc1234' }).app_version).toBe('abc1234')
+    expect(buildClientErrorReport(new Error('x'), { kind: 'k', appVersion: 'v'.repeat(90) }).app_version).toHaveLength(60)
+    expect(buildClientErrorReport(new Error('x'), { kind: 'k' })).not.toHaveProperty('app_version')
+    expect(buildClientErrorReport(new Error('x'), { kind: 'k', appVersion: '  ' })).not.toHaveProperty('app_version')
+  })
 })
 
 describe('reportKey', () => {

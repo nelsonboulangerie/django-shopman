@@ -136,12 +136,36 @@ o cache de runtime, sobe o Nitro localmente e roda o fluxo Playwright. O contrat
 Se os splash screens mudarem, remova a instalação anterior e adicione-a de novo;
 o iOS conserva assets da instalação antiga.
 
-### Forçar e validar uma atualização
+### Como uma versão nova chega ao app instalado
+
+Com `registerType: 'prompt'` o worker novo fica em espera até todas as janelas do
+app fecharem, e o app instalado que fica dias aberto (o iOS suspende em vez de
+fechar) nunca fecha todas. O mecanismo é porte do `operator-kit` (17/09/2026), sem
+a aplicação automática:
+
+- **Registro** no plugin `app/plugins/pwaRegistration.client.ts`, e não num
+  componente: vale também quando o Nuxt renderiza `error.vue`.
+- **Sonda** (`usePwaUpdateCheck`): `registration.update()` no boot, a cada 30 min
+  e ao voltar do segundo plano, ganhar foco ou reconectar (piso de 60 s entre as
+  oportunistas). Régua em `app/presentation/pwaRuntime.ts`.
+- **Aviso persistente** (`PwaUpdatePrompt`, montado em `app.vue` e `error.vue`):
+  fica na tela enquanto houver worker em espera, sem botão de fechar. Cala no
+  checkout, no pedido e no login (o toque recarrega a página) e sem rede, e volta
+  na tela seguinte.
+- **Nunca automático:** o worker em espera só recebe `skipWaiting` pelo toque em
+  **Atualizar**. Não habilite `autoUpdate`, não chame `skipWaiting()` no
+  carregamento e não porte o auto-reload ocioso do kit: o cliente pode estar
+  escolhendo endereço, digitando o código de acesso ou pagando.
+- **Versão:** `public.appVersion` (`NUXT_PUBLIC_APP_VERSION`, senão
+  `SOURCE_VERSION`, senão `local`) vai como `app_version` no relatório de erro do
+  cliente.
+
+O fluxo inteiro (versão nova, aviso, checkout calado, aviso de volta, toque,
+worker novo ativo) é provado pelo `tests/e2e/pwa.spec.ts`, que roda no gate.
+
+### Forçar e validar uma atualização à mão
 
 1. Rode `npm run build` e `npm run preview`.
 2. Abra o app e espere `navigator.serviceWorker.ready` no console do navegador.
 3. Faça outro build com uma alteração visível e recarregue a página.
 4. Quando aparecer “Nova versão disponível”, toque em **Atualizar**.
-
-O worker em espera só recebe `skipWaiting` por esse toque. Não habilite
-`autoUpdate` nem chame `skipWaiting()` no carregamento.
