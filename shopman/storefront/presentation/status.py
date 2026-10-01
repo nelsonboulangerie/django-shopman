@@ -12,7 +12,7 @@ rule R-B keeps those classes out of ``shop/projections`` (the data read-side).
 
 from __future__ import annotations
 
-from shopman.shop.projections.copy import build_copy
+from shopman.shop.projections.copy import CopyCatalog, build_copy
 from shopman.shop.projections.types import ORDER_STATUS_TONES, Availability, Tone
 
 # Tone → storefront design-token classes. Owned here because the concrete
@@ -88,8 +88,12 @@ def payment_method_label(method: str) -> str:
     return build_copy("PAYMENT_METHOD").title(f"PAYMENT_METHOD_{method.upper()}", method)
 
 
-def availability_label(availability: Availability) -> str:
-    """Resolve an :class:`Availability` state to its display label."""
-    return build_copy("AVAILABILITY").title(
-        f"AVAILABILITY_{availability.upper()}", str(availability)
-    )
+def availability_label(availability: Availability, *, copy: CopyCatalog | None = None) -> str:
+    """Resolve an :class:`Availability` state to its display label.
+
+    Quem rotula muitos cards de uma vez (o cardápio) resolve o catálogo de copy
+    ``AVAILABILITY`` uma vez e passa em ``copy``; sem ele, resolve aqui.
+    """
+    if copy is None:
+        copy = build_copy("AVAILABILITY")
+    return copy.title(f"AVAILABILITY_{availability.upper()}", str(availability))

@@ -22,6 +22,7 @@ from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.projections import catalog_context
+from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.storefront_context import (
     happy_hour_state,
     popular_skus,
@@ -507,6 +508,10 @@ def _build_items(
     # Promotion query per SKU.
     active_promotions = _active_storefront_promotions(channel_ref)
 
+    # O rótulo de disponibilidade sai do mesmo catálogo de copy para todos os
+    # cards: resolvido uma vez, e não uma vez por card.
+    availability_copy = build_copy("AVAILABILITY")
+
     result: list[CatalogItemProjection] = []
     for p in products:
         base_q = price_map.get(p.sku) or p.base_price_q
@@ -544,7 +549,7 @@ def _build_items(
         availability = state.availability
         is_paused = state.is_paused
         is_notifiable = state.is_notifiable
-        avail_label = availability_label(availability)
+        avail_label = availability_label(availability, copy=availability_copy)
         can_add = availability in (
             Availability.AVAILABLE,
             Availability.LOW_STOCK,
@@ -817,9 +822,7 @@ def _build_dynamic_sections(
         if section is None:
             continue
         # Reusa CatalogItemProjection já construídos (mesmo pricing/availability)
-        proj_items = tuple(
-            items_by_sku[p.sku] for p in section.products if p.sku in items_by_sku
-        )
+        proj_items = tuple(items_by_sku[sku] for sku in section.skus if sku in items_by_sku)
         if not proj_items:
             continue
         sections.append(

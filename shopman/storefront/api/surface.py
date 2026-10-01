@@ -7,7 +7,6 @@ rules.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from django.utils.decorators import method_decorator
@@ -490,27 +489,33 @@ class StorefrontMenuView(APIView):
             response = Response(payload)
             response["Server-Timing"] = timing.server_timing()
 
-        response_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
-        log_catalog_observation(
-            path="storefront_menu" if self.include_cart else "storefront_catalog",
-            mode="shadow" if shadow_enabled() else "baseline",
-            status=200,
-            query_count=timing.query_count,
-            response_bytes=response_bytes,
-            snapshot_bytes=shadow.snapshot_bytes if shadow else 0,
-            cache_status=shadow.cache_status if shadow else "off",
-            snapshot_sequence=shadow.head.sequence if shadow else 0,
-            snapshot_age_ms=head_age_ms(shadow.head) if shadow else 0,
-            shadow_equal=shadow.equal if shadow else None,
-            shadow_error=shadow_error,
-            shadow_ms=timing.durations_ms.get("shadow", 0.0),
-            shadow_query_count=shadow_query_count,
-            projection_ms=timing.durations_ms.get("projection", 0.0),
-            availability_ms=timing.durations_ms.get("availability", 0.0),
-            personalization_ms=timing.durations_ms.get("personalization", 0.0),
-            db_ms=timing.durations_ms.get("db", 0.0),
+        observation = {
+            "path": "storefront_menu" if self.include_cart else "storefront_catalog",
+            "mode": "shadow" if shadow_enabled() else "baseline",
+            "status": 200,
+            "query_count": timing.query_count,
+            "snapshot_bytes": shadow.snapshot_bytes if shadow else 0,
+            "cache_status": shadow.cache_status if shadow else "off",
+            "snapshot_sequence": shadow.head.sequence if shadow else 0,
+            "snapshot_age_ms": head_age_ms(shadow.head) if shadow else 0,
+            "shadow_equal": shadow.equal if shadow else None,
+            "shadow_error": shadow_error,
+            "shadow_ms": timing.durations_ms.get("shadow", 0.0),
+            "shadow_query_count": shadow_query_count,
+            "projection_ms": timing.durations_ms.get("projection", 0.0),
+            "availability_ms": timing.durations_ms.get("availability", 0.0),
+            "personalization_ms": timing.durations_ms.get("personalization", 0.0),
+            "db_ms": timing.durations_ms.get("db", 0.0),
             **timing.fixed_cost_fields(),
-        )
+        }
+
+        # O tamanho é o do corpo que sai, medido depois que o DRF o renderiza:
+        # serializar o payload inteiro uma segunda vez só para contar bytes
+        # custava tanto quanto a própria renderização.
+        def log_observation(rendered):
+            log_catalog_observation(**observation, response_bytes=len(rendered.content))
+
+        response.add_post_render_callback(log_observation)
         return response
 
 

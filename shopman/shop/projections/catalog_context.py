@@ -129,13 +129,42 @@ def comes_out_of_the_oven(sku: str) -> bool:
 
 
 def products_by_sku(skus: list[str], *, only_published: bool = True) -> dict[str, Any]:
-    # Prefetch the relations the catalog card reads (tags via ``product_tags``,
-    # components via ``is_bundle``) so ad-hoc SKU lists (PDP substitutes,
-    # cross-sell, home rails) don't N+1 like the menu did.
-    qs = products_queryset().filter(sku__in=skus).prefetch_related("keywords", "components")
+    # Carrega de uma vez o que o card lê de cada produto (as tags, por
+    # ``product_tags``; os componentes, por ``is_bundle``) para listas avulsas de
+    # SKU (substitutos e cross-sell da PDP, trilhos da home) não caírem em N+1.
+    qs = products_queryset().filter(sku__in=skus).prefetch_related("components")
     if only_published:
         qs = qs.filter(is_published=True)
-    return {product.sku: product for product in qs}
+    products = list(qs)
+    attach_tag_names(products)
+    return {product.sku: product for product in products}
+
+
+# Atributo onde ``attach_tag_names`` deixa os nomes das tags de cada produto,
+# já ordenados, para ``product_tags`` não ir ao banco por produto.
+_TAG_NAMES_ATTR = "_catalog_tag_names"
+
+
+def attach_tag_names(products: list[Any]) -> None:
+    """Lê as tags (``keywords``) de todos os ``products`` numa consulta só.
+
+    O ``prefetch_related("keywords")`` fazia o mesmo número de consultas, mas
+    materializava um ``Tag`` por vínculo (≈200 no cardápio) para o card ler
+    só o ``name``. Aqui sai o par ``(produto, nome)`` direto do banco.
+    """
+    if not products:
+        return
+    from django.contrib.contenttypes.models import ContentType
+
+    model = type(products[0])
+    names_by_pk: dict[Any, list[str]] = {}
+    for object_id, name in model.keywords.through.objects.filter(
+        content_type=ContentType.objects.get_for_model(model),
+        object_id__in=[product.pk for product in products],
+    ).values_list("object_id", "tag__name"):
+        names_by_pk.setdefault(object_id, []).append(name)
+    for product in products:
+        setattr(product, _TAG_NAMES_ATTR, tuple(sorted(names_by_pk.get(product.pk, ()))))
 
 
 def published_products(listing_ref: str | None = None):
@@ -227,8 +256,10 @@ def collection_refs_by_sku(skus: list[str]) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     if not skus:
         return result
-    for item in CollectionItem.objects.filter(product__sku__in=skus).select_related("collection", "product"):
-        result.setdefault(item.product.sku, []).append(item.collection.ref)
+    for sku, collection_ref in CollectionItem.objects.filter(product__sku__in=skus).values_list(
+        "product__sku", "collection__ref",
+    ):
+        result.setdefault(sku, []).append(collection_ref)
     return result
 
 
@@ -256,11 +287,13 @@ def primary_collection_by_sku(skus: list[str]) -> dict:
     result: dict = {}
     if not skus:
         return result
-    for item in CollectionItem.objects.filter(
-        product__sku__in=skus,
-        is_primary=True,
-    ).select_related("collection", "product"):
-        result[item.product.sku] = item.collection
+    # Só o SKU do produto: anotado, sem materializar o ``Product`` inteiro.
+    for item in (
+        CollectionItem.objects.filter(product__sku__in=skus, is_primary=True)
+        .select_related("collection")
+        .annotate(product_sku=models.F("product__sku"))
+    ):
+        result[item.product_sku] = item.collection
     return result
 
 
@@ -298,11 +331,11 @@ def published_products_by_collection(
     active_collection: Any | None = None,
 ) -> list[tuple[str | None, list[Any]]]:
     """Return ordered (collection_ref | None, products) groups for a listing."""
-    # Prefetch the per-product relations the catalog builder reads in its loop so
-    # they don't N+1: ``keywords`` (django-taggit, read by ``product_tags``) and
-    # ``components`` (read by ``is_bundle`` → ``components.exists()``, which uses
-    # the prefetch cache instead of a query per product).
-    base = published_products(listing_ref).prefetch_related("keywords", "components")
+    # O que o montador do cardápio lê de cada produto no laço vem junto, para não
+    # virar N+1: ``components`` (lido por ``is_bundle`` → ``components.exists()``,
+    # que usa o cache do prefetch) e as tags (``attach_tag_names``, lidas por
+    # ``product_tags``).
+    base = published_products(listing_ref).prefetch_related("components")
 
     if active_collection is not None:
         products = list(
@@ -310,6 +343,7 @@ def published_products_by_collection(
             .order_by("collection_items__sort_order", "name")
             .distinct()
         )
+        attach_tag_names(products)
         return [(active_collection.ref, products)]
 
     # Visão completa: UMA leitura de produtos e UMA de vínculos com coleção, e o
@@ -323,6 +357,7 @@ def published_products_by_collection(
     products = list(base.order_by("name").distinct())
     if not products:
         return []
+    attach_tag_names(products)
     name_rank = {p.pk: index for index, p in enumerate(products)}
     by_pk = {p.pk: p for p in products}
 
@@ -370,12 +405,12 @@ def listing_price_map(
         filters["is_sellable"] = True
 
     price_map: dict[str, int] = {}
-    for item in (
+    for sku, price_q in (
         ListingItem.objects.filter(**filters)
-        .select_related("product")
         .order_by("-min_qty")
+        .values_list("product__sku", "price_q")
     ):
-        price_map.setdefault(item.product.sku, item.price_q)
+        price_map.setdefault(sku, price_q)
     return price_map
 
 
@@ -1135,6 +1170,9 @@ def product_tags(product) -> tuple[str, ...]:
     # price or badge), and taggit's default ``.all()`` order is the through-table
     # PK — which flips depending on whether ``keywords`` was prefetched and on the
     # order tags were first created. Sorting pins the output regardless.
+    names = getattr(product, _TAG_NAMES_ATTR, None)
+    if names is not None:
+        return names
     try:
         return tuple(sorted(tag.name for tag in product.keywords.all()))
     except Exception:

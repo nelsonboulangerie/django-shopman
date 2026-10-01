@@ -38,6 +38,9 @@ def _isolate_rules_state():
     * ``notification_manychat`` reserva o assinante no cache por uma janela de
       assentamento (uma mensagem com flow por pessoa por vez). A reserva de um teste
       deixaria o MESMO assinante sintético "ocupado" no seguinte.
+    * ``dynamic_collections`` guarda o ranking dos Destaques por alguns minutos. Os
+      pedidos de um teste (desfeitos no rollback) decidiriam os Destaques do
+      seguinte.
 
     Clear the caches, reset the bootstrap flag, drop the suppression flag, and
     snapshot/restore the validator registry around each test so state created in
@@ -46,6 +49,7 @@ def _isolate_rules_state():
     from django.core.cache import cache
     from shopman.orderman import registry as orderman_registry
 
+    from shopman.shop import dynamic_collections
     from shopman.shop.adapters import _external
     from shopman.shop.models.shop import SHOP_CACHE_KEY
     from shopman.shop.rules import engine as rules_engine
@@ -59,6 +63,7 @@ def _isolate_rules_state():
         cache.delete(rules_engine.CACHE_KEY)
         cache.delete(attributes_service.CACHE_KEY)
         cache.delete(SHOP_CACHE_KEY)
+        dynamic_collections.invalidate_featured_ranking()
         _drop_manychat_flow_reservations()
         rules_engine._bootstrapped = False
         _external._suppressed_reason = None
