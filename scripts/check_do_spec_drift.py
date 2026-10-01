@@ -23,8 +23,8 @@ com a lista na frente. É de propósito somente-leitura: um script que
 
 Compara envs (de app e por serviço), domínios, ingress, bancos anexados
 (``databases``, campo a campo) e, por componente, imagem (registry_type,
-repository, tag/digest, deploy_on_push) e dimensionamento (instance_count,
-instance_size_slug).
+repository, tag/digest, deploy_on_push), dimensionamento (instance_count,
+instance_size_slug) e o comando que sobe (run_command).
 
 ⚠️ O token precisa LER databases. Sem o escopo, o App Platform devolve o bloco
 só com ``name`` — o formato que derrubou os deploys em 29-30/09/2026 — e o
@@ -230,7 +230,11 @@ COMPONENT_SECTIONS = ("services", "workers", "jobs", "static_sites", "functions"
 IMAGE_FIELDS = ("registry_type", "repository", "tag", "digest")
 
 #: O essencial do componente que, se sumir, muda o que roda ou quanto roda.
-COMPONENT_FIELDS = ("instance_count", "instance_size_slug")
+#: `run_command` entrou em 01/10/2026: o `web` vivo rodava o daphne SEM o
+#: `--access-log=/dev/null` do arquivo (commit 15061ed3f), e o access log grava a
+#: URI crua, com o `?token=` do webhook da Efí. Ninguém via, porque este script
+#: não comparava o comando.
+COMPONENT_FIELDS = ("instance_count", "instance_size_slug", "run_command")
 
 
 def database_index(spec: dict) -> dict[str, dict]:
