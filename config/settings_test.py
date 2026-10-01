@@ -39,6 +39,7 @@ import os
 # tanto o shell quanto o `.env` local.
 os.environ["DJANGO_DEBUG"] = "true"  # como no runtime-gate.yml
 os.environ["SENTRY_DSN"] = ""  # a suíte nunca inicializa o Sentry
+os.environ["SHOPMAN_MEDIA_STORAGE"] = "local"  # a suíte nunca escreve no R2 (config/media_storage.py)
 
 from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 

@@ -56,6 +56,10 @@ dependencies = [
     "requests>=2.31,<3.0",
     "stripe>=14,<16",
     "whitenoise>=6.11,<7.0",
+    # Arquivos de usuário (foto da receita, anexos) no Cloudflare R2, que fala S3. Só é
+    # importado com SHOPMAN_MEDIA_STORAGE=r2; desligado, o disco local segue. Ver
+    # config/media_storage.py.
+    "django-storages[s3]>=1.14,<2.0",
     "sentry-sdk[django]>=2.0,<3.0",
 ]
 

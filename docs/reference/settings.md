@@ -319,6 +319,26 @@ enfileirada quando o pedido carrega `data.fiscal.issue_document=true`.
 
 **Guia:** [lifecycle.md](../guides/lifecycle.md)
 
+### Arquivos de usuário (Cloudflare R2)
+
+`STORAGES["default"]` vem de `config/media_storage.py`. O estático (`STORAGES["staticfiles"]`)
+não muda: segue no WhiteNoise.
+
+| Env | Tipo | Default | Descrição |
+|-----|------|---------|-----------|
+| `SHOPMAN_MEDIA_STORAGE` | env str | `""` (= `local`) | `local`: disco do contêiner (some no deploy). `r2`: Cloudflare R2 via `storages.backends.s3.S3Storage`. Outro valor derruba o boot |
+| `R2_ACCOUNT_ID` | env str | | Identificador da conta Cloudflare; monta o endpoint `https://<id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | env str | | Nome do bucket |
+| `R2_ACCESS_KEY_ID` | env segredo | | Chave de acesso do token R2 (Object Read & Write, restrito ao bucket) |
+| `R2_SECRET_ACCESS_KEY` | env segredo | | Chave secreta do token R2 |
+| `R2_URL_EXPIRE_SECONDS` | env int | `3600` | Validade do link assinado de cada arquivo |
+
+Com `r2` e qualquer uma das quatro primeiras faltando, o boot cai com `ImproperlyConfigured`
+listando as que faltam. Bucket privado: o R2 não tem ACL por objeto (`default_acl=None`), cada
+`.url` sai assinada (`querystring_auth=True`) e nome repetido não sobrescreve
+(`file_overwrite=False`). Decisão: [D-010](../coordination/DECISIONS.md). Passo a passo do dono:
+[r2-passo-a-passo-do-dono.md](../runbooks/r2-passo-a-passo-do-dono.md).
+
 ### Ligar o porteiro fiscal do catálogo
 
 `SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` nasce **desligada** de
