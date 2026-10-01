@@ -2,7 +2,9 @@
 
 Complementam as Collections estáticas do Offerman (operador cria, produto é
 associado). Dinâmicas não têm linhas no DB — são Python resolvers que retornam
-produtos baseados em métricas (vendas, data de produção, novidade, etc.).
+os SKUs dos produtos, em ordem, baseados em métricas (vendas, data de produção,
+novidade, etc.). Só o SKU: quem mostra a seção (o cardápio) já tem o card de
+cada produto montado, com preço e disponibilidade, e reusa o card pelo SKU.
 
 **Configuração**: quais dinâmicas aparecem no menu e em que ordem fica em
 ``Shop.defaults["menu"]["dynamic_collections"]`` (ou ``Channel.config``),
@@ -11,22 +13,20 @@ como lista de refs (``["featured", "fresh_from_oven"]``).
 **Uso**:
     from shopman.shop import dynamic_collections as dyn
     section = dyn.resolve("featured", channel_ref="web")
-    # Retorna DynamicSection(meta, products) ou None se ref desconhecido
-    # ou produtos vazios.
+    # Retorna DynamicSection(meta, skus) ou None se ref desconhecido
+    # ou nenhum SKU.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
+from django.core.cache import cache
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from shopman.offerman.models import Product
 
 
 @dataclass(frozen=True)
@@ -41,16 +41,16 @@ class DynamicCollectionMeta:
 
 @dataclass(frozen=True)
 class DynamicSection:
-    """Resultado de um resolver: metadados + produtos."""
+    """Resultado de um resolver: metadados + SKUs, na ordem da seção."""
 
     meta: DynamicCollectionMeta
-    products: tuple[Product, ...]
+    skus: tuple[str, ...]
 
 
 class DynamicCollectionResolver(Protocol):
     meta: DynamicCollectionMeta
 
-    def resolve(self, channel_ref: str, limit: int = 20) -> list[Product]:
+    def resolve(self, channel_ref: str, limit: int = 20) -> list[str]:
         ...
 
 
@@ -78,18 +78,32 @@ def resolve(ref: str, *, channel_ref: str, limit: int = 20) -> DynamicSection | 
     if resolver is None:
         return None
     try:
-        products = resolver.resolve(channel_ref, limit=limit)
+        skus = resolver.resolve(channel_ref, limit=limit)
     except Exception:
         logger.exception(
             "dynamic_collections.resolve failed ref=%s channel=%s", ref, channel_ref,
         )
         return None
-    if not products:
+    if not skus:
         return None
-    return DynamicSection(meta=resolver.meta, products=tuple(products))
+    return DynamicSection(meta=resolver.meta, skus=tuple(skus))
 
 
 # ── Built-in resolvers ────────────────────────────────────────────────
+
+
+# O ranking dos mais vendidos (agregado de ``OrderItem`` × ``Order`` de 30 dias)
+# é a única leitura cara do cardápio que não depende de quem pede, e ele é lido
+# a cada ``menu/``. Guardado por poucos minutos: um pedido novo pode demorar até
+# ``FEATURED_RANKING_TTL_SECONDS`` para mexer na ordem dos Destaques. Só o
+# ranking fica guardado — publicação e pausa do produto continuam lidas na hora,
+# e o card (preço, disponibilidade) vem do cardápio, ao vivo.
+FEATURED_RANKING_CACHE_KEY = "shop:dynamic_collections:featured_ranking"
+FEATURED_RANKING_TTL_SECONDS = 300
+
+
+def invalidate_featured_ranking() -> None:
+    cache.delete(FEATURED_RANKING_CACHE_KEY)
 
 
 class FeaturedResolver:
@@ -104,13 +118,50 @@ class FeaturedResolver:
 
     WINDOW_DAYS = 30
 
-    def resolve(self, channel_ref: str, limit: int = 20) -> list[Product]:
-        from django.db.models import Count
+    def resolve(self, channel_ref: str, limit: int = 20) -> list[str]:
         from shopman.offerman.models import Product
+
+        top_skus = self._top_selling_skus(limit)
+        if top_skus:
+            # Manter ordem de mais vendidos
+            preserved = {sku: idx for idx, sku in enumerate(top_skus)}
+            skus = list(
+                Product.objects
+                .filter(sku__in=top_skus, is_published=True, is_sellable=True)
+                .values_list("sku", flat=True)
+            )
+            skus.sort(key=lambda sku: preserved.get(sku, 9999))
+            if skus:
+                return skus
+
+        # Fallback: produtos com is_featured no metadata ou menor sort_order
+        qs = Product.objects.filter(is_published=True, is_sellable=True)
+        featured_in_meta = [
+            sku for sku, metadata in qs.values_list("sku", "metadata")
+            if (metadata or {}).get("is_featured")
+        ]
+        if featured_in_meta:
+            return featured_in_meta[:limit]
+        return list(qs.order_by("sort_order", "name").values_list("sku", flat=True)[:limit])
+
+    def _top_selling_skus(self, limit: int) -> list[str]:
+        """Os ``limit`` SKUs mais vendidos da janela, do cache curto ou do banco.
+
+        Cache fora do ar não derruba a seção: lê do banco, como sem cache.
+        """
+        try:
+            cached = cache.get(FEATURED_RANKING_CACHE_KEY)
+        except Exception:
+            logger.warning("featured_ranking_cache_read_failed", exc_info=True)
+            cached = None
+        if cached is not None and cached[0] == limit:
+            return list(cached[1])
+
+        from django.db.models import Count
         from shopman.orderman.models import OrderItem
 
         since = timezone.now() - timedelta(days=self.WINDOW_DAYS)
-        top_skus = (
+        top_skus = list(
             OrderItem.objects
             .filter(order__created_at__gte=since)
             .values("sku")
@@ -118,24 +169,11 @@ class FeaturedResolver:
             .order_by("-n")
             .values_list("sku", flat=True)[:limit]
         )
-        top_skus = list(top_skus)
-        if top_skus:
-            # Manter ordem de mais vendidos
-            preserved = {sku: idx for idx, sku in enumerate(top_skus)}
-            products = list(
-                Product.objects
-                .filter(sku__in=top_skus, is_published=True, is_sellable=True)
-            )
-            products.sort(key=lambda p: preserved.get(p.sku, 9999))
-            if products:
-                return products
-
-        # Fallback: produtos com is_featured no metadata ou menor sort_order
-        qs = Product.objects.filter(is_published=True, is_sellable=True)
-        featured_in_meta = [p for p in qs if (p.metadata or {}).get("is_featured")]
-        if featured_in_meta:
-            return featured_in_meta[:limit]
-        return list(qs.order_by("sort_order", "name")[:limit])
+        try:
+            cache.set(FEATURED_RANKING_CACHE_KEY, (limit, tuple(top_skus)), FEATURED_RANKING_TTL_SECONDS)
+        except Exception:
+            logger.warning("featured_ranking_cache_write_failed", exc_info=True)
+        return top_skus
 
 
 class FreshFromOvenResolver:
@@ -150,7 +188,7 @@ class FreshFromOvenResolver:
 
     WINDOW_MINUTES = 60
 
-    def resolve(self, channel_ref: str, limit: int = 20) -> list[Product]:
+    def resolve(self, channel_ref: str, limit: int = 20) -> list[str]:
         try:
             from shopman.craftsman.models import WorkOrder
         except ImportError:
@@ -175,7 +213,8 @@ class FreshFromOvenResolver:
         return list(
             Product.objects
             .filter(sku__in=recent_skus, is_published=True, is_sellable=True)
-            .order_by("name")[:limit]
+            .order_by("name")
+            .values_list("sku", flat=True)[:limit]
         )
 
 
@@ -191,14 +230,15 @@ class NewArrivalsResolver:
 
     WINDOW_DAYS = 14
 
-    def resolve(self, channel_ref: str, limit: int = 20) -> list[Product]:
+    def resolve(self, channel_ref: str, limit: int = 20) -> list[str]:
         from shopman.offerman.models import Product
 
         since = timezone.now() - timedelta(days=self.WINDOW_DAYS)
         return list(
             Product.objects
             .filter(is_published=True, is_sellable=True, created_at__gte=since)
-            .order_by("-created_at")[:limit]
+            .order_by("-created_at")
+            .values_list("sku", flat=True)[:limit]
         )
 
 
