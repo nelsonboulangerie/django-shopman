@@ -1,5 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/vue'
-import { bindPwaUpdateRegistration } from '~/composables/usePwaUpdate'
+import { bindPwaUpdateRegistration, reloadAfterPwaUpdate } from '~/composables/usePwaUpdate'
 
 // Porte do `operator-kit/runtime/plugins/pwaRegistration.client.ts`.
 //
@@ -14,6 +14,9 @@ export default defineNuxtPlugin(() => {
   let swRegistration: ServiceWorkerRegistration | undefined
   const registration = useRegisterSW({
     immediate: true,
+    // Quando o worker novo assume: recarrega, ou vai ao destino da navegação que
+    // aplicou a versão (D9). Sem isto o vite-plugin-pwa só recarrega onde está.
+    onNeedReload: () => reloadAfterPwaUpdate(),
     onRegisteredSW: (_url: string, active: ServiceWorkerRegistration | undefined) => {
       swRegistration = active
     }
