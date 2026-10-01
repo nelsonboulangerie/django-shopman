@@ -1,14 +1,80 @@
 # HANDOFF — aceleração de go-live
 
-> Escrito em **2026-09-30, ~21:30 UTC**. Leia este arquivo ANTES de abrir qualquer frente de
-> infraestrutura, deploy ou performance. Ele existe porque este projeto perdeu 21 horas num
-> incidente que já estava documentado em outro lugar.
+> 🚪 **Este é o documento de ENTRADA ÚNICA** da aceleração de go-live. Sessão nova (Claude, Codex,
+> DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0.2. O
+> `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Estado anterior:** `docs/plans/GO-LIVE-ACCELERATION-PLAN-2026-09-29.md` (diagnóstico completo)
-> e `docs/coordination/DECISIONS.md` (decisões D-001 a D-009 + B-001 resolvido).
-> **Evidência:** `docs/reports/go-live-acceleration-20260929/` (15 relatórios).
+> **Atualizado em 2026-10-01, ~09:35 UTC** (estado depois da Frente 0 do turno de 01/10).
+> As seções 1 a 5 são o registro de 30/09 e ficam como histórico: valem as armadilhas, não a fila.
 
 ---
+
+## 0. Estado agora (01/10, depois da Frente 0)
+
+### 0.1 Onde as coisas estão
+
+| O quê | Estado | Onde |
+|---|---|---|
+| Turno autônomo 30/09 → 01/10 | encerrado; 28 PRs mergeados | NIGHT-REPORT (abaixo) |
+| NIGHT-REPORT + PENDING-DECISIONS (D1–D16) | **na fila de merge** (PR #1299; até entrar, leia no branch `claude/turno-autonomo-coordenacao-76dc5f`) | `docs/reports/go-live-acceleration-20260930-diag/` |
+| Diagnósticos D4, D5, D14, D16 (turno DSH de 01/10) | **na fila** (PR #1325); estavam só na worktree do DSH, o D16 nem commitado | `docs/reports/go-live-acceleration-20261001/` |
+| #1324 (margem da vitrine comia a unidade da sacola) | ✅ mergeado 01/10 09:00 UTC | `main` |
+| **D14 token da Efí no access log** | ✅ **FECHADO** 01/10 09:21 UTC (detalhe em 0.3) | spec vivo |
+| D13 republicar fichas com insumo repetido | ✅ **nada a fazer**: no alpha, 72 receitas com versão atual e 74 versões no total, **zero** com o mesmo SKU em duas linhas (consulta só-leitura, conexão direta 25060) | — |
+| D15 picos Cloudflare ↔ DO | medido 01/10 09:23–09:27 UTC: **não reproduz** (400 requisições, 0 erro, 0 acima de 5 s; tamanho, encoding, IPv4/6 e H1/H2 descartados; H3 e outra rede não medidos). Deployments explicam no máximo 2 de 4 picos; o 520 das 04:44:41 caiu fora de troca. Chamado na DO só para pedir log da madrugada | NIGHT-REPORT |
+
+### 0.2 Ordem de leitura
+
+1. **Este arquivo** (estado, em voo, armadilhas).
+2. `docs/reports/go-live-acceleration-20260930-diag/NIGHT-REPORT.md` (o que entrou no turno, medições de produção).
+3. `docs/reports/go-live-acceleration-20260930-diag/PENDING-DECISIONS.md` (D1–D16: o que é do dono).
+4. `docs/reports/go-live-acceleration-20261001/` (D14, D4, D5, D16: diagnósticos com caminho:linha).
+5. Só para regras de convivência e deploy: `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` §1 a §5.
+
+### 0.3 D14, como foi fechado (não refaça)
+
+- `make deploy-spec-drift context=shopman-do-app-admin` acusava **uma** divergência: o `run_command`
+  do `web` sem `--access-log=/dev/null` (a flag está em `.do/app.alpha-subdomains.yaml` desde 05/09).
+- Backup do spec vivo, edição textual de **uma linha**, `apps update`. SECRET antes × depois:
+  **42 = 42, idênticos** (chave e hash do valor cifrado). `spec get` depois: diff de uma linha só.
+- Deployment `50988cd5` ACTIVE 09:24 UTC. Drift agora: **[OK]**. `/health/live/` e `/health/ready/` 200.
+- Prova: POST no webhook da Efí com token **falso** (sonda) → 401, e a sonda **não** aparece no log;
+  a única linha é a do `django.request`, que já grava `token=[redacted]`.
+- Busca no log antes do update: só o deployment ativo tem log recuperável pelo `doctl` (347 linhas,
+  09:05–09:19 UTC): **0** `token=`, **0** `efi/pix`. Os 59 deployments anteriores não devolvem log.
+- ⚠️ **O token NÃO foi rotacionado.** É de sandbox (`EFI_SANDBOX=true`, Pix no simulador), mas é a
+  mesma variável `EFI_WEBHOOK_TOKEN` que irá para produção, onde é a autenticação **única** do
+  webhook (sem mTLS, allowlist de IP vazia). **Rotacionar é OBRIGATÓRIO antes de ligar a Efí de
+  produção** (item de checklist do corte do Pix). Ver `d14-token-efi.md` §7.
+
+### 0.4 Turno de 01/10: frentes (atualizado ~10:35 UTC)
+
+| Frente | PR | Estado |
+|---|---|---|
+| 1: token da Efí fora do access log (D14) | spec vivo | ✅ feito |
+| 2: loja 1 pedido = 1 data + 409 de ajuste mostra o teto da linha | #1329 | ✅ mergeado |
+| 3: "Etapa/Etapas" + guardrails + processo das 11 massas (92 etapas) | #1326 | ✅ mergeado |
+| 4: motivos de recusa (lista de 11 + "Outros", agrupada) | #1328 | ✅ mergeado |
+| 5: botão "Adicionar" ativo desde o primeiro quadro (D1) + `usePendingAction` | #1330 | na fila |
+| 6: D12 pool de Redis por processo + `gc.freeze()` | #1331 | na fila |
+| 7: D6 referências externas + D7 nota com critérios editáveis | #1332 | na fila |
+| 8: D15 medição de rede | sem PR | sem sintoma hoje |
+
+Detalhe e medições: NIGHT-REPORT, seção "Turno de 01/10". Decisões novas: D17 a D24.
+
+⚠️ **O balcão NÃO tem "1 linha = 1 data".** A comanda tem uma data por sessão; o
+`TestOneLineOneDate` é teste da loja. Ver D17 antes de supor o contrário.
+
+⚠️ **O processo das 92 etapas NÃO é dado da casa.** O próprio artifact de origem (claude.ai
+`b8cd4fc0-…`, 05/09) o chama de "proposta minha, é a parte que eu menos sei". Ele está no repo para
+não se perder, não para ir ao seed.
+
+⚠️ **D12, degrau 1 (`CONN_MAX_AGE=0`) pede escrita no spec vivo** (`DATABASE_CONN_MAX_AGE="60"` está
+no spec, e o deploy não escreve spec). Fora da autorização deste turno: é do dono.
+
+---
+
+## Histórico de 30/09 (seções 1 a 5)
 
 ## 1. O que foi resolvido hoje
 
@@ -26,9 +92,9 @@
 
 1. ⛔ **NUNCA** `doctl apps update --spec` com um arquivo que não veio do spec VIVO. O update
    **substitui** o spec inteiro, não faz merge. Foi assim que o app congelou.
-2. ⛔ **Sempre** `--context shopman-spec-update`. O default do doctl agora é vazio e **falha alto**
+2. ⛔ **Sempre** `--context shopman-do-app-admin` (o antigo `shopman-spec-update` foi renomeado). O default do doctl agora é vazio e **falha alto**
    de propósito — não "conserte" isso pondo um token no default.
-3. **Antes de aplicar qualquer spec:** `make deploy-spec-drift context=shopman-spec-update`.
+3. **Antes de aplicar qualquer spec:** `make deploy-spec-drift context=shopman-do-app-admin`.
    Se houver linha em SUMIRIAM, **pare**.
 4. **Depois de aplicar:** `spec get` de novo e compare os SECRET antes × depois. Hoje são 42.
 5. `deploy_on_push` está `false` nos 8 componentes. **Quem criar o deployment é o

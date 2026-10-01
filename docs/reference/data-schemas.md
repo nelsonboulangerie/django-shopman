@@ -1327,6 +1327,38 @@ mecânica do `LoyaltyConfig`): defaults sensatos, `deep_merge` com
 
 ---
 
+## Shop.cancellation_presets
+
+Motivos prontos que o operador escolhe com um toque ao **recusar** ou **cancelar** um
+pedido no Gestor (canais que não são iFood; o iFood usa a lista de códigos dele).
+
+**Campo**: `Shop.cancellation_presets` (JSONField, `shopman/shop/models/shop.py`).
+**Escrito por**: Admin → Loja → Pedidos e entrega → "Motivos de cancelamento e recusa"; `seed`
+(`CANCELLATION_PRESETS`); migração `shop.0085` (leva a lista velha do seed até a aprovada).
+**Lido por**: `backstage.projections.order_queue._cancellation_presets` →
+`OperatorOrderProjection.cancellation_presets` → `OrderReasonDialog.vue`.
+
+Lista; cada item é **um dos dois**:
+
+| Forma | Exemplo | Significado |
+|---|---|---|
+| `string` | `"Pedido em duplicidade"` | Motivo sem grupo (chip sem cabeçalho). |
+| `{"label": str, "group": str}` | `{"label": "Pagamento não aprovado", "group": "Pagamento"}` | Motivo sob o cabeçalho `group`. Só essas duas chaves. |
+
+- **Ordem**: a da lista é a da tela. Os grupos aparecem na ordem do primeiro motivo de cada
+  um; dentro do grupo, a ordem gravada. Motivos sem grupo formam um bloco sem cabeçalho.
+- **Projeção** (`CancellationPresetGroupProjection`): `[{label, presets: [str]}]`, `label`
+  vazio = sem cabeçalho. Vazio e forma desconhecida são descartados; a leitura nunca derruba
+  a projeção.
+- ⚠️ **O cliente lê o motivo como `Motivo: <motivo>.`** (`services/notification.py`,
+  `{status_note}` de `order_cancelled`/`order_rejected`). Por isso **nenhum motivo termina
+  em pontuação** (`.,;:!?…`): `validate_cancellation_presets` recusa no model e no Admin.
+- No Admin, cada linha é `Grupo | Motivo` (ou só `Motivo`).
+- O chip **"Outros"** do Gestor não é motivo e não mora aqui: ele limpa a escolha e abre o
+  texto livre, e com ele selecionado não se envia texto vazio.
+
+---
+
 ## Shop.integrations
 
 Seleção de adapters por tipo. Sobreescreve `settings.py` sem exigir redeploy.
@@ -1604,6 +1636,20 @@ apontando a etapa ("Etapa 2: ...").
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
 | `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
+
+## RecipeEntry.meta
+
+A receita do inventário (a linhagem). Diferente da `RecipeVersion` publicada, a `RecipeEntry`
+muda: o que é da receita e não de uma fórmula congelada mora aqui.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `external_references` | `list[{title, url?, note?}]` | `backstage.services.recipe_book.patch_entry` (`PATCH recipes/<ref>/` com a lista inteira; forma em `backstage.services.recipe_external_references.validate`) | `RecipeEntryDetailProjection.external_references` (via `recipe_external_references.read`) | Referências externas (D6, 01/10/2026): livro + página, vídeo, artigo. `title` obrigatório (até 200); `url` só `http`/`https` com host (até 500); `note` até 500; no máximo 30 por receita. Chave vazia não se grava; lista vazia apaga a chave. Da receita, não da versão: a fonte vale para todas as versões, e a versão publicada é imutável (#1308). A leitura descarta link fora da forma (gravado à mão pelo Admin). Anexo de arquivo não mora aqui. |
+
+A nota 0 a 5 por critério (D7) **não** mora em JSON: é registro próprio
+(`backstage.RecipeVersionRating` + `RecipeVersionRatingScore`, critérios em
+`backstage.RecipeRatingCriterion`), apontando para a versão fechada por `entry_ref` +
+`version_number`.
 
 ## RecipeVersion.meta
 

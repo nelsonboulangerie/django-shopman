@@ -16,6 +16,7 @@ import type {
 
 export type {
   AwaitingWorkOrderProjection,
+  CancellationPresetGroupProjection,
   OrderItemProjection,
   TimelineEventProjection,
 } from "~/generated/ordersContract";

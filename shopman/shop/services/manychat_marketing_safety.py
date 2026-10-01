@@ -192,6 +192,7 @@ def flow_fields_for_event(event: str) -> tuple[str, ...] | None:
 #: permissão, não de proibição: backend desconhecido não prova compartilhamento.
 _SHARED_CACHE_BACKENDS = frozenset({
     "django.core.cache.backends.redis.RedisCache",
+    "shopman.shop.cache.SharedPoolRedisCache",
     "django_redis.cache.RedisCache",
     "django.core.cache.backends.db.DatabaseCache",
     "django.core.cache.backends.memcached.PyMemcacheCache",

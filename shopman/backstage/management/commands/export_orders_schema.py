@@ -72,6 +72,7 @@ from shopman.backstage.projections.feeds import (
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
+    CancellationPresetGroupProjection,
     CustomerProfileProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
@@ -123,6 +124,7 @@ CONTRACT_DATACLASSES = (
     OrderItemProjection,
     TimelineEventProjection,
     AwaitingWorkOrderProjection,
+    CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
     CustomerProfileProjection,

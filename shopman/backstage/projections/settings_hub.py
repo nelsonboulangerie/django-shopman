@@ -137,6 +137,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Compras", "shop_shoppurchase", "Como a reposição de insumos é calculada: consumo, prazos e segurança.", "shopping_cart"),
             _model("Defeitos de lote", "shop_qualitydefect", "Os problemas que o padeiro pode apontar ao avaliar um lote.", "report"),
             _model("Graus de qualidade", "shop_qualitygrade", "As notas de qualidade e o desconto que cada uma aplica.", "grade"),
+            _model("Critérios da nota de receita", "backstage_reciperatingcriterion", "O que o operador avalia de 0 a 5 em cada versão de receita: sabor, textura, aparência.", "star"),
             _model("Etiquetas de timer", "backstage_timertag", "Os lembretes de um toque no fournil: estufa, descanso, freezer.", "timer"),
             _model("Motivos de episódio", "backstage_operationepisodekind", "As explicações que o operador pode dar quando algo sai do previsto.", "help_center"),
             _model("Posições", "stockman_position", "Os lugares onde o estoque fica: balcão, câmara, depósito.", "domain"),

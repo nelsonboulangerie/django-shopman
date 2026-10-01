@@ -262,6 +262,52 @@ def own_holds_by_sku(session_key: str, skus: list[str]) -> dict[str, Decimal]:
     return {sku: bucket[sku] for sku in dict.fromkeys(skus) if bucket.get(sku) is not None}
 
 
+def session_hold_dates_around(session_key: str, first_new_hold_id: str | None) -> tuple[set[date], set[date]]:
+    """``(datas de antes, datas novas)`` das reservas vivas da sessão, numa consulta.
+
+    "Novas" são as reservas criadas a partir de ``first_new_hold_id`` (a
+    mutação corre sob o lock da sessão, então tudo o que ela criou tem chave
+    igual ou maior; a reserva fatiada entre quants e a de combo criam várias,
+    e só a primeira volta no resultado). "De antes" é o resto.
+
+    Só conta reserva que aponta para um quant: pão pronto (a data é hoje) ou
+    fornada planejada (a data é a do lote). Reserva de DEMANDA (``quant`` nulo,
+    política ``demand_ok``: café, croque) não tem lote a esperar e cabe em
+    qualquer data, e SKU que o Stockman não rastreia nem reserva tem; nenhum
+    dos dois fixa a data da sacola.
+    """
+    if not session_key or not first_new_hold_id:
+        return set(), set()
+    try:
+        first_pk = int(str(first_new_hold_id).split(":")[1])
+    except (IndexError, ValueError):
+        return set(), set()
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_hold_dates_around degraded; returning empty", exc_info=True)
+        return set(), set()
+
+    before: set[date] = set()
+    new: set[date] = set()
+    rows = (
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            target_date__isnull=False,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by()
+        .values_list("pk", "target_date")
+    )
+    for pk, target_date in rows:
+        (new if pk >= first_pk else before).add(target_date)
+    return before, new
+
+
 def stock_on_dates(
     skus: list[str],
     dates: list[date],
@@ -1125,6 +1171,20 @@ def _load_session_holds_for_sku(
         metadata_filters=metadata_filters,
     )
     return [(hold_id, qty) for hold_id, _sku, qty in holds]
+
+
+def session_line_held_qty(session_key: str, sku: str) -> Decimal:
+    """Quanto a LINHA ``sku`` da sacola segura hoje (as mesmas reservas que o ``reconcile`` ajusta).
+
+    Só as reservas da própria linha: a unidade de CROIS-01 que um combo da
+    mesma sacola segura é do combo, não da linha de CROIS-01.
+    """
+    if not session_key or not sku:
+        return Decimal("0")
+    held = _load_session_holds_for_sku(
+        session_key, sku, metadata_filters=_cart_hold_metadata(sku),
+    )
+    return sum((qty for _, qty in held), Decimal("0"))
 
 
 def _reconcile_simple(

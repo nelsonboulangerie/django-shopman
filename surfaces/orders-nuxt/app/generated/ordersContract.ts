@@ -307,6 +307,12 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
+/** Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho). */
+export interface CancellationPresetGroupProjection {
+  label: string;
+  presets: string[];
+}
+
 /** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */
 export interface EquipmentOptionProjection {
   ref: string;
@@ -553,7 +559,7 @@ export interface OperatorOrderProjection {
   gift_recipient_phone: string;
   gift_message: string;
   gift_hide_values: boolean;
-  cancellation_presets: string[];
+  cancellation_presets: CancellationPresetGroupProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;

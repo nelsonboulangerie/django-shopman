@@ -48,6 +48,10 @@ from shopman.backstage.admin.print_jobs import (  # noqa: F401
     PrintAgentCredentialAdmin,
     PrintJobAdmin,
 )
+from shopman.backstage.admin.recipe_rating import (  # noqa: F401
+    RecipeRatingCriterionAdmin,
+    RecipeVersionRatingAdmin,
+)
 from shopman.backstage.admin.seating import SeatingSpotAdmin  # noqa: F401
 from shopman.backstage.admin.sign_in import SignInEventAdmin  # noqa: F401
 from shopman.backstage.admin.terminal import TerminalAdmin  # noqa: F401

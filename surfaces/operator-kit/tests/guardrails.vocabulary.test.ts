@@ -265,3 +265,54 @@ describe("o objeto que a Produção planeja e fecha chama-se lote", () => {
     expect(SOURCES.length - BATCH_SOURCES.length).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO, terceira regra: a unidade do modo de fazer de uma
+// receita chama-se **etapa**. Decisão do dono em 01/10/2026, diante da colisão
+// que estava no ar: o modelo e o Admin diziam "Etapas" (`Recipe.steps`, o campo
+// do Admin do Craftsman) e as telas de receita do app de Produção diziam
+// "Passos", "Passos lidos" e "Passos (um por linha)". A mesma coisa com dois
+// nomes, a depender da porta.
+//
+// ## Por que o escopo é o app de Produção, e não as superfícies todas
+//
+// "Passo" é palavra certa para outra coisa: o passo do login, o passo a passo da
+// instalação (`OperatorInstallSteps.vue`), os dois passos do dropdown do
+// `FilterBar`. Nada disso é etapa de receita. Recusar a palavra em todas as
+// superfícies obrigaria a reescrever frases que dizem a verdade. Etapa de receita
+// e de produção só aparece ao operador no `production-nuxt` (receitas, grade da
+// produção, leitura automática da ficha), então a trava mora ali, no app inteiro,
+// para que a próxima tela de receita nasça coberta sem ninguém lembrar dela.
+//
+// Comentário é descontado, como na regra do "lote": "plan + finish num passo"
+// (`useQcKiosk.ts`) fala de um gesto, não de uma etapa. O que chega ao operador
+// (template, atributo, literal, nome de teste) é o que conta. A irmã em Python é
+// `shopman/backstage/tests/test_vocabulario_etapa_da_receita.py`.
+/** A unidade do modo de fazer é "etapa" (feminino: "uma por linha"). */
+const BANNED_STEP = /\bpassos?\b/i;
+
+const STEP_SOURCES = SOURCES.filter((file) =>
+  relative(surfacesDir, file).startsWith("production-nuxt/"),
+);
+
+describe("a unidade do modo de fazer de uma receita chama-se etapa", () => {
+  it("nenhum texto do app de Produção diz 'passo'", () => {
+    const leaks = STEP_SOURCES.flatMap((file) => offenders(file, BANNED_STEP, stripComments));
+
+    expect(
+      leaks,
+      "A unidade do modo de fazer é 'etapa' (decisão do dono, 01/10/2026), o mesmo\n" +
+        "nome do modelo e do Admin. A trava não escreve a substituição porque o gênero\n" +
+        "muda: 'Passos (um por linha)' vira 'Etapas (uma por linha)', 'Passos lidos'\n" +
+        "vira 'Etapas lidas'. Leia a linha.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+
+  it("a varredura enxerga as telas de receita", () => {
+    const paths = STEP_SOURCES.map((file) => relative(surfacesDir, file));
+    expect(paths).toContain("production-nuxt/app/pages/recipes/[ref]/edit.vue");
+    expect(paths).toContain("production-nuxt/app/pages/recipes/new.vue");
+    expect(STEP_SOURCES.length).toBeGreaterThan(40);
+  });
+});

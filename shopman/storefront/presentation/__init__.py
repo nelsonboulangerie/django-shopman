@@ -20,6 +20,7 @@ from .cart import (
     MinimumOrderProgressProjection,
     UpsellSuggestionProjection,
     build_cart,
+    present_cart_date_mismatch,
 )
 from .catalog import (
     CatalogItemProjection,
@@ -124,6 +125,7 @@ __all__ = [
     "badges_for_product",
     "build_account",
     "build_cart",
+    "present_cart_date_mismatch",
     "build_catalog",
     "build_catalog_items_for_skus",
     "notify_subscribed_skus",

@@ -3,12 +3,12 @@ dialeto certo (409 conflito vs 400 pedido inválido), nunca com um 500.
 
 As telas de produção são muitas (grid do gestor, quiosque de QC, KDS, timer do
 forno) e todas olham a mesma fornada. Quando duas mexem na mesma ordem, ou quando
-uma tela abre uma ação impossível para o estado atual (avançar passo numa fornada
+uma tela abre uma ação impossível para o estado atual (avançar etapa numa fornada
 que ainda não começou, estornar uma que já saiu), o core recusa — e o que o
 operador tem de ver é o mapeamento da casa:
 
   - conflito de estado / revisão velha  → ``ProductionConflict`` (HTTP 409)
-  - passo/estado inaplicável            → ``ProductionError``    (HTTP 400)
+  - etapa/estado inaplicável            → ``ProductionError``    (HTTP 400)
 
 O ``expected_rev`` no ``start`` e no ``finish`` nunca tinha teste — só o ``plan``
 e o ``void`` provavam o compare-and-swap. Aqui as quatro mutações com revisão e

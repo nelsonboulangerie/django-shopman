@@ -490,7 +490,7 @@ Endpoints `/api/v1/cart/`, `/api/v1/checkout/` (3/min), `/api/v1/availability/<s
 
 ### 3.2 Bootstrap
 
-`config/settings.py` wires: Daphne (primeiro), Unfold, Django core, terceiros, 8 cores + contribs, `shopman.shop`, instance apps via env. Middleware inclui `doorman.AuthCustomerMiddleware` + 3 middleware shopman. Auth backends: PhoneOTPBackend + ModelBackend. Templates com 3 context processors. PostgreSQL via `DATABASE_URL` e Redis via `REDIS_URL` formam o runtime canonico; SQLite/LocMem sao apenas fallback local. `REDIS_URL` configura `django.core.cache.backends.redis.RedisCache` e `EVENTSTREAM_REDIS` para SSE multi-worker.
+`config/settings.py` wires: Daphne (primeiro), Unfold, Django core, terceiros, 8 cores + contribs, `shopman.shop`, instance apps via env. Middleware inclui `doorman.AuthCustomerMiddleware` + 3 middleware shopman. Auth backends: PhoneOTPBackend + ModelBackend. Templates com 3 context processors. PostgreSQL via `DATABASE_URL` e Redis via `REDIS_URL` formam o runtime canonico; SQLite/LocMem sao apenas fallback local. `REDIS_URL` configura `shopman.shop.cache.SharedPoolRedisCache` (RedisCache do Django com um pool de conexões por processo) e `EVENTSTREAM_REDIS` para SSE multi-worker.
 
 ### 3.3 Seed
 

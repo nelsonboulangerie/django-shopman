@@ -329,3 +329,76 @@ class TestOneLineOneDate:
         holds = _active_holds(product.sku)
         assert {h.target_date for h in holds} == {date.today()}
         assert sum(h.quantity for h in holds) == Decimal(_line_qty(client, product.sku))
+
+
+def _set_available_action(body):
+    return next((a for a in body.get("actions", []) if a.get("ref") == "set_available_qty"), None)
+
+
+class TestAdjustmentRefusalOffersTheLineCeiling:
+    """No 409 de um AJUSTE, o número é o TETO da linha, não o que sobra além dela.
+
+    A ação de 1 toque leva a linha a N (absoluto). Mandar o livre além da
+    reserva fazia o botão mentir: sacola 2, fornada 4, pediu 6 oferecia
+    "Pré-reservar 2", que não muda nada, quando 4 cabem; e linha 4, pediu 5
+    oferecia "Levar 2", que ENCOLHIA a sacola. O teto é o que a linha segura
+    mais o livre; na linha nova os dois números coincidem.
+    """
+
+    def test_queue_line_refusal_offers_the_whole_batch(self, client, queue):
+        assert _set_qty(client, queue.sku, 2).status_code == 200
+
+        refused = _set_qty(client, queue.sku, 6)
+
+        assert refused.status_code == 409
+        body = refused.json()
+        assert body["available_qty"] == 4, "o teto da linha é a fornada inteira, não os 2 que sobram"
+        assert body["line_qty"] == 2
+        assert body["is_planned"] is True
+        action = _set_available_action(body)
+        assert action is not None
+        assert action["payload_schema"]["properties"]["qty"]["const"] == 4
+
+        # O botão leva a linha até o teto, e o teto cabe.
+        assert _set_qty(client, queue.sku, body["available_qty"]).status_code == 200
+        assert _reserved(queue.sku) == Decimal("4")
+        assert _line_qty(client, queue.sku) == 4
+
+    def test_line_already_at_the_ceiling_is_never_offered_less(self, client, channel, product):
+        _ensure_listing_item(channel, product, price_q=90)
+        _receive_today(product, "4")
+        assert _set_qty(client, product.sku, 4).status_code == 200
+
+        refused = _set_qty(client, product.sku, 5)
+
+        assert refused.status_code == 409
+        body = refused.json()
+        assert body["available_qty"] == 4, "antes: 0 (o livre), e o botão encolhia a linha"
+        assert body["line_qty"] == 4
+        assert _set_available_action(body) is None, "teto igual à linha: não há o que levar"
+        assert _reserved(product.sku) == Decimal("4")
+        assert _line_qty(client, product.sku) == 4
+
+    def test_ready_line_refusal_offers_held_plus_free(self, client, channel, product):
+        _ensure_listing_item(channel, product, price_q=90)
+        _receive_today(product, "5")
+        assert _set_qty(client, product.sku, 2).status_code == 200
+
+        body = _set_qty(client, product.sku, 9).json()
+
+        assert body["available_qty"] == 5
+        assert body["line_qty"] == 2
+        assert _set_available_action(body)["payload_schema"]["properties"]["qty"]["const"] == 5
+
+    def test_new_line_refusal_keeps_the_free_quantity(self, client, channel, product):
+        """Linha nova: o teto é o livre, como sempre foi."""
+        _ensure_listing_item(channel, product, price_q=90)
+        _receive_today(product, "3")
+
+        refused = _set_qty(client, product.sku, 5)
+
+        assert refused.status_code == 409
+        body = refused.json()
+        assert body["available_qty"] == 3
+        assert body["line_qty"] is None
+        assert _set_available_action(body)["payload_schema"]["properties"]["qty"]["const"] == 3

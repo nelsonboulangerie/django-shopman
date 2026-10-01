@@ -4,7 +4,9 @@
 // linha do tempo das versões e as ações: nova versão (copia a selecionada em
 // rascunho), editar rascunho, publicar (diálogo com o que muda contra a atual),
 // comparar, associar SKU, arquivar. Ler é do gate do app; mexer pede `can_edit`.
-// A estrela (favorita) é preferência do operador: basta ler.
+// A estrela (favorita) é preferência do operador: basta ler. A nota da versão
+// (0 a 5 por critério do Admin) também; as referências (livros, vídeos, artigos)
+// são da receita e pedem `can_edit` para mudar.
 import type { RecipeVersionProjection } from "~/types/recipeBook";
 import { isStale } from "~/presentation/production";
 import {
@@ -38,6 +40,8 @@ const {
   patchEntry,
   createVersion,
   publish,
+  saveReferences,
+  rateVersion,
   toggleFavorite,
   favoriteBusy,
 } = useRecipeEntry(entryRef);
@@ -402,7 +406,7 @@ async function confirmArchive() {
               <FormulaLens :lens="selected.lens" />
 
               <div v-if="selected.steps.length" class="mt-4 rounded-md border bg-card p-4">
-                <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos</p>
+                <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas</p>
                 <ol class="list-decimal space-y-1 pl-5 text-sm">
                   <li v-for="(step, index) in selected.steps" :key="index">
                     <span class="font-medium">{{ step.name }}</span>
@@ -449,6 +453,22 @@ async function confirmArchive() {
               </li>
             </ol>
             <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhuma versão ainda.</p>
+
+            <div class="mt-4 grid gap-3">
+              <RecipeVersionRating
+                :version="selected"
+                :criteria="entry.rating_criteria"
+                :ratings="entry.ratings"
+                :busy="busy"
+                :rate="rateVersion"
+              />
+              <RecipeExternalReferences
+                :references="entry.external_references"
+                :can-edit="canEdit"
+                :busy="busy"
+                :save="saveReferences"
+              />
+            </div>
           </aside>
         </div>
       </template>

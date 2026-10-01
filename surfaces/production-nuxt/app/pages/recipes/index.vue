@@ -231,6 +231,13 @@ function clearFilters() {
               <span v-if="entry.hydration_display" class="tabular-nums">
                 Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
               </span>
+              <span
+                v-if="entry.rating_display"
+                class="tabular-nums"
+                :title="entry.rating_count === 1 ? '1 avaliação da versão atual' : `${entry.rating_count} avaliações da versão atual`"
+              >
+                Nota <b class="text-foreground">{{ entry.rating_display }}</b> de 5
+              </span>
               <UiBadge v-if="entry.draft_count > 0" variant="warning" class="px-1.5 py-0 text-xs">
                 {{ entry.draft_count === 1 ? "Rascunho" : `${entry.draft_count} rascunhos` }}
               </UiBadge>

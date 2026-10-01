@@ -50,6 +50,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **aparelho** | ⛔ não se usa em superfície de operador. **Fica na loja**, por concessão do dono | 18/09 | exenção escrita da trava para `storefront-nuxt/` |
 | **lote** | o objeto que a Produção planeja, inicia e fecha. *Fornada* nomeia o evento do forno | 22/09 | trava (só texto de tela; comentário sobre o forno continua livre) |
 | **fornada** | fica na **loja** e no texto que o **cliente** lê no Marketing | 22/09 | exenção por audiência, escrita na trava |
+| **etapa** | a unidade do modo de fazer de uma receita (`Recipe.steps`, `RecipeVersion.steps`) e o avanço dela no lote (evento `step_advanced` = "Etapa avançada"). Decisão do dono: era "Etapas" no modelo e no Admin e "Passos" nas telas de receita. ⛔ **"passo" como nome da etapa de receita ou de produção** ("Passos", "Passos lidos", "Adicionar passo", "Passo 3" da receita). "Passo" continua certo para o que não é etapa: o passo do login, o passo a passo de instalação, "próximo passo" de uma instrução | 01/10 | trava: 3ª regra de `guardrails.vocabulary.test.ts` (texto do `production-nuxt`) + `test_vocabulario_etapa_da_receita.py` (literais do `craftsman` e dos arquivos `recipe`/`production` do backstage) |
 | **Faixa de preço** | fica (conceito de negócio). A *lane* de processamento passa a ser nomeada **plataforma** | ≤22/09 | [`omotenashi-copy.md`](omotenashi-copy.md) §D7b(b) |
 | **Tela do cliente** | o monitor do balcão do **PDV** | 22/09 | — |
 | **Painel de retirada** | o painel público da **Cozinha** (rota `/pickup` não muda: URL é em inglês) | 22/09 | — |
@@ -160,7 +161,7 @@ que deve ser. O que precisa de nome único é só o que os dois **fazem igual** 
 
 | Camada | Palavras |
 |---|---|
-| objeto | **lote** · **receita** (a ficha) · **insumo** · **bancada** · **estação** |
+| objeto | **lote** · **receita** (a ficha) · **etapa** (do modo de fazer; ⛔ nunca "passo", 01/10) · **insumo** · **bancada** · **estação** |
 | atos | **planejar** · **iniciar** · **continuar** · **finalizar** (só o último passo) · **visto** |
 | grandezas | **peça** (unidade) · **quilo** · **lote** — ⛔ nunca somadas num número só |
 

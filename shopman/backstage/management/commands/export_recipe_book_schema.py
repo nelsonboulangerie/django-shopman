@@ -22,6 +22,8 @@ from django.core.management.base import BaseCommand
 from shopman.backstage.contracts import render_contract_module, run_contract_export
 from shopman.backstage.projections.recipe_book import (
     CaptureItemProjection,
+    CriterionAverageProjection,
+    ExternalReferenceProjection,
     FormulaItemProjection,
     FormulaLensProjection,
     FormulaMetricProjection,
@@ -30,6 +32,7 @@ from shopman.backstage.projections.recipe_book import (
     IngredientOptionProjection,
     KindOptionProjection,
     QualityShareProjection,
+    RatingCriterionProjection,
     RecipeBookAccessProjection,
     RecipeBookListProjection,
     RecipeCaptureDraftProjection,
@@ -44,6 +47,7 @@ from shopman.backstage.projections.recipe_book import (
     RecipeVersionProjection,
     ReferenceRangeProjection,
     UsageCaveatProjection,
+    VersionRatingProjection,
     VersionUsageProjection,
 )
 
@@ -67,6 +71,10 @@ CONTRACT_DATACLASSES = (
     QualityShareProjection,
     VersionUsageProjection,
     RecipeUsageProjection,
+    ExternalReferenceProjection,
+    RatingCriterionProjection,
+    CriterionAverageProjection,
+    VersionRatingProjection,
     RecipeEntryDetailProjection,
     RecipeCompareRowProjection,
     RecipeCompareMetricProjection,

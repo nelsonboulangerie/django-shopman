@@ -71,6 +71,7 @@ from shopman.shop.models import (
     ShopPurchase,
     ShopSearch,
 )
+from shopman.shop.models.shop import cancellation_preset_entries, validate_cancellation_presets
 from shopman.shop.operator_capacity_policy import (
     DEFAULT_ATTENTION_PERCENT,
     DEFAULT_CRITICAL_PERCENT,
@@ -251,6 +252,36 @@ class CalendarRemovalForm(BaseDialogForm):
         widget=UnfoldAdminDateWidget(format="%Y-%m-%d"),
         help_text="Deixe em branco para uma decisão de data avulsa.",
     )
+
+
+#: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
+CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
+
+
+def _cancellation_presets_to_rows(raw) -> list[str]:
+    """``Shop.cancellation_presets`` → linhas do ArrayWidget (``"Grupo | Motivo"`` ou ``"Motivo"``)."""
+    rows = []
+    for group, label in cancellation_preset_entries(raw):
+        rows.append(f"{group} {CANCELLATION_PRESET_GROUP_SEPARATOR} {label}" if group else label)
+    return rows
+
+
+def _cancellation_presets_from_rows(rows) -> list:
+    """Linhas do ArrayWidget → ``Shop.cancellation_presets`` (string ou ``{"label", "group"}``)."""
+    presets: list = []
+    for row in rows or []:
+        row = str(row).strip()
+        if not row:
+            continue
+        group, sep, label = row.partition(CANCELLATION_PRESET_GROUP_SEPARATOR)
+        if not sep:
+            presets.append(row)
+            continue
+        group, label = group.strip(), label.strip()
+        if not label:
+            raise forms.ValidationError(f"Falta o motivo depois do grupo em “{row}”.")
+        presets.append({"label": label, "group": group} if group else label)
+    return presets
 
 
 def _opening_field(day: str, suffix: str) -> str:
@@ -1229,9 +1260,13 @@ class ShopForm(forms.ModelForm):
         if "cancellation_presets" in self.fields:
             self.fields["cancellation_presets"].required = False
             self.fields["cancellation_presets"].help_text = (
-                "Adicione um motivo por vez. O operador injeta com um toque ao recusar/"
-                "cancelar no gestor, e o texto vai ao cliente na notificação — escreva na "
-                "voz da loja (ex.: “Item indisponível no momento”)."
+                "Um motivo por linha, na ordem da tela. Para mostrar sob um cabeçalho no "
+                f"Gestor, escreva o grupo antes, separado por “{CANCELLATION_PRESET_GROUP_SEPARATOR}” "
+                "(ex.: “Produto | Item indisponível no momento”); sem grupo, só o motivo. "
+                "O cliente lê “Motivo: <motivo>.”: escreva na voz da loja e sem ponto final."
+            )
+            self.initial["cancellation_presets"] = _cancellation_presets_to_rows(
+                self.initial.get("cancellation_presets")
             )
 
         if "kitchen_note_tags" in self.fields:
@@ -1473,6 +1508,11 @@ class ShopForm(forms.ModelForm):
                 closed_date.get("date")
             )
             self.fields[_defaults_closed_date_field(index, "label")].initial = closed_date.get("label", "")
+
+    def clean_cancellation_presets(self):
+        presets = _cancellation_presets_from_rows(self.cleaned_data.get("cancellation_presets"))
+        validate_cancellation_presets(presets)
+        return presets
 
     def clean(self):
         cleaned_data = super().clean()

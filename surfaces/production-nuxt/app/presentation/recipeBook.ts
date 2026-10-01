@@ -409,8 +409,8 @@ function stepInput(step: RecipeStepInput | RecipeStepProjection): RecipeStepInpu
 }
 
 /**
- * Passos em textarea: uma linha por passo (vazias fora). O textarea só edita
- * nomes; o passo que continua com o MESMO nome guarda instruções, tempo alvo e
+ * Etapas em textarea: uma linha por etapa (vazias fora). O textarea só edita
+ * nomes; a etapa que continua com o MESMO nome guarda instruções, tempo alvo e
  * anotação que já tinha (`previous`). Nome repetido casa com o próximo ainda
  * não usado (espelho de `recipe_steps.steps_from_names` no Craftsman).
  */
@@ -434,7 +434,7 @@ export function stepsToText(steps: readonly { name: string }[]): string {
   return steps.map((step) => step.name).join("\n");
 }
 
-/** Cópia de passos projetados para o corpo de uma versão nova. */
+/** Cópia de etapas projetadas para o corpo de uma versão nova. */
 export function stepsForPayload(steps: readonly RecipeStepProjection[]): RecipeStepInput[] {
   return steps.map(stepInput);
 }

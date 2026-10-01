@@ -4,6 +4,71 @@
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` (#1297 + #1302).
 > **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D16).
 
+## Turno de 01/10 (manhã): Frentes 0 a 8
+
+> Coordenador: Claude (sessão `turno-autonomo-go-live`). Entrada única do estado:
+> [`../go-live-acceleration-20260929/HANDOFF.md`](../go-live-acceleration-20260929/HANDOFF.md).
+> Decisões novas: D17 a D24 em [PENDING-DECISIONS](PENDING-DECISIONS.md).
+
+| Frente | PR | Estado | O que mudou para você |
+|---|---|---|---|
+| 0 higiene | #1299, #1325, #1327 | mergeados | NIGHT-REPORT, PENDING-DECISIONS e os diagnósticos D4/D5/D14/D16 no `main`; HANDOFF vira entrada única. O #1324 já estava mergeado (09:00) |
+| **1 token da Efí no access log (D14)** | spec vivo | ✅ feito 09:21 UTC | `web` agora roda com `--access-log=/dev/null`. Diff de uma linha, 42 SECRET idênticos, drift [OK], sonda com token falso não aparece no log |
+| **2 lei da data + 409 de ajuste (D16)** | #1329 | na fila | A sacola da loja **aceitava** itens de datas diferentes; agora recusa e diz "Isso fica para outro pedido". O 409 de ajuste mostra o teto da linha ("Pré-reservar 4 unidades no total") e nunca encolhe a linha |
+| 3 "Etapa" (D5) | #1326 | mergeado | Telas dizem "Etapas"; decisão no `suite-vocabulary.md`; duas travas; processo das 11 massas (92 etapas) no repo |
+| 4 motivos de recusa (D4) | #1328 | na fila | Lista aprovada de 11, agrupada, "Outros" que foca o texto; ponto final recusado; migração de dados leva a lista ao alpha só se ninguém editou |
+| 5 clique nunca inerte (D1) | #1330 | na fila | "Adicionar" ativo desde o primeiro quadro, toque precoce repetido uma vez; `usePendingAction` no kit e na loja; trava que só encolhe |
+| 6 custo fixo por request (D12) | #1331 | na fila | Um pool de Redis por processo (bancada TLS: 103 → 3 conexões em 100 requests) e `gc.freeze()` (pausa máxima 86 → 9,7 ms). Degrau 1 (`CONN_MAX_AGE=0`) é seu (D21) |
+| 7 referências + nota (D6/D7) | #1332 | na fila | "Referências" (livros, vídeos, artigos) na receita, em `RecipeEntry.meta`, sem upload; nota 0 a 5 por versão com critérios editáveis no Admin (Sabor, Textura, Aparência), um voto por operador |
+| D13 fichas com insumo repetido | só leitura | ✅ nada a fazer | No alpha, 72 receitas com versão atual e 74 versões: **zero** com o mesmo SKU em duas linhas |
+| 8 picos Cloudflare ↔ DO (D15) | só medição | sem sintoma hoje | 400 requisições 09:23–09:27 UTC, 0 erro, 0 acima de 5 s (detalhe abaixo) |
+
+### Frente 1 em detalhe (D14)
+- `make deploy-spec-drift context=shopman-do-app-admin` acusava só o `run_command` do `web`.
+- Backup do spec vivo, `sed` em uma linha, `apps update`; SECRET antes × depois: 42 = 42 (chave e hash
+  do valor cifrado); `spec get` depois difere do backup só nessa linha. Deployment `50988cd5` ACTIVE.
+- Busca no log: só o deployment ativo devolve log pelo `doctl` (347 linhas, 09:05–09:19 UTC; os 59
+  anteriores não devolvem): **0** `token=`, **0** `efi/pix`. Depois do deploy, POST com token falso → 401
+  e a sonda não aparece; a única linha é do `django.request`, que já grava `token=[redacted]`.
+- **Token NÃO rotacionado.** Rotação é OBRIGATÓRIA antes de ligar a Efí de produção (D14).
+
+### Frente 2: o que a apuração achou
+- (a) A sacola aceitava datas distintas: cada SKU escolhe a data (pronto = hoje; fila = data da
+  fornada) e nada comparava com as datas que a sacola já tinha. Teste escrito antes do conserto: 3 de
+  7 cenários passavam com 200.
+- (b) ⚠️ **A premissa do balcão não se sustenta.** A comanda tem **uma data por sessão**
+  (`session.data["delivery_date"]`), `POSTab` não tem data e as linhas da comanda não carregam data.
+  O `TestOneLineOneDate` é teste da **loja** (PUT em `/api/v1/cart/skus/`). Não existe "1 linha = 1
+  data" no balcão para vigiar; o teste não foi escrito porque inventaria um contrato (D17).
+- (c) O cliente via a linha da fornada com "Lista de espera / Previsto para amanhã" ao lado da de
+  hoje, e o checkout seguia liberado.
+- Achado de carona: `available_qty` saía como texto `"3.000"` e a folha, que só aceita número,
+  sumia com o botão "Levar N". Agora sai inteiro.
+
+### Frente 3: o processo das 92 etapas
+Resgatado do artifact `b8cd4fc0-…` ("Fichas dos Pães", 05/09) para
+`docs/reference/processo-das-massas-proposta-2026-09-05.md`. ⚠️ **Não é temperatura da casa:** o
+artifact chama o processo de "proposta minha, é a parte que eu menos sei" e o rodapé diz que tempos,
+temperatura da massa e ponto de fermentação são o que só o dono sabe. Não vai para seed nem banco.
+
+### Frente 8: medições (anônimo, `api.boulangerie.com.br`, rede local, POP GRU)
+| Teste | n | p50 | p95 | max | > 5 s |
+|---|---|---|---|---|---|
+| `shell/` 12 KB, alternado | 45 | 0,418 s | 0,493 s | 0,880 s | 0 |
+| `home/` 19 KB, alternado | 45 | 0,644 s | 0,749 s | 0,813 s | 0 |
+| identity × gzip | 25 + 25 | 0,714 × 0,710 s | 0,884 × 0,894 s | | 0 |
+| IPv4 × IPv6 | 25 + 25 | 0,738 × 0,740 s | 0,802 × 0,877 s | | 0 |
+| HTTP/1.1 × HTTP/2 | 20 + 20 | 0,733 × 0,750 s | 0,918 × 1,177 s | | 0 |
+Tamanho, encoding, IP e H1/H2 descartados. **Não medidos:** HTTP/3 (curl local sem suporte), outra
+rede (sem VPN/VPS), `home/` com sessão. Deployments da madrugada: o início (04:26) e o 525 (04:58)
+caem em troca; o **520 das 04:44:41 e o trecho 05:02–05:07 não**. Com troca em ~40% do tempo entre
+04:22 e 05:12, 2 de 4 é o esperado por acaso. Chamado na DO só para pedir log do LB da janela
+04:26–05:09 (rascunho em D23).
+
+---
+
+## Turno de 30/09 → 01/10 (madrugada)
+
 ## Em uma tela
 
 **Resultado de performance, medido no ar (medianas, anônimo):** `catalog/` (a página `/menu`) TTFB
