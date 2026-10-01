@@ -205,7 +205,7 @@ SHOPMAN_IFOOD.update(  # noqa: F405
 )
 SHOPMAN_MACHINE.update(  # noqa: F405
     base_url="https://api.taximachine.com.br/api/integracao",
-    details_base="https://api.taximachine.com.br/integracao/v1",
+    details_base="https://api.taximachine.com.br/api/integracao/v1",
     username="",
     password="",
     api_key="",

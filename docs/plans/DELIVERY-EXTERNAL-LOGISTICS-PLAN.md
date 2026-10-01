@@ -36,6 +36,7 @@ Status (2 vias → services/courier.apply_status, idempotente):
 
 - **Adapter**: `shopman/shop/adapters/courier_machine.py` (borda HTTP única; dinheiro → `_q`;
   inerte em DEBUG via `SHOPMAN_MACHINE_ALLOW_IN_DEBUG`) + `courier_mock.py` (dev/testes).
+  Contrato conferido contra o OpenAPI v1 em §2.1.
   Registro: `get_adapter("courier")` ← `Shop.integrations["courier"]` > `SHOPMAN_COURIER_ADAPTER`.
 - **Config por canal**: `ChannelConfig.Fulfillment.courier` = `"none" | "auto"` (iFood tem
   logística própria = none; canal delivery próprio = auto). Config diz SE; adapter diz QUEM.
@@ -54,10 +55,76 @@ Status (2 vias → services/courier.apply_status, idempotente):
 2. Ligar: `SHOPMAN_COURIER_ADAPTER=shopman.shop.adapters.courier_machine` +
    `fulfillment.courier="auto"` no canal delivery. Polling ativo desde o dia 1.
 3. Homologar webhook: `MACHINE_WEBHOOK_TOKEN` + `manage.py machine_register_webhook
-   https://api.<dominio>`; observar o primeiro evento real (payload não documentado — o endpoint
-   loga o corpo cru) e então reduzir/zerar `Shop.defaults.delivery.courier_poll_seconds`.
+   https://api.<dominio>`; conferir o primeiro evento real contra o payload documentado (§2.1,
+   o endpoint também loga o corpo cru) e então reduzir ou zerar
+   `Shop.defaults.delivery.courier_poll_seconds`.
 4. Confirmar com a central: `MACHINE_FORMA_PAGAMENTO` (default `F` faturado) e `motivo_id`
    válido de cancelamento (`MACHINE_CANCEL_REASON_ID`).
+5. Ensaio de homologação ponta a ponta:
+   [courier-machine-homologacao](../runbooks/courier-machine-homologacao.md).
+
+### 2.1 Contrato da API v1, conferido endereço a endereço (01/10/2026)
+
+Fonte: OpenAPI v1 de docs.machine.global, `pages/v1/openapi-corridas.json` e
+`pages/v1/openapi-entregas.json` (o adapter usa a API de **entregas**: paradas, link de
+rastreio, permissão "API - Entrega"). O adapter fala v1 e fica em v1.
+
+- **Bases**: produção `https://api.taximachine.com.br/api/integracao`; homologação
+  `https://api-vendas.taximachine.com.br/api/integracao`. Mesma API Key nos dois.
+- **Autenticação**: header `api-key` + `Authorization: Basic base64(usuario:senha)`
+  (securitySchemes `ApiKeyAuth` + `basicAuth`). No adapter:
+  `shopman/shop/adapters/courier_machine.py:122-123` (`auth=(username, password)` e
+  `headers={"api-key": ...}`). [OK]
+
+| Chamada | Método e caminho | Parâmetros principais (doc) | Veredito |
+|---|---|---|---|
+| Estimar | `GET /estimarSolicitacao` | entregas: `endereco_`, `bairro_`, `cidade_`, `estado_` de `partida` e de `desejado` **obrigatórios**; `lat_`/`lng_` opcionais | [DIVERGENTE] mandava só lat/lng. Corrigido: o adapter manda os oito campos de endereço (`courier_machine.py:_estimate_params`) e `services/courier.estimate_for_order` passa o endereço da loja e do cliente |
+| Abrir | `POST /abrirSolicitacao` | corpo `forma_pagamento`, `partida{endereco, bairro, cidade, estado, lat, lng}`, `paradas[{endereco_parada, ..., id_externo, nome_cliente_parada, telefone_cliente_parada}]`, `retorno`; resposta `id_mch` | [OK] |
+| Status | `GET /solicitacaoStatus?id_mch=` | `id_mch` obrigatório; resposta `{status}` | [OK] |
+| Detalhes | `GET {base}/v1/request/{id}` | `id` no caminho; resposta sem envelope (`request_id`, `driver`, `progress`, `finished`, `stops`) | [DIVERGENTE] na base: o padrão era `https://api.taximachine.com.br/integracao/v1` (sem `/api`). Corrigido para `https://api.taximachine.com.br/api/integracao/v1` em `config/settings.py:926`, no fallback do adapter (`courier_machine.py:79`), no `settings_test.py` e no `.env.example`; o caminho `/request/{id}` estava certo |
+| Posição | `GET /posicaoCondutor?id_mch=` | `id_mch` obrigatório; resposta `lat_condutor`/`lng_condutor` (nulos fora de A/S/E) | [OK] |
+| Cancelar | `POST /cancelar` | corpo `id_mch` e `motivo_id`, os dois obrigatórios; só antes de F/C/N | [OK] |
+| Link de rastreio | `GET /obterLinkRastreio/{id}` | `id` no caminho; só na API de entregas | Caminho [OK]. [DIVERGENTE] na resposta: a doc v1 dá `{"link": ...}` e o adapter só aceitava a lista por parada. Corrigido: os dois formatos viram a mesma lista (`courier_machine.py:273`) |
+| Cadastrar webhook | `POST /cadastrarWebhook` | corpo `tipo` (`status`, `posicao`, `mensagens`, `mensagens_corrida`), `url`, `responsabilidade` (`solicitante` ou `corrida`), os três obrigatórios; até 5 por tipo | [OK] |
+
+O teste `test_each_call_hits_the_documented_v1_path`
+(`shopman/shop/tests/test_courier_machine_adapter.py`) trava método, caminho e parâmetros de
+cada linha; `test_settings_py_defaults_are_the_documented_addresses` trava o padrão do
+`settings.py`.
+
+**Formas de pagamento.** O OpenAPI de corridas lista 12 (`D B C T V X P H A F I R`); o de
+entregas, 8 (`D` dinheiro, `B` débito, `C` crédito, `X` Pix, `P` PicPay, `H` WhatsApp,
+`F` faturado, `R` carteira de créditos). O padrão `F` vale nos dois.
+
+**Webhooks: o payload É documentado** (página "Webhooks > Sobre" da v1). O formato antigo
+(`id_mch` + `status_solicitacao`; `id_mch` + `lat_cond`/`lng_cond`) está marcado como
+deprecado e a doc pede recadastro para o novo:
+
+- **status**: um POST por evento, com `datetime`, `event_id` (UUID, idempotência),
+  `company_id`, `request_id`, `status_code`, `status_label`, `stop_id` (só em parada
+  finalizada) e `links{request, driver?, enterprise?}`. `status_code` é a letra da corrida
+  (`D G P S N A E C F U`) ou um evento que não é estado: `AP` chegou ao local, `ER` parada
+  finalizada, `L` aguardando liberação, `R` aguardando pagamento.
+- **posicao**: lote a cada 10 s com `event_id`, `datetime` e `data[]` (até 500 itens de
+  `timestamp`, `company_id`, `request_id`, `driver_id`, `coordinates{latitude,
+  longitude}`). Sem reenvio; posição com mais de 15 s é descartada pela própria Machine.
+- **Assinatura**: header `Signature-V2`, HMAC-SHA-512 com a chave da API, calculado sobre o
+  corpo inteiro.
+
+`shopman/shop/webhooks/machine.py` entende os dois formatos: `status_code` de estado entra no
+funil `apply_status`; `AP`/`ER`/`L`/`R` são aceitos e logados sem mexer na letra; o lote de
+posição vai para o cache por `request_id`. Pendente: conferir a `Signature-V2` (hoje a borda
+autentica pelo token da URL).
+
+**Limites.** O gateway conta por `api-key`, em janela deslizante de 60 s, e responde `429`
+com `Retry-After`. Os números que o dono trouxe (corridas 800/min, webhooks 60/min) são os da
+tabela da **v2** (`/api/v2/integracao/corridas*` e `/webhooks*`, vezes a faixa da central).
+Na v1, que é a que o adapter fala, a tabela publicada em 01/10/2026 é: `/api/integracao/*`
+1000 × faixa por minuto; `solicitacao` e `solicitacaoStatus` 1900 × faixa;
+`posicaoCondutor` 1000 × faixa; `/integracao/v1/*` (detalhes) 200 × faixa. E um limite
+fixo por recurso: **3 consultas por minuto por solicitação** em `solicitacao` e
+`solicitacaoStatus`. O polling padrão (`DEFAULT_POLL_SECONDS = 60`, 1 por minuto por
+corrida) cabe; `courier_poll_seconds` abaixo de 20 estoura.
 
 ---
 

@@ -214,3 +214,57 @@ def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():
         assert web_envs[key]["type"] == expected_type
         if expected_type == "SECRET":
             assert "value" not in web_envs[key]
+
+
+#: Envs da Machine (entrega por parceiro) que o spec do alpha declara com valor.
+MACHINE_GENERAL_ENVS = (
+    "MACHINE_API_BASE",
+    "MACHINE_DETAILS_BASE",
+    "MACHINE_FORMA_PAGAMENTO",
+    "MACHINE_CANCEL_REASON_ID",
+    "MACHINE_RETORNO",
+    "MACHINE_TIMEOUT",
+)
+MACHINE_SECRET_ENVS = ("MACHINE_API_USER", "MACHINE_API_PASSWORD", "MACHINE_API_KEY", "MACHINE_WEBHOOK_TOKEN")
+
+
+def _shopman_machine_from_settings_py(environ: dict) -> dict:
+    """Avalia o bloco ``SHOPMAN_MACHINE`` do config/settings.py com o ambiente dado.
+
+    Lê o código de verdade (não uma cópia dos valores), sem importar o settings
+    inteiro: o ``_env_bool`` e o dicionário saem do próprio arquivo.
+    """
+    import ast
+    import types
+
+    tree = ast.parse((ROOT / "config" / "settings.py").read_text(encoding="utf-8"))
+    env_bool = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_env_bool")
+    block = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.Assign) and any(getattr(t, "id", None) == "SHOPMAN_MACHINE" for t in n.targets)
+    )
+    namespace: dict = {"os": types.SimpleNamespace(environ=environ)}
+    exec(compile(ast.Module(body=[env_bool], type_ignores=[]), "settings.py", "exec"), namespace)
+    return eval(compile(ast.Expression(body=block.value), "settings.py", "eval"), namespace)
+
+
+def test_alpha_machine_envs_repeat_the_code_defaults_and_never_arm_the_adapter():
+    """As seis GENERAL da Machine no spec do alpha são o padrão do código; o interruptor fica fora.
+
+    ``SHOPMAN_COURIER_ADAPTER`` no arquivo ligaria o despacho no próximo ``apps update``
+    e, sem as credenciais, o ``check --deploy`` do release reprovaria (SHOPMAN_E011).
+    """
+    spec = _load_spec(ALPHA_SPEC)
+    app_envs = {entry["key"]: entry for entry in spec["envs"]}
+    assert "SHOPMAN_COURIER_ADAPTER" not in {key for key, _ in _envs(spec)}
+
+    declared = {key: str(app_envs[key]["value"]) for key in MACHINE_GENERAL_ENVS}
+    assert all(app_envs[key]["type"] == "GENERAL" for key in MACHINE_GENERAL_ENVS)
+    assert _shopman_machine_from_settings_py(declared) == _shopman_machine_from_settings_py({})
+    assert declared["MACHINE_DETAILS_BASE"] == "https://api.taximachine.com.br/api/integracao/v1"
+
+    for key in MACHINE_SECRET_ENVS:
+        assert app_envs[key]["type"] == "SECRET"
+        assert app_envs[key]["scope"] == "RUN_TIME"
+        assert "value" not in app_envs[key]

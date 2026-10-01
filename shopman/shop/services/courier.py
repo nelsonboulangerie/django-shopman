@@ -161,11 +161,29 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     cache_key = f"courier:est:{float(lat):.4f}:{float(lng):.4f}"
     estimate = cache.get(cache_key)
     if estimate is None:
+        from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+        handoff = build_dispatch_payload(order)
+        pickup = {
+            "lat": str(shop.latitude),
+            "lng": str(shop.longitude),
+            "street": " ".join(p for p in (shop.route, shop.street_number) if p).strip()
+            or shop.formatted_address,
+            "neighborhood": shop.neighborhood,
+            "city": shop.city,
+            "state": shop.state_code,
+        }
+        dropoff = {
+            "lat": str(lat),
+            "lng": str(lng),
+            "street": " ".join(p for p in (handoff["route"], handoff["street_number"]) if p).strip()
+            or handoff["formatted_address"],
+            "neighborhood": handoff["neighborhood"],
+            "city": handoff["city"],
+            "state": handoff["state_code"],
+        }
         try:
-            result = adapter.estimate(
-                pickup={"lat": str(shop.latitude), "lng": str(shop.longitude)},
-                dropoff={"lat": str(lat), "lng": str(lng)},
-            )
+            result = adapter.estimate(pickup=pickup, dropoff=dropoff)
         except CourierError as exc:
             logger.warning("courier.estimate_failed order=%s: %s", order.ref, exc)
             return None

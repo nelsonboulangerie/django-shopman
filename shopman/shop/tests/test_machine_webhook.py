@@ -194,3 +194,68 @@ def test_position_event_goes_to_cache_not_order(shop):
     assert cache.get("courier:pos:184532") == {"lat": "-23.305", "lng": "-51.162"}
     order.refresh_from_db()
     assert order.updated_at == before  # posição nunca escreve no Order
+
+
+# ── formato documentado (docs.machine.global, v1 entregas, "Webhooks > Sobre") ──
+
+
+def _documented_status(code, label):
+    return {
+        "datetime": "2026-10-01T13:20:05Z",
+        "event_id": "550e8400-e29b-41d4-a716-446655440000",
+        "company_id": 8,
+        "request_id": 184532,
+        "status_code": code,
+        "status_label": label,
+        "links": {"request": "https://api.taximachine.com.br/api/v1/request/184532"},
+    }
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_documented_status_payload_advances_the_order(shop):
+    order = _order_with_ride()
+    resp = APIClient().post(_url(), _documented_status("E", "IN_PROGRESS"), format="json")
+    assert resp.status_code == 200
+    assert resp.data["kind"] == "status"
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+    assert courier.get_block(order)["status"] == "E"
+
+
+@pytest.mark.parametrize(("code", "label"), [("AP", "ARRIVED_AT_LOCATION"), ("ER", "STOP_FINISHED")])
+@override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_documented_event_that_is_not_a_state_keeps_the_ride_letter(shop, code, label):
+    order = _order_with_ride()
+    resp = APIClient().post(_url(), _documented_status(code, label), format="json")
+    assert resp.status_code == 200
+    assert resp.data["kind"] == "event"
+    order.refresh_from_db()
+    assert courier.get_block(order)["status"] == "D"
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_documented_position_batch_goes_to_cache(shop):
+    batch = {
+        "event_id": "01a01e79-080c-7d22-bdf6-432b1ba40c44",
+        "datetime": "2026-10-01T17:00:00Z",
+        "data": [
+            {"timestamp": 1786381200000, "company_id": 8, "request_id": 184532, "driver_id": 8101,
+             "coordinates": {"latitude": -23.305, "longitude": -51.162}},
+            {"timestamp": 1786381200000, "company_id": 8, "request_id": 184533, "driver_id": 8102},
+        ],
+    }
+    resp = APIClient().post(_url(), batch, format="json")
+    assert resp.status_code == 200
+    assert resp.data == {"status": "ok", "kind": "position_batch", "positions": 1}
+    assert cache.get("courier:pos:184532") == {"lat": "-23.305", "lng": "-51.162"}
+    assert cache.get("courier:pos:184533") is None
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_deprecated_position_payload_goes_to_cache(shop):
+    resp = APIClient().post(
+        _url(), {"id_mch": "184532", "condutor_id": "9", "lat_cond": "-23.3", "lng_cond": "-51.1"}, format="json"
+    )
+    assert resp.status_code == 200
+    assert resp.data["kind"] == "position"
+    assert cache.get("courier:pos:184532") == {"lat": "-23.3", "lng": "-51.1"}

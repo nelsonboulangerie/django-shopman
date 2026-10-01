@@ -10,6 +10,13 @@ dinheiro cruza esta borda.
 Auth: HTTP Basic (usuário de integração) + header `api-key`. Permissão
 "API - Entrega" no usuário. Config em settings.SHOPMAN_MACHINE.
 
+Contrato: API de Integração **v1, entregas** (OpenAPI em
+docs.machine.global/pages/v1/openapi-entregas.json). Base de produção
+``https://api.taximachine.com.br/api/integracao``; homologação
+``https://api-vendas.taximachine.com.br/api/integracao`` (mesma API Key). Os
+detalhes moram em ``<base>/v1/request/{id}``. Tabela endereço a endereço em
+docs/plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md.
+
 Status de solicitação (letra crua; labels só na projection):
   D distribuindo · G aguardando aceite · P pendente · A aceita · S em espera ·
   E em andamento (coletou) · F finalizada · N não atendida · C cancelada ·
@@ -69,7 +76,7 @@ def _base_url() -> str:
 
 
 def _details_base() -> str:
-    return str(_cfg().get("details_base") or "https://api.taximachine.com.br/integracao/v1").rstrip("/")
+    return str(_cfg().get("details_base") or "https://api.taximachine.com.br/api/integracao/v1").rstrip("/")
 
 
 def _to_q(value) -> int:
@@ -132,7 +139,7 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
             transient=resp.status_code >= 500, outcome_unknown=resp.status_code < 400 or resp.status_code >= 500,
         ) from exc
 
-    # O endpoint de detalhes (/integracao/v1) responde o objeto direto, sem envelope.
+    # O endpoint de detalhes (/api/integracao/v1) responde o objeto direto, sem envelope.
     if "success" not in payload:
         if resp.status_code >= 400:
             raise CourierError(
@@ -151,11 +158,34 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
     return response if isinstance(response, (dict, list)) else {}
 
 
-def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
-    """Cota a corrida (GET /estimarSolicitacao) por coordenadas.
+#: Campo do endereço no nosso lado → sufixo do parâmetro da Machine no
+#: GET /estimarSolicitacao (``endereco_partida``, ``bairro_desejado``...). Na
+#: API de entregas v1 os quatro são obrigatórios nos dois pontos; a coordenada
+#: é opcional e só refina.
+_ESTIMATE_ADDRESS_FIELDS = (
+    ("street", "endereco"),
+    ("neighborhood", "bairro"),
+    ("city", "cidade"),
+    ("state", "estado"),
+)
 
-    ``pickup``/``dropoff``: dicts com ``lat``/``lng``. Retorna None quando
-    inerte ou sem coordenadas — a cotação é sempre best-effort.
+
+def _estimate_params(point: dict, suffix: str) -> dict:
+    params = {f"lat_{suffix}": point["lat"], f"lng_{suffix}": point["lng"]}
+    for ours, theirs in _ESTIMATE_ADDRESS_FIELDS:
+        value = str(point.get(ours) or "").strip()
+        if value:
+            params[f"{theirs}_{suffix}"] = value
+    return params
+
+
+def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
+    """Cota a corrida (GET /estimarSolicitacao).
+
+    ``pickup``/``dropoff``: dicts com ``lat``/``lng`` e o endereço
+    (``street``, ``neighborhood``, ``city``, ``state``), que a API de entregas
+    exige. Retorna None quando inerte ou sem coordenadas: a cotação é sempre
+    best-effort.
     """
     if _inert():
         return None
@@ -164,12 +194,7 @@ def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
     response = _request(
         "GET",
         "/estimarSolicitacao",
-        params={
-            "lat_partida": pickup["lat"],
-            "lng_partida": pickup["lng"],
-            "lat_desejado": dropoff["lat"],
-            "lng_desejado": dropoff["lng"],
-        },
+        params={**_estimate_params(pickup, "partida"), **_estimate_params(dropoff, "desejado")},
     )
     return CourierEstimate(
         value_q=_to_q(response.get("estimativa_valor")),
@@ -202,7 +227,7 @@ def get_status(courier_ref: str) -> str:
 
 
 def get_details(courier_ref: str) -> dict:
-    """Detalhes da corrida (GET /integracao/v1/request/:id): driver, progress, finished."""
+    """Detalhes da corrida (GET /api/integracao/v1/request/:id): driver, progress, finished."""
     if _inert():
         return {}
     return _request("GET", f"/request/{courier_ref}", base=_details_base())
@@ -238,11 +263,15 @@ def tracking_links(courier_ref: str) -> list[dict]:
     """Links de rastreio por parada (GET /obterLinkRastreio/:id).
 
     Retorna ``[{parada_id, link_rastreio, codigo_confirmacao}]`` (lista vazia
-    se inerte ou indisponível).
+    se inerte ou indisponível). O OpenAPI v1 de entregas documenta a resposta
+    como um objeto só, ``{"link": ...}``; a coleção original trazia a lista por
+    parada. Os dois formatos viram a mesma lista até a homologação dizer qual é.
     """
     if _inert():
         return []
     response = _request("GET", f"/obterLinkRastreio/{courier_ref}")
+    if isinstance(response, dict) and response.get("link"):
+        return [{"parada_id": "", "link_rastreio": str(response["link"]), "codigo_confirmacao": None}]
     return response if isinstance(response, list) else []
 
 

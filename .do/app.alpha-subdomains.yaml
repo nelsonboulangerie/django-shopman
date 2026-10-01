@@ -412,6 +412,48 @@ envs:
 - key: EFI_CERTIFICATE_PEM_BASE64
   scope: RUN_TIME
   type: SECRET
+# Entrega por parceiro (TaOn sobre a Machine, API v1). As seis GENERAL abaixo
+# repetem o padrão do config/settings.py (SHOPMAN_MACHINE): aplicar não muda
+# comportamento. ⚠️ SHOPMAN_COURIER_ADAPTER fica FORA deste arquivo de propósito:
+# com ele e sem as quatro credenciais, o `check --deploy` do job release reprova
+# (SHOPMAN_E011) e o deploy para. O interruptor se liga no painel, depois das
+# credenciais e do ensaio de homologação (docs/runbooks/courier-machine-homologacao.md).
+- key: MACHINE_API_BASE
+  scope: RUN_TIME
+  value: 'https://api.taximachine.com.br/api/integracao'
+  type: GENERAL
+- key: MACHINE_DETAILS_BASE
+  scope: RUN_TIME
+  value: 'https://api.taximachine.com.br/api/integracao/v1'
+  type: GENERAL
+- key: MACHINE_FORMA_PAGAMENTO
+  scope: RUN_TIME
+  value: 'F'
+  type: GENERAL
+- key: MACHINE_CANCEL_REASON_ID
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
+- key: MACHINE_RETORNO
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: MACHINE_TIMEOUT
+  scope: RUN_TIME
+  value: '15'
+  type: GENERAL
+- key: MACHINE_API_USER
+  scope: RUN_TIME
+  type: SECRET
+- key: MACHINE_API_PASSWORD
+  scope: RUN_TIME
+  type: SECRET
+- key: MACHINE_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: MACHINE_WEBHOOK_TOKEN
+  scope: RUN_TIME
+  type: SECRET
 - key: COMTELE_API_KEY
   scope: RUN_TIME
   type: SECRET

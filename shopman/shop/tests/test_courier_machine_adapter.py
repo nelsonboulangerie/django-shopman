@@ -13,7 +13,7 @@ from shopman.shop.adapters.courier_machine import CourierError
 
 MACHINE = {
     "base_url": "https://api.machine.test/api/integracao",
-    "details_base": "https://api.machine.test/integracao/v1",
+    "details_base": "https://api.machine.test/api/integracao/v1",
     "username": "user-1",
     "password": "pass-1",
     "api_key": "key-1",
@@ -70,6 +70,37 @@ def test_estimate_returns_centavos_and_metrics():
     assert kwargs["headers"] == {"api-key": "key-1"}
     assert kwargs["params"]["lat_partida"] == "-23.30"
     assert kwargs["params"]["lng_desejado"] == "-51.17"
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_estimate_sends_the_address_the_delivery_api_requires():
+    """Na API de entregas v1 o endereço é obrigatório nos dois pontos; a coordenada só refina."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"estimativa_valor": 9.9}),
+    ) as mock_request:
+        courier_machine.estimate(
+            pickup={"lat": "-23.34", "lng": "-51.15", "street": "Av. Madre Leônia Milito 446",
+                    "neighborhood": "Bela Suíça", "city": "Londrina", "state": "PR"},
+            dropoff={"lat": "-23.31", "lng": "-51.16", "street": "Rua das Flores 123",
+                     "neighborhood": "Centro", "city": "Londrina", "state": "PR"},
+        )
+    args, kwargs = mock_request.call_args
+    assert args == ("GET", "https://api.machine.test/api/integracao/estimarSolicitacao")
+    assert kwargs["params"] == {
+        "lat_partida": "-23.34",
+        "lng_partida": "-51.15",
+        "endereco_partida": "Av. Madre Leônia Milito 446",
+        "bairro_partida": "Bela Suíça",
+        "cidade_partida": "Londrina",
+        "estado_partida": "PR",
+        "lat_desejado": "-23.31",
+        "lng_desejado": "-51.16",
+        "endereco_desejado": "Rua das Flores 123",
+        "bairro_desejado": "Centro",
+        "cidade_desejado": "Londrina",
+        "estado_desejado": "PR",
+    }
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
@@ -177,7 +208,7 @@ def test_get_details_uses_v1_base_and_unwrapped_body():
     ) as mock_request:
         assert courier_machine.get_details("42")["driver"]["name"] == "João"
     args = mock_request.call_args.args
-    assert args == ("GET", "https://api.machine.test/integracao/v1/request/42")
+    assert args == ("GET", "https://api.machine.test/api/integracao/v1/request/42")
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
@@ -197,6 +228,22 @@ def test_tracking_links_returns_list():
         return_value=_ok(links),
     ):
         assert courier_machine.tracking_links("42") == links
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_tracking_links_understands_the_documented_single_link():
+    """OpenAPI v1 de entregas: ``response`` é ``{"link": ...}``, não a lista por parada."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"link": "https://rastreio.taximachine.com.br/rastreio/XXXXX"}),
+    ):
+        assert courier_machine.tracking_links("42") == [
+            {
+                "parada_id": "",
+                "link_rastreio": "https://rastreio.taximachine.com.br/rastreio/XXXXX",
+                "codigo_confirmacao": None,
+            }
+        ]
 
 
 def test_register_webhook_rejects_unknown_kind():
@@ -249,3 +296,86 @@ def test_mock_adapter_dispatch_and_status_cycle():
     courier_mock.reset()
     with pytest.raises(CourierError):
         courier_mock.get_status("MOCK-ORD-9")
+
+
+# ── endereços: o que o adapter monta é o que a doc da Machine publica ─────
+
+#: Produção, conforme o OpenAPI v1 (servers) de docs.machine.global.
+PRODUCTION_BASE = "https://api.taximachine.com.br/api/integracao"
+CREDENTIALS_ONLY = {"username": "u", "password": "p", "api_key": "k"}
+
+
+def _called_url(call, *args, **kwargs):
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"status": "D", "id_mch": 1, "lat_condutor": None, "lng_condutor": None}),
+    ) as mock_request:
+        call(*args, **kwargs)
+    method, url = mock_request.call_args.args
+    return method, url, mock_request.call_args.kwargs
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=CREDENTIALS_ONLY)
+def test_adapter_fallback_builds_the_documented_details_url():
+    """Sem base configurada, o adapter cai no endereço de produção documentado."""
+    assert _called_url(courier_machine.get_details, "123")[:2] == (
+        "GET",
+        "https://api.taximachine.com.br/api/integracao/v1/request/123",
+    )
+
+
+@override_settings(DEBUG=False)
+def test_settings_details_url_is_the_documented_one():
+    """O SHOPMAN_MACHINE carregado (settings_test espelha o padrão do settings.py)."""
+    from django.conf import settings
+
+    with override_settings(SHOPMAN_MACHINE={**settings.SHOPMAN_MACHINE, **CREDENTIALS_ONLY}):
+        assert _called_url(courier_machine.get_details, "123")[:2] == (
+            "GET",
+            "https://api.taximachine.com.br/api/integracao/v1/request/123",
+        )
+
+
+def test_settings_py_defaults_are_the_documented_addresses():
+    """Trava o padrão escrito no config/settings.py (o que vale quando a env não existe).
+
+    O settings_test sobrescreve as duas bases, então só a leitura do arquivo prova o
+    padrão de produção. Medido em 01/10/2026: o padrão dos detalhes era
+    ``.../integracao/v1``, sem o ``/api``.
+    """
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[3] / "config" / "settings.py").read_text(encoding="utf-8")
+    defaults = dict(re.findall(r'os\.environ\.get\("(MACHINE_(?:API|DETAILS)_BASE)", "([^"]+)"\)', source))
+    assert defaults == {
+        "MACHINE_API_BASE": PRODUCTION_BASE,
+        "MACHINE_DETAILS_BASE": f"{PRODUCTION_BASE}/v1",
+    }
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE={**CREDENTIALS_ONLY, "base_url": PRODUCTION_BASE})
+@pytest.mark.parametrize(
+    ("call", "args", "kwargs", "method", "url", "query", "body"),
+    [
+        (courier_machine.estimate, (), {"pickup": {"lat": 1, "lng": 2}, "dropoff": {"lat": 3, "lng": 4}},
+         "GET", "/estimarSolicitacao", {"lat_partida": 1, "lng_partida": 2, "lat_desejado": 3, "lng_desejado": 4},
+         None),
+        (courier_machine.dispatch, ({"paradas": []},), {}, "POST", "/abrirSolicitacao", None, {"paradas": []}),
+        (courier_machine.get_status, ("77",), {}, "GET", "/solicitacaoStatus", {"id_mch": "77"}, None),
+        (courier_machine.get_position, ("77",), {}, "GET", "/posicaoCondutor", {"id_mch": "77"}, None),
+        (courier_machine.cancel, ("77",), {"reason_id": 2}, "POST", "/cancelar", None,
+         {"id_mch": "77", "motivo_id": 2}),
+        (courier_machine.tracking_links, ("77",), {}, "GET", "/obterLinkRastreio/77", None, None),
+        (courier_machine.register_webhook, ("https://x.test/h",), {"kind": "status"}, "POST", "/cadastrarWebhook",
+         None, {"tipo": "status", "url": "https://x.test/h", "responsabilidade": "solicitante"}),
+    ],
+)
+def test_each_call_hits_the_documented_v1_path(call, args, kwargs, method, url, query, body):
+    """Método, caminho e parâmetros principais de cada chamada, um por um, contra o OpenAPI v1."""
+    called_method, called_url, sent = _called_url(call, *args, **kwargs)
+    assert (called_method, called_url) == (method, f"{PRODUCTION_BASE}{url}")
+    assert sent["params"] == query
+    assert sent["json"] == body
+    assert sent["headers"] == {"api-key": "k"}
+    assert sent["auth"] == ("u", "p")
