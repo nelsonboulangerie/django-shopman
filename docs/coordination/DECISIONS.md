@@ -719,3 +719,60 @@ system check `SHOPMAN_W022`/`SHOPMAN_W023` e `manage.py concierge_check` (`shopm
 Testes em `shopman/storefront/tests/test_concierge_triage.py`. Ligar continua sendo do dono, no
 painel, pela sequência do `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`.
 
+---
+
+## D-019 · Botão do `link_pagamento_enviado` vai para a tela do pedido
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-02 · **revisar_em:** 2026-10-15
+
+**Decisão do dono.** "Se a página do pedido mostrar o link de cobrança, aplique o botão apontando para
+`/pedido/{{order_ref}}`." Ela mostra: para `method == "link"` a tela trata como checkout hospedado
+(`surfaces/storefront-nuxt/app/presentation/payment.ts:15-16`) e desenha "Pagar com cartão" com
+`href=checkout_url` (`PaymentBlock.vue:53-62`). Motivo: a Meta exige domínio fixo com variável no fim, e
+o link do Stripe termina em `#…`.
+
+**Prova.** PR #1346 (documento dos modelos e contrato de campos); modelo enviado à Meta em 01/10 com
+`https://www.nelsonboulangerie.com.br/pedido/` + `order_ref`.
+
+---
+
+## D-020 · `SHOPMAN_COURIER_ADAPTER` fora do arquivo do spec; interruptor pelo painel
+
+- **Estado:** `EXECUTADA` · **Dono:** Pablo · **Data:** 2026-10-02 · **revisar_em:** —
+
+**Decisão do dono.** Aprovado o desvio: o interruptor não entra em `.do/app.alpha-subdomains.yaml`
+(aplicado sem credenciais, o `check --deploy` reprova com `SHOPMAN_E011`); um teste impede a volta. O
+dono criou no painel as quatro credenciais `MACHINE_*` (SECRET) e, depois do #1348 no ar, o
+`SHOPMAN_COURIER_ADAPTER`. Usuário da API: o login Gestor da empresa no painel (não há seção "Machine
+API" no painel da empresa nem usuário novo). Ressalva: se a senha desse login mudar, a entrega para.
+
+**Prova.** PR #1345 (spec e drift), PR #1348 (User-Agent; sem ele a borda da Machine devolve 403 a
+toda chamada); deploys `fd5c3921` e `227a0acb` ACTIVE com `/health/ready/` 200; drift `[OK]`.
+Ensaio só de leitura em produção (cotação R$ 8,00, 11 min, 3,43 km; `listarWebhook` vazio): a TaOn não
+tem chave de homologação e o dono vetou chamada completa (02/10).
+
+---
+
+## D-021 · Ensaio de restauração pelo painel, sem token temporário
+
+- **Estado:** `EXECUTADA` · **Dono:** Pablo · **Data:** 2026-10-01 · **revisar_em:** —
+
+**Decisão do dono.** Nada de token temporário: o fork é dele, no painel. Feito: cluster
+`shopman-staging-postgres-oct-1-backup`, cerca de 7 min, 191 tabelas conferidas, 0 migração pendente;
+apagado pelo dono no mesmo dia.
+
+**Prova.** `docs/runbooks/backup-e-restore.md` §1b; item do `go-live-preflight.md` marcado.
+
+---
+
+## D-022 · Token do `doctl` rotacionado
+
+- **Estado:** `EXECUTADA` · **Dono:** Pablo · **Data:** 2026-10-01 · **revisar_em:** 2026-11-25
+
+**Decisão do dono.** O `shopman-spec-update` (vazado numa auditoria; pode reescrever o spec) foi
+substituído por `shopman-do-app-admin-2026-10`, mesmos 8 escopos, e apagado. **Expira em 2 meses**:
+renovar antes do fim de novembro.
+
+**Prova.** `doctl auth init` com "Validating token... ✔"; `apps list` OK;
+`check_do_spec_drift.py --context shopman-do-app-admin` → `[OK] spec_drift`; o antigo some da lista do
+painel.

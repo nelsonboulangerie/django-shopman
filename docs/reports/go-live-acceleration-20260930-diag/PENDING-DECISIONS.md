@@ -441,3 +441,19 @@ num app próprio? Fora do expediente, o que escala espera a manhã ou toca algu�
 (`CONCIERGE_OPERATION_MODE=observe`) acaba quando o Concierge passa a responder: aceita?
 **Recomendação:** 1, porque é o que o dono descreveu ("já classificado e resumido") e reaproveita o
 vocabulário que ele já aprovou; 2 só se o prazo do go-live apertar.
+
+## D33. Textos de quatro modelos que o ManyChat recusa por formato
+
+**Contexto.** Ao enviar os modelos revisados em 25/09, o ManyChat recusou dois antes de chegarem à
+Meta (01/10, tela "Criar modelo"): `pedido_em_preparo` ("Minimum of 7 words required for 2 variable
+parameter"; o corpo tem 4 palavras fixas) e `pagamento_falhou` ("Template body cannot start or end
+with a variable"; o ponto final depois de `{{2}}` não conta como texto). `pontos_fidelidade` termina
+igual e vai cair na mesma regra. O dono aprovou em 01/10 "textos ok" para as sugestões da sessão; a
+sessão encontrou depois uma repetição na do `pedido_em_preparo` (o `status_note` já termina em
+"avisamos assim que estiver pronto") e propõe a versão abaixo.
+**Proposta (corpo WhatsApp; SMS e e-mail não mudam):**
+- `pedido_em_preparo`: `Estamos preparando seu pedido {{1}} com todo carinho. {{2}}. Qualquer dúvida, estamos à disposição.`
+- `pagamento_falhou`: `Oi, {{1}}. Não conseguimos gerar o pagamento do seu pedido {{2}}. Qualquer dúvida, estamos à disposição.`
+- `pontos_fidelidade`: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
+**Recomendação:** aprovar as três; a sessão envia em seguida. `reembolso_processado` não tem defeito,
+só não foi enviado nesta rodada (a aba do ManyChat em segundo plano não aceita digitação).

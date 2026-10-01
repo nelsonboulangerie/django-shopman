@@ -4,14 +4,116 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Atualizado em 2026-10-01, tarde (UTC)** (turno da tarde de 01/10, ordens do dono).
-> A seção 0 é o estado agora; "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
+> **Atualizado em 2026-10-02** (turno das ordens de 01/10 noite e 02/10).
+> A seção 0 é o estado agora; "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
 
-## 0. Estado agora (01/10, fim do turno da tarde)
+## 0. Estado agora (02/10, turno das ordens de 01/10 noite e 02/10)
 
 ### 0.1 O que entrou
+
+| Frente | PR | Estado |
+|---|---|---|
+| 0: fechar o turno anterior (#1343) | #1343 | ✅ mergeado 01/10 15:58 UTC; D25 a D32 no `main` |
+| 1: escopo do go-live: fora só Marketing e B.I. (D28 → D-017) | #1344 | ✅ mergeado 01/10 18:57 UTC |
+| 1b: Concierge: visão do dono, distância, proposta de triagem (D32) | #1344 | ✅ mergeado |
+| 2: courier Machine: `/api` no detalhe, cotação com endereço, link de rastreio, webhook no payload documentado, chaves no spec, roteiro de homologação | #1345 | ✅ mergeado 01/10 18:57 UTC |
+| 3: triagem do Concierge implementada ("aprovo a triagem", D-018) + `check_concierge_readiness` + `concierge_check` | #1347 | ✅ mergeado 01/10 21:07 UTC (antes: `except` silencioso em `triage.py`, corrigido no próprio PR) |
+| 4: ManyChat: contrato de campos cobre toda variável do modelo; botão do `link_pagamento_enviado` | #1346 | ✅ mergeado |
+| 5: token do `doctl` rotacionado | sem PR (painel + `doctl`) | ✅ feito |
+| 6: ensaio de restauração pelo fork (dono, no painel) | este PR (runbook) | ✅ feito e conferido; falta o dono apagar o cluster |
+| 7: Machine: User-Agent próprio (a borda recusa `python-requests` com 403) | #1348 | ✅ mergeado 01/10 20:49 UTC; imagem `web-b6f0459fc` no ar |
+| 7b: Machine: 4 credenciais (SECRET) e `SHOPMAN_COURIER_ADAPTER` no painel da DO | sem PR | ✅ feito pelo dono; deploys `fd5c3921` e `227a0acb` ACTIVE, sem `SHOPMAN_E011`; drift `[OK]` |
+| 7c: `fulfillment.courier="auto"` no canal de entrega | sem PR | **espera o dono**: ligado, pedido de entrega chama a TaOn de verdade |
+| 8: modelos no ManyChat | sem PR | 6 enviados à Meta pela sessão + 1 aprovado (dono); 4 esperam ajuste de texto (0.2) |
+| 9: receitas do Drive | sem PR | **espera o dono** (nomes dos arquivos) |
+
+### 0.2 Achados do turno (não redescubra)
+
+- **ManyChat: contrato de campos (#1346).** O adapter só regrava no perfil os campos declarados
+  (`notification_manychat.py:587-593`). `order_cancelled`, `order_rejected` e `order_preparing`
+  não declaravam `status_note`; `order_cancelled`, `preorder_reminder` e `payment_confirmed` não
+  declaravam `order_ref`. O `pedido_cancelado` e o `pedido_nao_confirmado` estão APROVADOS com
+  `status_note` no corpo: o cliente recebia o motivo e o link do pedido anterior. Trava:
+  `shopman/shop/tests/test_manychat_template_contract.py` lê o documento dos modelos.
+- **Modelos enviados em 01/10 (ManyChat > Enviar para análise):** `link_pagamento_enviado`,
+  `pagamento_lembrete`, `pagamento_expirado`, `fila_vaga_disponivel`, `fila_vaga_liberada`,
+  `produto_chegou` (em análise); `pagamento_confirmado` já APROVADO (dono). O ManyChat recusou
+  antes da Meta, por formato: `pedido_em_preparo` ("Minimum of 7 words required for 2 variable
+  parameter") e `pagamento_falhou` ("Template body cannot start or end with a variable": o ponto
+  final sozinho não conta). `pontos_fidelidade` tem o mesmo defeito; `reembolso_processado` não foi
+  enviado (a aba do ManyChat em segundo plano não aceita digitação). Textos novos: PENDING D33.
+  Armadilha do formulário: a primeira digitação depois de carregar é apagada; localizar o campo por
+  referência e digitar de novo.
+- **Catálogo no ManyChat (lido em 01/10):** 20 modelos, 19 aprovados, `OTP` recusado (desnecessário).
+  Faltam 11 de cliente com texto revisado em 25/09. ⚠️ A Meta reclassificou o `pedido_entregue`
+  como **Marketing**: custa mais e quem recusou marketing deixa de receber.
+- **Botão do `link_pagamento_enviado`:** vai para `/pedido/{{order_ref}}` (D-019). A tela do pedido
+  já mostra o link de cobrança (`PaymentBlock.vue:53-62`).
+- **Machine, credenciais:** o usuário da API é o próprio login Gestor da empresa no painel
+  (`cloud.taximachine.com.br`, "Nhk Panificadora", cargo de administrador com permissões fixas,
+  já com API Empresa, Entrega e Webhook). Não existe seção "Machine API" no painel da empresa
+  (equívoco da coordenação, confirmado pelo dono) nem Joyce; a chave o dono já tinha. Ficam num
+  arquivo local do dono (`~/.config/shopman/machine.env`, `600`), nunca no repositório.
+- **Machine, User-Agent (#1348):** a borda recusa `python-requests/x.y` com 403 HTML nos dois
+  ambientes; com User-Agent próprio a produção responde. Sem o #1348 no ar, ligar o interruptor
+  faz toda chamada falhar.
+- **Machine, homologação: não há chave.** A chave de produção é "inválida" na homologação, e a
+  TaOn não tem chave de homologação (dono, 02/10). ⛔ **Nenhuma chamada completa à TaOn**: a chave
+  é de produção, e abrir corrida chama entregador de verdade. Feito só leitura: cotação
+  (R$ 8,00, 11 min, 3,43 km) e `listarWebhook` (vazio). Abrir, status, detalhes, posição, link,
+  cancelar e webhook seguem NÃO VERIFICADOS contra a API viva (só contra a doc e o mock).
+- **Machine, API v1:** o limite que pesa é **3 consultas de status por minuto por corrida**
+  (polling de 60 s cabe; abaixo de 20 s estoura). Os 800/min e 60/min são da v2.
+- **Machine, webhook:** a assinatura HMAC (`Signature-V2`) ainda não é conferida; a borda se
+  autentica só pelo token na URL. Pendência declarada.
+- **Ressalva da senha:** a API usa o login do painel. Se a senha desse usuário mudar, a entrega
+  para até o `MACHINE_API_PASSWORD` ser trocado no painel da DO. Um usuário só para a API evitaria;
+  não bloqueia (dono, 02/10: não criar usuário novo).
+- **`SHOPMAN_COURIER_ADAPTER` fica FORA do arquivo do spec** (D-020): aplicado sem credenciais,
+  o deploy reprova (`SHOPMAN_E011`). Teste impede a volta; entra pelo painel, por último.
+- **Concierge:** em `observe`, ligar `SHOPMAN_CONCIERGE_ENABLED` não muda nada (`service.py:89-91`).
+  A sequência para ligar está no `WHATSAPP-CONCIERGE-PLAN.md`, com o passo 0 `manage.py concierge_check`.
+  `manychat_flows --check` e `check_whatsapp_flow_coverage` NÃO cobrem o Concierge; quem cobre é o
+  `check_concierge_readiness` (`SHOPMAN_W022`/`W023`, só Warning de propósito).
+
+### 0.3 Token do `doctl` (D-022)
+
+`shopman-spec-update` (8 escopos, vazado numa auditoria) → `shopman-do-app-admin-2026-10`, mesmos 8
+escopos (`actions:read`, `regions:read`, `sizes:read`, `app:read`, `app:update`, `database:read`,
+`database:view_credentials`, `registry:read`), **expira em 2 meses** (fim de nov/2026: renovar).
+Validado por `doctl auth init` ("Validating token... ✔"). Identificação do antigo: o "último uso" virou "há 27 segundos" logo após um `apps list` pelo contexto.
+Validação: `apps list` OK, `check_do_spec_drift.py --context shopman-do-app-admin` → `[OK] spec_drift`.
+O antigo não aparece mais na lista do painel.
+
+### 0.4 Ensaio de restauração: FEITO pelo fork (o portão fechou)
+
+Decisão do dono (D-021): sem token temporário; ele fez o fork no painel. Cluster
+`shopman-staging-postgres-oct-1-backup`, criado 19:28:28 UTC, cerca de 7 min até `online`.
+191 tabelas, 186 com a mesma contagem; as 5 diferentes são de conversa e explicadas pela rotina de
+retenção (o restaurado tem a mais); pedidos 4817 e 306 migrações nos dois; `migrations-pending` = 0.
+Detalhe: `docs/runbooks/backup-e-restore.md` §1b; item do pré-flight marcado. O dono já apagou o cluster (só restam
+`shopman-staging-postgres` e o cache, `doctl databases list`). Reapontar o app não foi ensaiado.
+
+### 0.5 O que depende do dono
+
+D33 (textos de 4 modelos) · `fulfillment.courier="auto"` no canal de entrega · nomes dos arquivos de
+receita · e as abertas de antes: D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
+
+⚠️ Continua valendo a 0t.4: o Pix real se ensaia ANTES da virada (D-016).
+
+### 0.6 Em voo que não é deste turno
+
+- #1293 (docs: contexto doctl renomeado) em `CONFLICTING`, de 30/09.
+- #1257 (PDV: saldo de encomenda) com `operator-kit` vermelho, de 29/09.
+- Drafts #1220 a #1223 (snapshots WIP de outras frentes).
+
+---
+
+## 0-tarde. Estado de 01/10, fim do turno da tarde (histórico)
+
+### 0t.1 O que entrou
 
 | Frente | PR | Estado |
 |---|---|---|
@@ -28,7 +130,7 @@
 Decisões novas registradas: `docs/coordination/DECISIONS.md` D-011 a D-016. Perguntas novas ao
 dono: `PENDING-DECISIONS.md` D25 a D31.
 
-### 0.2 Frente 8, como foi feita (não refaça)
+### 0t.2 Frente 8, como foi feita (não refaça)
 
 Drift `[OK]` antes, nada em SUMIRIAM → backup `spec get` (965 linhas, 42 `type: SECRET`) → uma linha
 (`133c133`, `DATABASE_CONN_MAX_AGE` `"60"` → `"0"`) → `apps update` → deployment `c4f07630` ACTIVE →
@@ -38,7 +140,7 @@ env até o #1334 trazer o arquivo, depois `[OK]` → `/health/live/` e `/health/
 backend ocioso). Depois de 30 requests concorrentes: 3 conexões ociosas no banco `shopman` (as do
 PgBouncer). Não havia contagem viva de "antes". Os workers também recebem 0 e reconectam por ciclo.
 
-### 0.3 Ensaio de restauração: o que foi e o que NÃO foi feito
+### 0t.3 Ensaio de restauração: o que foi e o que NÃO foi feito
 
 - **Fork (o de verdade): NÃO FEITO.** `doctl databases fork` → `403`; falta `database:create` no
   `shopman-do-app-admin`. É do dono (D29). Continua portão duro.
@@ -47,7 +149,7 @@ PgBouncer). Não havia contagem viva de "antes". Os workers também recebem 0 e 
   migrations-pending` contra o restaurado: 0 pendente. Banco e dump locais apagados depois.
   Runbook corrigido (`DJANGO_DEBUG=true`, fork herda o plano): `docs/runbooks/backup-e-restore.md`.
 
-### 0.4 ⚠️ Pix: última chave a LIGAR, não a ENSAIAR
+### 0t.4 ⚠️ Pix: última chave a LIGAR, não a ENSAIAR
 
 O botão público que deixa o cliente marcar o próprio pedido como pago (Pix no simulador, D-006)
 **continua aberto**, por decisão do dono. O ensaio do Pix real (`payment_efi` + `EFI_SANDBOX=true` +
@@ -55,13 +157,13 @@ O botão público que deixa o cliente marcar o próprio pedido como pago (Pix no
 `EFI_WEBHOOK_TOKEN` (D22) têm de acontecer **ANTES** da virada. Está no
 `docs/runbooks/go-live-preflight.md` §4 e é regra de parada no `go-live-cutover.md` §0 (D-016).
 
-### 0.5 O que depende do dono
+### 0t.5 O que depende do dono
 
 D25 (data e promessa, destrava a Frente 5) · D26 (editar publicada no app) · D27 (mais eventos
 críticos, alerta frequente) · D28 (corte de escopo) · D29 (token para o fork) · D30 (R2) · D31 (trilho do `shell/`) · e as
 abertas de antes: D2, D8, D18 (b, d, e), D22, D23.
 
-### 0.6 Em voo que não é deste turno
+### 0t.6 Em voo que não é deste turno
 
 - #1293 (docs: contexto doctl renomeado) em `CONFLICTING`, com check do Marketing vermelho; de 30/09.
 - #1257 (PDV: saldo de encomenda) com `operator-kit` vermelho (trava de links cross-app), de 29/09.
