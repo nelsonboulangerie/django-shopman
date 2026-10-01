@@ -18,9 +18,25 @@ export interface PwaUpdateRegistration {
 
 let registration: PwaUpdateRegistration | null = null
 
+// Para onde a página vai quando o worker novo assume. Vazio: recarrega onde está (o
+// toque em "Atualizar"). Preenchido: a navegação que aplicou a versão (D9) termina no
+// destino, carregado já pela versão nova.
+let pendingDestination: string | null = null
+
 /** Ligação interna usada somente pelo plugin de registro do service worker. */
 export function bindPwaUpdateRegistration (next: PwaUpdateRegistration | null) {
   registration = next
+}
+
+/**
+ * O worker novo assumiu: carrega a página pela versão nova. Ligada ao `onNeedReload`
+ * do registro (plugin), no lugar do `location.reload()` do vite-plugin-pwa.
+ */
+export function reloadAfterPwaUpdate (target: Pick<Location, 'assign' | 'reload'> = window.location) {
+  const destination = pendingDestination
+  pendingDestination = null
+  if (destination) target.assign(destination)
+  else target.reload()
 }
 
 export function usePwaUpdate () {
@@ -29,12 +45,16 @@ export function usePwaUpdate () {
   // `skipWaiting` só por este caminho: `updateServiceWorker(true)` manda a mensagem
   // `SKIP_WAITING` ao worker em espera e recarrega quando ele assume. O gate
   // `tools/pwa-gate/check.mjs` exige que o worker só pule a espera por mensagem.
-  async function update (): Promise<boolean> {
+  // `destination`: a rota aonde a página vai quando o worker novo assumir; sem ela,
+  // recarrega onde está.
+  async function update (destination?: string): Promise<boolean> {
     if (!registration) return false
+    pendingDestination = destination || null
     try {
       await registration.updateServiceWorker(true)
       return true
     } catch {
+      pendingDestination = null
       return false
     }
   }

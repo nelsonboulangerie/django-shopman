@@ -59,7 +59,7 @@ async function replaceServiceWorker (content: string) {
   await rename(`${swPath}.next`, swPath)
 }
 
-test('versão nova aparece num aviso persistente e só entra pelo toque', async ({ page }) => {
+test('versão nova bloqueia a tela num aviso e entra pelo toque', async ({ page }) => {
   // Duas instalações completas do worker (o precache inteiro, duas vezes) não cabem
   // no teto padrão de 30 s num runner lento da CI.
   test.setTimeout(90_000)
@@ -141,6 +141,55 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
     // Recarregada com o worker novo no comando, não há mais versão em espera.
     await expect(prompt).toBeHidden({ timeout: 15_000 })
     expect(iconFetches).toEqual([])
+  } finally {
+    await replaceServiceWorker(original)
+  }
+})
+
+// D9: com versão nova em espera, a navegação de cliente entre telas comuns vira
+// carga completa do destino, já pela versão nova. Entrar no checkout ou sair dele
+// NÃO recarrega: o cliente pode estar pagando. A navegação é a do roteador (o aviso
+// cobre a tela e tomaria o toque num link), pela instância do app que o Nuxt pendura
+// no `#__nuxt`.
+test('versão nova entra na navegação, mas nunca entrando ou saindo do checkout', async ({ page }) => {
+  test.setTimeout(90_000)
+  const original = await readFile(swPath, 'utf8')
+  expect(original).toContain(SW_ORIGINAL)
+  const push = (path: string) => page.evaluate(async (target) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const app = (document.querySelector('#__nuxt') as any).__vue_app__
+    await app.config.globalProperties.$router.push(target)
+  }, path)
+  const waiting = () => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))
+
+  try {
+    await page.goto('/menu')
+    await page.evaluate(async () => { await navigator.serviceWorker.ready })
+    await replaceServiceWorker(original.replace(SW_ORIGINAL, SW_NEXT))
+    await page.reload()
+    const prompt = page.getByTestId('pwa-update-prompt')
+    await expect(prompt).toBeVisible()
+
+    // Documento carregado (recarga), e não troca de tela pelo roteador.
+    const loads: string[] = []
+    page.on('load', () => loads.push(page.url()))
+
+    await push('/finalizar')
+    await expect(page).toHaveURL(/\/finalizar$/)
+    await expect(prompt).toBeHidden()
+    await push('/menu')
+    await expect(page).toHaveURL(/\/menu$/)
+    await expect(prompt).toBeVisible()
+    expect(loads).toEqual([])
+    expect(await waiting()).toBe(true)
+
+    // Tela comum para tela comum: a troca de tela é cancelada, a versão entra e a
+    // página carrega no destino.
+    await push('/sacola')
+    await expect.poll(() => loads.some(url => url.endsWith('/sacola')), { timeout: 45_000 }).toBe(true)
+    await expect(page).toHaveURL(/\/sacola$/)
+    await expect.poll(waiting, { timeout: 15_000 }).toBe(false)
+    await expect(prompt).toBeHidden()
   } finally {
     await replaceServiceWorker(original)
   }

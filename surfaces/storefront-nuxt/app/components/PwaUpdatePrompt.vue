@@ -2,7 +2,8 @@
 // Versão nova do app instalado: a loja FORÇA (decisão do dono, D9, 01/10/2026).
 //
 // Duas portas, decididas em `presentation/pwaRuntime.ts`:
-//   1. Navegar entre telas, com versão nova em espera, recarrega a página no destino.
+//   1. Navegar entre telas, com versão nova em espera, carrega o destino pela versão
+//      nova (carga completa, não troca de tela no cliente).
 //   2. Fora das telas protegidas, um aviso BLOQUEIA a tela: sem fechar, sem Esc, com
 //      um único botão, "Atualizar".
 //
@@ -38,31 +39,40 @@ const blocking = computed(() => updating.value || shouldBlockForPwaUpdate({
   path: route.path
 }))
 
-/** Aplica a versão nova: o worker assume e a página recarrega onde está. Uma vez só. */
-async function update () {
+/**
+ * Aplica a versão nova: o worker assume e a página carrega pela versão nova, onde está
+ * ou em `destination`. Uma vez só.
+ */
+async function update (destination?: string) {
   if (updating.value) return
   updating.value = true
-  const accepted = await pwa.update()
+  const accepted = await pwa.update(destination)
   if (!accepted) updating.value = false
 }
 
-// Porta 1: a navegação já trocou de tela no cliente; aplicar agora recarrega a página
-// no DESTINO (o worker recarrega a URL corrente quando assume).
-const removeNavigationHook = router.afterEach((to, from) => {
-  if (shouldApplyPwaUpdateOnNavigation({
+// Porta 1: a troca de tela no cliente é cancelada e vira carga completa no DESTINO,
+// já pela versão nova (`reloadAfterPwaUpdate`). Cancelar, e não deixar a tela nova
+// montar antes: a tela nova dispara buscas no mesmo instante, e busca que chega ao
+// worker antigo enquanto ele desliga adia a troca (medido no `pwa.spec.ts`).
+const removeNavigationHook = router.beforeEach((to, from) => {
+  if (!shouldApplyPwaUpdateOnNavigation({
     needsRefresh: pwa.needRefresh.value,
     online: online.value,
     from: from.path,
     to: to.path
-  })) void update()
+  })) return
+  void update(to.fullPath)
+  return false
 })
 onBeforeUnmount(removeNavigationHook)
 
 // Porta 2: o aviso bloqueia de verdade. Scroll travado e o resto da loja inerte para
-// teclado e leitor de tela; Esc não fecha (não há o que fechar).
+// teclado e leitor de tela; Esc não fecha (não há o que fechar). Inertes são os
+// IRMÃOS, nunca o `.shop-shell`: este aviso mora dentro dele (`app.vue`), e um
+// ancestral inerte deixaria o próprio botão sem toque.
 const panel = useTemplateRef<HTMLElement>('panel')
 useOverlayLock(blocking, {
-  inert: ['.shop-shell', '.shop-bottomnav-bar'],
+  inert: ['.shop-header-bar', '#main-content', '.shop-footer', '.shop-bottomnav-bar'],
   focus: panel
 })
 </script>
@@ -91,7 +101,7 @@ useOverlayLock(blocking, {
         <Icon name="lucide:sparkles" class="mx-auto size-6 text-primary" aria-hidden="true" />
         <h2 id="pwa-update-title" class="mt-3 text-base font-semibold">{{ title }}</h2>
         <p id="pwa-update-message" class="mt-1 text-sm text-muted-foreground">{{ message }}</p>
-        <UiButton class="mt-4 w-full" :loading="updating" :disabled="updating" @click="update">
+        <UiButton class="mt-4 w-full" :loading="updating" :disabled="updating" @click="update()">
           {{ cta }}
         </UiButton>
       </section>

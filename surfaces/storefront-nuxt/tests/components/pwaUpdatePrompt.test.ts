@@ -6,41 +6,45 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import PwaUpdatePrompt from '~/components/PwaUpdatePrompt.vue'
-import { bindPwaUpdateRegistration } from '~/composables/usePwaUpdate'
+import { bindPwaUpdateRegistration, reloadAfterPwaUpdate } from '~/composables/usePwaUpdate'
 import type { PwaCopyProjection } from '~/types/shopman'
 
-type AfterEach = (to: { path: string }, from: { path: string }) => void
+type BeforeEach = (to: { path: string, fullPath: string }, from: { path: string }) => boolean | undefined
 
 const state = vi.hoisted(() => ({
   path: undefined as unknown as Ref<string>,
   online: undefined as unknown as Ref<boolean>,
-  afterEach: [] as AfterEach[]
+  beforeEach: [] as BeforeEach[]
 }))
 
 mockNuxtImport('useRoute', () => () => ({
   get path () { return state.path.value }
 }))
 
-// O roteador real segue servindo o Nuxt; só o `afterEach` é capturado, para o teste
+// O roteador real segue servindo o Nuxt; só o `beforeEach` é capturado, para o teste
 // disparar a navegação sem carregar páginas.
 mockNuxtImport('useRouter', original => () => {
   const router = original()
   return new Proxy(router, {
     get (target, key, receiver) {
-      if (key !== 'afterEach') return Reflect.get(target, key, receiver)
-      return (hook: AfterEach) => {
-        state.afterEach.push(hook)
-        return () => { state.afterEach = state.afterEach.filter(item => item !== hook) }
+      if (key !== 'beforeEach') return Reflect.get(target, key, receiver)
+      return (hook: BeforeEach) => {
+        state.beforeEach.push(hook)
+        return () => { state.beforeEach = state.beforeEach.filter(item => item !== hook) }
       }
     }
   })
 })
 
-/** Simula a navegação do cliente: a rota muda e os ganchos `afterEach` rodam. */
-async function navigate (from: string, to: string) {
-  state.path.value = to
-  for (const hook of state.afterEach) hook({ path: to }, { path: from })
+/**
+ * Simula a navegação do cliente: os ganchos `beforeEach` rodam e, se nenhum cancelar
+ * (`false`), a rota muda. Devolve se a troca de tela no cliente aconteceu.
+ */
+async function navigate (from: string, to: string): Promise<boolean> {
+  const cancelled = state.beforeEach.some(hook => hook({ path: to, fullPath: to }, { path: from }) === false)
+  if (!cancelled) state.path.value = to
   await nextTick()
+  return !cancelled
 }
 
 const PROTECTED = ['/finalizar', '/pedido/ORD-1', '/entrar', '/a']
@@ -75,7 +79,7 @@ const prompt = '[data-testid="pwa-update-prompt"]'
 beforeEach(() => {
   state.path = ref('/menu')
   state.online = ref(true)
-  state.afterEach = []
+  state.beforeEach = []
 })
 
 afterEach(() => {
@@ -130,6 +134,31 @@ describe('PwaUpdatePrompt: aviso que bloqueia', () => {
     expect(worker.updateServiceWorker).toHaveBeenCalledWith(true)
   })
 
+  it('deixa a loja inerte por trás, mas nunca o próprio aviso', async () => {
+    const worker = fakeWorker()
+    const shell = document.createElement('div')
+    shell.className = 'shop-shell'
+    const main = document.createElement('div')
+    main.id = 'main-content'
+    shell.appendChild(main)
+    document.body.appendChild(shell)
+    try {
+      const wrapper = await mountSuspended(PwaUpdatePrompt, { props: { copy }, attachTo: shell })
+      worker.needRefresh.value = true
+      await nextTick()
+      await nextTick()
+      expect(main.inert).toBe(true)
+      let node: HTMLElement | null = wrapper.get(`${prompt} button`).element as HTMLElement
+      while (node) {
+        expect(node.inert, node.className).not.toBe(true)
+        node = node.parentElement
+      }
+      wrapper.unmount()
+    } finally {
+      shell.remove()
+    }
+  })
+
   it('NUNCA bloqueia no checkout, no pedido e no login, e volta na tela seguinte', async () => {
     const worker = fakeWorker()
     worker.needRefresh.value = true
@@ -166,20 +195,26 @@ describe('PwaUpdatePrompt: aviso que bloqueia', () => {
   })
 })
 
-describe('PwaUpdatePrompt: navegação recarrega no destino', () => {
-  it('com versão nova, navegar entre telas comuns aplica a versão (recarga no destino)', async () => {
+describe('PwaUpdatePrompt: navegação carrega o destino pela versão nova', () => {
+  it('com versão nova, navegar entre telas comuns cancela a troca e aplica a versão rumo ao destino', async () => {
     const worker = fakeWorker()
     await mountSuspended(PwaUpdatePrompt, { props: { copy } })
     worker.needRefresh.value = true
-    await navigate('/menu', '/produto/PAO')
+    expect(await navigate('/menu', '/produto/PAO')).toBe(false)
     expect(worker.updateServiceWorker).toHaveBeenCalledOnce()
     expect(worker.updateServiceWorker).toHaveBeenCalledWith(true)
+
+    // O worker novo assumiu: a página vai ao destino, não recarrega a origem.
+    const target = { assign: vi.fn(), reload: vi.fn() }
+    reloadAfterPwaUpdate(target)
+    expect(target.assign).toHaveBeenCalledWith('/produto/PAO')
+    expect(target.reload).not.toHaveBeenCalled()
   })
 
-  it('sem versão nova, navegar não recarrega', async () => {
+  it('sem versão nova, navegar é troca de tela comum', async () => {
     const worker = fakeWorker()
     await mountSuspended(PwaUpdatePrompt, { props: { copy } })
-    await navigate('/menu', '/sacola')
+    expect(await navigate('/menu', '/sacola')).toBe(true)
     expect(worker.updateServiceWorker).not.toHaveBeenCalled()
   })
 
@@ -188,8 +223,8 @@ describe('PwaUpdatePrompt: navegação recarrega no destino', () => {
     await mountSuspended(PwaUpdatePrompt, { props: { copy } })
     worker.needRefresh.value = true
     for (const path of PROTECTED) {
-      await navigate('/sacola', path)
-      await navigate(path, '/menu')
+      expect(await navigate('/sacola', path), `para ${path}`).toBe(true)
+      expect(await navigate(path, '/menu'), `de ${path}`).toBe(true)
     }
     expect(worker.updateServiceWorker).not.toHaveBeenCalled()
   })
@@ -199,15 +234,26 @@ describe('PwaUpdatePrompt: navegação recarrega no destino', () => {
     state.online.value = false
     await mountSuspended(PwaUpdatePrompt, { props: { copy } })
     worker.needRefresh.value = true
-    await navigate('/menu', '/sacola')
+    expect(await navigate('/menu', '/sacola')).toBe(true)
     expect(worker.updateServiceWorker).not.toHaveBeenCalled()
+  })
+
+  it('o toque em Atualizar recarrega onde está', async () => {
+    const worker = fakeWorker()
+    worker.needRefresh.value = true
+    const wrapper = await mountSuspended(PwaUpdatePrompt, { props: { copy } })
+    await wrapper.get(`${prompt} button`).trigger('click')
+    const target = { assign: vi.fn(), reload: vi.fn() }
+    reloadAfterPwaUpdate(target)
+    expect(target.reload).toHaveBeenCalledOnce()
+    expect(target.assign).not.toHaveBeenCalled()
   })
 
   it('desmontado, solta o gancho do roteador', async () => {
     fakeWorker()
     const wrapper = await mountSuspended(PwaUpdatePrompt, { props: { copy } })
-    expect(state.afterEach).toHaveLength(1)
+    expect(state.beforeEach).toHaveLength(1)
     wrapper.unmount()
-    expect(state.afterEach).toHaveLength(0)
+    expect(state.beforeEach).toHaveLength(0)
   })
 })
