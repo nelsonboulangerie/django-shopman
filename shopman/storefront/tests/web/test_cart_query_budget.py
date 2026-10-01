@@ -14,6 +14,13 @@ Este arquivo trava o que ficou: a sacola com 1 item e com 5 itens fazem o MESMO
 número de consultas, e há um teto absoluto para a sacola e para o que ela
 acrescenta a ``menu/`` e ``home/``.
 
+Desde 01/10 (F4b) a disponibilidade é lida uma vez por request GET
+(``request_memo.stock_reads_scope``): o trilho de sugestão lê candidatos e
+sacola numa leitura só do Stockman, e as linhas da sacola, o cardápio e os
+destaques da home reaproveitam o que já foi lido. Por isso, em ``home/``, a
+sacola de 5 itens pode custar MENOS que a de 1: os pães dela são os mesmos dos
+destaques, que já não vão ao Stockman de novo. A trava é "não cresce".
+
 ⚠️ O estoque aqui é todo de HOJE de propósito. A disponibilidade com fornada
 futura (``waitlist.next_batch_availability_for_skus``) ainda faz uma leitura por
 DATA de fornada distinta; ela é do caminho do catálogo, não da sacola, e tem
@@ -34,6 +41,7 @@ from django.utils import timezone
 from shopman.offerman.models import Collection, CollectionItem, ListingItem, Product
 
 from shopman.shop.models import Channel, ProductAffinity
+from shopman.shop.request_memo import request_memo_scope, stock_reads_scope
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation import build_cart
 
@@ -42,13 +50,15 @@ pytestmark = pytest.mark.django_db
 PAES = [f"PAO-{i}" for i in range(1, 6)]
 BEBIDAS = ["CAFE", "SUCO", "CHA"]
 
-#: Tetos absolutos. Medidos neste arquivo em 30/09/2026: a sacola faz 44
-#: consultas (eram 62 com 1 item e 70 com 5) e acrescenta 47 a ``menu/`` e
-#: ``home/`` (eram 65 com 1 item e 73 com 5). A folga é para mudança honesta;
-#: estourar quer dizer que voltou a haver leitura por item ou por produto —
-#: procure o laço antes de subir o número.
-CART_PROJECTION_CEILING = 50
-CART_OVERHEAD_CEILING = 53
+#: Tetos absolutos. Medidos neste arquivo em 01/10/2026 (F4b): a sacola faz 31
+#: consultas (39 antes, com uma leitura do Stockman para as linhas e outra para
+#: os candidatos do trilho; 44 antes da F3) e acrescenta 27 a ``menu/`` e 37 a
+#: ``home/`` com 1 item (eram 45 nos dois). A folga é para mudança honesta;
+#: estourar quer dizer que voltou a haver leitura por item ou por produto, ou
+#: que a sacola e o trilho voltaram a ler o estoque cada um por si — procure o
+#: laço antes de subir o número.
+CART_PROJECTION_CEILING = 34
+CART_OVERHEAD_CEILING = 40
 
 
 @pytest.fixture
@@ -114,7 +124,9 @@ def _cart_queries(client: Client) -> tuple[int, object]:
     request = RequestFactory().get("/sacola/")
     request.session = client.session  # type: ignore[attr-defined]
     build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)  # aquece caches do processo
-    with CaptureQueriesContext(connection) as ctx:
+    # Os memos que o ``RequestMemoMiddleware`` abre num GET: a sacola é medida
+    # como o request a monta.
+    with request_memo_scope(), stock_reads_scope(), CaptureQueriesContext(connection) as ctx:
         projection = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
     return len(ctx.captured_queries), projection
 
@@ -148,8 +160,29 @@ def test_cart_adds_a_bounded_cost_to_menu_and_home(catalog, path):
     with_one = _endpoint_queries(_client_with_cart(PAES[:1]), path)
     with_five = _endpoint_queries(_client_with_cart(PAES), path)
 
-    assert with_five == with_one, f"{path}: 5 itens fizeram {with_five} consultas; 1 item, {with_one}"
+    assert with_five <= with_one, f"{path}: 5 itens fizeram {with_five} consultas; 1 item, {with_one}"
     overhead = with_one - without_cart
     assert overhead <= CART_OVERHEAD_CEILING, (
         f"{path}: a sacola acrescentou {overhead} consultas (teto {CART_OVERHEAD_CEILING})"
     )
+
+
+def test_put_answers_with_the_state_after_the_mutation(catalog):
+    """O PUT muda a sacola e responde com ela: nada do que ele devolve é leitura de antes.
+
+    Request que muta não abre o memo de estoque (só GET/HEAD abrem), então a
+    resposta do PUT é o que um GET logo depois vê.
+    """
+    client = _client_with_cart(PAES[:2])
+    for qty in (4, 1):
+        put = client.put(
+            f"/api/v1/cart/skus/{PAES[0]}/",
+            data=json.dumps({"qty": qty}),
+            content_type="application/json",
+        )
+        assert put.status_code == 200, put.content[:300]
+        fresh = client.get("/api/v1/storefront/cart/")
+        assert fresh.status_code == 200
+        assert put.json()["cart"] == fresh.json()["cart"]
+        line = next(line for line in put.json()["cart"]["items"] if line["sku"] == PAES[0])
+        assert line["qty"] == qty
