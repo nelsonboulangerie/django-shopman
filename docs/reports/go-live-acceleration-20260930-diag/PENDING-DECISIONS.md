@@ -205,3 +205,19 @@ janela ruim. 2) Segunda instância do `web` (custo; regra dos US$ 100/mês), que
 blip de cada deploy. 3) Timeouts curtos de conexão no banco e no Redis (hoje não há), que viram
 travamento em erro rápido sem resolver a causa.
 **Recomendação:** 1 agora; 3 como higiene; 2 só com o go-live à vista.
+
+## D16 — Sacola: que número o 409 de AJUSTE mostra, e se uma linha pode juntar hoje + fornada (#1323)
+
+**Contexto.** O #1323 corrige o defeito (a sacola perdia a reserva ao ajustar quantidade com fila de
+espera). Ficaram duas perguntas de regra, que ele não decidiu:
+(a) No 409 de um ajuste, `available_qty` é o que existe ALÉM do que a sacola já reservou (2 com 2 na
+sacola e fornada de 4). Mas o botão "Usar N unidades disponíveis" envia N como quantidade TOTAL da
+linha, então oferece "Usar 2", que não muda nada, quando caberiam 4. Erra para menos (não promete o
+que não existe), mas rótulo e ação discordam.
+(b) Com 2 prontos hoje já na sacola e 4 na fornada de amanhã, pedir 4 dá 409: a linha de
+pronta-entrega só cresce dentro de hoje. A alternativa é a linha virar "2 hoje + 2 amanhã" (promessa
+nova: que dia a sacola mostra? a parte de hoje espera a de amanhã?).
+
+**Opções.** (a) 1) O 409 do ajuste passa a dizer o total que a linha pode ter (reservado + livre),
+alinhado ao botão. 2) Manter e mudar o botão para somar. (b) 1) Manter uma linha = uma data. 2) Dividir.
+**Recomendação:** (a) 1. (b) 1, por ora; dividir é desenho de UX, não conserto.

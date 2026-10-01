@@ -2,7 +2,7 @@
 
 > Coordenador: Claude (sessão `turno-autonomo-coordenacao`). Briefing:
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` (#1297 + #1302).
-> **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D15).
+> **Decisões que são suas: [`PENDING-DECISIONS.md`](PENDING-DECISIONS.md)** (D1–D16).
 
 ## Em uma tela
 
@@ -13,7 +13,7 @@
 usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
 na `home/` privada desde ~04:26 UTC, em investigação.
 
-**Mergeado (23 PRs):**
+**Mergeado (26 PRs):**
 
 | Frente | PR | O que mudou para você |
 |---|---|---|
@@ -39,22 +39,23 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 | FUSO testes 21h–24h | #1315 | 2 testes que reprovavam perto da meia-noite; código estava certo |
 | F4b disponibilidade reaproveitada no request | #1318 | `home/` com 6 itens 72 → 51 consultas; revisão independente: seguro |
 | O8 Favorita por operador | #1319 | Estrela no inventário de receitas + filtro "Favoritas" |
+| P5 payload do cardápio sem cards duplicados | #1321 | `catalog/` 142 → 56 KB (−61%; gzip −47%); tela provada idêntica |
+| Onda 2c miúdos | #1322 | PUT da sacola 478 → 198 consultas (reduzir) e 289 → 189 (aumentar); revisão independente: seguro |
+| Drift compara `run_command` | #1320 | Contra o vivo acusa exatamente o D14 e nada mais |
 
 **Na fila / aberto:**
 
 | Frente | PR | Estado |
 |---|---|---|
-| P5 payload do cardápio sem cards duplicados | #1321 | checks; −61% do corpo do `catalog/` |
-| Onda 2c miúdos de performance | — | em andamento |
+| **Sacola perdia a reserva ao ajustar quantidade com fila** (defeito no main) | #1323 | **aberto, segurado**: a revisão independente achou 2 regressões no conserto (sobra presa ao pão pronto sem prazo; reduzir recusado quando o estoque caiu); correção em andamento. **Não enfileirar sem nova revisão.** Regras em D16 |
 | NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
-| Drift compara `run_command` | #1320 | na fila; contra o vivo acusa só o D14 |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
 
 **Precisa de você** (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):
 🔴 **D14 access log do `web` grava o token da Efí (spec vivo)** · 🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D15 picos entre Cloudflare e DO (chamado) · D3 link "entregue" sem entrega (ManyChat) ·
 D13 republicar fichas com insumo repetido · D12 conexão nova por request (pool) · D1 botão "Adicionar"
 inerte até carregar · D4 motivos de rejeição · D5 modo de fazer · D6 storage de anexos · D7 critérios
-da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `shell/` · D11 versão não se apaga.
+da nota · D8 backfill de nomes · D9 PWA forçar versão · D10 sugestão no `shell/` · D11 versão não se apaga · D16 regra do 409 de ajuste da sacola.
 
 ---
 
