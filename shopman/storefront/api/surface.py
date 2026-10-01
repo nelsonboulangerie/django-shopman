@@ -22,6 +22,7 @@ from rest_framework.views import APIView
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
+from shopman.shop.services.cart import CartDateMismatchError
 from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
@@ -43,6 +44,7 @@ from shopman.storefront.presentation import (
     build_shell,
     build_site,
     notify_subscribed_skus,
+    present_cart_date_mismatch,
 )
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
@@ -100,7 +102,59 @@ def _stock_reason(exc) -> str:
     return "Item indisponível no momento."
 
 
+def _date_mismatch_payload(exc, *, product=None) -> dict:
+    """409 ``cart_date_mismatch``: o item é de outra data, e isso é OUTRO pedido.
+
+    Fala o superset da sacola (a mesma folha do 409 de estoque a lê), mas sem
+    quantidade a oferecer (``available_qty`` nulo), sem substituto e sem "me
+    avise": nada disso resolve uma data diferente.
+    """
+    item_name = getattr(product, "name", None) or exc.sku
+    copy = present_cart_date_mismatch(
+        name=item_name, cart_date=exc.cart_date, item_date=exc.item_date,
+    )
+    return {
+        "detail": copy["detail"],
+        "title": copy["title"],
+        "error_code": exc.error_code,
+        "sku": exc.sku,
+        "name": item_name,
+        "requested_qty": exc.requested_qty,
+        "available_qty": None,
+        "line_qty": None,
+        "is_paused": False,
+        "is_planned": False,
+        "is_notifiable": False,
+        "is_notify_subscribed": False,
+        "cart_date": exc.cart_date.isoformat(),
+        "item_date": exc.item_date.isoformat(),
+        "cart_date_display": copy["cart_day_display"],
+        "item_date_display": copy["item_day_display"],
+        "substitutes": [],
+        "actions": [
+            action_payload(
+                ref="review_cart",
+                kind="link",
+                label="Ver minha sacola",
+                href=storefront_links.path_cart(),
+                priority="secondary",
+            ),
+        ],
+        "items": [
+            {
+                "sku": exc.sku,
+                "name": item_name,
+                "requested_qty": exc.requested_qty,
+                "available_qty": None,
+                "reason": copy["detail"],
+            }
+        ],
+    }
+
+
 def _stock_error_payload(exc, *, product=None, request=None) -> dict:
+    if isinstance(exc, CartDateMismatchError):
+        return _date_mismatch_payload(exc, product=product)
     item_name = getattr(product, "name", None) or getattr(exc, "sku", "")
     reason = _stock_reason(exc)
     actions = [
@@ -119,7 +173,11 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
             priority="quiet",
         ),
     ]
-    if exc.available_qty and exc.available_qty > 0:
+    # ``available_qty`` é o TETO da linha (absoluto). A ação de 1 toque só
+    # existe quando ele AVANÇA a linha: teto igual ao que a linha já tem seria
+    # um botão que não faz nada, e teto abaixo dela encolheria a sacola.
+    line_qty = getattr(exc, "line_qty", None)
+    if exc.available_qty and exc.available_qty > 0 and (line_qty is None or exc.available_qty > line_qty):
         actions.insert(0, action_payload(
             ref="set_available_qty",
             kind="mutation",
@@ -163,6 +221,7 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         "name": item_name,
         "requested_qty": exc.requested_qty,
         "available_qty": exc.available_qty,
+        "line_qty": line_qty,
         "is_paused": exc.is_paused,
         "is_planned": exc.is_planned,
         "is_notifiable": is_notifiable,
@@ -1063,7 +1122,13 @@ class CheckoutLoyaltyView(APIView):
             200: OpenApiResponse(description="Cart mutation response plus authoritative cart projection."),
             400: DetailSerializer,
             404: DetailSerializer,
-            409: OpenApiResponse(description="Estoque insuficiente para a quantidade solicitada."),
+            409: OpenApiResponse(
+                description=(
+                    "Estoque insuficiente para a quantidade solicitada (available_qty é o teto "
+                    "da linha), ou item de outra data (error_code=cart_date_mismatch): "
+                    "na loja online cada pedido tem uma data só."
+                ),
+            ),
         },
     ),
 )

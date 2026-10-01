@@ -141,6 +141,50 @@ resto sem quebrar:
 `{detail, field, errors}`. O superset só aparece onde há semântica de recuperação
 real que o front consome; nunca é decoração de um erro comum.
 
+### A sacola recusa: estoque (409) e item de outra data (409 `cart_date_mismatch`)
+
+`PUT /api/v1/cart/skus/<sku>/` recusa com **409** em dois casos, e os dois sobem
+a mesma folha da loja (`SubstituteSheet.vue`), que roteia pelo `error_code`:
+
+**Estoque.** `available_qty` é o **teto da linha**: o máximo que ela pode ter
+(o que ela já segura + o livre), **absoluto**, porque a ação de 1 toque
+(`set_available_qty`, `qty: {const: available_qty}`) leva a linha até ele. Na
+linha nova o teto é o livre. `line_qty` é quanto a linha tinha antes do pedido
+recusado (`null` na linha nova); a ação só vem quando `available_qty > line_qty`,
+porque teto igual à linha seria um botão que não faz nada e teto abaixo dela
+encolheria a sacola. Exemplo que define a regra: fornada de 4, sacola com 2,
+cliente pede 6 → `available_qty: 4`, `line_qty: 2`, botão "Pré-reservar 4
+unidades no total". (Combo é exceção conhecida: o número segue sendo o livre
+do componente que faltou.)
+
+**Outra data.** Na loja online cada pedido tem **uma data só** (decisão do dono,
+01/10/2026; no balcão a régua é outra). O item cuja reserva cairia em outra data
+que a das reservas que a sacola já tem (pronto hoje × fornada de amanhã, ou duas
+fornadas) é recusado, e a reserva recém-criada é desfeita
+(`shopman/shop/services/cart.py::CartDateMismatchError`):
+
+```json
+{
+  "detail": "Croissant é para amanhã, e sua sacola é para hoje. Cada pedido tem uma data só: envie este e monte outro pedido para amanhã.",
+  "title": "Isso fica para outro pedido",
+  "error_code": "cart_date_mismatch",
+  "sku": "CROISSANT",
+  "available_qty": null,
+  "cart_date": "2026-10-01",
+  "item_date": "2026-10-02",
+  "cart_date_display": "hoje",
+  "item_date_display": "amanhã",
+  "substitutes": [],
+  "is_notifiable": false,
+  "actions": [{"ref": "review_cart", "kind": "link", "label": "Ver minha sacola", "href": "/sacola"}]
+}
+```
+
+Não é "indisponível" (o item existe) nem "ajuste a quantidade" (nenhuma
+quantidade resolve): `available_qty` é nulo, sem substituto e sem "me avise".
+Reserva de demanda (café, croque: `quant` nulo) e SKU não rastreado não fixam a
+data da sacola. O concierge devolve o mesmo `code` com a mesma frase.
+
 ### Recusa nomeada: contato já usado por outro cadastro (409)
 
 `PATCH /api/v1/account/profile/` recusa a troca de e-mail quando o valor já

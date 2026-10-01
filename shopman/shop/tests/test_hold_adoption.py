@@ -536,11 +536,14 @@ class TestCartReconcileIntegration:
             "error_code": "insufficient_stock",
             "substitutes": [],
         }
+        # A linha segura 2: o 409 publica o TETO da linha (2 + 3 livres), não o livre.
+        mock_availability.session_line_held_qty.return_value = Decimal("2")
 
         with pytest.raises(CartUnavailableError) as excinfo:
             CartService.update_qty(request, "line-1", 999)
 
         assert excinfo.value.sku == "X"
+        assert excinfo.value.available_qty == 5
         mock_session_service.modify_session.assert_not_called()
         mock_availability.bump_session_hold_expiry.assert_not_called()
 
@@ -589,6 +592,8 @@ class TestCartReconcileIntegration:
             "error_code": None,
             "substitutes": [],
         }
+        # Sacola sem reserva datada antes: a régua de uma data por pedido não morde.
+        mock_availability.session_hold_dates_around.return_value = (set(), set())
         mock_session_service.modify_session.return_value = session
 
         cart_mutations.add_item(

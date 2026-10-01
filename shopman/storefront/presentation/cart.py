@@ -430,6 +430,31 @@ def _planned_for_display(planned_iso: str | None) -> str | None:
         return None
 
 
+def present_cart_date_mismatch(*, name: str, cart_date, item_date) -> dict[str, str]:
+    """A recusa do item de OUTRA data, na voz da loja: é outro pedido.
+
+    Não é "indisponível" (o item existe) nem "ajuste a quantidade" (nenhuma
+    quantidade resolve): na loja online cada pedido tem uma data só.
+    """
+    item_day = _planned_for_display(_iso(item_date)) or "outra data"
+    cart_day = _planned_for_display(_iso(cart_date)) or "outra data"
+    return {
+        "title": "Isso fica para outro pedido",
+        "detail": (
+            f"{name} é para {item_day}, e sua sacola é para {cart_day}. "
+            f"Cada pedido tem uma data só: envie este e monte outro pedido para {item_day}."
+        ),
+        "item_day_display": item_day,
+        "cart_day_display": cart_day,
+    }
+
+
+def _iso(value) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
 def _deadline_display(deadline_iso: str | None) -> str | None:
     if not deadline_iso:
         return None
@@ -592,4 +617,5 @@ __all__ = [
     "MinimumOrderProgressProjection",
     "UpsellSuggestionProjection",
     "build_cart",
+    "present_cart_date_mismatch",
 ]
