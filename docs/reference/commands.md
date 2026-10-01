@@ -50,6 +50,7 @@
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
+| [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
@@ -1386,6 +1387,18 @@ desses errados; latência p50/p95; tokens; custo total e por 1.000 itens; falhas
 mesmos `--shortlist` candidatos do fuzzy mais a opção "nenhum destes"; a cobertura dessa lista é o
 teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `--min-similarity`). Concorrente sem credencial fica de fora (ou falha, se pedido por
 `--matcher`). Gabarito vazio falha com o caminho para confirmar no Admin.
+
+### concierge_check
+
+**Propósito:** Responde "o Concierge, ligado, consegue atender?". Sem rede, repete o system check
+`SHOPMAN_W022`/`SHOPMAN_W023` (`shopman/storefront/checks.py`): modo `assist`, contrato 3,
+`AI_ASSIST_API_KEY`, conexão ativa, coorte de assinantes, `CONCIERGE_API_KEY`,
+`MANYCHAT_API_TOKEN`, campo de atendimento humano e fuso da janela de 24 horas. Com `--live`,
+pergunta ao ManyChat (`getCustomFields`) se o campo que a triagem usa para calar o bot existe.
+Desligado, só informa o modo e sai com 0; com pendência, sai com 1. Não confere o grafo do flow
+(a API do ManyChat não o expõe): isso é o ensaio do checklist do
+[WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md). O `manychat_flows --check` não
+cobre o Concierge.
 
 ### run_intent_pilot
 

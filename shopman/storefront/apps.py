@@ -12,11 +12,15 @@ class StorefrontConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        # System check do Concierge (SHOPMAN_W022/W023): o que ele precisa para
+        # responder, conferido na subida. Mora aqui porque o shop não importa
+        # superfície.
         # Concierge de WhatsApp: o turno roda no worker de diretivas. O handler é
         # desta superfície (fala com o cliente), então é registrado daqui, não pelo
         # `shop.handlers` — o shop não importa superfície.
         from shopman.orderman import registry
 
+        import shopman.storefront.checks  # noqa: F401
         from shopman.storefront.concierge.handler import ConciergeTurnHandler
         from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 

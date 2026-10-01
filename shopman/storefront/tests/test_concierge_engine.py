@@ -1680,12 +1680,20 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
 
     conversation.refresh_from_db()
     assert result.handoff and conversation.state == Conversation.State.HANDOFF
-    assert conversation.handoff_reason == "customer_request"
+    # Triagem (D32): o motivo é a intenção com a urgência, e o modelo de resposta nem roda.
+    assert conversation.handoff_reason == "Falar com uma pessoa · agora"
+    assert conversation.flags["triage"]["intent"] == "human"
+    assert conversation.flags["triage"]["destination"] == "team"
+    assert "falar com alguém" in conversation.summary
+    assert client.requests == []
     assert outbox.flags == [True]
     assert len(outbox.sent) == 1 and "atendimento humano" in outbox.sent[0]
     from shopman.backstage.models import OperatorAlert
 
-    assert OperatorAlert.objects.get(type="concierge_handoff").acknowledged is False
+    alert = OperatorAlert.objects.get(type="concierge_handoff")
+    assert alert.acknowledged is False
+    assert alert.audience == "orders"
+    assert alert.message.startswith("Falar com uma pessoa, urgência: agora.")
 
     # Com a equipe na conversa, a próxima mensagem fica na transcrição e o bot cala.
     later = _receive(conversation, "oi?", "m2")
@@ -1706,15 +1714,20 @@ def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, ou
     class BrokenClient:
         messages = SimpleNamespace(create=lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
 
-    for _ in range(3):
-        result = service.run_turn(conversation.pk, binding.pk, client=BrokenClient())
-        _receive(conversation, "oi de novo", f"failure-{_}")
-    assert result.fallback == "error" and result.replies == ["[CONCIERGE_UNAVAILABLE]"]
+    first = service.run_turn(conversation.pk, binding.pk, client=BrokenClient())
+    assert first.fallback == "error" and first.replies == ["[CONCIERGE_UNAVAILABLE]"]
+    _receive(conversation, "oi de novo", "failure-1")
+    # Triagem (D32): a segunda tentativa sem resposta útil vai para a equipe, agora.
+    second = service.run_turn(conversation.pk, binding.pk, client=BrokenClient())
+    assert second.handoff and second.triage.escalated_by == "no_useful_answer"
     conversation.refresh_from_db()
-    assert conversation.consecutive_failures == 3
+    assert conversation.consecutive_failures == 2
+    assert conversation.state == Conversation.State.HANDOFF
+    assert conversation.flags["triage"]["urgency"] == "now"
     from shopman.backstage.models import OperatorAlert
 
     assert OperatorAlert.objects.filter(type="concierge_unavailable").count() == 1
+    assert OperatorAlert.objects.filter(type="concierge_handoff", audience="orders").count() == 1
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")

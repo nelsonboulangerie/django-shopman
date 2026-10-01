@@ -149,6 +149,17 @@ lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL c
 provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
 `Conversation.flags.web_transfer_key` referencia a Session de origem da última
 transferência para consultar o recibo canônico da mesma intenção. Não é outra sacola.
+
+Triagem (D32, 02/10/2026; `shopman/storefront/concierge/triage.py`): cada entrada do turno
+ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
+`Conversation.flags["triage"]`, ambos `{intent, urgency, destination, summary, source,
+escalated_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
+`intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
+`answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
+parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model`, `default`
+ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`.
+`Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
+filtro "triagem" do Admin lê `flags__triage__destination`.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.

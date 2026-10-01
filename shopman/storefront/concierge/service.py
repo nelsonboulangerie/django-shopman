@@ -755,6 +755,8 @@ class TurnResult:
     processed_message_ids: list[int] = field(default_factory=list)
     pending_more: bool = False
     fallback: str = ""
+    #: A triagem do turno (``triage.Triage``), quando o turno chegou a ela.
+    triage: object | None = None
 
 
 def unanswered_inbound(
@@ -877,7 +879,7 @@ def _best_window_evidence(
 
 
 @_observed("turn")
-def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResult:
+def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_client=None) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
     result = TurnResult(
@@ -892,15 +894,26 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
 
     try:
         assert_turn_authority(conversation, for_mutation=False)
-        from .handoff import classify_handoff_request
+        from . import triage as triage_module
 
-        handoff_category = next(
-            (category for message in inbound if (category := classify_handoff_request(message.text))),
-            "",
+        # Triagem (D32): toda entrada ganha intenção, urgência e destino ANTES
+        # do modelo de resposta. O que não é para o bot responder sai daqui
+        # para a equipe (ou para a outra mesa), com o resumo gravado.
+        turn_text = "\n".join(message.text for message in inbound if message.text)
+        previous_triage = (conversation.flags or {}).get("triage")
+        decision = triage_module.decide(
+            turn_text,
+            context=triage_module.context_for(conversation),
+            previous=previous_triage,
+            message_ids=ids,
+            commercial_authority=bool(conversation._commercial_authority),
+            client=triage_client,
         )
-        if handoff_category:
-            mark_handoff(conversation, binding, handoff_category, consumed_ids=ids)
-            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
+        triage_module.record(conversation, inbound, decision)
+        result.triage = decision
+        if decision.escalates:
+            mark_handoff(conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision)
+            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=decision)
         if (
             binding.identity_assurance
             != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
@@ -935,6 +948,20 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
                 Conversation.objects.filter(pk=conversation.pk).update(
                     consecutive_failures=F("consecutive_failures") + 1
                 )
+                failures = Conversation.objects.filter(pk=conversation.pk).values_list(
+                    "consecutive_failures", flat=True
+                ).first() or 0
+                if failures >= FAILURES_BEFORE_TEAM:
+                    # Triagem (D32): duas tentativas sem resposta útil vão para
+                    # a equipe, agora, em vez de repetir "indisponível".
+                    escalation = triage_module.after_failures(
+                        (conversation.flags or {}).get("triage"), turn_text
+                    )
+                    triage_module.record(conversation, inbound, escalation)
+                    mark_handoff(conversation, binding, escalation.reason_line(), consumed_ids=ids, triage=escalation)
+                    return TurnResult(
+                        conversation.pk, handoff=True, processed_message_ids=ids, triage=escalation
+                    )
                 _alert(
                     conversation,
                     "concierge_unavailable",
@@ -1250,6 +1277,7 @@ def mark_handoff(
     reason: str,
     *,
     consumed_ids=(),
+    triage=None,
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo."""
     with transaction.atomic():
@@ -1299,12 +1327,15 @@ def mark_handoff(
     for binding in bindings:
         outcome = _execute_handoff(binding, True)
         accepted &= outcome.state == "accepted"
-    _alert(
-        current,
-        "concierge_handoff",
-        "Atendimento solicitado; sincronização "
-        + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
-    )
+    if triage is not None:
+        _triage_alert(current, triage, synced=accepted)
+    else:
+        _alert(
+            current,
+            "concierge_handoff",
+            "Atendimento solicitado; sincronização "
+            + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
+        )
     if consumed_ids:
         consumed = list(
             ConversationMessage.objects.filter(
@@ -1420,6 +1451,44 @@ def return_to_concierge(conversation: Conversation) -> bool:
         )
     conversation.refresh_from_db()
     return synced
+
+
+#: Falhas seguidas da resposta automática antes de a conversa ir para a equipe.
+FAILURES_BEFORE_TEAM = 2
+
+
+def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
+    """O cartão do operador. Equipe vai ao sino do Gestor; outra mesa, ao Admin.
+
+    O tipo decide o público (``OperatorAlert.audience_for_type``):
+    ``concierge_handoff`` é de pedidos e aparece no sino do Gestor mesmo sem
+    pedido na conversa; ``concierge_other_desk`` fica na operação geral, no
+    Admin, e não acorda o balcão.
+    """
+    from .triage import OTHER_DESK, alert_message
+
+    alert_type = "concierge_other_desk" if triage.destination == OTHER_DESK else "concierge_handoff"
+    message = alert_message(conversation, triage)
+    if not synced:
+        message += "\nA marca de atendimento humano não foi confirmada no ManyChat em todos os vínculos."
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type=alert_type,
+            severity="warning",
+            message=message,
+            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
+            order_ref=conversation.last_order_ref,
+            conversation_id=conversation.pk,
+            owner_role="atendimento",
+            action="inspect_conversation",
+            intent=triage.intent,
+            urgency=triage.urgency,
+            destination=triage.destination,
+        )
+    except Exception:
+        logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
 def _alert(conversation: Conversation, alert_type: str, message: str) -> None:

@@ -50,6 +50,9 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
   SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
   SHOPMAN_W021  Modo do WhatsApp de Marketing pedido sem cache compartilhado, sem lista do ensaio ou desconhecido
+
+Os avisos do Concierge (W022 e W023) moram em ``shopman/storefront/checks.py``,
+porque o shop não importa superfície. O próximo id livre aqui é o W024.
 """
 
 from __future__ import annotations

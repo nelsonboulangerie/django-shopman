@@ -255,9 +255,14 @@ class OperatorAlert(models.Model):
         ("marketing_readiness_stale", "Marketing: prontidão do canal vencida"),
         ("stock_alert_delivery_stuck", "Entrega de aviso de produto atrasada"),
         ("stock_alert_dispatch_unknown", "Resultado de envio de aviso incerto"),
-        # Concierge de WhatsApp: o cliente pediu gente (o bot calou e a conversa
-        # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
-        ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),
+        # Concierge de WhatsApp. A triagem (D32, 02/10/2026) manda para a equipe
+        # o que o bot não responde: pediu pessoa, reclamação, alergia, encomenda
+        # especial e o pedido que o chat não fecha. O cartão traz intenção,
+        # urgência e resumo, e vai ao sino do Gestor de pedidos (ORDER_TYPES)
+        # mesmo sem pedido na conversa. Vaga, parceria e fornecedor vão para a
+        # "outra mesa": operação geral, no Admin, sem acordar o balcão.
+        ("concierge_handoff", "WhatsApp: conversa para a equipe"),
+        ("concierge_other_desk", "WhatsApp: mensagem para outra mesa"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
@@ -329,6 +334,7 @@ class OperatorAlert(models.Model):
         "card_machine_overdue",
         "danfe_print_failed",
         "kitchen_print_failed",
+        "concierge_handoff",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
