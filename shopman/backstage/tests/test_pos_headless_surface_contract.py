@@ -272,6 +272,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertNotIn("link", payment_methods)
         self.assertNotIn("card", payment_methods)
         self.assertIn("mixed", payment_methods)
+        # Cada forma diz em que modo do PDV aparece: a projeção é do terminal e o
+        # modo é da venda. As do gesto de balcão valem nos dois.
+        self.assertEqual(payment_methods["cash"]["sales_modes"], ["counter", "order"])
         self.assertIn("delivery", {option["ref"] for option in payload["pos"]["fulfillment_options"]})
         payment_collections = {collection["ref"]: collection for collection in payload["pos"]["payment_collections"]}
         # A COLEÇÃO responde "a que recebimento esta forma pertence", e a lista
@@ -990,6 +993,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         self.assertEqual(reviewed.status_code, 422)
         self.assertEqual(reviewed.json()["error"]["code"], "delivery_address_required")
+        self.assertEqual(Order.objects.count(), 0)
+
+    @override_settings(
+        SHOPMAN_PAYMENT_ADAPTERS={"link": "shopman.shop.adapters.payment_mock", "cash": None, "external": None},
+    )
+    def test_api_close_refuses_payment_link_in_counter_mode(self) -> None:
+        # O link é do pedido remoto anotado (modo Encomendas). No Balcão o pão sai
+        # na hora, e a venda de link ficaria aberta com o recibo "A nota fiscal
+        # sai na retirada" (PDV-260930-R62). A recusa é antes do commit.
+        closed = self.client.post(
+            "/api/v1/backstage/pos/sale/close/",
+            data=json.dumps({
+                "intent_version": POS_SALE_INTENT_VERSION,
+                "sales_mode": "counter",
+                "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
+                "customer_phone": "43999990000",
+                "payment_tenders": [{"method": "link", "amount_q": 1300, "collection": "terminal"}],
+                "client_request_id": "pos-headless-link-counter-001",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(closed.status_code, 422)
+        body = closed.json()
+        self.assertEqual(body["detail"], "O link de pagamento é só para encomenda.")
+        self.assertEqual(body["error"]["code"], "link_requires_order_mode")
+        self.assertEqual(body["error"]["field"], "payment_tenders")
+        self.assertEqual(body["error"]["focus"], "payment")
+        self.assertIn("Encomendas", body["error"]["recovery"])
         self.assertEqual(Order.objects.count(), 0)
 
     def test_api_headless_pos_review_warns_but_close_rejects_incomplete_split_payment(self) -> None:

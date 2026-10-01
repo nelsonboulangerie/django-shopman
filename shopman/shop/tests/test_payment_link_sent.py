@@ -400,7 +400,16 @@ class _Counter:
         self.shift = cash.open_shift(operator=self.operator, float_q=10000)
 
     def close(self, *, client_request_id: str, **overrides):
+        from shopman.guestman.models import Customer
+
+        # O link só existe no modo Encomendas (`link_requires_order_mode`): é o
+        # pedido remoto anotado, com cliente identificado e data combinada.
+        customer, _ = Customer.objects.get_or_create(ref="JOYCE", defaults={"first_name": "Joyce"})
         payload = {
+            "sales_mode": "order",
+            "customer_ref": customer.ref,
+            "fulfillment_type": "pickup",
+            "delivery_date": timezone.localdate().isoformat(),
             "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
             "customer_name": "Joyce",
             "customer_phone": "43999990000",

@@ -454,6 +454,19 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(methodLabel("account", injectableMethods(METHODS, { houseAccount: true }))).toBe("Em conta");
   });
 
+  it("offers each method only in the sales modes the projection declares (link is Encomendas only)", () => {
+    // O link é do pedido remoto anotado; no Balcão o servidor recusa
+    // (`link_requires_order_mode`). A regra mora na projeção, não aqui.
+    const withLink = [
+      { ref: "cash", label: "Dinheiro", sales_modes: ["counter", "order"] as Array<"counter" | "order"> },
+      { ref: "link", label: "Link de pagamento", sales_modes: ["order"] as Array<"counter" | "order"> },
+    ];
+    expect(injectableMethods(withLink, { salesMode: "counter" }).map((method) => method.ref)).toEqual(["cash"]);
+    expect(injectableMethods(withLink, { salesMode: "order" }).map((method) => method.ref)).toEqual(["cash", "link"]);
+    // Sem `sales_modes` declarado, a forma vale nos dois modos.
+    expect(injectableMethods(METHODS, { salesMode: "counter" }).map((method) => method.ref)).toEqual(["cash", "pix", "card"]);
+  });
+
   it("resolves the method label and icon, with fallbacks", () => {
     expect(methodLabel("pix", METHODS)).toBe("PIX");
     // Ref cru nunca chega à tela: fallback pt-BR digno.

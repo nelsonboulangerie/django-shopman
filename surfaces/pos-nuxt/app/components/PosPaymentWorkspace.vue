@@ -559,13 +559,21 @@ const kitchenNote = computed(() => kitchenHandoffNote(props.items, { deferred: k
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
+// Os BOTÕES respeitam o modo da venda (o link só aparece em Encomendas); as
+// LINHAS já lançadas leem a lista inteira, para nenhuma perder o rótulo.
 const injectableMethods = computed(() =>
+  toInjectableMethods(props.paymentMethods, {
+    houseAccount: Boolean(props.customerLookup?.house_account),
+    salesMode: props.salesMode,
+  }),
+);
+const labelledMethods = computed(() =>
   toInjectableMethods(props.paymentMethods, { houseAccount: Boolean(props.customerLookup?.house_account) }),
 );
 // D/P/C — a tecla de cada forma, derivada do rótulo do contrato. Escolher a
 // forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
-const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
+const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, labelledMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(
   props.paymentCollections,
   props.fulfillmentType,
@@ -894,6 +902,14 @@ const ctaBlock = computed<{
     return {
       message: "O link cobra a venda inteira.",
       hint: "Remova as outras formas, ou troque o link por uma delas.",
+    };
+  }
+  // `link_requires_order_mode` — a gêmea do botão que some no Balcão: uma linha
+  // de link que sobrou de Encomendas não chega ao Validar para ser recusada.
+  if (hasLinkTender.value && props.salesMode === "counter") {
+    return {
+      message: "O link de pagamento é só para encomenda.",
+      hint: "No balcão, receba em Pix, cartão ou dinheiro.",
     };
   }
   // `link_requires_customer_contact` — o link é uma URL que alguém precisa

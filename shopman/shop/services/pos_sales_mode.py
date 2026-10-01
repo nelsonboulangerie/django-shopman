@@ -19,6 +19,25 @@ def sales_mode(data: dict) -> str:
     ) else "counter"
 
 
+#: Os dois modos do PDV, na ordem em que a tela os mostra.
+SALES_MODES: tuple[str, ...] = ("counter", "order")
+
+#: A forma de pagamento que só existe num dos modos. O LINK é a forma do pedido
+#: REMOTO anotado no balcão (o cliente ligou, vai pagar do celular e vem buscar):
+#: a mercadoria fica na casa até o dinheiro chegar, e é por isso que a venda de
+#: link nunca é "entrega de balcão" (``is_counter_takeaway``) e a nota sai na
+#: retirada. No modo Balcão o pão sai na mão do cliente AGORA, e essa premissa é
+#: falsa: o recibo diria "A nota fiscal sai na retirada" de um pão já entregue, e
+#: a venda ficaria aberta esperando um pagamento de quem está na frente do caixa.
+_PAYMENT_METHOD_SALES_MODES: dict[str, tuple[str, ...]] = {"link": ("order",)}
+
+
+def payment_method_sales_modes(method: str) -> tuple[str, ...]:
+    """Em quais modos do PDV a forma é oferecida. Uma verdade só: a projeção
+    publica isto para a tela, e o ``close_sale`` recusa o que estiver fora."""
+    return _PAYMENT_METHOD_SALES_MODES.get(str(method or "").strip().lower(), SALES_MODES)
+
+
 def order_sales_mode(order) -> str:
     """Lê o modo do pedido inclusive durante o callback inicial do commit.
 
