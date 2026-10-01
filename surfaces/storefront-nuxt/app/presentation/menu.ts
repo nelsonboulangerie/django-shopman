@@ -1,5 +1,5 @@
 import { normalizeSearchText, formatCount } from '~/utils/display'
-import type { CatalogItemProjection, CatalogSectionProjection } from '~/types/shopman'
+import type { CatalogItemProjection, CatalogProjection, CatalogSection } from '~/types/shopman'
 
 // Transforms puros do cardápio: busca com scoring, filtros multi-select e
 // badges de disponibilidade. Nenhum estado de UI aqui — a página orquestra.
@@ -16,7 +16,7 @@ export type SearchListOption = {
   icon: string
   imageUrl?: string
   item?: CatalogItemProjection
-  section?: CatalogSectionProjection
+  section?: CatalogSection
 }
 
 // O painel de busca tem três zonas: sem busca, a lista vertical de coleções
@@ -146,7 +146,7 @@ export function keywordDisplayLabel (term: string): string {
   return KEYWORD_LABEL_BY_KEY[normalized] || term.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-export function collectionDisplayLabel (section: Pick<CatalogSectionProjection, 'ref' | 'label' | 'dynamic_ref'>): string {
+export function collectionDisplayLabel (section: Pick<CatalogSection, 'ref' | 'label' | 'dynamic_ref'>): string {
   const label = section.label.trim()
   if (label) return label
   return COLLECTION_LABEL_BY_REF[section.dynamic_ref || section.ref] || humanizeRefLabel(section.ref)
@@ -159,7 +159,7 @@ function publicRouteSlug (value: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-export function sectionPublicSlug (section: Pick<CatalogSectionProjection, 'ref' | 'label' | 'dynamic_ref' | 'is_dynamic'>): string {
+export function sectionPublicSlug (section: Pick<CatalogSection, 'ref' | 'label' | 'dynamic_ref' | 'is_dynamic'>): string {
   const internalRef = section.dynamic_ref || section.ref
   if (section.is_dynamic && PUBLIC_DYNAMIC_SECTION_SLUG_BY_REF[internalRef]) {
     return PUBLIC_DYNAMIC_SECTION_SLUG_BY_REF[internalRef]
@@ -169,7 +169,7 @@ export function sectionPublicSlug (section: Pick<CatalogSectionProjection, 'ref'
 
 export function resolveSectionRefFromParam (
   raw: string,
-  sections: ReadonlyArray<Pick<CatalogSectionProjection, 'ref' | 'label' | 'dynamic_ref' | 'is_dynamic'>>
+  sections: ReadonlyArray<Pick<CatalogSection, 'ref' | 'label' | 'dynamic_ref' | 'is_dynamic'>>
 ): string {
   const wanted = publicRouteSlug(raw)
   if (!wanted) return ''
@@ -231,8 +231,30 @@ export function uniqueItemsBySku (items: ReadonlyArray<CatalogItemProjection>): 
   })
 }
 
-export function buildSectionsBySku (sections: ReadonlyArray<CatalogSectionProjection>): Map<string, CatalogSectionProjection[]> {
-  const map = new Map<string, CatalogSectionProjection[]>()
+// A API manda cada card uma vez só, em `items`, e a seção só com os SKUs dela
+// (na ordem da seção). Aqui a seção volta a ter os cards, resolvidos pelo índice
+// de `items`: mesma ordem, mesmo objeto de card (mesmo preço, disponibilidade e
+// selos), em todas as seções onde o SKU aparece. É a ÚNICA porta de leitura das
+// seções nas telas. Todo SKU de seção tem card em `items` por construção do BE
+// (teste de contrato lá); um SKU sem card não vira card vazio, sai da seção.
+export function resolveCatalogSections (
+  catalog: Pick<CatalogProjection, 'items' | 'sections'> | null | undefined
+): CatalogSection[] {
+  if (!catalog) return []
+  const itemBySku = new Map<string, CatalogItemProjection>()
+  for (const item of catalog.items || []) {
+    if (!itemBySku.has(item.sku)) itemBySku.set(item.sku, item)
+  }
+  return (catalog.sections || []).map(({ skus, ...section }) => ({
+    ...section,
+    items: (skus || [])
+      .map(sku => itemBySku.get(sku))
+      .filter((item): item is CatalogItemProjection => !!item)
+  }))
+}
+
+export function buildSectionsBySku (sections: ReadonlyArray<CatalogSection>): Map<string, CatalogSection[]> {
+  const map = new Map<string, CatalogSection[]>()
   for (const section of sections) {
     for (const item of section.items) {
       const memberships = map.get(item.sku) || []
@@ -243,8 +265,8 @@ export function buildSectionsBySku (sections: ReadonlyArray<CatalogSectionProjec
   return map
 }
 
-export function primarySectionBySku (sectionsBySku: Map<string, CatalogSectionProjection[]>): Map<string, CatalogSectionProjection> {
-  const map = new Map<string, CatalogSectionProjection>()
+export function primarySectionBySku (sectionsBySku: Map<string, CatalogSection[]>): Map<string, CatalogSection> {
+  const map = new Map<string, CatalogSection>()
   for (const [sku, memberships] of sectionsBySku.entries()) {
     const firstStaticSection = memberships.find(section => !section.is_dynamic)
     const primary = firstStaticSection || memberships[0]
@@ -253,7 +275,7 @@ export function primarySectionBySku (sectionsBySku: Map<string, CatalogSectionPr
   return map
 }
 
-export function matchesItem (item: CatalogItemProjection, section: CatalogSectionProjection | undefined, search: string): boolean {
+export function matchesItem (item: CatalogItemProjection, section: CatalogSection | undefined, search: string): boolean {
   return searchTextMatches(search, [
     item.name,
     item.short_description,
@@ -269,7 +291,7 @@ export function matchesItem (item: CatalogItemProjection, section: CatalogSectio
 export function matchesProductAcrossCatalog (
   item: CatalogItemProjection,
   search: string,
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionsBySku: Map<string, CatalogSection[]>
 ): boolean {
   return searchTextMatches(search, [
     item.name,
@@ -283,7 +305,7 @@ export function matchesProductAcrossCatalog (
   ].join(' '))
 }
 
-export function collectionSearchScore (section: CatalogSectionProjection, search: string): number {
+export function collectionSearchScore (section: CatalogSection, search: string): number {
   const displayLabel = collectionDisplayLabel(section)
   const label = normalizeSearchText(displayLabel)
   const haystack = normalizeSearchText([displayLabel, section.description, section.ref].join(' '))
@@ -298,7 +320,7 @@ export function collectionSearchScore (section: CatalogSectionProjection, search
 export function productSearchScore (
   item: CatalogItemProjection,
   search: string,
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionsBySku: Map<string, CatalogSection[]>
 ): number {
   const name = normalizeSearchText(item.name)
   const directTerms = normalizeSearchText([
@@ -355,9 +377,9 @@ export function parseFilterKey (key: string): { kind: SearchFilterKind, value: s
 
 export function itemMatchesFilter (
   item: CatalogItemProjection,
-  section: CatalogSectionProjection | undefined,
+  section: CatalogSection | undefined,
   key: string,
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionsBySku: Map<string, CatalogSection[]>
 ): boolean {
   const parsed = parseFilterKey(key)
   if (!parsed) return false
@@ -368,9 +390,9 @@ export function itemMatchesFilter (
 
 export function itemMatchesAnyFilter (
   item: CatalogItemProjection,
-  section: CatalogSectionProjection | undefined,
+  section: CatalogSection | undefined,
   keys: string[],
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionsBySku: Map<string, CatalogSection[]>
 ): boolean {
   if (!keys.length) return true
   return keys.some(key => itemMatchesFilter(item, section, key, sectionsBySku))
@@ -378,10 +400,10 @@ export function itemMatchesAnyFilter (
 
 export function itemPassesMenuFilters (
   item: CatalogItemProjection,
-  section: CatalogSectionProjection | undefined,
+  section: CatalogSection | undefined,
   search: string,
   appliedFilterKeys: string[],
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionsBySku: Map<string, CatalogSection[]>
 ): boolean {
   if (search && !matchesItem(item, section, search)) return false
   if (appliedFilterKeys.length && !itemMatchesAnyFilter(item, section, appliedFilterKeys, sectionsBySku)) return false
@@ -391,9 +413,9 @@ export function itemPassesMenuFilters (
 // Em busca/filtro as seções estáticas vêm antes das dinâmicas e cada SKU
 // aparece uma vez só (a primeira seção que o contém fica com ele).
 export function orderedSections (
-  sections: ReadonlyArray<CatalogSectionProjection>,
+  sections: ReadonlyArray<CatalogSection>,
   searchOrFilterMode: boolean
-): CatalogSectionProjection[] {
+): CatalogSection[] {
   if (!searchOrFilterMode) return [...sections]
   const staticSections = sections.filter(section => !section.is_dynamic)
   const dynamicSections = sections.filter(section => section.is_dynamic)
@@ -401,11 +423,11 @@ export function orderedSections (
 }
 
 export function filteredSections (
-  sections: ReadonlyArray<CatalogSectionProjection>,
+  sections: ReadonlyArray<CatalogSection>,
   search: string,
   appliedFilterKeys: string[],
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
-): CatalogSectionProjection[] {
+  sectionsBySku: Map<string, CatalogSection[]>
+): CatalogSection[] {
   const searchOrFilterMode = Boolean(search || appliedFilterKeys.length)
   const seenSkus = new Set<string>()
   return orderedSections(sections, searchOrFilterMode)
@@ -423,7 +445,7 @@ export function filteredSections (
 }
 
 export function collectionSearchOptions (
-  sections: ReadonlyArray<CatalogSectionProjection>,
+  sections: ReadonlyArray<CatalogSection>,
   search: string
 ): SearchListOption[] {
   if (!search) return []
@@ -451,8 +473,8 @@ export function collectionSearchOptions (
 export function productSearchOptions (
   items: ReadonlyArray<CatalogItemProjection>,
   search: string,
-  sectionBySku: Map<string, CatalogSectionProjection>,
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionBySku: Map<string, CatalogSection>,
+  sectionsBySku: Map<string, CatalogSection[]>
 ): SearchListOption[] {
   if (!search) return []
   return items
@@ -480,8 +502,8 @@ export function productSearchOptions (
 export function keywordSearchOptions (
   items: ReadonlyArray<CatalogItemProjection>,
   search: string,
-  sectionBySku: Map<string, CatalogSectionProjection>,
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionBySku: Map<string, CatalogSection>,
+  sectionsBySku: Map<string, CatalogSection[]>
 ): SearchListOption[] {
   if (!search) return []
   const options = new Map<string, SearchListOption & { skus: Set<string> }>()
@@ -520,7 +542,7 @@ export function keywordSearchOptions (
 // desempilhar ou conferir o que está ativo.
 export function appliedFilterChips (
   keys: string[],
-  sections: ReadonlyArray<CatalogSectionProjection>
+  sections: ReadonlyArray<CatalogSection>
 ): Array<{ key: string, label: string }> {
   return keys
     .map(key => {
@@ -536,12 +558,12 @@ export function appliedFilterChips (
 }
 
 export function searchPanelView (input: {
-  sections: ReadonlyArray<CatalogSectionProjection>
+  sections: ReadonlyArray<CatalogSection>
   items: ReadonlyArray<CatalogItemProjection>
   search: string
   favoriteRef: string
-  sectionBySku: Map<string, CatalogSectionProjection>
-  sectionsBySku: Map<string, CatalogSectionProjection[]>
+  sectionBySku: Map<string, CatalogSection>
+  sectionsBySku: Map<string, CatalogSection[]>
 }): SearchPanelView {
   const { sections, items, search, favoriteRef, sectionBySku, sectionsBySku } = input
   if (!search) {

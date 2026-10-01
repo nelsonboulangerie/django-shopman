@@ -46,6 +46,9 @@ export interface CatalogItemProjection {
   category_icon: string | null
 }
 
+// O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
+// card mora uma vez só, em `CatalogProjection.items`. Repetir o card inteiro em
+// cada seção era 62% do corpo do cardápio (P5, 29/09/2026).
 export interface CatalogSectionProjection {
   ref: string
   label: string
@@ -54,6 +57,12 @@ export interface CatalogSectionProjection {
   is_dynamic: boolean
   dynamic_ref: string | null
   category: CategoryProjection | null
+  skus: string[]
+}
+
+// O que a tela usa: a mesma seção com os SKUs já resolvidos em cards, por
+// `resolveCatalogSections` (presentation/menu). Nenhuma página lê `skus`.
+export interface CatalogSection extends Omit<CatalogSectionProjection, 'skus'> {
   items: CatalogItemProjection[]
 }
 

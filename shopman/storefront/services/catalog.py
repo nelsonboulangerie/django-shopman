@@ -48,9 +48,13 @@ def search_index(catalog) -> list[dict]:
     seen: set[str] = set()
     records: list[dict] = []
     keywords_by_sku: dict[str, list[str]] = {}
+    # A seção carrega só SKUs; o card mora uma vez em ``catalog.items``.
+    item_by_sku = {}
+    for item in catalog.items:
+        item_by_sku.setdefault(item.sku, item)
 
     try:
-        skus_all = [item.sku for sec in catalog.sections for item in sec.items]
+        skus_all = [sku for sec in catalog.sections for sku in sec.skus]
         if skus_all:
             keywords_by_sku = catalog_context.keywords_by_sku(skus_all)
     except Exception:
@@ -58,8 +62,9 @@ def search_index(catalog) -> list[dict]:
         keywords_by_sku = {}
 
     for section in catalog.sections:
-        for item in section.items:
-            if item.sku in seen:
+        for sku in section.skus:
+            item = item_by_sku.get(sku)
+            if item is None or sku in seen:
                 continue
             seen.add(item.sku)
             records.append({

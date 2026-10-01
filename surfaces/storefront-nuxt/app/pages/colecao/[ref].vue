@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dynamicCollectionMenuTarget } from '~/presentation/menu'
+import { dynamicCollectionMenuTarget, resolveCatalogSections } from '~/presentation/menu'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -49,7 +49,7 @@ if (!dynamicRedirectTarget.value) requireContentOnSsr(error.value, !!data.value?
 
 const catalog = computed(() => data.value?.catalog || null)
 const section = computed(() => {
-  const sections = catalog.value?.sections || []
+  const sections = resolveCatalogSections(catalog.value)
   return sections.find(s => s.ref === collectionRef.value) || sections[0] || null
 })
 const items = computed(() => section.value?.items || catalog.value?.items || [])

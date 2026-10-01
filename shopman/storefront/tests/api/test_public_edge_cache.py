@@ -62,9 +62,8 @@ def _customer_client() -> tuple[Client, Customer]:
 
 def _favorites(body: dict) -> list[bool]:
     catalog = body.get("catalog") or (body.get("home") or {}).get("catalog") or {}
+    # A seção carrega só SKUs: todo card do cardápio está em ``items``.
     items = list(catalog.get("items") or [])
-    for section in catalog.get("sections") or []:
-        items.extend(section.get("items") or [])
     return [bool(item.get("is_favorite")) for item in items]
 
 

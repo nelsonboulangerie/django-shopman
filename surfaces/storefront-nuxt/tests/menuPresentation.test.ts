@@ -16,6 +16,7 @@ import {
   parseFilterKey,
   primarySectionBySku,
   productSearchOptions,
+  resolveCatalogSections,
   resolveSectionRefFromParam,
   searchPanelView,
   searchTextMatches,
@@ -24,7 +25,7 @@ import {
   tileBadge,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import type { CatalogItemProjection, CatalogSectionProjection } from '~/types/shopman'
+import type { CatalogItemProjection, CatalogSection, CatalogSectionProjection } from '~/types/shopman'
 
 function item (overrides: Partial<CatalogItemProjection> = {}): CatalogItemProjection {
   return {
@@ -57,7 +58,7 @@ function item (overrides: Partial<CatalogItemProjection> = {}): CatalogItemProje
   }
 }
 
-function section (overrides: Partial<CatalogSectionProjection> = {}): CatalogSectionProjection {
+function section (overrides: Partial<CatalogSection> = {}): CatalogSection {
   return {
     ref: 'rusticos',
     label: 'Rústicos',
@@ -83,6 +84,57 @@ const sections = [
 const allItems = uniqueItemsBySku(sections.flatMap(s => s.items))
 const sectionsBySku = buildSectionsBySku(sections)
 const sectionBySku = primarySectionBySku(sectionsBySku)
+
+describe('menu presentation — resolveCatalogSections', () => {
+  // A API manda o card uma vez só, em `items`; a seção traz só os SKUs dela.
+  function wire (section: CatalogSection): CatalogSectionProjection {
+    const { items, ...meta } = section
+    return { ...meta, skus: items.map(entry => entry.sku) }
+  }
+
+  it('devolve as mesmas seções que o payload antigo, com os mesmos cards e na mesma ordem', () => {
+    const resolved = resolveCatalogSections({ items: allItems, sections: sections.map(wire) })
+    expect(resolved).toEqual(sections)
+    // O card é o MESMO objeto de `items` em toda seção onde o SKU aparece: preço,
+    // disponibilidade e selos não podem divergir entre a seção e a busca.
+    const croissantInFolhados = resolved.find(s => s.ref === 'folhados')?.items[0]
+    const croissantInFeatured = resolved.find(s => s.ref === 'featured')?.items[0]
+    expect(croissantInFolhados).toBe(croissantInFeatured)
+    expect(croissantInFolhados).toBe(allItems.find(entry => entry.sku === 'CROIS-001'))
+  })
+
+  it('preserva a ordem da seção, que não é a ordem de items', () => {
+    const resolved = resolveCatalogSections({
+      items: [croissant, brigadeiro],
+      sections: [wire(section({ ref: 'featured', is_dynamic: true, items: [brigadeiro, croissant] }))]
+    })
+    expect(resolved[0]?.items.map(entry => entry.sku)).toEqual(['BRIG-001', 'CROIS-001'])
+  })
+
+  it('não inventa card para SKU que não está em items, nem deixa skus na seção resolvida', () => {
+    const resolved = resolveCatalogSections({
+      items: [croissant],
+      sections: [{ ...wire(section({ items: [croissant] })), skus: ['CROIS-001', 'FANTASMA'] }]
+    })
+    expect(resolved[0]?.items).toEqual([croissant])
+    expect(resolved[0]).not.toHaveProperty('skus')
+  })
+
+  it('com SKU repetido em items (produto em duas coleções), usa o primeiro card', () => {
+    const first = item({ sku: 'MELON', name: 'Melon' })
+    const repeated = item({ sku: 'MELON', name: 'Melon' })
+    const resolved = resolveCatalogSections({
+      items: [first, repeated],
+      sections: [wire(section({ items: [repeated] }))]
+    })
+    expect(resolved[0]?.items[0]).toBe(first)
+  })
+
+  it('sem catálogo não há seção', () => {
+    expect(resolveCatalogSections(null)).toEqual([])
+    expect(resolveCatalogSections(undefined)).toEqual([])
+  })
+})
 
 describe('menu presentation — tileBadge', () => {
   it('omits the badge for plainly available items', () => {

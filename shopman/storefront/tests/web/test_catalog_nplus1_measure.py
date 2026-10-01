@@ -189,7 +189,7 @@ def _serialize(proj) -> dict:
                 "icon": s.icon,
                 "is_dynamic": s.is_dynamic,
                 "dynamic_ref": s.dynamic_ref,
-                "item_skus": [i.sku for i in s.items],
+                "item_skus": list(s.skus),
             }
             for s in proj.sections
         ],

@@ -105,8 +105,6 @@ export function catalogFromStructureSnapshot (
     .map(sku => state.items[sku])
     .filter((item): item is CatalogStructureState['items'][string] => !!item)
     .map(pendingItem)
-  const bySku = new Map(items.map(item => [item.sku, item]))
-
   return {
     items,
     categories: Array.isArray(state.categories) ? state.categories : [],
@@ -118,7 +116,7 @@ export function catalogFromStructureSnapshot (
       is_dynamic: false,
       dynamic_ref: null,
       category: section.category,
-      items: section.skus.map(sku => bySku.get(sku)).filter((item): item is CatalogItemProjection => !!item)
+      skus: [...section.skus]
     })),
     featured: [],
     active_category_ref: null,
