@@ -21,6 +21,7 @@ from shopman.orderman.exceptions import CommitError as OrderCommitError
 from shopman.orderman.exceptions import ValidationError as OrderValidationError
 from shopman.orderman.models import Order, Session
 from shopman.utils.monetary import format_money, monetary_mult
+from shopman.utils.names import split_full_name
 
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
@@ -344,6 +345,7 @@ def close_sale(
     approved_by = approver.get_username() if approver is not None else ""
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
+    _require_order_mode_if_payment_link(payload)
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
@@ -1075,6 +1077,33 @@ def _payload_identifies_customer(payload: dict) -> bool:
     return any(
         str(payload.get(key) or "").strip()
         for key in ("customer_ref", "customer_phone", "customer_name")
+    )
+
+
+def _require_order_mode_if_payment_link(payload: dict) -> None:
+    """Link de pagamento só no modo Encomendas. Recusa ANTES do commit.
+
+    Irmã de ``_require_contact_if_payment_link``. O link é a forma do pedido
+    REMOTO anotado no balcão, e o resto do sistema o lê assim: a venda de link
+    nunca é entrega de balcão (``is_counter_takeaway``), fica aberta até o
+    dinheiro chegar e a nota sai na retirada. No modo Balcão o cliente está na
+    frente e leva o pão agora; fechar ali com link produz o recibo "A nota
+    fiscal sai na retirada" de um pão já entregue.
+
+    A tela não oferece o link no Balcão (``payment_method_sales_modes``, lido
+    pela projeção); esta é a trava para quem chega sem passar por ela.
+    """
+    from shopman.shop.services.pos_sales_mode import payment_method_sales_modes, sales_mode
+
+    mode = sales_mode(payload)
+    if all(mode in payment_method_sales_modes(method) for method in _payload_payment_method_set(payload)):
+        return
+    raise PosIntentError(
+        code="link_requires_order_mode",
+        message="O link de pagamento é só para encomenda.",
+        field="payment_tenders",
+        focus="payment",
+        recovery="No balcão, receba em Pix, cartão ou dinheiro. Para cobrar por link, lance a venda em Encomendas.",
     )
 
 
@@ -4323,7 +4352,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             confirmed=save_receipt_tax_id_confirmed,
         )
         if customer is None:
-            first_name, last_name = _split_name(name)
+            first_name, last_name = split_full_name(name)
             fallback = ("", "") if payload.get("_receipt_registration") else _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
@@ -4771,7 +4800,7 @@ def _merge_pos_customer_fields(
     autorização para trocar o telefone, e a ordem sobre o CPF da nota não vem
     de carona na correção de contato.
     """
-    first_name, last_name = _split_name(name)
+    first_name, last_name = split_full_name(name)
     updates: list[str] = []
 
     if first_name and (correct_name or _should_refresh_name(customer)):
@@ -5272,11 +5301,6 @@ def _structured_coordinates(structured: dict) -> tuple[float, float] | None:
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         return None
     return lat, lng
-
-
-def _split_name(full_name: str) -> tuple[str, str]:
-    parts = full_name.strip().split(None, 1)
-    return (parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
 
 
 def _fallback_customer_name(*, phone: str, tax_id: str, email: str) -> tuple[str, str]:

@@ -14,6 +14,7 @@ import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
+from django.utils import timezone
 from shopman.cashman import Entry
 from shopman.cashman import services as cash
 from shopman.orderman.models import Order
@@ -108,6 +109,20 @@ class _Counter:
 @pytest.fixture
 def counter():
     return _Counter()
+
+
+def _encomenda(**extra) -> dict:
+    """O modo Encomendas: o único em que o PDV cobra por link (`link_requires_order_mode`)."""
+    from shopman.guestman.models import Customer
+
+    customer, _ = Customer.objects.get_or_create(ref="JORGE", defaults={"first_name": "Jorge"})
+    return {
+        "sales_mode": "order",
+        "customer_ref": customer.ref,
+        "fulfillment_type": "pickup",
+        "delivery_date": timezone.localdate().isoformat(),
+        **extra,
+    }
 
 
 # ── A linha `sale` ────────────────────────────────────────────────────────
@@ -882,6 +897,7 @@ def test_venda_em_link_entrega_a_url_e_fica_aguardando(counter):
         # a URL existe para ser ENVIADA a alguém.
         customer_phone="43999990000",
         payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+        **_encomenda(),
     )
 
     # A URL chega ao operador — é o que ele copia e manda.
@@ -928,6 +944,7 @@ def test_link_com_outra_forma_e_recusado_antes_do_commit(counter):
                 {"method": "cash", "amount_q": 200, "collection": "terminal"},
                 {"method": "link", "amount_q": 1000, "collection": "terminal"},
             ],
+            **_encomenda(),
         )
     assert exc.value.code == "link_requires_full_payment"
 
@@ -939,6 +956,7 @@ def test_link_sem_contato_e_recusado(counter):
             client_request_id="link-sem-contato",
             customer_name="Seu Jorge",  # ⚠️ nome NÃO é contato
             payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+            **_encomenda(),
         )
     assert exc.value.code == "link_requires_customer_contact"
 
@@ -949,6 +967,7 @@ def test_link_com_telefone_passa(counter):
         client_request_id="link-com-tel",
         customer_phone="43999990000",
         payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+        **_encomenda(),
     )
     assert r.payment.get("checkout_url", "").startswith("http")
 
@@ -959,8 +978,54 @@ def test_link_com_email_tambem_passa(counter):
         client_request_id="link-com-email",
         customer_email="jorge@casa.com",
         payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+        **_encomenda(),
     )
     assert r.payment.get("checkout_url", "").startswith("http")
+
+
+#: ⚠️ A terceira recusa: o link é do modo Encomendas. No Balcão o cliente está na
+#: frente e leva o pão agora, mas a venda de link nunca é entrega de balcão
+#: (`is_counter_takeaway`): ela ficava aberta esperando o pagamento e o recibo
+#: dizia "A nota fiscal sai na retirada" de um pão já entregue (PDV-260930-R62).
+@_LINK_ADAPTERS
+@pytest.mark.parametrize("modo", [{"sales_mode": "counter"}, {}], ids=["balcao", "sem-modo"])
+def test_link_no_balcao_e_recusado_antes_do_commit(counter, modo):
+    with pytest.raises(PosIntentError) as exc:
+        counter.close(
+            client_request_id="link-balcao",
+            customer_phone="43999990000",
+            payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+            **modo,
+        )
+    assert exc.value.code == "link_requires_order_mode"
+    assert exc.value.focus == "payment"
+    assert "—" not in exc.value.message and "—" not in exc.value.recovery
+    assert not Order.objects.exists(), "a recusa é antes do commit: nenhum pedido nasce"
+    assert counter.sale_lines() == []
+
+
+@_LINK_ADAPTERS
+def test_a_trava_do_modo_e_do_link_e_de_mais_ninguem(counter):
+    # Pix, cartão e dinheiro seguem valendo no Balcão: a regra é do link.
+    r = counter.close(
+        client_request_id="pix-balcao",
+        sales_mode="counter",
+        payment_tenders=[{"method": "pix", "amount_q": 1200, "collection": "terminal"}],
+    )
+    assert r.order_ref
+
+
+@_LINK_ADAPTERS
+@override_settings(DEBUG=True)
+def test_a_tela_so_oferece_o_link_no_modo_encomendas():
+    # A gêmea na TELA da trava do modo: a projeção é do terminal e o modo é da
+    # venda, então cada forma diz em quais modos aparece e a tela filtra.
+    from shopman.backstage.projections.pos import _payment_methods
+
+    modos = {m.ref: m.sales_modes for m in _payment_methods()}
+    assert modos["link"] == ("order",)
+    for ref in ("cash", "pix", "credit", "debit"):
+        assert modos[ref] == ("counter", "order"), ref
 
 
 @_LINK_ADAPTERS

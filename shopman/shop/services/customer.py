@@ -21,6 +21,7 @@ import uuid
 from collections.abc import Callable
 
 from django.conf import settings
+from shopman.utils.names import split_full_name
 
 from shopman.shop.adapters import get_adapter
 
@@ -111,7 +112,7 @@ def _handle_manychat(order):
             _maybe_update_name(adapter, customer, name)
             return customer
 
-    first_name, last_name = _split_name(name)
+    first_name, last_name = split_full_name(name)
     ref = f"MC-{uuid.uuid4().hex[:8].upper()}"
     customer = adapter.create_customer(
         ref=ref, first_name=first_name, last_name=last_name,
@@ -158,7 +159,7 @@ def _handle_ifood(order):
         _maybe_update_name(adapter, customer, name)
         return customer
 
-    first_name, last_name = _split_name(name)
+    first_name, last_name = split_full_name(name)
     ref = f"IF-{uuid.uuid4().hex[:8].upper()}"
     customer = adapter.create_customer(
         ref=ref, first_name=first_name or "iFood",
@@ -223,7 +224,7 @@ def _handle_counter(order):
             _maybe_update_name(adapter, customer, name)
             return customer
 
-        first_name, last_name = _split_name(name)
+        first_name, last_name = split_full_name(name)
         ref = f"CLI-{uuid.uuid4().hex[:8].upper()}"
         return adapter.create_customer(
             ref=ref, first_name=first_name, last_name=last_name,
@@ -240,7 +241,7 @@ def _handle_counter(order):
             _maybe_update_name(adapter, customer, name)
             return customer
 
-        first_name, last_name = _split_name(name)
+        first_name, last_name = split_full_name(name)
         ref = f"CLI-{uuid.uuid4().hex[:8].upper()}"
         customer = adapter.create_customer(
             ref=ref,
@@ -272,7 +273,7 @@ def _handle_phone(order):
         _maybe_update_name(adapter, customer, name)
         return customer
 
-    first_name, last_name = _split_name(name)
+    first_name, last_name = split_full_name(name)
     ref = f"CLI-{uuid.uuid4().hex[:8].upper()}"
     customer = adapter.create_customer(
         ref=ref, first_name=first_name, last_name=last_name,
@@ -309,11 +310,6 @@ def _customers_available() -> bool:
 
 def _get_customer_data(order) -> dict:
     return order.snapshot.get("data", {}).get("customer", {}) or order.data.get("customer", {})
-
-
-def _split_name(full_name: str) -> tuple[str, str]:
-    parts = full_name.strip().split(None, 1)
-    return (parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
 
 
 def _normalize_phone_safe(phone_raw: str) -> str:
@@ -356,7 +352,7 @@ def _customer_by_ref(customer_ref: str) -> dict | None:
 
 def _maybe_update_name(adapter, customer: dict, name: str) -> None:
     if name and not customer.get("first_name"):
-        first_name, last_name = _split_name(name)
+        first_name, last_name = split_full_name(name)
         try:
             adapter.update_customer(customer["ref"], first_name=first_name, last_name=last_name)
         except Exception:  # silêncio-deliberado: preencher nome vazio é oportunista; o pedido e o cliente já estão salvos

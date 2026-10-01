@@ -8,12 +8,15 @@ export interface ClientErrorReport {
   source: string
   url?: string
   stack?: string
+  /** Versão do build que gerou o erro (`public.appVersion`). O Django corta em 60. */
+  app_version?: string
 }
 
 export interface ErrorContext {
   kind: string
   url?: string
   source?: string
+  appVersion?: string
 }
 
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
@@ -46,12 +49,14 @@ export function buildClientErrorReport (error: unknown, context: ErrorContext): 
   const stackRaw = error instanceof Error && error.stack ? error.stack : ''
   const stack = stackRaw ? redact(truncate(stackRaw, 4000)) : undefined
   const url = context.url ? stripQuery(context.url).slice(0, 300) : undefined
+  const appVersion = context.appVersion ? truncate(context.appVersion.trim(), 60) : ''
   return {
     message,
     kind: context.kind,
     source: context.source ?? 'client',
     ...(url ? { url } : {}),
-    ...(stack ? { stack } : {})
+    ...(stack ? { stack } : {}),
+    ...(appVersion ? { app_version: appVersion } : {})
   }
 }
 

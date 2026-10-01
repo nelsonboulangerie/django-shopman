@@ -46,9 +46,17 @@ export function paymentIcon(ref: string): string {
  */
 export function injectableMethods(
   methods: POSPaymentMethodProjection[],
-  options: { houseAccount?: boolean } = {},
+  options: { houseAccount?: boolean; salesMode?: "counter" | "order" } = {},
 ): POSPaymentMethodProjection[] {
-  const base = methods.filter((method) => method.ref !== "mixed" && method.ref !== ACCOUNT_METHOD.ref);
+  // O modo da venda filtra pelo que a PROJEÇÃO declara (`sales_modes`), nunca por
+  // ref cravado aqui: o link é do pedido remoto (Encomendas) e o servidor recusa
+  // no Balcão (`link_requires_order_mode`). Sem modo, nada se filtra.
+  const { salesMode } = options;
+  const base = methods.filter((method) =>
+    method.ref !== "mixed"
+    && method.ref !== ACCOUNT_METHOD.ref
+    && (!salesMode || !method.sales_modes || method.sales_modes.includes(salesMode)),
+  );
   // "Em conta" só aparece para cliente com conta na casa: dado opcional faz a
   // tela crescer; sem a flag a opção nem existe (e o servidor recusa de todo jeito).
   return options.houseAccount ? [...base, ACCOUNT_METHOD] : base;

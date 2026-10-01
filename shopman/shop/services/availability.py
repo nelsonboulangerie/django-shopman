@@ -144,34 +144,56 @@ def classify_planned_hold_for_session_sku(
     - ``is_ready_for_confirmation`` = AND of every hold's ready state (ALL
       must have materialized before the badge flips to "Tudo pronto!").
     """
-    empty = {
-        "is_awaiting_confirmation": False,
-        "is_ready_for_confirmation": False,
-        "deadline": None,
-        "planned_for": None,
-    }
     if not session_key or not sku:
-        return empty
+        return _empty_planned_hold()
+    return classify_planned_holds_for_session(session_key, [sku]).get(sku) or _empty_planned_hold()
+
+
+def classify_planned_holds_for_session(session_key: str, skus) -> dict[str, dict]:
+    """``classify_planned_hold_for_session_sku`` para vários SKUs, numa consulta.
+
+    ``{sku: classificação}`` só para os SKUs que têm reserva planejada ativa da
+    sessão; quem não aparece no mapa tem a classificação vazia (nem aguardando,
+    nem pronto, sem prazo, sem data). A sacola pergunta por todas as linhas de
+    uma vez — perguntar por linha era uma consulta de ``Hold`` por item.
+    """
+    wanted = sorted({sku for sku in skus if sku})
+    if not session_key or not wanted:
+        return {}
     try:
         from django.db.models import Q
         from django.utils import timezone
         from shopman.stockman import Hold, HoldStatus
     except Exception:
         logger.debug("availability.classify_planned_hold degraded; returning empty", exc_info=True)
-        return empty
+        return {}
 
-    holds = list(
+    holds_by_sku: dict[str, list] = {}
+    holds = (
         Hold.objects.filter(
             metadata__reference=session_key,
-            sku=sku,
+            sku__in=wanted,
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
             **waitlist.WAITLIST_HOLD_FILTER,
         )
         .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
     )
-    if not holds:
-        return empty
+    for hold in holds:
+        holds_by_sku.setdefault(hold.sku, []).append(hold)
+    return {sku: _classify_planned_holds(found) for sku, found in holds_by_sku.items()}
 
+
+def _empty_planned_hold() -> dict:
+    return {
+        "is_awaiting_confirmation": False,
+        "is_ready_for_confirmation": False,
+        "deadline": None,
+        "planned_for": None,
+    }
+
+
+def _classify_planned_holds(holds: list) -> dict:
+    """A classificação de um SKU a partir das reservas planejadas dele (não vazias)."""
     any_awaiting = any(h.expires_at is None for h in holds)
     all_ready = all(h.expires_at is not None for h in holds)
     deadline = None
