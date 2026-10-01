@@ -7,10 +7,16 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
 
-def synthetic_certificate(*, pfx=False, start=-1, end=1, password=b"", include_private_key=True):
+def synthetic_certificate(*, pfx=False, start=-1, end=1, password=b"", include_private_key=True, now=None):
+    """Certificado de teste válido de ``now + start`` a ``now + end`` dias.
+
+    ``now`` deixa o teste nascer o certificado e rodar o código no MESMO instante
+    congelado. Sem ele, são duas leituras do relógio; e se a meia-noite local cai
+    entre elas, "daqui a 7 dias" vira 6 (CI do #1312, 23:59 de Brasília).
+    """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "local-test.invalid")])
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
         .public_key(key.public_key()).serial_number(x509.random_serial_number())
         .not_valid_before(now + timedelta(days=start)).not_valid_after(now + timedelta(days=end))
