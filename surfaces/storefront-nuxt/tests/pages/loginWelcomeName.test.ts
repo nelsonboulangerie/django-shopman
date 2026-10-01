@@ -144,6 +144,19 @@ describe('login — o passo do nome', () => {
     expect(useShopSession().welcomeAsksMarketing.value).toBe(true)
   })
 
+  it('nome inteiro grava nome e sobrenome separados: a confirmação não desfaz a divisão', async () => {
+    const page = await openNameGate()
+
+    await page.find('#welcome-name').setValue('Pablo Valentini')
+    await page.find('form[data-login-welcome]').trigger('submit')
+    await flushPromises()
+
+    const patches = callsTo('/api/v1/account/profile/').filter(([, o]) => (o as any)?.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect((patches[0]![1] as any).body).toEqual({ first_name: 'Pablo', last_name: 'Valentini' })
+    expect(useShopSession().customerName.value).toBe('Pablo Valentini')
+  })
+
   it('"Deixar para depois" segue sem gravar nada', async () => {
     const page = await openNameGate()
 

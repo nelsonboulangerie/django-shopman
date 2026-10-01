@@ -6,6 +6,7 @@ from django.db import transaction
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.models import Customer
 from shopman.guestman.models.erasure_tombstone import ProviderErasureTombstone
+from shopman.utils.names import split_full_name
 
 logger = logging.getLogger("guestman.manychat")
 
@@ -48,6 +49,10 @@ _TEXT_FIELDS = (
     "fb_id",
     "tg_id",
 )
+
+
+# Onde fica o nome como o ManyChat mandou, antes da divisão (`Customer.metadata`).
+NAME_RAW_KEY = "manychat_name_raw"
 
 
 def _as_text_fields(subscriber_data: dict) -> dict:
@@ -306,14 +311,18 @@ class ManychatService:
         hash_value = hashlib.md5(data["id"].encode()).hexdigest()[:8].upper()
         ref = f"MC-{hash_value}"
 
+        first_name, last_name = cls._incoming_name(data)
+        metadata = {"manychat_custom_fields": data.get("custom_fields", {})}
+        if first_name or last_name:
+            metadata[NAME_RAW_KEY] = cls._raw_name(data)
         customer = Customer.objects.create(
             ref=ref,
-            first_name=data.get("first_name", ""),
-            last_name=data.get("last_name", ""),
+            first_name=first_name,
+            last_name=last_name,
             email=data.get("email", ""),
             phone=cls._preferred_phone(data),
             source_system=source_system,
-            metadata={"manychat_custom_fields": data.get("custom_fields", {})},
+            metadata=metadata,
         )
         cls._sync_contact_points(customer, data, source_system)
         return customer
@@ -328,12 +337,24 @@ class ManychatService:
         """Update customer with Manychat data."""
         updated = False
 
-        if data.get("first_name") and not customer.first_name:
-            customer.first_name = data["first_name"]
-            updated = True
+        # Campo preenchido nunca é sobrescrito: o que a pessoa (ou o operador)
+        # já gravou vence o que o provedor manda.
+        first_name, last_name = cls._incoming_name(data)
+        name_filled = False
+        if first_name and not customer.first_name:
+            customer.first_name = first_name
+            name_filled = True
 
-        if data.get("last_name") and not customer.last_name:
-            customer.last_name = data["last_name"]
+        if (
+            last_name
+            and not customer.last_name
+            and not cls._first_name_holds_surname(customer.first_name, last_name)
+        ):
+            customer.last_name = last_name
+            name_filled = True
+
+        if name_filled:
+            customer.metadata[NAME_RAW_KEY] = cls._raw_name(data)
             updated = True
 
         if data.get("email") and not customer.email:
@@ -357,6 +378,44 @@ class ManychatService:
         if updated:
             customer.save()
         cls._sync_contact_points(customer, data, source_system)
+
+    @staticmethod
+    def _incoming_name(data: dict) -> tuple[str, str]:
+        """Nome e sobrenome do assinante, divididos na entrada.
+
+        Contato de WhatsApp tem UM nome de perfil, texto livre, e o ManyChat o
+        entrega inteiro em ``first_name`` com ``last_name`` vazio: sem esta divisão,
+        "Pablo Valentini" caía todo no campo do nome, e a saudação dizia
+        "Oi, Pablo Valentini". Quando o provedor manda ``last_name``, ele é confiado
+        como veio. Senão, a regra é a mesma do pedido pelo ManyChat
+        (``shopman.utils.names.split_full_name``): primeiro token é o nome.
+        """
+        first_name = (data.get("first_name") or "").strip()
+        last_name = (data.get("last_name") or "").strip()
+        if last_name:
+            return first_name, last_name
+        return split_full_name(first_name)
+
+    @staticmethod
+    def _raw_name(data: dict) -> dict:
+        """O nome exatamente como chegou, para a divisão ser auditável e reparável."""
+        return {
+            "first_name": data.get("first_name") or "",
+            "last_name": data.get("last_name") or "",
+        }
+
+    @staticmethod
+    def _first_name_holds_surname(stored_first_name: str, last_name: str) -> bool:
+        """O nome gravado já termina com este sobrenome (nome inteiro num campo só).
+
+        Cadastro gravado antes da divisão tem "Pablo Valentini" em ``first_name``.
+        Completar o ``last_name`` dele com "Valentini" exibiria "Pablo Valentini
+        Valentini". Esse cadastro fica como está: corrigi-lo é decisão sobre dado
+        de cliente, não efeito colateral de um login.
+        """
+        stored = " ".join((stored_first_name or "").split()).casefold()
+        surname = " ".join(last_name.split()).casefold()
+        return bool(surname) and stored.endswith(" " + surname)
 
     @classmethod
     def _add_manychat_identifiers(

@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from django.core.management import CommandError, call_command
 from shopman.buyman.models import Material, Supplier, SupplierMaterialCost
-from shopman.craftsman.models import Recipe, RecipeItem
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.offerman.models import Listing, ListingItem, Product
 
 from shopman.shop.backup import registry, workbook
@@ -123,6 +123,84 @@ def test_roundtrip_restores_deleted_and_mutated_rows(curated, tmp_path):
     assert OmotenashiCopy.objects.filter(key="welcome", moment="checkout").count() == 1
     cost = SupplierMaterialCost.objects.get(supplier__ref="moinho", material__sku="FARINHA")
     assert cost.cost_q == 18000
+
+
+def _formula(water: int) -> dict:
+    return {
+        "anchor": {"kind": "flour"},
+        "basis_g": 1000,
+        "items": [
+            {"sku": "FARINHA", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"},
+            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
+        ],
+        "parts": [],
+    }
+
+
+@pytest.fixture
+def recipe_book(curated):
+    """Uma receita do inventário com duas versões: a 1 substituída, a 2 atual."""
+    entry = RecipeEntry.objects.create(
+        ref="pao-01", name="Pão", kind="bread", output_sku="PAO-01", notes="da casa",
+    )
+    published = datetime(2026, 9, 1, 12, tzinfo=UTC)
+    RecipeVersion.objects.create(
+        entry=entry, number=1, status=RecipeVersion.Status.SUPERSEDED, label="primeira",
+        yield_quantity=Decimal("1.6"), yield_unit="kg", formula=_formula(650),
+        steps=["Mistura", "Forno"], origin={"text": "caderno"}, source={"kind": "note"},
+        created_by="maysa", published_at=published,
+    )
+    current = RecipeVersion.objects.create(
+        entry=entry, number=2, status=RecipeVersion.Status.PUBLISHED, label="mais água",
+        yield_quantity=Decimal("1.7"), yield_unit="kg", formula=_formula(700),
+        steps=["Mistura", "Fermentação", "Forno"], notes="hidratação 70%",
+        created_by="maysa", published_at=datetime(2026, 9, 20, 12, tzinfo=UTC),
+        meta={"published_by": "pablo"},
+    )
+    entry.current_version = current
+    entry.save(update_fields=["current_version"])
+    return entry
+
+
+def test_recipe_book_versions_survive_restore(recipe_book, tmp_path):
+    """O registro imutável das receitas atravessa o cofre: sem estas abas, só a
+    ficha (a última publicada) voltava, e o histórico de versões se perdia."""
+    path = _export_xlsx(tmp_path)
+
+    RecipeEntry.objects.all().delete()  # CASCADE leva as versões
+    assert RecipeVersion.objects.count() == 0
+
+    call_command("import_backup", str(path), "--apply", stdout=StringIO())
+
+    entry = RecipeEntry.objects.get(ref="pao-01")
+    assert (entry.name, entry.kind, entry.output_sku, entry.notes) == ("Pão", "bread", "PAO-01", "da casa")
+    versions = {v.number: v for v in entry.versions.all()}
+    assert sorted(versions) == [1, 2]
+    first, second = versions[1], versions[2]
+    assert first.status == RecipeVersion.Status.SUPERSEDED
+    assert first.formula == _formula(650)
+    assert first.steps == ["Mistura", "Forno"]
+    assert (first.origin, first.source) == ({"text": "caderno"}, {"kind": "note"})
+    assert second.status == RecipeVersion.Status.PUBLISHED
+    assert second.formula == _formula(700)
+    assert second.yield_quantity == Decimal("1.7")
+    assert (second.label, second.notes, second.created_by) == ("mais água", "hidratação 70%", "maysa")
+    assert second.published_at == datetime(2026, 9, 20, 12, tzinfo=UTC)
+    assert second.meta == {"published_by": "pablo"}
+    assert entry.current_version_id == second.pk
+
+
+def test_recipe_version_rewritten_in_place_is_restored(recipe_book, tmp_path):
+    path = _export_xlsx(tmp_path)
+    RecipeVersion.objects.filter(entry=recipe_book, number=1).update(formula=_formula(999), steps=[])
+
+    call_command("import_backup", str(path), "--apply", stdout=StringIO())
+
+    first = RecipeVersion.objects.get(entry=recipe_book, number=1)
+    assert first.formula == _formula(650)
+    assert first.steps == ["Mistura", "Forno"]
+    recipe_book.refresh_from_db()
+    assert recipe_book.current_version.number == 2
 
 
 def test_dry_run_is_default_and_writes_nothing(curated, tmp_path):

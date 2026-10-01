@@ -21,6 +21,7 @@ from shopman.orderman.exceptions import CommitError as OrderCommitError
 from shopman.orderman.exceptions import ValidationError as OrderValidationError
 from shopman.orderman.models import Order, Session
 from shopman.utils.monetary import format_money, monetary_mult
+from shopman.utils.names import split_full_name
 
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
@@ -4323,7 +4324,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             confirmed=save_receipt_tax_id_confirmed,
         )
         if customer is None:
-            first_name, last_name = _split_name(name)
+            first_name, last_name = split_full_name(name)
             fallback = ("", "") if payload.get("_receipt_registration") else _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
@@ -4771,7 +4772,7 @@ def _merge_pos_customer_fields(
     autorização para trocar o telefone, e a ordem sobre o CPF da nota não vem
     de carona na correção de contato.
     """
-    first_name, last_name = _split_name(name)
+    first_name, last_name = split_full_name(name)
     updates: list[str] = []
 
     if first_name and (correct_name or _should_refresh_name(customer)):
@@ -5272,11 +5273,6 @@ def _structured_coordinates(structured: dict) -> tuple[float, float] | None:
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         return None
     return lat, lng
-
-
-def _split_name(full_name: str) -> tuple[str, str]:
-    parts = full_name.strip().split(None, 1)
-    return (parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
 
 
 def _fallback_customer_name(*, phone: str, tax_id: str, email: str) -> tuple[str, str]:

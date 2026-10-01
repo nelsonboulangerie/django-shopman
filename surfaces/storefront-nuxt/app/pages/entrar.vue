@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameFields, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, ShellResponse } from '~/types/shopman'
 import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
@@ -462,7 +462,7 @@ async function submitWelcome () {
       method: 'PATCH',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: { first_name: name }
+      body: welcomeNameFields(name)
     })
     session.setIdentity({ name, requiresWelcome: false })
     await navigateTo(nextUrl.value)

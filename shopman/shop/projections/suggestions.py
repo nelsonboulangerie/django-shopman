@@ -114,7 +114,11 @@ def suggest(
     if limit <= 0:
         return ()
 
-    candidates = _candidates(cart_skus, rule)
+    # Os produtos da sacola entram no pareamento (``_pairing_pool``) e na
+    # pontuação (``_score``): lidos uma vez, e só se alguém pedir.
+    cart_products = _cart_products_once(cart_skus)
+
+    candidates = _candidates(cart_skus, rule, cart_products=cart_products)
     if not candidates:
         return ()
 
@@ -125,6 +129,7 @@ def suggest(
     scored = _score(
         products, cart_skus=cart_skus, anchor_sku=anchor_sku,
         rule=rule, context=context or {}, channel_ref=channel_ref,
+        cart_products=cart_products(),
     )
     return tuple(scored[:limit])
 
@@ -149,7 +154,7 @@ def _resolve_limit(limit: int | None, rule: dict, surface: str) -> int:
 # --- candidatos ------------------------------------------------------------
 
 
-def _candidates(cart_skus: set[str], rule: dict) -> dict[str, dict]:
+def _candidates(cart_skus: set[str], rule: dict, *, cart_products) -> dict[str, dict]:
     """``{sku: {"affinity": lift, "reasons": [...]}}`` — quem sequer entra na fila.
 
     A afinidade traz os pares que o histórico conhece. Os pareamentos trazem o
@@ -170,7 +175,7 @@ def _candidates(cart_skus: set[str], rule: dict) -> dict[str, dict]:
             entry["reasons"] = [f"affinity:{partner}"]
 
     if rule.get("pairings"):
-        for sku in _pairing_pool(cart_skus, rule):
+        for sku in _pairing_pool(cart_skus, rule, cart_products=cart_products):
             candidates.setdefault(sku, {"affinity": 0.0, "reasons": []})
 
     for sku in cart_skus:
@@ -193,7 +198,7 @@ def _affinity_partners(cart_skus: set[str]):
         yield row.sku_b, row.lift, row.sku_a
 
 
-def _pairing_pool(cart_skus: set[str], rule: dict) -> list[str]:
+def _pairing_pool(cart_skus: set[str], rule: dict, *, cart_products) -> list[str]:
     """Os SKUs vendáveis que algum pareamento da regra de fato casa.
 
     O catálogo inteiro é avaliado (são centenas de linhas, não milhares) e só
@@ -214,7 +219,7 @@ def _pairing_pool(cart_skus: set[str], rule: dict) -> list[str]:
         .exclude(sku__in=cart_skus)
         .prefetch_related("keywords")
     )
-    everyone = products + _cart_products(cart_skus)
+    everyone = products + cart_products()
     values = {
         d.ref: attributes.get_many(everyone, d.ref)
         for d in attributes.for_purpose("rule")
@@ -294,17 +299,17 @@ def _score(
     rule: dict,
     context: dict,
     channel_ref: str,
+    cart_products: list,
 ) -> list[Suggestion]:
     from shopman.shop.services import attributes
 
     affinity_weight = float(rule.get("affinity_weight", 1) or 0)
     pairings = rule.get("pairings") or []
 
-    cart_products = _cart_products(cart_skus)
     excluded = _context_exclusions(rule, context)
 
     prices = _listed_prices(list(products), channel_ref)
-    cart_average = _cart_average(cart_skus, channel_ref)
+    cart_average = _cart_average(cart_skus, channel_ref, cart_products)
     prefers_cheaper = rule.get("price") == "below_cart_average"
 
     # Uma leitura de atributo por definição, não por produto.
@@ -439,10 +444,16 @@ COLLECTIONS = "__collections__"
 
 def _catalog_facts(products) -> dict:
     """Palavras-chave e coleções de cada produto, para as condições ``tag`` e
-    ``collection`` — dos dois lados do pareamento (sacola e candidato)."""
+    ``collection`` — dos dois lados do pareamento (sacola e candidato).
+
+    ⚠️ ``keywords.all()``, não ``keywords.names()``: no django-taggit 6.1
+    ``names()`` é um ``values_list`` e ignora o ``prefetch_related("keywords")``
+    que quem monta ``products`` já fez — era uma consulta por produto (~55 por
+    sacola, a maior parte do custo dela). ``all()`` lê o prefetch.
+    """
     skus = {p.sku for p in products}
     return {
-        TAGS: {p.sku: {k.lower() for k in p.keywords.names()} for p in products},
+        TAGS: {p.sku: {str(k.name).lower() for k in p.keywords.all()} for p in products},
         COLLECTIONS: _collections(skus) if skus else {},
     }
 
@@ -548,7 +559,10 @@ def _same_role_as_cart(
     if not (candidate_skus and cart_skus):
         return set()
 
-    collections = _collections(candidate_skus | cart_skus)
+    # ``_score`` já leu as coleções de candidatos + sacola em ``_catalog_facts``.
+    collections = values.get(COLLECTIONS)
+    if collections is None:
+        collections = _collections(candidate_skus | cart_skus)
 
     def value(ref, sku):
         v = (values.get(ref) or {}).get(sku)
@@ -648,6 +662,22 @@ def _cart_products(cart_skus: set[str]) -> list:
     return list(Product.objects.filter(sku__in=cart_skus).prefetch_related("keywords"))
 
 
+def _cart_products_once(cart_skus: set[str]):
+    """``_cart_products`` lido na primeira chamada e reaproveitado nas seguintes.
+
+    Preguiçoso de propósito: sem pareamento e sem candidato, o motor sai antes
+    de precisar da sacola, e aí não paga a leitura.
+    """
+    loaded: list[list] = []
+
+    def load() -> list:
+        if not loaded:
+            loaded.append(_cart_products(cart_skus))
+        return loaded[0]
+
+    return load
+
+
 def _listed_prices(skus: list[str], channel_ref: str) -> dict[str, int]:
     """Preço que o checkout cobraria, por SKU, neste canal."""
     from shopman.offerman.models import ListingItem
@@ -670,13 +700,15 @@ def _listed_prices(skus: list[str], channel_ref: str) -> dict[str, int]:
     return prices
 
 
-def _cart_average(cart_skus: set[str], channel_ref: str) -> int | None:
-    from shopman.offerman.models import Product
+def _cart_average(cart_skus: set[str], channel_ref: str, cart_products: list) -> int | None:
+    """Preço médio da sacola: o listado no canal, ou o base de quem não tem.
 
+    ``cart_products`` são os produtos da sacola já lidos por ``_cart_products``.
+    """
     if not cart_skus:
         return None
     prices = _listed_prices(list(cart_skus), channel_ref)
-    for product in Product.objects.filter(sku__in=cart_skus):
+    for product in cart_products:
         prices.setdefault(product.sku, int(product.base_price_q or 0))
     values = [p for p in prices.values() if p]
     return sum(values) // len(values) if values else None

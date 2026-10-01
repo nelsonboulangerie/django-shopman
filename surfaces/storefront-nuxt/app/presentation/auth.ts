@@ -81,6 +81,19 @@ export function welcomeNameValue (raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
 }
 
+// O que o passo do nome grava no perfil. O campo é UM, e a sugestão que vem
+// do servidor é o nome inteiro ("Pablo Valentini"): mandar tudo em
+// `first_name` desfazia a divisão feita na entrada e, com o sobrenome já
+// gravado, a tela passava a dizer "Pablo Valentini Valentini". A regra é a da
+// casa (`shopman.utils.names.split_full_name`): primeiro token é o nome, o
+// resto é o sobrenome. Um nome só ("Talita") não manda `last_name`, para não
+// apagar o sobrenome que já está no cadastro.
+export function welcomeNameFields (raw: string): { first_name: string, last_name?: string } {
+  const [firstName = '', ...rest] = welcomeNameValue(raw).split(' ')
+  const lastName = rest.join(' ')
+  return lastName ? { first_name: firstName, last_name: lastName } : { first_name: firstName }
+}
+
 // ── A declaração de maioridade, feita ao ENTRAR ────────────────────────────
 //
 // A nota ao lado do botão de entrar, em TODOS os caminhos (telefone/código,

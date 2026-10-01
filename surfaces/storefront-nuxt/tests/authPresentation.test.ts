@@ -12,6 +12,7 @@ import {
   isMarketingPromptRouteExcluded,
   resendCooldown,
   resendWindowMs,
+  welcomeNameFields,
   welcomeNameValue
 } from '../app/presentation/auth'
 
@@ -108,6 +109,20 @@ describe('welcomeNameValue', () => {
 
   it('returns empty for blank input', () => {
     expect(welcomeNameValue('   ')).toBe('')
+  })
+})
+
+describe('welcomeNameFields', () => {
+  it('divide o nome inteiro pela regra da casa: primeiro token é o nome', () => {
+    expect(welcomeNameFields('  Pablo   Valentini ')).toEqual({ first_name: 'Pablo', last_name: 'Valentini' })
+  })
+
+  it('erra do lado do sobrenome, como a regra do servidor', () => {
+    expect(welcomeNameFields('Ana Maria Silva')).toEqual({ first_name: 'Ana', last_name: 'Maria Silva' })
+  })
+
+  it('um nome só não manda sobrenome (não apaga o que está no cadastro)', () => {
+    expect(welcomeNameFields('Talita')).toEqual({ first_name: 'Talita' })
   })
 })
 
