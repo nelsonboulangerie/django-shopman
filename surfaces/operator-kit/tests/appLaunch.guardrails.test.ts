@@ -69,9 +69,10 @@ describe("link para outro app de operador", () => {
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
     // Hoje são os tiles do Shopman Apps, o "Voltar ao Shopman Apps" da tela sem
-    // acesso do Marketing e as quatro travessias do PDV (duas para a Produção no
-    // fechamento, a da trava de cobrança e a do aviso de recebimento pendente).
-    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(7);
+    // acesso do Marketing e as três travessias do PDV (duas para a Produção no
+    // fechamento e a da trava de cobrança). O aviso de saldo na retirada deixou de
+    // ser travessia: o PDV recebe em Encomendas, no próprio app.
+    expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(6);
   });
 
   it("o próprio rail do kit — a origem do padrão — está em dia", () => {
