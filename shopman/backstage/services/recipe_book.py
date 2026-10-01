@@ -23,6 +23,7 @@ from shopman.craftsman.models import RecipeEntry, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
+from shopman.backstage.services import recipe_external_references as external_references
 from shopman.backstage.services.exceptions import (
     RecipeBookServiceError,
     RecipeEntryNotFound,
@@ -198,7 +199,11 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
 
 
 def patch_entry(entry: RecipeEntry, data: dict) -> RecipeEntry:
-    """``PATCH recipes/<ref>/``: nome, tipo, SKU, observações e arquivamento."""
+    """``PATCH recipes/<ref>/``: nome, tipo, SKU, observações, arquivamento e referências externas.
+
+    ``external_references`` substitui a lista INTEIRA (a tela manda a lista
+    com o item a mais ou a menos); a forma é de ``recipe_external_references``.
+    """
     if not isinstance(data, dict):
         raise _fail("O corpo precisa ser um objeto.")
     if "name" in data:
@@ -217,6 +222,14 @@ def patch_entry(entry: RecipeEntry, data: dict) -> RecipeEntry:
         if not isinstance(value, bool):
             raise _fail("Arquivar aceita apenas sim ou não.", field="is_archived")
         entry.is_archived = value
+    if external_references.FIELD in data:
+        references = external_references.validate(data.get(external_references.FIELD))
+        meta = dict(entry.meta or {})
+        if references:
+            meta[external_references.META_KEY] = references
+        else:
+            meta.pop(external_references.META_KEY, None)
+        entry.meta = meta
     with translating_errors():
         entry.full_clean()
         entry.save()

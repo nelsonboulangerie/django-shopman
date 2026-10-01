@@ -92,6 +92,36 @@ describe("useRecipeEntry", () => {
     expect(env.sonner.error).toHaveBeenCalledWith("SKU desconhecido.");
   });
 
+  it("saveReferences PATCHes the whole list; rateVersion PUTs the scores of a version", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    const { saveReferences, rateVersion } = useRecipeEntry("pao-campanha");
+
+    env.fetchMock.mockResolvedValueOnce({ entry: ENTRY });
+    const saved = await saveReferences([{ title: "Tartine Bread", note: "p. 48" }]);
+    expect(env.fetchMock).toHaveBeenLastCalledWith(
+      "/api/v1/backstage/recipes/pao-campanha/",
+      expect.objectContaining({ method: "PATCH", body: { external_references: [{ title: "Tartine Bread", note: "p. 48" }] } }),
+    );
+    expect(saved.ok).toBe(true);
+
+    env.fetchMock.mockResolvedValueOnce({ entry: ENTRY });
+    const rated = await rateVersion(2, { "1": 5, "2": 4 });
+    expect(env.fetchMock).toHaveBeenLastCalledWith(
+      "/api/v1/backstage/recipes/pao-campanha/versions/2/rating/",
+      expect.objectContaining({ method: "PUT", body: { scores: { "1": 5, "2": 4 } } }),
+    );
+    expect(rated.ok).toBe(true);
+    expect(env.refresh).toHaveBeenCalled();
+  });
+
+  it("a refused rating toasts the server message", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "Rascunho não recebe nota: publique a versão antes de avaliar." } });
+    const result = await useRecipeEntry("pao-campanha").rateVersion(3, { "1": 5 });
+    expect(result.ok).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalledWith("Rascunho não recebe nota: publique a versão antes de avaliar.");
+  });
+
   it("encodes the ref in the URL", async () => {
     env.fetchData.value = { entry: ENTRY };
     env.fetchMock.mockResolvedValueOnce({ entry: ENTRY });

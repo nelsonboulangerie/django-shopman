@@ -3,11 +3,14 @@
 // primeiro), cada uma já com a lente calculada. As escritas vão pelo BFF (CSRF no
 // proxy) e reconciliam por refresh: PATCH da entry (nome/kind/SKU/notas/arquivar),
 // POST de versão (cópia em rascunho), PATCH do rascunho e POST publish. A estrela
-// do operador (useRecipeFavorite) acende no lugar, sem refazer a lente. Erro no
-// dialeto canônico: a mensagem vai ao toast e o `field` volta para a tela acender.
+// do operador (useRecipeFavorite) acende no lugar, sem refazer a lente. As
+// referências externas (livros, vídeos, artigos) vão no PATCH da entry com a lista
+// inteira; a nota da versão (0 a 5 por critério) é um PUT em versions/<n>/rating/.
+// Erro no dialeto canônico: a mensagem vai ao toast e o `field` volta para a tela acender.
 import type {
   DraftPatch,
   EntryPatch,
+  ExternalReferenceInput,
   RecipeEntryDetailProjection,
   RecipeEntryResponse,
   RecipeVersionProjection,
@@ -102,6 +105,18 @@ export function useRecipeEntry(entryRef: string) {
     return true;
   }
 
+  const saveReferences = (references: ExternalReferenceInput[]) =>
+    act(
+      () => $fetch<RecipeEntryResponse>(base, { method: "PATCH", body: { external_references: references } }),
+      "Não foi possível salvar as referências.",
+    );
+
+  const rateVersion = (number: number, scores: Record<string, number>) =>
+    act(
+      () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/rating/`, { method: "PUT", body: { scores } }),
+      "Não foi possível salvar a nota.",
+    );
+
   const publish = (number: number) =>
     act(
       () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/publish/`, { method: "POST", body: {} }),
@@ -126,6 +141,8 @@ export function useRecipeEntry(entryRef: string) {
     createVersion,
     updateDraft,
     publish,
+    saveReferences,
+    rateVersion,
     toggleFavorite,
     favoriteBusy,
   };

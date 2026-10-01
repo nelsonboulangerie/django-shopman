@@ -21,6 +21,7 @@ import logging
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -45,7 +46,7 @@ from shopman.craftsman.services.recipe_book import (
     suggest_anchor_kind,
 )
 
-from shopman.backstage.services import recipe_favorites
+from shopman.backstage.services import recipe_external_references, recipe_favorites, recipe_ratings
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
@@ -151,6 +152,10 @@ class RecipeEntryCardProjection:
     #: Estrela do operador que pediu a lista (``OperatorRecipeFavorite``): é
     #: preferência dele, não atributo da receita; outro operador vê a sua.
     is_favorite: bool
+    #: Média geral da nota da VERSÃO ATUAL ("4,3"), só dos critérios ativos.
+    #: Vazio quando a versão atual ainda não foi avaliada.
+    rating_display: str
+    rating_count: int
 
 
 @dataclass(frozen=True)
@@ -350,6 +355,55 @@ class RecipeUsageProjection:
 
 
 @dataclass(frozen=True)
+class ExternalReferenceProjection:
+    """A book, video or article the recipe came from (``RecipeEntry.meta["external_references"]``)."""
+
+    title: str
+    #: Só ``http``/``https``; vazio quando a referência não tem link.
+    url: str
+    #: O host do link para ler ("youtube.com"). Vazio sem link.
+    host_display: str
+    note: str
+
+
+@dataclass(frozen=True)
+class RatingCriterionProjection:
+    """An active rating criterion (editable in the Admin, ``RecipeRatingCriterion``)."""
+
+    id: int
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class CriterionAverageProjection:
+    """The average of one criterion for one version, and the score of who asked."""
+
+    criterion_id: int
+    name: str
+    #: "4,3"; vazio quando ninguém deu nota neste critério.
+    average_display: str
+    count: int
+    my_score: int | None
+
+
+@dataclass(frozen=True)
+class VersionRatingProjection:
+    """The 0 to 5 rating of one closed version: averages per criterion and overall."""
+
+    version_number: int
+    version_ref: str
+    ratings_count: int
+    #: "Nenhuma avaliação", "1 avaliação", "3 avaliações".
+    ratings_count_display: str
+    #: Média de todas as notas dos critérios ativos ("4,3"); vazio sem avaliação.
+    overall_display: str
+    criteria: tuple[CriterionAverageProjection, ...]
+    rated_by_me: bool
+    my_rated_at_display: str
+
+
+@dataclass(frozen=True)
 class RecipeEntryDetailProjection:
     """A recipe entry with its versions (newest first)."""
 
@@ -372,6 +426,13 @@ class RecipeEntryDetailProjection:
     is_favorite: bool
     versions: tuple[RecipeVersionProjection, ...]
     usage: RecipeUsageProjection
+    #: Livros, vídeos e artigos de onde a receita veio. São da receita, não da versão.
+    external_references: tuple[ExternalReferenceProjection, ...]
+    #: Os critérios ATIVOS, na ordem do Admin: o que a tela de avaliar pergunta.
+    rating_criteria: tuple[RatingCriterionProjection, ...]
+    #: Uma por versão FECHADA (publicada ou substituída), mais nova primeiro.
+    #: Rascunho não recebe nota e não aparece aqui.
+    ratings: tuple[VersionRatingProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -807,12 +868,20 @@ def build_recipe_book(
         Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
     )
     favorites = recipe_favorites.favorite_refs(operator_ref)
-    cards = tuple(_card(entry, names, ficha_refs, favorites) for entry in entries)
+    ratings = recipe_ratings.overall_by_entry(
+        [entry.ref for entry in entries],
+        {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
+    )
+    cards = tuple(_card(entry, names, ficha_refs, favorites, ratings) for entry in entries)
     return RecipeBookListProjection(entries=cards, kinds=_kind_options(), count=len(cards))
 
 
 def _card(
-    entry: RecipeEntry, names: dict[str, str], ficha_refs: set[str], favorites: set[str]
+    entry: RecipeEntry,
+    names: dict[str, str],
+    ficha_refs: set[str],
+    favorites: set[str],
+    ratings: dict[str, tuple[Decimal | None, int]],
 ) -> RecipeEntryCardProjection:
     current = entry.current_version
     formula = dict(current.formula or {}) if current is not None else {}
@@ -837,6 +906,8 @@ def _card(
         updated_at_display=_date_display(entry.updated_at),
         is_archived=entry.is_archived,
         is_favorite=entry.ref in favorites,
+        rating_display=_rating_display(ratings.get(entry.ref, (None, 0))[0]),
+        rating_count=ratings.get(entry.ref, (None, 0))[1],
     )
 
 
@@ -848,6 +919,7 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
     entry = RecipeEntry.objects.filter(ref=ref).select_related("current_version").first()
     if entry is None:
         raise RecipeEntryNotFound(f"Receita '{ref}' não existe no inventário.")
+    criteria = recipe_ratings.active_criteria()
     versions = list(entry.versions.order_by("-number"))
     names = _output_names({entry.output_sku} if entry.output_sku else set())
     ficha = Recipe.objects.filter(ref=entry.ref, is_active=True).first()
@@ -867,7 +939,87 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         is_favorite=recipe_favorites.is_favorite(operator_ref, entry.ref),
         versions=tuple(build_recipe_version(version, kind=entry.kind) for version in versions),
         usage=build_recipe_usage(entry.ref),
+        external_references=build_external_references(entry.meta),
+        rating_criteria=tuple(
+            RatingCriterionProjection(id=criterion.pk, name=criterion.name, description=criterion.description)
+            for criterion in criteria
+        ),
+        ratings=build_version_ratings(entry.ref, versions, operator_ref=operator_ref, criteria=criteria),
     )
+
+
+# ── Referências externas (D6) ────────────────────────────────────────────────
+
+
+def _host_display(url: str) -> str:
+    if not url:
+        return ""
+    return (urlsplit(url).hostname or "").removeprefix("www.")
+
+
+def build_external_references(meta: Any) -> tuple[ExternalReferenceProjection, ...]:
+    """As referências gravadas, já sem link inseguro (``recipe_external_references.read``)."""
+    return tuple(
+        ExternalReferenceProjection(
+            title=reference["title"],
+            url=reference["url"],
+            host_display=_host_display(reference["url"]),
+            note=reference["note"],
+        )
+        for reference in recipe_external_references.read(meta)
+    )
+
+
+# ── Nota da receita (D7) ─────────────────────────────────────────────────────
+
+
+def _rating_display(value: Decimal | None) -> str:
+    """``Decimal("4.3")`` → ``"4,3"``; inteiro sem casa ("4"). Vazio sem nota."""
+    if value is None:
+        return ""
+    if value == value.to_integral_value():
+        return str(int(value))
+    return format(value, "f").replace(".", ",")
+
+
+def _ratings_count_display(count: int) -> str:
+    if count == 0:
+        return "Nenhuma avaliação"
+    return "1 avaliação" if count == 1 else f"{count} avaliações"
+
+
+def build_version_ratings(
+    ref: str, versions: list[RecipeVersion], *, operator_ref: str = "", criteria=None
+) -> tuple[VersionRatingProjection, ...]:
+    """A nota de cada versão FECHADA (mais nova primeiro); a de quem pede vem em ``my_score``."""
+    criteria = recipe_ratings.active_criteria() if criteria is None else criteria
+    summaries = recipe_ratings.summaries(ref, operator_ref=operator_ref, criteria=criteria)
+    projections = []
+    for version in sorted(versions, key=lambda item: item.number, reverse=True):
+        if version.status == RecipeVersion.Status.DRAFT:
+            continue
+        summary = summaries.get(version.number)
+        averages = {item.criterion_id: item for item in summary.criteria} if summary else {}
+        projections.append(VersionRatingProjection(
+            version_number=version.number,
+            version_ref=f"{ref}@{version.number}",
+            ratings_count=summary.ratings_count if summary else 0,
+            ratings_count_display=_ratings_count_display(summary.ratings_count if summary else 0),
+            overall_display=_rating_display(summary.overall) if summary else "",
+            criteria=tuple(
+                CriterionAverageProjection(
+                    criterion_id=criterion.pk,
+                    name=criterion.name,
+                    average_display=_rating_display(averages[criterion.pk].average) if criterion.pk in averages else "",
+                    count=averages[criterion.pk].count if criterion.pk in averages else 0,
+                    my_score=averages[criterion.pk].my_score if criterion.pk in averages else None,
+                )
+                for criterion in criteria
+            ),
+            rated_by_me=bool(summary and summary.my_rated_at),
+            my_rated_at_display=_datetime_display(summary.my_rated_at) if summary else "",
+        ))
+    return tuple(projections)
 
 
 def _seconds_display(seconds: int | None) -> str:

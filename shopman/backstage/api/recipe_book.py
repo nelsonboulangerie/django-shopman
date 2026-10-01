@@ -13,6 +13,11 @@ a mesma régua de "mexer acontece no app de Produção". A régua vive em
 A estrela (``recipes/<ref>/favorite/``) é preferência do operador, não edição
 da receita: marcar e desmarcar pedem só a leitura, e a resposta de leitura
 traz ``is_favorite`` de quem pediu (o ``username``, o mesmo de ``_actor``).
+A nota (``recipes/<ref>/versions/<n>/rating/``) segue a mesma régua: é a
+opinião de quem prova, não edição da receita, então basta a leitura.
+
+As referências externas (livros, vídeos, artigos) vão no ``PATCH`` da receita
+(``external_references``, a lista inteira), com a régua de escrita.
 
 Erros no dialeto canônico ``{detail, field, errors}``: campo inválido é 400
 com ``field``; estado (versão que não é rascunho, receita arquivada) é 409;
@@ -39,7 +44,7 @@ from shopman.backstage.projections.recipe_book import (
     wire_formula,
 )
 from shopman.backstage.services import recipe_book as recipe_book_service
-from shopman.backstage.services import recipe_favorites
+from shopman.backstage.services import recipe_favorites, recipe_ratings
 from shopman.backstage.services.exceptions import (
     RecipeBookServiceError,
     RecipeEntryNotFound,
@@ -54,7 +59,7 @@ _MSG_VIEW = "O inventário de receitas exige backstage.operate_production."
 _MSG_EDIT = "Alterar o inventário de receitas exige shop.manage_production."
 
 #: Códigos do Craftsman que são conflito de ESTADO, não de campo: 409, não 400.
-_STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED")
+_STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED", recipe_ratings.DRAFT_NOT_RATEABLE, "NO_ACTIVE_CRITERIA")
 
 _KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
 
@@ -196,7 +201,7 @@ class RecipeBookListView(_RecipeBookBase):
     ),
     patch=extend_schema(
         tags=["backstage"],
-        summary="Edit a recipe entry (name, kind, SKU, notes, archive)",
+        summary="Edit a recipe entry (name, kind, SKU, notes, archive, external references)",
         responses={200: OpenApiResponse(description="The entry with its versions.")},
     ),
 )
@@ -246,6 +251,32 @@ class RecipeFavoriteView(_RecipeBookBase):
     def delete(self, request, ref: str):
         entry = self._entry(ref)
         return Response({"ref": entry.ref, "is_favorite": recipe_favorites.unmark(_actor(request), entry.ref)})
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=["backstage"],
+        summary="Rate a closed version 0 to 5 per active criterion (one rating per operator, replaced on re-rate)",
+        responses={200: OpenApiResponse(description="The entry with its versions and ratings.")},
+    ),
+)
+class RecipeVersionRatingView(_RecipeBookBase):
+    """A nota do operador para uma versão FECHADA: ``{"scores": {"<id do critério>": 0..5}}``.
+
+    Uma nota para cada critério ativo, nem mais nem menos (400 com ``field``).
+    Rascunho é 409: ainda muda. Avaliar de novo substitui a avaliação anterior
+    do mesmo operador. Pede só a leitura, como a estrela.
+    """
+
+    def put(self, request, ref: str, number: int):
+        entry = self._entry(ref)
+        version = self._version(entry, number)
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            recipe_ratings.rate(_actor(request), version, data.get("scores"))
+        except RecipeBookServiceError as exc:
+            return _service_error_response(exc)
+        return Response({"entry": self._entry_payload(entry.ref)})
 
 
 @extend_schema_view(

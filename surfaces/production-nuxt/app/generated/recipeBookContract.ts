@@ -19,6 +19,8 @@ export interface RecipeEntryCardProjection {
   updated_at_display: string;
   is_archived: boolean;
   is_favorite: boolean;
+  rating_display: string;
+  rating_count: number;
 }
 
 /** A recipe kind option (filter chip). */
@@ -181,6 +183,42 @@ export interface RecipeUsageProjection {
   unversioned: VersionUsageProjection | null;
 }
 
+/** A book, video or article the recipe came from (``RecipeEntry.meta["external_references"]``). */
+export interface ExternalReferenceProjection {
+  title: string;
+  url: string;
+  host_display: string;
+  note: string;
+}
+
+/** An active rating criterion (editable in the Admin, ``RecipeRatingCriterion``). */
+export interface RatingCriterionProjection {
+  id: number;
+  name: string;
+  description: string;
+}
+
+/** The average of one criterion for one version, and the score of who asked. */
+export interface CriterionAverageProjection {
+  criterion_id: number;
+  name: string;
+  average_display: string;
+  count: number;
+  my_score: number | null;
+}
+
+/** The 0 to 5 rating of one closed version: averages per criterion and overall. */
+export interface VersionRatingProjection {
+  version_number: number;
+  version_ref: string;
+  ratings_count: number;
+  ratings_count_display: string;
+  overall_display: string;
+  criteria: CriterionAverageProjection[];
+  rated_by_me: boolean;
+  my_rated_at_display: string;
+}
+
 /** A recipe entry with its versions (newest first). */
 export interface RecipeEntryDetailProjection {
   ref: string;
@@ -197,6 +235,9 @@ export interface RecipeEntryDetailProjection {
   is_favorite: boolean;
   versions: RecipeVersionProjection[];
   usage: RecipeUsageProjection;
+  external_references: ExternalReferenceProjection[];
+  rating_criteria: RatingCriterionProjection[];
+  ratings: VersionRatingProjection[];
 }
 
 /** One ingredient row of a version comparison. */

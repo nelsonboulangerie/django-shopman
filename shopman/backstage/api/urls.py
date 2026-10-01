@@ -261,6 +261,7 @@ from .recipe_book import (
     RecipeReferenceView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
+    RecipeVersionRatingView,
     RecipeVersionView,
 )
 from .sign_ins import SignInListView
@@ -431,6 +432,11 @@ urlpatterns = [
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
+    path(
+        "recipes/<slug:ref>/versions/<int:number>/rating/",
+        RecipeVersionRatingView.as_view(),
+        name="api-backstage-recipe-version-rating",
+    ),
     path(
         "recipes/<slug:ref>/versions/<int:number>/publish/",
         RecipeVersionPublishView.as_view(),
