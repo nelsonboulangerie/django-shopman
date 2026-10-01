@@ -444,6 +444,8 @@ vocabulário que ele já aprovou; 2 só se o prazo do go-live apertar.
 
 ## D33. Textos de quatro modelos que o ManyChat recusa por formato
 
+> ✅ **DECIDIDA em 02/10/2026** (D-023): o dono aprovou as três propostas abaixo como estão.
+
 **Contexto.** Ao enviar os modelos revisados em 25/09, o ManyChat recusou dois antes de chegarem à
 Meta (01/10, tela "Criar modelo"): `pedido_em_preparo` ("Minimum of 7 words required for 2 variable
 parameter"; o corpo tem 4 palavras fixas) e `pagamento_falhou` ("Template body cannot start or end

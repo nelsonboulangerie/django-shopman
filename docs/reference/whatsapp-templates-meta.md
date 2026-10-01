@@ -238,7 +238,8 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
 
 ### `pedido_em_preparo` — evento `order_preparing`
-- Corpo: `Estamos preparando seu pedido {{1}}. {{2}}.`
+- Corpo: `Estamos preparando seu pedido {{1}} com todo carinho. {{2}}. Qualquer dúvida, estamos à disposição.`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (o ManyChat recusou o corpo de 25/09 por ter menos de 7 palavras fixas para 2 variáveis). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Previsto para ficar pronto às 18h20. Mas avisamos assim que estiver` (`status_note`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
@@ -283,7 +284,8 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > aprovado). Efeito: custa como Marketing, e quem recusou mensagem de marketing deixa de
 > recebê-lo. Os outros 17 aprovados seguem Utility.
 
-- Corpo: `Seu pedido {{1}} foi entregue. Esperamos que tenha gostado, {{2}}! Obrigada por nos prestigiar! 💛✨`
+- Corpo: `Seu pedido {{1}} foi entregue. Qualquer dúvida, estamos à disposição.`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (a Meta reclassificou o de 25/09 como Marketing; nasce `pedido_entregue_v2`, Utility, só com `{{1}}`=`order_ref_short`, sem botão). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`Ana` (`customer_name`)
 - Sem botão.
 
@@ -383,7 +385,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 - Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
 ### `pagamento_falhou` — evento `payment_failed`
-- Corpo: `Oi, {{1}}. Não conseguimos gerar o pagamento do seu pedido {{2}}.`
+- Corpo: `Oi, {{1}}. Não conseguimos gerar o pagamento do seu pedido {{2}}. Qualquer dúvida, estamos à disposição.`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (o ManyChat recusou o de 25/09 por terminar em variável (o ponto final sozinho não conta)). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Tentar de novo` → `/pedido/{{1}}` (`order_ref`)
 
@@ -401,7 +404,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > até alguém ligar o evento à notificação. Ver "Templates catalogados que ainda não disparam".
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
-- Corpo: `Oba! 💛✨ Acabou de sair do forno, {{1}}! Confirme o pedido {{2}} para garantir.`
+- Corpo: `Oi, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} para garantir o seu.`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (a Meta reclassificou o de 25/09 como Marketing; nasce `fila_vaga_disponivel_v2`, Utility, mesmo botão `Confirmar pedido`). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Confirmar pedido` → `/pedido/{{1}}` (`order_ref`)
 
@@ -416,7 +420,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > cliente (o prazo passou, a reserva voltou, ninguém cobrou) e devem falar igual.
 
 ### `pontos_fidelidade` — evento `loyalty_earned` 🆕
-- Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}.`
+- Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (o de 25/09 terminava em variável). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Ver saldo` → `/conta` (link **fixo**, sem variável)
 
@@ -425,7 +430,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > não disparam".
 
 ### `produto_chegou` — evento `stock_arrived`
-- Corpo: `Oi, {{1}}! Você pediu pra avisar quando {{2}} estivesse disponível e agora está! 💛✨`
+- Corpo: `Oi, {{1}}! Você pediu para avisar: {{2}} já está disponível.`
+  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (a Meta reclassificou o de 25/09 como Marketing; nasce `produto_chegou_v2`, Utility, mesmo botão `Garantir já`). O de 25/09 fica só como histórico.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`Croissant` (`product_name`)
 - Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
