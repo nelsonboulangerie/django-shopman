@@ -7,9 +7,15 @@
 > **LEIA ESTE ARQUIVO INTEIRO ANTES DE QUALQUER COISA.** E **releia antes de cada frente nova** —
 > ele pode ter sido completado depois que você o leu pela primeira vez.
 
-**Handshake:** se a seção **「FILA — OBSERVAÇÕES DO DONO」** ainda estiver marcada como
-`⏳ EM COMPLETAMENTO`, espere 10 minutos e releia. Outra sessão está terminando de apurá-la.
-Não comece as frentes daquela seção antes de ela estar completa; comece pelas outras.
+**Handshake — JÁ ESTÁ COMPLETA.** A seção 6.2 (observações do dono) e a 6.4 (o que fazer na
+madrugada) estão preenchidas. Se você leu uma versão sem elas, **releia agora**:
+`git fetch origin && git show origin/dsh/handoff-onda1-e-p7-20260930:docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md`
+
+⚠️ **AÇÃO SUA (pequena):** esta versão está **no branch** `dsh/handoff-onda1-e-p7-20260930` e **ainda
+NÃO está no `main`** — o PR anterior mergeou a versão antiga. **Abra um PR deste branch para `main`**
+para a seção 6.2 sobreviver à noite. É só documentação, sem código.
+Os 5 relatórios de diagnóstico estão no mesmo branch, em
+`docs/reports/go-live-acceleration-20260930-diag/`.
 
 **Contexto que você precisa:** `docs/reports/go-live-acceleration-20260929/HANDOFF.md` (estado,
 armadilhas, o que já foi feito) e `docs/coordination/DECISIONS.md` (D-001 a D-009).
