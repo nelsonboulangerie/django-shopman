@@ -81,12 +81,31 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
 
     // Só o toque aplica: o worker novo assume e a página recarrega sem aviso.
     expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true)
+    const trail: string[] = []
+    page.on('console', message => trail.push(`console ${message.type()}: ${message.text()}`))
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) trail.push(`nav ${frame.url()}`) })
+    const snapshot = () => page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration()
+      return {
+        active: registration?.active?.state || null,
+        waiting: registration?.waiting?.state || null,
+        installing: registration?.installing?.state || null,
+        controller: navigator.serviceWorker.controller?.state || null
+      }
+    }).catch(error => ({ error: String(error).slice(0, 120) }))
+    trail.push(`antes do toque ${JSON.stringify(await snapshot())}`)
     await prompt.getByRole('button', { name: 'Atualizar' }).click()
     // A página recarrega no meio da sonda: avaliação perdida na troca conta como "ainda não".
-    await expect.poll(async () => page.evaluate(async () => {
-      const registration = await navigator.serviceWorker.getRegistration()
-      return Boolean(registration?.active && !registration.waiting)
-    }).catch(() => false), { timeout: 30_000 }).toBe(true)
+    try {
+      await expect.poll(async () => {
+        const state = await snapshot()
+        trail.push(JSON.stringify(state))
+        return 'active' in state && state.active === 'activated' && !state.waiting
+      }, { timeout: 30_000 }).toBe(true)
+    } catch (error) {
+      console.log(`trilha da troca de versão:\n${trail.slice(-40).join('\n')}`)
+      throw error
+    }
     // Recarregada com o worker novo no comando, não há mais versão em espera.
     await expect(prompt).toBeHidden({ timeout: 15_000 })
   } finally {
