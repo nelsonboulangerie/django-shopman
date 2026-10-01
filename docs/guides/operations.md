@@ -102,6 +102,43 @@ Eventos operacionais críticos usam nomes estáveis:
 - `operator_alert.created`
 - `operator_alert.debounced`
 
+## Server-Timing das leituras do storefront
+
+As leituras do storefront (cardápio, `catalog/`, Continuum, home, shell, site,
+legal, sacola, checkout, produto, acompanhamento, Conta) devolvem o header
+`Server-Timing` num formato só, para comparar uma rota com a outra. Lê-se de fora,
+sem credencial:
+
+```bash
+curl -s -o /dev/null -D- https://<loja>/api/v1/storefront/shell/ | grep -i server-timing
+```
+
+```
+projection;dur=12.40, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=6.10,
+connect;dur=3.20;desc="1", cache;dur=0.90;desc="2", gc;dur=0.00;desc="0"
+```
+
+| estágio | o que é |
+|---|---|
+| `projection` | a view inteira (os demais ficam dentro dela) |
+| `availability` / `personalization` / `shadow` | trechos do cardápio, quando a view passa por eles |
+| `db` | soma do SQL do request (wrapper de execução do Django); **não** inclui abrir a conexão |
+| `connect` | abertura de conexão de banco dentro do request, com os handlers de `connection_created`; `desc` = conexões abertas |
+| `cache` | tempo e número de chamadas ao cache (`RedisCache` em produção: cada chamada é uma ida e volta ao Redis, e a primeira do request inclui conectar); `desc` = chamadas |
+| `gc` | coleta de lixo disparada durante o request (pausa o processo inteiro); `desc` = coletas |
+
+`connect`, `cache` e `gc` são o **custo fixo** do request: não dependem do que a
+rota faz e somem da conta quando só se olha `db`. `connect;desc="1"` em toda
+resposta quer dizer que cada request abre conexão nova com o Postgres; `desc` alto
+em `cache` aponta leitura repetida da mesma chave; `gc` alto e esporádico é coleta
+completa (geração 2). Os estágios não se somam de forma exata entre si (uma coleta
+pode cair no meio de uma consulta), mas todos cabem em `projection`. Pelo host da
+loja o BFF acrescenta `bff;dur=` (e `csrf;dur=` quando semeia o token).
+
+O log `storefront_catalog_observation` (cardápio e Continuum) traz os mesmos
+números em campos: `connect_ms`/`connect_count`, `cache_ms`/`cache_calls`,
+`gc_ms`/`gc_count`. Implementação: `shopman/storefront/observability.py`.
+
 ## Alertas operacionais
 
 Falhas que exigem ação humana criam `OperatorAlert` com debounce local:

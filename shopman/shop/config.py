@@ -433,9 +433,12 @@ class ChannelConfig:
         base = cls.defaults()
 
         # Nível loja
+        # A instância da loja é a mesma no request inteiro (``Shop.load`` passa
+        # pelo memo): a cópia impede que o config montado aqui compartilhe listas
+        # com ela e que uma mutação vaze para a próxima cascata.
         shop = Shop.load()
         if shop and shop.defaults:
-            base = deep_merge(base, shop.defaults)
+            base = deep_merge(base, copy.deepcopy(shop.defaults))
 
         # Nível canal — a linha é lida uma vez por request (``request_memo``);
         # a cópia impede que o config montado aqui compartilhe listas com ela.

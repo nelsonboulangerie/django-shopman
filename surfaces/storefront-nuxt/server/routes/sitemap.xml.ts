@@ -1,4 +1,4 @@
-import type { MenuResponse } from '~/types/shopman'
+import type { CatalogResponse } from '~/types/shopman'
 import { resolveDjangoBaseUrl } from '../utils/djangoBaseUrl'
 import { sitemapUrls, sitemapXml } from '../utils/sitemap'
 
@@ -15,7 +15,11 @@ export default defineEventHandler(async (event) => {
   let skus: string[] = []
   let collectionRefs: string[] = []
   try {
-    const menu = await $fetch<MenuResponse>(`${djangoBaseUrl}/api/v1/storefront/menu/`)
+    // A gêmea pública do catálogo (sem cookie, cacheável na borda): o sitemap só
+    // precisa de `sku` e do `ref` das coleções estáticas, e o corpo do anônimo é o
+    // mesmo para todos. O `menu/` montava sacola e personalização para nada, e era
+    // a leitura mais lenta da loja.
+    const menu = await $fetch<CatalogResponse>(`${djangoBaseUrl}/api/v1/storefront/public/catalog/`)
     const items = menu?.catalog?.items || []
     skus = [...new Set(items.map(item => item.sku).filter(Boolean))]
     // Só coleções ESTÁTICAS viram rota indexável; seções dinâmicas ("Destaques"

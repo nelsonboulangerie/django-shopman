@@ -10,8 +10,12 @@ O memo é um ``ContextVar`` aberto por :class:`RequestMemoMiddleware` no começo
 request e descartado no fim. Fora de um request (comando, worker, teste que chama
 a função direto) não há memo e tudo consulta o banco como sempre. Não é cache
 global de propósito: o estado do canal muda (toggle, agenda, Admin) e o request
-seguinte tem de ver o valor novo. Se o próprio request grava um ``Channel``, o
-``post_save``/``post_delete`` esvazia o memo e a leitura seguinte vai ao banco.
+seguinte tem de ver o valor novo. Se o próprio request grava um ``Channel`` ou o
+``Shop``, o ``post_save``/``post_delete`` esvazia o memo e a leitura seguinte vai
+ao banco.
+
+O ``Shop.load()`` também passa por aqui: era o campeão de idas ao Redis do
+cardápio (6 de 10 ``GET`` por request, todos da mesma chave ``shop_singleton``).
 
 Leituras de estoque têm um memo à parte, mais estreito (:func:`stock_reads_scope`):
 
@@ -142,6 +146,8 @@ def _clear_on_write(**_kwargs) -> None:
 
 post_save.connect(_clear_on_write, sender="shop.Channel", dispatch_uid="request_memo_channel_saved")
 post_delete.connect(_clear_on_write, sender="shop.Channel", dispatch_uid="request_memo_channel_deleted")
+post_save.connect(_clear_on_write, sender="shop.Shop", dispatch_uid="request_memo_shop_saved")
+post_delete.connect(_clear_on_write, sender="shop.Shop", dispatch_uid="request_memo_shop_deleted")
 
 
 class RequestMemoMiddleware:
