@@ -305,6 +305,64 @@ class TestAnalyze:
         assert derive_bom(formula, PART_FORMULAS) == list(analyze(formula, PART_FORMULAS).bom)
 
 
+
+def bassinage(first=650, second=50, parts=None):
+    """A Tradição com a água em duas linhas do MESMO SKU: a da massa e a da bassinage."""
+    formula = tradicao(parts=parts)
+    formula["items"][1] = {"sku": "AGUA-FILTRADA", "name": "Água da massa", "role": "liquid", "quantity": first, "unit": "g"}
+    formula["items"].append(
+        {"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid", "quantity": second, "unit": "g"},
+    )
+    return formula
+
+
+class TestOMesmoInsumoEmDuasLinhas:
+    """Duas linhas do mesmo SKU são dois gestos do padeiro, cada um com o seu peso.
+
+    O defeito era a mistura final indexar o que sobra de cada insumo pelo SKU:
+    a segunda linha sobrescrevia a primeira, e as duas saíam com os gramas da
+    última (50 + 50 em vez de 650 + 50), distorcendo a ficha e o consumo.
+    """
+
+    def test_each_line_keeps_its_own_grams(self):
+        analysis = analyze(bassinage())
+        assert [row.grams for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"] == [Decimal("650"), Decimal("50")]
+        assert [line["quantity"] for line in analysis.bom if line["sku"] == "AGUA-FILTRADA"] == [Decimal("650"), Decimal("50")]
+        assert sum(line["quantity"] for line in analysis.bom) == analysis.total_mass_g == Decimal("1720")
+        assert analysis.hydration_pct == Decimal("70")
+
+    def test_the_part_takes_its_water_from_the_first_line(self):
+        """O levain leva 200 g de água: saem da água da massa, a bassinage fica inteira."""
+        analysis = analyze(bassinage(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]), PART_FORMULAS)
+        assert [row.grams for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"] == [Decimal("450"), Decimal("50")]
+        assert sum(line["quantity"] for line in analysis.bom) == Decimal("1720")
+        assert analysis.warnings == ()
+
+    def test_what_the_first_line_lacks_comes_from_the_next(self):
+        analysis = analyze(
+            bassinage(first=100, second=600, parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PART_FORMULAS,
+        )
+        assert [row.grams for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"] == [Decimal("0"), Decimal("500")]
+        assert [line["quantity"] for line in analysis.bom if line["sku"] == "AGUA-FILTRADA"] == [Decimal("500")]
+        assert analysis.warnings == ()
+
+    def test_the_part_bigger_than_both_lines_together_is_flagged(self):
+        analysis = analyze(
+            bassinage(first=100, second=50, parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PART_FORMULAS,
+        )
+        assert "PART_EXCEEDS_BASE" in [w.code for w in analysis.warnings]
+        assert "AGUA-FILTRADA" not in {line["sku"] for line in analysis.bom}
+
+    def test_each_line_comes_back_in_its_own_unit(self):
+        formula = bassinage()
+        formula["items"][1] = {**formula["items"][1], "quantity": "0.65", "unit": "kg"}
+        analysis = analyze(formula)
+        rows = [(row.quantity, row.unit) for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"]
+        assert rows == [(Decimal("0.65"), "kg"), (Decimal("50"), "g")]
+
+
 # ── Padronizar e escalar ─────────────────────────────────────────────────────
 
 
