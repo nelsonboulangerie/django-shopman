@@ -29,6 +29,26 @@
 | 8: modelos no ManyChat | sem PR | 6 enviados à Meta pela sessão + 1 aprovado (dono); 4 esperam ajuste de texto (0.2) |
 | 9: receitas do Drive | sem PR | **espera o dono** (nomes dos arquivos) |
 
+### 0.1b Pendências vivas ao fim do turno (02/10, noite): a próxima sessão começa aqui
+
+1. **ManyChat, enviar 5 modelos** (textos aprovados, D-023, corpos em `whatsapp-templates-meta.md`):
+   `pagamento_falhou`, `pontos_fidelidade`, `pedido_entregue_v2` (sem botão),
+   `fila_vaga_disponivel_v2` (botão "Confirmar pedido", `/pedido/` + `order_ref`),
+   `produto_chegou_v2` (botão "Garantir já", `/produto/` + `product_sku`). `pedido_em_preparo` já foi
+   enviado em 02/10. **Armadilha:** o formulário só aceita digitação com a aba do ManyChat VISÍVEL
+   (`document.visibilityState == "visible"`); em segundo plano a digitação some sem erro. A primeira
+   digitação depois de carregar também é apagada: digite um caractere, espere ~20 s, localize o campo
+   por referência e digite de novo. Variável no corpo só pelo botão `{}` (chaves digitadas viram texto).
+2. **Apagar** `pedido_entregue`, `fila_vaga_disponivel` e `produto_chegou` (Marketing) quando os `_v2`
+   forem aprovados. O nome `_v2` fica.
+3. **Flows** (dono: "Flow você vai fazer"): um flow por modelo aprovado no ManyChat e o namespace no
+   `NotificationTemplate` do evento (Admin). Sem isso a mensagem segue como texto livre.
+4. **Entrega por parceiro:** `fulfillment.courier="auto"` **NÃO ligar** (dono, 02/10: "Não ligue agora o Taon ainda").
+5. **Receitas (WP-RECEITAS-DO-DONO, #1351):** respostas do dono em 02/10: (1) a **Fx** é a fonte para
+   tradição, campagne e ciabatta; (2) etapas, tempos e temperaturas **não existem**, ele edita depois;
+   (3) a aba LEVAIN pode ser lida, mas está desatualizada; (4) **PH é massa de Tradição** e **Focaccia é
+   massa de ciabatta**. Próximo passo: propor estrutura a partir da Fx, sem inventar nada que ela não diga.
+
 ### 0.2 Achados do turno (não redescubra)
 
 - **ManyChat: contrato de campos (#1346).** O adapter só regrava no perfil os campos declarados
