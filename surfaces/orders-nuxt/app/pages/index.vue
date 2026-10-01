@@ -146,16 +146,19 @@ function toggleSelectAll() {
 }
 const confirmableSel = computed(() => bulkableRefs(allCards.value, selected.value, "confirm"));
 const advanceableSel = computed(() => bulkableRefs(allCards.value, selected.value, "advance"));
-async function bulkConfirm() {
+// Aceitar/Avançar em lote: o botão gira até o último pedido responder (clique nunca
+// inerte). Antes ele não mudava nada enquanto a fila de N pedidos andava, e o segundo
+// toque parecia o primeiro.
+const { run: bulkConfirm, pending: bulkConfirming } = usePendingAction(async () => {
   const targets = confirmableSel.value.filter((ref) => !isBusy(ref));
   await confirmMany(targets);
   selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
-}
-async function bulkAdvance() {
+});
+const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(async () => {
   const targets = advanceableSel.value.filter((ref) => !isBusy(ref));
   await advanceMany(targets);
   selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
-}
+});
 
 // sort menu (house pattern: button + backdrop + absolute panel).
 const sortOpen = ref(false);
@@ -521,18 +524,22 @@ function printQueue() {
         <button
           v-if="confirmableSel.length"
           type="button"
-          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-progress disabled:opacity-80"
+          :disabled="bulkConfirming"
+          :aria-busy="bulkConfirming || undefined"
           @click="bulkConfirm"
         >
-          <Icon name="lucide:check" class="size-3.5" /> Aceitar {{ confirmableSel.length }}
+          <Icon :name="bulkConfirming ? 'line-md:loading-loop' : 'lucide:check'" class="size-3.5" aria-hidden="true" /> Aceitar {{ confirmableSel.length }}
         </button>
         <button
           v-if="advanceableSel.length"
           type="button"
-          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent"
+          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent disabled:cursor-progress disabled:opacity-80"
+          :disabled="bulkAdvancing"
+          :aria-busy="bulkAdvancing || undefined"
           @click="bulkAdvance"
         >
-          <Icon name="lucide:arrow-right" class="size-3.5" /> Avançar {{ advanceableSel.length }}
+          <Icon :name="bulkAdvancing ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-3.5" aria-hidden="true" /> Avançar {{ advanceableSel.length }}
         </button>
         <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
           Limpar

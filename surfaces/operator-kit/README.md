@@ -450,6 +450,49 @@ O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
 
+## Clique nunca inerte (`usePendingAction`)
+
+Regra da casa: "cliquei e não aconteceu nada" não pode existir. Todo botão que dispara
+uma ação assíncrona (`$fetch`, fila de pedidos, navegação que carrega rota) diz que
+está em andamento do toque até a resposta.
+
+```ts
+const { run: bulkConfirm, pending: bulkConfirming } = usePendingAction(async () => {
+  await confirmMany(targets);
+});
+// Por linha: remover A não trava B.
+const { run: removeLine, isPending: removing } = usePendingAction(removeLineNow, { key: (line) => line.sku });
+```
+
+```html
+<button :disabled="bulkConfirming" :aria-busy="bulkConfirming || undefined" @click="bulkConfirm">
+  <Icon :name="bulkConfirming ? 'line-md:loading-loop' : 'lucide:check'" aria-hidden="true" /> Aceitar
+</button>
+```
+
+Contrato:
+
+- **Pendente do toque até a promessa assentar**, com sucesso ou erro. O botão mostra
+  (`aria-busy` + spinner) e fica desabilitado **só durante** o pendente; nunca nasce
+  desabilitado "até ficar pronto".
+- **Toque repetido enquanto pende é ignorado**, não enfileira uma segunda ação. Com
+  `key`, a trava é por chave.
+- **O erro sobe para quem chamou.** O composable não engole nem avisa: o aviso de
+  erro continua sendo da ação.
+- **Spinner empacotado**: `line-md:loading-loop` (coleção instalada na layer, #1316).
+  Ícone buscado pela rede no meio do gesto é a mesma inércia por outro caminho.
+- A trava `tests/guardrails.pendingAction.test.ts` varre a layer e os apps de operador
+  do `registry.json`: botão com `@click` numa função `async` do próprio componente
+  precisa declarar o pendente (`:loading`, `:aria-busy` ou `:disabled` no mesmo
+  elemento). O que já existia sem isso está numa lista que **só encolhe**: corrigir um
+  item obriga a tirá-lo da lista, e item novo reprova.
+
+A loja tem cópia espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`) e,
+além dela, o **toque antes da hidratação** (`storefront-nuxt/app/utils/earlyTap.ts`):
+o "Adicionar" nasce ativo no HTML do servidor, um script inline no `<head>` guarda o
+toque que chega antes do app e o mostra girando, e o componente o executa uma vez ao
+montar.
+
 ## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
 
 Até 18/09/2026 **todo** checkbox e **todo** rádio das nove superfícies era o controle

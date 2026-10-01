@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProductMutationMeta } from '~/types/shopman'
+import { claimEarlyTap } from '~/utils/earlyTap'
 
 const props = withDefaults(defineProps<{
   meta: ProductMutationMeta
@@ -25,12 +26,23 @@ const hydrated = ref(false)
 const actionRoot = ref<HTMLElement | null>(null)
 const pending = computed(() => isPending(props.meta.sku))
 
+// O botão nasce ATIVO no HTML do servidor (D1, opção 3). Enquanto o app não montou,
+// ele carrega a chave do toque precoce: o script inline do <head> guarda o toque e
+// o mostra girando; ao montar, o toque guardado é executado uma vez. Produto
+// indisponível não ganha a marca e segue com o `disabled` dele. Ver utils/earlyTap.ts.
+const earlyTapKey = computed(() => `cart-add:${props.meta.sku}:${props.addTargetQty ?? 1}`)
+const earlyTap = computed(() => (hydrated.value || props.disabled ? undefined : earlyTapKey.value))
+const { run: add, pending: adding } = usePendingAction(addOne)
+
 onMounted(() => {
+  const replay = !props.disabled && claimEarlyTap(earlyTapKey.value)
   hydrated.value = true
+  // O erro já tem aviso próprio no useCartState; aqui só não pode virar rejeição solta.
+  if (replay) void add().catch(() => {})
 })
 
 async function addOne () {
-  if (!hydrated.value || props.disabled || pending.value) return
+  if (props.disabled || pending.value) return
   const nextQty = props.addTargetQty ?? 1
   const keepKeyboardFocus = import.meta.client && actionRoot.value?.contains(document.activeElement)
   const mutation = setSkuQty(props.meta, nextQty)
@@ -71,8 +83,10 @@ async function addOne () {
       class="size-10 rounded-full shadow-sm"
       :class="tone === 'inverted' ? 'shop-action-inverted' : ''"
       :aria-label="`Adicionar ${meta.name}`"
-      :disabled="!hydrated || disabled || pending"
-      @click="addOne"
+      :data-early-tap="earlyTap"
+      :disabled="disabled"
+      :loading="pending || adding"
+      @click="add"
     />
     <UiButton
       v-else
@@ -80,9 +94,10 @@ async function addOne () {
       :size="compact ? 'sm' : 'default'"
       icon="lucide:shopping-bag"
       :class="tone === 'inverted' ? 'shop-action-inverted' : ''"
-      :disabled="!hydrated || disabled || pending"
-      :loading="pending"
-      @click="addOne"
+      :data-early-tap="earlyTap"
+      :disabled="disabled"
+      :loading="pending || adding"
+      @click="add"
     >
       {{ addLabel }}
     </UiButton>

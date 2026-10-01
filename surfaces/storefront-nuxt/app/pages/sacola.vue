@@ -61,7 +61,12 @@ function holdFor (line: CartItemProjection) {
   return lineHoldState(line)
 }
 
-async function removeLine (line: CartItemProjection) {
+// Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
+// responder; a trava é por linha (remover A não trava B).
+const { run: removeLine, isPending: removingLine } = usePendingAction(removeLineNow, { key: line => line.sku })
+const { run: adjustToAvailable, isPending: adjustingLine } = usePendingAction(adjustToAvailableNow, { key: line => line.sku })
+
+async function removeLineNow (line: CartItemProjection) {
   const meta = metaForLine(line)
   const prevQty = line.qty
   await setSkuQty(meta, 0)
@@ -75,7 +80,7 @@ async function removeLine (line: CartItemProjection) {
 
 // Linha indisponível com algum estoque: ajusta para a quantidade disponível,
 // em vez de só permitir remover (consistente com o fluxo de erro 409).
-async function adjustToAvailable (line: CartItemProjection) {
+async function adjustToAvailableNow (line: CartItemProjection) {
   if (line.available_qty && line.available_qty > 0) {
     await setSkuQty(metaForLine(line), line.available_qty)
   }
@@ -210,6 +215,7 @@ useSeoMeta({
                       icon="lucide:trash-2"
                       class="-mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-destructive"
                       :aria-label="`Remover ${line.name}`"
+                      :loading="removingLine(line.sku)"
                       @click="removeLine(line)"
                     />
                   </div>
@@ -263,6 +269,7 @@ useSeoMeta({
                       v-if="!line.is_available && !holdFor(line) && line.available_qty && line.available_qty > 0"
                       size="sm"
                       variant="outline"
+                      :loading="adjustingLine(line.sku)"
                       @click="adjustToAvailable(line)"
                     >
                       Usar {{ line.available_qty }} disponíve{{ line.available_qty > 1 ? 'is' : 'l' }}

@@ -77,11 +77,10 @@ function applyPreset(text: string) {
   reason.value = text;
 }
 
-async function chooseOther() {
+function chooseOther() {
   other.value = true;
   reason.value = "";
-  await nextTick();
-  reasonInput.value?.focus();
+  void nextTick(() => reasonInput.value?.focus());
 }
 
 const presetPressed = (text: string) => !other.value && reason.value === text;
