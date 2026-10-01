@@ -1,6 +1,6 @@
 // Leitura automática de uma anotação ou foto — POST recipes/capture/ devolve o
 // rascunho estruturado (nome, língua, rendimento, ingredientes casados com
-// candidatos, passos). A foto é redimensionada NO NAVEGADOR (canvas, maior lado
+// candidatos, etapas). A foto é redimensionada NO NAVEGADOR (canvas, maior lado
 // ≤ 1600 px) antes de subir como base64: a ficha fotografada no celular tem 12 MP
 // e o provedor não precisa disso.
 //

@@ -97,7 +97,7 @@ class WorkOrderEvent(models.Model):
         PLANNING_CONFIRMED = "planning_confirmed", _("Planejamento confirmado")
         ADJUSTED = "adjusted", _("Ajustado")
         STARTED = "started", _("Iniciado")
-        STEP_ADVANCED = "step_advanced", _("Passo avançado")
+        STEP_ADVANCED = "step_advanced", _("Etapa avançada")
         OVEN_ARMED = "oven_armed", _("Enfornado")
         OVEN_CONCLUDED = "oven_concluded", _("Retirado do forno")
         OVEN_ABANDONED = "oven_abandoned", _("Medição de forno abandonada")
