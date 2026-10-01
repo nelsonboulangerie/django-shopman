@@ -5,15 +5,16 @@
 // Porte do `operator-kit/app/presentation/pwaRuntime.ts` (17/09/2026, commit
 // 976152c7b). O problema é o mesmo: com `registerType: 'prompt'` o worker novo fica
 // em "waiting" até TODAS as janelas do host fecharem, e o app instalado que fica dias
-// aberto nunca fecha todas. No PDV isso deixou o desktop do dono dias no bundle
-// antigo; na loja, o cliente instalado ficava preso numa versão velha com um único
-// toast descartável como saída.
+// aberto nunca fecha todas.
 //
-// O kit tem duas metades: SONDAR e APLICAR sozinho quando a superfície prova que é
-// seguro. A loja porta só a primeira. Aplicar sozinho significa recarregar a página
-// do cliente sem ele pedir, e o cliente pode estar escolhendo endereço, digitando o
-// código de acesso ou pagando: ninguém publica "estou no meio de algo" em todas essas
-// telas. Na loja quem aplica é sempre o toque do cliente no aviso.
+// Decisão do dono (D9, 01/10/2026): a loja FORÇA a versão nova. Duas portas, as duas
+// fechadas nas telas protegidas (`pwaUpdateRouteProtected`):
+//   1. Navegação entre telas vira recarga completa no destino
+//      (`shouldApplyPwaUpdateOnNavigation`).
+//   2. Fora das telas protegidas, um aviso que bloqueia a tela até o toque em
+//      "Atualizar" (`shouldBlockForPwaUpdate`).
+// A metade "aplicar sozinho no ocioso" do kit continua de fora: a loja não sabe se o
+// cliente está parado ou lendo, e recarrega só num gesto dele (navegar ou tocar).
 
 /** Sonda a cada 30 min: pega o deploy do dia sem transformar a loja em pinger. */
 export const PWA_UPDATE_CHECK_MS = 30 * 60 * 1000
@@ -41,18 +42,21 @@ export function shouldCheckForUpdate (options: {
 }
 
 /**
- * Telas em que o aviso NÃO aparece, porque o toque nele recarrega a página e ali há
- * algo em curso que a recarga perderia: o checkout, o pedido (onde mora o pagamento)
- * e o login (código de acesso sendo digitado). O aviso não some para sempre: volta
- * na próxima tela que não estiver nesta lista.
+ * Telas PROTEGIDAS: aqui a versão nova nunca entra, nem por recarga na navegação nem
+ * por aviso que bloqueia. A exceção é deliberada (D9): o cliente pode estar digitando
+ * endereço, escolhendo o pagamento ou pagando (checkout e pedido, onde mora o Pix e o
+ * cartão), ou digitando o código de acesso (login e o link de acesso `/a`). Recarregar
+ * ali perde o que está em curso, e no pagamento isso custa mais que alguns minutos na
+ * versão velha. A versão nova entra na primeira tela seguinte
+ * que não estiver nesta lista.
  */
-export function pwaUpdatePromptRouteExcluded (path: string): boolean {
+export function pwaUpdateRouteProtected (path: string): boolean {
   if (path === '/finalizar' || path.startsWith('/finalizar/')) return true
   if (path.startsWith('/pedido/')) return true
   return path === '/entrar' || path === '/a'
 }
 
-export interface PwaUpdatePromptState {
+export interface PwaUpdateBlockState {
   /** Há worker novo em "waiting". */
   needsRefresh: boolean
   /** Sem rede, a página recarregada cairia no casco offline: espera a conexão voltar. */
@@ -60,7 +64,28 @@ export interface PwaUpdatePromptState {
   path: string
 }
 
-/** O aviso é persistente: aparece SEMPRE que houver versão nova e a tela permitir. */
-export function shouldShowPwaUpdatePrompt (state: PwaUpdatePromptState): boolean {
-  return state.needsRefresh && state.online && !pwaUpdatePromptRouteExcluded(state.path)
+/** Bloquear a tela? Sempre que houver versão nova, rede e a tela não for protegida. */
+export function shouldBlockForPwaUpdate (state: PwaUpdateBlockState): boolean {
+  return state.needsRefresh && state.online && !pwaUpdateRouteProtected(state.path)
+}
+
+export interface PwaUpdateNavigationState {
+  needsRefresh: boolean
+  online: boolean
+  /** Caminho de onde o cliente saiu. */
+  from: string
+  /** Caminho aonde ele chegou: é ali que a página recarrega. */
+  to: string
+}
+
+/**
+ * A navegação vira recarga completa no destino? Só com versão nova e rede, e só
+ * quando NENHUMA das duas pontas é protegida: sair do checkout para o menu não
+ * recarrega (quem acabou de pagar volta ao menu e encontra o aviso), e entrar no
+ * checkout também não (o cliente chega ao pagamento sem uma tela piscando).
+ */
+export function shouldApplyPwaUpdateOnNavigation (state: PwaUpdateNavigationState): boolean {
+  if (!state.needsRefresh || !state.online) return false
+  if (state.from === state.to) return false
+  return !pwaUpdateRouteProtected(state.from) && !pwaUpdateRouteProtected(state.to)
 }

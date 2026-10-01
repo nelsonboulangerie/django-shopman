@@ -83,7 +83,7 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
     // app pergunta ao servidor, o worker novo instala e fica em espera.
     await page.reload()
     await expect(prompt).toBeVisible()
-    await expect(prompt).toContainText('Nova versão disponível')
+    await expect(prompt).toContainText('A loja tem uma versão nova')
 
     // No checkout o aviso cala (o toque recarregaria a página no meio do pedido)...
     await page.goto('/finalizar')

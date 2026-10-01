@@ -1,12 +1,14 @@
 // Decisões puras da troca de versão do app instalado da loja (porte do
-// `operator-kit/tests/pwaRuntime.test.ts`, só com a metade "sonda" e o aviso).
+// `operator-kit/tests/pwaRuntime.test.ts`, com a sonda e as duas portas que FORÇAM
+// a versão nova, D9).
 import { describe, expect, it } from 'vitest'
 import {
   PWA_UPDATE_CHECK_FLOOR_MS,
   PWA_UPDATE_CHECK_MS,
-  pwaUpdatePromptRouteExcluded,
-  shouldCheckForUpdate,
-  shouldShowPwaUpdatePrompt
+  pwaUpdateRouteProtected,
+  shouldApplyPwaUpdateOnNavigation,
+  shouldBlockForPwaUpdate,
+  shouldCheckForUpdate
 } from '~/presentation/pwaRuntime'
 
 describe('shouldCheckForUpdate', () => {
@@ -32,38 +34,62 @@ describe('shouldCheckForUpdate', () => {
   })
 })
 
-describe('pwaUpdatePromptRouteExcluded', () => {
-  it('cala o aviso onde a recarga perderia algo em curso', () => {
-    expect(pwaUpdatePromptRouteExcluded('/finalizar')).toBe(true)
-    expect(pwaUpdatePromptRouteExcluded('/finalizar/pagamento')).toBe(true)
-    expect(pwaUpdatePromptRouteExcluded('/pedido/ORD-1')).toBe(true)
-    expect(pwaUpdatePromptRouteExcluded('/entrar')).toBe(true)
-    expect(pwaUpdatePromptRouteExcluded('/a')).toBe(true)
+describe('pwaUpdateRouteProtected', () => {
+  it('protege checkout, pedido e login: ali a recarga perderia algo em curso', () => {
+    expect(pwaUpdateRouteProtected('/finalizar')).toBe(true)
+    expect(pwaUpdateRouteProtected('/finalizar/pagamento')).toBe(true)
+    expect(pwaUpdateRouteProtected('/pedido/ORD-1')).toBe(true)
+    expect(pwaUpdateRouteProtected('/entrar')).toBe(true)
+    expect(pwaUpdateRouteProtected('/a')).toBe(true)
   })
 
-  it('mostra no resto da loja, inclusive na sacola e na conta', () => {
+  it('o resto da loja não é protegido, inclusive a sacola e a conta', () => {
     for (const path of ['/', '/menu', '/sacola', '/produto/PAO', '/conta', '/conta/pedidos', '/busca']) {
-      expect(pwaUpdatePromptRouteExcluded(path)).toBe(false)
+      expect(pwaUpdateRouteProtected(path)).toBe(false)
     }
   })
 
   it('não confunde prefixo de palavra com prefixo de caminho', () => {
-    expect(pwaUpdatePromptRouteExcluded('/finalizarx')).toBe(false)
-    expect(pwaUpdatePromptRouteExcluded('/ajuda')).toBe(false)
-    expect(pwaUpdatePromptRouteExcluded('/entrar-agora')).toBe(false)
+    expect(pwaUpdateRouteProtected('/finalizarx')).toBe(false)
+    expect(pwaUpdateRouteProtected('/ajuda')).toBe(false)
+    expect(pwaUpdateRouteProtected('/entrar-agora')).toBe(false)
   })
 })
 
-describe('shouldShowPwaUpdatePrompt', () => {
+describe('shouldBlockForPwaUpdate', () => {
   const ready = { needsRefresh: true, online: true, path: '/menu' }
 
-  it('aparece sempre que há versão nova e a tela permite', () => {
-    expect(shouldShowPwaUpdatePrompt(ready)).toBe(true)
+  it('bloqueia sempre que há versão nova e a tela não é protegida', () => {
+    expect(shouldBlockForPwaUpdate(ready)).toBe(true)
   })
 
-  it('some sem versão nova, sem rede ou em tela calada', () => {
-    expect(shouldShowPwaUpdatePrompt({ ...ready, needsRefresh: false })).toBe(false)
-    expect(shouldShowPwaUpdatePrompt({ ...ready, online: false })).toBe(false)
-    expect(shouldShowPwaUpdatePrompt({ ...ready, path: '/finalizar' })).toBe(false)
+  it('não bloqueia sem versão nova, sem rede ou em tela protegida', () => {
+    expect(shouldBlockForPwaUpdate({ ...ready, needsRefresh: false })).toBe(false)
+    expect(shouldBlockForPwaUpdate({ ...ready, online: false })).toBe(false)
+    for (const path of ['/finalizar', '/pedido/ORD-1', '/entrar', '/a']) {
+      expect(shouldBlockForPwaUpdate({ ...ready, path })).toBe(false)
+    }
+  })
+})
+
+describe('shouldApplyPwaUpdateOnNavigation', () => {
+  const ready = { needsRefresh: true, online: true, from: '/menu', to: '/produto/PAO' }
+
+  it('com versão nova, navegar fora das telas protegidas recarrega no destino', () => {
+    expect(shouldApplyPwaUpdateOnNavigation(ready)).toBe(true)
+    expect(shouldApplyPwaUpdateOnNavigation({ ...ready, from: '/', to: '/sacola' })).toBe(true)
+  })
+
+  it('nunca recarrega se a origem OU o destino for protegido', () => {
+    for (const path of ['/finalizar', '/pedido/ORD-1', '/entrar', '/a']) {
+      expect(shouldApplyPwaUpdateOnNavigation({ ...ready, to: path })).toBe(false)
+      expect(shouldApplyPwaUpdateOnNavigation({ ...ready, from: path })).toBe(false)
+    }
+  })
+
+  it('sem versão nova, sem rede ou sem troca de tela, não recarrega', () => {
+    expect(shouldApplyPwaUpdateOnNavigation({ ...ready, needsRefresh: false })).toBe(false)
+    expect(shouldApplyPwaUpdateOnNavigation({ ...ready, online: false })).toBe(false)
+    expect(shouldApplyPwaUpdateOnNavigation({ ...ready, to: '/menu' })).toBe(false)
   })
 })
