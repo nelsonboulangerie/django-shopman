@@ -444,22 +444,124 @@ def reserve_ceding_cart_holds(
     return reserved, ceded
 
 
-def _recreate_remainder(hold, remainder: Decimal, *, channel_ref: str | None = None, **marker) -> dict:
-    """Recria, para a mesma sacola, o troco de uma reserva que acabou de ser solta.
+# Carimbos do TIPO de reserva: quem os escreve é ``create_hold``, a partir do
+# quant em que a reserva caiu (fornada → ``planned``, demanda → ``on_demand``).
+# Herdá-los de outra reserva carimbaria pão pronto como fila.
+_HOLD_KIND_METADATA = frozenset({"planned", "on_demand"})
 
-    O Stockman não parte hold: quem precisa ficar com só uma parte solta o hold
-    inteiro e pede o troco de volta. O troco é a MESMA reserva, não uma nova —
-    nasce na data do hold original (a fornada de amanhã continua sendo a de
-    amanhã), com o mesmo prazo e os mesmos carimbos de linha, e sem a margem da
-    vitrine, que barraria justamente a devolução do que já era da sacola.
+
+def return_hold_remainder(
+    hold_id: str,
+    remainder: Decimal,
+    *,
+    channel_ref: str | None = None,
+    ttl_minutes: int = 30,
+) -> list[tuple[str, Decimal]]:
+    """Devolve à sacola ``remainder`` de uma reserva dela que acabou de ser solta.
+
+    Para a sacola que DIMINUI uma linha: o Stockman não parte hold, então o
+    último hold solto cobria mais do que a redução e a sobra precisa voltar.
+
+    1. **A mesma reserva**, quando a sobra volta ao MESMO quant do hold original:
+       mesma data, mesmo prazo (inclusive o "sem prazo" da fila), mesmos
+       carimbos, e sem a margem da vitrine, porque é a sacola recebendo de
+       volta o que já era dela.
+    2. **Uma reserva comum de sacola**, quando a sobra cairia em OUTRO quant (o
+       Stockman escolhe por validade, não por origem: a sobra de uma reserva da
+       fornada de amanhã pode cair no pão pronto que chegou hoje). Aí não é a
+       mesma reserva: os carimbos de tipo e o prazo saem do quant onde ela cai
+       (``create_hold``), e a margem da vitrine vale como em qualquer reserva.
+    3. **O que couber**, se nem isso couber inteiro (o quant encolheu por perda
+       ou ajuste): reduzir a sacola nunca falha, e a reserva fica com o que
+       existe.
+
+    Returns:
+        ``[(hold_id, qty), ...]`` do que voltou (vazia se nada coube).
     """
-    cart_reference = str((hold.metadata or {}).get("reference") or "")
-    if channel_ref is None:
-        from shopman.orderman.models import Session
+    from shopman.stockman.models import Hold
 
-        channel_ref = (
-            Session.objects.filter(session_key=cart_reference).values_list("channel_ref", flat=True).first()
-        )
+    try:
+        original = Hold.objects.get(pk=int(str(hold_id).split(":")[-1]))
+    except (Hold.DoesNotExist, ValueError):
+        logger.warning("stock.hold_remainder_unknown_hold hold=%s", hold_id)
+        return []
+    remainder = Decimal(str(remainder))
+    reference = str((original.metadata or {}).get("reference") or "")
+    carried = {
+        key: value
+        for key, value in (original.metadata or {}).items()
+        if not key.startswith("_")
+        and key not in _HOLD_LIFECYCLE_METADATA
+        and key not in _HOLD_KIND_METADATA
+    }
+    carried["remainder_of"] = original.hold_id
+
+    def _hold(hold_id_: str):
+        return Hold.objects.get(pk=int(hold_id_.split(":")[1]))
+
+    # 1. A mesma reserva, no mesmo quant.
+    same = create_hold(
+        original.sku,
+        remainder,
+        ttl_minutes,
+        target_date=original.target_date,
+        reference=reference,
+        channel_ref=channel_ref,
+        apply_safety_margin=False,
+        **carried,
+    )
+    if same.get("success"):
+        created = _hold(same["hold_id"])
+        if created.quant_id == original.quant_id:
+            kind = {k: v for k, v in (original.metadata or {}).items() if k in _HOLD_KIND_METADATA}
+            created.metadata = {
+                **{k: v for k, v in (created.metadata or {}).items() if k not in _HOLD_KIND_METADATA},
+                **kind,
+            }
+            created.expires_at = original.expires_at
+            created.save(update_fields=["metadata", "expires_at"])
+            return [(same["hold_id"], remainder)]
+        # Caiu em outro quant sem a margem da vitrine: não é a mesma reserva.
+        release_holds([same["hold_id"]])
+
+    # 2. Uma reserva comum de sacola, onde ela couber, com a margem valendo.
+    fresh = create_hold(
+        original.sku,
+        remainder,
+        ttl_minutes,
+        target_date=original.target_date,
+        reference=reference,
+        channel_ref=channel_ref,
+        **carried,
+    )
+    if fresh.get("success"):
+        return [(fresh["hold_id"], remainder)]
+
+    # 3. O que couber.
+    partial = create_holds_up_to(
+        original.sku,
+        remainder,
+        ttl_minutes,
+        target_date=original.target_date,
+        reference=reference,
+        channel_ref=channel_ref,
+        **carried,
+    )
+    logger.info(
+        "stock.hold_remainder_partial hold=%s session=%s asked=%s returned=%s",
+        original.hold_id, reference, remainder, sum((q for _, q in partial), Decimal("0")),
+    )
+    return partial
+
+
+def _return_remainder_to_cart(hold, remainder: Decimal) -> str | None:
+    """Devolve à sacola o que a reserva cedida tinha além da falta."""
+    from shopman.orderman.models import Session
+
+    cart_reference = str((hold.metadata or {}).get("reference") or "")
+    session_channel = (
+        Session.objects.filter(session_key=cart_reference).values_list("channel_ref", flat=True).first()
+    )
     carried = {
         key: value
         for key, value in (hold.metadata or {}).items()
@@ -470,49 +572,21 @@ def _recreate_remainder(hold, remainder: Decimal, *, channel_ref: str | None = N
         remainder,
         target_date=hold.target_date,
         reference=cart_reference,
-        channel_ref=channel_ref,
+        channel_ref=session_channel,
+        # Não é reserva nova: é a sacola recebendo de volta o que já era dela.
+        # A margem da vitrine barraria justamente esta devolução.
         apply_safety_margin=False,
-        **marker,
+        ceded_remainder_of=hold.hold_id,
         **carried,
     )
-    if result.get("success"):
-        extend_hold(result["hold_id"], expires_at=hold.expires_at)
-    return result
-
-
-def return_hold_remainder(hold_id: str, remainder: Decimal, *, channel_ref: str | None = None) -> dict:
-    """Devolve à sacola ``remainder`` de uma reserva dela que acabou de ser solta.
-
-    Para a sacola que DIMINUI uma linha: o último hold solto cobria mais do que
-    a redução, e a sobra volta como a mesma reserva (``_recreate_remainder``).
-    Devolve o resultado de ``create_hold``.
-    """
-    from shopman.stockman.models import Hold
-
-    try:
-        hold = Hold.objects.get(pk=int(str(hold_id).split(":")[-1]))
-    except (Hold.DoesNotExist, ValueError):
-        return {
-            "success": False,
-            "hold_id": None,
-            "error_code": "INVALID_HOLD",
-            "message": f"Reserva não encontrada: {hold_id}",
-            "expires_at": None,
-            "is_planned": False,
-        }
-    return _recreate_remainder(hold, Decimal(str(remainder)), channel_ref=channel_ref, remainder_of=hold.hold_id)
-
-
-def _return_remainder_to_cart(hold, remainder: Decimal) -> str | None:
-    """Devolve à sacola o que a reserva cedida tinha além da falta."""
-    result = _recreate_remainder(hold, remainder, ceded_remainder_of=hold.hold_id)
     if not result.get("success"):
         # A sacola descobre na revalidação/checkout, como numa reserva vencida.
         logger.warning(
             "stock.cart_hold_remainder_lost hold=%s session=%s qty=%s code=%s",
-            hold.hold_id, (hold.metadata or {}).get("reference"), remainder, result.get("error_code"),
+            hold.hold_id, cart_reference, remainder, result.get("error_code"),
         )
         return None
+    extend_hold(result["hold_id"], expires_at=hold.expires_at)
     return result["hold_id"]
 
 

@@ -11,7 +11,10 @@ isto é, para HOJE, onde não há nada. Daí:
   a compensação falhava, o log dizia ``session now under-reserved`` e a linha
   ficava com 1 na tela e ZERO reservado — o cliente perdia a vaga na fila.
 
-A régua: ou o ajuste acontece inteiro, ou nada muda.
+A régua: aumentar acontece inteiro ou não acontece; reduzir nunca falha e nunca
+solta o que ainda existe. E a sobra devolvida é do tipo do quant em que cai: a
+sobra da fila que cai em pão pronto vira reserva comum de sacola (com prazo e
+com a margem da vitrine), nunca "fila" presa sem relógio.
 """
 from __future__ import annotations
 
@@ -19,12 +22,14 @@ import json
 import logging
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
 from shopman.stockman import stock
-from shopman.stockman.models import Hold, Position, PositionKind
+from shopman.stockman.models import Hold, Position, PositionKind, Quant
+from shopman.stockman.services.movements import StockMovements
 
+from shopman.shop.adapters.stock import is_cart_hold
+from shopman.shop.services.waitlist import is_waitlist_hold
 from shopman.storefront.tests.web.conftest import _ensure_listing_item
 
 pytestmark = pytest.mark.django_db
@@ -56,6 +61,14 @@ def _receive_today(product, qty: str):
     stock.receive(
         quantity=Decimal(qty), sku=product.sku, position=_position(),
         target_date=date.today(), reason="pronta-entrega (teste de ajuste)",
+    )
+
+
+def _receive_ready(product, qty: str):
+    """Pão pronto como a produção grava: quant físico, sem data."""
+    stock.receive(
+        quantity=Decimal(qty), sku=product.sku, position=_position(),
+        target_date=None, reason="pronta-entrega (teste de ajuste)",
     )
 
 
@@ -139,19 +152,65 @@ class TestQueueReservationAdjustments:
         assert all(h.expires_at is None for h in holds), "vaga na fila continua sem relógio"
         assert _line_qty(client, queue.sku) == 1
 
-    def test_shrink_whose_compensation_fails_changes_nothing(self, client, queue):
-        """Se a sobra não puder voltar para a sacola, o ajuste não acontece."""
-        assert _set_qty(client, queue.sku, 2).status_code == 200
-        before = [h.pk for h in _active_holds(queue.sku)]
+    def test_queue_remainder_landing_on_ready_bread_is_a_regular_cart_hold(
+        self, client, channel, product,
+    ):
+        """Sobra da fila que cai no pão pronto que chegou: reserva comum, nunca 'fila'.
 
-        failure = {"success": False, "hold_id": None, "error_code": "INSUFFICIENT_AVAILABLE"}
-        with patch("shopman.shop.adapters.stock.create_hold", return_value=failure):
-            resp = _set_qty(client, queue.sku, 1)
+        O Stockman escolhe o quant por validade, não pela origem da reserva; o
+        pão pronto (quant sem data, como a produção grava) vence a fornada.
+        Herdar ``planned`` e o "sem prazo" da fila prenderia pão pronto sem
+        relógio, fora do alcance do balcão e da materialização da fornada.
+        """
+        _ensure_listing_item(channel, product, price_q=90)
+        _enable_waitlist(channel)
+        # O quant de pronta-entrega já existiu e foi vendido: nasce antes da fornada.
+        _receive_ready(product, "2")
+        StockMovements.issue(
+            Decimal("2"), Quant.objects.get(sku=product.sku, target_date__isnull=True), reason="vendido",
+        )
+        _plan_tomorrow(product, "4")
+        assert _set_qty(client, product.sku, 3).status_code == 200
+        assert {h.target_date for h in _active_holds(product.sku)} == {TOMORROW}
 
-        assert resp.status_code == 409
-        assert [h.pk for h in _active_holds(queue.sku)] == before, "nada foi solto"
-        assert _reserved(queue.sku) == Decimal("2")
-        assert _line_qty(client, queue.sku) == 2
+        _receive_ready(product, "5")  # chega a pronta-entrega
+        assert _set_qty(client, product.sku, 2).status_code == 200
+
+        assert _reserved(product.sku) == Decimal("2")
+        assert any(
+            h.quant is not None and h.quant.target_date is None for h in _active_holds(product.sku)
+        ), "o cenário exige que a sobra caia no pão pronto"
+        for hold in _active_holds(product.sku):
+            on_ready_bread = hold.quant is not None and hold.quant.target_date is None
+            if on_ready_bread:
+                assert not hold.metadata.get("planned"), "pão pronto não é fila"
+                assert hold.expires_at is not None, "reserva de pão pronto corre relógio"
+                assert is_cart_hold(hold), "o balcão alcança a reserva de sacola"
+                assert not is_waitlist_hold(hold)
+            else:
+                assert is_waitlist_hold(hold) and hold.expires_at is None
+
+
+class TestShrinkNeverFails:
+    def test_shrink_after_the_quant_shrank_keeps_what_exists(self, client, channel, product):
+        """Sacola com 3 prontos; uma perda deixa o quant em 1; o cliente pede 2.
+
+        Reduzir não pode ser recusado (antes: 409 "INSUFFICIENT_AVAILABLE" com
+        "Usar 3.000 unidades"). A linha fica com o que o cliente pediu; a
+        reserva, com o que existe.
+        """
+        _ensure_listing_item(channel, product, price_q=90)
+        _receive_today(product, "3")
+        assert _set_qty(client, product.sku, 3).status_code == 200
+        StockMovements.adjust(
+            Quant.objects.get(sku=product.sku, target_date=date.today()), Decimal("1"), reason="perda",
+        )
+
+        resp = _set_qty(client, product.sku, 2)
+
+        assert resp.status_code == 200, resp.content[:400]
+        assert _line_qty(client, product.sku) == 2
+        assert _reserved(product.sku) == Decimal("1"), "a reserva fica com o que existe"
 
 
 class TestTodayStockAdjustments:
