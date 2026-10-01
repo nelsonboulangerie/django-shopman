@@ -883,7 +883,7 @@ services:
     repository: shopman
     tag: web
     deploy_on_push:
-      enabled: true
+      enabled: false
 - alerts:
   - operator: GREATER_THAN
     rule: RESTART_COUNT
@@ -925,7 +925,7 @@ services:
     repository: shopman
     tag: storefront
     deploy_on_push:
-      enabled: true
+      enabled: false
 # ── Apps de operador: DOIS services, não oito (ADR-030, decisão de 17/09) ──
 # Cada service é um contêiner com os `.output/` do grupo e um roteador por Host
 # (surfaces/operator-router). O ingress manda os hostnames de sempre para o
@@ -1078,7 +1078,7 @@ services:
     repository: shopman
     tag: operator-floor
     deploy_on_push:
-      enabled: true
+      enabled: false
 - alerts:
   - operator: GREATER_THAN
     rule: CPU_UTILIZATION
@@ -1167,7 +1167,7 @@ services:
     repository: shopman
     tag: operator-office
     deploy_on_push:
-      enabled: true
+      enabled: false
 workers:
 - alerts:
   - operator: GREATER_THAN
@@ -1193,7 +1193,7 @@ workers:
     repository: shopman
     tag: web
     deploy_on_push:
-      enabled: true
+      enabled: false
 - alerts:
   - operator: GREATER_THAN
     rule: RESTART_COUNT
@@ -1208,7 +1208,7 @@ workers:
     repository: shopman
     tag: web
     deploy_on_push:
-      enabled: true
+      enabled: false
 - alerts:
   - operator: GREATER_THAN
     rule: RESTART_COUNT
@@ -1223,7 +1223,7 @@ workers:
     repository: shopman
     tag: web
     deploy_on_push:
-      enabled: true
+      enabled: false
 jobs:
 - instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
@@ -1245,7 +1245,7 @@ jobs:
     repository: shopman
     tag: web
     deploy_on_push:
-      enabled: true
+      enabled: false
 databases:
 - cluster_name: shopman-staging-postgres
   db_name: shopman

@@ -130,7 +130,9 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
     """Cada superfície Nuxt é alcançável no spec e servida pela IMAGEM certa.
 
     Desde 26/08 o deploy é por imagem do DOCR (deploy-images.yml), não por
-    buildpack com ``source_dir``: o push da tag móvel VIRA o deploy. Desde a
+    buildpack com ``source_dir``. O ``deploy_on_push`` fica DESLIGADO, como no
+    spec vivo: o push da tag móvel não vira deploy sozinho; o deploy-images.yml
+    cria UM deployment por run, depois de publicar todas as tags. Desde a
     ADR-030 os apps de operador não têm service próprio: o ingress do hostname
     aponta para o service do GRUPO (`operator-floor`/`operator-office`, tag de
     mesmo nome) e o `OPERATOR_HOSTS` daquele service entrega o hostname ao app.
@@ -153,8 +155,9 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
         assert image.get("registry_type") == "DOCR", f"{name} não deploya por imagem do DOCR"
         assert image.get("repository") == "shopman", f"{name} fora do repositório shopman"
         assert image.get("tag") == tag, f"{name} com tag {image.get('tag')!r}; o deploy-images.yml publica {tag!r}"
-        assert (image.get("deploy_on_push") or {}).get("enabled") is True, (
-            f"{name} sem deploy_on_push — o push do Actions não viraria deploy"
+        assert (image.get("deploy_on_push") or {}).get("enabled") is not True, (
+            f"{name} com deploy_on_push ligado; o vivo tem desligado e quem cria o "
+            "deployment é o deploy-images.yml (um por run)"
         )
 
     assert_image("storefront-nuxt", "storefront")
