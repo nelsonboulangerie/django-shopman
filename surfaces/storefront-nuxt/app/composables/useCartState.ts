@@ -409,6 +409,25 @@ export function useCartState () {
     return nextCart
   }
 
+  // Observação por item ("sem cebola"): grava em meta.notes da linha e chega
+  // ao ticket da cozinha. Texto vazio apaga.
+  async function setLineNotes (lineId: string, notes: string) {
+    beginMutation()
+    let response: { cart: CartProjection }
+    try {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath(`/api/v1/cart/lines/${encodeURIComponent(lineId)}/notes/`), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { notes },
+        credentials: 'include'
+      })))
+    } finally {
+      queueDepth -= 1
+    }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response.cart
+  }
+
   async function retryLastMutation () {
     const mutation = lastMutation.value
     if (!mutation) return null
@@ -454,6 +473,7 @@ export function useCartState () {
     setSkuQty,
     applyCoupon,
     removeCoupon,
+    setLineNotes,
     retryLastMutation,
     acceptAvailableQty,
     addSubstitute,

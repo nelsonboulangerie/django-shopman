@@ -30,6 +30,7 @@ const { data, pending, error, refresh } = await useFetch<CatalogResponse>(
   () => apiPath(`/api/v1/storefront/catalog/${encodeURIComponent(collectionRef.value)}/`),
   { credentials: 'include', immediate: !dynamicRedirectTarget.value, lazy: true }
 )
+useNavigationPending(pending)
 
 // Coleção inexistente: 404 de verdade — o endpoint levanta Http404 via
 // ensure_active_collection(); a SSR responde 404 + noindex (error.vue).

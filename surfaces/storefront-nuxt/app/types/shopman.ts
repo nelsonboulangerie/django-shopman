@@ -240,6 +240,8 @@ export interface CartItemProjection {
   confirmation_deadline_display: string | null
   planned_for_date: string | null
   planned_for_notice: string | null
+  // Observação que o cliente escreveu para este item; vai para a cozinha.
+  notes?: string
 }
 
 export interface CartProjection {

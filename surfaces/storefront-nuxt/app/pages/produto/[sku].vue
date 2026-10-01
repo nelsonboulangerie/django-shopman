@@ -23,6 +23,7 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
   { credentials: 'include', lazy: true }
 )
+useNavigationPending(pending)
 
 async function missingProductError (missingSku: string) {
   const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), missingSku)

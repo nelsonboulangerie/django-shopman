@@ -18,6 +18,7 @@ const { data, pending, error, refresh } = await useFetch<CatalogResponse>(apiPat
   credentials: 'include',
   lazy: true
 })
+useNavigationPending(pending)
 
 function parseFilters (raw: unknown): string[] {
   return String(raw || '').split(',').map(part => part.trim()).filter(Boolean)

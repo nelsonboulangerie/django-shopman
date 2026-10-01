@@ -57,6 +57,7 @@ const pending = computed(() => !catalog.value && (canonicalPending.value || cont
 const error = computed(() => !catalog.value ? (canonicalError.value || continuum?.error.value) : null)
 const continuumPending = computed(() => !!structureCatalog.value && !data.value?.catalog)
 const continuumFailed = computed(() => continuumPending.value && !!canonicalError.value)
+useNavigationPending(pending)
 
 async function refresh () {
   await Promise.all([

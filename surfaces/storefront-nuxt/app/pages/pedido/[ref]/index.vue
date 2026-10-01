@@ -55,6 +55,7 @@ const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
   { credentials: 'include', headers: requestHeaders, lazy: true }
 )
+useNavigationPending(pending)
 
 const tracking = computed(() => data.value || null)
 const errorView = computed(() => orderAccessErrorView((error.value as { statusCode?: number } | null)?.statusCode, 'tracking'))

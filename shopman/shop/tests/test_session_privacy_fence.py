@@ -182,6 +182,7 @@ def test_coupon_and_delivery_direct_writers_obey_anonymized_fence():
     "meta",
     [
         {"customer_note": "ligar para Ana"},
+        {"notes": "sem cebola, é para a Ana"},
         {"customization": {"note": "nome no bolo"}},
         {"customization": {"text": "parabéns Ana"}},
         {"customization": {"message": "entregar para Ana"}},
@@ -234,6 +235,44 @@ def test_anonymized_session_keeps_commercial_line_metadata():
     assert meta["batch_ref"] == "LOT-2026-09"
     assert meta["customization"] == {"size": "large", "icing": "chocolate"}
     assert "customer_note" not in meta
+
+
+def _anonymized_session_with_line(suffix: str, meta: dict) -> Session:
+    session = Session.objects.create(
+        session_key=f"session-privacy-{suffix}",
+        channel_ref="web",
+        items=[{"line_id": "LINE-NOTE", "sku": "SKU-NOTE", "qty": 1, "unit_price_q": 1000, "meta": meta}],
+        data={},
+    )
+    Session.objects.filter(pk=session.pk).update(handle_type="anonymized", handle_ref=f"ANON-{suffix}")
+    return session
+
+
+def test_set_line_meta_cannot_add_line_note_after_anonymization():
+    session = _anonymized_session_with_line("set-line-note", {"batch_ref": "LOT-1"})
+
+    with pytest.raises(SessionError) as exc_info:
+        ModifyService.modify_session(
+            session_key=session.session_key,
+            channel_ref=session.channel_ref,
+            ops=[{"op": "set_line_meta", "line_id": "LINE-NOTE", "meta": {"notes": "para a Ana"}}],
+        )
+
+    assert exc_info.value.code == "session_anonymized"
+    session.refresh_from_db()
+    assert session.items[0]["meta"] == {"batch_ref": "LOT-1"}
+
+
+def test_set_line_meta_can_still_clear_a_line_note_after_anonymization():
+    session = _anonymized_session_with_line("clear-line-note", {"batch_ref": "LOT-1"})
+
+    updated = ModifyService.modify_session(
+        session_key=session.session_key,
+        channel_ref=session.channel_ref,
+        ops=[{"op": "set_line_meta", "line_id": "LINE-NOTE", "meta": {"notes": None}}],
+    )
+
+    assert updated.items[0]["meta"] == {"batch_ref": "LOT-1"}
 
 
 def test_replace_sku_cannot_add_personal_line_metadata_after_anonymization():

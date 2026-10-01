@@ -36,10 +36,11 @@ const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const openingHours = computed(() => session.openingHours.value)
 
 const apiPath = useShopmanApiPath()
-const { data } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
+const { data, pending } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
   key: 'legal',
   lazy: true
 })
+useNavigationPending(pending)
 const legal = computed(() => data.value?.legal)
 
 useCanonical()

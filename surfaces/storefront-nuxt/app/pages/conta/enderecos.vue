@@ -26,6 +26,7 @@ const { data: addressData, pending, refresh: refreshAddresses } = await useFetch
   query: { include: 'copy' },
   lazy: true
 })
+useNavigationPending(pending)
 
 const addresses = computed(() => addressData.value?.addresses ?? [])
 // Copy do vazio vem do registro omotenashi; o fallback cobre só o carregamento.

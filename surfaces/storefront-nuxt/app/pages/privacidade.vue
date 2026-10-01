@@ -26,10 +26,11 @@ const marca = computed(() => shop.value?.brand_name || 'a loja')
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 
 const apiPath = useShopmanApiPath()
-const { data } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
+const { data, pending } = await useFetch<{ legal: LegalProjection }>(apiPath('/api/v1/storefront/legal/'), {
   key: 'legal',
   lazy: true
 })
+useNavigationPending(pending)
 const legal = computed(() => data.value?.legal)
 
 useCanonical()

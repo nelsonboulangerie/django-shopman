@@ -120,6 +120,10 @@ class CartLineProjection:
     # única saída era a lixeira.
     is_notifiable: bool = False
 
+    # Observação da linha (``meta["notes"]``), a mesma chave que o PDV escreve
+    # e que o ticket do KDS lê.
+    notes: str = ""
+
 
 @dataclass(frozen=True)
 class CartDiscountLineProjection:
@@ -510,6 +514,7 @@ def _build_line(
         original_price_q=original_price_q,
         discount_name=discount_name or None,
         discount_is_coupon=discount_is_coupon,
+        notes=str((item.get("meta") or {}).get("notes") or ""),
     )
 
 

@@ -56,7 +56,7 @@ from shopman.storefront.services.cart_mutations import (
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
 from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
-from .serializers import DetailSerializer, SetSkuQtySerializer
+from .serializers import DetailSerializer, SetLineNotesSerializer, SetSkuQtySerializer
 
 logger = logging.getLogger(__name__)
 
@@ -944,6 +944,72 @@ class OfferClaimView(APIView):
         responses={200: OpenApiResponse(description="Cart projection after coupon removed.")},
     ),
 )
+@extend_schema_view(
+    put=extend_schema(
+        tags=["cart"],
+        summary="Set the note of one cart line (empty clears it)",
+        request=SetLineNotesSerializer,
+        responses={
+            200: OpenApiResponse(description="Authoritative cart projection."),
+            400: DetailSerializer,
+            404: DetailSerializer,
+            409: DetailSerializer,
+        },
+    ),
+)
+class CartLineNotesView(APIView):
+    """PUT /api/v1/cart/lines/{line_id}/notes/
+
+    A observação por item ("sem cebola") grava em ``meta["notes"]`` da linha,
+    a mesma chave do PDV, e chega ao ticket do KDS no commit.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = SetLineNotesSerializer
+    throttle_classes = []
+
+    def put(self, request, line_id: str):
+        from shopman.orderman.exceptions import SessionError, ValidationError
+
+        from shopman.storefront.cart import CartService
+
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-cart-line-notes",
+            rate="60/m",
+            method="PUT",
+        ):
+            return _rate_limited_response(
+                detail="Muitas alterações na sacola. Aguarde um instante.",
+                retry_after_seconds=CART_RATE_LIMIT_RETRY_SECONDS,
+            )
+
+        serializer = SetLineNotesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            CartService.set_line_notes(
+                request,
+                line_id=line_id.strip(),
+                notes=serializer.validated_data["notes"],
+            )
+        except ValueError:
+            return Response({"detail": "Sacola vazia."}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            if exc.code == "unknown_line_id":
+                return Response(
+                    {"detail": "Este item não está mais na sacola."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            raise
+        except SessionError:
+            return Response(
+                {"detail": "Esta sacola não aceita mais alterações."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"cart": _cart_payload_after_mutation(request)})
+
+
 class CartCouponView(APIView):
     """POST/DELETE /api/v1/cart/coupon/"""
 

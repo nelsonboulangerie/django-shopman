@@ -972,15 +972,18 @@ def _scrub_item_meta(payload) -> tuple[dict, bool]:
 
     O restante de ``meta`` documenta a venda (desconto, fiscal, tipo de item,
     escolha e acréscimo da customização) e precisa sobreviver. Por isso esta
-    cerca é fechada nos caminhos ``customer_note`` e
+    cerca é fechada nos caminhos ``customer_note``, ``notes`` e
     ``customization.{note,text,message}``, em vez de apagar o JSON inteiro.
     """
     if not isinstance(payload, dict):
         return payload, False
 
     clean = dict(payload)
-    changed = "customer_note" in clean
+    changed = "customer_note" in clean or "notes" in clean
     clean.pop("customer_note", None)
+    # Observação da linha ("sem cebola, é para o João"): texto livre de quem
+    # pediu. A cozinha já preparou; depois do esquecimento ela não tem uso.
+    clean.pop("notes", None)
 
     customization = clean.get("customization")
     if isinstance(customization, dict):

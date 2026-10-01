@@ -304,6 +304,34 @@ def remove_item(
     )
 
 
+#: Teto da observação de linha: o mesmo do PDV (``pos_intent``), para o
+#: cartão da cozinha ter a mesma régua venha a linha de onde vier.
+LINE_NOTES_MAX_LENGTH = 280
+
+
+@transaction.atomic
+def set_line_notes(
+    *,
+    session_key: str,
+    channel_ref: str,
+    line_id: str,
+    notes: str,
+) -> Session:
+    """Grava (ou apaga, com texto vazio) a observação de uma linha da sacola.
+
+    A chave canônica é ``meta["notes"]``, a mesma que o PDV escreve: é dela que
+    o ticket do KDS lê. Texto pessoal, então passa pela cerca de anonimização
+    do ``ModifyService``.
+    """
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    text = " ".join(str(notes or "").split())[:LINE_NOTES_MAX_LENGTH]
+    return session_service.modify_session(
+        session_key=session_key,
+        channel_ref=channel_ref,
+        ops=[{"op": "set_line_meta", "line_id": line_id, "meta": {"notes": text or None}}],
+    )
+
+
 def _whole(value: Decimal):
     """Quantidade de sacola como a tela a lê: inteiro quando é inteiro."""
     value = Decimal(str(value))

@@ -28,6 +28,7 @@ const { data: history, pending } = await useFetch<OrderHistoryResponse>(apiPath(
   query: computed(() => ({ filter: orderFilter.value })),
   lazy: true
 })
+useNavigationPending(pending)
 
 const orders = computed(() => history.value?.orders ?? [])
 // "Todos" separa em dois grupos: os ativos vivem em cor plena; os anteriores

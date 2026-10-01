@@ -202,6 +202,8 @@ def test_exclusao_limpa_texto_pessoal_das_tres_copias_do_meta_do_item():
     def meta_with(personal_text):
         return {
             "customer_note": personal_text,
+            # Observação da linha (PDV e loja): texto livre de quem pediu.
+            "notes": personal_text,
             "gift_wrap": True,
             "_disc": {"type": "manual", "amount_q": 100},
             "fiscal": {"ncm": "19059090"},

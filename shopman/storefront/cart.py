@@ -209,6 +209,21 @@ class CartService:
         )
 
     @staticmethod
+    def set_line_notes(request: HttpRequest, line_id: str, notes: str) -> Session:
+        """Grava a observação de uma linha da sacola (vazia apaga)."""
+        session_key = CartService._get_session_key(request)
+        if not session_key:
+            raise ValueError("No active cart")
+
+        CartService._link_customer(request, session_key)
+        return cart_mutations.set_line_notes(
+            session_key=session_key,
+            channel_ref=CHANNEL_REF,
+            line_id=line_id,
+            notes=notes,
+        )
+
+    @staticmethod
     def _get_line(session_key: str, line_id: str) -> dict | None:
         """Return the session line dict matching `line_id`, or None."""
         session = cart_mutations.get_open_session(session_key=session_key, channel_ref=CHANNEL_REF)

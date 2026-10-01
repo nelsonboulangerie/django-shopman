@@ -82,6 +82,12 @@ describe('storefront performance guardrails', () => {
     expect(home).toContain('lazy: true')
     expect(continuum).toContain('lazy: true')
     for (const path of lazyPages) expect(source(path)).toContain('lazy: true')
+    // Página preguiçosa avisa o NavigationFeedback que ainda espera o próprio
+    // dado; sem isto o page:finish cancela o aviso antes dos 200 ms.
+    for (const path of [...lazyPages, 'app/pages/menu.vue', 'app/pages/index.vue']) {
+      expect(source(path), path).toContain('useNavigationPending(')
+    }
+    expect(source('app/components/NavigationFeedback.vue')).toContain('useNavigationPendingRegistry()')
   })
 
   it('guards checkout against a second in-flight submit', () => {

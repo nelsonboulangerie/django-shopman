@@ -23,6 +23,12 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null
 let revealFrame: number | null = null
 let visibleSince = 0
+// A rota já terminou (page:finish), mas a página nova ainda espera o próprio
+// dado (projeção preguiçosa no cliente). O aviso segue o estado da página.
+let awaitingPage = false
+
+const pendingPages = useNavigationPendingRegistry()
+const pagePending = computed(() => Object.keys(pendingPages.value).length > 0)
 
 function copyForDestination (destination?: URL): WaitCopy {
   const path = destination?.pathname || ''
@@ -81,6 +87,7 @@ function begin (destination?: URL) {
   }
 
   active.value = true
+  awaitingPage = false
   clearRevealSchedule()
   clearHideSchedule()
   clearWatchdog()
@@ -105,6 +112,17 @@ function begin (destination?: URL) {
 }
 
 function finish () {
+  if (active.value && pagePending.value) {
+    // Rota pronta, página ainda carregando: o limiar de 200 ms continua valendo
+    // e o aviso aparece se a espera passar dele.
+    awaitingPage = true
+    return
+  }
+  settle()
+}
+
+function settle () {
+  awaitingPage = false
   active.value = false
   clearRevealSchedule()
   clearWatchdog()
@@ -120,6 +138,7 @@ function finish () {
 }
 
 function forceFinish () {
+  awaitingPage = false
   active.value = false
   clearRevealSchedule()
   clearHideSchedule()
@@ -165,6 +184,10 @@ function navigationIntent (event: MouseEvent) {
   // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
   begin(destination)
 }
+
+watch(pagePending, (stillPending) => {
+  if (!stillPending && awaitingPage) settle()
+})
 
 const removePageStart = nuxtApp.hook('page:start', () => begin())
 const removePageFinish = nuxtApp.hook('page:finish', finish)

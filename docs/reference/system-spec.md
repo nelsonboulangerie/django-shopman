@@ -232,7 +232,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
   10. Mark session `committed`.
   11. Enqueue diretivas pós-commit (ex.: preorder reminder D-1 09:00 se `delivery_date > today`).
   12. Mark idempotency `done`.
-- `ModifyService.modify_session(session_key, channel_ref, ops, ctx, channel_config)` — ops: `add_line, remove_line, set_qty, replace_sku, set_data, merge_lines`. Pricing modifiers (prefix `pricing.*`) rodam sempre; restantes filtrados por `channel_config.rules.modifiers`. Validators `stage="draft"`. Incrementa rev; limpa checks/issues. Enqueue check directives.
+- `ModifyService.modify_session(session_key, channel_ref, ops, ctx, channel_config)` — ops: `add_line, remove_line, set_qty, replace_sku, set_data, merge_lines, set_line_meta` (`set_line_meta` mescla chaves no `meta` de uma linha existente, valor vazio remove; interno, fora do `OpSerializer` da API REST). Pricing modifiers (prefix `pricing.*`) rodam sempre; restantes filtrados por `channel_config.rules.modifiers`. Validators `stage="draft"`. Incrementa rev; limpa checks/issues. Enqueue check directives.
 - `Order.transition_status(new_status, actor)` — atomicamente, valida contra `snapshot.lifecycle` ou `DEFAULT_TRANSITIONS`, seta timestamp, emit `OrderEvent + order_changed`.
 
 **Dispatch de directives** (`dispatch.py`)

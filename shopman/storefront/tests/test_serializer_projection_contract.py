@@ -82,6 +82,7 @@ MIRROR_CONTRACTS = [
 NON_MIRROR = {
     # Corpos de request (entrada, não projection).
     "SetSkuQtySerializer",
+    "SetLineNotesSerializer",
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",

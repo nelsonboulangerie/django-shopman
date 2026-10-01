@@ -87,6 +87,56 @@ class ModifyServiceAbandonedSessionTests(ModifyServiceBaseTests):
         self.assertEqual(ctx.exception.code, "already_abandoned")
 
 
+class ModifyServiceSetLineMetaTests(ModifyServiceBaseTests):
+    """set_line_meta: mescla chaves no meta da linha sem trocar a linha."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.session = Session.objects.create(
+            session_key="SET-LINE-META-SESSION",
+            channel_ref=self.channel.ref,
+            state="open",
+            pricing_policy="external",
+            items=[
+                {"line_id": "L1", "sku": "PAO", "qty": 2, "unit_price_q": 1000, "meta": {"batch_ref": "LOT-1"}},
+            ],
+        )
+
+    def _set(self, meta):
+        return ModifyService.modify_session(
+            session_key=self.session.session_key,
+            channel_ref=self.channel.ref,
+            ops=[{"op": "set_line_meta", "line_id": "L1", "meta": meta}],
+        )
+
+    def test_merges_key_and_keeps_line_identity(self) -> None:
+        session = self._set({"notes": "sem cebola"})
+
+        self.assertEqual(session.items[0]["line_id"], "L1")
+        self.assertEqual(session.items[0]["meta"], {"batch_ref": "LOT-1", "notes": "sem cebola"})
+        self.assertEqual(Decimal(str(session.items[0]["qty"])), Decimal("2"))
+
+    def test_none_or_empty_removes_key(self) -> None:
+        self._set({"notes": "sem cebola"})
+        session = self._set({"notes": ""})
+
+        self.assertEqual(session.items[0]["meta"], {"batch_ref": "LOT-1"})
+
+    def test_unknown_line_raises(self) -> None:
+        with self.assertRaises(ValidationError) as ctx:
+            ModifyService.modify_session(
+                session_key=self.session.session_key,
+                channel_ref=self.channel.ref,
+                ops=[{"op": "set_line_meta", "line_id": "NOPE", "meta": {"notes": "x"}}],
+            )
+        self.assertEqual(ctx.exception.code, "unknown_line_id")
+
+    def test_empty_patch_raises(self) -> None:
+        with self.assertRaises(ValidationError) as ctx:
+            self._set({})
+        self.assertEqual(ctx.exception.code, "invalid_meta")
+
+
 class ModifyServiceReplaceSKUTests(ModifyServiceBaseTests):
     """Tests for replace_sku operation."""
 

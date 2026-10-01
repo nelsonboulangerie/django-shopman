@@ -23,6 +23,7 @@ const { data: summary, pending } = await useFetch<AccountSummary>(apiPath('/api/
   headers: requestHeaders,
   lazy: true
 })
+useNavigationPending(pending)
 
 const greeting = computed(() => accountGreeting(
   summary.value?.customer_first_name || session.customerName.value,

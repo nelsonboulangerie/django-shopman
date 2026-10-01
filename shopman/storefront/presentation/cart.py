@@ -98,6 +98,9 @@ class CartItemProjection:
     # uma não cala a outra.
     is_made_to_order: bool = False
     made_to_order_label: str = ""
+    # Observação que o cliente escreveu para esta linha ("sem cebola"). Vai
+    # para a cozinha no ticket do KDS.
+    notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -365,6 +368,7 @@ def _present_line(
         confirmation_deadline_display=_deadline_display(line.confirmation_deadline_iso),
         planned_for_date=line.planned_for_date,
         planned_for_notice=_planned_for_notice(line, planned_notice_template),
+        notes=line.notes,
     )
 
 

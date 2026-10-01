@@ -8,6 +8,16 @@ class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
 
 
+class SetLineNotesSerializer(serializers.Serializer):
+    """Observação de uma linha da sacola. Texto vazio apaga.
+
+    O teto é o do PDV (``shop.services.cart.LINE_NOTES_MAX_LENGTH``): a cozinha
+    lê as duas no mesmo cartão.
+    """
+
+    notes = serializers.CharField(allow_blank=True, max_length=280, trim_whitespace=True)
+
+
 class CheckoutAddressLabelSerializer(serializers.Serializer):
     key = serializers.ChoiceField(choices=["home", "work", "other"])
     custom = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)

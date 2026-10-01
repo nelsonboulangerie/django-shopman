@@ -20,6 +20,7 @@ const { openSearch } = useSearchOverlay()
 
 const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 const { data, pending, error, refresh } = await useStorefrontHome()
+useNavigationPending(pending)
 await siteSeoReady
 
 watch(() => data.value, value => {

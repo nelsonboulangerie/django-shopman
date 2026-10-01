@@ -37,6 +37,7 @@ class ModifyService:
         "replace_sku",
         "set_data",
         "merge_lines",
+        "set_line_meta",
     }
 
     @staticmethod
@@ -351,6 +352,8 @@ class ModifyService:
             return ModifyService._op_set_data(items, data, op)
         elif op_type == "merge_lines":
             return ModifyService._op_merge_lines(items, data, op)
+        elif op_type == "set_line_meta":
+            return ModifyService._op_set_line_meta(items, data, op, session)
 
         return items, data
 
@@ -380,7 +383,9 @@ class ModifyService:
         if not session.is_anonymized or not isinstance(meta, dict):
             return
         customization = meta.get("customization")
-        has_personal_text = "customer_note" in meta or (
+        # ``notes`` é a observação da linha (cliente na loja, operador no PDV):
+        # texto livre, e por isso pessoal.
+        has_personal_text = bool({"customer_note", "notes"}.intersection(meta)) or (
             isinstance(customization, dict)
             and bool({"note", "text", "message"}.intersection(customization))
         )
@@ -439,6 +444,34 @@ class ModifyService:
                 item["qty"] = qty
                 # Clear line_total_q so _normalize_items recalculates it
                 item.pop("line_total_q", None)
+                break
+        else:
+            raise ValidationError(code="unknown_line_id", message="line_id não encontrado")
+        return items, data
+
+    @staticmethod
+    def _op_set_line_meta(items: list[dict], data: dict, op: dict, session: Session) -> tuple[list[dict], dict]:
+        """Mescla chaves em ``meta`` de uma linha existente, sem trocar a linha.
+
+        ``op["meta"]`` é um dict parcial: cada chave sobrescreve a da linha, e
+        valor ``None`` ou texto vazio remove a chave. O ``line_id`` não muda (a
+        cozinha e as reservas endereçam a linha por ele).
+        """
+        line_id = op.get("line_id")
+        patch = op.get("meta")
+        if not isinstance(patch, dict) or not patch:
+            raise ValidationError(code="invalid_meta", message="meta deve ser um dict não vazio")
+        written = {key: value for key, value in patch.items() if value not in (None, "")}
+        ModifyService._assert_line_meta_is_allowed(session, written)
+        for item in items:
+            if item["line_id"] == line_id:
+                meta = dict(item.get("meta") or {})
+                for key, value in patch.items():
+                    if value in (None, ""):
+                        meta.pop(key, None)
+                    else:
+                        meta[key] = value
+                item["meta"] = meta
                 break
         else:
             raise ValidationError(code="unknown_line_id", message="line_id não encontrado")

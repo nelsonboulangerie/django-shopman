@@ -1035,7 +1035,9 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
             sku=getattr(item, "sku", "") or "",
             name=getattr(item, "name", "") or getattr(item, "sku", "") or "",
             qty=json_quantity(item.qty),
-            notes=str(getattr(item, "notes", "") or ""),
+            # A observação da linha mora em ``meta["notes"]`` (PDV e loja);
+            # ``EffectiveItem`` e ``OrderItem`` não têm atributo ``notes``.
+            notes=str((item.meta or {}).get("notes") or ""),
             stock_warning="",
         )
         for item in items
