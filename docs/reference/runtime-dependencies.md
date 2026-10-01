@@ -169,6 +169,12 @@ reverse proxy/HTTPS
 Redis nao substitui o banco e nao e fila principal. Ele e infraestrutura
 compartilhada para limites, cache e realtime.
 
+O processo Daphne (`config/asgi.py`) congela os objetos do boot com
+`gc.freeze()` depois de montar a aplicacao, para que a coleta completa nao os
+percorra a cada pico (ver `config/gc_tuning.py`). Envs: `SHOPMAN_GC_FREEZE`
+(padrao ligado; `0` desliga) e `SHOPMAN_GC_THRESHOLD` (padrao vazio = limiares
+do Python; ex. `5000,10,10`).
+
 ## Deploy encapsulado
 
 O repositorio inclui `Dockerfile` e compose profiles para app/worker/release,
