@@ -11,9 +11,9 @@
 
 **Produção:** no ar a noite toda. Nenhuma escrita no spec vivo, nenhuma recuperação precisou ser
 usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
-na `home/` privada desde ~04:26 UTC, em investigação.
+na `home/` privada desde ~04:26 UTC; investigados, estão entre a Cloudflare e a DO, não no app (D15).
 
-**Mergeado (27 PRs):**
+**Mergeado (28 PRs):**
 
 | Frente | PR | O que mudou para você |
 |---|---|---|
@@ -43,13 +43,17 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 | Onda 2c miúdos | #1322 | PUT da sacola 478 → 198 consultas (reduzir) e 289 → 189 (aumentar); revisão independente: seguro |
 | Drift compara `run_command` | #1320 | Contra o vivo acusa exatamente o D14 e nada mais |
 | **Sacola perdia a reserva ao ajustar quantidade com fila** (defeito que estava no main) | #1323 | Ajuste ancora na data da linha; reduzir nunca falha nem perde o que existe; sobra que cai no pão pronto vira reserva comum. Duas revisões independentes (a 1ª segurou e achou 2 regressões, corrigidas). Regras abertas em D16 |
+| Seguimento: a margem da vitrine não leva o pão que a sacola já segurava | #1324 | Revisão independente com fuzz de 500 cenários: seguro. Limite declarado: com dois quants e a validade preferindo o outro, a unidade ainda pode se perder (pede mudança no Core; nunca vende a mais) |
+
+**Ao encerrar (09:05 UTC):** nada desta noite ficou dormindo. Todas as frentes estão mergeadas; abertos só
+ficam este relatório (#1299, entra na fila agora) e o #1293, de outra sessão (`CONFLICTING`).
+Saúde final: `/health/live` 200, `/health/ready` 200, `www` 200.
 
 **Na fila / aberto:**
 
 | Frente | PR | Estado |
 |---|---|---|
-| Seguimento do #1323: margem da vitrine ao devolver sobra | #1324 | na fila; revisão independente: seguro (fuzz de 500 cenários). Limite declarado: com dois quants e a validade preferindo o outro, a unidade ainda pode se perder (pede mudança no Core; não vende a mais) |
-| NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
+| NIGHT-REPORT | #1299 | na fila (só docs) |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
 
 **Precisa de você** (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):
