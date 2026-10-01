@@ -411,6 +411,25 @@ def test_estimate_for_order_caches_and_stores(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_estimate_for_order_sends_both_addresses(shop):
+    """A cotação leva o endereço da loja e o do cliente (obrigatórios na API de entregas)."""
+    import unittest.mock as mock
+
+    order = _delivery_order()
+    with mock.patch.object(courier_mock, "estimate", wraps=courier_mock.estimate) as spy:
+        courier.estimate_for_order(order)
+    kwargs = spy.call_args.kwargs
+    assert kwargs["pickup"] == {
+        "lat": "-23.3405000", "lng": "-51.1580000", "street": "Av. Madre Leônia Milito 446",
+        "neighborhood": "Bela Suíça", "city": "Londrina", "state": "PR",
+    }
+    assert kwargs["dropoff"] == {
+        "lat": "-23.31", "lng": "-51.16", "street": "Rua das Flores 123",
+        "neighborhood": "Centro", "city": "Londrina", "state": "PR",
+    }
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_estimate_for_order_none_without_coordinates(shop):
     order = _delivery_order(delivery_address_structured={"city": "Londrina"})
     assert courier.estimate_for_order(order) is None
@@ -667,3 +686,42 @@ def test_two_dispatch_workers_do_not_open_two_remote_rides(shop, monkeypatch):
     assert len(calls) == 1
     order.refresh_from_db()
     assert courier.has_active_ride(order)
+
+
+# ── ensaio a seco: o caminho inteiro do lifecycle, com o adapter mock ─────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ensaio_a_seco_despacho_status_e_cancelamento(shop):
+    """Pedido pronto → despacho → aceite por polling → cancelamento, pelo caminho real.
+
+    Mesmas peças que o worker usa em produção: ``lifecycle._on_ready`` enfileira,
+    os handlers de Directive executam, e o adapter é o mock no lugar da Machine.
+    """
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+    from shopman.shop.lifecycle import _on_ready
+
+    order = _delivery_order(ref="ENSAIO-1")
+    _on_ready(order, ChannelConfig.from_dict({"fulfillment": {"timing": "external", "courier": "auto"}}))
+
+    _run_dispatch(order)  # despacho: POST /abrirSolicitacao
+    ride = courier.get_block(order)["id_mch"]
+    assert ride == "MOCK-ENSAIO-1"
+    assert courier.get_block(order)["status"] == "D"
+
+    courier_mock.set_status(ride, "A")  # a central aceitou
+    sync = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref)
+    Directive.objects.filter(pk=sync.pk).update(status=Directive.Status.DONE)
+    CourierSyncHandler().handle(message=sync, ctx={})  # status: GET /solicitacaoStatus
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["status"] == "A"
+    assert block["driver"]["name"] == "Entregador Mock"  # detalhes: GET /v1/request/{id}
+    assert block["tracking_url"] == f"https://rastreio.mock/pedido/{ride}"  # GET /obterLinkRastreio/{id}
+
+    task = courier.cancel_ride(order, actor="ensaio")
+    CourierCancelHandler().handle(message=task, ctx={})  # cancelamento: POST /cancelar
+    order.refresh_from_db()
+    assert courier_mock.rides()[ride]["status"] == "C"
+    assert not courier.has_active_ride(order)
