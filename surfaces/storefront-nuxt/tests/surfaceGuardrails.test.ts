@@ -1383,13 +1383,16 @@ describe('surface UX guardrails', () => {
     expect(tracking).toContain('const rating = ref(0)')
   })
 
+  // D1 (opção 3): desabilitar até hidratar deixava o cardápio com cara de
+  // indisponível. O botão nasce ativo e o toque precoce é guardado e repetido
+  // (utils/earlyTap.ts); a trava completa está em pendingActionGuardrails.test.ts.
   it('prevents dead add-to-cart taps before client hydration', () => {
     const action = read('app/components/CartQuantityAction.vue')
 
     expect(action).toContain('const hydrated = ref(false)')
     expect(action).toContain('onMounted')
-    expect(action).toContain('!hydrated.value')
-    expect(action).toContain(':disabled="!hydrated || disabled || pending"')
+    expect(action).toContain(':data-early-tap="earlyTap"')
+    expect(action).not.toContain(':disabled="!hydrated')
   })
 
   it('serves the storefront locally on its reserved dev port at the root path', () => {

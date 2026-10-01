@@ -571,6 +571,11 @@ const { reveal } = useNextFocus(focusKey, { initialReveal: 'always' })
 // `reason` nunca é decorativo: botão desabilitado no lugar mais nobre da tela
 // tem que dizer o que falta (a sacola vazia já fazia isso, virando "Adicionar
 // itens" em vez de um "Revisar pedido" morto).
+// Navegação também pende: em rede lenta o pedaço da rota demora, e o toque precisa
+// de resposta enquanto isso (clique nunca inerte).
+const { run: goToMenu, pending: goingToMenu } = usePendingAction(async () => { await navigateTo('/menu') })
+const { run: adjustCartForPix, pending: adjustingCartForPix } = usePendingAction(async () => { await navigateTo('/sacola') })
+
 interface CheckoutPrimaryAction {
   label: string
   icon: string
@@ -625,7 +630,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
   // Sacola vazia é beco sem saída se o botão só ficar apagado: vira o caminho
   // de volta ao cardápio, ativo.
   if (bagIsEmpty.value) {
-    return { label: 'Adicionar itens', icon: 'lucide:utensils', loading: false, disabled: false, reason: 'Sacola vazia.', run: goToMenu }
+    return { label: 'Adicionar itens', icon: 'lucide:utensils', loading: goingToMenu.value, disabled: false, reason: 'Sacola vazia.', run: goToMenu }
   }
   return {
     label: 'Revisar pedido',
@@ -1154,10 +1159,6 @@ function validate (): boolean {
   return true
 }
 
-async function goToMenu () {
-  await navigateTo('/menu')
-}
-
 function changeFromPix () {
   const alternative = paymentMethods.value.find(method => method.ref !== 'pix')
   state.payment_method = ''
@@ -1165,10 +1166,6 @@ function changeFromPix () {
   reveal(() => (alternative
     ? document.getElementById(`checkout-payment-${alternative.ref}`)
     : document.querySelector<HTMLElement>('[data-checkout-payment-option]')), { align: 'center' })
-}
-
-async function adjustCartForPix () {
-  await navigateTo('/sacola')
 }
 
 async function goToAuthRoute () {
@@ -1589,6 +1586,7 @@ useSeoMeta({
                     icon="lucide:plus"
                     class="mt-3 w-full"
                     data-checkout-minimum-add-items
+                    :loading="goingToMenu"
                     @click="goToMenu"
                   >
                     {{ cart.delivery_minimum_progress.add_more_cta || 'Adicionar mais itens' }}
@@ -1873,7 +1871,7 @@ useSeoMeta({
                     <UiButton type="button" variant="outline" class="w-full sm:w-auto" @click="changeFromPix">
                       Trocar forma de pagamento
                     </UiButton>
-                    <UiButton type="button" variant="outline" class="w-full sm:w-auto" @click="adjustCartForPix">
+                    <UiButton type="button" variant="outline" class="w-full sm:w-auto" :loading="adjustingCartForPix" @click="adjustCartForPix">
                       Ajustar itens
                     </UiButton>
                   </div>
