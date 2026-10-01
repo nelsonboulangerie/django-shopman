@@ -1,24 +1,19 @@
 # NIGHT-SHIFT BRIEF — turno autônomo de 30/09 para 01/10/2026
 
+> 🚪 **ENTRADA ÚNICA (desde 01/10/2026): [`docs/reports/go-live-acceleration-20260929/HANDOFF.md`](../reports/go-live-acceleration-20260929/HANDOFF.md).**
+> Comece por ele, sempre. Ele diz o estado atual, o que está em voo, as armadilhas e a ordem de
+> leitura dos outros documentos (NIGHT-REPORT, PENDING-DECISIONS, diagnósticos). Este brief é o
+> registro histórico do turno de 30/09 para 01/10: as regras das seções 1 a 5 continuam valendo,
+> mas a fila da seção 6 já foi executada e não é mais a fila do momento.
+
 > **Você (Claude) é o coordenador desta madrugada.** O dono está fora do computador e não vai
 > responder. Nada aqui depende dele para andar — o que depender vai para `PENDING-DECISIONS.md`
 > e você segue para a próxima frente.
 >
-> **LEIA ESTE ARQUIVO INTEIRO ANTES DE QUALQUER COISA.** E **releia antes de cada frente nova** —
-> ele pode ter sido completado depois que você o leu pela primeira vez.
+> *(Texto original do turno de 30/09.)* Leia este arquivo inteiro para as regras de convivência
+> e de deploy; o estado e a fila do momento estão no HANDOFF acima.
 
-**Handshake — JÁ ESTÁ COMPLETA.** A seção 6.2 (observações do dono) e a 6.4 (o que fazer na
-madrugada) estão preenchidas. Se você leu uma versão sem elas, **releia agora**:
-`git fetch origin && git show origin/dsh/handoff-onda1-e-p7-20260930:docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md`
-
-⚠️ **AÇÃO SUA (pequena):** esta versão está **no branch** `dsh/handoff-onda1-e-p7-20260930` e **ainda
-NÃO está no `main`** — o PR anterior mergeou a versão antiga. **Abra um PR deste branch para `main`**
-para a seção 6.2 sobreviver à noite. É só documentação, sem código.
-Os 5 relatórios de diagnóstico estão no mesmo branch, em
-`docs/reports/go-live-acceleration-20260930-diag/`.
-
-**Contexto que você precisa:** `docs/reports/go-live-acceleration-20260929/HANDOFF.md` (estado,
-armadilhas, o que já foi feito) e `docs/coordination/DECISIONS.md` (D-001 a D-009).
+**Handshake:** concluída. As seções 6.2 e 6.4 estão no `main` (#1297, #1302).
 
 ---
 
