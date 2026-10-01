@@ -71,7 +71,7 @@ jobs:
     # seis horas toda quarta, sem ninguém olhando.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Decidir se a base já está velha
         id: idade
