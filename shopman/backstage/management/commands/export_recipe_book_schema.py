@@ -29,6 +29,7 @@ from shopman.backstage.projections.recipe_book import (
     FormulaWarningProjection,
     IngredientOptionProjection,
     KindOptionProjection,
+    QualityShareProjection,
     RecipeBookAccessProjection,
     RecipeBookListProjection,
     RecipeCaptureDraftProjection,
@@ -38,8 +39,11 @@ from shopman.backstage.projections.recipe_book import (
     RecipeEntryCardProjection,
     RecipeEntryDetailProjection,
     RecipeReferenceProjection,
+    RecipeUsageProjection,
     RecipeVersionProjection,
     ReferenceRangeProjection,
+    UsageCaveatProjection,
+    VersionUsageProjection,
 )
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
@@ -57,6 +61,10 @@ CONTRACT_DATACLASSES = (
     FormulaWarningProjection,
     FormulaLensProjection,
     RecipeVersionProjection,
+    UsageCaveatProjection,
+    QualityShareProjection,
+    VersionUsageProjection,
+    RecipeUsageProjection,
     RecipeEntryDetailProjection,
     RecipeCompareRowProjection,
     RecipeCompareMetricProjection,

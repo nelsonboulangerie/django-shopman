@@ -506,6 +506,7 @@ class StorefrontMenuView(APIView):
             "availability_ms": timing.durations_ms.get("availability", 0.0),
             "personalization_ms": timing.durations_ms.get("personalization", 0.0),
             "db_ms": timing.durations_ms.get("db", 0.0),
+            **timing.fixed_cost_fields(),
         }
 
         # O tamanho é o do corpo que sai, medido depois que o DRF o renderiza:

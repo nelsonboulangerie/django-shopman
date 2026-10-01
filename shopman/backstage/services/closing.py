@@ -85,6 +85,7 @@ def perform_day_closing(
             data={
                 "items": snapshot,
                 "production_summary": production_summary(closing_date),
+                "production_by_version": production_summary_by_version(closing_date),
                 "pending_production": _pending_production_snapshot(closing_date),
                 "cash_shift_summary": cash_summary,
                 "reconciliation_errors": _reconciliation_errors(
@@ -337,6 +338,126 @@ def production_summary(closing_date: date) -> dict:
         if "quality" in row:
             row["quality"] = {ref: _json_qty(qty) for ref, qty in row["quality"].items()}
     return summary
+
+
+# ── Leitura por VERSÃO da receita (reputação, fatia 1) ───────────────────────
+#
+# A pergunta "a v3 rende mais que a v2?" já tem o dado: o plano da fornada
+# congela ``Recipe.meta["version_ref"]`` em ``WorkOrder.meta["_recipe_snapshot"]``.
+# Esta é a segunda chave de agrupamento, ao lado (nunca no lugar) da agregação
+# por receita: ``production_summary`` segue intacto para os leitores de hoje.
+#
+# Os avisos viajam no próprio dado, porque o número sozinho mente de três jeitos:
+
+#: A perda é ``(iniciado ou planejado) − concluído``: resíduo contábil, não
+#: medida. Massa na bacia, aparas e peça não anotada entram todas aqui; uma
+#: ordenação por perda ordenaria por quem anota melhor.
+CAVEAT_LOSS_IS_RESIDUAL = "loss_is_residual"
+#: Fornada sem carimbo de versão (ficha nunca publicada pelo inventário, ou
+#: planejada antes da publicação) fica no balde "sem versão" e NUNCA é atribuída
+#: a versão nenhuma: não há como saber qual fórmula ela executou.
+CAVEAT_UNVERSIONED_NOT_ATTRIBUTED = "unversioned_not_attributed"
+
+VERSION_CAVEATS = (CAVEAT_LOSS_IS_RESIDUAL, CAVEAT_UNVERSIONED_NOT_ATTRIBUTED)
+
+
+def work_order_version_ref(work_order) -> str:
+    """O ``version_ref`` congelado no plano da fornada; ``""`` quando não há carimbo."""
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot")
+    if not isinstance(snapshot, dict):
+        return ""
+    return str(snapshot.get("version_ref") or "").strip()
+
+
+def aggregate_by_version(work_orders) -> list[dict]:
+    """Fornadas agrupadas por ``(receita, versão)``, em ``Decimal``.
+
+    Mesma conta do ``production_summary`` (planejado de todas as ordens;
+    concluído e perda das concluídas), mais a contagem de fornadas e a base de
+    rendimento das executadas. A soma das linhas de uma receita bate com a
+    linha dela no resumo por receita — é a mesma fonte, outra chave.
+
+    ``work_orders`` é um queryset de ``WorkOrder``; os eventos ``started`` vêm
+    num prefetch (``started_qty`` por ordem seria uma consulta por fornada).
+    """
+    from django.db.models import Prefetch
+    from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
+
+    started_events = WorkOrderEvent.objects.filter(kind=WorkOrderEvent.Kind.STARTED).order_by("-seq")
+    qs = work_orders.select_related("recipe").prefetch_related(
+        Prefetch("events", queryset=started_events, to_attr="_started_events")
+    )
+
+    zero = Decimal("0")
+    rows: dict[tuple[str, str], dict] = {}
+    key_by_pk: dict[int, tuple[str, str]] = {}
+    for wo in qs:
+        version_ref = work_order_version_ref(wo)
+        key = (wo.recipe.ref, version_ref)
+        key_by_pk[wo.pk] = key
+        row = rows.setdefault(
+            key,
+            {
+                "recipe_ref": wo.recipe.ref,
+                "version_ref": version_ref,
+                "versioned": bool(version_ref),
+                "output_sku": wo.output_sku,
+                "batches": 0,
+                "executed": 0,
+                "planned": zero,
+                "executed_planned": zero,
+                "executed_started": zero,
+                "finished": zero,
+                "loss": zero,
+            },
+        )
+        row["batches"] += 1
+        row["planned"] += wo.quantity or zero
+        if wo.finished is None:
+            continue
+        events = getattr(wo, "_started_events", None) or []
+        started = Decimal(str(events[0].payload.get("quantity", "0"))) if events else None
+        base = (started or wo.quantity) or zero
+        row["executed"] += 1
+        row["executed_planned"] += wo.quantity or zero
+        row["executed_started"] += base
+        row["finished"] += wo.finished or zero
+        row["loss"] += max(zero, base - wo.finished)
+
+    if key_by_pk:
+        quality_lines = (
+            WorkOrderItem.objects.filter(work_order_id__in=key_by_pk, kind=WorkOrderItem.Kind.OUTPUT)
+            .exclude(quality_grade_ref="")
+            .values_list("work_order_id", "quality_grade_ref", "quantity")
+        )
+        for wo_id, grade_ref, quantity in quality_lines:
+            grades = rows[key_by_pk[wo_id]].setdefault("quality", {})
+            grades[grade_ref] = grades.get(grade_ref, zero) + (quantity or zero)
+
+    return [rows[key] for key in sorted(rows)]
+
+
+def production_summary_by_version(closing_date: date) -> dict:
+    """Resumo de produção do dia por VERSÃO da receita, com os avisos no dado.
+
+    Persistido em ``DayClosing.data["production_by_version"]`` ao lado de
+    ``production_summary`` (que não muda). Fornada sem carimbo de versão sai
+    numa linha ``versioned: false`` da sua receita, nunca somada a uma versão.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    rows = []
+    for row in aggregate_by_version(WorkOrder.objects.filter(target_date=closing_date)):
+        out = {
+            key: row[key]
+            for key in ("recipe_ref", "version_ref", "versioned", "output_sku", "batches", "executed")
+        }
+        for key in ("planned", "finished", "loss"):
+            out[key] = _json_qty(row[key])
+        if "quality" in row:
+            out["quality"] = {ref: _json_qty(qty) for ref, qty in row["quality"].items()}
+        rows.append(out)
+    return {"caveats": list(VERSION_CAVEATS), "rows": rows}
 
 
 def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dict]:

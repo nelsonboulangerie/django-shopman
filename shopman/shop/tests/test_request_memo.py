@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel, Promotion, Shop
-from shopman.shop.request_memo import request_memo_scope
+from shopman.shop.request_memo import RequestMemoMiddleware, request_memo_scope
 from shopman.shop.services import channel_switch
 
 pytestmark = pytest.mark.django_db
@@ -91,3 +93,76 @@ def test_promotion_channel_scope_uses_the_prefetch(web):
         assert loaded.applies_to_channel("web") is True
         assert loaded.applies_to_channel("pdv") is False
     assert ctx.captured_queries == []
+
+
+# ── Shop.load: a mesma instância no request, relida entre requests ───────────
+
+
+def _shop_queries(ctx) -> int:
+    return sum('"shop_shop"' in q["sql"] for q in ctx.captured_queries)
+
+
+def test_inside_a_request_the_shop_is_the_same_instance(web):
+    from django.core.cache import cache
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+
+    cache.delete(SHOP_CACHE_KEY)
+    with request_memo_scope(), CaptureQueriesContext(connection) as ctx:
+        first = Shop.load()
+        assert Shop.load() is first
+        ChannelConfig.for_channel("web")  # a cascata também pergunta pela loja
+        assert Shop.load() is first
+    assert _shop_queries(ctx) == 1
+
+
+def test_without_scope_every_call_goes_to_the_cache(web):
+    with patch("shopman.shop.models.shop.cache.get", return_value=None) as cache_get:
+        assert Shop.load() is not Shop.load()
+    assert cache_get.call_count == 2
+
+
+def test_each_request_reads_the_shop_again(rf, web):
+    """Duas passagens pelo middleware: dentro, uma instância; entre elas, a gravada."""
+    seen = []
+
+    def view(request):
+        seen.append((Shop.load(), Shop.load()))
+        return None
+
+    middleware = RequestMemoMiddleware(view)
+    middleware(rf.get("/"))
+
+    shop = Shop.objects.get()
+    shop.name = "Nelson Boulangerie"
+    shop.save()
+
+    middleware(rf.get("/"))
+
+    (first_a, first_b), (second_a, second_b) = seen
+    assert first_a is first_b
+    assert second_a is second_b
+    assert first_a is not second_a
+    assert first_a.name == "Nelson"
+    assert second_a.name == "Nelson Boulangerie"
+
+
+def test_saving_the_shop_inside_the_request_is_seen(web):
+    with request_memo_scope():
+        assert Shop.load().name == "Nelson"
+        shop = Shop.objects.get()
+        shop.name = "Nelson Boulangerie"
+        shop.save()
+        assert Shop.load().name == "Nelson Boulangerie"
+
+
+def test_mutating_the_config_does_not_leak_into_the_shop(web):
+    shop = Shop.objects.get()
+    shop.defaults = {"payment": {"method": ["pix"]}}
+    shop.save()
+    with request_memo_scope():
+        first = ChannelConfig.for_channel("web")
+        assert first.payment.method == ["pix"]
+        first.payment.method.append("cash")
+        assert ChannelConfig.for_channel("web").payment.method == ["pix"]
+        assert Shop.load().defaults == {"payment": {"method": ["pix"]}}
