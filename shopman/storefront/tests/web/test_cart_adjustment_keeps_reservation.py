@@ -72,6 +72,14 @@ def _receive_ready(product, qty: str):
     )
 
 
+def _set_margin(channel, margin: int):
+    """A margem da vitrine do canal (``stock.safety_margin``; o alpha usa 2)."""
+    cfg = dict(channel.config or {})
+    cfg["stock"] = {**(cfg.get("stock") or {}), "safety_margin": margin}
+    channel.config = cfg
+    channel.save(update_fields=["config"])
+
+
 def _set_qty(client, sku, qty):
     return client.put(
         f"/api/v1/cart/skus/{sku}/",
@@ -211,6 +219,70 @@ class TestShrinkNeverFails:
         assert resp.status_code == 200, resp.content[:400]
         assert _line_qty(client, product.sku) == 2
         assert _reserved(product.sku) == Decimal("1"), "a reserva fica com o que existe"
+
+
+    @pytest.mark.parametrize("margin", [0, 2])
+    def test_shrink_after_a_loss_keeps_the_unit_the_cart_held_whatever_the_margin(
+        self, client, channel, product, margin,
+    ):
+        """5 prontos, sacola com 3, a perda deixa o quant com 1, o cliente pede 2.
+
+        O pão que sobrou é da sacola: ela o segurava antes da perda. Com a
+        margem 2 (a do alpha) a devolução reaplicava a margem e, com o livre do
+        quant (1) abaixo dela, a sacola ficava com ZERO reservado, embora o pão
+        existisse. A margem protege a vitrine do estoque que ninguém segura,
+        não o que a própria sacola já tinha.
+        """
+        _ensure_listing_item(channel, product, price_q=90)
+        _set_margin(channel, margin)
+        _receive_ready(product, "5")
+        assert _set_qty(client, product.sku, 3).status_code == 200
+        quant = Quant.objects.get(sku=product.sku, target_date__isnull=True)
+        StockMovements.adjust(quant, Decimal("1"), reason="perda")
+
+        resp = _set_qty(client, product.sku, 2)
+
+        assert resp.status_code == 200, resp.content[:400]
+        assert _line_qty(client, product.sku) == 2
+        holds = _active_holds(product.sku)
+        assert sum(h.quantity for h in holds) == Decimal("1"), "a reserva fica com o pão que existe"
+        assert {h.quant_id for h in holds} == {quant.pk}
+        assert all(is_cart_hold(h) and h.expires_at is not None for h in holds)
+        quant.refresh_from_db()
+        assert quant.available == Decimal("0"), "nunca reserva além do que existe"
+
+    @pytest.mark.parametrize(("margin", "reserved"), [(2, "1"), (1, "2"), (0, "2")])
+    def test_the_margin_still_guards_stock_the_cart_never_held(
+        self, client, channel, product, margin, reserved,
+    ):
+        """A sobra só dispensa a margem no quant que já era da sacola.
+
+        5 prontos (quant A), sacola com 3; depois chegam 2 do dia (quant B),
+        que a sacola nunca segurou. A perda deixa A com 1 e o cliente pede 2.
+        Com margem 2 só o 1 de A volta (sem margem, era da sacola) e B fica
+        inteiro na vitrine; com margem menor, a sobra inteira cabe com a margem
+        valendo. Em todos, o livre que sobra nunca fica abaixo da margem.
+        """
+        _ensure_listing_item(channel, product, price_q=90)
+        _set_margin(channel, margin)
+        _receive_ready(product, "5")
+        assert _set_qty(client, product.sku, 3).status_code == 200
+        own = Quant.objects.get(sku=product.sku, target_date__isnull=True)
+        _receive_today(product, "2")
+        other = Quant.objects.get(sku=product.sku, target_date=date.today())
+        StockMovements.adjust(own, Decimal("1"), reason="perda")
+
+        resp = _set_qty(client, product.sku, 2)
+
+        assert resp.status_code == 200, resp.content[:400]
+        assert _line_qty(client, product.sku) == 2
+        assert _reserved(product.sku) == Decimal(reserved)
+        own.refresh_from_db()
+        other.refresh_from_db()
+        assert own.available >= 0 and other.available >= 0, "nunca reserva além do que existe"
+        assert own.available + other.available >= Decimal(margin), "a margem vale no estoque alheio"
+        if margin == 2:
+            assert own.available == Decimal("0") and other.available == Decimal("2")
 
 
 class TestTodayStockAdjustments:
