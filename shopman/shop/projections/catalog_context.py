@@ -683,17 +683,39 @@ def availability_for_skus(
         return {}
     if target_date is not None:
         try:
-            from shopman.stockman.services.availability import availability_for_skus as _availability_for_skus
+            from shopman.shop.services.availability import stock_on_dates
 
-            return _availability_for_skus(
+            return stock_on_dates(
                 skus,
-                target_date=target_date,
+                [target_date],
                 **_channel_scope_kwargs(channel_ref),
-            )
+            )[target_date]
         except Exception as exc:
             logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)
             return {}
     return availability_and_today_for_skus(skus, channel_ref=channel_ref)[0]
+
+
+def warm_availability_for_skus(skus: list[str], *, channel_ref: str) -> None:
+    """Lê de uma vez, para o memo do request, o que vários chamadores vão pedir.
+
+    A sacola lê as linhas dela e o trilho de sugestão lê os candidatos: dois
+    conjuntos que não se cruzam, e cada leitura do Stockman tem um custo fixo
+    de ~10 consultas. Quem já sabe os dois conjuntos chama isto com a união
+    ANTES; depois cada chamador faz a própria pergunta, do jeito de sempre
+    (:func:`availability_for_skus` com os seus SKUs, as suas datas candidatas
+    da fila), e encontra tudo no memo.
+
+    Nada é devolvido nem decidido aqui: é só leitura antecipada. Sem memo ativo
+    (fora de GET, ou depois de uma escrita no request) não faz nada, para não
+    pagar uma leitura que ninguém vai reaproveitar.
+    """
+    from shopman.shop import request_memo
+
+    unique = list(dict.fromkeys(sku for sku in skus if sku))
+    if not unique or not request_memo.stock_reads_active():
+        return
+    availability_and_today_for_skus(unique, channel_ref=channel_ref)
 
 
 def _channel_scope_kwargs(channel_ref: str) -> dict:
@@ -746,9 +768,9 @@ def availability_and_today_for_skus(
         return {}, {}
     try:
         from django.utils import timezone
-        from shopman.stockman.services.availability import availability_for_skus_on_dates
 
         from shopman.shop.services import waitlist
+        from shopman.shop.services.availability import stock_on_dates
 
         kwargs = _channel_scope_kwargs(channel_ref)
         today = timezone.localdate()
@@ -764,7 +786,7 @@ def availability_and_today_for_skus(
         if combined is not None:
             current, next_batches = combined
         else:
-            current = availability_for_skus_on_dates(read_skus, [today], **kwargs)[today]
+            current = stock_on_dates(read_skus, [today], **kwargs)[today]
             next_batches = waitlist.next_batch_availability_for_skus(
                 skus,
                 channel_ref=channel_ref,
@@ -805,20 +827,19 @@ def _read_today_and_next_batches(
     datas futuras falhar — a fila degrada sozinha para vazio, e o pronto de
     hoje não pode cair junto com ela.
     """
-    from shopman.stockman.services.availability import availability_for_skus_on_dates
-
     from shopman.shop.services import waitlist
+    from shopman.shop.services.availability import stock_on_dates
 
     if not channel_ref:
         return None
     candidates = waitlist.candidate_batch_dates(skus, channel_ref=channel_ref)
     if not candidates:
         # Fila desligada, ou nenhuma fornada no horizonte: não há o que mesclar.
-        return availability_for_skus_on_dates(read_skus, [today], **kwargs)[today], {}
+        return stock_on_dates(read_skus, [today], **kwargs)[today], {}
     try:
         if not _same_scope_kwargs(waitlist.scope_kwargs(channel_ref), kwargs):
             return None
-        by_date = availability_for_skus_on_dates(read_skus, [today, *candidates], **kwargs)
+        by_date = stock_on_dates(read_skus, [today, *candidates], **kwargs)
         next_batches = waitlist.first_batch_with_planned(skus, candidates, by_date)
     except Exception:
         logger.debug("catalog_availability.single_read degraded; reading separately", exc_info=True)

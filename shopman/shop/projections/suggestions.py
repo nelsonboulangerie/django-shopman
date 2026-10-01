@@ -122,7 +122,7 @@ def suggest(
     if not candidates:
         return ()
 
-    products = _passing_the_gates(list(candidates), channel_ref=channel_ref)
+    products = _passing_the_gates(list(candidates), channel_ref=channel_ref, cart_skus=cart_skus)
     if not products:
         return ()
 
@@ -242,7 +242,12 @@ def _pairing_pool(cart_skus: set[str], rule: dict, *, cart_products) -> list[str
 # --- os portões ------------------------------------------------------------
 
 
-def _passing_the_gates(skus: list[str], *, channel_ref: str) -> dict[str, object]:
+def _passing_the_gates(
+    skus: list[str],
+    *,
+    channel_ref: str,
+    cart_skus: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, object]:
     """``{sku: Product}`` do que dá para ADICIONAR agora, neste canal.
 
     Os mesmos portões do cardápio, e pela mesma razão que o carrinho já os
@@ -257,6 +262,12 @@ def _passing_the_gates(skus: list[str], *, channel_ref: str) -> dict[str, object
 
     visible = catalog_context.visible_skus_in_channel(skus, channel_ref)
     listing_sellable = catalog_context.listing_sellable_map(skus, channel_ref)
+    # A sacola lê as linhas dela no mesmo request (``cart.build_cart``): a
+    # leitura antecipada põe candidatos e sacola numa leitura só do Stockman,
+    # e cada pergunta abaixo (e a da sacola) sai do memo do request.
+    catalog_context.warm_availability_for_skus(
+        [*skus, *sorted(cart_skus)], channel_ref=channel_ref,
+    )
     avail_map, _own = _availability(skus, "", channel_ref)
 
     products = {

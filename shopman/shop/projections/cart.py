@@ -248,6 +248,11 @@ def build_cart(
 
     skus = [item.get("sku", "") for item in raw_items]
     names_by_sku, made_to_order, sellable = _product_facts(skus)
+    # O trilho de sugestão vem ANTES das linhas: ele conhece os candidatos e a
+    # sacola, e lê os dois de uma vez para o memo do request (GET); a leitura
+    # das linhas, logo abaixo, sai do memo. A resposta é a mesma: o trilho só
+    # depende do conjunto de SKUs da sacola, que já está decidido aqui.
+    upsell = _upsell(set(skus), channel_ref=channel_ref)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
     planned_by_sku = _planned_holds(session_key, skus)
 
@@ -306,7 +311,6 @@ def build_cart(
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
     delivery_minimum = build_delivery_minimum_progress(threshold_base_q, channel_ref)
     free_delivery = build_free_delivery_progress(threshold_base_q, channel_ref)
-    upsell = _upsell({line.sku for line in lines}, channel_ref=channel_ref)
 
     can_checkout, block_reason = _checkout_eligibility(
         is_empty=False,

@@ -231,17 +231,104 @@ def own_holds_by_sku(session_key: str, skus: list[str]) -> dict[str, Decimal]:
         logger.debug("availability.own_holds_by_sku degraded; returning {}", exc_info=True)
         return {}
 
-    rows = (
-        Hold.objects.filter(
-            metadata__reference=session_key,
-            sku__in=skus,
-            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+    def read(missing: list[str]) -> dict[str, Decimal]:
+        rows = (
+            Hold.objects.filter(
+                metadata__reference=session_key,
+                sku__in=missing,
+                status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            )
+            .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+            .values("sku")
+            .annotate(total=Sum("quantity"))
         )
-        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
-        .values("sku")
-        .annotate(total=Sum("quantity"))
-    )
-    return {row["sku"]: row["total"] or Decimal("0") for row in rows}
+        return {row["sku"]: row["total"] or Decimal("0") for row in rows}
+
+    # No GET, o cardápio e a sacola perguntam pelos holds da MESMA sessão no
+    # mesmo request: cada SKU vai ao banco uma vez (``None`` = sem hold ativo).
+    from shopman.shop import request_memo
+
+    bucket = request_memo.stock_bucket(("own_holds", session_key))
+    if bucket is None:
+        return read(list(skus))
+    missing = [sku for sku in dict.fromkeys(skus) if sku not in bucket]
+    if missing:
+        fresh = read(missing)
+        for sku in missing:
+            bucket[sku] = fresh.get(sku)
+    return {sku: bucket[sku] for sku in dict.fromkeys(skus) if bucket.get(sku) is not None}
+
+
+def stock_on_dates(
+    skus: list[str],
+    dates: list[date],
+    **scope,
+) -> dict[date, dict[str, dict]]:
+    """``stockman.availability_for_skus_on_dates`` com memo por request (GET/HEAD).
+
+    O cardápio, as linhas da sacola e os portões do trilho de sugestão leem o
+    estoque dos mesmos SKUs, no mesmo canal e nas mesmas datas, dentro de um
+    request. Aqui cada par (SKU, data) vai ao Stockman uma vez por recorte de
+    canal: quem pergunta depois recebe o que já foi lido e só lê o que falta.
+
+    É a mesma resposta porque a leitura de um SKU numa data não depende dos
+    outros SKUs nem das outras datas do lote (provado em
+    ``stockman/tests/test_availability_on_dates.py``). A chave tem o recorte
+    (tipo a tipo: ``0`` e ``0.0`` somam diferente), o dia de hoje e a data.
+    Os holds da própria sessão NÃO entram aqui: a leitura do Stockman é a de
+    todo mundo, e quem desconta o hold da sessão é o chamador
+    (:func:`own_holds_by_sku`), depois.
+
+    Devolve cópias: quem recebe pode mexer no ``dict`` sem tocar o memo.
+    Fora do memo (comando, worker, request que muta) é a leitura direta.
+    """
+    from django.utils import timezone
+    from shopman.stockman.services.availability import availability_for_skus_on_dates
+
+    from shopman.shop import request_memo
+
+    unique_dates = list(dict.fromkeys(dates))
+    unique_skus = list(dict.fromkeys(skus))
+    if not unique_skus or not unique_dates:
+        return availability_for_skus_on_dates(skus, dates, **scope)
+    try:
+        base = ("stock_on_dates", _scope_key(scope), timezone.localdate())
+        hash(base)
+    except TypeError:
+        return availability_for_skus_on_dates(skus, dates, **scope)
+    buckets = {on: request_memo.stock_bucket((*base, on)) for on in unique_dates}
+    if any(bucket is None for bucket in buckets.values()):
+        return availability_for_skus_on_dates(skus, dates, **scope)
+
+    missing = [sku for sku in unique_skus if any(sku not in buckets[on] for on in unique_dates)]
+    if missing:
+        fresh = availability_for_skus_on_dates(missing, unique_dates, **scope)
+        for on in unique_dates:
+            for sku, info in (fresh.get(on) or {}).items():
+                buckets[on].setdefault(sku, info)
+    return {
+        on: {sku: _copy_reading(buckets[on][sku]) for sku in unique_skus if sku in buckets[on]}
+        for on in unique_dates
+    }
+
+
+def _scope_key(scope: dict) -> tuple:
+    def freeze(value):
+        if isinstance(value, (list, tuple)):
+            return (type(value).__name__, tuple(value))
+        if isinstance(value, (set, frozenset)):
+            return (type(value).__name__, tuple(sorted(value)))
+        return (type(value).__name__, value)
+
+    return tuple(sorted((key, freeze(value)) for key, value in scope.items()))
+
+
+def _copy_reading(value):
+    if isinstance(value, dict):
+        return {key: _copy_reading(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_reading(item) for item in value]
+    return value
 
 
 def decide(

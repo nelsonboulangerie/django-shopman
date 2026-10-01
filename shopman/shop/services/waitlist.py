@@ -93,7 +93,7 @@ def next_batch_availability_for_skus(
     if horizon <= today:
         return {}
     try:
-        from shopman.stockman.services.availability import availability_for_skus_on_dates
+        from shopman.shop.services.availability import stock_on_dates
 
         candidates = _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
         if not candidates:
@@ -103,7 +103,7 @@ def next_batch_availability_for_skus(
         # resposta de um SKU não depende dos outros SKUs do lote — então ler
         # todos de uma vez e escolher depois é a mesma escolha do laço antigo
         # (que relia o estoque inteiro por data, com os SKUs que restavam).
-        infos_by_date = availability_for_skus_on_dates(
+        infos_by_date = stock_on_dates(
             unique_skus,
             candidates,
             **scope_kwargs(channel_ref),
@@ -133,20 +133,42 @@ def scope_kwargs(channel_ref: str | None) -> dict:
 
 
 def _candidate_batch_dates(skus: list[str], *, today: date, horizon: date) -> list[date]:
-    """Datas de fornada com saldo entre amanhã e o horizonte, em ordem."""
+    """Datas de fornada com saldo entre amanhã e o horizonte, em ordem.
+
+    São as datas de CADA SKU, unidas: num GET, o cardápio, a sacola e o trilho
+    de sugestão perguntam por conjuntos que se sobrepõem, e cada SKU vai ao
+    banco uma vez por request (``request_memo.stock_bucket``).
+    """
     from shopman.stockman.models import Quant
 
-    return list(
-        Quant.objects.filter(
-            sku__in=skus,
-            _quantity__gt=0,
-            target_date__gt=today,
-            target_date__lte=horizon,
-        )
-        .order_by("target_date")
-        .values_list("target_date", flat=True)
-        .distinct()
-    )
+    from shopman.shop import request_memo
+
+    def read(missing: list[str]) -> dict[str, set[date]]:
+        by_sku: dict[str, set[date]] = {sku: set() for sku in missing}
+        for sku, target_date in (
+            Quant.objects.filter(
+                sku__in=missing,
+                _quantity__gt=0,
+                target_date__gt=today,
+                target_date__lte=horizon,
+            )
+            .order_by()
+            .values_list("sku", "target_date")
+            .distinct()
+        ):
+            by_sku.setdefault(sku, set()).add(target_date)
+        return by_sku
+
+    unique_skus = list(dict.fromkeys(skus))
+    bucket = request_memo.stock_bucket(("batch_dates", today, horizon))
+    if bucket is None:
+        by_sku = read(unique_skus)
+    else:
+        missing = [sku for sku in unique_skus if sku not in bucket]
+        if missing:
+            bucket.update(read(missing))
+        by_sku = bucket
+    return sorted({on for sku in unique_skus for on in by_sku.get(sku, ())})
 
 
 def candidate_batch_dates(skus: list[str], *, channel_ref: str | None = None) -> list[date]:
