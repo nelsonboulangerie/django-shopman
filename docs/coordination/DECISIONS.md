@@ -212,6 +212,7 @@ gravado a cada requisição) e ninguém usa: dois dispositivos ativos no mesmo b
 | D-014 | Recibo de envio crítico: reserva por e-mail e SMS só em evento crítico (D3) | `DECIDIDA` | 2026-10-31 |
 | D-015 | Loja: forçar a versão nova, nunca durante pagamento (D9); trilho fora do `shell/` só se ninguém o exibe (D10) | `DECIDIDA` | 2026-10-31 |
 | D-016 | Pix real se ENSAIA antes da virada; Efí, Stripe e Focus são as últimas a LIGAR | `DECIDIDA` | 2026-10-15 |
+| D-018 | Triagem do Concierge aprovada (D32) | `EXECUTADA` | n/a |
 | B-001 | Alpha SEM DEPLOY desde 29/09 21:31 UTC | `BLOQUEADA` | 2026-10-01 |
 
 ---
@@ -694,3 +695,27 @@ online (visão no `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`); a triagem é propost
 **Prova.** PR #1344: `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` (decisão com custo e dependência
 externa de cada frente que voltou), `docs/plans/PRODUCT-V1-SCOPE-BACKLOG.md` (regra do go-live),
 `docs/plans/WHATSAPP-CONCIERGE-PLAN.md` (visão, fases, distância, checklist para ligar).
+
+---
+
+## D-018 · Triagem do Concierge aprovada
+
+- **Estado:** `EXECUTADA` · **Dono:** Pablo (produto) · **Data:** 2026-10-02
+
+**Decisão do dono.** *"aprovo a triagem"*: a proposta da D32 (opção 1, triagem completa), sem
+redesenho. Toda mensagem recebe uma das 12 intenções aprovadas em 23/09
+(`shopman/storefront/concierge/intent_pilot.py`, `DEFAULT_INTENTS`) e uma urgência (agora, hoje,
+pode esperar). O Concierge responde sozinho horário e entrega, como funciona a casa, produto sem
+alergia, status do pedido e pedido simples (fase 1: com o link da loja). Escalam sempre para uma
+pessoa: pedido de pessoa, reclamação, alergia, encomenda especial e o pedido que o chat não fecha.
+Vaga, parceria e fornecedor vão para a "outra mesa", no Admin, sem acordar o balcão. O operador vê
+um cartão com intenção, urgência e resumo de uma ou duas linhas no sino do Gestor de pedidos.
+
+**Prova.** PR #1347: `shopman/storefront/concierge/triage.py` (tabela, regra local, modelo
+opcional, resumo), ligado no turno em `shopman/storefront/concierge/service.py` (`run_turn`),
+cartão `concierge_handoff` no público de pedidos (`shopman/backstage/models/alerts.py`,
+`ORDER_TYPES`) e `concierge_other_desk` na operação geral; filtro "triagem" no Admin da conversa;
+system check `SHOPMAN_W022`/`SHOPMAN_W023` e `manage.py concierge_check` (`shopman/storefront/checks.py`).
+Testes em `shopman/storefront/tests/test_concierge_triage.py`. Ligar continua sendo do dono, no
+painel, pela sequência do `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`.
+

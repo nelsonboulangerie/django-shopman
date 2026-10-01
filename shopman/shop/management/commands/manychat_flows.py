@@ -13,6 +13,9 @@ automatizar é a VERIFICAÇÃO, e é o que este comando e o system check
 
     python manage.py manychat_flows
     python manage.py manychat_flows --check    # confronta o configurado com o real
+
+Não confere o Concierge: para ele, ``manage.py concierge_check [--live]`` e o
+system check ``SHOPMAN_W022``/``SHOPMAN_W023`` (``shopman/storefront/checks.py``).
 """
 
 from __future__ import annotations
@@ -54,6 +57,10 @@ class Command(BaseCommand):
             return
 
         self._check_configured(by_ns)
+        self.stdout.write("")
+        self.stdout.write(
+            "O Concierge não entra nesta conferência: rode `manage.py concierge_check --live`."
+        )
 
     def _fetch_flows(self) -> list[dict]:
         from django.conf import settings

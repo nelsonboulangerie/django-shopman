@@ -1487,6 +1487,12 @@ SHOPMAN_CONCIERGE = {
     # popularidade) e os pareamentos configuráveis de `suggestion.complement`.
     # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
     "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
+    # Triagem (D32, aprovada pelo dono em 02/10/2026): toda mensagem ganha uma das
+    # 12 intenções e uma urgência. A regra local roda sempre; com o modelo ligado,
+    # ele propõe intenção, urgência e o resumo de uma ou duas linhas. Sem chave ou
+    # com falha, vale a regra local. Modelo vazio = o mesmo do concierge.
+    "triage_with_model": _env_bool("CONCIERGE_TRIAGE_WITH_MODEL", True),
+    "triage_model": os.environ.get("CONCIERGE_TRIAGE_MODEL", ""),
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {

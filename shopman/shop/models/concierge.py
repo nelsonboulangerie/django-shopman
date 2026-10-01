@@ -56,7 +56,10 @@ class Conversation(models.Model):
     #: (o adicional é UM por conversa, não um por recap).
     flags = models.JSONField("marcas da conversa", default=dict, blank=True)
 
-    #: Resumo das mensagens antigas que saíram da janela enviada ao modelo.
+    #: Resumo de uma ou duas linhas para a equipe, escrito pela triagem a cada
+    #: turno (``storefront/concierge/triage.py``): o que a pessoa quer, o que já
+    #: foi respondido, o que falta. Vai no cartão do operador. A última triagem
+    #: (intenção, urgência, destino) fica em ``flags["triage"]``.
     summary = models.TextField("resumo", blank=True)
     summary_until_id = models.BigIntegerField("resumo cobre até", null=True, blank=True)
 

@@ -192,11 +192,32 @@ class ConversationBindingInline(StackedInline):
         )
 
 
+class TriageDestinationFilter(admin.SimpleListFilter):
+    """A fila da triagem (D32): com a equipe, outra mesa, respondida pelo bot.
+
+    "Outra mesa" é vaga, parceria e fornecedor: lida no dia, sem acordar o balcão.
+    """
+
+    title = _("triagem")
+    parameter_name = "triage"
+
+    def lookups(self, request, model_admin):
+        from shopman.storefront.concierge.triage import DESTINATION_LABELS
+
+        return [(key, _(label)) for key, label in DESTINATION_LABELS.items()]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(flags__triage__destination=self.value())
+        return queryset
+
+
 @admin.register(Conversation)
 class ConversationAdmin(ModelAdmin):
     list_display = (
         "who_display",
         "state_badge",
+        "triage_display",
         "usage_badge",
         "bindings_display",
         "last_inbound_at",
@@ -204,7 +225,7 @@ class ConversationAdmin(ModelAdmin):
         "handoff_reason",
         "tokens_display",
     )
-    list_filter = ("state", "last_inbound_at")
+    list_filter = (TriageDestinationFilter, "state", "last_inbound_at")
     search_fields = (
         "phone",
         "customer_name",
@@ -221,6 +242,7 @@ class ConversationAdmin(ModelAdmin):
     inlines = [ConversationBindingInline]
 
     readonly_fields = (
+        "triage_display",
         "bindings_display",
         "last_order_display",
         "phone",
@@ -251,6 +273,8 @@ class ConversationAdmin(ModelAdmin):
                     ("customer_name", "phone"),
                     ("customer_ref", "channel_ref"),
                     "state",
+                    "triage_display",
+                    "summary",
                     "bindings_display",
                     ("handoff_reason", "handoff_at"),
                     ("last_inbound_at", "last_outbound_at"),
@@ -260,7 +284,7 @@ class ConversationAdmin(ModelAdmin):
         (_("Transcrição"), {"fields": ("transcript_display",), "classes": ("tab",)}),
         (
             _("Pedido em andamento"),
-            {"fields": ("session_key", "last_order_display", "quote_display", "summary"), "classes": ("tab",)},
+            {"fields": ("session_key", "last_order_display", "quote_display"), "classes": ("tab",)},
         ),
         (
             _("Consumo"),
@@ -354,6 +378,23 @@ class ConversationAdmin(ModelAdmin):
         if observed:
             return "Observação"
         return "Atendimento"
+
+    @display(description="triagem")
+    def triage_display(self, obj):
+        """Intenção e urgência da última mensagem, e para onde ela foi."""
+        from shopman.storefront.concierge.triage import (
+            DEFAULT_LABELS,
+            DESTINATION_LABELS,
+            URGENCY_LABELS,
+        )
+
+        triage = (obj.flags or {}).get("triage") or {}
+        if not triage.get("intent"):
+            return "Sem triagem"
+        intent = DEFAULT_LABELS.get(triage["intent"], triage["intent"])
+        urgency = URGENCY_LABELS.get(triage.get("urgency"), triage.get("urgency") or "")
+        destination = DESTINATION_LABELS.get(triage.get("destination"), "")
+        return f"{intent} · {urgency} · {destination}"
 
     @display(description="tokens (in / out / cache)")
     def tokens_display(self, obj):

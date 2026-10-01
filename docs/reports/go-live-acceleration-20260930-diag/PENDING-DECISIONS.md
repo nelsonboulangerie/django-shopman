@@ -40,6 +40,12 @@
 | D28 | ✅ Decidido: proposta de corte **recusada**. Ficam fora do go-live só Marketing e B.I.; entra todo o resto, com entrega por parceiro (TaOn/Machine) e Concierge nomeados. Registro: D-017 em `docs/coordination/DECISIONS.md`; custo de cada frente em `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` |
 | D32 | Nova: a proposta de triagem do Concierge, abaixo |
 
+## Atualização de 02/10: decidido pelo dono e executado
+
+| # | Estado |
+|---|---|
+| D32 | ✅ Decidido: "aprovo a triagem" (opção 1, triagem completa). Implementada no #1347. Registro: D-018 em `docs/coordination/DECISIONS.md`; mapeamento e sequência para ligar em `docs/plans/WHATSAPP-CONCIERGE-PLAN.md` |
+
 ## D17 — Balcão: "1 linha = 1 data" NÃO existe hoje
 
 **Contexto.** A premissa era "a comanda pode ter linhas de datas diferentes, e isso já funciona". A
@@ -410,6 +416,13 @@ do `shell/`: a `/sacola` abre sem o trilho e ele aparece um instante depois.
 **Recomendação:** 1 até o go-live (omotenashi); 2 se o custo do `shell/` voltar a doer.
 
 ## D32. Concierge: a proposta de triagem
+
+> ✅ **Decidida em 02/10/2026** pelo dono: *"aprovo a triagem"* (opção 1). Implementada no #1347;
+> registro D-018. As perguntas abaixo ficaram respondidas pela proposta aprovada: as 12 intenções
+> bastam; o resumo vai no sino do Gestor de pedidos; vaga, parceria e fornecedor vão para a outra
+> mesa no Admin; a observação passiva acaba quando o modo passa a `assist`. Fora do expediente o
+> que escala espera a equipe (nada toca ninguém): não estava na proposta e segue o comportamento de
+> hoje.
 
 **Contexto.** O Concierge entrou no go-live (D-017) e a razão do dono é a triagem. Ela não existe no
 código: hoje uma regex com quatro causas decide só o handoff (`shopman/storefront/concierge/handoff.py:16-49`),
