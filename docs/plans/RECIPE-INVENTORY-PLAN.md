@@ -277,6 +277,7 @@ Produção"). Sem permissão nova, sem migração de permissão. Erros no dialet
 | R2 UI | `surfaces/production-nuxt` | ✅ entregue (`/recipes`, `/recipes/new`, `/recipes/[ref]`, `/recipes/[ref]/edit`, `/recipes/compare`; +66 testes) |
 | R3 captura + casamento + projections + API + export + testes + seed | `shopman/backstage`, `config` | ✅ entregue (`export_recipe_book_schema`, +133 testes) |
 | R4 docs (ADR-027, data-schemas, commands) + integração + QA | raiz | ✅ QA no navegador sobre o seed real: bootstrap de 67 fichas, rascunho → padronizar → associar SKU → publicar → ficha com `version_ref`, comparação |
+| R5 cofre (`export_backup`/`import_backup`) | `shopman/shop/backup` | ✅ abas `recipe_entries` e `recipe_versions` (01/10/2026); `is_current` restaura a `current_version` |
 
 Decisões tomadas na integração (03/09): fermento natural (cultura) não é `yeast` (fica fora da
 faixa de fermento biológico); `prefermented_flour_pct` soma só partes `preferment` (autólise
@@ -288,6 +289,5 @@ nova da ficha; massa velha vai para a ficha como linha **opcional** (fora do con
 ## 11. Fora deste plano (dito, não esquecido)
 
 - Leitura do **saldo de massa velha** do dia no planejamento (`min(sobra, teto)`).
-- **Cofre** (`export_backup`/`import_backup`) ainda não carrega `RecipeEntry`/`RecipeVersion`.
 - Admin/Unfold para `RecipeEntry`/`RecipeVersion` (CRUD de conferência, atrás do gate).
 - Comparação com dados de produção do B.I. por `version_ref` (o carimbo já sai daqui).
