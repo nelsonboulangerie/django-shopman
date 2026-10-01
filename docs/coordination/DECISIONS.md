@@ -691,6 +691,6 @@ conversacional, catálogos externos e media persistente, foi **recusada**. Ficam
 defasada e a triagem das mensagens será muito útil". O Concierge é a interface conversacional da loja
 online (visão no `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`); a triagem é proposta na D32.
 
-**Prova.** PR #NUMERO_DO_PR: `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` (decisão com custo e dependência
+**Prova.** PR #1344: `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` (decisão com custo e dependência
 externa de cada frente que voltou), `docs/plans/PRODUCT-V1-SCOPE-BACKLOG.md` (regra do go-live),
 `docs/plans/WHATSAPP-CONCIERGE-PLAN.md` (visão, fases, distância, checklist para ligar).
