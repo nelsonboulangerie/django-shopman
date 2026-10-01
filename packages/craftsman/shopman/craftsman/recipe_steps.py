@@ -9,8 +9,9 @@ Cada etapa é um objeto::
 opcionais e só ficam gravados quando têm conteúdo.
 
 ``normalize_steps`` é o funil: os ``clean()`` das duas tabelas passam por ele,
-e o ``Recipe.save`` chama ``full_clean``, então nada chega ao banco em outra
-forma. Texto puro na entrada é atalho aceito (``"Mistura"`` vira
+o ``Recipe.save`` chama ``full_clean`` e o ``RecipeVersion.save`` normaliza as
+etapas, então nada chega ao banco em outra forma (nem um backup anterior à
+``craftsman/0015`` restaurado pelo cofre). Texto puro na entrada é atalho aceito (``"Mistura"`` vira
 ``{"name": "Mistura"}``); o que não for texto nem objeto com as chaves acima é
 recusado apontando a etapa.
 

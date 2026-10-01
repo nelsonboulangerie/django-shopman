@@ -179,7 +179,7 @@ def test_recipe_book_versions_survive_restore(recipe_book, tmp_path):
     first, second = versions[1], versions[2]
     assert first.status == RecipeVersion.Status.SUPERSEDED
     assert first.formula == _formula(650)
-    assert first.steps == ["Mistura", "Forno"]
+    assert first.steps == [{"name": "Mistura"}, {"name": "Forno"}]
     assert (first.origin, first.source) == ({"text": "caderno"}, {"kind": "note"})
     assert second.status == RecipeVersion.Status.PUBLISHED
     assert second.formula == _formula(700)
@@ -198,7 +198,7 @@ def test_recipe_version_rewritten_in_place_is_restored(recipe_book, tmp_path):
 
     first = RecipeVersion.objects.get(entry=recipe_book, number=1)
     assert first.formula == _formula(650)
-    assert first.steps == ["Mistura", "Forno"]
+    assert first.steps == [{"name": "Mistura"}, {"name": "Forno"}]
     recipe_book.refresh_from_db()
     assert recipe_book.current_version.number == 2
 

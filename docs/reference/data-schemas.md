@@ -1560,7 +1560,9 @@ Contexto operacional de produção mantido fora do core Craftsman.
 
 Campos (não `meta`), `JSONField` de lista. Forma única, definida em
 `packages/craftsman/shopman/craftsman/recipe_steps.py` (`normalize_steps`) e aplicada pelo
-`clean()` das duas tabelas (o `Recipe.save` chama `full_clean`). A migração `craftsman/0015`
+`clean()` das duas tabelas e no `save()` (o `Recipe.save` chama `full_clean`; o
+`RecipeVersion.save` normaliza as etapas). O cofre (`import_backup`) passa pelo mesmo funil, então
+backup anterior à migração restaura na forma nova. A migração `craftsman/0015`
 reescreveu o que estava gravado como texto.
 
 ```

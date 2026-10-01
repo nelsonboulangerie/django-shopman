@@ -13,7 +13,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from shopman.craftsman import craft
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeItem
+from shopman.craftsman.models import Recipe, RecipeItem, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps, steps_from_names
 from shopman.craftsman.services import recipe_book
 
@@ -111,6 +111,12 @@ class TestModels:
             Recipe.objects.create(ref="pao", name="Pão", output_sku="PAO", batch_size=Decimal("1"),
                                   steps=[{"name": "Sova", "target_seconds": 0}])
         assert "Etapa 1" in " ".join(exc.value.message_dict["steps"])
+
+    def test_version_save_normalizes_even_without_full_clean(self):
+        entry = recipe_book.create_entry(ref="massa", name="Massa", kind="bread", output_sku="MASSA")
+        version = RecipeVersion.objects.create(entry=entry, number=1, formula=flour_formula(), steps=["Mistura", "Forno"])
+        version.refresh_from_db()
+        assert version.steps == [{"name": "Mistura"}, {"name": "Forno"}]
 
     def test_version_normalizes_and_refuses(self):
         entry = recipe_book.create_entry(ref="massa", name="Massa", kind="bread", output_sku="MASSA")

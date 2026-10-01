@@ -177,6 +177,12 @@ class RecipeVersion(models.Model):
             field = exc.data.get("field", "formula")
             raise ValidationError({"formula": f"{field}: {exc.message}"}) from exc
 
+    def save(self, *args, **kwargs):
+        # A versão não roda full_clean no save (o service roda), mas as etapas
+        # passam pelo funil sempre: nenhum caminho grava a forma antiga.
+        self.steps = normalize_steps(self.steps)
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return self.version_ref if self.entry_id else f"@{self.number}"
 
