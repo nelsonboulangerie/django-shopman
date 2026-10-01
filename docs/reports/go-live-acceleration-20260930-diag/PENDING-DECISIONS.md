@@ -33,6 +33,13 @@
 | D21 | ✅ Aplicado no spec vivo, arquivos no #1334 |
 | D16(b), D17, D18 | Viraram o mapa WP-DATA-E-PROMESSA (#1335). Perguntas em D25 |
 
+## Atualização de 01/10 (noite): decidido pelo dono
+
+| # | Estado |
+|---|---|
+| D28 | ✅ Decidido: proposta de corte **recusada**. Ficam fora do go-live só Marketing e B.I.; entra todo o resto, com entrega por parceiro (TaOn/Machine) e Concierge nomeados. Registro: D-017 em `docs/coordination/DECISIONS.md`; custo de cada frente em `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` |
+| D32 | Nova: a proposta de triagem do Concierge, abaixo |
+
 ## D17 — Balcão: "1 linha = 1 data" NÃO existe hoje
 
 **Contexto.** A premissa era "a comanda pode ter linhas de datas diferentes, e isso já funciona". A
@@ -370,6 +377,10 @@ A proposta (`docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md`, #1336) deixa DENTRO Gest
 retirada e PDV (8 a 11 já entregues) e FORA entrega própria, WhatsApp conversacional, catálogos
 externos e media persistente, com o custo de cada corte e o texto novo da linha 77.
 **Pergunta.** Aprova o corte como está? **Recomendação:** sim; ele não tira nada que o balcão use.
+**✅ Decidido pelo dono (01/10/2026, noite): RECUSADO.** Ficam fora só Marketing e B.I.; entra todo
+o resto, explicitamente a entrega por parceiro (TaOn/Machine) e o Concierge ("a equipe está defasada e a
+triagem das mensagens será muito útil"). Registro: D-017; o arquivo da proposta virou a decisão, com o
+custo e a dependência externa de cada frente que voltou.
 
 ## D29 — Ensaio de restauração: token ou painel
 
@@ -398,3 +409,22 @@ responde depois. Nenhuma outra tela exibe esse trilho (#1341, tabela tela a tela
 do `shell/`: a `/sacola` abre sem o trilho e ele aparece um instante depois.
 **Recomendação:** 1 até o go-live (omotenashi); 2 se o custo do `shell/` voltar a doer.
 
+## D32. Concierge: a proposta de triagem
+
+**Contexto.** O Concierge entrou no go-live (D-017) e a razão do dono é a triagem. Ela não existe no
+código: hoje uma regex com quatro causas decide só o handoff (`shopman/storefront/concierge/handoff.py:16-49`),
+o modelo não consegue escalar (sem ferramenta de handoff, `tools.py:1948-1960`), o alerta ao operador não
+tem resumo (`service.py:1302-1307`) e só aparece no Gestor se a conversa tiver pedido
+(`shopman/backstage/services/alerts.py:69-70`). Já existem as 12 intenções combinadas com o dono em 23/09
+(`intent_pilot.py:58-91`) e o campo `Conversation.summary`, que nada escreve. Proposta completa em
+`docs/plans/WHATSAPP-CONCIERGE-PLAN.md`, seção "Triagem: PROPOSTA para o dono corrigir".
+**Opções.** 1) Triagem completa: toda mensagem ganha intenção (das 12) e urgência; o simples é respondido;
+`human`, `complaint`, `allergy`, `order` que o chat não fecha e `special_order` escalam com resumo de uma ou
+duas linhas no sino do Gestor; `job`, `partnership`, `supplier_offer` vão para uma fila de "outra mesa" no
+Admin. 2) Triagem mínima: manter a regex de quatro causas e só acrescentar o resumo no alerta e o alerta no
+sino do Gestor. 3) Só escalar tudo para a equipe, sem resposta automática (Concierge vira recepcionista).
+**Perguntas.** As 12 intenções bastam? Quem é "atendimento" na casa hoje? O resumo vai no sino do Gestor ou
+num app próprio? Fora do expediente, o que escala espera a manhã ou toca alguém? E a observação passiva
+(`CONCIERGE_OPERATION_MODE=observe`) acaba quando o Concierge passa a responder: aceita?
+**Recomendação:** 1, porque é o que o dono descreveu ("já classificado e resumido") e reaproveita o
+vocabulário que ele já aprovou; 2 só se o prazo do go-live apertar.

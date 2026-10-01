@@ -677,3 +677,20 @@ que fecha o botão por construção) tem de acontecer ANTES da virada, junto da 
 
 **Prova.** Item no `docs/runbooks/go-live-preflight.md` §4 e regra de parada no
 `docs/runbooks/go-live-cutover.md` §0 (PR #1336, mergeado).
+
+---
+
+## D-017 · Escopo do go-live: fora só Marketing e B.I.
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-15
+
+**Decisão do dono.** A proposta de corte (#1336, D28), que deixava fora entrega própria, WhatsApp
+conversacional, catálogos externos e media persistente, foi **recusada**. Ficam fora do go-live só
+**Marketing** e **B.I.** Entra todo o resto, explicitamente a **entrega por parceiro** (TaOn/Machine,
+`shopman/shop/adapters/courier_machine.py`) e o **Concierge**, com a razão do dono: "a equipe está
+defasada e a triagem das mensagens será muito útil". O Concierge é a interface conversacional da loja
+online (visão no `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`); a triagem é proposta na D32.
+
+**Prova.** PR #1344: `docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md` (decisão com custo e dependência
+externa de cada frente que voltou), `docs/plans/PRODUCT-V1-SCOPE-BACKLOG.md` (regra do go-live),
+`docs/plans/WHATSAPP-CONCIERGE-PLAN.md` (visão, fases, distância, checklist para ligar).

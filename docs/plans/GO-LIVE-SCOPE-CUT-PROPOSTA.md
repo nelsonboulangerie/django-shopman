@@ -1,89 +1,166 @@
-# Proposta de corte de escopo do go-live (01/10/2026)
+# Escopo do go-live: decisão do dono (01/10/2026)
 
-> **Proposta, não decisão.** Nada aqui altera o
-> [PRODUCT-V1-SCOPE-BACKLOG](PRODUCT-V1-SCOPE-BACKLOG.md). O dono aprova, recusa
-> ou ajusta linha a linha; só então o backlog muda. Estado comercial, owners e
-> evidência continuam morando na
+> **Decisão registrada, não mais proposta.** O nome do arquivo ficou por causa dos
+> links antigos (#1336, D28). Ledger: [D-017](../coordination/DECISIONS.md).
+> Estado comercial, owners e evidência continuam na
 > [matriz canônica](GO-LIVE-READINESS-PLAN.md).
+>
+> Legenda: **[FATO]** = medido no código, no spec ou em saída de comando, com
+> caminho:linha ou PR. **[INFERÊNCIA]** = leitura minha a partir dos fatos.
+> **NÃO VERIFICADO** = não medi.
 
-## O problema em uma frase
+## A decisão em uma frase
 
-A linha 77 do backlog diz que o go-live "só dispara com **todas** as ✅
-entregues" (as 11 frentes de 26/06). Medido em 01/10/2026 (`main` em
-`bf415ad98`), seis das onze já estão entregues ou desatualizadas no próprio
-backlog, e as que faltam dependem de credencial, homologação externa ou decisão
-do dono. Do jeito que está escrita, a regra trava o go-live por frentes que não
-são condição para vender pão no balcão e na loja online.
+A proposta de corte de 01/10 (#1336), que deixava fora entrega própria, WhatsApp
+conversacional, catálogos externos e media persistente, foi **RECUSADA** pelo
+dono na noite de 01/10/2026. **Ficam fora do go-live só o Marketing e o B.I.**
+Entra todo o resto, e duas frentes foram nomeadas explicitamente:
 
-## As 11 frentes, medidas
+- **Entrega por parceiro** (TaOn sobre a Machine, adaptador
+  `shopman/shop/adapters/courier_machine.py`);
+- **Concierge**, com a razão do dono: *"a equipe está defasada e a triagem das
+  mensagens será muito útil"*. A visão do Concierge está registrada no plano
+  canônico, [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md#visão-do-dono-01102026).
 
-Legenda da proposta: **DENTRO** = condição do go-live; **FORA** = vira
-pós-go-live, com o custo dito; **ENTREGUE** = já não trava nada, sai da conta.
+O que a proposta recusada dizia continua no histórico do git (`dc265f2cd`).
 
-| # | Frente (como o backlog nomeia) | Estado medido | Prova | Proposta | Custo do corte |
-|---|---|---|---|---|---|
-| 1 | Gestor de pedidos ao estado da arte | Código no ar, `orders-nuxt` é check obrigatório. QA autenticado existe de 28/08 (admin e gerente); depois das mudanças de setembro (#1231 a #1328), NÃO VERIFICADO | `docs/reports/2026-08-28-revisao-alpha-gestor-pedidos.md`; PRs #1231, #1258, #1328 | **DENTRO** (só a QA física da matriz, que já é item do pré-flight §5) | Nenhum corte: o que falta é QA, não código |
-| 2 | Canal: Loja online (retirada) | No ar no ambiente técnico; smoke cobre `/ready/`, menu, checkout não mutante e SSR | matriz, linha "Smoke pós-deploy" (run 36521633479); #1329 | **DENTRO** | Nenhum corte. Condição real: ensaio do Pix real (pré-flight §4, D-006, D22) |
-| 3 | Canal: PDV / balcão | `pos-nuxt` no ar, check obrigatório | `.do/app.alpha-subdomains.yaml:36`; #1218 | **DENTRO** | Nenhum corte. Impressão, gaveta e som seguem PENDENTES na matriz (QA física) |
-| 4 | Canal: Entrega / delivery | Código de endereço existe (Places com fallback ViaCEP, mapa, pin, distância). Chave Maps declarada como SECRET no spec; valor e cota no vivo NÃO VERIFICADO. Pedido com entrega de ponta a ponta: NÃO VERIFICADO | `surfaces/storefront-nuxt/app/components/AddressPicker.vue`; `shopman/shop/services/delivery_distance.py`; `.do/app.alpha-subdomains.yaml:785-790` | **FORA no primeiro dia** (entra quando um pedido de entrega real fechar de ponta a ponta) | Cliente da loja online só tem retirada; quem quer entrega usa iFood ou telefone. Risco baixo: o canal fica desligado, não quebrado. Pós-go-live: QA de entrega com a chave do vivo e o entregador da casa |
-| 5 | Canal: WhatsApp conversacional (ManyChat) | O plano foi superado pelo WHATSAPP-CONCIERGE-PLAN (03/09); webhooks registrados e o Concierge fecha pedido no código. Spec versionado: **desligado** (`SHOPMAN_CONCIERGE_ENABLED='false'`, `READ_ONLY='true'`). Valor vivo: NÃO VERIFICADO. Matriz: escopo DESCONHECIDO | `config/urls.py:169-177`; `shopman/storefront/concierge/tools.py`; `.do/app.alpha-subdomains.yaml:550-570`; #1131, #1132 | **FORA** | Cliente não fecha pedido conversando no WhatsApp; continua recebendo notificação e link de acesso por WhatsApp (isso não depende do Concierge). Pós-go-live: ligar por env com autorização, depois de aprovar templates na Meta/ManyChat |
-| 6 | Sincronização com catálogos externos | Feed pull Google/Meta e push Meta entregues; push Meta só com `META_CATALOG_PROJECTION=1`. Falta homologação Meta, vínculo ao WhatsApp, cadastro no Merchant Center | `docs/plans/CATALOG-SYNC-EXTERNO-PLAN.md:7-9`; #1255, #957 | **FORA** | Produtos não aparecem no catálogo do Instagram/Facebook nem no Google Shopping no dia 1. Nenhum risco ao pedido. Pós-go-live: homologação nas contas do dono |
-| 7 | Media persistente (Spaces/S3) | **Não feito.** `STORAGES["default"]` é `FileSystemStorage`; nenhum bucket nos specs. Fotos de produto NÃO dependem disso (estáticos do storefront em `img.`). D6 (30/09) mandou upload para o R2, depois | `config/settings.py:575-589`; `PENDING-DECISIONS.md` (D6) | **FORA** | Arquivo enviado pelo Admin (anexo, mídia avulsa) some no próximo deploy. Mitigação até lá: não usar upload em produção; anexos de receita já são "Referências externas" (#1332). Pós-go-live: storage durável (R2, conforme D6) |
-| 8 | Shelf life perecível | Precedência travada por teste (27/06); validator composto ativo; janela rígida **desligada** por padrão (só aviso no Admin) | `config/settings.py:1598-1604`; `packages/stockman/shopman/stockman/tests/test_batch_consistency.py` | **ENTREGUE** (a decisão de ligar `STOCKMAN_STRICT_SHELF_LIFE_WINDOW` vira pós-go-live) | Lote com validade além da janela do produto gera aviso, não bloqueio. Risco baixo com produção do dia; pós-go-live: decidir se a trava liga |
-| 9 | Revisão reversa do PDV (Fase C) | "Reconciliação concluída em 2026-09-29", nenhuma lacuna nova | `docs/plans/POS-FASE-C-REVISION.md:7-9` | **ENTREGUE** | Nenhum. Itens "a verificar" funcionais caem na QA física do pré-flight |
-| 10 | Surface convergence | "CONVERGÊNCIA COMPLETA (2026-06-27)"; sem template HTMX de POS/KDS; KDS é Nuxt e check obrigatório | `docs/plans/completed/SURFACE-CONVERGENCE-PLAN.md:13-16`; `ls surfaces/` | **ENTREGUE** | Nenhum |
-| 11 | Playwright E2E como gate | "Storefront E2E (Playwright)" é check obrigatório de `main`, roda em `pull_request` e `merge_group` | `.github/required-status-checks.json`; `.github/workflows/omotenashi-gate.yml` | **ENTREGUE** | Nenhum. A suíte cobre a loja; operador é coberto pelo "Browser QA" |
+## As 11 frentes depois da decisão
 
-### Resumo
+Medido em 01/10/2026 sobre `origin/main` em `1f1ff5afb`.
 
-- **Entregues e fora da conta:** 8, 9, 10, 11.
-- **Dentro do go-live:** 1, 2, 3 (nenhuma pede código novo; pedem QA física e o
-  ensaio do Pix real, que já são itens do [pré-flight](../runbooks/go-live-preflight.md)).
-- **Fora, pós-go-live:** 4 (entrega própria), 5 (WhatsApp conversacional), 6
-  (catálogos externos), 7 (media persistente).
+| # | Frente | No go-live? | Estado medido | Prova |
+|---|---|---|---|---|
+| 1 | Gestor de pedidos | DENTRO | Código no ar; QA autenticado depois das mudanças de setembro: NÃO VERIFICADO | #1231, #1258, #1328 |
+| 2 | Loja online (retirada) | DENTRO | No ar; condição real é o ensaio do Pix real (D-016) | #1329, D-016 |
+| 3 | PDV / balcão | DENTRO | No ar; impressão, gaveta e som pendentes de QA física | `.do/app.alpha-subdomains.yaml:36` |
+| 4 | Entrega (endereço + entregador parceiro) | **DENTRO (voltou)** | Ver custo abaixo | abaixo |
+| 5 | WhatsApp conversacional = **Concierge** | **DENTRO (voltou)** | Ver custo abaixo e o plano canônico | abaixo |
+| 6 | Catálogos externos (Google/Meta) | **DENTRO (voltou)** | Ver custo abaixo | abaixo |
+| 7 | Media persistente | **DENTRO (voltou)** | Ver custo abaixo | abaixo |
+| 8 | Shelf life perecível | ENTREGUE | Janela rígida desligada por padrão (só aviso) | `config/settings.py:1607` |
+| 9 | Revisão reversa do PDV | ENTREGUE | Reconciliação concluída em 29/09 | `docs/plans/POS-FASE-C-REVISION.md:7-9` |
+| 10 | Surface convergence | ENTREGUE | Convergência completa | `docs/plans/completed/SURFACE-CONVERGENCE-PLAN.md:13-16` |
+| 11 | Playwright E2E como gate | ENTREGUE | Check obrigatório de `main` | `.github/required-status-checks.json` |
+| · | iFood, fiscal (NFC-e) | DENTRO ("todo o resto") | Custo não medido nesta rodada: NÃO VERIFICADO | matriz, linha "Escopo v1" |
+| · | Marketing | **FORA** | Decisão do dono | D-017 |
+| · | B.I. | **FORA** | Decisão do dono | D-017 |
 
-O go-live proposto é **retirada na loja online + balcão + gestor de pedidos**,
-com pagamento real. É o mesmo corte que a matriz já pede para assinar na linha
-"Escopo v1 de iFood, ManyChat/Concierge, Machine, fiscal e Marketing"
-(DESCONHECIDO): esta proposta responde a parte de ManyChat/Concierge e deixa
-iFood, Machine, fiscal e Marketing para a assinatura própria daquela linha.
+## Custo e dependência externa de cada frente que voltou
 
-## Mudança de texto proposta (para aprovar em um minuto)
+### 4. Entrega: endereço na loja + entregador parceiro (TaOn/Machine)
 
-**Linha 77 hoje:**
+**Endereço e taxa na loja.**
 
-> 3. O go-live (no GO-LIVE-READINESS-PLAN) só dispara com **todas** as ✅ entregues.
+- [FATO] Código existe: busca Places com fallback ViaCEP, mapa, pin e taxa por
+  faixa de distância (`surfaces/storefront-nuxt/app/components/AddressPicker.vue`,
+  `shopman/shop/services/delivery_distance.py`).
+- [FATO] As duas chaves do Maps estão declaradas como SECRET no spec
+  (`.do/app.alpha-subdomains.yaml:785-790`). Valor e cota no vivo: NÃO VERIFICADO.
+- **Custo:** QA de um pedido de entrega de ponta a ponta no ambiente vivo
+  (NÃO VERIFICADO até hoje). Nenhum código novo identificado.
+- **Dependência externa:** chave do Google Maps com cota no projeto do dono.
 
-**Linha 77 proposta:**
+**Entregador parceiro (Machine).**
 
-> 3. O go-live (no GO-LIVE-READINESS-PLAN) dispara com as frentes **1, 2 e 3**
->    (gestor de pedidos, loja online com retirada, PDV) prontas e com QA física,
->    mais o ensaio do Pix real do pré-flight. As frentes 4, 5, 6 e 7 (entrega
->    própria, WhatsApp conversacional, catálogos externos, media persistente)
->    passam a pós-go-live, cada uma com o custo registrado em
->    [GO-LIVE-SCOPE-CUT-PROPOSTA](GO-LIVE-SCOPE-CUT-PROPOSTA.md). As frentes 8 a
->    11 estão entregues. Decidido por Pablo em DD/MM/2026.
+- [FATO] Integração construída em 07/07/2026: despacho por diretiva, status por
+  webhook e por polling, ações do operador no Gestor
+  (`docs/plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md:15`, `:20-50`).
+- [FATO] O spec versionado não tem **nenhuma** variável da Machine:
+  `grep -c MACHINE .do/app.alpha-subdomains.yaml` devolve `0`; também falta
+  `SHOPMAN_COURIER_ADAPTER`. Sem credencial com o adaptador ligado, o deploy-check
+  `SHOPMAN_E011` bloqueia (`shopman/shop/checks.py:380`).
+- [FATO] O endereço padrão da API no código é o de produção
+  (`config/settings.py:925`, `https://api.taximachine.com.br/api/integracao`). A
+  homologação é `https://api-vendas.taximachine.com.br/api/integracao` (informação
+  do dono). **Outra sessão corrige os endereços do adaptador em PR próprio**; este
+  PR não toca o código do courier.
+- **Custo (trabalho restante):** os quatro passos de
+  `DELIVERY-EXTERNAL-LOGISTICS-PLAN.md:51-61`: (1) credenciais no painel da DO;
+  (2) ligar `SHOPMAN_COURIER_ADAPTER` e `fulfillment.courier="auto"` no canal de
+  entrega; (3) registrar o webhook (`manage.py machine_register_webhook`, com
+  `MACHINE_WEBHOOK_TOKEN`) e observar o primeiro evento real, cujo payload não é
+  documentado; (4) confirmar com a central a forma de pagamento
+  (`MACHINE_FORMA_PAGAMENTO`, default `F`) e o motivo de cancelamento
+  (`MACHINE_CANCEL_REASON_ID`). Mais a correção de endereços da outra sessão e um
+  ensaio em homologação antes de apontar para produção.
+- **Dependência externa:** API Key do painel da Machine + usuário Gestor (hoje a
+  Joyce) com permissão **API Corrida/Entrega** (`MACHINE_API_USER`,
+  `MACHINE_API_PASSWORD`, `MACHINE_API_KEY`, `config/settings.py:927-929`).
+  **Ressalva:** se a Joyce trocar a senha, a entrega para. Um usuário dedicado à
+  integração evitaria isso. [INFERÊNCIA] Como o adaptador autentica por HTTP Basic
+  com esse usuário (`courier_machine.py:10-11`), a troca de senha derruba o
+  despacho sem aviso prévio; o primeiro sinal seria o erro 4xx na diretiva.
 
-Acompanham a mesma aprovação, para o backlog não se contradizer:
+### 5. Concierge (WhatsApp conversacional)
 
-- **Linha 6** ("o go-live real só dispara quando o 'deve entrar no v1' abaixo
-  estiver fechado"): passa a apontar para a linha 77 nova.
-- **Linha 57** (nota de sequenciamento, "o go-live só dispara quando **todas**
-  as ✅ estiverem entregues"): mesma troca.
-- **Tabela "pós-v1"**: ganha as frentes 4, 5, 6 e 7, com o custo em uma linha.
+Detalhe item a item em
+[WHATSAPP-CONCIERGE-PLAN, "Distância até a visão"](WHATSAPP-CONCIERGE-PLAN.md#distância-até-a-visão-medida-em-01102026).
+Resumo:
 
-## O que esta proposta NÃO resolve
+- [FATO] Código no ar e **desligado**: `SHOPMAN_CONCIERGE_ENABLED='false'`
+  (`.do/app.alpha-subdomains.yaml:550-553`), `CONCIERGE_READ_ONLY='true'`
+  (`:568-571`) e `CONCIERGE_OPERATION_MODE=observe` (`:617-620`), que guarda as
+  mensagens sem responder.
+- [FATO] FAQ, horários e catálogo respondem pela ferramenta `search_storefront`
+  (`shopman/storefront/concierge/tools.py:449`). Montar e fechar pedido existe no
+  código (`set_item`, `set_fulfillment`, `review_order`, `place_order`), mas
+  **não roda pelo ManyChat**: sem identificador de mensagem, todo turno fica só
+  leitura por construção (`service.py:835-839`; guia
+  `docs/guides/whatsapp-concierge.md:118-141`).
+- [FATO] A triagem como o dono descreveu não existe. Há um classificador de
+  regex com quatro causas que só decide o handoff
+  (`shopman/storefront/concierge/handoff.py:16-49`) e um piloto que mede
+  classificadores sobre doze intenções, sem rotear nada
+  (`intent_pilot.py:61-91`). A proposta de triagem é a D32.
+- **Custo (trabalho restante, nosso):** triagem (classificar toda mensagem,
+  resumo para a equipe, onde a equipe vê); identidade do cliente ligada
+  (`CONCIERGE_IDENTITY_LINK_ENABLED`) para consultar pedido; retorno da equipe ao
+  bot (`CONCIERGE_HUMAN_RETURN_ENABLED`); e a decisão de como fechar pedido sem
+  identificador de mensagem.
+- **Dependência externa:** ManyChat (flow com External Request em toda mensagem,
+  não só no `#c`; campo `concierge_handoff`; continuidade entre mensagens ainda
+  a confirmar no grafo do flow, guia `:112-116`); Meta (templates aprovados para
+  qualquer aviso fora da janela de 24 horas, 24 a 48 horas por rodada,
+  `docs/reference/whatsapp-templates-meta.md:16-18`); chave da Anthropic
+  (`AI_ASSIST_API_KEY`, `.do/app.alpha-subdomains.yaml:545-547`, valor no vivo
+  NÃO VERIFICADO).
 
-Cortar escopo não destrava sozinho o go-live. Seguem abertos na matriz, com ou
-sem corte: perfil comercial do runtime, drift do spec vivo, credenciais externas
-(Efí, Stripe, Focus), ensaio de restore pelo fork (403, ver
-[backup-e-restore](../runbooks/backup-e-restore.md#ensaio-de-01102026)),
-`production-readiness` no ambiente alvo, QA física, impressão/gaveta/som e o
-GO/NO-GO assinado.
+### 6. Catálogos externos (Google Merchant, Meta, WhatsApp Catalog)
+
+- [FATO] Feed pull Google/Meta e push Meta implementados; push Meta só com
+  `META_CATALOG_PROJECTION=1` (`docs/plans/CATALOG-SYNC-EXTERNO-PLAN.md:7-9`;
+  #1255, #957). A variável não está no spec versionado
+  (`grep META_CATALOG .do/app.alpha-subdomains.yaml` sem resultado).
+- **Custo (nosso):** declarar a variável no spec e conferir o feed com o catálogo
+  vivo. Nenhum código novo identificado.
+- **Dependência externa:** homologação do catálogo na Meta, vínculo do catálogo
+  ao número do WhatsApp, cadastro e verificação no Google Merchant Center, todos
+  nas contas do dono.
+
+### 7. Media persistente (arquivos enviados pelo Admin)
+
+- [FATO] Mudou desde a proposta: o código do Cloudflare R2 está pronto e
+  desligado (#1337, D-010). `STORAGES["default"]` vem de `media_storage()`
+  (`config/settings.py:577-585`) e só usa o R2 com `SHOPMAN_MEDIA_STORAGE=r2`.
+  Nenhuma variável `R2_*` no spec versionado.
+- **Custo (nosso):** ligar `SHOPMAN_MEDIA_STORAGE=r2` e conferir um upload que
+  sobreviva a um deploy.
+- **Dependência externa:** o dono cria o bucket privado e o token R2 e cola as
+  quatro chaves como segredo no painel da DO (D30,
+  `docs/runbooks/r2-passo-a-passo-do-dono.md`).
+
+## O que a decisão NÃO resolve
+
+Seguem abertos na matriz, com ou sem escopo: perfil comercial do runtime, drift
+do spec vivo, credenciais externas (Efí, Stripe, Focus), ensaio de restore pelo
+fork (D29), `production-readiness` no ambiente alvo, QA física,
+impressão/gaveta/som e o GO/NO-GO assinado.
 
 ## NÃO VERIFICADO
 
-- Valores de env no app vivo da DO (Concierge, chaves Maps,
-  `META_CATALOG_PROJECTION`): só o spec versionado foi lido.
-- QA autenticado do Gestor de pedidos depois das mudanças de setembro.
-- Pedido com entrega de ponta a ponta no ambiente vivo.
+- Valores de env no app vivo da DO (Concierge, Maps, Machine,
+  `META_CATALOG_PROJECTION`, R2): só o spec versionado foi lido.
+- QA autenticado do Gestor depois das mudanças de setembro.
+- Pedido com entrega de ponta a ponta no ambiente vivo; corrida real na
+  homologação da Machine.
+- Custo restante de iFood e fiscal (entram por "todo o resto"; não medidos aqui).
