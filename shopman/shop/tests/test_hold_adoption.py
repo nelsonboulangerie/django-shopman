@@ -268,6 +268,7 @@ class TestReconcileSimple:
         mock_check.assert_called_once()
         adapter.release_holds.assert_not_called()
 
+    @pytest.mark.django_db  # a redução vive num savepoint
     @patch("shopman.shop.services.availability._expand_if_bundle", return_value=None)
     @patch("shopman.shop.services.availability._load_session_holds_for_sku")
     @patch("shopman.shop.services.availability.get_adapter")
@@ -292,14 +293,15 @@ class TestReconcileSimple:
         adapter.release_holds.assert_called_once_with(["hold:A"])
         adapter.create_hold.assert_not_called()
 
+    @pytest.mark.django_db  # a redução vive num savepoint
     @patch("shopman.shop.services.availability._expand_if_bundle", return_value=None)
     @patch("shopman.shop.services.availability._load_session_holds_for_sku")
     @patch("shopman.shop.services.availability.get_adapter")
     @patch("shopman.shop.services.availability.check")
-    def test_reconcile_shrink_with_overshoot_creates_compensating_hold(
+    def test_reconcile_shrink_with_overshoot_returns_remainder_as_same_reservation(
         self, mock_check, mock_get_adapter, mock_load_sku, mock_expand,
     ):
-        """Shrink that overshoots last hold → compensating hold for leftover."""
+        """Shrink that overshoots last hold → the leftover returns as that hold's remainder."""
         from shopman.shop.services.availability import reconcile
 
         mock_load_sku.return_value = [
@@ -308,22 +310,48 @@ class TestReconcileSimple:
             ("hold:C", Decimal("2")),
         ]
         adapter = MagicMock()
-        adapter.create_hold.return_value = {
+        adapter.return_hold_remainder.return_value = {
             "success": True, "hold_id": "hold:COMP",
         }
         mock_get_adapter.return_value = adapter
 
         # current=7, new=4 → diff=3 → release A(2), B(3) (released=5,
-        # overshoot=2) → compensating hold for 2.
+        # overshoot=2) → B's remainder of 2 goes back (B's date, expiry, scope).
         result = reconcile("X", Decimal("4"), session_key="s1", channel_ref="web")
 
         assert result["ok"] is True
         adapter.release_holds.assert_called_once_with(["hold:A", "hold:B"])
-        adapter.create_hold.assert_called_once()
-        kwargs = adapter.create_hold.call_args.kwargs
-        assert kwargs["qty"] == Decimal("2")
+        adapter.create_hold.assert_not_called()
+        adapter.return_hold_remainder.assert_called_once_with(
+            "hold:B", Decimal("2"), channel_ref="web",
+        )
         assert result["hold_ids"] == ["hold:COMP"]
 
+    @pytest.mark.django_db
+    @patch("shopman.shop.services.availability._expand_if_bundle", return_value=None)
+    @patch("shopman.shop.services.availability._load_session_holds_for_sku")
+    @patch("shopman.shop.services.availability.get_adapter")
+    def test_reconcile_shrink_whose_remainder_fails_reports_failure(
+        self, mock_get_adapter, mock_load_sku, mock_expand,
+    ):
+        """Remainder that cannot return → ok=False; the release lives in the rolled-back savepoint."""
+        from shopman.shop.services.availability import reconcile
+
+        mock_load_sku.return_value = [("hold:A", Decimal("2"))]
+        adapter = MagicMock()
+        adapter.return_hold_remainder.return_value = {
+            "success": False, "hold_id": None, "error_code": "INSUFFICIENT_AVAILABLE",
+        }
+        mock_get_adapter.return_value = adapter
+
+        result = reconcile("X", Decimal("1"), session_key="s1", channel_ref="web")
+
+        assert result["ok"] is False
+        assert result["error_code"] == "INSUFFICIENT_AVAILABLE"
+        assert result["available_qty"] == Decimal("2")
+        assert result["released_ids"] == []
+
+    @pytest.mark.django_db  # a redução vive num savepoint
     @patch("shopman.shop.services.availability._expand_if_bundle", return_value=None)
     @patch("shopman.shop.services.availability._load_session_holds_for_sku")
     @patch("shopman.shop.services.availability.get_adapter")
