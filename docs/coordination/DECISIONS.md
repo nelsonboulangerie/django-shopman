@@ -776,3 +776,20 @@ renovar antes do fim de novembro.
 **Prova.** `doctl auth init` com "Validating token... ✔"; `apps list` OK;
 `check_do_spec_drift.py --context shopman-do-app-admin` → `[OK] spec_drift`; o antigo some da lista do
 painel.
+
+---
+
+## D-023 · Textos novos de seis modelos do WhatsApp
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-02 · **revisar_em:** 2026-10-15
+
+**Decisão do dono.** "Aprovo pedido_em_preparo e pagamento_falhou e pontos_fidelidade como mostrou"
+(os de 25/09 eram recusados pelo ManyChat por formato). E três versões sem o tom que a Meta lê como
+Marketing (ela reclassificou `pedido_entregue`, `fila_vaga_disponivel` e `produto_chegou`):
+`pedido_entregue_v2` ("OK"), `fila_vaga_disponivel_v2` (opção 1; "Você está na fila" é a fermata, o
+"aguardando confirmação") e `produto_chegou_v2` (texto do próprio dono: "Oi, {{1}}! Você pediu para
+avisar: {{2}} já está disponível."). Botões no padrão dos aprovados. Os três errados se apagam quando
+os `_v2` forem aprovados; o nome `_v2` fica (o código liga evento a flow, não a nome de modelo).
+
+**Prova.** `docs/reference/whatsapp-templates-meta.md` (corpos marcados "aprovado pelo dono em
+02/10/2026"); envio no ManyChat registrado no HANDOFF.
