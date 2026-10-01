@@ -21,8 +21,9 @@ Three verbs:
     reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
         Write. Brings the total reserved quantity for `(session_key, sku)` to
         exactly `new_qty`. Grows by creating a fresh hold for the delta (may
-        shortage); shrinks by releasing holds FIFO and creating a compensating
-        hold for any release overshoot; `new_qty=0` releases everything.
+        shortage); shrinks by releasing holds FIFO and returning any release
+        overshoot to the session (never fails; keeps what still exists);
+        `new_qty=0` releases everything.
 
 All three return plain dicts so callers (cart UX, marketplace flow, API) can
 react without coupling to Stockman internals.
@@ -33,6 +34,8 @@ from __future__ import annotations
 import logging
 from datetime import date
 from decimal import Decimal
+
+from django.db import transaction
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel
@@ -1025,8 +1028,12 @@ def reconcile(
 
     Shrink (`new_qty < current`):
         Releases holds FIFO until the released qty covers the diff. If the
-        last released hold overshoots, creates a small compensating hold for
-        the overshoot so the final reserved qty lands on `new_qty`.
+        last released hold overshoots, the overshoot goes back to the session
+        through ``adapter.return_hold_remainder``: the same reservation when it
+        lands on the original quant (date, expiry, kind markers, no shop-window
+        margin), a regular cart reservation when it would land on another quant,
+        and whatever still fits when the quant shrank. Shrinking never fails;
+        when stock no longer covers the line, the session keeps what exists.
 
     Zero (`new_qty == 0`):
         Releases every hold for the SKU in this session.
@@ -1155,6 +1162,17 @@ def _reconcile_simple(
     # ── Grow ──
     if new_qty > current_total:
         delta = new_qty - current_total
+        if target_date is None:
+            # O acréscimo entra no MESMO dia que a linha já promete: a sacola
+            # que está na fila da fornada de amanhã cresce dentro dela, e a de
+            # pronta-entrega cresce dentro de hoje (uma linha, uma data). Sem
+            # reserva viva, ancora como uma reserva nova (``reserve``). Sem
+            # isto o hold nascia para HOJE e a linha da fila não crescia nunca.
+            target_date = (
+                adapter.hold_target_date(existing[-1][0])
+                if existing
+                else waitlist.reserve_target_date(sku, delta, channel_ref=channel_ref)
+            )
 
         listing_error = _reserve_listing_gate_error(
             sku,
@@ -1214,6 +1232,7 @@ def _reconcile_simple(
                 "released_ids": [],
                 "available_qty": status["available_qty"],
                 "is_paused": status.get("is_paused", False),
+                "is_planned": status.get("is_planned", False),
                 "error_code": status.get("error_code") or "insufficient_stock",
                 "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
             }
@@ -1264,6 +1283,12 @@ def _reconcile_simple(
         }
 
     # ── Shrink ──
+    # Reduzir a sacola nunca falha, e nunca solta o que ainda cabe: soltar e
+    # devolver a sobra vivem num savepoint (um erro no meio desfaz a soltura),
+    # e a sobra volta pelo adapter, que devolve a mesma reserva quando pode,
+    # uma reserva comum quando ela cairia em outro quant, e o que couber quando
+    # o quant encolheu. Nesse último caso a linha fica com o que o cliente
+    # pediu e a reserva com o que existe; a revalidação da sacola mostra a falta.
     diff = current_total - new_qty
     released_ids: list[str] = []
     released_qty = Decimal("0")
@@ -1273,31 +1298,25 @@ def _reconcile_simple(
         released_ids.append(hid)
         released_qty += hqty
 
-    if released_ids:
-        adapter.release_holds(released_ids)
-
     overshoot = released_qty - diff
     created_ids: list[str] = []
-    if overshoot > 0:
-        # Stock just went back into the pool; re-reserve the excess so the
-        # final total matches new_qty exactly.
-        result = adapter.create_hold(
-            sku=sku,
-            qty=overshoot,
-            ttl_minutes=ttl_minutes,
-            reference=session_key,
-            target_date=target_date,
-            channel_ref=channel_ref,
-            **(hold_metadata or {}),
-        )
-        if result.get("success"):
-            created_ids.append(result["hold_id"])
-        else:
-            logger.warning(
-                "availability.reconcile: compensating hold failed sku=%s "
-                "overshoot=%s code=%s — session now under-reserved",
-                sku, overshoot, result.get("error_code"),
+    with transaction.atomic():
+        if released_ids:
+            adapter.release_holds(released_ids)
+        if overshoot > 0:
+            returned = adapter.return_hold_remainder(
+                released_ids[-1], overshoot,
+                channel_ref=channel_ref,
+                ttl_minutes=ttl_minutes,
             )
+            created_ids = [hold_id for hold_id, _qty in returned]
+            returned_qty = sum((qty for _hold_id, qty in returned), Decimal("0"))
+            if returned_qty < overshoot:
+                logger.info(
+                    "availability.reconcile: shrink kept less than the line sku=%s "
+                    "line=%s reserved=%s (stock no longer covers it)",
+                    sku, new_qty, new_qty - (overshoot - returned_qty),
+                )
 
     return {
         "ok": True,
