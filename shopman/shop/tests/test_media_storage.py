@@ -5,6 +5,8 @@ Sem rede: só a configuração resolvida e a instância do storage são inspecio
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import pytest
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -57,8 +59,10 @@ def test_flag_on_builds_a_working_s3storage_instance():
     assert storage.file_overwrite is False
     # A URL sai assinada e com o endpoint do R2, sem tocar a rede.
     url = storage.url("receitas/foto.jpg")
-    assert url.startswith("https://")
-    assert "r2.cloudflarestorage.com" in url
+    parsed = urlparse(url)
+    assert parsed.scheme == "https"
+    assert parsed.hostname is not None
+    assert parsed.hostname.endswith(".abc123.r2.cloudflarestorage.com") or parsed.hostname == "abc123.r2.cloudflarestorage.com"
     assert "X-Amz-Signature=" in url
 
 
