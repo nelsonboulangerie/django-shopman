@@ -498,3 +498,30 @@ def test_deploy_on_push_turned_off_is_a_divergence():
         unit="componentes",
     )
     assert any("deploy_on_push" in line for line in problems)
+
+
+def test_run_command_divergence_is_reported():
+    """O caso real de 01/10/2026: o vivo sem o `--access-log=/dev/null` do arquivo."""
+    live_component = _component("web")
+    live_component["run_command"] = "daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+    versioned_component = _component("web")
+    versioned_component["run_command"] = "daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application"
+    problems = drift.compare_records(
+        drift.component_index({"services": [live_component]}),
+        drift.component_index({"services": [versioned_component]}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("services/web" in line and "run_command" in line and "access-log" in line for line in problems)
+
+
+def test_run_command_lost_in_the_live_app_fails():
+    versioned_component = _component("web")
+    versioned_component["run_command"] = "daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application"
+    problems = drift.compare_records(
+        drift.component_index({"services": [_component("web")]}),
+        drift.component_index({"services": [versioned_component]}),
+        label="componente",
+        unit="componentes",
+    )
+    assert any("services/web" in line and "run_command" in line for line in problems)
