@@ -20,6 +20,8 @@ import type {
 
 export type {
   CaptureItemProjection,
+  CriterionAverageProjection,
+  ExternalReferenceProjection,
   FormulaItemProjection,
   FormulaLensProjection,
   FormulaMetricProjection,
@@ -28,6 +30,7 @@ export type {
   IngredientOptionProjection,
   KindOptionProjection,
   QualityShareProjection,
+  RatingCriterionProjection,
   RecipeBookAccessProjection,
   RecipeBookListProjection,
   RecipeCaptureDraftProjection,
@@ -42,6 +45,7 @@ export type {
   RecipeVersionProjection,
   ReferenceRangeProjection,
   UsageCaveatProjection,
+  VersionRatingProjection,
   VersionUsageProjection,
 } from "~/generated/recipeBookContract";
 
@@ -180,13 +184,29 @@ export interface EntryCreatePayload {
   version?: VersionPayload;
 }
 
-/** Corpo de `PATCH recipes/<ref>/`. */
+/**
+ * Uma referência externa como a API a recebe (`RecipeEntry.meta["external_references"]`):
+ * livro, vídeo ou artigo. Só `title` é obrigatório; `url` só http/https.
+ */
+export interface ExternalReferenceInput {
+  title: string;
+  url?: string;
+  note?: string;
+}
+
+/** Corpo de `PATCH recipes/<ref>/`. `external_references` substitui a lista inteira. */
 export interface EntryPatch {
   name?: string;
   kind?: string;
   output_sku?: string;
   notes?: string;
   is_archived?: boolean;
+  external_references?: ExternalReferenceInput[];
+}
+
+/** Corpo de `PUT recipes/<ref>/versions/<n>/rating/`: id do critério → nota inteira de 0 a 5. */
+export interface RatingPayload {
+  scores: Record<string, number>;
 }
 
 /** Corpo de `POST recipes/capture/`. */

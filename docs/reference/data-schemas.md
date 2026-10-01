@@ -1605,6 +1605,20 @@ apontando a etapa ("Etapa 2: ...").
 | `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
+## RecipeEntry.meta
+
+A receita do inventário (a linhagem). Diferente da `RecipeVersion` publicada, a `RecipeEntry`
+muda: o que é da receita e não de uma fórmula congelada mora aqui.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `external_references` | `list[{title, url?, note?}]` | `backstage.services.recipe_book.patch_entry` (`PATCH recipes/<ref>/` com a lista inteira; forma em `backstage.services.recipe_external_references.validate`) | `RecipeEntryDetailProjection.external_references` (via `recipe_external_references.read`) | Referências externas (D6, 01/10/2026): livro + página, vídeo, artigo. `title` obrigatório (até 200); `url` só `http`/`https` com host (até 500); `note` até 500; no máximo 30 por receita. Chave vazia não se grava; lista vazia apaga a chave. Da receita, não da versão: a fonte vale para todas as versões, e a versão publicada é imutável (#1308). A leitura descarta link fora da forma (gravado à mão pelo Admin). Anexo de arquivo não mora aqui. |
+
+A nota 0 a 5 por critério (D7) **não** mora em JSON: é registro próprio
+(`backstage.RecipeVersionRating` + `RecipeVersionRatingScore`, critérios em
+`backstage.RecipeRatingCriterion`), apontando para a versão fechada por `entry_ref` +
+`version_number`.
+
 ## RecipeVersion.meta
 
 Versão publicada ou substituída é imutável no modelo (`save()`, `.update()` e exclusão recusam;
