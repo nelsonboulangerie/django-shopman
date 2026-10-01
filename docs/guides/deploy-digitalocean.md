@@ -103,13 +103,15 @@ persistentes. O alpha usa o pool legado de nao-producao `shopman-staging-pool`:
 
 ```env
 DATABASE_URL=${postgres.shopman-staging-pool.DATABASE_URL}
-DATABASE_CONN_MAX_AGE=60
+DATABASE_CONN_MAX_AGE=0
 DATABASE_DISABLE_SERVER_SIDE_CURSORS=true
 ```
 
-Não suba `DATABASE_CONN_MAX_AGE` para `60` no Postgres pequeno sem pool: em
-ASGI/Daphne ele pode acumular conexões ociosas e causar `remaining connection
-slots are reserved`. Sem pool, use `DATABASE_CONN_MAX_AGE=0`. Com pool em modo
+`DATABASE_CONN_MAX_AGE` é `0`, com ou sem pool. Sob ASGI/Daphne cada request roda
+numa thread nova, então `60` não reaproveita conexão nenhuma: só deixa o backend
+ocioso até o GC (bancada de 01/10: 15 ociosas depois de 100 requests; com `0`,
+zero). No Postgres pequeno sem pool isso vira `remaining connection slots are
+reserved`. Aplicado no spec vivo em 01/10/2026 (decisão D21). Com pool em modo
 transaction, mantenha `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`.
 
 O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
