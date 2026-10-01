@@ -167,6 +167,7 @@ def intent_label(ref: str) -> str:
 
         name = IntentCategory.objects.filter(ref=ref).values_list("name", flat=True).first()
     except Exception:  # banco indisponível não pode derrubar o turno
+        logger.warning("concierge.triage.intent_label_failed ref=%s", ref, exc_info=True)
         name = None
     return name or DEFAULT_LABELS.get(ref, ref)
 
