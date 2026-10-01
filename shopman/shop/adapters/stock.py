@@ -473,7 +473,11 @@ def return_hold_remainder(
        (``create_hold``), e a margem da vitrine vale como em qualquer reserva.
     3. **O que couber**, se nem isso couber inteiro (o quant encolheu por perda
        ou ajuste): reduzir a sacola nunca falha, e a reserva fica com o que
-       existe.
+       existe. Primeiro no quant ORIGINAL, sem a margem, até o livre dele: é
+       estoque que a sacola já segurava, e a margem barraria justamente a
+       unidade que é dela (margem 2, quant que a perda deixou com 1: sem isso a
+       sacola ficava com zero). O resto, nos outros quants, com a margem
+       valendo, porque ali o estoque nunca foi da sacola.
 
     Returns:
         ``[(hold_id, qty), ...]`` do que voltou (vazia se nada coube).
@@ -499,30 +503,42 @@ def return_hold_remainder(
     def _hold(hold_id_: str):
         return Hold.objects.get(pk=int(hold_id_.split(":")[1]))
 
+    def _back_on_original_quant(qty: Decimal) -> str | None:
+        """Reserva ``qty`` sem margem e a mantém só se caiu no quant original.
+
+        Caindo lá, é a mesma reserva: carimbos de tipo e prazo da original. O
+        Stockman escolhe o quant por validade, então pode cair em outro; aí é
+        estoque que nunca foi da sacola, e a reserva sem margem é desfeita.
+        """
+        result = create_hold(
+            original.sku,
+            qty,
+            ttl_minutes,
+            target_date=original.target_date,
+            reference=reference,
+            channel_ref=channel_ref,
+            apply_safety_margin=False,
+            **carried,
+        )
+        if not result.get("success"):
+            return None
+        created = _hold(result["hold_id"])
+        if created.quant_id != original.quant_id:
+            release_holds([result["hold_id"]])
+            return None
+        kind = {k: v for k, v in (original.metadata or {}).items() if k in _HOLD_KIND_METADATA}
+        created.metadata = {
+            **{k: v for k, v in (created.metadata or {}).items() if k not in _HOLD_KIND_METADATA},
+            **kind,
+        }
+        created.expires_at = original.expires_at
+        created.save(update_fields=["metadata", "expires_at"])
+        return result["hold_id"]
+
     # 1. A mesma reserva, no mesmo quant.
-    same = create_hold(
-        original.sku,
-        remainder,
-        ttl_minutes,
-        target_date=original.target_date,
-        reference=reference,
-        channel_ref=channel_ref,
-        apply_safety_margin=False,
-        **carried,
-    )
-    if same.get("success"):
-        created = _hold(same["hold_id"])
-        if created.quant_id == original.quant_id:
-            kind = {k: v for k, v in (original.metadata or {}).items() if k in _HOLD_KIND_METADATA}
-            created.metadata = {
-                **{k: v for k, v in (created.metadata or {}).items() if k not in _HOLD_KIND_METADATA},
-                **kind,
-            }
-            created.expires_at = original.expires_at
-            created.save(update_fields=["metadata", "expires_at"])
-            return [(same["hold_id"], remainder)]
-        # Caiu em outro quant sem a margem da vitrine: não é a mesma reserva.
-        release_holds([same["hold_id"]])
+    same = _back_on_original_quant(remainder)
+    if same:
+        return [(same, remainder)]
 
     # 2. Uma reserva comum de sacola, onde ela couber, com a margem valendo.
     fresh = create_hold(
@@ -537,16 +553,30 @@ def return_hold_remainder(
     if fresh.get("success"):
         return [(fresh["hold_id"], remainder)]
 
-    # 3. O que couber.
-    partial = create_holds_up_to(
-        original.sku,
-        remainder,
-        ttl_minutes,
-        target_date=original.target_date,
-        reference=reference,
-        channel_ref=channel_ref,
-        **carried,
-    )
+    # 3. O que couber: primeiro o livre do quant original, sem a margem (era
+    #    da sacola); o resto nos outros quants, com a margem valendo.
+    partial: list[tuple[str, Decimal]] = []
+    left = remainder
+    if original.quant_id is not None:
+        own_free = _free_by_eligible_quant(
+            original.sku, target_date=original.target_date, channel_ref=channel_ref,
+        ).get(original.quant_id, Decimal("0"))
+        piece = min(left, own_free)
+        if piece > 0:
+            own = _back_on_original_quant(piece)
+            if own:
+                partial.append((own, piece))
+                left -= piece
+    if left > 0:
+        partial += create_holds_up_to(
+            original.sku,
+            left,
+            ttl_minutes,
+            target_date=original.target_date,
+            reference=reference,
+            channel_ref=channel_ref,
+            **carried,
+        )
     logger.info(
         "stock.hold_remainder_partial hold=%s session=%s asked=%s returned=%s",
         original.hold_id, reference, remainder, sum((q for _, q in partial), Decimal("0")),
