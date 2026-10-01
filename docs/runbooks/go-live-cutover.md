@@ -12,6 +12,11 @@ Parar antes de qualquer mutação quando:
 - houver `PENDENTE`, `BLOQUEADO` ou `DESCONHECIDO` aplicável na matriz;
 - SHA, manifesto, deployment ou ambiente não coincidirem;
 - backup/restore ou rollback não estiverem comprovados;
+- o **ensaio do Pix real** do [pré-flight §4](go-live-preflight.md#4-integrações-externas)
+  não estiver feito (Pix em `payment_efi` com `EFI_SANDBOX=true` e
+  `SHOPMAN_EXPOSE_MOCK_CAPTURE=false`, o que fecha o botão público de simular
+  pagamento; D-006) ou o `EFI_WEBHOOK_TOKEN` não tiver sido rotacionado (D22).
+  Efí, Stripe e Focus são as últimas chaves a ligar, não as últimas a ensaiar;
 - faltar autorização específica para pagamento, estorno, emissão/cancelamento
   fiscal, envio, corrida, credencial/2FA/DNS ou tráfego comercial.
 
