@@ -303,7 +303,20 @@ class TestProvaDeEnvio:
         _settled(directive)
         directive.refresh_from_db()
         local = timezone.localtime(directive.updated_at)
-        assert self._notice(order) == f"Envio aceito pelo serviço às {local.hour}h{local.minute:02d}. Leitura pelo cliente não confirmada."
+        assert self._notice(order) == f"Link aceito pelo provedor às {local.hour}h{local.minute:02d}, sem comprovante de entrega."
+
+    def test_entregue_so_com_comprovante(self):
+        order = _order("PDV-N2B")
+        notification_svc.send(order, "payment_link_sent")
+        (directive,) = _directives(order)
+        directive.payload["notification_delivery"] = {
+            "status": "accepted", "recorded_at": timezone.now().isoformat(),
+            "proof": "receipt", "message_id": "<abc@boulangerie.com.br>",
+        }
+        directive.save(update_fields=["payload"])
+        _settled(directive)
+        assert self._notice(order).startswith("Link entregue pelo provedor às ")
+        assert self._notice(order).endswith(", com comprovante. Leitura pelo cliente não confirmada.")
 
     def test_falhou_convida_ao_gesto(self):
         order = _order("PDV-N3")
@@ -328,7 +341,7 @@ class TestProvaDeEnvio:
     ("done", {}, "sem confirmação de envio"),
     ("done", {"status": "skipped", "reason": "customer_opt_out"}, "cliente não autorizou"),
     ("done", {"status": "skipped", "reason": "expected_no_contact"}, "não há contato"),
-    ("running", {"status": "accepted"}, "Envio aceito pelo serviço"),
+    ("running", {"status": "accepted"}, "sem comprovante de entrega"),
     ("running", {}, "aceite ainda não confirmado"),
 ])
 def test_notice_reads_delivery_evidence_instead_of_worker_completion(status, delivery, expected):

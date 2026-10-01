@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -296,6 +296,30 @@ export interface TimelineEventProjection {
   detail: string;
 }
 
+/** Um salto da cadeia (WhatsApp, e-mail, SMS) de um aviso. */
+export interface NotificationAttemptProjection {
+  channel_label: string;
+  outcome: string;
+  outcome_label: string;
+  time_display: string;
+  provider_id: string;
+}
+
+/** O comprovante de um aviso ao cliente: o que saiu, por onde, quando e com que prova. */
+export interface NotificationReceiptProjection {
+  template: string;
+  label: string;
+  critical: boolean;
+  state: string;
+  state_label: string;
+  tone: string;
+  channel_label: string;
+  time_display: string;
+  provider_id: string;
+  detail: string;
+  attempts: NotificationAttemptProjection[];
+}
+
 /** A compact production dependency shown on order cards and detail. */
 export interface AwaitingWorkOrderProjection {
   ref: string;
@@ -579,6 +603,7 @@ export interface OperatorOrderProjection {
   courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  notification_receipts: NotificationReceiptProjection[];
   managers: Record<string, string>[];
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];

@@ -701,9 +701,21 @@ Write-back: `intent_ref` (string)
 `notification_delivery` é a evidência na própria Directive: `status` (`started`,
 `unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
 `backend`, `recipient_fingerprint` (SHA-256 truncado, sem contato), `message_id`
-(somente ID real devolvido pelo adaptador), `reason`, `error`. `started` é
-persistido antes de chamar o transporte, fora da transação. `started`/`unknown`
-não autorizam fallback nem replay externo; um aceite posterior é monotônico.
+(somente ID real devolvido pelo adaptador), `reason`, `error`. Comprovante de
+entrega (D3, 01/10/2026; ver [comprovante-de-entrega.md](comprovante-de-entrega.md)):
+`proof` em todo `accepted` (`receipt` = o provedor devolveu identificador e há
+`message_id`; `no_receipt` = só "ok", sem identificador), `critical: true` nos avisos
+de `CRITICAL_NOTIFICATION_TEMPLATES` (`payment_link_sent`, `order_accepted`) e
+`attempts` (lista, um item por salto da cadeia: `backend`, `outcome` =
+`receipt`/`no_receipt`/`unknown`/`failed`, `recorded_at`, `recipient_fingerprint`,
+`message_id?`, `error?`). Em aviso crítico, `no_receipt` e `unknown` NÃO encerram a
+cadeia dentro da mesma execução: o próximo canal é tentado, e o fim sem comprovante
+fica `accepted` + `no_receipt` e alerta o operador (`notification_failed`). Lido
+pelo detalhe do pedido no Gestor (`backstage/projections/notification_receipts.py`
+→ `notification_receipts`) e pelos avisos do link no PDV e no Gestor
+(`pos_payment_delivery`, `order_queue.payment_link_notice`). `started` é
+persistido antes de chamar o transporte, fora da transação. Entre execuções,
+`started`/`unknown` não autorizam replay externo; um aceite posterior é monotônico.
 `failed` novo contém `outcome: not_applied`; falha histórica sem essa prova não
 se torna segura por idade. Worker antigo não entende o fence: rollout requer
 drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre

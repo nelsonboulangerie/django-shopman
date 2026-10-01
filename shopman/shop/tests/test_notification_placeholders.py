@@ -105,7 +105,7 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
         sent.update(kwargs)
         return 1
 
-    with patch("shopman.shop.adapters.notification_email.send_mail", side_effect=fake_send_mail):
+    with patch("shopman.shop.adapters.notification_email._send_mail_with_id", side_effect=fake_send_mail):
         with override_settings(
             MAILERS={
                 "default": {
@@ -114,7 +114,7 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
                 }
             }
         ):
-            assert notification_email.send("joyce@example.com", "order_received", context) is True
+            assert notification_email.send("joyce@example.com", "order_received", context)["success"] is True
 
     assert "Joyce" in sent["subject"]
     assert "{" not in sent["subject"], f"placeholder cru no assunto: {sent['subject']!r}"

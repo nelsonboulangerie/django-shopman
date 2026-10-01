@@ -28,6 +28,10 @@ from shopman.backstage.presentation.status import (
 )
 from shopman.backstage.projections import ifood as ifood_projection
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
+from shopman.backstage.projections.notification_receipts import (
+    NotificationReceiptProjection,
+    build_notification_receipts,
+)
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
 from shopman.shop.projections.types import (
@@ -504,6 +508,10 @@ class OperatorOrderProjection:
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
+    # Comprovante de entrega de cada aviso ao cliente (D3): canal, hora,
+    # identificador do provedor e o estado final. "Entregue" só com
+    # comprovante. Ver ``docs/reference/comprovante-de-entrega.md``.
+    notification_receipts: tuple[NotificationReceiptProjection, ...] = ()
     # Quem pode dar a segunda assinatura (nome + ``username``, nada além) — a MESMA
     # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
     # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
@@ -760,6 +768,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         total_display=_money(order_composition.effective_total_q(order)),
         items=items,
         timeline=_build_timeline(order),
+        notification_receipts=build_notification_receipts(order),
         kitchen_note=order.data.get("kitchen_note", ""),
         customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
@@ -2023,7 +2032,12 @@ def payment_link_notice(order: Order) -> str:
     if delivery.get("status") == "accepted":
         recorded = parse_datetime(str(delivery.get("recorded_at") or ""))
         when = _format_time_of_day(recorded) if recorded and timezone.is_aware(recorded) else ""
-        return f"Envio aceito pelo serviço{(' ' + when) if when else ''}. Leitura pelo cliente não confirmada."
+        at = f" {when}" if when else ""
+        # "Entregue" só com comprovante do provedor (D3). Ver
+        # docs/reference/comprovante-de-entrega.md.
+        if delivery.get("proof") == notification_svc.PROOF_RECEIPT and delivery.get("message_id"):
+            return f"Link entregue pelo provedor{at}, com comprovante. Leitura pelo cliente não confirmada."
+        return f"Link aceito pelo provedor{at}, sem comprovante de entrega."
     if delivery.get("status") == "skipped":
         reason = {
             "customer_opt_out": "o cliente não autorizou notificações",
