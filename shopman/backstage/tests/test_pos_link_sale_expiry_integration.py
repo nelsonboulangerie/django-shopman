@@ -6,8 +6,10 @@ contrário, e pelo MESMO ``close_sale`` de produção: a venda em link é o pedi
 remoto anotado no balcão — o cliente não está na loja, paga depois pelo celular
 e vem buscar. Então:
 
-1. a venda NÃO fecha: fica ACCEPTED aguardando o ``on_paid``, com o estoque
-   reservado (não baixado) e sem ticket de cozinha;
+1. a venda NÃO fecha: fica aberta (NEW, porque a encomenda do PDV espera o
+   aceite humano) aguardando o ``on_paid``, com o estoque reservado (não
+   baixado) e sem ticket de cozinha. O link só existe no modo Encomendas
+   (``link_requires_order_mode``);
 2. o prazo do link chega ao pedido (``payment.expires_at``), à tela do PDV e à
    Directive ``payment.timeout`` — armada exatamente para o vencimento. O prazo
    segue o ciclo do atendimento: a janela do canal (default 120 min) e, quando
@@ -102,10 +104,18 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         Quant.objects.create(sku=SKU, position=position, _quantity=Decimal(STOCK_QTY))
 
     def _close_with_link(self, request_id: str = "link-1") -> tuple[Order, dict]:
+        from shopman.guestman.models import Customer
+
+        # O link só existe no modo Encomendas (`link_requires_order_mode`): é o
+        # pedido remoto anotado, com cliente identificado e data combinada.
+        customer, _ = Customer.objects.get_or_create(ref="MARIA", defaults={"first_name": "Maria"})
         result = pos_service.close_sale(
             channel_ref="pdv",
             payload={
                 "items": [{"sku": SKU, "name": "Pão Francês", "qty": SOLD_QTY, "unit_price_q": 100}],
+                "sales_mode": "order",
+                "customer_ref": customer.ref,
+                "delivery_date": timezone.localdate().isoformat(),
                 "fulfillment_type": "pickup",
                 "customer_name": "Maria",
                 # O contato é obrigatório no link: a URL existe para ser enviada.
@@ -130,7 +140,7 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         order, screen = self._close_with_link()
 
         # 1. Não é entrega de balcão: fica aguardando o cliente pagar.
-        self.assertEqual(order.status, Order.Status.ACCEPTED)
+        self.assertEqual(order.status, Order.Status.NEW)
 
         # 2. O prazo é UM, e chega a todo mundo: pedido, Payman, tela, Directive.
         payment = order.data["payment"]
@@ -199,7 +209,7 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self._run_timeout(directive, at=expires_at - timedelta(hours=1))
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.ACCEPTED)
+        self.assertEqual(order.status, Order.Status.NEW)
         directive.refresh_from_db()
         self.assertEqual(directive.status, Directive.Status.QUEUED)
         self.assertEqual(directive.available_at, expires_at)

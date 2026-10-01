@@ -94,6 +94,10 @@ class POSPaymentMethodProjection:
 
     ref: str
     label: str
+    # Em quais modos do PDV a forma aparece ("counter", "order"). A projeção é
+    # do terminal e o modo é da venda, que troca na tela sem nova leitura; então
+    # a tela filtra por aqui, e o ``close_sale`` recusa o que vier de fora.
+    sales_modes: tuple[str, ...] = ("counter", "order")
 
 
 @dataclass(frozen=True)
@@ -1109,12 +1113,16 @@ def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
 
     `link` some quando o gateway não está de pé (ver `_link_payment_available`):
     o intent continua aceitando o ref, para a venda antiga seguir legível, mas o
-    operador não vê um botão que vai falhar.
+    operador não vê um botão que vai falhar. E, de pé, ele vale só no modo
+    Encomendas (`sales_modes`): no Balcão o cliente está na frente e leva agora.
     """
+    from shopman.shop.services.pos_sales_mode import payment_method_sales_modes
+
     return tuple(
         POSPaymentMethodProjection(
             ref=ref,
             label=payment_method_label(ref),
+            sales_modes=payment_method_sales_modes(ref),
         )
         for ref in _POS_PAYMENT_METHOD_REFS
         if ref != "link" or _link_payment_available()

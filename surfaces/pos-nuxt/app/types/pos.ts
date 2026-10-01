@@ -53,6 +53,8 @@ export interface POSCollectionProjection {
 export interface POSPaymentMethodProjection {
   ref: PosPaymentMethod | string;
   label: string;
+  /** Em quais modos do PDV a forma aparece. `link` é só `order` (Encomendas). */
+  sales_modes?: Array<"counter" | "order">;
 }
 
 export interface POSPaymentConstraintProjection {

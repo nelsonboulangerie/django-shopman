@@ -70,7 +70,10 @@ must match the canonical table above.
 - `products[]`: `sku`, `name`, `price_q`, `price_display`, `collection_ref`.
 - `collections[]`: `ref`, `name`.
 - `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `credit`, `debit`,
-  `mixed`.
+  `mixed`, plus `link` when the link gateway is ready. Each entry carries
+  `sales_modes` (`counter`, `order`): the screen offers the method only in those
+  modes. `link` is `["order"]` only, and `close_sale` refuses it in the counter
+  mode with `link_requires_order_mode`.
 - `fulfillment_options[]`: `pickup`/`delivery` options and address requirement.
 - `payment_collections[]`: terminal/on-delivery options and compatible methods.
 - `checkout`: sale intent contract, sections, fields, option lists and

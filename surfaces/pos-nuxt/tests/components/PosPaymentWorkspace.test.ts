@@ -1554,6 +1554,37 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
   expect(w.text()).not.toContain("Na entrega");
 });
 
+describe("PosPaymentWorkspace — o link é só da encomenda", () => {
+  // Venda de balcão com link fechava aberta e o recibo dizia "A nota fiscal sai
+  // na retirada" de um pão já entregue (PDV-260930-R62). O servidor recusa
+  // (`link_requires_order_mode`); a tela nem oferece.
+  const metodos = [
+    { ref: "cash", label: "Dinheiro", sales_modes: ["counter", "order"] },
+    { ref: "link", label: "Link de pagamento", sales_modes: ["order"] },
+  ];
+  const botaoDoLink = (w: Awaited<ReturnType<typeof mountSuspended>>) => w.find('[data-payment-method="link"]');
+
+  it("no Balcão o botão do link não existe", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "counter", paymentMethods: metodos }) });
+    expect(botaoDoLink(w).exists()).toBe(false);
+    expect(w.find('[data-payment-method="cash"]').exists()).toBe(true);
+  });
+
+  it("uma linha de link que sobrou no Balcão trava o Validar com a frase do servidor", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+      salesMode: "counter", paymentMethods: metodos, customerPhone: "43999990000",
+      paymentTenders: [{ method: "link", amount_q: 1000, collection: "terminal" }],
+      paymentCovered: true, paymentRemainingQ: 0,
+    }) });
+    expect(w.text()).toContain("O link de pagamento é só para encomenda.");
+  });
+
+  it("em Encomendas o botão do link aparece", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "order", paymentMethods: metodos }) });
+    expect(botaoDoLink(w).exists()).toBe(true);
+  });
+});
+
 it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
   const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "counter" }) });
   const vm = (w.vm as unknown as { $: { exposed: { openFulfillment(): void; openSchedule(): void } } }).$.exposed;
