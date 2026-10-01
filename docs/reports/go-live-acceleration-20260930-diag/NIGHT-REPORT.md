@@ -8,16 +8,26 @@
 
 | Frente | PR | Estado | Uma linha |
 |---|---|---|---|
-| Briefing + HANDOFF | #1297 | 🚦 na fila | Só docs; arquivos do branch intocados |
-| **F1** drift do spec (`deploy_on_push`) | #1291 | 🚦 na fila | Teste agora exige DESLIGADO, como o vivo; 38 testes do spec/drift passam |
-| **F2** `brace-expansion` no audit | #1298 | 🚦 na fila | Troca cirúrgica em 10 locks (96 linhas); audit OK nos 10 apps |
-| **F5** PWA travado | — | 🛠️ em andamento | Portar sonda + aviso persistente do operator-kit |
-| **F6** segundo clique | — | 🛠️ em andamento | Bugs A/B/C/D do relatório 04 |
-| **F3** P2 disponibilidade (Core) | — | ⏸️ depois | Sozinha, por último |
-| **F4** projeção da sacola | — | ⏸️ depois | Nunca em paralelo com F3 |
-| 6.2 observações do dono | — | ⏳ seção ainda em completamento | Releio antes de atacar |
+| Briefing + HANDOFF | #1297 | ✅ mergeado | Só docs |
+| Briefing 6.2 + 5 diagnósticos | #1302 | 🚦 na fila | Só docs |
+| **F1** drift do spec (`deploy_on_push`) | #1291 | ✅ mergeado | Teste exige DESLIGADO, como o vivo |
+| **F2** `brace-expansion` no audit | #1298 | ✅ mergeado | "Marketing — cadeia completa" deixa de reprovar todo PR |
+| **F5** PWA travado | #1301 | 🚦 na fila | Sonda + aviso persistente portados do operator-kit |
+| **F6** segundo clique | #1300 | 🚦 na fila | Bugs A, C, D corrigidos; **B é decisão sua (D1)** |
+| **O6.1** cofre sem histórico de receitas | #1303 | 🚦 na fila | Única perda de dado da lista; versões entram no backup |
+| **F4** consultas da sacola | — | 🛠️ em andamento | Corte seguro, sem Core; mede `/catalog/` (O2) |
+| **O3a** link de pagamento no balcão | — | 🛠️ em andamento | `link` só no modo encomenda |
+| **O1** nome+sobrenome no login WhatsApp | — | 🛠️ em andamento | Dividir na entrada; backfill é decisão sua (D8) |
+| **F3** P2 disponibilidade (Core) | — | ⏸️ depois | Sozinha; alvo de medição corrigido para `/catalog/` (O2) |
+| O2 rota `/menu` | — | ✅ não mexer | Veredito: não procede |
 
-**Produção:** no ar a cada verificação (ver "Saúde" abaixo). Nenhuma escrita no spec vivo.
+**Precisa de você (detalhe em [PENDING-DECISIONS](PENDING-DECISIONS.md)):**
+🔴 **D2 Stripe em `cs_test_` no alpha (gate de go-live)** · D3 link "entregue" sem entrega (ManyChat) ·
+D1 botão "Adicionar" inerte até carregar · D4 motivos de rejeição · D5 modo de fazer das receitas ·
+D6 storage de anexos · D7 critérios da nota · D8 backfill de nomes.
+
+**Produção:** no ar a cada verificação (monitor a cada 90 s). Deploys da noite saindo pelo
+`deploy-images.yml`, causa `manual`, sem intervenção. Nenhuma escrita no spec vivo.
 
 ---
 
@@ -53,8 +63,26 @@ PR aberto do branch `dsh/handoff-onda1-e-p7-20260930` e enfileirado. Nenhum arqu
 |---|---|---|---|---|
 | 01/10 00:0x | 200 (2,5 s) | 200 | 200 | `405e3f25` manual, ACTIVE 30/09 23:12 |
 
+### O6 fatia 1 — cofre (#1303)
+- **Defeito:** `shopman/shop/backup/resources.py` levava `Recipe`/`RecipeItem`, nada de
+  `RecipeEntry`/`RecipeVersion`. Restore devolvia a última ficha e perdia todo o histórico.
+- **Correção:** abas `recipe_entries` e `recipe_versions` (chave `entry__ref`+`number`; coluna
+  `is_current` restaura a `current_version`). Sem migração, sem `packages/`.
+- **Prova:** 2 testes novos (apaga tudo → restaura cada campo; versão reescrita → volta);
+  `test_backup.py` 16 passed, `_drive` 4, `_sheet_domain` 4, backstage `_backup_api` 3.
+
+### F6 — segundo clique (#1300)
+- A: o navegador não faz mais a semente de CSRF antes do 1º clique (era um GET da sacola inteira
+  com erro engolido); a semente do BFF que cai na rede não derruba mais a mutação; `csrf;dur` no
+  `Server-Timing`. C: `refreshCart` descarta resposta anterior à mutação (época). D: decremento
+  único em `finally`. 6 testes novos vermelhos no código antigo, verdes agora.
+- B ficou de fora: muda o que o cliente vê na carga. → D1.
+
 ## Divisão do trabalho
 - Coordenador (eu): briefing, F1, F2, relatório, fila de merge, saúde da produção.
 - Agente F5 (worktree própria, branch `night/f5-pwa-storefront`).
 - Agente F6 (worktree própria, branch `night/f6-segundo-clique`).
-- F3 e F4: sequenciais, depois de F5/F6, nunca juntas.
+- Agente F4 (`night/f4-sacola-consultas`), sem tocar arquivos da F3.
+- Agente O3a (`night/o3a-link-so-encomenda`) e agente O1 (`night/o1-nome-na-entrada`).
+- Eu fiz O6.1 (#1303) direto.
+- F3: depois, sozinha, nunca junto com F4.
