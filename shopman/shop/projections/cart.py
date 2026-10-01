@@ -247,10 +247,9 @@ def build_cart(
         return _empty_cart(session_key)
 
     skus = [item.get("sku", "") for item in raw_items]
-    names_by_sku = _names_by_sku(skus)
-    made_to_order = _made_to_order_skus(skus)
-    sellable = _sellable_skus(skus)
+    names_by_sku, made_to_order, sellable = _product_facts(skus)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
+    planned_by_sku = _planned_holds(session_key, skus)
 
     pricing = session.pricing or {}
     discount_data = pricing.get("discount", {})
@@ -258,7 +257,8 @@ def build_cart(
 
     lines = tuple(
         _build_line(
-            item, names_by_sku, avail_map, own_holds, discount_items, session_key,
+            item, names_by_sku, avail_map, own_holds, discount_items,
+            planned_by_sku=planned_by_sku,
             made_to_order_skus=made_to_order,
             sellable_skus=sellable,
         )
@@ -348,16 +348,26 @@ def build_cart(
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _names_by_sku(skus: list[str]) -> dict[str, str]:
+def _product_facts(
+    skus: list[str],
+) -> tuple[dict[str, str], frozenset[str], frozenset[str]]:
+    """Nome, "preparado na hora" e "ainda vendável" dos SKUs da sacola.
+
+    Uma leitura de ``Product`` para as três perguntas (eram três, para os
+    mesmos SKUs). A degradação de cada uma continua a dela: a leitura que falha
+    sobe, como subia a do nome; uma derivação que falha esvazia só a própria
+    resposta (``_made_to_order_skus``, ``_sellable_skus``).
+    """
     from shopman.offerman.models import Product
 
-    return {
-        p.sku: p.name
-        for p in Product.objects.filter(sku__in=skus).only("sku", "name")
-    }
+    products = list(
+        Product.objects.filter(sku__in=skus).only("sku", "name", "metadata", "is_sellable")
+    )
+    names_by_sku = {p.sku: p.name for p in products}
+    return names_by_sku, _made_to_order_skus(products, skus), _sellable_skus(products, skus)
 
 
-def _sellable_skus(skus: list[str]) -> frozenset[str]:
+def _sellable_skus(products: list, skus: list[str]) -> frozenset[str]:
     """Quais destes SKUs a casa ainda vende (``Product.is_sellable``).
 
     O mapa de disponibilidade vem do Stockman e só conhece pausa de ESTOQUE; a
@@ -368,33 +378,25 @@ def _sellable_skus(skus: list[str]) -> frozenset[str]:
     if not skus:
         return frozenset()
     try:
-        from shopman.offerman.models import Product
-
-        return frozenset(
-            p.sku
-            for p in Product.objects.filter(sku__in=skus, is_sellable=True).only("sku")
-        )
+        return frozenset(p.sku for p in products if p.is_sellable)
     except Exception:
         logger.warning("cart.sellable lookup failed skus=%s", skus, exc_info=True)
         return frozenset()
 
 
-def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
+def _made_to_order_skus(products: list, skus: list[str]) -> frozenset[str]:
     """Quais destes SKUs a casa declara como "Preparado na hora".
 
-    Uma consulta para a sacola inteira (o mesmo padrão de ``_names_by_sku``):
-    perguntar por linha faria N+1 numa leitura que roda a cada mexida na
-    sacola. Degrada para vazio — selo é promessa, e promessa que não se pode
-    confirmar não se faz.
+    Lido da mesma leitura da sacola inteira (``_product_facts``): perguntar por
+    linha faria N+1 numa leitura que roda a cada mexida na sacola. Degrada para
+    vazio — selo é promessa, e promessa que não se pode confirmar não se faz.
     """
     if not skus:
         return frozenset()
     try:
-        from shopman.offerman.models import Product
-
         return frozenset(
             p.sku
-            for p in Product.objects.filter(sku__in=skus).only("sku", "metadata")
+            for p in products
             if (p.metadata or {}).get("made_to_order")
         )
     except Exception:
@@ -432,7 +434,8 @@ def _build_line(
     avail_map: dict[str, dict | None],
     own_holds: dict[str, Decimal],
     discount_items: dict[str, dict],
-    session_key: str,
+    *,
+    planned_by_sku: dict[str, tuple[bool, bool, str | None, str | None]],
     made_to_order_skus: frozenset[str] = frozenset(),
     sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
@@ -465,7 +468,9 @@ def _build_line(
     # de amanhã é as duas coisas ao mesmo tempo, e a sacola pode dizer as duas
     # — o que ele É, e quando ele vem.
     is_made_to_order = sku in made_to_order_skus
-    is_awaiting, is_ready, deadline_iso, planned_for_date = _planned_hold(session_key, sku)
+    is_awaiting, is_ready, deadline_iso, planned_for_date = planned_by_sku.get(
+        sku, _NO_PLANNED_HOLD,
+    )
     is_available, available_qty = _line_availability(
         sku, qty, raw_avail, own_holds,
     )
@@ -504,24 +509,45 @@ def _build_line(
     )
 
 
-def _planned_hold(session_key: str, sku: str) -> tuple[bool, bool, str | None, str | None]:
+#: Linha sem reserva planejada: nem aguardando, nem pronta, sem prazo, sem data.
+_NO_PLANNED_HOLD: tuple[bool, bool, str | None, str | None] = (False, False, None, None)
+
+
+def _planned_holds(
+    session_key: str, skus: list[str],
+) -> dict[str, tuple[bool, bool, str | None, str | None]]:
+    """Estado da reserva planejada de cada SKU da sacola, numa leitura só.
+
+    ``(aguardando, pronta, prazo ISO, data prevista ISO)`` por SKU; SKU fora do
+    mapa não tem reserva planejada (``_NO_PLANNED_HOLD``). Era uma consulta de
+    ``Hold`` por linha.
+    """
     from shopman.shop.services import availability as availability_service
 
-    planned = availability_service.classify_planned_hold_for_session_sku(session_key, sku)
-    deadline = planned.get("deadline")
-    planned_for = planned.get("planned_for")
-    if planned_for is not None:
-        # Piso fulfillável: a fornada pode estar datada para HOJE, mas se a loja já
-        # fechou (ou hoje é dia fechado) não há retirada hoje. A promessa ao cliente
-        # nunca fica abaixo do próximo dia operante — senão a sacola diz "Previsto
-        # pra hoje" enquanto o acompanhamento (correto) diz "Estamos fechados".
-        planned_for = max(planned_for, _earliest_fulfillable_date())
-    return (
-        planned["is_awaiting_confirmation"],
-        planned["is_ready_for_confirmation"],
-        deadline.isoformat() if deadline is not None else None,
-        planned_for.isoformat() if planned_for is not None else None,
-    )
+    planned_by_sku = availability_service.classify_planned_holds_for_session(session_key, skus)
+    # O piso é o mesmo para a sacola inteira: calculado uma vez, e só se alguma
+    # linha tiver data prevista.
+    floor = None
+    if any(p.get("planned_for") is not None for p in planned_by_sku.values()):
+        floor = _earliest_fulfillable_date()
+
+    out: dict[str, tuple[bool, bool, str | None, str | None]] = {}
+    for sku, planned in planned_by_sku.items():
+        deadline = planned.get("deadline")
+        planned_for = planned.get("planned_for")
+        if planned_for is not None:
+            # Piso fulfillável: a fornada pode estar datada para HOJE, mas se a loja já
+            # fechou (ou hoje é dia fechado) não há retirada hoje. A promessa ao cliente
+            # nunca fica abaixo do próximo dia operante — senão a sacola diz "Previsto
+            # pra hoje" enquanto o acompanhamento (correto) diz "Estamos fechados".
+            planned_for = max(planned_for, floor)
+        out[sku] = (
+            planned["is_awaiting_confirmation"],
+            planned["is_ready_for_confirmation"],
+            deadline.isoformat() if deadline is not None else None,
+            planned_for.isoformat() if planned_for is not None else None,
+        )
+    return out
 
 
 def _earliest_fulfillable_date():
