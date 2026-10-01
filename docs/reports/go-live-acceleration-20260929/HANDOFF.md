@@ -47,16 +47,23 @@
   webhook (sem mTLS, allowlist de IP vazia). **Rotacionar é OBRIGATÓRIO antes de ligar a Efí de
   produção** (item de checklist do corte do Pix). Ver `d14-token-efi.md` §7.
 
-### 0.4 Em voo (turno de 01/10, uma frente = um branch = um PR, no máximo dois PRs de código ao mesmo tempo)
+### 0.4 Turno de 01/10: frentes (atualizado ~10:35 UTC)
 
-| Frente | Branch / PR | Estado |
+| Frente | PR | Estado |
 |---|---|---|
-| 2: lei da data por superfície (loja: 1 pedido = 1 data; balcão: 1 linha = 1 data) + 409 de ajuste mostra o teto da linha | `night/f2-lei-da-data-por-superficie` | em execução |
-| 3: "Etapa/Etapas" nas telas + guardrails + processo das 11 massas (92 etapas) resgatado | #1326 | na fila |
-| 4: motivos de recusa (lista de 11 + "Outros", agrupada) | `night/f4-motivos-de-recusa` | em execução |
-| 5: botão que nasce inerte (D1) + estado pendente | — | aguarda vaga |
-| 6: D12 pool de Redis e GC | — | aguarda vaga |
-| 7: D6 referências externas + D7 critérios de nota editáveis | — | aguarda vaga |
+| 1: token da Efí fora do access log (D14) | spec vivo | ✅ feito |
+| 2: loja 1 pedido = 1 data + 409 de ajuste mostra o teto da linha | #1329 | ✅ mergeado |
+| 3: "Etapa/Etapas" + guardrails + processo das 11 massas (92 etapas) | #1326 | ✅ mergeado |
+| 4: motivos de recusa (lista de 11 + "Outros", agrupada) | #1328 | ✅ mergeado |
+| 5: botão "Adicionar" ativo desde o primeiro quadro (D1) + `usePendingAction` | #1330 | na fila |
+| 6: D12 pool de Redis por processo + `gc.freeze()` | #1331 | na fila |
+| 7: D6 referências externas + D7 nota com critérios editáveis | #1332 | na fila |
+| 8: D15 medição de rede | sem PR | sem sintoma hoje |
+
+Detalhe e medições: NIGHT-REPORT, seção "Turno de 01/10". Decisões novas: D17 a D24.
+
+⚠️ **O balcão NÃO tem "1 linha = 1 data".** A comanda tem uma data por sessão; o
+`TestOneLineOneDate` é teste da loja. Ver D17 antes de supor o contrário.
 
 ⚠️ **O processo das 92 etapas NÃO é dado da casa.** O próprio artifact de origem (claude.ai
 `b8cd4fc0-…`, 05/09) o chama de "proposta minha, é a parte que eu menos sei". Ele está no repo para
