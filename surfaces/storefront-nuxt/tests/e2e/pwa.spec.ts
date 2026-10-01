@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
@@ -51,6 +51,14 @@ const swPath = fileURLToPath(new URL('../../.output/public/sw.js', import.meta.u
 const SW_ORIGINAL = '"storefront-fonts"'
 const SW_NEXT = '"storefront-f0nts"'
 
+// Troca ATÔMICA (arquivo ao lado + rename): o Nitro manda o `Content-Length` do build,
+// e um `sw.js` lido pela metade no meio da escrita deixaria a busca do navegador
+// esperando bytes que nunca chegam.
+async function replaceServiceWorker (content: string) {
+  await writeFile(`${swPath}.next`, content)
+  await rename(`${swPath}.next`, swPath)
+}
+
 test('versão nova aparece num aviso persistente e só entra pelo toque', async ({ page }) => {
   // Duas instalações completas do worker (o precache inteiro, duas vezes) não cabem
   // no teto padrão de 30 s num runner lento da CI.
@@ -65,7 +73,7 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
     const prompt = page.getByTestId('pwa-update-prompt')
     await expect(prompt).toBeHidden()
 
-    await writeFile(swPath, original.replace(SW_ORIGINAL, SW_NEXT))
+    await replaceServiceWorker(original.replace(SW_ORIGINAL, SW_NEXT))
     // A página recarregada já é controlada pelo worker antigo; a sonda de boot do
     // app pergunta ao servidor, o worker novo instala e fica em espera.
     await page.reload()
@@ -109,7 +117,7 @@ test('versão nova aparece num aviso persistente e só entra pelo toque', async 
     // Recarregada com o worker novo no comando, não há mais versão em espera.
     await expect(prompt).toBeHidden({ timeout: 15_000 })
   } finally {
-    await writeFile(swPath, original)
+    await replaceServiceWorker(original)
   }
 })
 
