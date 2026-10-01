@@ -35,7 +35,7 @@ de ausência de backup:
 - `shopman-alpha-deploy` (contexto removido do doctl local em 30/09/2026) continua sem `database:read` e recebe 403 em
   `GET /v2/databases`;
 - o contexto já existente `shopman-do-app-admin` (na data desta auditoria ainda
-  chamado `shopman-spec-update`; renomeado em 30/09/2026, mesmo token) acessa os mesmos apps e possui
+  chamado `shopman-spec-update`; renomeado em 30/09/2026; token rotacionado em 01/10, D-022) acessa os mesmos apps e possui
   leitura de databases/backups; nenhum token ou valor secreto foi exibido;
 - listar backups exige `database:read`, conforme a API oficial.
 

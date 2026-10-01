@@ -114,7 +114,7 @@ para ler a connection string do cluster novo.
 > **30/09/2026:** o contexto `shopman-alpha-deploy` foi **removido** do doctl
 > local (token cego para databases e, pior, era o default). Use
 > `--context shopman-do-app-admin` explícito; o default agora é o contexto vazio
-> `default`, que falha alto. O `shopman-do-app-admin` se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`), com o mesmo token.
+> `default`, que falha alto. O `shopman-do-app-admin` se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto.
 
 > **01/10/2026:** nesta máquina restam só dois contextos, `default` (vazio) e
 > **`shopman-do-app-admin`**. `shopman-spec-update` e `shopman-alpha-deploy` **não

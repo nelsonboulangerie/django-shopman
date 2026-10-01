@@ -3,7 +3,7 @@
 > # ⛔ NUNCA rode `doctl apps update --spec` sem passar o drift-check antes.
 >
 > `make deploy-spec-drift context=shopman-do-app-admin` tem que sair **[OK]**,
-> imediatamente antes do update. (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`), com o mesmo token.) Se a saída listar qualquer coisa em
+> imediatamente antes do update. (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto.) Se a saída listar qualquer coisa em
 > **SUMIRIAM**, não rode o update: traga a coisa para o arquivo primeiro. Isto
 > vale para env, **domínio**, **regra de ingress**, **banco anexado** e
 > **componente**: todos somem do mesmo jeito.

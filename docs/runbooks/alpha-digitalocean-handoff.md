@@ -72,7 +72,7 @@ Estado aplicado:
 - App ID preservado: `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 - Projeto DigitalOcean: `Shopman Alpha`.
 - Contexto `doctl` com token nesta maquina: `shopman-do-app-admin` (le e escreve
-  o spec, inclusive o bloco `databases`). Ele se chamava `shopman-spec-update` ate 30/09/2026; foi renomeado para nomear o papel, nao o comando perigoso (`apps update`), com o mesmo token. O antigo `shopman-alpha-deploy` foi
+  o spec, inclusive o bloco `databases`). Ele se chamava `shopman-spec-update` ate 30/09/2026; foi renomeado para nomear o papel, nao o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto. O antigo `shopman-alpha-deploy` foi
   removido do doctl local em 30/09/2026: era token cego (sem `database:read`) e
   era o default silencioso. O default do doctl agora e o contexto vazio
   `default`, que falha alto sem `--context`.

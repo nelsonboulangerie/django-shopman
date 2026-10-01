@@ -271,7 +271,7 @@ capture o spec vivo e edite esse arquivo capturado.
 
 > ⛔ **Pré-condição de QUALQUER `apps update`:** rode
 > `make deploy-spec-drift context=shopman-do-app-admin` imediatamente antes.
-> (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`), com o mesmo token.)
+> (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto.)
 > Ele tem que sair **[OK]**, e **exit 2 ("leitura cega") não é OK**.
 >
 > O contexto importa tanto quanto o comando. O token de deploy
