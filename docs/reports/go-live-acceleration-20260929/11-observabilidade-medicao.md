@@ -430,7 +430,7 @@ tornar visível**: o dado está no log, é gratuito, e ninguém o lê. Vale conf
 
 | # | Sinal | Como obter | Credencial | Latência por request? | Granularidade |
 |---|---|---|---|---|---|
-| 1 | `Server-Timing` (Django: `projection/availability/personalization/shadow/db`) | `curl -s -o /dev/null -D- <url> \| grep -i server-timing` | **nenhuma** | sim | `menu/`, `catalog/`, `continuum/…` |
+| 1 | `Server-Timing` (Django: `projection/availability/personalization/shadow/db`; desde a Onda 2b também `connect/cache/gc`, ver `docs/guides/operations.md`) | `curl -s -o /dev/null -D- <url> \| grep -i server-timing` | **nenhuma** | sim | `menu/`, `catalog/`, `continuum/…` |
 | 2 | `Server-Timing` + estágio `bff` | idem, na rota de API pelo host da loja | **nenhuma** | sim | separa BFF de Django |
 | 3 | `storefront_catalog_observation` | `doctl apps logs <id> web --type run --no-prefix \| jq 'select(.message=="storefront_catalog_observation")'` | `doctl apps logs` (OK) | sim (ms por estágio) | por request, allowlisted |
 | 4 | `operator.request.finished` (`view_elapsed_ms`) | idem, `jq 'select(.message=="operator.request.finished")'` | `doctl apps logs` | sim | 9 módulos de API backstage |
