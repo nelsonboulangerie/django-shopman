@@ -67,7 +67,7 @@ def test_estimate_returns_centavos_and_metrics():
     assert est.km == 4.05
     kwargs = mock_request.call_args.kwargs
     assert kwargs["auth"] == ("user-1", "pass-1")
-    assert kwargs["headers"] == {"api-key": "key-1"}
+    assert kwargs["headers"] == {"api-key": "key-1", "User-Agent": courier_machine.USER_AGENT}
     assert kwargs["params"]["lat_partida"] == "-23.30"
     assert kwargs["params"]["lng_desejado"] == "-51.17"
 
@@ -377,5 +377,11 @@ def test_each_call_hits_the_documented_v1_path(call, args, kwargs, method, url, 
     assert (called_method, called_url) == (method, f"{PRODUCTION_BASE}{url}")
     assert sent["params"] == query
     assert sent["json"] == body
-    assert sent["headers"] == {"api-key": "k"}
+    assert sent["headers"] == {"api-key": "k", "User-Agent": courier_machine.USER_AGENT}
     assert sent["auth"] == ("u", "p")
+
+
+def test_user_agent_is_never_the_requests_default():
+    """A borda da Machine devolve 403 em HTML para `python-requests/x.y` (01/10/2026)."""
+    assert not courier_machine.USER_AGENT.lower().startswith("python-requests")
+    assert courier_machine.USER_AGENT.strip()

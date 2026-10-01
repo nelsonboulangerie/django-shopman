@@ -140,3 +140,29 @@ O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload doc
 Janela deslizante de 60 s por `api-key`; estourar devolve `429` com `Retry-After`. Na v1:
 **3 consultas por minuto por solicitação** em `solicitacaoStatus`. Rodar o passo 3 em laço
 apertado estoura; espere 20 s entre consultas da mesma corrida.
+
+## Ensaio de 01/10/2026: o que aconteceu
+
+Credenciais do usuário Gestor da empresa (login do painel `cloud.taximachine.com.br`, cargo de
+administrador, permissões fixas com API Empresa, Entrega e Webhook) e a API Key que o dono tinha em
+mãos, lidas de um arquivo fora do repositório. Nenhuma corrida foi aberta.
+
+| Chamada | Ambiente | User-Agent | Resposta |
+|---|---|---|---|
+| `GET /solicitacaoStatus?id_mch=1` | homologação | `python-requests/2.32.3` | **403, página HTML** |
+| `GET /solicitacaoStatus?id_mch=1` | homologação | `curl/8` | 400 JSON `"Chave da API inválida."` |
+| `GET /solicitacaoStatus?id_mch=1` | produção | `python-requests/2.32.3` | **403, página HTML** |
+| `GET /solicitacaoStatus?id_mch=1` | produção | `curl/8` | 400 JSON código 67 (a corrida 1 não é nossa) |
+| `estimate()` (cotação, não cria corrida) | produção | `Shopman/1.0` | `CourierEstimate(value_q=800, minutes=11.0, km=3.43)` em 0,40 s |
+| `GET /listarWebhook` | produção | `Shopman/1.0` | `{"webhooks": [], "quantidade_webhooks": 0}` em 0,31 s |
+
+O que isso prova:
+
+1. **A borda da Machine recusa o User-Agent padrão do `requests`**, nos dois ambientes. O adaptador
+   passou a mandar `courier_machine.USER_AGENT`; sem isso, toda chamada em produção falharia com 403.
+2. **A chave de produção não vale na homologação** ("Chave da API inválida."). A frase "a mesma
+   API Key vale nos dois" não se confirmou para esta chave. Ensaiar abrir e cancelar exige uma chave
+   de homologação (pedir à Machine) ou uma corrida real em produção, que chama entregador de verdade:
+   as duas são decisão do dono.
+3. **Credencial, cotação e leitura funcionam em produção.** Faltam provar, sem corrida real:
+   abrir, status, detalhes, posição, link de rastreio, cancelar e webhook.
