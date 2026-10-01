@@ -923,7 +923,7 @@ if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
 # SHOPMAN_E011 bloqueia produção. Ver docs/plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md.
 SHOPMAN_MACHINE = {
     "base_url": os.environ.get("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),
-    "details_base": os.environ.get("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/integracao/v1"),
+    "details_base": os.environ.get("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
     "username": os.environ.get("MACHINE_API_USER", "").strip(),
     "password": os.environ.get("MACHINE_API_PASSWORD", "").strip(),
     "api_key": os.environ.get("MACHINE_API_KEY", "").strip(),

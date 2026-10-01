@@ -7,12 +7,24 @@ token compartilhado (``SHOPMAN_MACHINE["webhook_token"]``) no header
 na Machine leva o token no query param. Token ausente/errado → 401 fail-closed
 em qualquer ambiente (mesmo contrato do EFI, ver ``efi.py``).
 
-⚠️ O payload do EVENTO não é documentado na collection da Machine — só o
-cadastro do webhook. O parsing é defensivo (múltiplas chaves candidatas) e o
-corpo cru é SEMPRE logado; o polling (``courier.sync``) é a via garantida
-enquanto o formato real não for observado em homologação. Payload não
-reconhecido → 202 (não punimos a Machine por um formato que ainda não
-conhecemos; nada é perdido — o polling converge).
+Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
+
+- **status** (um POST por evento): ``{datetime, event_id, company_id,
+  request_id, status_code, status_label, stop_id?, links{request, driver?,
+  enterprise?}}``. ``status_code`` traz a letra da corrida (D/G/P/S/N/A/E/C/F/U)
+  ou um evento que não é estado: ``AP`` (chegou ao local), ``ER`` (parada
+  finalizada), ``L`` (aguardando liberação), ``R`` (aguardando pagamento).
+  Só a letra de estado entra no funil; o evento é aceito e logado.
+- **posicao** (lote a cada 10 s, sem reenvio): ``{event_id, datetime,
+  data: [{timestamp, company_id, request_id, driver_id,
+  coordinates{latitude, longitude}}]}``, até 500 itens por POST.
+- O formato antigo (``id_mch``/``status_solicitacao`` e ``id_mch``/
+  ``lat_cond``/``lng_cond``) está DEPRECADO na doc, mas continua aceito.
+
+A Machine assina com ``Signature-V2`` (HMAC-SHA-512 com a chave da API); esta
+borda autentica pelo token na URL e ainda não confere a assinatura. O corpo cru
+é SEMPRE logado e o polling (``courier.sync``) segue como via garantida.
+Payload não reconhecido → 202 (nada é perdido: o polling converge).
 
 Status converge no funil ``courier.apply_status`` (idempotente — replay do
 mesmo status é no-op). Posição não toca o Order: vai para o cache
@@ -37,11 +49,18 @@ from shopman.shop.services import webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
-#: Chaves candidatas ao id da corrida no evento (formato não documentado).
+#: Chaves do id da corrida: ``request_id`` no formato documentado atual,
+#: ``id_mch`` no deprecado; as demais são tolerância.
 _ID_KEYS = ("id_mch", "id", "solicitacao_id", "id_solicitacao", "request_id")
 
-#: Chaves candidatas ao status.
-_STATUS_KEYS = ("status", "status_solicitacao", "situacao")
+#: Chaves do status: ``status_code`` no formato atual, ``status_solicitacao``
+#: no deprecado.
+_STATUS_KEYS = ("status", "status_solicitacao", "status_code", "situacao")
+
+#: Letras que são ESTADO da corrida. ``AP``/``ER``/``L``/``R`` chegam pelo
+#: mesmo webhook mas são eventos (chegada, parada, liberação, pagamento):
+#: gravá-los como status apagaria a letra verdadeira.
+_RIDE_STATUSES = frozenset({"D", "G", "P", "S", "N", "A", "E", "C", "F", "U"})
 
 POSITION_CACHE_SECONDS = 120
 
@@ -71,27 +90,32 @@ class MachineWebhookView(APIView):
         logger.info("machine.webhook raw=%s", raw.decode("utf-8", errors="replace"))
 
         event = request.data if isinstance(request.data, dict) else {}
+        if isinstance(event.get("data"), list):
+            # Lote de posição (formato documentado atual).
+            stored = sum(_cache_position(item) for item in event["data"] if isinstance(item, dict))
+            return Response(
+                {"status": "ok", "kind": "position_batch", "positions": stored},
+                status=http.HTTP_200_OK,
+            )
+
         ride_ref = _first(event, _ID_KEYS)
         if not ride_ref:
             # Formato desconhecido: aceito (202) + logado; o polling converge.
             return Response({"status": "unrecognized"}, status=http.HTTP_202_ACCEPTED)
 
-        lat, lng = event.get("lat"), event.get("lng")
-        if lat is None:
-            lat = event.get("lat_condutor")
-        if lng is None:
-            lng = event.get("lng_condutor")
-        if lat is not None and lng is not None:
-            cache.set(
-                f"courier:pos:{ride_ref}",
-                {"lat": str(lat), "lng": str(lng)},
-                POSITION_CACHE_SECONDS,
-            )
+        lat = _first(event, ("lat", "lat_condutor", "lat_cond"))
+        lng = _first(event, ("lng", "lng_condutor", "lng_cond"))
+        if lat and lng:
+            _store_position(ride_ref, lat, lng)
 
         ride_status = _first(event, _STATUS_KEYS).upper()
         if not ride_status:
             # Evento só de posição: cache atualizado acima, nada mais a fazer.
             return Response({"status": "ok", "kind": "position"}, status=http.HTTP_200_OK)
+        if ride_status not in _RIDE_STATUSES:
+            # Chegada ao local, parada finalizada etc.: fato registrado no log
+            # acima, sem mexer na letra da corrida.
+            return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 
         from shopman.orderman.models import Order
 
@@ -153,6 +177,25 @@ class MachineWebhookView(APIView):
             logger.warning("MachineWebhook: token não confere — rejeitando")
             return False
         return True
+
+
+def _store_position(ride_ref: str, lat, lng) -> None:
+    cache.set(
+        f"courier:pos:{ride_ref}",
+        {"lat": str(lat), "lng": str(lng)},
+        POSITION_CACHE_SECONDS,
+    )
+
+
+def _cache_position(item: dict) -> bool:
+    """Um item do lote de posição: ``request_id`` + ``coordinates``."""
+    ride_ref = _first(item, ("request_id", "id_mch"))
+    coordinates = item.get("coordinates") if isinstance(item.get("coordinates"), dict) else {}
+    lat, lng = coordinates.get("latitude"), coordinates.get("longitude")
+    if not ride_ref or lat is None or lng is None:
+        return False
+    _store_position(ride_ref, lat, lng)
+    return True
 
 
 def _first(event: dict, keys: tuple[str, ...]) -> str:

@@ -79,6 +79,27 @@ EXPECTED_ONLY_VERSIONED: dict[str, str] = {
         "SECRET sem valor, esperando o opt-in de docs/runbooks/ativar-sentry.md. "
         "Sem DSN o settings.py não inicializa o Sentry."
     ),
+    **{
+        key: (
+            f"declarada explícita no arquivo com `{value}`, o MESMO valor padrão do "
+            "SHOPMAN_MACHINE no config/settings.py. Aplicar não muda comportamento "
+            "(e sem SHOPMAN_COURIER_ADAPTER, que fica fora do arquivo, o adapter nem liga)."
+        )
+        for key, value in (
+            ("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),
+            ("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
+            ("MACHINE_FORMA_PAGAMENTO", "F"),
+            ("MACHINE_CANCEL_REASON_ID", "1"),
+            ("MACHINE_RETORNO", "false"),
+            ("MACHINE_TIMEOUT", "15"),
+        )
+    },
+    **dict.fromkeys(
+        ("MACHINE_API_USER", "MACHINE_API_PASSWORD", "MACHINE_API_KEY", "MACHINE_WEBHOOK_TOKEN"),
+        "SECRET sem valor, esperando a credencial da central (TaOn/Machine). "
+        "Sem ela o adapter não chama a Machine (`is_configured()` falso) e o "
+        "webhook recusa todo evento (fail-closed).",
+    ),
 }
 
 

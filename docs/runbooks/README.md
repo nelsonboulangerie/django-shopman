@@ -34,6 +34,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 ### Demais domínios
 
 - [Webhook falhando](webhook-falhando.md)
+- [Entrega por parceiro (TaOn/Machine): ensaio na homologação](courier-machine-homologacao.md)
 - [Pagamento divergente](pagamento-divergente.md)
 - [Pedido pago sem confirmacao](pedido-pago-sem-confirmacao.md)
 - [Redis fora ou SSE sem fanout](redis-fora.md)
