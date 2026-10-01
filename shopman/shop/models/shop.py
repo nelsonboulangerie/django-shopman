@@ -9,8 +9,10 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from shopman.shop.fonts import BODY_FONTS, HEADING_FONTS
+from shopman.shop.request_memo import memoized
 
 SHOP_CACHE_KEY = "shop_singleton"
+SHOP_MEMO_KEY = ("shop",)
 LOGO_ALLOWED_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
@@ -483,6 +485,19 @@ class Shop(models.Model):
 
     @classmethod
     def load(cls) -> Shop | None:
+        """A loja, lida uma vez por request (``request_memo``) e no cache entre requests.
+
+        Dentro de um request, toda chamada devolve a MESMA instância: o caminho
+        quente chama ``Shop.load()`` meia dúzia de vezes (cascata do
+        ``ChannelConfig``, shell, disponibilidade), e cada chamada era uma ida ao
+        Redis. Fora de um request (comando, worker) não há memo e cada chamada vai
+        ao cache como antes. Quem recebe a instância só lê; ``save``/``delete`` da
+        loja esvaziam o memo (``request_memo``) e o cache.
+        """
+        return memoized(SHOP_MEMO_KEY, cls._load_cached)
+
+    @classmethod
+    def _load_cached(cls) -> Shop | None:
         shop = cache.get(SHOP_CACHE_KEY)
         if shop is None:
             shop = cls.objects.first()
