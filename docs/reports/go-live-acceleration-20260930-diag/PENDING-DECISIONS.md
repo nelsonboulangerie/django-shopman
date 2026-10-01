@@ -20,6 +20,19 @@
 | D15 | Medido sem sintoma; o chamado virou D23 |
 | D16 | ✅ (a) teto da linha e (b) 1 pedido = 1 data na loja (#1329). O que sobrou virou D17 e D18 |
 
+## Atualização de 01/10 (tarde): decidido pelo dono e executado
+
+| # | Estado |
+|---|---|
+| D3 | ✅ Recibo de envio crítico (#1339). Perguntas restantes em D27 |
+| D6 | ✅ R2 pronto e desligado (#1337). O que falta é do dono: D30 |
+| D9 | ✅ Versão nova forçada, nunca no pagamento (#1341) |
+| D10 | Não removido: a `/sacola` exibe o trilho vindo do `shell/`. Pergunta em D31 |
+| D11 | ✅ Versão livre (#1338). Perguntas restantes em D26 |
+| D19, D20, D24 | ✅ (#1338) |
+| D21 | ✅ Aplicado no spec vivo, arquivos no #1334 |
+| D16(b), D17, D18 | Viraram o mapa WP-DATA-E-PROMESSA (#1335). Perguntas em D25 |
+
 ## D17 — Balcão: "1 linha = 1 data" NÃO existe hoje
 
 **Contexto.** A premissa era "a comanda pode ter linhas de datas diferentes, e isso já funciona". A
@@ -318,3 +331,70 @@ nova: que dia a sacola mostra? a parte de hoje espera a de amanhã?).
 **Opções.** (a) 1) O 409 do ajuste passa a dizer o total que a linha pode ter (reservado + livre),
 alinhado ao botão. 2) Manter e mudar o botão para somar. (b) 1) Manter uma linha = uma data. 2) Dividir.
 **Recomendação:** (a) 1. (b) 1, por ora; dividir é desenho de UX, não conserto.
+
+
+## D25 — Data e promessa: as perguntas do mapa (destrava a Frente 5)
+
+**Contexto.** O mapa `docs/plans/WP-DATA-E-PROMESSA.md` (#1335) confirma "uma data alvo por pedido"
+com ressalva: a data também mora na reserva (`Hold.target_date`), e nada obriga as duas a
+concordarem (sacola montada na fornada de amanhã, "Hoje" escolhido no checkout).
+**Perguntas.** As P1 a P9 estão na seção 7 do mapa, cada uma com opções e recomendação. **P1, P2 e
+P3 destravam o conserto da loja** (passar a data da sacola para a resolução no `add_item`).
+**Recomendação:** P1 sim (uma data nos quatro canais), P2 vale a data da sacola, P3 sim.
+
+## D26 — Receita: editar a versão publicada direto no app?
+
+**Contexto.** Com o D11 o banco e o Admin deixam editar e apagar versão publicada (#1338). O
+serviço do app (`update_draft`, regra anterior ao #1308) ainda edita só rascunho: no app, mudar uma
+versão publicada continua sendo criar versão nova.
+**Opções.** 1) Manter (o app cria versão nova; o Admin edita direto). 2) Liberar edição direta da
+publicada no app. E: os comandos `rewrite_recipe_per_unit` e `convert_material_base_unit` ainda
+dizem "versão publicada é história" (escolha deles de não reescrever versões): trocar?
+**Recomendação:** 1, e manter a frase dos comandos (descreve o que eles fazem).
+
+## D27 — Recibo de envio: mais eventos críticos, e o alerta frequente
+
+**Contexto.** Críticos hoje: `payment_link_sent` e `order_accepted` (#1339). ManyChat e Comtele não
+devolvem identificador; só o e-mail comprova. Cliente sem e-mail recebe WhatsApp + SMS e, mesmo
+assim, o operador recebe alerta de "sem comprovante" em todo link de pagamento.
+**Perguntas.** (a) Entram `payment_requested` (cobrança Pix), `order_received`,
+`order_rejected`/`order_cancelled`, `waitlist_available`? (b) O alerta em todo link sem e-mail é
+aceitável, ou o e-mail passa a ser pedido na venda por link? (c) Mensagem em dobro (WhatsApp + SMS,
+ou WhatsApp + e-mail) é o custo aceito?
+**Recomendação:** (a) só `payment_requested`; (b) aceitar o alerta por uma semana e medir; (c) sim.
+
+## D28 — Corte de escopo do go-live
+
+**Contexto.** `docs/plans/PRODUCT-V1-SCOPE-BACKLOG.md:77` exige as 11 frentes e se auto-bloqueia.
+A proposta (`docs/plans/GO-LIVE-SCOPE-CUT-PROPOSTA.md`, #1336) deixa DENTRO Gestor, loja com
+retirada e PDV (8 a 11 já entregues) e FORA entrega própria, WhatsApp conversacional, catálogos
+externos e media persistente, com o custo de cada corte e o texto novo da linha 77.
+**Pergunta.** Aprova o corte como está? **Recomendação:** sim; ele não tira nada que o balcão use.
+
+## D29 — Ensaio de restauração: token ou painel
+
+**Contexto.** Backup e PITR estão verificados, mas o ensaio pelo fork deu `403` (o contexto
+`shopman-do-app-admin` não tem `database:create`). O ensaio lógico (pg_dump direto → Postgres local)
+passou: 104 s + 23 s, contagens batem, 0 migração pendente. Ele não substitui o fork.
+**Opções.** 1) Gerar token com `database:create`, `database:read`, `database:view_credentials`,
+`database:delete`, `regions:read`, `sizes:read`, `actions:read` e o agente faz o ensaio inteiro
+(~40 a 60 min, cluster descartado no mesmo dia). 2) Você faz pelo painel, com o runbook.
+**Recomendação:** 1 (fica cronometrado e com evidência).
+
+## D30 — R2: o que só você faz
+
+**Contexto.** O código está pronto e desligado (#1337, D-010). Passo a passo em
+`docs/runbooks/r2-passo-a-passo-do-dono.md`: criar o bucket privado, criar o token R2 com leitura e
+escrita só naquele bucket, colar `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` e
+`R2_SECRET_ACCESS_KEY` como segredo no painel da DO. Segredo nunca vai por chat.
+**Pergunta.** Depois disso, liga `SHOPMAN_MEDIA_STORAGE=r2` no alpha? **Recomendação:** sim.
+
+## D31 — Trilho de sugestão no `shell/`: aceitar que ele "pule" na sacola?
+
+**Contexto.** A sugestão da sacola (`cart.upsell`) vem no `shell/`, e a `/sacola` a mostra na primeira
+pintura (`surfaces/storefront-nuxt/app/app.vue:32`, `pages/sacola.vue:302`); a sacola própria só
+responde depois. Nenhuma outra tela exibe esse trilho (#1341, tabela tela a tela).
+**Opções.** 1) Manter (o `shell/` segue montando a sacola inteira, ~56 consultas com 1 item). 2) Tirar
+do `shell/`: a `/sacola` abre sem o trilho e ele aparece um instante depois.
+**Recomendação:** 1 até o go-live (omotenashi); 2 se o custo do `shell/` voltar a doer.
+
