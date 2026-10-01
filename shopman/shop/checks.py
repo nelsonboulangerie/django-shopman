@@ -66,6 +66,7 @@ from django.core.checks import Error, Warning, register
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
+from shopman.shop.cache import is_redis_cache_backend
 from shopman.shop.environment import (
     NON_PRODUCTION_ENVIRONMENTS,
     environment_name,
@@ -630,7 +631,7 @@ def check_shared_cache_backend(app_configs, **kwargs):
         return errors
 
     backend = settings.CACHES.get("default", {}).get("BACKEND", "")
-    if backend != "django.core.cache.backends.redis.RedisCache":
+    if not is_redis_cache_backend(backend):
         errors.append(
             Error(
                 "Cache compartilhado Redis não está configurado em produção.",
