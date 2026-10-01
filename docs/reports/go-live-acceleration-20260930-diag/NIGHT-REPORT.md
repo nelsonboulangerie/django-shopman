@@ -13,7 +13,7 @@
 usada. Deploys saíram sozinhos pelo `deploy-images.yml`. Leia "Observação" abaixo: picos de 15–40 s
 na `home/` privada desde ~04:26 UTC, em investigação.
 
-**Mergeado (26 PRs):**
+**Mergeado (27 PRs):**
 
 | Frente | PR | O que mudou para você |
 |---|---|---|
@@ -42,12 +42,13 @@ na `home/` privada desde ~04:26 UTC, em investigação.
 | P5 payload do cardápio sem cards duplicados | #1321 | `catalog/` 142 → 56 KB (−61%; gzip −47%); tela provada idêntica |
 | Onda 2c miúdos | #1322 | PUT da sacola 478 → 198 consultas (reduzir) e 289 → 189 (aumentar); revisão independente: seguro |
 | Drift compara `run_command` | #1320 | Contra o vivo acusa exatamente o D14 e nada mais |
+| **Sacola perdia a reserva ao ajustar quantidade com fila** (defeito que estava no main) | #1323 | Ajuste ancora na data da linha; reduzir nunca falha nem perde o que existe; sobra que cai no pão pronto vira reserva comum. Duas revisões independentes (a 1ª segurou e achou 2 regressões, corrigidas). Regras abertas em D16 |
 
 **Na fila / aberto:**
 
 | Frente | PR | Estado |
 |---|---|---|
-| **Sacola perdia a reserva ao ajustar quantidade com fila** (defeito no main) | #1323 | **aberto, segurado**: a revisão independente achou 2 regressões no conserto (sobra presa ao pão pronto sem prazo; reduzir recusado quando o estoque caiu); correção em andamento. **Não enfileirar sem nova revisão.** Regras em D16 |
+| Seguimento do #1323: margem da vitrine ao devolver sobra | — | em andamento; com margem 2, reduzir depois de uma quebra ainda pode deixar 0 reservado (já existia antes) |
 | NIGHT-REPORT | #1299 | draft; sai de draft ao amanhecer |
 | (outra sessão) contexto doctl nos docs | #1293 | `CONFLICTING`, não é desta noite |
 
