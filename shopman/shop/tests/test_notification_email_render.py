@@ -45,7 +45,8 @@ def test_malformed_admin_subject_still_sends_email():
 
     ok = notification_email.send("cliente@example.com", "order_accepted", {"order_ref": "ORD-9"})
 
-    assert ok is True
+    assert ok["success"] is True
+    assert ok["message_id"] == mail.outbox[0].extra_headers["Message-ID"]
     assert len(mail.outbox) == 1
     # Assunto degradou para o template cru; corpo renderizou normal.
     assert mail.outbox[0].subject.endswith("Pedido {order_ref pronto")
@@ -70,7 +71,8 @@ def test_stock_alert_uses_human_name_and_sku():
         },
     )
 
-    assert ok is True
+    assert ok["success"] is True
+    assert ok["message_id"] == mail.outbox[0].extra_headers["Message-ID"]
     assert mail.outbox[0].subject.endswith(
         "Alerta de estoque: Focaccia do dia (FOA)"
     )

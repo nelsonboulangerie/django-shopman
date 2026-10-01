@@ -32,6 +32,28 @@ TOPIC = "notification.send"
 PAYMENT_LINK_TEMPLATE = "payment_link_sent"
 PAYMENT_PIX_TEMPLATE = "payment_requested"
 
+#: Avisos CRÍTICOS: os que o cliente PRECISA receber para a venda acontecer.
+#:
+#: - ``payment_link_sent``: é a cobrança inteira do pedido remoto anotado no
+#:   PDV. Se não chega, a casa espera um dinheiro que ninguém pediu (O3b, 30/09:
+#:   "despachado 2×, entregue 0").
+#: - ``order_accepted``: é a confirmação do pedido ("Pedido confirmado, o total
+#:   é…"). Sem ela o cliente não sabe que a casa vai preparar.
+#:
+#: Só nestes a cadeia trata "aceito sem comprovante" e "aceite ambíguo" como
+#: NÃO entregue e segue para o próximo canal (e-mail, SMS). É decisão do dono
+#: (D3, 01/10/2026): recibo vale mais que silêncio, e a mensagem em dobro é o
+#: preço aceito. Nos demais avisos o primeiro aceite encerra a cadeia, como
+#: sempre: ligar o fallback em massa custaria SMS e viraria spam.
+#: Estados e limites de cada canal: ``docs/reference/comprovante-de-entrega.md``.
+CRITICAL_NOTIFICATION_TEMPLATES = frozenset({PAYMENT_LINK_TEMPLATE, "order_accepted"})
+
+#: Comprovante de um envio aceito (``notification_delivery.proof``).
+#: ``receipt``: o provedor devolveu identificador da mensagem;
+#: ``no_receipt``: o provedor só disse "ok", sem identificador nenhum.
+PROOF_RECEIPT = "receipt"
+PROOF_NO_RECEIPT = "no_receipt"
+
 #: Intervalo mínimo entre dois reenvios do MESMO aviso. Clique duplo, operador
 #: ansioso e cliente que "ainda não viu" em 30 s não podem virar três mensagens.
 RESEND_MIN_INTERVAL_SECONDS = 60
@@ -461,6 +483,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     SYNC — chamado pelo NotificationSendHandler durante o processamento de directives.
     """
     template = _canonical_template(template)
+    critical = is_critical_notification(template)
     backend_chain = _resolve_backend_chain(order)
     requires_active = _requires_active_notification(template, payload=payload)
     routing: dict[str, str] = {}
@@ -496,6 +519,13 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     any_recipient = False
     last_attempted_backend = ""
     last_attempted_recipient = ""
+    # Trilha de cada salto da cadeia: é ela que vira o comprovante consultável
+    # no Gestor. Guarda fingerprint, nunca o contato.
+    attempts: list[dict] = []
+    # Em aviso crítico, "aceito sem comprovante" e "aceite ambíguo" NÃO encerram
+    # a cadeia: guardamos o salto e seguimos para o próximo canal.
+    accepted_without_receipt: tuple[str, str] | None = None
+    ambiguous: tuple[str, str] | None = None
     for backend_name in backend_chain:
         if backend_name == "none":
             continue
@@ -531,27 +561,76 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
             context["subscriber_id"] = order.handle_ref
 
         result = notify(event=template, recipient=recipient, context=context, backend=backend_name)
+        message_id = str(getattr(result, "message_id", "") or "").strip()
 
         if result.success:
-            _record_delivery(
-                payload,
-                status="accepted",
-                backend=backend_name,
-                recipient=recipient,
-                message_id=str(getattr(result, "message_id", "") or ""),
+            # Aceite não é entrega. Só o identificador devolvido pelo provedor
+            # é comprovante; "status: success" sozinho (o ManyChat) não é.
+            proof = PROOF_RECEIPT if message_id else PROOF_NO_RECEIPT
+            attempts.append(_attempt_record(backend_name, recipient, proof, message_id=message_id))
+            if proof == PROOF_RECEIPT or not critical:
+                _record_delivery(
+                    payload,
+                    status="accepted",
+                    backend=backend_name,
+                    recipient=recipient,
+                    message_id=message_id,
+                    proof=proof,
+                    critical=critical,
+                    attempts=attempts,
+                )
+                return True, None
+            accepted_without_receipt = (backend_name, recipient)
+            logger.info(
+                "notification backend %s accepted critical %s for order %s without receipt, trying next in chain",
+                backend_name, template, order.ref,
             )
-            return True, None
+            continue
 
         if getattr(result, "outcome_unknown", False):
-            _record_delivery(payload, status="unknown", backend=backend_name,
-                             recipient=recipient, reason="acceptance_unconfirmed")
-            return False, "acceptance_unconfirmed"
+            attempts.append(_attempt_record(backend_name, recipient, "unknown", error="acceptance_unconfirmed"))
+            if not critical:
+                _record_delivery(payload, status="unknown", backend=backend_name,
+                                 recipient=recipient, reason="acceptance_unconfirmed",
+                                 critical=critical, attempts=attempts)
+                return False, "acceptance_unconfirmed"
+            # Crítico: o cliente pode receber em dobro se o salto ambíguo de
+            # fato entregou. Aceito pelo dono: recibo vale mais que silêncio.
+            ambiguous = (backend_name, recipient)
+            logger.info(
+                "notification backend %s ambiguous for critical %s order %s, trying next in chain",
+                backend_name, template, order.ref,
+            )
+            continue
 
         last_error = result.error or "unknown"
+        attempts.append(_attempt_record(backend_name, recipient, "failed", error=last_error))
         logger.info(
             "notification backend %s failed for order %s, trying next in chain",
             backend_name, order.ref,
         )
+
+    if accepted_without_receipt is not None:
+        # Crítico que terminou a cadeia sem comprovante: o aviso saiu (ninguém
+        # reenvia sozinho), e o handler alerta o operador para confirmar.
+        backend_name, recipient = accepted_without_receipt
+        _record_delivery(
+            payload,
+            status="accepted",
+            backend=backend_name,
+            recipient=recipient,
+            proof=PROOF_NO_RECEIPT,
+            critical=critical,
+            attempts=attempts,
+        )
+        return True, None
+
+    if ambiguous is not None:
+        backend_name, recipient = ambiguous
+        _record_delivery(payload, status="unknown", backend=backend_name,
+                         recipient=recipient, reason="acceptance_unconfirmed",
+                         critical=critical, attempts=attempts)
+        return False, "acceptance_unconfirmed"
 
     if not any_attempted:
         if _expected_order_without_contact(order, template=template):
@@ -584,6 +663,8 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         backend=last_attempted_backend,
         recipient=last_attempted_recipient,
         error=last_error or "unknown",
+        critical=critical,
+        attempts=attempts,
     )
     return False, last_error
 
@@ -1405,6 +1486,30 @@ def _expected_order_without_contact(order, *, template: str) -> bool:
     }
 
 
+def is_critical_notification(template: str) -> bool:
+    """Este aviso segue a cadeia até ter comprovante? Ver ``CRITICAL_NOTIFICATION_TEMPLATES``."""
+    return _canonical_template(template) in CRITICAL_NOTIFICATION_TEMPLATES
+
+
+def _recipient_fingerprint(recipient: str) -> str:
+    return hashlib.sha256(recipient.strip().lower().encode("utf-8")).hexdigest()[:16]
+
+
+def _attempt_record(backend: str, recipient: str, outcome: str, *, message_id: str = "", error: str = "") -> dict:
+    """Um salto da cadeia, para a trilha do comprovante. Sem o contato em claro."""
+    record = {
+        "backend": backend,
+        "outcome": outcome,
+        "recorded_at": timezone.now().isoformat(),
+        "recipient_fingerprint": _recipient_fingerprint(recipient),
+    }
+    if message_id:
+        record["message_id"] = message_id[:200]
+    if error:
+        record["error"] = error[:200]
+    return record
+
+
 def _record_delivery(
     payload: dict,
     *,
@@ -1414,20 +1519,27 @@ def _record_delivery(
     message_id: str = "",
     reason: str = "",
     error: str = "",
+    proof: str = "",
+    critical: bool = False,
+    attempts: list[dict] | None = None,
 ) -> None:
     """Persistable evidence for the directive without copying contact data."""
     record = {
         "status": status,
         "recorded_at": timezone.now().isoformat(),
     }
+    if proof:
+        record["proof"] = proof
+    if critical:
+        record["critical"] = True
+    if attempts:
+        record["attempts"] = [dict(item) for item in attempts]
     if status == "failed":
         record["outcome"] = "not_applied"
     if backend:
         record["backend"] = backend
     if recipient:
-        record["recipient_fingerprint"] = hashlib.sha256(
-            recipient.strip().lower().encode("utf-8")
-        ).hexdigest()[:16]
+        record["recipient_fingerprint"] = _recipient_fingerprint(recipient)
     if message_id:
         record["message_id"] = message_id[:200]
     if reason:

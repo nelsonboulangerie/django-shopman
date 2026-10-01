@@ -40,12 +40,12 @@ def test_http_rejection_differs_from_unknown_acceptance(settings, monkeypatch, c
 @pytest.mark.parametrize("error", [smtplib.SMTPAuthenticationError(535, b"private"),
     smtplib.SMTPDataError(550, b"private"), smtplib.SMTPRecipientsRefused({"a@example.com": (550, b"private")})])
 def test_explicit_smtp_refusal_allows_fallback(monkeypatch, error):
-    monkeypatch.setattr(notification_email, "send_mail", Mock(side_effect=error))
+    monkeypatch.setattr(notification_email, "_send_mail_with_id", Mock(side_effect=error))
     assert notification_email.send("a@example.com", "order_received", {}) is False
 
 
 @pytest.mark.parametrize("error", [TimeoutError(), smtplib.SMTPServerDisconnected(), URLError("lost")])
 def test_uncertain_email_acceptance_still_blocks_fallback(monkeypatch, error):
-    monkeypatch.setattr(notification_email, "send_mail", Mock(side_effect=error))
+    monkeypatch.setattr(notification_email, "_send_mail_with_id", Mock(side_effect=error))
     with pytest.raises(RuntimeError, match="acceptance_unconfirmed"):
         notification_email.send("a@example.com", "order_received", {})

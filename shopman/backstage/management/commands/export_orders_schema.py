@@ -70,6 +70,10 @@ from shopman.backstage.projections.feeds import (
     MenuboardAutomaticProjection,
 )
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
+from shopman.backstage.projections.notification_receipts import (
+    NotificationAttemptProjection,
+    NotificationReceiptProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancellationPresetGroupProjection,
@@ -123,6 +127,8 @@ CONTRACT_DATACLASSES = (
     ChannelHealthBoardProjection,
     OrderItemProjection,
     TimelineEventProjection,
+    NotificationAttemptProjection,
+    NotificationReceiptProjection,
     AwaitingWorkOrderProjection,
     CancellationPresetGroupProjection,
     EquipmentOptionProjection,
@@ -165,6 +171,7 @@ def render_orders_contract_ts() -> str:
             "shopman/backstage/projections/order_queue.py"
             " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
             " + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py"
+            " + shopman/backstage/projections/notification_receipts.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

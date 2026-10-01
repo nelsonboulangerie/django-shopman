@@ -110,6 +110,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Configurações](reference/settings.md) | Settings por app (STOCKMAN, CRAFTSMAN, DOORMAN, SHOPMAN_*, etc.) com defaults |
 | [Management Commands](reference/commands.md) | Comandos disponíveis com flags, exemplos e cron recomendado |
 | [Exceções e Erros](reference/errors.md) | Hierarquia de exceções, códigos de erro e quando ocorrem |
+| [Comprovante de Entrega](reference/comprovante-de-entrega.md) | Avisos ao cliente: aceite × entrega, o que cada canal comprova, quais avisos são críticos e por quê |
 | [Sinais (Signals)](reference/signals.md) | Sinais emitidos e consumidos por cada app, payload e fluxos |
 | [Glossário](reference/glossary.md) | Termos de domínio: Quant, Hold, Move, Session, Order, Channel, etc. |
 | [Data Schemas](reference/data-schemas.md) | Inventário de chaves em Session.data, Order.data, Directive.payload |

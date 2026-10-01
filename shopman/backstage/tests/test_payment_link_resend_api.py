@@ -221,7 +221,7 @@ class GestorResendPaymentLinkTests(_ResendContract, TestCase):
         self.assertEqual(response.status_code, 200)
         detail = response.json()["order"]
         self.assertTrue(detail["can_resend_payment_link"])
-        self.assertTrue(detail["payment_link_notice"].startswith("Envio aceito pelo serviço às "))
+        self.assertTrue(detail["payment_link_notice"].startswith("Link aceito pelo provedor às "))
 
     def test_o_detalhe_esconde_o_botao_de_quem_nao_e_link(self) -> None:
         _link_order("LNK-7", method="cash", checkout_url="")
