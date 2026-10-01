@@ -207,6 +207,12 @@ export interface RecipeEntryResponse {
   access?: RecipeBookAccessProjection;
 }
 
+/** POST/DELETE recipes/<ref>/favorite/ — a estrela do operador, idempotente. */
+export interface RecipeFavoriteResponse {
+  ref: string;
+  is_favorite: boolean;
+}
+
 export interface RecipeVersionResponse {
   entry: RecipeEntryDetailProjection;
   version: RecipeVersionProjection;

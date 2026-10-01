@@ -13,6 +13,8 @@ import {
   emptyItem,
   emptyPart,
   errorField,
+  favoriteActionHint,
+  favoriteToggleLabel,
   filterEntries,
   formatNumber,
   formulaFromDraft,
@@ -88,6 +90,7 @@ function card(over: Partial<RecipeEntryCardProjection> = {}): RecipeEntryCardPro
     hydration_display: "72%",
     updated_at_display: "hoje 08:10",
     is_archived: false,
+    is_favorite: false,
     ...over,
   };
 }
@@ -425,6 +428,28 @@ describe("filterEntries", () => {
 
   it("returns everything with no filters", () => {
     expect(filterEntries(entries, "  ", "", false, false)).toHaveLength(3);
+  });
+
+  it("'Favoritas' keeps only the operator's starred entries, combined with the other filters", () => {
+    const starred = [
+      card({ is_favorite: true }),
+      card({ ref: "brioche", name: "Brioche", kind: "viennoiserie", output_sku: "", output_name: "", is_favorite: true }),
+      card({ ref: "creme-pat", name: "Creme pâtissier", kind: "cream", output_sku: "CREME-PAT", output_name: "Creme" }),
+    ];
+    expect(filterEntries(starred, "", "", false, false, true).map((e) => e.ref)).toEqual(["pao-campanha", "brioche"]);
+    expect(filterEntries(starred, "", "", true, false, true).map((e) => e.ref)).toEqual(["brioche"]);
+    expect(filterEntries(starred, "", "cream", false, false, true)).toEqual([]);
+    expect(filterEntries(starred, "", "", false, false, false)).toHaveLength(3);
+  });
+
+  it("the star is a toggle: fixed name with the recipe, hint says what the tap does", () => {
+    expect(favoriteToggleLabel("Massa Tradição")).toBe("Favorita: Massa Tradição");
+    expect(favoriteToggleLabel("  ")).toBe("Favorita");
+    expect(favoriteActionHint(false)).toBe("Marcar como favorita");
+    expect(favoriteActionHint(true)).toBe("Tirar das favoritas");
+    for (const text of [favoriteToggleLabel("Pão"), favoriteActionHint(true), favoriteActionHint(false)]) {
+      expect(text).not.toMatch(/[—–]/);
+    }
   });
 
   it("bookQuery omits empty filters", () => {

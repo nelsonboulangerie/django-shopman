@@ -36,6 +36,7 @@ from .operation_episode import (
 from .oven_run import OvenRun
 from .pos import POSTab
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
+from .recipe_favorite import OperatorRecipeFavorite
 from .seating import SeatingSpot, SpotKind
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
@@ -79,6 +80,7 @@ __all__ = [
     "OperationTaskRun",
     "OperationTaskStatus",
     "OperationTaskTemplate",
+    "OperatorRecipeFavorite",
     "OvenRun",
     "POSTab",
     "PrintAgentCredential",

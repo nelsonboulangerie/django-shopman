@@ -2,7 +2,8 @@
 // GET /api/v1/backstage/recipes/<ref>/ traz a entry com TODAS as versões (mais nova
 // primeiro), cada uma já com a lente calculada. As escritas vão pelo BFF (CSRF no
 // proxy) e reconciliam por refresh: PATCH da entry (nome/kind/SKU/notas/arquivar),
-// POST de versão (cópia em rascunho), PATCH do rascunho e POST publish. Erro no
+// POST de versão (cópia em rascunho), PATCH do rascunho e POST publish. A estrela
+// do operador (useRecipeFavorite) acende no lugar, sem refazer a lente. Erro no
 // dialeto canônico: a mensagem vai ao toast e o `field` volta para a tela acender.
 import type {
   DraftPatch,
@@ -14,6 +15,7 @@ import type {
   VersionPayload,
 } from "~/types/recipeBook";
 import { errorField } from "~/presentation/recipeBook";
+import { useRecipeFavorite } from "~/composables/useRecipeFavorite";
 
 export interface EntryActionResult {
   ok: boolean;
@@ -88,6 +90,18 @@ export function useRecipeEntry(entryRef: string) {
       "Não foi possível salvar o rascunho.",
     );
 
+  const { setFavorite, isFavoriteBusy } = useRecipeFavorite();
+  const favoriteBusy = computed(() => isFavoriteBusy(entryRef));
+
+  /** Marca/desmarca esta receita e acende a estrela com o estado do servidor. */
+  async function toggleFavorite(next: boolean): Promise<boolean> {
+    const state = await setFavorite(entryRef, next);
+    if (state === null) return false;
+    const current = data.value;
+    if (current?.entry) data.value = { ...current, entry: { ...current.entry, is_favorite: state } };
+    return true;
+  }
+
   const publish = (number: number) =>
     act(
       () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/publish/`, { method: "POST", body: {} }),
@@ -112,5 +126,7 @@ export function useRecipeEntry(entryRef: string) {
     createVersion,
     updateDraft,
     publish,
+    toggleFavorite,
+    favoriteBusy,
   };
 }
