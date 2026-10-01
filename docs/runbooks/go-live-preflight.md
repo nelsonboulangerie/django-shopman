@@ -43,7 +43,10 @@ autorização.
 
 - [ ] Política real de backup/PITR identificada no ambiente alvo.
 - [ ] Referência/ponto de restauração pré-corte registrado sem segredo.
-- [ ] Restore ensaiado em destino isolado; RTO/RPO e validação de dados anexados.
+- [x] Restore ensaiado em destino isolado; RTO/RPO e validação de dados anexados.
+  01/10/2026: fork pelo painel em cerca de 7 min, ponto mais recente (RPO de minutos), 191
+  tabelas conferidas, 0 migração pendente. Evidência: [backup-e-restore.md §1b](backup-e-restore.md).
+  Reapontar o app para o cluster restaurado não foi ensaiado.
 - [ ] Deployment anterior e procedimento de rollback identificados.
 - [ ] [Rollback de deploy](rollback-de-deploy.md) revisado pelo incident commander.
 

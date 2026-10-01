@@ -406,7 +406,7 @@ listados. Verdade da origem às **12:50:21 UTC** (passo 1):
 | `count(*)` de `django_migrations` | 306 |
 | as cinco últimas | backstage `0080_recipe_rating` · shop `0085_motivos_de_recusa_aprovados` · craftsman `0016_step_advanced_label` · backstage `0079_operatorrecipefavorite` · craftsman `0015_steps_as_objects` |
 
-### 1. Pelo fork (o ensaio de verdade): NÃO FEITO
+### 1. Pelo fork via `doctl` (manhã de 01/10): 403, ver 1b
 
 ```
 doctl --context shopman-do-app-admin databases fork shopman-restore-drill-20261001 \
@@ -423,6 +423,41 @@ painel. Enquanto isso não acontecer, o item "restore ensaiado em destino
 isolado" do [pré-flight](go-live-preflight.md) segue aberto: o que se provou
 abaixo é que o **dado** é legível e restaurável, não que **nós sabemos
 restaurar o cluster** (PITR, host novo, reapontar o app).
+
+### 1b. Pelo fork, no painel (01/10/2026, fim da tarde): FEITO, bate com a origem
+
+Decisão do dono (02/10): sem token temporário; o fork é dele, no painel, em três cliques
+(`shopman-staging-postgres` → Actions → Restore from backup → Restore to New Cluster). Antes, a
+sessão guardou o spec vivo (`doctl apps spec get`, 965 linhas, sha256 `2c601563…`, fora do
+repositório).
+
+| Etapa | Valor |
+|---|---|
+| Cluster novo | `shopman-staging-postgres-oct-1-backup` (`8d343ef5-…`), pg 16, `nyc3`, `db-s-1vcpu-1gb` (herdou o plano) |
+| Criado | 2026-10-01 19:28:28 UTC; o dono contou de ~16h28 a ~16h35 (Brasília): **cerca de 7 min** até `online` |
+| Ponto da cópia | o mais recente; anterior a 19:29:17 UTC (ver a conversa 114 abaixo) |
+
+Conferência por leitura, a origem com `PGOPTIONS='-c default_transaction_read_only=on'` e pela
+porta direta `25060`, às 19:37 UTC:
+
+- **191 tabelas** em `public` nos dois lados; **186 com a mesma contagem**.
+- `orderman_order`: 4817 nos dois; último `PDV-261001-N83`, mesmo `created_at`.
+- `django_migrations`: 306 nos dois, as mesmas três últimas
+  (backstage `0080_recipe_rating` · shop `0085_motivos_de_recusa_aprovados` · craftsman `0016_step_advanced_label`).
+- `make migrations-pending` contra o restaurado (`DJANGO_DEBUG=true` e `PYTHONPATH` da worktree):
+  `0 migração(ões) pendente(s), 0 com operação destrutiva`.
+- As 5 tabelas diferentes são todas de conversa (`shop_conversation` 78 × 79,
+  `shop_conversationbinding` 78 × 79, `shop_conversationmessage` 376 × 378,
+  `storefront_messageintentsample` 148 × 150, `…_intents` 48 × 49), e o **restaurado tem a mais**.
+  É a conversa 114 (de 24/09 19:29): as duas mensagens dela eram observação passiva com
+  `retention_until` 2026-10-01 19:29:17 e 19:33:05 UTC, e a rotina de retenção as apagou da
+  origem depois do ponto da cópia. A origem andou; o restaurado não perdeu nada.
+
+**NÃO verificado:** reapontar o app para o cluster restaurado (não faz parte do ensaio); o tempo
+exato pelo relógio da DO (só o `Created At` e a conta do dono).
+
+**Descarte:** feito pelo dono no painel no mesmo dia; `doctl databases list` depois mostrou só
+`shopman-staging-cache` e `shopman-staging-postgres`.
 
 ### 2. Lógico (complemento): FEITO, bate com a origem
 
