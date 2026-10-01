@@ -93,3 +93,29 @@ Ana / Maria Silva).
 **Opções.** 1) Não mexer no que existe. 2) Backfill com a mesma regra, só onde `last_name` está vazio.
 3) Backfill com lista para revisão manual antes de aplicar.
 **Recomendação:** 3. É dado de cliente.
+
+## D9 — App instalado da loja: até onde forçar a versão nova (F5, #1301)
+
+**Contexto.** Com o #1301 o app instalado sonda versão nova e mostra um aviso persistente, sem
+botão de fechar, até o toque em "Atualizar". Ele some no checkout, no pedido e no login. Mas quem
+nunca toca segue na versão velha até fechar o app: a loja nunca recarrega sozinha. A recarga
+automática por ociosidade do operator-kit ficou fora de propósito, porque o cliente pode estar
+digitando endereço ou pagando.
+
+**Opções.** (a) Só o aviso, como está. (b) Aplicar a versão nova numa navegação entre telas, fora
+do checkout, do pedido e do login. (c) Forçar pelo servidor (`shell.pwa_release`) um aviso que
+bloqueia a tela.
+
+**Recomendação:** (a) agora, e medir com o `app_version` (novo no relatório de erro) quantos ficam
+para trás. Se incomodar, (b).
+
+## D10 — O trilho de sugestão ("leve também") deve ir no `shell/`?
+
+**Contexto.** Com sacola, o `shell/` (o envelope barato que toda página carrega, 3 consultas sem
+sacola) monta a sacola inteira com o trilho de sugestão: depois do #1304, 56 consultas com 1 item
+(eram 118). `home/` e `menu/` também montam o trilho. O `/catalog/` (a página `/menu`) não monta.
+
+**Opções.** 1) Manter. 2) Tirar o trilho do `shell/` (o resumo da sacola fica; a sugestão vem só
+onde ela aparece na tela). 3) Tirar de `shell/` e `home/`.
+**Recomendação:** 2, se o front confirmar que o `shell/` não exibe a sugestão. Muda contrato com o
+front, por isso é sua.
