@@ -147,7 +147,7 @@ useSeoMeta({
       <SubstituteSheet />
       <OfflineBanner />
       <PwaInstallInvite :copy="shellState?.shell?.pwa_copy" />
-      <PwaUpdateToast :copy="shellState?.shell?.pwa_copy" />
+      <PwaUpdatePrompt :copy="shellState?.shell?.pwa_copy" />
       <!-- O convite de novidades: sobe na página em que a pessoa cai depois de
            entrar, uma vez, dirigido pela sessão (welcomeAsksMarketing). Nunca em
            /entrar, /a, no checkout ou no pedido. -->

@@ -119,6 +119,13 @@ function retry () {
     >
       Prefere falar conosco? WhatsApp
     </UiButton>
+
+    <!-- A tela de erro é justamente onde cai quem ficou com a versão velha depois de
+         um deploy: o aviso de atualizar tem de estar aqui também, e não só no
+         `app.vue`, que o Nuxt não monta quando renderiza esta tela. -->
+    <ClientOnly>
+      <PwaUpdatePrompt :copy="shellState?.shell?.pwa_copy" />
+    </ClientOnly>
   </div>
 </template>
 

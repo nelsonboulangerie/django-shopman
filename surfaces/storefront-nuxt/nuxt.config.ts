@@ -47,7 +47,12 @@ export default defineNuxtConfig({
     public: {
       // O runtime já contém o fallback monolítico. A flag abre o consumidor
       // Continuum sem novo build e permite rollback junto da flag do Django.
-      continuumCatalogEnabled: false
+      continuumCatalogEnabled: false,
+      // Versão deste build, a mesma régua do `operator-kit/pwa.config.ts`: sha do
+      // App Platform (`SOURCE_VERSION`) no deploy, "local" na máquina de quem
+      // desenvolve. Vai no relatório de erro do cliente (`app_version`), que é como
+      // se separa "erro novo" de "cliente preso numa versão velha".
+      appVersion: process.env.NUXT_PUBLIC_APP_VERSION || process.env.SOURCE_VERSION || 'local'
     }
   },
 

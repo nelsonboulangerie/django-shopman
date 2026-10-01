@@ -1,3 +1,5 @@
+import { readFile, rename, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 test('manifesto, service worker e metadados iOS são servidos pelo build', async ({ page, request }) => {
@@ -32,6 +34,91 @@ test('service worker registra e entrega o casco quando uma navegação perde a r
 
   await expect(page.getByRole('heading', { name: 'A loja ficou sem conexão' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Tentar de novo' })).toBeVisible()
+})
+
+// O fluxo que travava o app instalado: existe versão nova, e o cliente consegue
+// atualizar. O build é um só, então a "versão nova" é o mesmo `sw.js` com um byte
+// trocado no disco depois que o primeiro worker já assumiu.
+//
+// Por que no disco, e não por `context.route`: a sonda (`registration.update()`) é
+// uma busca do próprio navegador, que a interceptação do Playwright não vê. Por que
+// com o MESMO tamanho: o Nitro serve `public/` com `Content-Length` pré-calculado no
+// build. O `sw.js` sai com `no-store`, então o navegador não manda `If-None-Match` e
+// o ETag pré-calculado não responde 304 por engano. E por que NESTE arquivo: os
+// testes de um arquivo rodam em série (`fullyParallel: false`), e o `sw.js` trocado
+// não pode vazar para outro teste do PWA.
+const swPath = fileURLToPath(new URL('../../.output/public/sw.js', import.meta.url))
+const SW_ORIGINAL = '"storefront-fonts"'
+const SW_NEXT = '"storefront-f0nts"'
+
+// Troca ATÔMICA (arquivo ao lado + rename): o Nitro manda o `Content-Length` do build,
+// e um `sw.js` lido pela metade no meio da escrita deixaria a busca do navegador
+// esperando bytes que nunca chegam.
+async function replaceServiceWorker (content: string) {
+  await writeFile(`${swPath}.next`, content)
+  await rename(`${swPath}.next`, swPath)
+}
+
+test('versão nova aparece num aviso persistente e só entra pelo toque', async ({ page }) => {
+  // Duas instalações completas do worker (o precache inteiro, duas vezes) não cabem
+  // no teto padrão de 30 s num runner lento da CI.
+  test.setTimeout(90_000)
+  const original = await readFile(swPath, 'utf8')
+  expect(original).toContain(SW_ORIGINAL)
+
+  try {
+    await page.goto('/menu')
+    // Primeira instalação: o worker ativa direto (não há outro em uso) e não há aviso.
+    await page.evaluate(async () => { await navigator.serviceWorker.ready })
+    const prompt = page.getByTestId('pwa-update-prompt')
+    await expect(prompt).toBeHidden()
+
+    await replaceServiceWorker(original.replace(SW_ORIGINAL, SW_NEXT))
+    // A página recarregada já é controlada pelo worker antigo; a sonda de boot do
+    // app pergunta ao servidor, o worker novo instala e fica em espera.
+    await page.reload()
+    await expect(prompt).toBeVisible()
+    await expect(prompt).toContainText('Nova versão disponível')
+
+    // No checkout o aviso cala (o toque recarregaria a página no meio do pedido)...
+    await page.goto('/finalizar')
+    await expect(prompt).toBeHidden()
+    // ...e volta na tela seguinte: não é tiro único.
+    await page.goto('/menu')
+    await expect(prompt).toBeVisible()
+
+    // Só o toque aplica: o worker novo assume e a página recarrega sem aviso.
+    expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true)
+    const trail: string[] = []
+    page.on('console', message => trail.push(`console ${message.type()}: ${message.text()}`))
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) trail.push(`nav ${frame.url()}`) })
+    const snapshot = () => page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration()
+      return {
+        active: registration?.active?.state || null,
+        waiting: registration?.waiting?.state || null,
+        installing: registration?.installing?.state || null,
+        controller: navigator.serviceWorker.controller?.state || null
+      }
+    }).catch(error => ({ error: String(error).slice(0, 120) }))
+    trail.push(`antes do toque ${JSON.stringify(await snapshot())}`)
+    await prompt.getByRole('button', { name: 'Atualizar' }).click()
+    // A página recarrega no meio da sonda: avaliação perdida na troca conta como "ainda não".
+    try {
+      await expect.poll(async () => {
+        const state = await snapshot()
+        trail.push(JSON.stringify(state))
+        return 'active' in state && state.active === 'activated' && !state.waiting
+      }, { timeout: 30_000 }).toBe(true)
+    } catch (error) {
+      console.log(`trilha da troca de versão:\n${trail.slice(-40).join('\n')}`)
+      throw error
+    }
+    // Recarregada com o worker novo no comando, não há mais versão em espera.
+    await expect(prompt).toBeHidden({ timeout: 15_000 })
+  } finally {
+    await replaceServiceWorker(original)
+  }
 })
 
 test('convite de instalação não aparece no checkout', async ({ page }) => {
