@@ -970,8 +970,7 @@ class CartLineNotesView(APIView):
     throttle_classes = []
 
     def put(self, request, line_id: str):
-        from shopman.orderman.exceptions import SessionError, ValidationError
-
+        from shopman.shop.services.cart import CartLineNotesRefused, CartLineNotFound
         from shopman.storefront.cart import CartService
 
         if _request_is_rate_limited(
@@ -995,14 +994,12 @@ class CartLineNotesView(APIView):
             )
         except ValueError:
             return Response({"detail": "Sacola vazia."}, status=status.HTTP_404_NOT_FOUND)
-        except ValidationError as exc:
-            if exc.code == "unknown_line_id":
-                return Response(
-                    {"detail": "Este item não está mais na sacola."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-            raise
-        except SessionError:
+        except CartLineNotFound:
+            return Response(
+                {"detail": "Este item não está mais na sacola."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except CartLineNotesRefused:
             return Response(
                 {"detail": "Esta sacola não aceita mais alterações."},
                 status=status.HTTP_409_CONFLICT,

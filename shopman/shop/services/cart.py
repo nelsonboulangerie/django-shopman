@@ -12,7 +12,7 @@ import logging
 from decimal import Decimal
 
 from django.db import transaction
-from shopman.orderman.exceptions import SessionError
+from shopman.orderman.exceptions import SessionError, ValidationError
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability, lot_pricing
@@ -304,6 +304,18 @@ def remove_item(
     )
 
 
+class CartLineNotFound(Exception):
+    """A linha não está (mais) na sacola."""
+
+
+class CartLineNotesRefused(Exception):
+    """A sacola não aceita a observação: encerrada, travada ou anonimizada."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 #: Teto da observação de linha: o mesmo do PDV (``pos_intent``), para o
 #: cartão da cozinha ter a mesma régua venha a linha de onde vier.
 LINE_NOTES_MAX_LENGTH = 280
@@ -323,13 +335,20 @@ def set_line_notes(
     o ticket do KDS lê. Texto pessoal, então passa pela cerca de anonimização
     do ``ModifyService``.
     """
-    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     text = " ".join(str(notes or "").split())[:LINE_NOTES_MAX_LENGTH]
-    return session_service.modify_session(
-        session_key=session_key,
-        channel_ref=channel_ref,
-        ops=[{"op": "set_line_meta", "line_id": line_id, "meta": {"notes": text or None}}],
-    )
+    try:
+        _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+        return session_service.modify_session(
+            session_key=session_key,
+            channel_ref=channel_ref,
+            ops=[{"op": "set_line_meta", "line_id": line_id, "meta": {"notes": text or None}}],
+        )
+    except ValidationError as exc:
+        if exc.code == "unknown_line_id":
+            raise CartLineNotFound(line_id) from exc
+        raise
+    except SessionError as exc:
+        raise CartLineNotesRefused(exc.code) from exc
 
 
 def _whole(value: Decimal):
