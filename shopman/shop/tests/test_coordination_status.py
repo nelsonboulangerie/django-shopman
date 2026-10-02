@@ -128,3 +128,36 @@ def test_fila_parada_e_reivindicacao_orfa(clone, tmp_path, capsys):
     assert "R2" not in orphans and "R3" not in orphans
     assert "fila parada há 3 h" in out
     assert "reivindicação órfã" in out.splitlines()[-1]
+
+
+def test_pr_fechado_nao_esconde_o_branch(clone, tmp_path, capsys):
+    """Head de PR fechado (sem ref de merge) não conta como PR: o branch aparece."""
+    _git(clone, "checkout", "-q", "-b", "feature/fechado", "main")
+    closed_sha = _commit(clone, "fechado.txt")
+    _git(clone, "push", "-q", "origin", "feature/fechado")
+    _git(clone, "push", "-q", "origin", f"{closed_sha}:refs/pull/9/head")
+
+    _, out = _run(capsys, "--board", str(tmp_path / "nao-existe.md"))
+
+    no_pr = out.split("SEM PR")[1]
+    assert "feature/fechado  (PR fechado sem merge: #9)" in no_pr
+    assert "feature/com-pr" not in no_pr
+
+
+def test_board_em_pr_de_pr_que_ja_saiu(clone, tmp_path, capsys):
+    board = tmp_path / "BOARD.md"
+    board.write_text(
+        "| id | frente | estado | sessão | branch / PR | desde (UTC) |\n"
+        "|---|---|---|---|---|---|\n"
+        "| R3 | aberto | `EM_PR` | s3 | #7 | 2026-10-02 14:00 |\n"
+        "| R4 | mergeado | `EM_PR` | s4 | #8 | 2026-10-02 14:00 |\n",
+        encoding="utf-8",
+    )
+
+    _, out = _run(capsys, "--board", str(board))
+
+    stale = out.split("BOARD desatualizado")[1]
+    assert "R4 | mergeado  → #8" in stale
+    assert "R3" not in stale
+    assert "BOARD desatualizado: #8 não está aberto" in out.splitlines()[-1]
+    assert "sem gh: estado da CI e auto-merge NÃO medidos" in out

@@ -7,7 +7,8 @@ terminar, e é o que o coordenador lê em vez de pedir que alguém cole o relat�
 o que dizer, escreva "nada".
 
 O registro entra no MESMO PR da frente (ou num PR de seguimento, se a frente já mergeou). A linha
-do `BOARD.md` sai quando o registro entra.
+do `BOARD.md` sai no mesmo PR, quando o registro entra: a fila mergeia sem a sessão voltar, e linha
+`EM_PR` de PR que já saiu é o `make coordination` acusando `BOARD desatualizado`.
 
 ## Molde
 

@@ -133,6 +133,11 @@ class OpenPR:
     sha: str
     title: str
     note: str = ""
+    red: tuple[str, ...] = ()
+    auto_merge: bool = False
+
+
+FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 
 
 def gh_open_prs() -> list[OpenPR] | None:
@@ -151,7 +156,7 @@ def gh_open_prs() -> list[OpenPR] | None:
                 "--limit",
                 "200",
                 "--json",
-                "number,title,headRefOid,isDraft,mergeable,autoMergeRequest",
+                "number,title,headRefOid,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup",
             ],
             capture_output=True,
             text=True,
@@ -168,7 +173,27 @@ def gh_open_prs() -> list[OpenPR] | None:
             notes.append("CONFLITO")
         if item.get("autoMergeRequest"):
             notes.append("auto-merge")
-        prs.append(OpenPR(item["number"], item["headRefOid"], item["title"], ", ".join(notes)))
+        if item.get("mergeStateStatus") in {"BLOCKED", "DIRTY", "BEHIND"}:
+            notes.append(item["mergeStateStatus"])
+        red = tuple(
+            dict.fromkeys(
+                c.get("name") or c.get("context") or "?"
+                for c in item.get("statusCheckRollup") or []
+                if (c.get("conclusion") or c.get("state")) in FAILED
+            )
+        )
+        if red:
+            notes.append(f"vermelho: {', '.join(red[:4])}" + (f" +{len(red) - 4}" if len(red) > 4 else ""))
+        prs.append(
+            OpenPR(
+                item["number"],
+                item["headRefOid"],
+                item["title"],
+                ", ".join(notes),
+                red,
+                bool(item.get("autoMergeRequest")),
+            )
+        )
     return prs
 
 
@@ -215,6 +240,21 @@ def orphan_claims(board: Path, now: datetime) -> tuple[list[str], list[str]]:
             hours = int((now - when).total_seconds() // 3600)
             orphans.append(f"{label}  (há {hours} h)")
     return orphans, unreadable
+
+
+def board_pr_claims(board: Path) -> list[tuple[str, int]]:
+    """Linhas `EM_PR` do BOARD e o número do PR que cada uma cita (`#1234`)."""
+    if not board.exists():
+        return []
+    claims = []
+    for line in board.read_text(encoding="utf-8").splitlines():
+        if not line.lstrip().startswith("|") or "EM_PR" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        label = " | ".join(cells[:2])
+        for number in re.findall(r"#(\d+)", line):
+            claims.append((label, int(number)))
+    return claims
 
 
 def fmt_age(delta: timedelta) -> str:
@@ -321,6 +361,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"   #{pr.number}  {pr.sha[:9]}  {pr.title}{note}")
     if len(open_prs) > OPEN_PR_LIMIT:
         print(f"   … e mais {len(open_prs) - OPEN_PR_LIMIT}")
+    if gh_prs is None:
+        print("   (sem gh: estado da CI e auto-merge NÃO medidos; vermelho parado não aparece aqui)")
+    for pr in open_prs:
+        if pr.auto_merge and pr.red:
+            attention.append(f"PR com auto-merge vermelho (não anda sozinho): #{pr.number}")
+    open_numbers = {pr.number for pr in open_prs}
+    open_shas = {pr.sha for pr in open_prs}
 
     # 4. atividade nas últimas 24 h
     print("\n== Branches com commit nas últimas 24 h (commits à frente do main)")
@@ -331,17 +378,26 @@ def main(argv: list[str] | None = None) -> int:
         b_when, _ = commit_info(s)
         if now - b_when <= ACTIVITY_WINDOW:
             recent.append((b_when, b, s))
+    merged_recent = [b for _, b, s in recent if is_ancestor(s, main_sha)]
+    recent = [r for r in recent if not is_ancestor(r[2], main_sha)]
     if not recent:
-        print("   (nenhum)")
+        print("   (nenhum à frente do main)")
     for b_when, b, s in sorted(recent, reverse=True):
         print(f"   {b_when:%m-%d %H:%M}  +{ahead_of(s, main_sha):<3} {b}")
+    if merged_recent:
+        print(f"   e {len(merged_recent)} já inteiros no main (mergeados, branch não apagado)")
 
     # 5. branches sem PR
     print("\n== Branches à frente do main SEM PR (trabalho invisível)")
-    pr_shas = set(pr_heads.values())
-    invisible, redundant, snapshots, unknown = [], [], [], []
+    # Só PR ABERTO tira o branch desta lista: head de PR fechado sem merge é trabalho
+    # dormente igual (o #1354, fechado como duplicado, ficou com 4 commits fora do main).
+    closed_by_sha: dict[str, list[int]] = {}
+    for n, sha in pr_heads.items():
+        if n not in open_numbers:
+            closed_by_sha.setdefault(sha, []).append(n)
+    invisible, redundant, snapshots, unknown, closed = [], [], [], [], []
     for b, s in sorted(live_branches.items()):
-        if s in pr_shas:
+        if s in open_shas:
             continue
         if not has_object(s):
             unknown.append(b)
@@ -352,6 +408,9 @@ def main(argv: list[str] | None = None) -> int:
             snapshots.append(b)
         elif content_already_in_main(s, main_sha):
             redundant.append(b)
+        elif s in closed_by_sha:
+            nums = ", ".join(f"#{n}" for n in sorted(closed_by_sha[s]))
+            closed.append(f"+{ahead_of(s, main_sha):<3} {b}  (PR fechado sem merge: {nums})")
         else:
             b_when, b_subject = commit_info(s)
             invisible.append(f"+{ahead_of(s, main_sha):<3} {b_when:%Y-%m-%d}  {b}  ({b_subject})")
@@ -364,6 +423,10 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"   conteúdo já no main (sobrando; antes de apagar, veja se alguma worktree o usa): {' '.join(redundant)}"
         )
+    if closed:
+        print("   com PR FECHADO sem merge e conteúdo fora do main (decidir: apagar o branch ou reabrir):")
+        for line in closed:
+            print(f"      {line}")
     if snapshots:
         print(f"   snapshots rescue/* (fora do resumo; triagem no BOARD): {len(snapshots)}")
     if unknown:
@@ -383,6 +446,13 @@ def main(argv: list[str] | None = None) -> int:
         for line in unreadable:
             print(f"   sem hora legível: {line}")
             attention.append("reivindicação sem hora")
+
+        stale = [(label, n) for label, n in board_pr_claims(args.board) if n not in open_numbers]
+        if stale:
+            print("\n== BOARD desatualizado (EM_PR citando PR que não está aberto: mergeado ou fechado)")
+        for label, n in stale:
+            print(f"   {label}  → #{n}")
+            attention.append(f"BOARD desatualizado: #{n} não está aberto")
 
     # 7. resumo
     print()
