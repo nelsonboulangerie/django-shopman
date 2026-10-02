@@ -37,8 +37,13 @@ const props = withDefaults(
     busy?: boolean;
     /** Endereço do Admin (o cadastro do cliente ainda mora lá). Vazio: sem o link. */
     adminBaseUrl?: string;
+    /** A etiqueta de status do pedido no resumo. Padrão: aparece (o Gestor).
+     *  A tela que já diz a situação com a etiqueta dela desliga esta, para não
+     *  mostrar duas etiquetas de estado com vocabulários diferentes (o PDV,
+     *  com a situação do balcão; P5 do dono, 02/10). */
+    showStatus?: boolean;
   }>(),
-  { busy: false, adminBaseUrl: "" },
+  { busy: false, adminBaseUrl: "", showStatus: true },
 );
 
 const emit = defineEmits<{ comment: [note: string] }>();
@@ -78,7 +83,7 @@ function submitComment() {
     <!-- resumo -->
     <section class="flex flex-col gap-3 rounded-lg border bg-card p-4" data-order-summary>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-medium" :class="toneBadge(statusTone(order.status))" data-order-status>
+        <span v-if="showStatus" class="inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-medium" :class="toneBadge(statusTone(order.status))" data-order-status>
           {{ order.status_label }}
         </span>
         <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">

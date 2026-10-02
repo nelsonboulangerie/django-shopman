@@ -32,17 +32,20 @@ export function statusTone(status: string): Tone {
 }
 
 /** Classes do selo (borda + tinta + texto) para um tom. Calmo por padrão; só
- *  perigo/atenção/sucesso carregam cor saturada. */
+ *  perigo/atenção/sucesso carregam cor saturada. Pinta com o token do tema
+ *  (`operator-theme.css`), nunca com a paleta: o tema dá a cada tom a cor que
+ *  passa AA como texto sobre o próprio fundo /10, no claro e no escuro, e o
+ *  selo fica igual no Gestor e no PDV. */
 export function toneBadge(tone: Tone | string): string {
   switch (tone) {
     case "danger":
-      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
+      return "border-destructive/40 bg-destructive/10 text-destructive";
     case "warning":
-      return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+      return "border-warning/40 bg-warning/10 text-warning";
     case "success":
-      return "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-300";
+      return "border-success/40 bg-success/10 text-success";
     case "info":
-      return "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+      return "border-info/40 bg-info/10 text-info";
     default:
       return "border-border bg-muted text-muted-foreground";
   }

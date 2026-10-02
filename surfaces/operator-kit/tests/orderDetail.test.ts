@@ -56,8 +56,21 @@ describe("orderDetail · tom", () => {
 
   it("o selo neutro não carrega cor saturada", () => {
     expect(toneBadge("neutral")).toContain("bg-muted");
-    expect(toneBadge("danger")).toContain("text-red-700");
+    expect(toneBadge("danger")).toContain("text-destructive");
     expect(toneBadge("")).toBe(toneBadge("neutral"));
+  });
+
+  it("o selo pinta com o token do tema, nunca com a paleta", () => {
+    // O tema da casa (operator-theme.css) dá a cada tom a cor que passa AA como
+    // texto sobre o próprio fundo /10, no claro e no escuro. Paleta crua ignora
+    // o tema e dá um selo de cor diferente em cada app.
+    expect(toneBadge("danger")).toBe("border-destructive/40 bg-destructive/10 text-destructive");
+    expect(toneBadge("warning")).toBe("border-warning/40 bg-warning/10 text-warning");
+    expect(toneBadge("success")).toBe("border-success/40 bg-success/10 text-success");
+    expect(toneBadge("info")).toBe("border-info/40 bg-info/10 text-info");
+    for (const tone of ["danger", "warning", "success", "info", "neutral"]) {
+      expect(toneBadge(tone)).not.toMatch(/\b(red|amber|green|blue)-\d|dark:/);
+    }
   });
 });
 

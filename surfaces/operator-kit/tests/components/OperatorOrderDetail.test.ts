@@ -80,6 +80,19 @@ describe("OperatorOrderDetail", () => {
     expect(wrapper.get("[data-order-items]").text()).toContain("Pão francês");
   });
 
+  it("a etiqueta de status do pedido sai quando a tela já diz a situação com a dela (P5, só o PDV)", async () => {
+    // Padrão igual ao de sempre: o Gestor não passa a opção e continua com a etiqueta.
+    const standard = await mount({ order: order() });
+    expect(standard.find("[data-order-status]").exists()).toBe(true);
+    standard.unmount();
+
+    const counter = await mount({ order: order({ context: "pos" }), showStatus: false });
+    expect(counter.find("[data-order-status]").exists()).toBe(false);
+    // O resto do resumo continua: canal e total.
+    expect(counter.get("[data-order-summary]").text()).toContain("web");
+    expect(counter.get("[data-order-total]").text()).toBe("R$ 42,00");
+  });
+
   it("os slots do contexto entram no lugar certo: saldo no resumo, barra de ações depois dele", async () => {
     const wrapper = await mount(
       { order: order() },
