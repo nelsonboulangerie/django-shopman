@@ -2,7 +2,7 @@
 
 Invólucro de ``shopman.storefront.concierge.intent_pilot.run_cycle``: cada passo
 tem teto próprio (40 sorteios por dia, fila aberta de até 200, placar no máximo
-semanal), então rodar a cada 5 minutos custa nada quando não há o que fazer.
+semanal, 60 mensagens por vez na sombra do Jev), então rodar a cada 5 minutos custa nada quando não há o que fazer.
 ``SHOPMAN_INTENT_PILOT_ENABLED=false`` desliga; sem mensagem observada, não faz
 nada. ``--measure-now`` força um placar fora da semana (útil depois de uma leva
 de conferência).
@@ -30,8 +30,8 @@ class Command(BaseCommand):
             self.stdout.write(f"placar: {measurement.reason}")
             return
         result = run_cycle()
-        if result.sampled or result.proposed or result.measurement == "medido":
+        if result.sampled or result.proposed or result.shadowed or result.measurement == "medido":
             self.stdout.write(
                 f"intenções: {result.sampled} sorteada(s), {result.proposed} pré-marcada(s), "
-                f"placar: {result.measurement}"
+                f"{result.shadowed} na sombra do Jev, placar: {result.measurement}"
             )

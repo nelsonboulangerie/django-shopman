@@ -183,8 +183,18 @@ def _observation_policy(connection, subject: str) -> tuple[Mapping, str]:
 
     ``allow_all_subjects`` é um gesto separado de ``enabled`` para impedir que
     uma lista vazia transforme sem querer um ensaio individual em coleta geral.
+
+    Em ``assist`` a coorte fechada (``allowed_subjects`` da connection) é
+    atendida e quem está fora dela continua só observado, como em ``observe``
+    (dono, 02/10/2026: ligar a Concierge só para o número dele, sem mudar nada
+    para os clientes). O atendido não é observado em dobro: a mensagem dele
+    entra pelo turno, e a observação seria a mesma fala duas vezes.
     """
-    if operation_mode() != "observe":
+    mode = operation_mode()
+    if mode == "assist":
+        if _subject_allowed(connection, subject):
+            return {}, "attended_subject"
+    elif mode != "observe":
         return {}, "operation_mode_gate"
     policy = connection.options.get("observation")
     if not isinstance(policy, Mapping) or policy.get("enabled") is not True:
