@@ -27,8 +27,9 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| T6 | PDV > Encomendas: brief do redesenho | `AGUARDA_DONO` (P1 a P7 do brief) | coordenacao-pedidos-4f89d4 | #1379, `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` | 2026-10-02 16:29 |
-| T7 | Primitivas no kit (`OperatorSchedulePicker`, `OperatorReasonDialog`) | `AGUARDA_DONO` (aval do brief T6) | nada | nada | 2026-10-02 16:29 |
+| S3 | Encomendas: a tela da seção (Período na barra, linha "Hoje", recortes de um toque P1, R7, "Incluir concluídas" só na busca) | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | `claude/encomendas-tela-da-secao` | 2026-10-02 18:10 |
+| S8 | PDV: um seletor de dia e horário para a venda e o reagendar (P4 = peça do PDV) | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | `claude/pdv-seletor-dia-horario` | 2026-10-02 18:10 |
+| S4/S5/S6/S7/S7b/S9/S2 | Encomendas: lote (P2), detalhe (P3), etiqueta (P5), `OperatorReasonDialog` + motivos no balcão (P7), "Nova encomenda" (P6), cor do selo no kit | `LIVRE` (fila desta sessão, duas por vez) | coordenacao-pedidos-4f89d4 | nada | 2026-10-02 18:10 |
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
