@@ -16,10 +16,10 @@
 | Frente | PR | Estado |
 |---|---|---|
 | Ordem 1: link de pagamento no vivo | sem PR | **meia verificação**: cadeia viva confere com o seed; nenhum link saiu depois do #1339; envio de teste não disparado (0.2) |
-| A1: aviso "Abrindo o cardápio" espera a página (`useNavigationPending`) | #1354 | na fila; única falha é `Marketing — cadeia completa` (`npm audit`, alerta novo no `listhen` via `nuxt`/`nitropack`, não é deste PR e não é check obrigatório) |
-| A2: observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1354 | idem. ⚠️ toca o Core: op nova `set_line_meta` no `ModifyService` do orderman, com a cerca de texto pessoal |
-| B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | na fila, 50 de 50 checks verdes. Primeira encomenda sobe 206 px em 1440x900 |
-| C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | este PR (docs) | PENDING D34 a D37 |
+| A1 e A2: aviso do cardápio segue o dado; observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1357 | ✅ mergeado (outra sessão, aberto um minuto depois do #1354; reusa `replace_sku`, Core intocado). O #1354 desta sessão foi fechado como duplicado |
+| A1 resto: aviso espera TODAS as páginas preguiçosas (o #1357 cobriu só `/menu`) e limite de 280 caracteres como no PDV (o #1357 pôs 140) | #1362 | aberto, de outra sessão |
+| B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | ✅ mergeado. Primeira encomenda sobe 206 px em 1440x900 |
+| C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | #1360 | ✅ mergeado; PENDING D34 a D37 |
 
 ### 0.2 Achados do turno (não redescubra)
 
@@ -40,6 +40,8 @@
 - **Encomendas, imagens de referência:** o POS não roda teste visual em nenhum workflow da CI e
   nenhum workflow regera; as 4 imagens nasceram no ambiente local (Playwright 1.63.0 e chromium-1243,
   iguais ao lock) e foram regeradas nele.
+- **Observação por item e anonimização:** conferido no `main` depois do #1357: a cerca de texto pessoal (`modify.py:383`) e o esquecimento (`account._scrub_item_meta`) já cobrem `meta["notes"]`.
+- **`npm audit` do Marketing vermelho em todo PR** (alerta novo no `listhen`, via `nuxt`/`nitropack`). Check não obrigatório; tarefa sugerida para uma sessão própria.
 - **Filtrar nas Encomendas custa 3 toques** (Filtrar, dimensão, opção) em vez de 1; a contagem por
   opção foi para o menu. Se o balcão reclamar, é o preço do espaço ganho.
 
