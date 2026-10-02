@@ -4,7 +4,7 @@
 - **sessão:** reconciliar-handoff-estado (Claude)
 - **branch:** `claude/reconciliar-handoff-estado-308593`
 - **PR:** #1375
-- **estado final:** na fila, #1375
+- **estado final:** mergeado, #1375 (2026-10-02 15:37 UTC, `bddd02693`)
 - **início / fim (UTC):** 2026-10-02 14:20 / 2026-10-02 15:00
 
 ## O que mudou
@@ -40,7 +40,7 @@ Conferência da seção 0 do HANDOFF (escrita em 02/10 02:15 UTC, #1359) contra 
 | 13 | Pix simulado | [CONFIRMADO] | `.do/app.subdomains.yaml:325` = `payment_mock`; o drift não acusa diferença nessa chave |
 | 14 | ManyChat: "os 5 não existem", "liga no Admin" | [REFUTADO] | `MANYCHAT-ESTADO-0210.md` (#1366): `pagamento_falhou` enviado, em análise; faltam 4. Ligação é pelo `MANYCHAT_FLOW_MAP`, o campo do Admin é somente leitura |
 | 15 | `node-forge` adiado (D-027) | [CONFIRMADO] | #1364 reconfirma com o dono |
-| 16 | Branches sem PR: só `print-layouts` fica | [REFUTADO em parte] | `make coordination`: nenhum com trabalho novo; `claude/wp-telas-de-parede` sobrando (apagado), `dsh/handoff-onda1-e-p7-20260930` com o conteúdo no `main` e em uso por worktree do DSH; 15 `rescue/*` |
+| 16 | Branches sem PR: só `print-layouts` fica | [REFUTADO em parte] (⚠️ corrigido pelo R2: o comando contava head de PR **fechado** como "tem PR" e escondia 29 branches; ver `R2-relatorio-da-reconciliacao.md`) | `make coordination`: nenhum com trabalho novo; `claude/wp-telas-de-parede` sobrando (apagado), `dsh/handoff-onda1-e-p7-20260930` com o conteúdo no `main` e em uso por worktree do DSH; 15 `rescue/*` |
 | 17 | Checkout principal 3135 commits atrás | [REFUTADO, número] | `git rev-list --count HEAD..origin/main` no principal: 3198, branch `codex/shopman-backstage-marketing-hardening` de 28/08 |
 | 18 | §0.3 "nenhum pedido desde 01/10 14:44" | [NÃO CONSEGUI VERIFICAR] | pede leitura do banco do alpha; não feita nesta rodada |
 | 19 | §0.5 `courier="auto"` não ligado | [NÃO CONSEGUI VERIFICAR] | pede leitura do Admin/banco do alpha |

@@ -4,9 +4,10 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Antes de ler a prosa: `make coordination`** (`python3 scripts/coordination_status.py`, só git,
-> sem `gh`). Ele diz o que está no `main`, na fila, em PR aberto e em branch sem PR, medido no
-> remoto. Depois o `docs/coordination/BOARD.md` (quem está com o quê). Esta prosa vem por último.
+> **Antes de ler a prosa: `make coordination`** (`python3 scripts/coordination_status.py`; roda só
+> com git, e com `gh` autenticado mede também CI e auto-merge). Ele diz o que está no `main`, na
+> fila, em PR aberto (vermelho ou não), em branch sem PR ou com PR fechado, e se o BOARD cita PR
+> que já saiu, medido no remoto. Depois o `docs/coordination/BOARD.md` (quem está com o quê). Esta prosa vem por último.
 >
 > **Seção 0 escrita em 2026-10-02 02:15 UTC** (23:15 de 01/10 em Brasília; turno do coordenador
 > noturno). **Reconciliada em 2026-10-02 14:48 UTC** (R0): ver "0-rec" logo abaixo.
@@ -32,9 +33,11 @@
   evento → flow é linha no `MANYCHAT_FLOW_MAP` num PR, **não** o Admin (o campo é somente leitura).
 - **Em PR, vermelho:** #1367 (`import_recipe_versions`), import interno do Craftsman na linha 60.
 - **Checks obrigatórios:** 23, confirmado contra a proteção viva.
-- **Branches sem PR:** nenhuma com trabalho novo. `claude/wp-telas-de-parede` (patch já no `main`)
-  apagada; `dsh/handoff-onda1-e-p7-20260930` tem o conteúdo no `main` mas está em uso numa worktree
-  do DeepSeek Harness, fica; 15 `rescue/*` esperam triagem (BOARD F2).
+- **Branches sem PR:** nenhuma sem PR nenhum, mas **29 com PR fechado sem merge e commits fora
+  do `main`** (corrigido pelo R2, 02/10 15:55 UTC: a primeira versão do comando contava PR fechado
+  como "tem PR"), mais 7 com conteúdo já no `main`. `claude/wp-telas-de-parede` (patch já no
+  `main`) apagada; `dsh/handoff-onda1-e-p7-20260930` em uso numa worktree do DeepSeek Harness, fica;
+  15 `rescue/*`. Triagem de tudo: BOARD F2.
 - **Não reconferido no vivo:** "nenhum pedido desde 01/10 14:44" (§0.3) e se o `courier="auto"`
   foi ligado (§0.5). Valiam quando a seção 0 foi escrita.
 
@@ -137,7 +140,7 @@ D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
 | Frente | PR | Estado |
 |---|---|---|
 | Ordem 1: link de pagamento no vivo | sem PR | **meia verificação**: cadeia viva confere com o seed; nenhum link saiu depois do #1339; envio de teste não disparado (0.2) |
-| A1 e A2: aviso do cardápio segue o dado; observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1357 | ✅ mergeado (outra sessão, aberto um minuto depois do #1354; reusa `replace_sku`, Core intocado). O #1354 desta sessão foi fechado como duplicado |
+| A1 e A2: aviso do cardápio segue o dado; observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1357 | ✅ mergeado (outra sessão, aberto 18 minutos depois do #1354, 23:46 → 00:04 UTC; reusa `replace_sku`, Core intocado). O #1354 desta sessão foi fechado como duplicado |
 | A1 resto: aviso espera TODAS as páginas preguiçosas (o #1357 cobriu só `/menu`) e limite de 280 caracteres como no PDV (o #1357 pôs 140) | #1362 | aberto, de outra sessão |
 | B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | ✅ mergeado. Primeira encomenda sobe 206 px em 1440x900 |
 | C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | #1360 | ✅ mergeado; PENDING D34 a D37 |
