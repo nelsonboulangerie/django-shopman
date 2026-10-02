@@ -99,6 +99,9 @@ class CartItemProjection:
     is_made_to_order: bool = False
     made_to_order_label: str = ""
 
+    # Observação do item para a cozinha, escrita pelo cliente ("" = nenhuma).
+    notes: str = ""
+
 
 @dataclass(frozen=True)
 class MinimumOrderProgressProjection:
@@ -365,6 +368,7 @@ def _present_line(
         confirmation_deadline_display=_deadline_display(line.confirmation_deadline_iso),
         planned_for_date=line.planned_for_date,
         planned_for_notice=_planned_for_notice(line, planned_notice_template),
+        notes=line.notes,
     )
 
 

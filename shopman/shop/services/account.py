@@ -929,6 +929,7 @@ def _scrub_pii(payload) -> tuple[dict, bool]:
     return clean, changed
 
 
+_ITEM_META_PII_KEYS = frozenset({"customer_note", "notes"})
 _ITEM_CUSTOMIZATION_PII_KEYS = frozenset({"note", "text", "message"})
 _ORDER_EVENT_PII_KEYS = frozenset({"note", "reason"})
 _SESSION_EVENT_PII_KEYS = frozenset(
@@ -972,15 +973,17 @@ def _scrub_item_meta(payload) -> tuple[dict, bool]:
 
     O restante de ``meta`` documenta a venda (desconto, fiscal, tipo de item,
     escolha e acréscimo da customização) e precisa sobreviver. Por isso esta
-    cerca é fechada nos caminhos ``customer_note`` e
+    cerca é fechada nos caminhos ``customer_note``, ``notes`` (a observação
+    do item, escrita pelo cliente na sacola ou ditada ao balcão) e
     ``customization.{note,text,message}``, em vez de apagar o JSON inteiro.
     """
     if not isinstance(payload, dict):
         return payload, False
 
     clean = dict(payload)
-    changed = "customer_note" in clean
-    clean.pop("customer_note", None)
+    changed = bool(_ITEM_META_PII_KEYS.intersection(clean))
+    for key in _ITEM_META_PII_KEYS:
+        clean.pop(key, None)
 
     customization = clean.get("customization")
     if isinstance(customization, dict):

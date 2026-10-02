@@ -10,6 +10,10 @@ interface WaitCopy {
 
 const nuxtApp = useNuxtApp()
 const router = useRouter()
+// A página de destino que monta antes do dado (ex.: /menu, `lazy`) declara o
+// pendente; a navegação só "termina" para o aviso quando ele resolve.
+const pageContentPending = usePageContentPendingCount()
+let awaitingPageContent = false
 const active = ref(false)
 const visible = ref(false)
 const announcement = ref('')
@@ -105,6 +109,13 @@ function begin (destination?: URL) {
 }
 
 function finish () {
+  if (active.value && pageContentPending.value > 0) {
+    // A transição acabou, mas a página ainda espera o próprio conteúdo. O
+    // limiar segue correndo: se a espera passar de 200 ms, o aviso aparece.
+    awaitingPageContent = true
+    return
+  }
+  awaitingPageContent = false
   active.value = false
   clearRevealSchedule()
   clearWatchdog()
@@ -120,6 +131,7 @@ function finish () {
 }
 
 function forceFinish () {
+  awaitingPageContent = false
   active.value = false
   clearRevealSchedule()
   clearHideSchedule()
@@ -165,6 +177,10 @@ function navigationIntent (event: MouseEvent) {
   // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
   begin(destination)
 }
+
+watch(() => pageContentPending.value > 0, (pending) => {
+  if (!pending && awaitingPageContent) finish()
+})
 
 const removePageStart = nuxtApp.hook('page:start', () => begin())
 const removePageFinish = nuxtApp.hook('page:finish', finish)

@@ -2198,6 +2198,7 @@ useSeoMeta({
                   <UiBadge v-if="line.is_made_to_order && line.made_to_order_label" variant="outline" class="ml-1 align-middle">
                     {{ line.made_to_order_label }}
                   </UiBadge>
+                  <span v-if="line.notes" class="block shop-meta" data-review-line-note>Obs.: {{ line.notes }}</span>
                 </li>
               </ul>
 

@@ -313,6 +313,22 @@ def test_build_expedition_board_uses_ready_orders(kds_setup):
     assert board.tickets[0].line_count == 1
 
 
+@pytest.mark.django_db
+def test_expedition_card_shows_the_item_note(kds_setup):
+    """A Saída lê a observação do item em ``meta["notes"]``, como a cozinha.
+
+    O card lia ``item.notes``, atributo que o item composto do pedido
+    (``order_composition.EffectiveItem``) não tem: a observação ficava sempre
+    vazia na conferência de despacho.
+    """
+    _, expedition, _, ready = kds_setup
+    OrderItem.objects.filter(order=ready).update(meta={"notes": "sem gergelim"})
+
+    board = build_kds_board(expedition.ref)
+
+    assert board.tickets[0].items[0].notes == "sem gergelim"
+
+
 # ── Customer pickup board (public) ─────────────────────────────────────────
 
 

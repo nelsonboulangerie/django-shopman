@@ -120,6 +120,9 @@ class CartLineProjection:
     # única saída era a lixeira.
     is_notifiable: bool = False
 
+    # Observação do item para a cozinha (``meta["notes"]``); "" = sem observação.
+    notes: str = ""
+
 
 @dataclass(frozen=True)
 class CartDiscountLineProjection:
@@ -503,6 +506,7 @@ def _build_line(
         available_qty=available_qty,
         is_made_to_order=is_made_to_order,
         is_notifiable=is_notifiable,
+        notes=str((item.get("meta") or {}).get("notes") or ""),
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,

@@ -41,7 +41,8 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     confirmation_deadline_iso: null,
     confirmation_deadline_display: null,
     planned_for_date: null,
-    planned_for_notice: null
+    planned_for_notice: null,
+    notes: ''
   }
 }
 

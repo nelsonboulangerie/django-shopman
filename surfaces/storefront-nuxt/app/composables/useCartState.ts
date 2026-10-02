@@ -409,6 +409,26 @@ export function useCartState () {
     return nextCart
   }
 
+  // Observação de UM item para a cozinha. Não é otimista: o texto só aparece
+  // como salvo depois que o servidor o gravou na linha. Entra na mesma fila das
+  // quantidades, para nunca ultrapassar uma mutação anterior da mesma sacola.
+  async function setLineNotes (sku: string, notes: string) {
+    beginMutation()
+    let response: { cart: CartProjection }
+    try {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(sku)}/notes/`), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { notes },
+        credentials: 'include'
+      })))
+    } finally {
+      queueDepth -= 1
+    }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response.cart
+  }
+
   async function retryLastMutation () {
     const mutation = lastMutation.value
     if (!mutation) return null
@@ -454,6 +474,7 @@ export function useCartState () {
     setSkuQty,
     applyCoupon,
     removeCoupon,
+    setLineNotes,
     retryLastMutation,
     acceptAvailableQty,
     addSubstitute,

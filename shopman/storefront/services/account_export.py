@@ -247,6 +247,7 @@ ORDER_DATA_QUERY_PATHS = ORDER_DATA_SCALAR_KEYS + tuple(
 )
 ITEM_META_QUERY_PATHS = (
     "customer_note",
+    "notes",
     "gift_wrap",
     "customization__note",
     "customization__text",
@@ -395,7 +396,7 @@ def _project_order_data(value: Any) -> dict[str, Any]:
 def _project_item_meta(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {}
-    projected = _closed_mapping(value, ("customer_note", "gift_wrap"))
+    projected = _closed_mapping(value, ("customer_note", "notes", "gift_wrap"))
     nested_customization = value.get("customization")
     customization = {}
     for field in ("note", "text", "message"):
