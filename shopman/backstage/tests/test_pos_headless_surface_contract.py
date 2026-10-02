@@ -220,6 +220,23 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertEqual(payload["pos"]["products"][0]["gtin"], "7898708850385")
 
+    def test_products_expose_the_choice_group_written_in_the_admin(self) -> None:
+        """O cartão de escolha é dado do produto (``metadata["choice_group"]``).
+
+        Sem grupo, a chave sai vazia (tile próprio). Com grupo, sai o nome
+        normalizado; o SKU, o preço e o esgotado continuam os do produto.
+        """
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["choice_group"], "")
+
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        product.metadata = {**(product.metadata or {}), "choice_group": " Chás  da casa"}
+        product.save(update_fields=["metadata"])
+
+        tile = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertEqual(tile["choice_group"], "Chás da casa")
+        self.assertEqual(tile["sku"], "POS-HEADLESS-ITEM")
+
     def test_products_expose_primary_collection_color_and_icon(self) -> None:
         """Cor (hex NB) e ícone (Lucide) da coleção primária vestem o tile sem
         foto (fundo tintado + ícone + SKU). Produto sem coleção primária expõe

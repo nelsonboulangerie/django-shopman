@@ -42,6 +42,28 @@ class CommercialIdentity:
     condition: str
 
 
+CHOICE_GROUP_KEY = "choice_group"
+
+
+def choice_group(product) -> str:
+    """Nome do cartão de escolha que reúne este produto a outros (ou ``""``).
+
+    Dado, não código: ``Product.metadata["choice_group"]`` é o NOME que o
+    cliente e o balcão leem no cartão ("Chás da casa"), escrito no Admin. Os
+    produtos com o mesmo nome viram um cartão só, que abre a escolha entre eles;
+    cada escolha continua sendo o próprio SKU (preço, estoque, ficha, nota e KDS
+    não mudam). O nome é a identidade do grupo: espaços repetidos não separam
+    dois grupos. Ausente, vazio ou malformado = o produto aparece sozinho.
+    """
+    metadata = getattr(product, "metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+    raw = metadata.get(CHOICE_GROUP_KEY)
+    if not isinstance(raw, str):
+        return ""
+    return " ".join(raw.split())
+
+
 def commercial_identity(product) -> CommercialIdentity:
     from shopman.offerman import get_social_attributes
 

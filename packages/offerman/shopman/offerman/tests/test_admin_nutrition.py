@@ -160,6 +160,37 @@ def test_form_serializes_remote_purchase_metadata_on_save(sem_provedor):
     }
 
 
+def test_choice_group_field_writes_normalized_name_and_blank_erases():
+    """Cartão de escolha: o nome é a identidade do grupo, normalizado na porta.
+
+    Em branco apaga a chave (o produto volta a aparecer sozinho).
+    """
+    product = Product.objects.create(sku="CHA1", name="Chá Um", base_price_q=1400)
+    form = ProductAdminForm(
+        data=_base_data(sku="CHA1", name="Chá Um", base_price_q="1400", choice_group="  Chás   da casa "),
+        instance=product,
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    saved.refresh_from_db()
+    assert saved.metadata["choice_group"] == "Chás da casa"
+
+    edit = ProductAdminForm(instance=saved)
+    assert edit.fields["choice_group"].initial == "Chás da casa"
+
+    form = ProductAdminForm(
+        data=_base_data(
+            sku="CHA1", name="Chá Um", base_price_q="1400",
+            metadata='{"choice_group": "Chás da casa"}', choice_group="",
+        ),
+        instance=saved,
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    saved.refresh_from_db()
+    assert "choice_group" not in saved.metadata
+
+
 def test_form_rejects_invalid_invariant():
     """trans > total must be blocked by Product.clean() via form.full_clean()."""
     product = Product.objects.create(

@@ -27,6 +27,7 @@ from shopman.backstage.services.integration_readiness import (
     focus_nfe_readiness,
     payment_link_readiness,
 )
+from shopman.shop.projections.catalog_context import choice_group as product_choice_group
 from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
     Action,
@@ -78,6 +79,10 @@ class POSProductProjection:
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
     sold_by_weight: bool = False
+    # Cartão de escolha (``Product.metadata["choice_group"]``, escrito no Admin):
+    # produtos com o mesmo nome aqui viram UM tile na grade, que abre a escolha
+    # entre eles. Cada escolha lança o próprio SKU. Vazio = tile próprio.
+    choice_group: str = ""
 
 
 @dataclass(frozen=True)
@@ -2289,6 +2294,7 @@ def _product_projection(
         sold_out=sold_out,
         sold_out_reason=sold_out_reason,
         sold_by_weight=sold_by_weight,
+        choice_group=product_choice_group(product),
     )
 
 

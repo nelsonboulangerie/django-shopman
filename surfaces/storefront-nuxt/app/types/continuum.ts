@@ -24,6 +24,7 @@ export interface CatalogStructureItem {
   allergens: string[]
   category_color: string | null
   category_icon: string | null
+  choice_group?: string | null
 }
 
 export interface CatalogStructureState {

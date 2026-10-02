@@ -6,7 +6,7 @@
 // and only rendered here.
 
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
-import { lineUnits } from "~/presentation/weighed";
+import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 
 /**
  * Quanto DESTE PRODUTO já entrou no pedido — o número do selo no card do grid.
@@ -126,4 +126,91 @@ export function productFallbackStyle(product: POSProductProjection): Record<stri
 export function productFallbackIcon(product: POSProductProjection): string {
   const icon = (product.collection_icon || "").trim();
   return icon ? `lucide:${icon}` : "lucide:package";
+}
+
+// ── Cartão de escolha ──────────────────────────────────────────────────────
+// Produtos com o mesmo `choice_group` (dado do Admin, ex.: "Chás da casa") viram
+// UM tile na grade, que abre a escolha entre eles. Nada aqui conhece "chá". Cada
+// escolha lança o próprio SKU, pelo mesmo `add` de sempre.
+
+export interface POSChoiceGroup {
+  name: string;
+  options: POSProductProjection[];
+  /** "R$ 14,00" quando todas custam o mesmo; "a partir de R$ 14,00" quando não. */
+  priceLabel: string;
+  /** Inerte só quando NENHUMA opção pode entrar no pedido. */
+  allBlocked: boolean;
+  /** A foto do tile: a da primeira opção vendável que tem foto. */
+  cover: POSProductProjection;
+}
+
+export type POSGridEntry =
+  | { kind: "product"; key: string; product: POSProductProjection }
+  | { kind: "group"; key: string; group: POSChoiceGroup };
+
+function choiceGroupName(product: POSProductProjection): string {
+  return (product.choice_group || "").trim();
+}
+
+/** Grupos do catálogo inteiro; grupo de uma opção só não é escolha. */
+export function choiceGroupsByName(products: POSProductProjection[]): Map<string, POSProductProjection[]> {
+  const groups = new Map<string, POSProductProjection[]>();
+  for (const product of products) {
+    const name = choiceGroupName(product);
+    if (!name) continue;
+    groups.set(name, [...(groups.get(name) || []), product]);
+  }
+  for (const [name, members] of groups) {
+    if (members.length < 2) groups.delete(name);
+  }
+  return groups;
+}
+
+export function choiceGroup(name: string, options: POSProductProjection[]): POSChoiceGroup {
+  const sellable = options.filter((option) => !productBlockedLabel(option));
+  const priced = options.filter((option) => option.price_q > 0);
+  let priceLabel = "";
+  if (priced.length) {
+    const cheapest = priced.reduce((min, option) => (option.price_q < min.price_q ? option : min));
+    const samePrice = priced.every((option) => option.price_q === cheapest.price_q);
+    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`;
+  }
+  const cover =
+    sellable.find((option) => option.image_url?.trim()) ||
+    options.find((option) => option.image_url?.trim()) ||
+    sellable[0] ||
+    options[0]!;
+  return { name, options, priceLabel, allBlocked: sellable.length === 0, cover };
+}
+
+/**
+ * O que a grade mostra. Com busca digitada, cada produto aparece sozinho: quem
+ * digita "camille" (ou bipa um código) quer o produto, e o Enter da busca lança
+ * o primeiro resultado. Sem busca, os membros de um grupo saem da grade e um tile
+ * do grupo entra no lugar do primeiro; as opções são o grupo inteiro do catálogo,
+ * mesmo com uma categoria ativa.
+ */
+export function gridEntries(
+  filtered: POSProductProjection[],
+  allProducts: POSProductProjection[],
+  query: string,
+): POSGridEntry[] {
+  const asProducts = filtered.map((product) => ({ kind: "product" as const, key: `product:${product.sku}`, product }));
+  if ((query || "").trim()) return asProducts;
+  const groups = choiceGroupsByName(allProducts);
+  if (!groups.size) return asProducts;
+  const entries: POSGridEntry[] = [];
+  const placed = new Set<string>();
+  for (const product of filtered) {
+    const name = choiceGroupName(product);
+    const members = name ? groups.get(name) : undefined;
+    if (!members) {
+      entries.push({ kind: "product", key: `product:${product.sku}`, product });
+      continue;
+    }
+    if (placed.has(name)) continue;
+    placed.add(name);
+    entries.push({ kind: "group", key: `group:${name}`, group: choiceGroup(name, members) });
+  }
+  return entries;
 }
