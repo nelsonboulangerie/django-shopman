@@ -676,7 +676,22 @@ function blockedForDelivery(method: string): boolean {
   return onDelivery.value && !["cash", "credit", "debit"].includes(method);
 }
 
+// A forma de pagamento espera a revisão, como o "Validar". Abrir o checkout ou
+// mexer no desconto zera a revisão antes de o servidor responder; nessa janela o
+// total é o interino (a última revisão vencida, ou o líquido do carrinho), e o
+// primeiro lançamento nasceria dimensionado por ele. Quando a revisão volta com
+// o desconto, ninguém redimensiona o que já foi escolhido. A trava é aqui, na
+// porta de entrada do valor; a conta do total interino fica como está.
+function awaitingReviewReason(): string | undefined {
+  if (!needsReview.value) return undefined;
+  return props.reviewFailed
+    ? "O total não atualizou. Toque em Tentar de novo."
+    : "Atualizando o total. A forma libera assim que ele chegar.";
+}
+
 function paymentMethodBlockedReason(ref: string): string | undefined {
+  const awaiting = awaitingReviewReason();
+  if (awaiting) return awaiting;
   if (blockedForDelivery(ref)) {
     const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
     return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
@@ -1159,6 +1174,11 @@ defineExpose({
     // A tecla da forma bloqueada calava: o operador apertava P, nada
     // acontecia, e apertava de novo achando que a tecla quebrou. O dedo no
     // botão já ouvia o motivo (`addTender`); a tecla ouve o mesmo.
+    const awaiting = awaitingReviewReason();
+    if (awaiting) {
+      toast.info(awaiting);
+      return true;
+    }
     if (blockedForDelivery(ref)) {
       const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
       toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
