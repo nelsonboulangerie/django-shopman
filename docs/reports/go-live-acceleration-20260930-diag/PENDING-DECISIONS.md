@@ -601,3 +601,16 @@ suas: a FAQ tem 14 perguntas e **0 publicadas** (a busca só lê as publicadas,
 handoff em `/admin/settings/copy/`; e, no ManyChat, o External Request em toda mensagem e a pausa
 com `concierge_handoff == "1"`. Depois: `observe` → `assist` e `SHOPMAN_CONCIERGE_ENABLED=true`
 juntos, no painel (escrita no spec vivo: sua).
+
+## D42. PDV: o envio da venda diz o total que o operador viu?
+
+**Contexto.** No PDV, abrir o checkout ou mexer no desconto zera a revisão antes de o servidor
+responder. As formas de pagamento agora esperam a revisão voltar, como o "Validar" já esperava
+(`PosPaymentWorkspace.vue`, `awaitingReviewReason`, PR desta frente). O servidor já protege o
+dinheiro: exige revisão, recalcula o total e recusa pagamento abaixo dele. O que ainda não existe é
+o segundo cinto: a tela mandar no envio o total que mostrou e o servidor recusar a venda se ele
+tiver mudado, como o checkout da loja já faz (`expected_total_q`, `shop/services/checkout.py:85-126`).
+**Pergunta:** o PDV passa a mandar o total esperado e o servidor recusa a venda quando ele mudou?
+(sim / não)
+**Recomendação:** sim, depois do go-live. Não é urgente: com a trava desta frente, o total que a tela
+mostra ao lançar já é o revisado.
