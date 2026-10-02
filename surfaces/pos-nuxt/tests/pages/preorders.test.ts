@@ -475,6 +475,80 @@ describe("Detalhe — cancelar", () => {
   });
 });
 
+describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
+  it("P3: o saldo e os gestos moram num painel à parte do detalhe do kit, fixo à direita em tela larga", async () => {
+    const wrapper = await mount(DetailPage);
+    const layout = wrapper.find("[data-preorder-layout]");
+    expect(layout.classes()).toEqual(expect.arrayContaining(["grid", "lg:grid-cols-[minmax(0,1fr)_23rem]"]));
+    const panel = layout.find("[data-preorder-counter-panel]");
+    expect(panel.attributes("aria-label")).toBe("Balcão");
+    expect(panel.classes()).toEqual(expect.arrayContaining(["lg:sticky", "lg:col-start-2", "lg:row-start-1"]));
+    expect(panel.find("h1").text()).toBe("Ana Souza");
+    expect(panel.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
+    expect(panel.find("[data-preorder-hand-over]").exists()).toBe(true);
+    // O detalhe do kit fica sem o que é do balcão (o PDV não usa #summary nem #actions).
+    const kit = layout.find("[data-order-detail]");
+    expect(kit.classes()).toContain("lg:col-start-1");
+    expect(kit.find("[data-preorder-money]").exists()).toBe(false);
+    expect(kit.find("[data-preorder-hand-over]").exists()).toBe(false);
+    // Tela estreita: uma árvore só, e o painel vem ANTES do detalhe.
+    const children = [...layout.element.children];
+    expect(children.indexOf(panel.element)).toBeLessThan(children.indexOf(kit.element));
+  });
+
+  it("o nome no topo do painel não repete o número e o canal, que o resumo do kit já diz", async () => {
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-counter-panel]").text()).not.toContain("Loja online");
+    expect(wrapper.find("[data-order-summary]").text()).toContain("web");
+  });
+
+  it("hierarquia dos gestos: o principal na largura, os médios lado a lado, Cancelar separado no pé", async () => {
+    const wrapper = await mount(DetailPage);
+    const panel = wrapper.find("[data-preorder-counter-panel]");
+    expect(panel.find("[data-preorder-hand-over]").classes()).toContain("w-full");
+    const middle = panel.find("[data-preorder-actions]");
+    expect(middle.classes()).toEqual(expect.arrayContaining(["flex", "flex-wrap"]));
+    for (const gesture of ["reschedule", "print", "edit"]) {
+      const button = middle.find(`[data-preorder-${gesture}]`);
+      expect(button.classes()).toContain("flex-auto");
+      expect(button.classes()).not.toContain("w-full");
+    }
+    // Cancelar não está entre os gestos do dia a dia: fica no pé, separado por um
+    // traço, e sem borda nem fundo (ação perigosa não ganha destaque maior).
+    expect(middle.find("[data-preorder-cancel]").exists()).toBe(false);
+    const zone = panel.find("[data-preorder-cancel-zone]");
+    expect(zone.classes()).toContain("border-t");
+    expect(panel.element.lastElementChild).toBe(zone.element);
+    const cancel = zone.find("[data-preorder-cancel]");
+    expect(cancel.classes()).toContain("text-destructive");
+    expect(cancel.classes()).not.toContain("border");
+  });
+
+  it("Comentar no painel leva ao campo do histórico, que continua do kit", async () => {
+    const wrapper = await mount(DetailPage);
+    const shortcut = wrapper.find("[data-preorder-counter-panel] [data-preorder-comment-shortcut]");
+    expect(shortcut.text()).toBe("Comentar no histórico");
+    const field = wrapper.find("[data-order-comment] textarea").element as HTMLTextAreaElement;
+    const focus = vi.spyOn(field, "focus");
+    await shortcut.trigger("click");
+    await settle();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    expect(focus).toHaveBeenCalled();
+  });
+
+  it("sem a ação de comentar, o painel não oferece o atalho", async () => {
+    detail.actions = [];
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-comment-shortcut]").exists()).toBe(false);
+  });
+
+  it("sem permissão para cancelar, o pé do painel some junto com o botão", async () => {
+    detail.counter.cancel = { allowed: false, requires_approval: false, block_reason: "" };
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-cancel-zone]").exists()).toBe(false);
+  });
+});
+
 const refsIn = (wrapper: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) =>
   wrapper.findAll("[data-preorder]").map((c) => c.attributes("data-preorder"));
 

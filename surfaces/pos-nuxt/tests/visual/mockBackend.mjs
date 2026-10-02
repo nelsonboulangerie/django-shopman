@@ -139,6 +139,42 @@ function send(res, status, payload) {
   res.end(body);
 }
 
+// O detalhe da primeira encomenda: o contrato do `OperatorOrderDetail` no
+// contexto "pos", com itens e histórico bastantes para a página rolar.
+const preorderDetail = {
+  ref: "NB-1042", status: "accepted", status_label: "Aceito", context: "pos",
+  actions: [{ ref: "comment", label: "Comentar", enabled: true, reason: "", payload_schema: { base_revision: "rev-c" } }],
+  channel_ref: "web", channel_icon: "language", total_display: "R$ 86,00",
+  customer_name: "Ana Souza", customer_ref: "C-1", customer_phone: "(43) 99988-7766",
+  customer_phone_uri: "tel:+5543999887766", customer_whatsapp_url: "https://wa.me/5543999887766",
+  customer_email: "ana.souza.com.um.endereco.comprido@exemplo.com.br",
+  customer_relay_phone: "", customer_relay_code: "", customer_relay_expires_at: "",
+  fulfillment_type: "pickup", fulfillment_label: "Retirada", schedule_label: "Hoje · 12h às 13h",
+  delivery_address: "", delivery_instructions: "", payment_method_label: "Dinheiro na retirada",
+  payment_status_label: "Pendente", payment_link_notice: "", test_order_notice: "",
+  is_gift: false, gift_recipient_name: "", gift_recipient_phone: "", gift_message: "", gift_hide_values: false,
+  customer_profile: null, fiscal_status_label: "", fiscal_links: [],
+  items: Array.from({ length: 12 }, (_, i) => ({
+    sku: `SKU-${i}`, name: i === 0 ? "Kit brunch para dois com croissant, geleia e suco" : `Croissant ${i}`,
+    qty: "1", unit_price_display: "R$ 7,00", total_display: "R$ 7,00",
+  })),
+  customer_note: "Sem açúcar no suco, por favor.", kitchen_note: "", timeline: [
+    { event_type: "created", label: "Pedido criado", timestamp_display: "29/09 às 09:12", actor: "Loja online", detail: "" },
+  ],
+  counter: {
+    card: card(), ticket_printed: false, revision: "rev-1", actor_id: 7,
+    hand_over: {
+      allowed: true, needs_payment: true, amount_q: 8600, amount_display: "R$ 86,00",
+      suggested_method: "cash", block_reason: "", digital_charge_notice: "",
+    },
+    cancel: { allowed: true, requires_approval: false, block_reason: "" },
+    reschedule: { allowed: true, block_reason: "", date: "2026-09-29", slot: "slot-12", skus: ["SKU-0"], revision: "rev-s" },
+    edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-e" },
+  },
+  managers: [],
+  cancellation_presets: [],
+};
+
 createServer((req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
   const path = url.pathname;
@@ -169,6 +205,11 @@ createServer((req, res) => {
       completed_count: 0,
       completed: [],
     });
+    return;
+  }
+  // O detalhe de uma encomenda (S5: o painel do Balcão nos cinco tamanhos).
+  if (path === "/api/v1/backstage/pos/preorders/NB-1042/") {
+    send(res, 200, { order: preorderDetail, generated_at: "2026-09-29T12:00:00Z", contract_version: 1 });
     return;
   }
   if (path === "/api/v1/backstage/pos/preorders/") {
