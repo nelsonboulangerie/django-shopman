@@ -32,7 +32,6 @@ import type {
 } from "~/types/pos";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
-import { ordersQueueUrl } from "~/presentation/crossAppLinks";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
@@ -960,28 +959,16 @@ type CheckoutNotice = {
   tone?: "block" | "warn";
   action?: CheckoutAction;
   actions?: CheckoutAction[];
-  /** Saída para OUTRO app de operador. Ver `noticeLink` logo abaixo. */
-  link?: { href: string; label: string };
 };
 
 function noticeActions(note: CheckoutNotice): CheckoutAction[] {
   return note.actions || (note.action ? [note.action] : []);
 }
 
-// "Registre o recebimento NO GESTOR" citava o app vizinho e não levava, com o
-// `ordersUrl` já no `runtimeConfig`. O pedido ainda não existe aqui (este é o
-// checkout, antes do commit), então não há `order_ref` para apontar: o destino
-// honesto é a FILA do Gestor, e o rótulo promete a fila.
-const workspaceRuntimeConfig = useRuntimeConfig();
-const ordersQueueHref = computed(() =>
-  ordersQueueUrl(String(workspaceRuntimeConfig.public.ordersUrl || "")),
-);
-const { attrsFor: crossAppAttrs } = useOperatorAppLink();
-function noticeLink(): { href: string; label: string } | undefined {
-  return ordersQueueHref.value
-    ? { href: ordersQueueHref.value, label: "Abrir a fila do Gestor" }
-    : undefined;
-}
+// Saldo na RETIRADA se recebe no próprio PDV: Encomendas → "Receber e
+// entregar" (`PosPreorderHandOverDialog`). O aviso dizia "registre no Gestor",
+// do tempo em que o balcão não recebia encomenda; mandar o operador a outro app
+// para um gesto que mora aqui era o desvio.
 
 // AVISOS — o bloqueio primeiro, depois as consequências, depois as ressalvas.
 // Só entra o que MUDA de venda para venda: uma linha que aparece em toda venda
@@ -1049,9 +1036,8 @@ const notices = computed<CheckoutNotice[]>(() => {
       key: "courier",
       icon: "lucide:banknote",
       message: props.fulfillmentType === "pickup"
-        ? "Dinheiro pendente. Registre o recebimento no Gestor antes de concluir a retirada."
+        ? "Dinheiro na retirada. Quando o cliente vier buscar, receba em Encomendas."
         : "Dinheiro pendente. O troco calculado será separado no despacho.",
-      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
   if (onDelivery.value && machineTenders.value.length) {
@@ -1059,9 +1045,8 @@ const notices = computed<CheckoutNotice[]>(() => {
       key: "delivery-machine",
       icon: "lucide:smartphone-nfc",
       message: props.fulfillmentType === "pickup"
-        ? "Passe o cartão na retirada e registre o recebimento no Gestor antes de concluir o pedido."
+        ? "Cartão na retirada. Quando o cliente vier buscar, receba em Encomendas."
         : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
-      link: props.fulfillmentType === "pickup" ? noticeLink() : undefined,
     });
   }
   // PEDIR O COMPROVANTE É PEDIR A NOTA — papel ou e-mail, como o CPF. Não
@@ -1579,22 +1564,9 @@ defineExpose({
                  meio de um balcão de 1024px, "Entrega com nota fiscal: falta o
                  CPF…" virava uma palavra por linha, espremida pelo botão. -->
             <div
-              v-if="noticeActions(note).length || note.link"
+              v-if="noticeActions(note).length"
               class="flex w-full flex-wrap gap-2"
             >
-              <!-- A menção ao app vizinho vira porta. Ver `noticeLink()`. -->
-              <UiButton
-                v-if="note.link"
-                size="lg"
-                variant="outline"
-                class="h-auto min-h-11 max-w-full gap-1.5 whitespace-normal py-2 text-left"
-                :href="note.link.href"
-                v-bind="crossAppAttrs(note.link.href)"
-                data-notice-app-link
-              >
-                <Icon name="lucide:external-link" class="size-4" />
-                {{ note.link.label }}
-              </UiButton>
               <UiButton
                 v-for="action in noticeActions(note)"
                 :key="action.label"
