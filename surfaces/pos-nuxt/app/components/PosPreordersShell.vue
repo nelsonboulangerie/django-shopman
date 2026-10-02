@@ -7,9 +7,9 @@
 // Uma navegação por destino (sessão Encomendas, 02/10):
 // - a PORTA da seção é o item "Encomendas" do rail (decisão do dono, 26/09). O
 //   nome no começo da barra é só o título: não é segundo link para o mesmo lugar;
-// - Dia | Semana mora num lugar só, o Período do kit (`OperatorPeriodPicker`) no
-//   quadro do período, onde o operador já olha a data e o ‹ ›. A barra não leva
-//   abas que gravariam o mesmo estado.
+// - Dia | Semana mora num lugar só, o Período do kit (`OperatorPeriodPicker`), que
+//   a tela da seção põe na barra (slot `period`): o mesmo lugar em que a Produção,
+//   o KDS e o B.I. o põem. A barra não leva abas que gravariam o mesmo estado.
 import { toast } from "vue-sonner";
 
 import type { POSProjection } from "~/types/pos";
@@ -50,12 +50,18 @@ function openCustomerDisplay() {
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <OperatorAppBar :sections="[]" label="Encomendas">
+      <!-- `flex-wrap`: com o Período na barra, a tela estreita leva o Período para a
+           linha de baixo em vez de empurrar a página para o lado. O Período entra
+           direto na barra (slot `period`, dentro do `start`) e não no `end` do kit,
+           cujo invólucro não encolhe: assim, na linha dele, o rótulo quebra em vez
+           de passar da borda. -->
+      <OperatorAppBar :sections="[]" label="Encomendas" class="flex-wrap">
         <template #start>
           <p class="inline-flex min-h-control shrink-0 items-center gap-1.5 px-2 text-base font-semibold" data-preorders-title>
             <Icon name="lucide:package" class="size-5 text-muted-foreground" aria-hidden="true" />
             Encomendas
           </p>
+          <slot name="period" />
         </template>
       </OperatorAppBar>
 
