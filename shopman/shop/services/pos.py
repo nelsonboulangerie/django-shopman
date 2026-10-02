@@ -311,8 +311,15 @@ def close_sale(
     payload: dict,
     actor: str,
     operator_username: str,
+    require_expected_total: bool = False,
 ) -> PosSaleResult:
-    """Create and commit a POS sale from a parsed cart payload."""
+    """Create and commit a POS sale from a parsed cart payload.
+
+    ``require_expected_total`` é o que a fronteira HTTP passa: a tela TEM de dizer
+    o total que mostrou (``expected_total_q``). Quem chama em Python (serviço,
+    teste) pode omitir, como já pode omitir ``intent_version``; mandando, vale a
+    mesma recusa. Ver ``_ensure_expected_total``.
+    """
     from shopman.shop.services import pos_edit_session
 
     # A comanda virtual da edição de encomenda não vira venda nova: o gesto
@@ -340,6 +347,7 @@ def close_sale(
         payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     )
     _ensure_resolved_prices(payload)
+    _ensure_expected_total(payload, channel_ref=channel.ref, required=require_expected_total)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
     # desconto lá embaixo. Ver `build_session_ops`.
     approver = validate_manager_approval(payload, operator_username=operator_username)
@@ -455,6 +463,70 @@ def close_sale(
         from shopman.shop.services.pos_sale_recovery import _as_error
 
         raise _as_error(result.order_ref, exc) from exc
+
+
+def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -> None:
+    """O total que a tela mostrou é o total que se cobra (D42, 02/10/2026).
+
+    A tela manda ``expected_total_q`` (o total da revisão que o operador viu) e o
+    servidor recalcula pela MESMA conta da revisão (``_payload_total_q``: itens
+    repesados, preço de tabela carimbado, desconto, taxa de entrega). Diferente,
+    para cima OU para baixo, a venda é recusada antes de qualquer escrita: cobrar
+    um número que o operador não conferiu com o cliente é cobrança surpresa, e
+    cobrar a menos é dinheiro que a casa não vê sair. Molde: o ``total_changed``
+    do checkout da loja (``checkout._ensure_total_matches``), mesmo código e
+    mesmo contexto ``old_total_q``/``new_total_q``.
+
+    Ausente na fronteira HTTP (``required``) é recusa, não "confie": antes do
+    go-live não há cliente antigo a preservar, e o único cliente do endpoint é o
+    PDV, que sempre manda. Ausente numa chamada Python é "sem total de tela":
+    segue a conta do servidor, como antes.
+
+    A retentativa da MESMA venda (``client_request_id`` que já virou pedido) não
+    passa por aqui: o pedido existe, e quem responde é ele. Um preço que mudou
+    depois do fechamento não pode transformar o replay de uma venda feita numa
+    recusa, porque a tela leria "nada foi fechado" de uma venda que fechou.
+    """
+    if _sale_already_committed(channel_ref=channel_ref, payload=payload):
+        return
+    expected = payload.get("expected_total_q")
+    if expected is None:
+        if not required:
+            return
+        raise PosIntentError(
+            code="expected_total_required",
+            message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e finalize de novo.",
+            field="expected_total_q",
+            focus="payment",
+            recovery="Atualize o PDV antes de reenviar a venda.",
+        )
+    current = _payload_total_q(payload)
+    if int(expected) == current:
+        return
+    raise PosIntentError(
+        code="total_changed",
+        message=(
+            f"O total mudou de R$ {format_money(int(expected))} para R$ {format_money(current)}. "
+            "Confira com o cliente antes de cobrar."
+        ),
+        field="expected_total_q",
+        focus="payment",
+        recovery="Confira o total novo com o cliente e finalize de novo.",
+        context={"old_total_q": int(expected), "new_total_q": current},
+    )
+
+
+def _sale_already_committed(*, channel_ref: str, payload: dict) -> bool:
+    """A chave deste envio já virou venda? (leitura; a trava de verdade vem depois)."""
+    key = _payload_client_request_id(payload)
+    if not key:
+        return False
+    from shopman.orderman.models import IdempotencyKey
+
+    claim = IdempotencyKey.objects.filter(scope=_sale_claim_scope(channel_ref), key=key).first()
+    return _claimed_sale(claim) is not None or _existing_sale_by_client_request_id(
+        channel_ref=channel_ref, payload=payload
+    ) is not None
 
 
 def _resume_committed_sale(order_ref: str) -> PosSaleResult:

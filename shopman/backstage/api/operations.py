@@ -5642,9 +5642,17 @@ class POSCloseSaleView(APIView):
                 payload=_pos_payload_with_runtime(request, body),
                 actor=_actor_pos(request),
                 operator_username=_username(request),
+                # A tela diz o total que mostrou; sem ele a venda não fecha (D42).
+                require_expected_total=True,
             )
         except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            body = {"detail": exc.message, "error": exc.as_dict()}
+            if exc.field:
+                # O canônico (``docs/reference/errors.md``) por cima do superset do
+                # PDV: ``field``/``errors`` dizem a quem lê só o dialeto comum que
+                # campo recusou (ex.: ``expected_total_q`` no total que mudou).
+                body.update({"field": exc.field, "errors": {exc.field: [exc.message]}})
+            return Response(body, status=exc.status)
         except PosCustomerConflict as exc:
             # ⚠️ ANTES do `except ValueError` — ver `_pos_customer_conflict_response`.
             # O conflito de cliente sempre foi detectado no COMMIT; o que nunca

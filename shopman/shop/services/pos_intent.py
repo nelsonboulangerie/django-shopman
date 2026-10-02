@@ -56,6 +56,11 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "tab_ref",
     "tab_session_key",
     "expected_revision",
+    # O total que a tela MOSTROU ao operador no fechamento (centavos). O servidor
+    # recalcula e recusa a venda se o dele for outro (``close_sale``). O mesmo
+    # nome do checkout da loja (``shop/services/checkout.py``). Campo à parte: não
+    # mexe no valor de nenhuma linha de pagamento.
+    "expected_total_q",
     "manual_discount",
     "manager_approval",
     "cash_shift_id",
@@ -246,6 +251,7 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["payment_collection"] = payment_collection
     payload["payment_tenders"] = _tenders(payload.get("payment_tenders"))
     payload["tendered_q"] = _optional_nonnegative_int(payload.get("tendered_q"), "tendered_q")
+    payload["expected_total_q"] = _optional_nonnegative_int(payload.get("expected_total_q"), "expected_total_q")
     # "Troco para quanto?" do pagamento na entrega — a MESMA chave canônica do
     # checkout da loja (payment.change_for_q). Só faz sentido no COD: fora dele
     # o valor é descartado (recebimento no terminal tem tendered_q).

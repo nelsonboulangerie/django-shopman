@@ -8,6 +8,7 @@ from django.urls import reverse
 from shopman.orderman.models import Order
 
 from shopman.backstage.projections.pos import build_open_tab
+from shopman.backstage.tests.pos_test_runtime import with_screen_total
 from shopman.shop.services import pos
 from shopman.shop.tests.test_pos_cash_ledger import _Counter
 
@@ -60,7 +61,7 @@ def test_two_connections_cannot_save_same_revision(tab):
 def test_stale_close_cannot_replace_newer_tab_contents(client, tab):
     _, _, body = tab
     assert client.post(reverse("api-backstage-pos-tab-save"), body, content_type="application/json").status_code == 200
-    response = client.post(reverse("api-backstage-pos-close-sale"), {**body, "client_request_id": "stale-close"}, content_type="application/json")
+    response = client.post(reverse("api-backstage-pos-close-sale"), with_screen_total({**body, "client_request_id": "stale-close"}), content_type="application/json")
     assert response.status_code == 409, response.content
     assert not Order.objects.exists()
 
