@@ -10,7 +10,7 @@
 //   (`presentation/preorders`, `barDimensions` e `toBarFilters`).
 //
 // À direita da mesma linha mora o que age sobre o visível (o slot `actions`:
-// o "Imprimir N vias" da tela).
+// o lote das vias que faltam).
 //
 // Pagamento a conferir não é opção escondida: é aviso próprio, com o gesto de
 // ver só elas. "Não sei" nunca some dentro de "a receber" ou de "pagas". Ligado

@@ -17,8 +17,9 @@
 //                       Feita com o que as listas já trazem, sem leitura nova.
 //   Recortes            os de todo dia são botões de um toque (A receber, Sem
 //                       Via Pedido, Retiradas, Entregas); o "Filtrar" do kit fica
-//                       para o resto. Na mesma linha, o "Imprimir N vias" do que
-//                       está VISÍVEL.
+//                       para o resto. Na mesma linha, o lote: do que está
+//                       VISÍVEL, só as vias que ainda não saíram (P2 do dono,
+//                       02/10). Reimprimir é no detalhe, uma por vez.
 //   Período             a grade da semana (uma árvore só) ou o dia por janela, e
 //                       a nota de escopo como legenda abaixo dela.
 //
@@ -116,14 +117,14 @@ const periodSelection = computed<PeriodSelection>({
   set: (next) => update({ mode: next.preset as PreordersMode, date: periodAnchor(next, today) }),
 });
 
-// ── Imprimir N vias (o que está visível) ──
+// ── O lote: do que está visível, só as vias que faltam ──
 const tickets = usePosOrderTickets(pos);
 const plan = computed(() => (list.value ? printPlan(list.value, days.value) : null));
 const printCount = computed(() => plan.value?.refs.length ?? 0);
 const maxBatch = computed(() => list.value?.max_batch ?? 0);
 const notice = computed(() => batchNotice(printCount.value, maxBatch.value));
 
-async function printVisible() {
+async function printMissing() {
   if (plan.value && (await tickets.printBatch(plan.value))) await period.refresh();
 }
 
@@ -323,7 +324,7 @@ function refreshAll() {
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
       <!-- HOJE e os RECORTES com o LOTE: um quadro só. A linha "Hoje" é sempre de
-           hoje; os recortes e o "Imprimir N vias" falam do período na tela. -->
+           hoje; os recortes e o lote falam do período na tela. -->
       <section
         v-if="todayLine.length || (list && list.count)"
         class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm"
@@ -341,7 +342,7 @@ function refreshAll() {
           >{{ fact.text }}</span>
         </p>
 
-        <!-- RECORTES à esquerda, o LOTE à direita, na mesma linha: "Imprimir N vias" imprime o que se vê. -->
+        <!-- RECORTES à esquerda, o LOTE à direita, na mesma linha: imprime, do que se vê, as vias que faltam. -->
         <PosPreorderFilters
           v-if="list && list.count"
           v-model="filters"
@@ -359,10 +360,10 @@ function refreshAll() {
                 :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
                 :loading="tickets.printing.value"
                 data-preorders-print
-                @click="printVisible"
+                @click="printMissing"
               >
                 <Icon name="lucide:printer" class="size-4" />
-                {{ printCtaLabel(printCount) }}
+                {{ printCtaLabel(printCount, shownCount) }}
               </UiButton>
             </div>
           </template>
