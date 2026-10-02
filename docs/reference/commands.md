@@ -16,6 +16,7 @@
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
+| [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
@@ -549,6 +550,26 @@ python manage.py bootstrap_recipe_book --dry-run   # só conta
 ```
 
 Idempotente: entry com o mesmo `ref` é pulada. O `seed` chama isto no fim das receitas.
+
+### import_recipe_versions
+
+Cria, a partir de um arquivo JSON passado por caminho, uma `RecipeVersion` nova em cada
+`RecipeEntry` existente (`create_version`), com `source.kind="import"`, `origin` = o bloco
+como está na planilha, fórmula em grama, `steps` vazio e o `label` do arquivo. Os valores
+**não** moram no repositório: o arquivo é gerado na hora a partir da planilha do dono e
+apagado depois (WP-RECEITAS-DO-DONO §C.7). Linha que é parte (o levain) entra em `parts`,
+e o que ela carrega entra na base pela composição da parte. `autolyse` passa toda a farinha
+da mistura final pela pasta autolisada só quando a conta fecha exata e cabe na água da
+planilha; senão a receita fica em rascunho e o motivo é dito.
+
+```bash
+python manage.py import_recipe_versions receitas.json                      # só o plano
+python manage.py import_recipe_versions receitas.json --apply              # grava rascunhos
+python manage.py import_recipe_versions receitas.json --apply --publish    # publica, parte antes da massa
+```
+
+Idempotente: rascunho igual é reaproveitado; versão igual já publicada é pulada. A versão
+publicada antes fica "Substituída". O formato do arquivo está na docstring do comando.
 
 ### export_recipe_book_schema
 
