@@ -22,6 +22,10 @@
 //                       02/10). Reimprimir é no detalhe, uma por vez.
 //   Período             a grade da semana (uma árvore só) ou o dia por janela, e
 //                       a nota de escopo como legenda abaixo dela.
+//   Nova encomenda      ao lado da busca: leva à venda já no modo Encomendas, na
+//                       próxima comanda livre, com o assistente na primeira etapa
+//                       que falta (P6 do dono, 02/10). A venda que estiver em
+//                       andamento fica na comanda dela, no quadro.
 //
 // O estado inteiro mora na URL (`presentation/preorders.parseView`): a volta do
 // detalhe cai no mesmo lugar, e o kiosk guarda o favorito.
@@ -29,6 +33,7 @@ import { useEventListener, watchDebounced } from "@vueuse/core";
 
 import { batchNotice, canPrintBatch, isoDate, printCtaLabel } from "~/presentation/orderTickets";
 import { preorderDetailPath } from "~/presentation/preorderDetail";
+import { NEW_ORDER_ROUTE } from "~/presentation/orderSetup";
 import {
   PREORDERS_SCOPE_NOTE,
   SEARCH_LABEL,
@@ -199,35 +204,52 @@ function refreshAll() {
       />
     </template>
 
-    <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
-    <!-- Uma linha no desktop: o título diz a tarefa, o campo diz o que se digita. -->
-    <section
-      class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5 shadow-sm"
-      aria-labelledby="preorders-search-title"
-      data-preorders-search-block
-    >
-      <h1 id="preorders-search-title" class="flex shrink-0 items-center gap-2 font-semibold leading-tight">
-        <Icon name="lucide:package-search" class="size-5 text-primary" aria-hidden="true" />
-        Cliente veio buscar?
-      </h1>
-      <UiInput
-        ref="searchField"
-        v-model="typed"
-        type="search"
-        inputmode="search"
-        autocomplete="off"
-        class="h-11 min-w-[min(100%,18rem)] flex-1 bg-background text-base shadow-sm"
-        :placeholder="SEARCH_PLACEHOLDER"
-        :aria-label="SEARCH_LABEL"
-        data-preorders-search
-        @keydown.enter.prevent="openSingle"
-      />
-      <!-- "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece. -->
-      <label v-if="searching" class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
-        <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
-        Incluir concluídas
-      </label>
-    </section>
+    <!-- A LINHA DO BALCÃO: quem veio buscar (a urgência, já focada) e, ao lado, a
+         porta para anotar uma encomenda nova. -->
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
+      <!-- Uma linha no desktop: o título diz a tarefa, o campo diz o que se digita. -->
+      <section
+        class="flex min-w-0 flex-[1_1_28rem] flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5 shadow-sm"
+        aria-labelledby="preorders-search-title"
+        data-preorders-search-block
+      >
+        <h1 id="preorders-search-title" class="flex shrink-0 items-center gap-2 font-semibold leading-tight">
+          <Icon name="lucide:package-search" class="size-5 text-primary" aria-hidden="true" />
+          Cliente veio buscar?
+        </h1>
+        <UiInput
+          ref="searchField"
+          v-model="typed"
+          type="search"
+          inputmode="search"
+          autocomplete="off"
+          class="h-11 min-w-[min(100%,18rem)] flex-1 bg-background text-base shadow-sm"
+          :placeholder="SEARCH_PLACEHOLDER"
+          :aria-label="SEARCH_LABEL"
+          data-preorders-search
+          @keydown.enter.prevent="openSingle"
+        />
+        <!-- "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece. -->
+        <label v-if="searching" class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
+          <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
+          Incluir concluídas
+        </label>
+      </section>
+
+      <!-- NOVA ENCOMENDA: a venda, já no modo Encomendas (o seletor Balcão |
+           Encomendas da barra da venda), numa comanda livre. -->
+      <UiButton
+        variant="outline"
+        size="lg"
+        class="h-11 shrink-0 gap-2"
+        data-preorders-new
+        @click="navigateTo(NEW_ORDER_ROUTE)"
+      >
+        <Icon name="lucide:plus" class="size-5" aria-hidden="true" />
+        Nova encomenda
+      </UiButton>
+    </div>
 
     <!-- ── O RESULTADO DA BUSCA toma o lugar do período. ── -->
     <template v-if="searching">

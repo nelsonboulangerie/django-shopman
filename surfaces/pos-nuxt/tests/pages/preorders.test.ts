@@ -821,3 +821,22 @@ describe("Encomendas — Cliente veio buscar", () => {
     expect(navigate).toHaveBeenCalledWith("/preorders/NB-7?back=%2Fpreorders%3Fq%3DAna");
   });
 });
+
+describe("Encomendas — Nova encomenda (S9, P6 do dono)", () => {
+  it("a seção tem a porta: leva à venda já no modo Encomendas", async () => {
+    const wrapper = await mount(PreordersPage);
+    const button = wrapper.find("[data-preorders-new]");
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toBe("Nova encomenda");
+    await button.trigger("click");
+    expect(navigate).toHaveBeenCalledWith({ path: "/", query: { new: "order" } });
+  });
+
+  it("a porta fica ao lado da busca e não sai durante ela: quem não achou a encomenda anota uma nova", async () => {
+    const wrapper = await mount(PreordersPage);
+    const search = wrapper.find("[data-preorders-search-block]");
+    expect(search.element.parentElement?.contains(wrapper.find("[data-preorders-new]").element)).toBe(true);
+    await typeSearch(wrapper, "Ana");
+    expect(wrapper.find("[data-preorders-new]").exists()).toBe(true);
+  });
+});

@@ -73,3 +73,16 @@ export function nextOrderSetupStep(input: {
   if (!input.wasReady && input.steps[index]!.ready) return firstPendingStep(input.steps);
   return input.current;
 }
+
+/**
+ * "NOVA ENCOMENDA" (seção Encomendas): a porta que leva à venda já no modo
+ * Encomendas. É um sinal de UMA vez na URL da venda, irmão de `?edit=` e
+ * `?redo=`: a tela de venda o lê ao montar, abre a próxima comanda livre no
+ * modo Encomendas (`openNewOrder`) e limpa a URL, para recarregar a página não
+ * abrir outra.
+ */
+export const NEW_ORDER_ROUTE = { path: "/", query: { new: "order" } } as const;
+
+export function wantsNewOrder(query: Record<string, unknown>): boolean {
+  return String(query.new ?? "").trim() === NEW_ORDER_ROUTE.query.new;
+}

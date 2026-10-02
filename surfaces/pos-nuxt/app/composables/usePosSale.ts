@@ -54,6 +54,7 @@ import {
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
+  nextFreeNumericTabRef,
   numericRefsZeroPaddedTo,
   requiresOpenTabForCart,
   requiresTabBeforeSave,
@@ -1605,7 +1606,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openTab(
     tab: POSTabProjection | string,
-    options: { preserveDraft?: boolean; drawerChecked?: boolean } = {},
+    options: { preserveDraft?: boolean; drawerChecked?: boolean; salesMode?: "counter" | "order" } = {},
   ) {
     if (busy.value) return; // guarda de reentrância
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
@@ -1645,6 +1646,11 @@ export function usePosSale(deps: PosSaleDeps) {
         review.value = null;
       } else {
         await setFromTabPayload(payload);
+        // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
+        // seção Encomendas). Só numa comanda VAZIA: se outra estação a ocupou no
+        // meio do caminho, ela abre como está, e a venda de quem a ocupou não
+        // troca de modo pelas costas.
+        if (options.salesMode && !(payload.items || []).length) setSalesMode(options.salesMode);
       }
       tabInput.value = "";
       await refresh();
@@ -1653,6 +1659,18 @@ export function usePosSale(deps: PosSaleDeps) {
     } finally {
       busy.value = false;
     }
+  }
+
+  /**
+   * "Nova encomenda" (seção Encomendas): a próxima comanda LIVRE, a mesma do
+   * "Próxima livre" do quadro, aberta já no modo Encomendas. Nunca a comanda de
+   * uma venda em andamento: essa fica no quadro, como estava. A trava da gaveta
+   * vale, como em qualquer venda que começa (`openTab`).
+   */
+  async function openNewOrder() {
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return;
+    await openTab(tabRef, { salesMode: "order" });
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {
@@ -3327,6 +3345,7 @@ export function usePosSale(deps: PosSaleDeps) {
     orderSetupIssue,
     completeOrderSetup,
     setSalesMode,
+    openNewOrder,
     // draft + flags
     cart,
     tabInput,
