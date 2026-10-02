@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { effectScope, ref } from 'vue'
 import NavigationFeedback from '~/components/NavigationFeedback.vue'
-import { usePageContentPending, usePageContentPendingCount } from '~/composables/usePageContentPending'
+import { usePageContentPending, usePageContentPendingCount, usePageContentWaitCopy } from '~/composables/usePageContentPending'
 
 // Página de destino que monta antes do dado (como /menu com `lazy`) e declara
 // o pendente pelo mesmo composable que a página real usa. Um effectScope faz o
@@ -217,6 +217,43 @@ describe('NavigationFeedback', () => {
 
     expect(wrapper.find('[data-navigation-wait-overlay]').exists()).toBe(false)
     page.unmount()
+    wrapper.unmount()
+  })
+
+  it('a segunda fase da espera troca a frase do mesmo aviso, sem abrir outro', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountSuspended(NavigationFeedback)
+    const nuxtApp = useNuxtApp()
+    const link = navigationLink('/menu')
+    const phase = ref<{ title: string, detail: string } | null>(null)
+    const scope = effectScope()
+
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+    contentPending.value = true
+    scope.run(() => usePageContentPending(contentPending, phase))
+    await nuxtApp.callHook('page:finish', undefined)
+    vi.advanceTimersByTime(217)
+    await nextTick()
+    expect(wrapper.get('[data-navigation-wait-card]').text()).toContain('Abrindo o cardápio…')
+
+    // A vitrine chegou; preços e disponibilidade ainda não: a espera continua,
+    // e o MESMO aviso passa a dizer o que falta.
+    phase.value = { title: 'Confirmando preços e disponibilidade…', detail: 'Só um instante.' }
+    await nextTick()
+    expect(wrapper.findAll('[data-navigation-wait-overlay]')).toHaveLength(1)
+    expect(wrapper.get('[data-navigation-wait-card]').text()).toContain('Confirmando preços e disponibilidade…')
+    expect(wrapper.get('[role="status"]').text()).toContain('Confirmando preços e disponibilidade…')
+
+    contentPending.value = false
+    phase.value = null
+    await nextTick()
+    await nextTick()
+    vi.advanceTimersByTime(320)
+    await nextTick()
+    expect(wrapper.find('[data-navigation-wait-overlay]').exists()).toBe(false)
+
+    scope.stop()
+    expect(usePageContentWaitCopy().value).toBeNull()
     wrapper.unmount()
   })
 

@@ -13,14 +13,18 @@ const router = useRouter()
 // A página de destino que monta antes do dado (ex.: /menu, `lazy`) declara o
 // pendente; a navegação só "termina" para o aviso quando ele resolve.
 const pageContentPending = usePageContentPendingCount()
+// E pode trocar a frase quando entra noutra fase da espera (ex.: /menu, que
+// abre a vitrine e depois confirma preços): continua um aviso só.
+const pageContentWaitCopy = usePageContentWaitCopy()
 let awaitingPageContent = false
 const active = ref(false)
 const visible = ref(false)
 const announcement = ref('')
-const waitCopy = ref<WaitCopy>({
+const destinationCopy = ref<WaitCopy>({
   title: 'Atualizando a tela…',
   detail: 'Só um instante.'
 })
+const waitCopy = computed<WaitCopy>(() => pageContentWaitCopy.value || destinationCopy.value)
 
 let revealTimer: ReturnType<typeof setTimeout> | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
@@ -76,8 +80,8 @@ function reveal () {
 }
 
 function begin (destination?: URL) {
-  if (destination) waitCopy.value = copyForDestination(destination)
-  else if (!active.value && !visible.value) waitCopy.value = copyForDestination()
+  if (destination) destinationCopy.value = copyForDestination(destination)
+  else if (!active.value && !visible.value) destinationCopy.value = copyForDestination()
 
   if (active.value) {
     if (visible.value) announcement.value = `${waitCopy.value.title} ${waitCopy.value.detail}`
@@ -177,6 +181,10 @@ function navigationIntent (event: MouseEvent) {
   // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
   begin(destination)
 }
+
+watch(waitCopy, (copy) => {
+  if (visible.value) announcement.value = `${copy.title} ${copy.detail}`
+})
 
 watch(() => pageContentPending.value > 0, (pending) => {
   if (!pending && awaitingPageContent) finish()
