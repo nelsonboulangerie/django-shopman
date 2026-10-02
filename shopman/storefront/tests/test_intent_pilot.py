@@ -259,29 +259,55 @@ class _FakeSession:
         return SimpleNamespace(status_code=200, text="", json=lambda: self.payload)
 
 
-def test_jev_asks_one_yes_no_per_intent_in_one_call(settings):
+def test_jev_asks_one_noul_per_intent_in_one_call(settings):
+    """Pedido e resposta no formato de https://docs.typesafe.ai/api.md."""
     settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"typesafe"})
     settings.JEV_API_KEY = "k"
     session = _FakeSession({
+        "model": "jev-1.13.0",
         "answers": {
-            "order": {"answer": True, "confidence": 0.95},
-            "hours_delivery": {"answer": "yes", "confidence": 0.7},
-            "allergy": {"answer": False, "confidence": 0.9},
-            "human": {"value": "no", "probabilities": {"yes": 0.1, "no": 0.9}},
+            "order": {"type": "noul", "noul": 0.95},
+            "hours_delivery": {"type": "noul", "noul": 0.7},
+            "allergy": {"type": "noul", "noul": 0.1},
+            "human": {"type": "noul", "noul": 0.0},
         },
-        "usage": {"input_tokens": 90},
+        "usage": {"input_tokens": 90, "output_tokens": 20},
     })
     prediction = JevContender(session=session).predict(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
-    assert set(session.sent[0]["questions"]) == {"order", "hours_delivery", "allergy", "human"}
-    assert session.sent[0]["state"] == {"customer_message": "Quero pão, abre domingo?"}
-    assert set(prediction.intents) == {"order", "hours_delivery"}
+    body = session.sent[0]
+    assert set(body) == {"model", "state", "questions"}
+    assert body["model"] == settings.JEV_MODEL
+    assert body["state"] == {"customer_message": "Quero pão, abre domingo?"}
+    assert set(body["questions"]) == {"order", "hours_delivery", "allergy", "human"}
+    for question in body["questions"].values():
+        assert set(question) == {"type", "instructions"} and question["type"] == "noul"
+    assert prediction.intents == {"order": 0.95, "hours_delivery": 0.7}
     assert prediction.input_tokens == 90
 
 
-def test_jev_boolean_parser_names_unknown_shapes():
-    assert parse_jev_boolean({"answers": {"q": {"answer": False, "confidence": 0.8}}}, question="q") == pytest.approx(0.2)
+def test_jev_noul_parser_reads_the_documented_shape_and_names_unknown_ones():
+    assert parse_jev_boolean({"answers": {"q": {"type": "noul", "noul": 0.25}}}, question="q") == pytest.approx(0.25)
     with pytest.raises(ContenderResponseError, match="Chaves recebidas"):
         parse_jev_boolean({"output": "?"}, question="q")
+    with pytest.raises(ContenderResponseError, match="ilegível"):
+        parse_jev_boolean({"answers": {"q": {"answer": True, "confidence": 0.8}}}, question="q")
+
+
+def test_jev_http_error_says_why_and_what_was_sent_without_the_message(settings):
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"typesafe"})
+    settings.JEV_API_KEY = "k"
+
+    class _Rejecting:
+        def post(self, url, *, json, headers, timeout):
+            detail = {"detail": {"error_type": "api_usage_error", "message": "Invalid request."}}
+            return SimpleNamespace(status_code=400, text=str(detail), json=lambda: detail)
+
+    with pytest.raises(ContenderResponseError) as caught:
+        JevContender(session=_Rejecting()).predict(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
+    message = str(caught.value)
+    assert "HTTP 400 (api_usage_error: Invalid request.)" in message
+    assert "4 pergunta(s) do tipo noul" in message
+    assert "Quero pão" not in message
 
 
 # ── Placar ──────────────────────────────────────────────────────────────────

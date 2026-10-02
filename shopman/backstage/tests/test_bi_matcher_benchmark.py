@@ -102,8 +102,12 @@ class _FakeSession:
 def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
     settings.JEV_API_KEY = "test-key"
     session = _FakeSession({
-        "answers": {"product": {"answer": "p1", "confidence": 0.97}},
-        "usage": {"input_tokens": 120},
+        "model": "jev-1.13.0",
+        "answers": {"product": {
+            "type": "choice", "choice": "p1",
+            "probabilities": {"p1": 0.97, "p2": 0.02, "p3": 0.0, "other": 0.01}, "confidence": 0.9,
+        }},
+        "usage": {"input_tokens": 120, "output_tokens": 30},
     })
     matcher = JevMatcher(session=session)
     candidates = shortlist("pain chocolat", load_catalog(), 3)
@@ -112,7 +116,9 @@ def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
     url, body, headers = session.sent[0]
     assert url == settings.JEV_API_URL
     assert headers["Authorization"] == "Bearer test-key"
-    choices = body["questions"]["product"]["choices"]
+    question = body["questions"]["product"]
+    assert set(question) == {"type", "instructions", "criteria"} and question["type"] == "choice"
+    choices = question["criteria"]
     assert list(choices)[:3] == ["p1", "p2", "p3"] and OTHER in choices
     assert body["state"] == {"sales_history_item": "pain chocolat"}
     assert (verdict.product_pk, verdict.confidence, verdict.input_tokens) == (catalog["PC"].pk, 0.97, 120)
@@ -121,7 +127,7 @@ def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
 @pytest.mark.django_db
 def test_jev_other_means_no_product(catalog, settings):
     settings.JEV_API_KEY = "test-key"
-    matcher = JevMatcher(session=_FakeSession({"answers": {"product": {"answer": OTHER, "confidence": 0.9}}}))
+    matcher = JevMatcher(session=_FakeSession({"answers": {"product": {"type": "choice", "choice": OTHER, "probabilities": {OTHER: 0.9, "p1": 0.1}, "confidence": 0.8}}}))
     verdict = matcher.match(Case("bolo de pote", None), shortlist("bolo de pote", load_catalog(), 3))
     assert verdict.product_pk is None
 
@@ -132,14 +138,26 @@ def test_jev_without_key_stays_out(settings):
         JevMatcher(session=_FakeSession({}))
 
 
-def test_jev_parser_accepts_probabilities_list_shape_and_names_unknown_shapes():
+def test_jev_parser_reads_the_documented_choice_shape_and_names_unknown_ones():
+    """Formato de https://docs.typesafe.ai/api.md#choice-answer."""
     choice, confidence, tokens = parse_jev_response(
-        {"answers": [{"id": "product", "value": "p2", "probabilities": {"p2": 0.8, "other": 0.2}}]},
+        {"answers": {"product": {"type": "choice", "choice": "p2", "probabilities": {"p2": 0.8, "other": 0.2}, "confidence": 0.6}}},
         question="product",
     )
     assert (choice, confidence, tokens) == ("p2", 0.8, 0)
     with pytest.raises(MatcherResponseError, match="Chaves recebidas"):
         parse_jev_response({"output": "?"}, question="product")
+    with pytest.raises(MatcherResponseError, match="ilegível"):
+        parse_jev_response({"answers": {"product": {"answer": "p2", "confidence": 0.9}}}, question="product")
+
+
+@pytest.mark.django_db
+def test_jev_http_error_names_the_reason_and_the_question_type(catalog, settings):
+    settings.JEV_API_KEY = "test-key"
+    session = _FakeSession({"detail": [{"loc": ["body", "questions", "product", "criteria"], "msg": "Field required"}]})
+    session.status_code = 422
+    with pytest.raises(MatcherResponseError, match=r"HTTP 422 \(body.questions.product.criteria: Field required\).*1 pergunta\(s\) do tipo choice"):
+        JevMatcher(session=session).match(Case("pain chocolat", None), shortlist("pain chocolat", load_catalog(), 3))
 
 
 class _FakeClient:
