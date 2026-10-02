@@ -4,12 +4,41 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Atualizado em 2026-10-02, noite** (turno do coordenador noturno).
+> **Antes de ler a prosa: `make coordination`** (`python3 scripts/coordination_status.py`, só git,
+> sem `gh`). Ele diz o que está no `main`, na fila, em PR aberto e em branch sem PR, medido no
+> remoto. Depois o `docs/coordination/BOARD.md` (quem está com o quê). Esta prosa vem por último.
+>
+> **Seção 0 escrita em 2026-10-02 02:15 UTC** (23:15 de 01/10 em Brasília; turno do coordenador
+> noturno). **Reconciliada em 2026-10-02 14:48 UTC** (R0): ver "0-rec" logo abaixo.
 > A seção 0 é o estado agora; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
 
-## 0. Estado agora (02/10 noite, turno do coordenador noturno)
+## 0-rec. Reconciliação de 02/10 14:48 UTC (o que mudou depois da seção 0)
+
+> Conferido contra `origin/main` = `c3c34d22f` (#1373). Prova de cada item em
+> `docs/coordination/ROUNDS/R0-reconciliar-handoff.md`. O estado vivo é o `BOARD.md`.
+
+- **Entraram 10 PRs depois da seção 0:** #1364 (D-027 reconfirmada), #1365 (cartão de escolha dos
+  chás, D34 opção 1), #1366 e #1369 (ManyChat, duas rodadas), #1368 ("Medir agora" no placar das
+  intenções), #1370 (as 14 fichas publicadas no alpha entram no seed, D40), #1371 e #1372 (controles
+  de data, D37), #1374 (escolhas no produto: sabor e adicionais com preço), #1373 (formato da API do Jev).
+- **D34, D36, D37 e D40 não dependem mais do dono** (respondidas em 02/10; registro na atualização
+  "02/10 (dia)" do `PENDING-DECISIONS.md`). D35, D38, D39 e D41 seguem abertas; D38 conferida no
+  GitHub: `can_approve_pull_request_reviews: false`.
+- **Drift do spec: três chaves, não uma.** Além de `SHOPMAN_COURIER_ADAPTER`, `JEV_API_KEY` e
+  `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` existem só no vivo. "Jev não rodou" (§0.4) deixou de valer.
+- **ManyChat:** `pagamento_falhou` enviado e em análise; faltam 4 modelos, não 5. A ligação
+  evento → flow é linha no `MANYCHAT_FLOW_MAP` num PR, **não** o Admin (o campo é somente leitura).
+- **Em PR, vermelho:** #1367 (`import_recipe_versions`), import interno do Craftsman na linha 60.
+- **Checks obrigatórios:** 23, confirmado contra a proteção viva.
+- **Branches sem PR:** nenhuma com trabalho novo. `claude/wp-telas-de-parede` (patch já no `main`)
+  apagada; `dsh/handoff-onda1-e-p7-20260930` tem o conteúdo no `main` mas está em uso numa worktree
+  do DeepSeek Harness, fica; 15 `rescue/*` esperam triagem (BOARD F2).
+- **Não reconferido no vivo:** "nenhum pedido desde 01/10 14:44" (§0.3) e se o `courier="auto"`
+  foi ligado (§0.5). Valiam quando a seção 0 foi escrita.
+
+## 0. Estado agora (02/10 madrugada UTC, turno do coordenador noturno; ver "0-rec" acima)
 
 > Ordem de leitura: esta seção, depois a "0-obs" (o turno paralelo da sessão "Turno: observações do dono") e a "0-dia" (§0d.1b tem as pendências do ManyChat e das
 > receitas), depois `PENDING-DECISIONS.md` (D34 a D41 são novas: D34 a D37 da sessão paralela, D38 a D41 deste turno).
@@ -65,7 +94,8 @@
 ### 0.4 Achados do turno (não redescubra)
 
 - **Drift do spec agora é `[FAIL]`, de propósito** (D-026): só `SHOPMAN_COURIER_ADAPTER`, ligado no
-  painel e fora do arquivo (D-020). ⛔ Nenhum `apps update --spec` sem repor essa chave à mão: o
+  painel e fora do arquivo (D-020). ⚠️ Desde 02/10 de dia, também `JEV_API_KEY` e
+  `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (ver "0-rec"). ⛔ Nenhum `apps update --spec` sem repor essa chave à mão: o
   arquivo de hoje desligaria a entrega por parceiro.
 - **Checks obrigatórios:** 23, sem regressão (`check_canonical_docs.py --live-required-checks`:
   "[OK] ... matches live branch protection (23 contexts)"); espelho em `.github/required-status-checks.json`.
@@ -77,7 +107,7 @@
 - **Pré-flight:** restauração ✅; Pix segue simulado (`SHOPMAN_PIX_ADAPTER=payment_mock`,
   `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`): regra de parada do dono; Stripe e Focus NÃO VERIFICADOS;
   `production-readiness` não tem modo só leitura (não rodado); SHA candidato do corte ainda não definido.
-- **Jev:** não rodou. Prova: o comparador manda mensagem real de cliente (decisão do dono), o
+- **Jev:** não rodou (⚠️ deixou de valer em 02/10: rodou no alpha, ver "0-rec"). Prova: o comparador manda mensagem real de cliente (decisão do dono), o
   `typesafe` não está aprovado, não há `JEV_API_KEY` nesta máquina, e o gabarito tem 0 conferidas (D36).
   Achado: o concorrente `regex` do comparador mede a regra velha de 4 causas, não a de 12
   (`intent_benchmark.py:135-145` × `triage.py:175-184`).
@@ -86,9 +116,10 @@
 
 ### 0.5 O que depende do dono
 
-D34 (chá com sabor) · D35 (Threads) · D36 (Jev) · D37 (controles de data) · D38 (permissão do
-GitHub Actions) · D39 (três pós-v1) · D40 (receitas 13 a 15 e o aval do plano) · D41 (Concierge passo 2: FAQ, copy, flow) ·
-**ManyChat:** deixar a aba "Criar modelo" do ManyChat na frente (ou liberar o Chrome no pedido de acesso) e dizer "segue": a sessão envia os 5 modelos, cria os flows e liga no Admin · `fulfillment.courier="auto"` quando quiser (clique pronto: `/admin/shop/channel/66/change/`, aba
+~~D34 (chá com sabor)~~ · D35 (Threads) · ~~D36 (Jev)~~ · ~~D37 (controles de data)~~ · D38 (permissão do
+GitHub Actions) · D39 (três pós-v1) · ~~D40 (receitas 13 a 15 e o aval do plano)~~ · D41 (Concierge passo 2: FAQ, copy, flow) ·
+(riscadas: respondidas em 02/10, ver "0-rec") ·
+**ManyChat:** deixar a aba "Criar modelo" do grupo do Claude na frente, com a janela sem nada por cima, e dizer "segue": a sessão envia os 4 modelos que faltam, cria os flows e liga cada um no `MANYCHAT_FLOW_MAP` num PR (o Admin é somente leitura nesse campo) · `fulfillment.courier="auto"` quando quiser (clique pronto: `/admin/shop/channel/66/change/`, aba
 "Preparo e entrega", acrescentar `"courier": "auto"` ao JSON; chama a TaOn de verdade) · gerar um link
 de pagamento no PDV para provar 0.3 · o Pix real antes da virada (D-016) · e as abertas de antes:
 D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
