@@ -57,6 +57,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
+| `app/components/OperatorDayPicker.vue` | `<OperatorDayPicker>` | Tipo 1 de data, "Escolha rápida de dia": Hoje, Amanhã, próxima data, Outra data (ver "Datas") |
+| `app/components/OperatorPeriodPicker.vue` | `<OperatorPeriodPicker>` | Tipo 2 de data, "Período": botão que diz a janela, chips no popover, ‹ › (ver "Datas") |
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
 | `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
@@ -629,6 +631,68 @@ sem nome acessível (a peça canônica é o `UiIconButton`, que EXIGE `label`).
 
 O inventário do que ainda falta converter, app por app, está em
 [`docs/primitivos-de-escolha-inventario.md`](docs/primitivos-de-escolha-inventario.md).
+
+## Datas: dois controles, e só dois (`OperatorDayPicker`, `OperatorPeriodPicker`)
+
+Decisão do dono (02/10/2026): todo controle de data das superfícies de operador é de um
+destes dois tipos. A aritmética que eles dividem (datas LOCAIS, nunca `toISOString`, que é
+UTC e virava o dia depois das 21h) mora em `app/presentation/dates.ts`, pura e testada em
+`tests/dates.test.ts`; os componentes em `tests/components/OperatorDatePickers.test.ts`.
+
+### Tipo 1: "Escolha rápida de dia" (`OperatorDayPicker`)
+
+Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebimento).
+
+```html
+<OperatorDayPicker v-model="date" :today="storeToday" :min="storeToday"
+                   :max="maxDate" :available-dates="openDates" label="Dia da retirada" />
+```
+
+- **Quatro botões de 44 px** (`min-h-control`), um toque escolhe: `Hoje / Qui 01/10`,
+  `Amanhã / Sex 02/10`, `<dia da semana por extenso> / 03/10` e `Outra data`.
+- O terceiro é a **próxima data depois de amanhã que o contexto permite**: pula dia
+  fechado (`availableDates`) e respeita `min`/`max`.
+- Hoje e amanhã **aparecem sempre**; se o contexto não deixa, ficam apagados com o
+  motivo curto no próprio botão (`fechado`, `fora do prazo`, `indisponível`).
+- `availableDates` é a lista de dias em que a casa abre. Dia dentro da lista que não
+  está nela é fechado; depois da última data, quem decide é o servidor.
+- **Outra data** abre o seletor nativo (com `min`/`max`) e deixa o campo à vista logo
+  abaixo: há navegador que recusa `showPicker()`, e o toque não pode ser inerte. Dia
+  fechado escolhido ali é recusado com a frase do motivo. A data escolhida por lá vira
+  a legenda do botão.
+- `today` é o hoje da LOJA (vem do servidor), não o do dispositivo.
+- ARIA: `role="radiogroup"` + `role="radio"`/`aria-checked`, uma parada de tabulação,
+  setas andam entre as opções.
+
+### Tipo 2: "Período" (`OperatorPeriodPicker`)
+
+Quadros e análise (B.I., Encomendas, Produção, KDS, Gestor). O desenho é o do B.I.
+(promovido de `BiTopBar.vue`): UM botão que DIZ a janela ativa, os chips e o personalizado
+no popover dele. Acrescido de ‹ › e de "Voltar para hoje".
+
+```html
+<!-- B.I.: tudo, personalizado, calendário até hoje -->
+<OperatorPeriodPicker v-model="selection" :presets="['day','week','month','year','7d','28d','3m','6m','1y','5y','max']"
+                      custom :max="today" :epoch="DATA_EPOCH" label="Período de análise" />
+<!-- Encomendas: dia e semana; KDS: só ['day'] -->
+<OperatorPeriodPicker v-model="period" :presets="['day','week']" label="Período das encomendas" />
+```
+
+- **O consumidor declara as granularidades** (`presets`, chaves de `PERIOD_PRESETS`) e se
+  aceita `custom`. Sem personalizado, o popover oferece "Ir para o dia".
+- **O valor** é `{ preset, from, to }`. No calendário (`day`/`week`/`month`/`year`), `from`
+  é a âncora e `""` é "o período que contém hoje" (acompanha a virada do dia); na janela
+  móvel (`7d`…`5y`), `to` é o último dia e `""` é "termina hoje"; em `custom`, o intervalo.
+  O estado é do consumidor: quem guarda na URL guarda na URL.
+- **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
+  anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias
+  antes. "Máx" não anda. A seta que sairia de `min`/`max` fica desabilitada.
+- **`max` muda o que é "o período"**: com `max` = hoje (B.I.), a semana corre de segunda até
+  hoje; sem `max` (quadros), é segunda a domingo inteira.
+- **Trocar de granularidade guarda a âncora** (quem olhava a quinta passada e toca
+  "Semana" vê a semana daquela quinta). Janela móvel recomeça terminando hoje.
+- **Rótulo**: dia diz sempre o dia da semana (`Hoje, qui 01/10`, `Ontem, qua 30/09`,
+  `Ter 29/09`); o resto diz nome e intervalo (`Semana · 28/09 a 04/10`). Sem travessão.
 
 ## Base de CSS (`operator-base.css`)
 

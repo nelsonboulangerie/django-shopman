@@ -17,7 +17,7 @@ import {
 
 const { config, report, pending, errorDetail, apply } = useBiExplore();
 const { views, save, toggleFavorite, remove } = useBiViews();
-const { selection, setPreset, applyCustom } = useBiWindow();
+const { savedWindow, setPreset, applyCustom } = useBiWindow();
 
 const currentSpec = computed(() =>
   report.value?.metrics.find((m) => m.key === config.value.metric),
@@ -74,11 +74,7 @@ const saveName = ref("");
 async function saveScenario() {
   const name = saveName.value.trim();
   if (!name) return;
-  const window: Record<string, string> =
-    selection.value.preset === "custom"
-      ? { from: selection.value.from, to: selection.value.to }
-      : { preset: selection.value.preset };
-  if (await save(name, { ...config.value, window })) {
+  if (await save(name, { ...config.value, window: savedWindow.value })) {
     saveName.value = "";
     menuOpen.value = false;
     const saved = views.value.find((v) => v.name === name);

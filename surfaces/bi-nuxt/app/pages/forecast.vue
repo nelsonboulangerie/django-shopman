@@ -7,7 +7,6 @@
 // aviso, que é como uma tela de previsão perde a confiança de quem a usa.
 import type { DayForecast, ForecastOccasion } from "~/types/bi";
 import {
-  HORIZON_LABELS,
   basisHeadline,
   basisNotes,
   cashOrdersNote,
@@ -23,7 +22,7 @@ import {
   shortDateWithYear,
 } from "~/presentation/bi";
 
-const { report, pending, error, refresh, target, horizon } = useBiForecast();
+const { report, pending, error, refresh, target, horizon, period, presets } = useBiForecast();
 
 // O troco é a mesma decisão de véspera: quem planeja o sábado quer abastecer a
 // gaveta no mesmo momento em que decide a fornada. Separá-lo em outra aba faria
@@ -39,11 +38,6 @@ const single = computed(() => (report.value?.horizon === "day" ? report.value.da
 const openDays = computed(() =>
   (report.value?.days ?? []).filter((day: DayForecast) => !day.closed),
 );
-
-const chipClass = (active: boolean) =>
-  active
-    ? "bg-card font-semibold text-foreground shadow-sm"
-    : "text-muted-foreground hover:bg-card/60 hover:text-foreground";
 
 const periodSeries = (days: DayForecast[]) =>
   days.map((day) => ({
@@ -67,31 +61,9 @@ const occasionTitle = (occasion: ForecastOccasion) =>
 
 <template>
   <main class="flex flex-1 flex-col gap-4 p-4">
-    <section class="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        Dia que você está planejando
-        <input
-          v-model="target"
-          type="date"
-          class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground"
-        />
-      </label>
-      <div
-        class="flex items-center gap-0.5 rounded-md bg-muted p-1"
-        role="group"
-        aria-label="Horizonte da projeção"
-      >
-        <button
-          v-for="option in HORIZON_LABELS"
-          :key="option.key"
-          type="button"
-          class="inline-flex h-8 items-center rounded-md px-3 text-sm transition-all"
-          :class="chipClass(horizon === option.key)"
-          @click="horizon = option.key"
-        >
-          {{ option.label }}
-        </button>
-      </div>
+    <section class="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-3">
+      <span class="text-xs font-medium text-muted-foreground">Período que você está planejando</span>
+      <OperatorPeriodPicker v-model="period" :presets="presets" label="Período da projeção" align="start" />
       <p class="ml-auto max-w-md text-xs text-muted-foreground">
         A projeção compara com dias parecidos do passado. Ela não usa o período da barra acima, que
         serve para olhar o que já aconteceu.

@@ -15,7 +15,6 @@
 // fechado e feriado; as janelas já vêm anotadas com a prontidão do carrinho. Ela
 // mostra o que o servidor resolveu, e diz o porquê.
 import {
-  dateLabel,
   readinessNote,
   selectedWindowConflict,
   type ScheduleWindow,
@@ -57,10 +56,9 @@ const isOpen = computed({
   set: (value: boolean) => emit("update:open", value),
 });
 
-// Os próximos dias viram atalho; o resto fica no seletor de data. Cinco cobre a
-// semana de encomenda sem virar uma parede de botões no balcão.
-const quickDates = computed(() => props.availableDates.slice(0, 5));
-
+// O dia é a "Escolha rápida de dia" do kit (Tipo 1): Hoje, Amanhã, a próxima data
+// em que a casa abre e Outra data. Dia fechado aparece apagado com o motivo.
+const chosenDate = computed(() => (props.salesMode === "order" ? props.deliveryDate ?? "" : props.deliveryDateEffective));
 
 const note = computed(() => readinessNote(props.bottleneckName, props.readyAt));
 const conflict = computed(() => selectedWindowConflict(props.windows, props.deliveryTimeSlot));
@@ -74,9 +72,12 @@ const emptyMessage = computed(() => {
   return "Não há horário combinável neste dia.";
 });
 
-/** Voltar para hoje é UM gesto, não "apagar a data e depois apagar a hora". */
+/**
+ * No balcão, "sem agendamento" é UM gesto, não "apagar a data e depois apagar a
+ * hora". Na encomenda não existe: ela exige um dia, e o "Hoje" é o primeiro botão.
+ */
 function backToToday() {
-  emit("update:deliveryDate", props.salesMode === "order" ? props.today : "");
+  emit("update:deliveryDate", "");
   emit("update:deliveryTimeSlot", "");
 }
 
@@ -103,30 +104,15 @@ function pickDate(iso: string) {
              alguma coisa. -->
         <div class="grid gap-2">
           <span class="text-sm font-medium text-muted-foreground">Dia</span>
-          <div class="flex flex-wrap gap-2">
-            <UiButton
-              v-for="iso in quickDates"
-              :key="iso"
-              type="button"
-              variant="outline"
-              size="sm"
-              class="h-9 px-3"
-              :class="deliveryDate === iso ? 'border-primary bg-primary/5 font-semibold' : ''"
-              @click="pickDate(iso)"
-            >
-              {{ dateLabel(iso, today) }}
-            </UiButton>
-          </div>
-          <label class="grid gap-1 text-sm">
-            <span class="text-xs text-muted-foreground">Outra data</span>
-            <UiInput
-              :model-value="salesMode === 'order' ? deliveryDate : deliveryDateEffective"
-              type="date"
-              :min="today"
-              :max="maxDate"
-              @update:model-value="pickDate(String($event || ''))"
-            />
-          </label>
+          <OperatorDayPicker
+            :model-value="chosenDate"
+            :today="today"
+            :min="today"
+            :max="maxDate || undefined"
+            :available-dates="availableDates"
+            label="Dia do pedido"
+            @update:model-value="pickDate"
+          />
         </div>
 
         <!-- O motivo dito UMA vez, no topo, em vez de repetido em dez janelas
@@ -185,7 +171,7 @@ function pickDate(iso: string) {
       </div>
 
       <UiDialogFooter class="gap-2 sm:justify-between">
-        <UiButton v-if="fulfillmentType !== 'delivery'" variant="outline" @click="backToToday">{{ salesMode === "order" ? "Hoje" : "Sem agendamento · levar agora" }}</UiButton>
+        <UiButton v-if="fulfillmentType !== 'delivery' && salesMode !== 'order'" variant="outline" @click="backToToday">Sem agendamento · levar agora</UiButton>
         <UiButton class="sm:ml-auto" :disabled="salesMode === 'order' && !deliveryDate" @click="isOpen = false">Confirmar dia e horário</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
