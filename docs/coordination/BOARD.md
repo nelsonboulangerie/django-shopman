@@ -23,7 +23,15 @@ da conferência está em `ROUNDS/R0-reconciliar-handoff.md`.
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
 | R0 | Reconciliar o HANDOFF; comando de estado; este BOARD | `EM_PR` | reconciliar-handoff-estado | #1375 (`claude/reconciliar-handoff-estado-308593`) | 2026-10-02 14:48 |
-| R1 | Receitas: comando `import_recipe_versions` (C.7 do WP-RECEITAS-DO-DONO) | `EM_PR` **vermelho** | não identificada | #1367 (`claude/receitas-fx-import`) | 2026-10-02 09:12 |
+| R1 | Receitas: comando `import_recipe_versions` (C.7 do WP-RECEITAS-DO-DONO) | `EM_EXECUCAO` (desencalhe) | coordenacao-pedidos-4f89d4 | #1367 (`claude/receitas-fx-import`) | 2026-10-02 16:29 |
+| T0 | Ordem 0: ordem durável, BOARD, HANDOFF linha 75 (rota da observação é por LINHA) | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | `claude/coordenacao-pedidos-4f89d4` | 2026-10-02 16:29 |
+| T1 | PDV: formas de pagamento travadas até a revisão do desconto voltar (opção b) | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | a abrir | 2026-10-02 16:29 |
+| T2 | Loja: um só aviso no cardápio (overlay narra, card azul de caminho feliz sai) | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | a abrir | 2026-10-02 16:29 |
+| T3 | Loja: observação por item vira folha (BottomSheet) | `LIVRE` (fila desta sessão, depois de T1/T2) | coordenacao-pedidos-4f89d4 | nada | 2026-10-02 16:29 |
+| T4 | PDV: modo Encomendas vira assistente | `LIVRE` (fila desta sessão) | coordenacao-pedidos-4f89d4 | nada | 2026-10-02 16:29 |
+| T5 | PDV > Encomendas: matar redundâncias R1 a R5 | `LIVRE` (fila desta sessão) | coordenacao-pedidos-4f89d4 | nada | 2026-10-02 16:29 |
+| T6 | PDV > Encomendas: brief do redesenho (documento para o dono) | `LIVRE` (fila desta sessão) | coordenacao-pedidos-4f89d4 | nada | 2026-10-02 16:29 |
+| T7 | Primitivas no kit (`OperatorSchedulePicker`, `OperatorReasonDialog`) | `AGUARDA_DONO` (aval do brief T6) | nada | nada | 2026-10-02 16:29 |
 
 **R1 está parado desde 09:25 UTC.** Auto-merge ligado, `BLOCKED`. Causa: o comando novo importa
 interno do kernel, `import_recipe_versions.py:60` → `shopman.craftsman.contrib.formula.percentages`

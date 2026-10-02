@@ -72,8 +72,12 @@
   próprio dado; o `NavigationFeedback` só termina quando o dado chega (teto de 15 s mantido). `lazy` e o
   limiar de 200 ms intocados. Desde o #1362 toda página preguiçosa declara, e o `performanceGuardrails.test.ts` trava.
   O teste novo reprova contra o `NavigationFeedback.vue` anterior (prova do defeito).
-- **Observação por item:** `PUT /api/v1/cart/skus/<sku>/notes/` grava `meta["notes"]` pelo op
-  `replace_sku` que já existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo).
+- **Observação por item:** `PUT /api/v1/cart/lines/<line_id>/notes/` (`shopman/storefront/api/urls.py:150`,
+  view `CartLineNotesView` em `surface.py:1334`) grava `meta["notes"]` pelo op `replace_sku` que já
+  existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo). ⚠️ **É por LINHA, não
+  por SKU, de propósito** (`shopman/shop/services/cart.py:384-386`): com escolhas no produto o mesmo
+  SKU tem duas linhas, e um editor por SKU faria uma observação sobrescrever a outra. (Corrigido em
+  02/10: esta linha dizia `cart/skus/<sku>/notes/`, rota que não existe.)
   280 caracteres, o mesmo teto do PDV (`LINE_NOTES_MAX_LENGTH`, `shopman/shop/services/cart.py`; #1362). `meta.notes` é texto pessoal: a sessão anonimizada recusa, a exclusão
   de conta apaga (o PDV também não apagava: corrigido), a exportação inclui.
 - **A Saída:** `backstage/projections/kds.py` lê `meta["notes"]` (lia `item.notes`, que não existe).
