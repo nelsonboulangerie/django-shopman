@@ -265,10 +265,13 @@ class LLMContender:
 
 
 class JevContender:
-    """TypeSafe Jev: uma pergunta sim/não por intenção, todas numa chamada.
+    """TypeSafe Jev: uma pergunta sim/não (``noul``) por intenção, todas numa chamada.
 
-    O formato segue a descrição pública da API (``state`` + ``questions``). A
-    leitura mora em ``parse_jev_boolean`` e falha dizendo as chaves que recebeu.
+    Formato da referência da API (https://docs.typesafe.ai/api.md, lida em
+    02/10/2026): ``POST /v1/systemone`` com ``Authorization: Bearer``, corpo
+    ``{state, model, questions}``, cada pergunta ``{"type": "noul",
+    "instructions": ...}``; a resposta traz ``answers[id] = {"type": "noul",
+    "noul": <0..1>}`` e ``usage.input_tokens``.
     """
 
     name = "jev"
@@ -292,22 +295,23 @@ class JevContender:
             "model": self.model,
             "state": {"customer_message": sample.text},
             "questions": {
-                c.ref: {"type": "boolean", "question": f"A mensagem do cliente inclui isto: {c.description}?"}
+                c.ref: {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
                 for c in categories
             },
         }
 
     def predict(self, sample: Sample, categories: list[Category]) -> Prediction:
         started = time.perf_counter()
+        body = self.build_request(sample, categories)
         response = self.session.post(
             self.url,
-            json=self.build_request(sample, categories),
+            json=body,
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=self.timeout,
         )
         latency_ms = (time.perf_counter() - started) * 1000
         if response.status_code >= 400:
-            raise ContenderResponseError(f"Jev respondeu HTTP {response.status_code}: {response.text[:300]}")
+            raise ContenderResponseError(jev_http_error(response, body))
         payload = response.json()
         intents = {}
         for category in categories:
@@ -322,35 +326,51 @@ class JevContender:
         )
 
 
-_YES = {True, "yes", "sim", "true"}
-_NO = {False, "no", "nao", "não", "false"}
-
-
 def parse_jev_boolean(payload: dict, *, question: str) -> float:
-    """Probabilidade de "sim" para uma pergunta sim/não numa resposta do Jev.
+    """Probabilidade de "sim" de uma pergunta ``noul`` numa resposta do Jev.
 
-    ⚠️ Escrito sem acesso à referência da API: aceita ``answers`` como dict ou
-    lista, valor em ``answer``/``value`` (booleano ou texto) e confiança em
-    ``confidence``/``probability`` (do valor escolhido) ou ``probabilities``.
+    Formato da referência (https://docs.typesafe.ai/api.md#noul-answer)::
+
+        {"model": "jev-1.13.0",
+         "answers": {"is_urgent": {"type": "noul", "noul": 0.95}},
+         "usage": {"input_tokens": 296, "output_tokens": 20}}
+
+    Qualquer outro formato falha dizendo as chaves que recebeu.
     """
-    answers = payload.get("answers", payload.get("results"))
-    if isinstance(answers, list):
-        answers = {item.get("id") or item.get("name") or item.get("question"): item for item in answers}
-    answer = (answers or {}).get(question)
+    answers = payload.get("answers")
+    answer = answers.get(question) if isinstance(answers, dict) else None
     if not isinstance(answer, dict):
         raise ContenderResponseError(f"Resposta do Jev sem '{question}'. Chaves recebidas: {sorted(payload)}")
-    value = answer.get("answer", answer.get("value"))
-    if isinstance(value, str):
-        value = value.strip().lower()
-    probabilities = answer.get("probabilities") or {}
-    if isinstance(probabilities, dict):
-        for key in ("yes", "true", True):
-            if key in probabilities:
-                return float(probabilities[key])
-    confidence = answer.get("confidence", answer.get("probability"))
-    if confidence is None or (value not in _YES and value not in _NO):
+    value = answer.get("noul")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
         raise ContenderResponseError(f"Resposta do Jev ilegível para '{question}'. Chaves: {sorted(answer)}")
-    return float(confidence) if value in _YES else 1.0 - float(confidence)
+    return float(value)
+
+
+def jev_http_error(response, body: dict) -> str:
+    """Mensagem de falha HTTP do Jev com o que ajuda a consertar.
+
+    Traz o tipo e a mensagem do erro (``detail.error_type``/``detail.message``
+    ou a lista de campos de um 422) e a forma do pedido enviado (chaves e tipos
+    das perguntas), nunca o texto do cliente.
+    """
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):  # corpo sem JSON ou JSON que não é objeto
+        detail = None
+    if isinstance(detail, dict):
+        reason = f"{detail.get('error_type', '?')}: {detail.get('message', '?')}"
+    elif isinstance(detail, list):
+        reason = "; ".join(
+            f"{'.'.join(str(p) for p in item.get('loc', []))}: {item.get('msg', '?')}" if isinstance(item, dict) else str(item)
+            for item in detail
+        )
+    else:
+        reason = (getattr(response, "text", "") or "")[:200]
+    questions = body.get("questions") or {}
+    kinds = sorted({str(q.get("type")) for q in questions.values() if isinstance(q, dict)})
+    sent = f"modelo {body.get('model')!r}, {len(questions)} pergunta(s) do tipo {', '.join(kinds) or '?'}"
+    return f"Jev respondeu HTTP {response.status_code} ({reason}). Pedido: {sent}."
 
 
 # ── Placar ──────────────────────────────────────────────────────────────────

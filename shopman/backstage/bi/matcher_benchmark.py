@@ -145,10 +145,11 @@ OTHER_DESCRIPTION = "Nenhum destes: produto fora do catálogo, extinto ou difere
 class JevMatcher:
     """TypeSafe Jev: uma pergunta de escolha entre os candidatos e ``other``.
 
-    O formato segue a descrição pública da API (``POST /v1/systemone`` com
-    ``state`` e ``questions``; pergunta de escolha = chave → descrição, sempre
-    com ``other``). A leitura da resposta mora em ``parse_jev_response`` e
-    grita com as chaves que recebeu se o formato for outro.
+    Formato da referência da API (https://docs.typesafe.ai/api.md, lida em
+    02/10/2026): ``POST /v1/systemone`` com ``Authorization: Bearer``, corpo
+    ``{state, model, questions}``; a pergunta é ``{"type": "choice",
+    "instructions": ..., "criteria": {opção: descrição}}``, sempre com
+    ``other``. A leitura mora em ``parse_jev_response``.
     """
 
     name = "jev"
@@ -172,21 +173,22 @@ class JevMatcher:
         return {
             "model": self.model,
             "state": {"sales_history_item": case.external_name},
-            "questions": {"product": {"type": "choice", "question": QUESTION, "choices": choices}},
+            "questions": {"product": {"type": "choice", "instructions": QUESTION, "criteria": choices}},
         }
 
     def match(self, case: Case, candidates: list[tuple[CatalogEntry, int]]) -> Verdict:
         keyed = _choice_keys(candidates)
         started = time.perf_counter()
+        body = self.build_request(case, keyed)
         response = self.session.post(
             self.url,
-            json=self.build_request(case, keyed),
+            json=body,
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=self.timeout,
         )
         latency_ms = (time.perf_counter() - started) * 1000
         if response.status_code >= 400:
-            raise MatcherResponseError(f"Jev respondeu HTTP {response.status_code}: {response.text[:300]}")
+            raise MatcherResponseError(jev_http_error(response, body))
         choice, confidence, input_tokens = parse_jev_response(response.json(), question="product")
         entry = keyed.get(choice)
         if entry is None and choice != OTHER:
@@ -200,34 +202,50 @@ class JevMatcher:
 
 
 def parse_jev_response(payload: dict, *, question: str) -> tuple[str, float, int]:
-    """(escolha, confiança 0–1, tokens de entrada) de uma resposta do Jev.
+    """(escolha, probabilidade da escolha, tokens de entrada) de uma resposta do Jev.
 
-    ⚠️ Escrito sem acesso à referência da API: aceita os nomes de campo que a
-    documentação pública cita (``answers``, ``answer``/``value``,
-    ``confidence``/``probability``/``probabilities``, ``usage``). Se a primeira
-    chamada real cair aqui, a mensagem traz as chaves recebidas; ajuste este
-    parser e o teste que o fixa.
+    Formato da referência (https://docs.typesafe.ai/api.md#choice-answer)::
+
+        {"model": "jev-1.13.0",
+         "answers": {"department": {"type": "choice", "choice": "billing",
+                                    "probabilities": {"billing": 0.88, ...},
+                                    "confidence": 0.81}},
+         "usage": {"input_tokens": 318, "output_tokens": 34}}
+
+    Devolve a probabilidade da opção escolhida (é ela que o corte de confiança
+    do placar compara); qualquer outro formato falha dizendo as chaves.
     """
-    answers = payload.get("answers", payload.get("results"))
-    if isinstance(answers, list):
-        answers = {item.get("id") or item.get("name") or item.get("question"): item for item in answers}
-    answer = (answers or {}).get(question)
+    answers = payload.get("answers")
+    answer = answers.get(question) if isinstance(answers, dict) else None
     if not isinstance(answer, dict):
         raise MatcherResponseError(f"Resposta do Jev sem '{question}'. Chaves recebidas: {sorted(payload)}")
-
-    choice = answer.get("answer", answer.get("value", answer.get("choice")))
-    probabilities = answer.get("probabilities") or {}
-    if isinstance(choice, dict):  # {"value": "p3", "probability": 0.93}
-        choice = choice.get("value", choice.get("key"))
-    confidence = answer.get("confidence", answer.get("probability"))
-    if confidence is None and isinstance(probabilities, dict) and choice in probabilities:
-        confidence = probabilities[choice]
-    if not isinstance(choice, str) or confidence is None:
+    choice = answer.get("choice")
+    probabilities = answer.get("probabilities")
+    if not isinstance(choice, str) or not isinstance(probabilities, dict) or choice not in probabilities:
         raise MatcherResponseError(f"Resposta do Jev ilegível para '{question}'. Chaves: {sorted(answer)}")
-
     usage = payload.get("usage") or {}
-    input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
-    return choice, float(confidence), input_tokens
+    return choice, float(probabilities[choice]), int(usage.get("input_tokens") or 0)
+
+
+def jev_http_error(response, body: dict) -> str:
+    """Mensagem de falha HTTP do Jev: tipo e mensagem do erro e a forma do pedido."""
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):  # corpo sem JSON ou JSON que não é objeto
+        detail = None
+    if isinstance(detail, dict):
+        reason = f"{detail.get('error_type', '?')}: {detail.get('message', '?')}"
+    elif isinstance(detail, list):
+        reason = "; ".join(
+            f"{'.'.join(str(p) for p in item.get('loc', []))}: {item.get('msg', '?')}" if isinstance(item, dict) else str(item)
+            for item in detail
+        )
+    else:
+        reason = (getattr(response, "text", "") or "")[:200]
+    questions = body.get("questions") or {}
+    kinds = sorted({str(q.get("type")) for q in questions.values() if isinstance(q, dict)})
+    sent = f"modelo {body.get('model')!r}, {len(questions)} pergunta(s) do tipo {', '.join(kinds) or '?'}"
+    return f"Jev respondeu HTTP {response.status_code} ({reason}). Pedido: {sent}."
 
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.S)

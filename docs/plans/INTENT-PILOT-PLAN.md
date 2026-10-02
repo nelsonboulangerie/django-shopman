@@ -142,8 +142,10 @@ python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --csv
 
 - **Volume real de mensagens:** depende de quantas perguntas a observação captura por dia; o
   teto de 40 sorteios/dia se ajusta em `intent_pilot.DAILY_SAMPLE_CAP`.
-- **Formato da resposta do Jev** para perguntas sim/não: `parse_jev_boolean` foi escrito pela
-  descrição pública e falha dizendo as chaves que recebeu.
+- ~~Formato da resposta do Jev~~ resolvido em 02/10/2026: a rodada do alpha deu HTTP 400 nas 44
+  chamadas porque a pergunta saía como `{"type": "boolean", "question": ...}`. A referência
+  (https://docs.typesafe.ai/api.md) pede `{"type": "noul", "instructions": ...}` e responde
+  `answers[id].noul` (0 a 1). Pedido, leitura e mensagem de erro seguem a referência.
 - **Calibração do `embed`:** similaridade não é probabilidade; o corte (`--min-similarity`,
   default 0,45) se escolhe pelo CSV da primeira rodada.
 - **A redação tira sinal?** "pago no pix amanhã" vira "pago no [dado financeiro ou segredo

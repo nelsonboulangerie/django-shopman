@@ -90,11 +90,11 @@ sendo o caminho sem chave nem pacote. Embeddings no caminho de produção signif
 
 ## O que não se sabe ainda
 
-- **Formato exato da resposta do Jev.** O pedido segue a descrição pública (`POST /v1/systemone`,
-  `state` + `questions`, escolha = chave → descrição com `other`), mas a referência da API não
-  estava acessível deste ambiente. `parse_jev_response` aceita os nomes de campo citados na
-  documentação pública e, se não reconhecer a resposta, falha listando as chaves recebidas. A
-  rodada de fumaça do passo 3 existe para isso.
+- ~~Formato exato da resposta do Jev~~ resolvido em 02/10/2026 pela referência
+  (https://docs.typesafe.ai/api.md): a escolha vai como `{"type": "choice", "instructions": ...,
+  "criteria": {opção: descrição}}` e volta como `answers.product.choice` com `probabilities`;
+  `parse_jev_response` usa a probabilidade da opção escolhida. A rodada de fumaça do passo 3
+  continua valendo como prova com a chave.
 - **Preço do LLM**: tabela pública de 24/06/2026 em `LLM_PRICES`; `--llm-price-*` sobrescreve.
   O de-para não é urgente: se um LLM vencer, a Batch API da Anthropic corta o custo à metade.
 - **Calibração dos embeddings**: similaridade de cosseno não é probabilidade; o `--min-similarity`
