@@ -593,3 +593,49 @@ def test_periodic_cleanup_realigns_before_purging(settings, capsys):
     assert json.loads(capsys.readouterr().out) == {
         "bindings": 0, "conversations": 0, "messages": 0, "realigned": 1,
     }
+
+
+# ── Coorte atendida, resto observado (dono, 02/10/2026) ─────────────────────
+
+
+def _assist(settings):
+    settings.SHOPMAN_CONCIERGE.update(operation_mode="assist", enabled=True)
+    settings.AI_ASSIST_API_KEY = "fixture"
+    policy = settings.SHOPMAN_CONCIERGE["connections"][CONNECTION_KEY]["options"]["observation"]
+    policy["allow_all_subjects"] = True
+
+
+def test_in_assist_a_contact_outside_the_cohort_is_still_only_observed(settings, monkeypatch):
+    _assist(settings)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("efeito externo")
+
+    monkeypatch.setattr(service, "_enqueue_turn", forbidden)
+    monkeypatch.setattr(transport, "send_for", forbidden)
+
+    assert _post(subject="cliente-real").json() == {"status": "observed", "queued": False}
+    message = ConversationMessage.objects.get()
+    assert message.automation_eligible is False
+    assert message.envelope["processing_mode"] == "observe"
+
+
+def test_in_assist_the_attended_contact_is_not_observed_twice(settings):
+    _assist(settings)
+
+    assert _post(subject=SUBJECT).json()["status"] == "observation_disabled"
+    assert not ConversationMessage.objects.exists()
+
+
+def test_in_assist_a_contact_outside_the_cohort_is_never_answered(settings):
+    _assist(settings)
+
+    response = Client().post(
+        reverse("concierge:connection-events", args=[CONNECTION_KEY]),
+        data=json.dumps({"subscriber_id": "cliente-real", "text": "oi", "provider_timestamp": "2026-09-14 11:59:00"}),
+        content_type="application/json",
+        HTTP_X_API_KEY=KEY,
+    )
+
+    assert response.json()["status"] == "not_allowed"
+    assert not Directive.objects.exists()

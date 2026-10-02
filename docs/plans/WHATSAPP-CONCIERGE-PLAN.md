@@ -214,10 +214,11 @@ não está no vivo nem no arquivo e cai no padrão `concierge_handoff` (`config/
    `observe`, `disabled_reason()` devolve `observation_only` mesmo com o switch
    ligado (`shopman/storefront/concierge/service.py:90-91`). **Em `observe`, ligar
    `SHOPMAN_CONCIERGE_ENABLED` não muda nada**: o webhook continua respondendo
-   `disabled` e nenhum turno roda. Por isso o modo vem primeiro. [FATO] Os modos são exclusivos: a observação
-   passiva só grava com `operation_mode == "observe"` (`service.py:187-188`).
-   [INFERÊNCIA] Trocar para `assist` **encerra a coleta** que alimenta o piloto de
-   intenções; a amostra já guardada some no prazo de 7 dias (`:653-656`).
+   `disabled` e nenhum turno roda. Por isso o modo vem primeiro. Desde 02/10/2026
+   (dono: "ligar só para o meu contato, sem afetar nenhum cliente"), em `assist` a
+   coorte (`CONCIERGE_ALLOWED_SUBSCRIBERS`) é atendida e **quem está fora dela continua
+   só observado**, como em `observe` (`service._observation_policy`). A coleta do piloto
+   de intenções e a sombra do Jev seguem; o atendido não é observado em dobro.
 2. **`SHOPMAN_CONCIERGE_ENABLED=true`.** Com `assist` e a chave da Anthropic
    presente, o webhook deixa de responder `disabled` e enfileira o turno. Só os
    subjects de `CONCIERGE_ALLOWED_SUBSCRIBERS` entram (`not_allowed` para o
@@ -243,8 +244,9 @@ não está no vivo nem no arquivo e cai no padrão `concierge_handoff` (`config/
       `Conversation.summary`, cartão no sino do Gestor, outra mesa no Admin).
 - [ ] `manage.py concierge_check --live` sem pendência no app (system check
       `SHOPMAN_W022`/`SHOPMAN_W023` limpo no release).
-- [x] Decidir o que acontece com a observação passiva (item 1 acima): o dono aceitou que ela
-      acaba quando o modo passa a `assist` (D32 respondida pela proposta aprovada, D-018).
+- [x] Decidir o que acontece com a observação passiva (item 1 acima): ela não acaba mais em
+      `assist` para quem está fora da coorte (02/10/2026). Antes disso o dono tinha aceitado
+      perdê-la (D-018), porque não havia outro jeito.
 - [x] `AI_ASSIST_API_KEY` e `CONCIERGE_API_KEY` com valor no app vivo: `SECRET` com valor
       cifrado em 02/10/2026 (`apps spec get`). Se a chave da Anthropic é válida: NÃO VERIFICADO
       (só um turno de verdade prova).
