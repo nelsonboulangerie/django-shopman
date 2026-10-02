@@ -601,3 +601,17 @@ suas: a FAQ tem 14 perguntas e **0 publicadas** (a busca só lê as publicadas,
 handoff em `/admin/settings/copy/`; e, no ManyChat, o External Request em toda mensagem e a pausa
 com `concierge_handoff == "1"`. Depois: `observe` → `assist` e `SHOPMAN_CONCIERGE_ENABLED=true`
 juntos, no painel (escrita no spec vivo: sua).
+
+## D43. PDV > Encomendas: o redesenho (brief da Frente 6 do turno de 02/10)
+
+**Contexto.** Brief em `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` (#1379): a seção vira a
+agenda do balcão (quem está na minha frente, o que sai hoje, como está a semana). As redundâncias
+R1 a R5 já saíram sem aval (#1382) e o modo Encomendas da venda virou assistente (#1384). O resto
+espera estas respostas (recomendação entre parênteses):
+P1) Os recortes de todo dia (A receber, Sem Via Pedido, Retiradas, Entregas) viram botões de um
+toque? (sim) · P2) O lote imprime 1 = tudo o que está na tela, inclusive o que já saiu, ou 2 = só o
+que ainda não saiu? (2) · P3) No detalhe, o saldo e os botões ficam num painel fixo à direita? (sim)
+· P4) O seletor de dia e horário vira 1 = peça do PDV agora, ou 2 = já nasce no kit? (1) · P5) No
+detalhe do PDV fica só a etiqueta do balcão, e o Gestor não muda? (sim) · P6) A seção ganha um botão
+"Nova encomenda"? (sim) · P7) O cancelar no balcão usa os mesmos motivos prontos do Gestor? Pede uma
+mudança pequena no servidor. (sim). As primitivas do kit (Frente 7) esperam este aval.

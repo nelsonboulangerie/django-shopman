@@ -18,7 +18,7 @@ Estados: `LIVRE` · `EM_EXECUCAO` · `EM_PR` · `AGUARDA_DONO` · `ADIADO`.
 `FEITO` não fica aqui: o histórico é do HANDOFF e o detalhe é de
 `docs/coordination/ROUNDS/<id>-<slug>.md`.
 
-Conferido contra o remoto em 2026-10-02 15:55 UTC (`origin/main` = `bddd02693`, #1375). Registros:
+Linhas do turno conferidas em 2026-10-02 17:05 UTC (fila de merge e `gh pr view`). Quadro conferido contra o remoto em 2026-10-02 15:55 UTC (`origin/main` = `bddd02693`, #1375). Registros:
 `ROUNDS/R0-reconciliar-handoff.md` (a conferência do HANDOFF) e `ROUNDS/R2-relatorio-da-reconciliacao.md`
 (o que o R0 e este quadro ainda erravam). O `make coordination` acusa linha `EM_PR` cujo PR já saiu:
 ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
@@ -27,26 +27,13 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| R1 | Receitas: comando `import_recipe_versions` (C.7 do WP-RECEITAS-DO-DONO) | `EM_PR` (import trocado pela porta pública em 02/10 16:3x; só o "Marketing — cadeia completa" vermelho, D-027, não obrigatório) | coordenacao-pedidos-4f89d4 (desencalhe; autora: coordenador noturno 02/10) | #1367 (`claude/receitas-fx-import`) | 2026-10-02 16:29 |
-| T0 | Ordem 0: ordem durável, BOARD, HANDOFF linha 75 (rota da observação é por LINHA); brief T6 | `EM_PR` | coordenacao-pedidos-4f89d4 | #1379 (`claude/coordenacao-pedidos-4f89d4`) | 2026-10-02 16:29 |
-| T1 | PDV: formas de pagamento travadas até a revisão do desconto voltar (opção b) | `EM_PR` (fila) | coordenacao-pedidos-4f89d4 | #1380 (`claude/pdv-pagamento-espera-revisao`) | 2026-10-02 16:29 |
-| T1b | PDV: o "Exato" (tecla `=`) espera a revisão também | `EM_EXECUCAO` (depois do #1380) | coordenacao-pedidos-4f89d4 | `claude/pdv-exato-espera-revisao` | 2026-10-02 17:20 |
-| T2 | Loja: um só aviso no cardápio (overlay narra, card azul de caminho feliz sai) | `EM_PR` (fila) | coordenacao-pedidos-4f89d4 | #1381 (`claude/loja-cardapio-um-aviso`) | 2026-10-02 16:29 |
-| T3 | Loja: observação por item vira folha (BottomSheet) | `EM_PR` (fila) | coordenacao-pedidos-4f89d4 | #1383 (`claude/loja-observacao-em-folha`) | 2026-10-02 16:29 |
-| T4 | PDV: modo Encomendas vira assistente | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | `claude/pdv-encomenda-assistente` | 2026-10-02 17:05 |
-| T5 | PDV > Encomendas: matar redundâncias R1 a R5 | `EM_PR` (fila) | coordenacao-pedidos-4f89d4 | #1382 (`claude/encomendas-sem-redundancia`) | 2026-10-02 16:29 |
+| T1b | PDV: o "Exato" (tecla `=`) espera a revisão também | `EM_EXECUCAO` (depois do #1380) | coordenacao-pedidos-4f89d4 | `claude/pdv-exato-espera-revisao` | 2026-10-02 16:58 |
 | T6 | PDV > Encomendas: brief do redesenho | `AGUARDA_DONO` (P1 a P7 do brief) | coordenacao-pedidos-4f89d4 | #1379, `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` | 2026-10-02 16:29 |
 | T7 | Primitivas no kit (`OperatorSchedulePicker`, `OperatorReasonDialog`) | `AGUARDA_DONO` (aval do brief T6) | nada | nada | 2026-10-02 16:29 |
 
-**R1 está parado desde 09:25 UTC.** Auto-merge ligado, `BLOCKED`. Causa: o comando novo importa
-interno do kernel, `import_recipe_versions.py:60` → `shopman.craftsman.contrib.formula.percentages`
-(`test_architecture.py::test_no_deep_kernel_imports_all_apps` e
-`test_import_boundaries.py::test_framework_does_not_import_protected_kernel_internals`, run
-36988496707). Reprovam por isso "Shop rest", "Shop heavy", "Testes (test-shop)" e "Coverage Gate".
-O vermelho do "Marketing — cadeia completa" é o `node-forge` (D-027, não obrigatório). Próximo
-passo: trocar o import pela porta pública do Craftsman, como o #1374 fez em `7979427a1`. As 14
-fichas já estão publicadas no alpha e no seed (#1370): o comando é para a próxima importação, não
-segura o go-live.
+**Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4): na fila** #1367 (R1,
+desencalhado), #1379 (T0 + brief T6), #1380 (T1), #1381 (T2), #1382 (T5), #1383 (T3), #1384 (T4).
+Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`.
 
 ## Fila livre (ninguém pegou)
 
