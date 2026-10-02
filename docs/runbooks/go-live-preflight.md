@@ -93,7 +93,7 @@ com efeito real só acontecem com autorização explícita no momento da ação.
 - [ ] enrollment/recovery de 2FA concluído antes de qualquer flag global;
 - [ ] ingress/admin aprovado; origem e proxy validados;
 - [ ] alerta sintético recebido por pessoa autorizada;
-- [ ] QA física de loja, operador, cozinha e gerente anexada com data/aparelho;
+- [ ] QA física de loja, operador, cozinha e gerente anexada com data/dispositivo;
 - [ ] impressão, gaveta, som e rede degradada testados no equipamento real;
 - [ ] catálogo, estoque, preços, parâmetros fiscais e validade aprovados pelos
   respectivos owners.

@@ -181,21 +181,24 @@ deixa sair texto livre até 24 horas depois da última interação do cliente
 
 ## Como ligar: estado no vivo e checklist
 
-**Estado no spec versionado** (`.do/app.alpha-subdomains.yaml`; valor no app vivo
-NÃO VERIFICADO):
+**Estado no spec versionado** (`.do/app.alpha-subdomains.yaml`). [FATO] Conferido contra o app vivo
+em 02/10/2026 (`doctl --context shopman-do-app-admin apps spec get`, só leitura): os dez valores
+abaixo são iguais no vivo; `AI_ASSIST_API_KEY`, `CONCIERGE_API_KEY` e `MANYCHAT_API_TOKEN` são
+`SECRET` com valor cifrado no vivo (se a chave é válida: NÃO VERIFICADO); `CONCIERGE_HANDOFF_FIELD`
+não está no vivo nem no arquivo e cai no padrão `concierge_handoff` (`config/settings.py:1527`).
 
 | Variável | Valor | Linha |
 |---|---|---|
-| `SHOPMAN_CONCIERGE_ENABLED` | `'false'` | `:550-553` |
-| `CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE` | `'true'` | `:554-557` |
-| `CONCIERGE_CONTRACT_VERSION` | `'3'` | `:564-567` |
-| `CONCIERGE_READ_ONLY` | `'true'` | `:568-571` |
-| `CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED` | `'false'` | `:572-575` |
-| `CONCIERGE_IDENTITY_LINK_ENABLED` | `'false'` | `:581-584` |
-| `CONCIERGE_HUMAN_RETURN_ENABLED` | `'false'` | `:585-588` |
-| `CONCIERGE_ALLOWED_SUBSCRIBERS` | um subject (coorte fechada) | `:603-606` |
-| `CONCIERGE_OPERATION_MODE` | `observe` | `:617-620` |
-| `CONCIERGE_OBSERVATION_ENABLED` / `_ALLOW_ALL_SUBJECTS` | `'true'` / `'true'` | `:621-624`, `:633-636` |
+| `SHOPMAN_CONCIERGE_ENABLED` | `'false'` | `:592-595` |
+| `CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE` | `'true'` | `:596-599` |
+| `CONCIERGE_CONTRACT_VERSION` | `'3'` | `:606-609` |
+| `CONCIERGE_READ_ONLY` | `'true'` | `:610-613` |
+| `CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED` | `'false'` | `:614-617` |
+| `CONCIERGE_IDENTITY_LINK_ENABLED` | `'false'` | `:623-626` |
+| `CONCIERGE_HUMAN_RETURN_ENABLED` | `'false'` | `:627-630` |
+| `CONCIERGE_ALLOWED_SUBSCRIBERS` | um subject (coorte fechada) | `:645-648` |
+| `CONCIERGE_OPERATION_MODE` | `observe` | `:659-662` |
+| `CONCIERGE_OBSERVATION_ENABLED` / `_ALLOW_ALL_SUBJECTS` | `'true'` / `'true'` | `:663-666`, `:675-678` |
 
 **O que muda ao ligar cada um, em ordem** ([FATO] pela leitura de
 `shopman/storefront/concierge/service.py:79-98`, `:835-844` e
@@ -210,7 +213,7 @@ NÃO VERIFICADO):
    `disabled` e nenhum turno roda. Por isso o modo vem primeiro. [FATO] Os modos são exclusivos: a observação
    passiva só grava com `operation_mode == "observe"` (`service.py:187-188`).
    [INFERÊNCIA] Trocar para `assist` **encerra a coleta** que alimenta o piloto de
-   intenções; a amostra já guardada some no prazo de 7 dias (`:611-614`).
+   intenções; a amostra já guardada some no prazo de 7 dias (`:653-656`).
 2. **`SHOPMAN_CONCIERGE_ENABLED=true`.** Com `assist` e a chave da Anthropic
    presente, o webhook deixa de responder `disabled` e enfileira o turno. Só os
    subjects de `CONCIERGE_ALLOWED_SUBSCRIBERS` entram (`not_allowed` para o
@@ -236,14 +239,20 @@ NÃO VERIFICADO):
       `Conversation.summary`, cartão no sino do Gestor, outra mesa no Admin).
 - [ ] `manage.py concierge_check --live` sem pendência no app (system check
       `SHOPMAN_W022`/`SHOPMAN_W023` limpo no release).
-- [ ] Decidir o que acontece com a observação passiva (item 1 acima).
-- [ ] `AI_ASSIST_API_KEY` e `CONCIERGE_API_KEY` com valor no app vivo
-      (NÃO VERIFICADO; `.do/app.alpha-subdomains.yaml:545-547`, `:558-560`).
+- [x] Decidir o que acontece com a observação passiva (item 1 acima): o dono aceitou que ela
+      acaba quando o modo passa a `assist` (D32 respondida pela proposta aprovada, D-018).
+- [x] `AI_ASSIST_API_KEY` e `CONCIERGE_API_KEY` com valor no app vivo: `SECRET` com valor
+      cifrado em 02/10/2026 (`apps spec get`). Se a chave da Anthropic é válida: NÃO VERIFICADO
+      (só um turno de verdade prova).
 - [ ] Flow do ManyChat: External Request em **toda** mensagem do assinante, não
       só no `#c`, confirmado no grafo do flow (`whatsapp-concierge.md:112-116`);
       condição `concierge_handoff == "1"` pausando a automação.
 - [ ] `directive-worker` vivo (o turno roda na fila de diretivas).
-- [ ] FAQ revisada no Admin (é a fonte das respostas do item 1).
+- [ ] FAQ revisada **e publicada** no Admin (é a fonte das respostas do item 1). [FATO] Alpha,
+      02/10/2026 (leitura pela conexão direta): 14 perguntas em `shop_faqentry`, **0 publicadas**;
+      a busca só lê `is_published=True` (`shopman/storefront/presentation/public_information.py:128`,
+      `:146`). Sem publicar, o Concierge não tem FAQ nenhuma. É o item `faq_initial` de
+      `config/public_copy_review.py` (aval do dono, 17/09). Tela: `/admin/shop/faqentry/`.
 - [ ] Copy de abertura `CONCIERGE_GREETING` e de handoff revisadas pelo dono.
 - [ ] Ensaio com o número do dono na coorte fechada, pelos 10 passos de
       `whatsapp-concierge.md:212-235`.
@@ -270,6 +279,17 @@ com `SHOPMAN_CONCIERGE_ENABLED=true`, `CONCIERGE_OPERATION_MODE=observe` e
 ("o Concierge só observa e não responde ninguém"), para a falta de `AI_ASSIST_API_KEY` e para a
 falta de conexão ativa. Desligado, só informa o modo e sai com 0. **NÃO VERIFICADO no app vivo**:
 o `--live` precisa do `MANYCHAT_API_TOKEN`, que só existe lá.
+
+**Com os valores do app vivo (02/10/2026).** O comando não toca o banco (lê settings e, com
+`--live`, faz um GET no ManyChat), então rodá-lo no alpha não acrescenta nada além do `--live`.
+Rodado localmente com os valores não secretos do `apps spec get` e os três segredos preenchidos:
+como está (`SHOPMAN_CONCIERGE_ENABLED=false`) sai 0 com "Concierge desligado [...] modo atual:
+observe."; simulando o switch ligado em `observe`, sai 1 só com `SHOPMAN_W022` do modo; simulando
+`assist` + switch, não sobra pendência de configuração. (O `SHOPMAN_W023` de `MANYCHAT_API_TOKEN`
+que aparece localmente é do `config/settings_test.py:138`, que zera o token.) O campo
+`concierge_handoff` existe no ManyChat e é textual (`"1"`/`"0"`), pela consulta só leitura de
+11/09 (`docs/reports/conversational-operational-excellence-implementation-2026-09-11.md:603-608`);
+o `--live` de hoje: NÃO VERIFICADO.
 
 ## Objetivo
 

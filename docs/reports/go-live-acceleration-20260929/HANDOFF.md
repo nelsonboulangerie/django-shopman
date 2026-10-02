@@ -4,14 +4,100 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Atualizado em 2026-10-02** (turno das observações do dono, depois do turno de 01/10 noite e 02/10).
-> A seção 0 é o estado agora; "0-noite", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
+> **Atualizado em 2026-10-02, noite** (turno do coordenador noturno).
+> A seção 0 é o estado agora; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
 
-## 0. Estado agora (turno das observações do dono: loja, Encomendas, pagamento, integrações)
+## 0. Estado agora (02/10 noite, turno do coordenador noturno)
+
+> Ordem de leitura: esta seção, depois a "0-obs" (o turno paralelo da sessão "Turno: observações do dono") e a "0-dia" (§0d.1b tem as pendências do ManyChat e das
+> receitas), depois `PENDING-DECISIONS.md` (D34 a D41 são novas: D34 a D37 da sessão paralela, D38 a D41 deste turno).
 
 ### 0.1 O que entrou
+
+| Frente | PR | Estado |
+|---|---|---|
+| 0: textos de seis modelos (D-023) | #1350 | ✅ mergeado |
+| 0: `actions/checkout` 4 → 7 (Dependabot) | #1342 | ✅ mergeado |
+| 0: Dependabot `python-runtime` | #1340 | ❌ fechado: reprova por construção (D-024) |
+| 0: WP Receitas do dono (inventário) | #1351 | ✅ mergeado |
+| 0: docs do contexto `doctl` (`shopman-do-app-admin`) | #1293 | ✅ mergeado (refeito sobre o `main`); o vermelho do Marketing era o `npm audit`, já corrigido no `main` (343f03e5e) |
+| 0: PDV, saldo de encomenda na retirada | #1257 | ✅ mergeado; o vermelho do `operator-kit` era o piso da varredura de links (7 → 6, o PR tira um link de propósito) |
+| 0: drafts #1220 a #1223 | — | fechados com prova (D-025) |
+| 0: base de cidades GeoLite2 (rotina semanal que não abre PR sozinha, D38) | #1356 | ✅ mergeado |
+| 0: branches sem PR | — | 3 locais apagadas (já no `main`); `print-layouts` fica (triada no #1120); `geolite2` virou #1356 (D-025) |
+| 1A: loja: aviso "Abrindo o cardápio" espera a página; observação por item da sacola ao KDS; a Saída mostra a observação | #1357 | ✅ mergeado (`880d35d58`); o #1354, aberto 1 min antes pela sessão "Turno: observações do dono" para o mesmo pedido, foi fechado como duplicado. Seguimento #1362 ✅ mergeado (`620ccd679`): toda página preguiçosa declara o pendente (trava no `performanceGuardrails`), observação por item até 280 como no PDV |
+| 1B: PDV > Encomendas: filtros numa linha, busca sem repetição, hoje com dia da semana | #1353 | ✅ mergeado (sessão "Turno: observações do dono") |
+| 1C: o link de pagamento sai? | sem PR | respondido em 0.3 |
+| 1D: Threads, Concierge × Jev, chá com sabor, controles de data | #1355 | ✅ mergeado; perguntas em D34 a D37 |
+| 2 e 3: Concierge (passos 0 e 1), corte de escopo sem contradição, pré-flight, matriz de prontidão | este PR | documentos corrigidos (ver 0.4) |
+| 4: Receitas: estrutura a partir da Fx (sem números) | #1358 | ✅ mergeado; perguntas 13 a 15 e o aval em D40 |
+| ManyChat: 5 modelos, apagar 3 de Marketing, flows (§0d.1b itens 1 a 3) | #1361 (estado, ✅ mergeado) | **BLOQUEADO**: o acesso ao Chrome para trazer a aba à frente foi negado duas vezes (`request_access` → `user_denied`, 21:20 e de novo pelo coordenador); com a aba em segundo plano (`visibilityState` "hidden") o formulário apaga a digitação. Lido às 21:20: os 5 não existem; `pedido_em_preparo` e `reembolso_processado` já APROVADOS (Utility). Padrão dos botões e campos anotado em `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
+| CI: `npm audit` acusa `node-forge` (7 high, via `listhen` ← `@nuxt/cli`) no job "Marketing — cadeia completa" (não obrigatório) | sem PR | **ADIADO, motivo técnico** (D-027): GHSA-86w9-cpqp-85rv não tem versão corrigida (`first_patched_version: None`; última publicada `node-forge` 1.4.0, já travada nos 10 locks); `npm audit fix --force` rebaixaria o Nuxt de major. O job não é obrigatório: não segura a fila. Reabrir quando sair o 1.4.1 |
+| Handoff do turno anterior (pendências vivas) | #1352 | ✅ mergeado |
+
+### 0.2 Loja (#1357 e #1362), o que mudou
+
+- **Aviso de navegação:** `usePageContentPending.ts` (storefront-nuxt): a página diz que ainda espera o
+  próprio dado; o `NavigationFeedback` só termina quando o dado chega (teto de 15 s mantido). `lazy` e o
+  limiar de 200 ms intocados. Desde o #1362 toda página preguiçosa declara, e o `performanceGuardrails.test.ts` trava.
+  O teste novo reprova contra o `NavigationFeedback.vue` anterior (prova do defeito).
+- **Observação por item:** `PUT /api/v1/cart/skus/<sku>/notes/` grava `meta["notes"]` pelo op
+  `replace_sku` que já existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo).
+  280 caracteres, o mesmo teto do PDV (`LINE_NOTES_MAX_LENGTH`, `shopman/shop/services/cart.py`; #1362). `meta.notes` é texto pessoal: a sessão anonimizada recusa, a exclusão
+  de conta apaga (o PDV também não apagava: corrigido), a exportação inclui.
+- **A Saída:** `backstage/projections/kds.py` lê `meta["notes"]` (lia `item.notes`, que não existe).
+- NÃO VERIFICADO no navegador (só teste).
+
+### 0.3 O link de pagamento sai? (pergunta do dono)
+
+1. [FATO] Desde que o #1339 entrou no ar (deploy `82e5d127`, 01/10 14:44 UTC) **não houve nenhum
+   pedido no alpha** (`select count(*) from orderman_order where created_at >= '2026-10-01 14:44+00'` → 0),
+   então nenhum link saiu pela regra nova.
+2. [FATO] Os 4 links anteriores (30/09 e 01/10 de manhã) foram aceitos só pelo ManyChat, sem
+   comprovante, e pararam ali (regra antiga): nenhum e-mail saiu. A cadeia viva está certa: `pdv`
+   ManyChat → e-mail → SMS; `web` ManyChat → SMS → e-mail; `EMAIL_BACKEND` SMTP real.
+3. [INFERÊNCIA] O próximo link do PDV deve sair "Entregue pelo e-mail, com comprovante"; o caminho tem
+   14 testes verdes (`shopman/shop/tests/test_notification_delivery_receipt.py`, rodado em 02/10), mas
+   **NÃO VERIFICADO no vivo**: falta gerar um link de verdade no PDV.
+
+### 0.4 Achados do turno (não redescubra)
+
+- **Drift do spec agora é `[FAIL]`, de propósito** (D-026): só `SHOPMAN_COURIER_ADAPTER`, ligado no
+  painel e fora do arquivo (D-020). ⛔ Nenhum `apps update --spec` sem repor essa chave à mão: o
+  arquivo de hoje desligaria a entrega por parceiro.
+- **Checks obrigatórios:** 23, sem regressão (`check_canonical_docs.py --live-required-checks`:
+  "[OK] ... matches live branch protection (23 contexts)"); espelho em `.github/required-status-checks.json`.
+- **Concierge:** passo 0 (`concierge_check`) satisfeito; passo 1 (`observe` → `assist`) decidido na
+  D32, execução é escrita no spec vivo (do dono, junto com o passo 2); **passo 2 é do dono** (D41):
+  FAQ com 14 perguntas e 0 publicadas, copy, flow do ManyChat. Plano atualizado em `WHATSAPP-CONCIERGE-PLAN.md`.
+- **Corte de escopo:** `PRODUCT-V1-SCOPE-BACKLOG.md` corrigido nas linhas 8, 33, 34, 46 ("Agentes de
+  atendimento" fora contradizia a D-017), 65, 68 e 76; três itens pós-v1 viraram a pergunta D39.
+- **Pré-flight:** restauração ✅; Pix segue simulado (`SHOPMAN_PIX_ADAPTER=payment_mock`,
+  `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`): regra de parada do dono; Stripe e Focus NÃO VERIFICADOS;
+  `production-readiness` não tem modo só leitura (não rodado); SHA candidato do corte ainda não definido.
+- **Jev:** não rodou. Prova: o comparador manda mensagem real de cliente (decisão do dono), o
+  `typesafe` não está aprovado, não há `JEV_API_KEY` nesta máquina, e o gabarito tem 0 conferidas (D36).
+  Achado: o concorrente `regex` do comparador mede a regra velha de 4 causas, não a de 12
+  (`intent_benchmark.py:135-145` × `triage.py:175-184`).
+- **Controles de data:** 14 campos em 11 arquivos, todos o seletor nativo, nenhum compartilhado.
+  Padronizar primeiro o trio do PDV (agendar, reagendar, Encomendas), depois do #1353.
+
+### 0.5 O que depende do dono
+
+D34 (chá com sabor) · D35 (Threads) · D36 (Jev) · D37 (controles de data) · D38 (permissão do
+GitHub Actions) · D39 (três pós-v1) · D40 (receitas 13 a 15 e o aval do plano) · D41 (Concierge passo 2: FAQ, copy, flow) ·
+**ManyChat:** deixar a aba "Criar modelo" do ManyChat na frente (ou liberar o Chrome no pedido de acesso) e dizer "segue": a sessão envia os 5 modelos, cria os flows e liga no Admin · `fulfillment.courier="auto"` quando quiser (clique pronto: `/admin/shop/channel/66/change/`, aba
+"Preparo e entrega", acrescentar `"courier": "auto"` ao JSON; chama a TaOn de verdade) · gerar um link
+de pagamento no PDV para provar 0.3 · o Pix real antes da virada (D-016) · e as abertas de antes:
+D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
+
+---
+
+## 0-obs. Turno das observações do dono, 02/10 (histórico; #1354 fechado como duplicado do #1357)
+
+### 0o.1 O que entrou
 
 | Frente | PR | Estado |
 |---|---|---|
@@ -21,7 +107,7 @@
 | B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | ✅ mergeado. Primeira encomenda sobe 206 px em 1440x900 |
 | C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | #1360 | ✅ mergeado; PENDING D34 a D37 |
 
-### 0.2 Achados do turno (não redescubra)
+### 0o.2 Achados do turno (não redescubra)
 
 - **Link de pagamento, o que o vivo mostra (01/10).** Cadeia no banco: `pdv` = `manychat → email → sms`;
   `web` e `whatsapp` = `manychat → sms → email`. Igual ao seed. Os quatro `payment_link_sent` que
@@ -45,9 +131,9 @@
 - **Filtrar nas Encomendas custa 3 toques** (Filtrar, dimensão, opção) em vez de 1; a contagem por
   opção foi para o menu. Se o balcão reclamar, é o preço do espaço ganho.
 
-## 0-noite. Estado do turno das ordens de 01/10 noite e 02/10 (histórico)
+## 0-dia. Estado de 02/10, turno das ordens de 01/10 noite e 02/10 (histórico)
 
-### 0.1 O que entrou
+### 0d.1 O que entrou
 
 | Frente | PR | Estado |
 |---|---|---|
@@ -65,7 +151,7 @@
 | 8: modelos no ManyChat | sem PR | 6 enviados à Meta pela sessão + 1 aprovado (dono); 4 esperam ajuste de texto (0.2) |
 | 9: receitas do Drive | sem PR | **espera o dono** (nomes dos arquivos) |
 
-### 0.1b Pendências vivas ao fim do turno (02/10, noite): a próxima sessão começa aqui
+### 0d.1b Pendências vivas ao fim do turno (02/10, noite): a próxima sessão começa aqui
 
 1. **ManyChat, enviar 5 modelos** (textos aprovados, D-023, corpos em `whatsapp-templates-meta.md`):
    `pagamento_falhou`, `pontos_fidelidade`, `pedido_entregue_v2` (sem botão),
@@ -85,7 +171,7 @@
    (3) a aba LEVAIN pode ser lida, mas está desatualizada; (4) **PH é massa de Tradição** e **Focaccia é
    massa de ciabatta**. Próximo passo: propor estrutura a partir da Fx, sem inventar nada que ela não diga.
 
-### 0.2 Achados do turno (não redescubra)
+### 0d.2 Achados do turno (não redescubra)
 
 - **ManyChat: contrato de campos (#1346).** O adapter só regrava no perfil os campos declarados
   (`notification_manychat.py:587-593`). `order_cancelled`, `order_rejected` e `order_preparing`
@@ -134,7 +220,7 @@
   `manychat_flows --check` e `check_whatsapp_flow_coverage` NÃO cobrem o Concierge; quem cobre é o
   `check_concierge_readiness` (`SHOPMAN_W022`/`W023`, só Warning de propósito).
 
-### 0.3 Token do `doctl` (D-022)
+### 0d.3 Token do `doctl` (D-022)
 
 `shopman-spec-update` (8 escopos, vazado numa auditoria) → `shopman-do-app-admin-2026-10`, mesmos 8
 escopos (`actions:read`, `regions:read`, `sizes:read`, `app:read`, `app:update`, `database:read`,
@@ -143,7 +229,7 @@ Validado por `doctl auth init` ("Validating token... ✔"). Identificação do a
 Validação: `apps list` OK, `check_do_spec_drift.py --context shopman-do-app-admin` → `[OK] spec_drift`.
 O antigo não aparece mais na lista do painel.
 
-### 0.4 Ensaio de restauração: FEITO pelo fork (o portão fechou)
+### 0d.4 Ensaio de restauração: FEITO pelo fork (o portão fechou)
 
 Decisão do dono (D-021): sem token temporário; ele fez o fork no painel. Cluster
 `shopman-staging-postgres-oct-1-backup`, criado 19:28:28 UTC, cerca de 7 min até `online`.
@@ -152,14 +238,14 @@ retenção (o restaurado tem a mais); pedidos 4817 e 306 migrações nos dois; `
 Detalhe: `docs/runbooks/backup-e-restore.md` §1b; item do pré-flight marcado. O dono já apagou o cluster (só restam
 `shopman-staging-postgres` e o cache, `doctl databases list`). Reapontar o app não foi ensaiado.
 
-### 0.5 O que depende do dono
+### 0d.5 O que depende do dono
 
 D33 (textos de 4 modelos) · `fulfillment.courier="auto"` no canal de entrega · nomes dos arquivos de
 receita · e as abertas de antes: D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
 
 ⚠️ Continua valendo a 0t.4: o Pix real se ensaia ANTES da virada (D-016).
 
-### 0.6 Em voo que não é deste turno
+### 0d.6 Em voo que não é deste turno
 
 - #1293 (docs: contexto doctl renomeado) em `CONFLICTING`, de 30/09.
 - #1257 (PDV: saldo de encomenda) com `operator-kit` vermelho, de 29/09.
