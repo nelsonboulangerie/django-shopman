@@ -29,6 +29,9 @@ Fazê-la voltar a pendente seria reescrever a regra (proibido pela ordem). Itens
 nada (se a janela deve ser obrigatória na encomenda, é decisão de regra, não de tela)
 
 ## Armadilhas novas
+A primeira CI reprovou em duas travas que o vitest do pos-nuxt não roda: `text-[11px]` fora da escala
+(`surfaces/operator-kit/tests/guardrails.test.ts`, só os 6 papéis; virou `text-xs`) e um alerta do CodeQL no
+teste novo (regex que tirava comentário HTML do fonte; saiu). Rode também o vitest do operator-kit ao mexer no PDV.
 `tests/e2e-live/copy-overflow.live.spec.ts` agora espera "Identificar cliente": "Montar encomenda" só aparece na última etapa.
 
 ## Próximo passo

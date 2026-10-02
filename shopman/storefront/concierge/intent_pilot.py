@@ -11,6 +11,10 @@ Quatro passos, cada um com o próprio limite, e o ciclo inteiro roda sozinho no
    (``sugerida``). Só com o provedor aprovado; sem chave, a fila espera a pessoa.
 4. ``maybe_measure``: com gabarito suficiente e o último placar velho, mede os
    concorrentes e guarda o placar (``IntentPilotReport``) para o Admin.
+5. ``shadow_triage``: o Jev decide, em sombra, a intenção de cada mensagem nova,
+   e a decisão fica gravada ao lado da regra local (``envelope["triage_shadow"]``).
+   Nada muda para o cliente. É o teste do Jev decidindo, pedido pelo dono em
+   02/10/2026 (D-028); ``shadow_report`` diz onde os dois discordam.
 
 **Por que a pressa é a certa:** a mensagem observada vence em dias
 (``CONCIERGE_OBSERVATION_RETENTION_DAYS``, default 7) e leva a amostra junto. O
@@ -205,6 +209,8 @@ class CycleResult:
     proposed: int = 0
     proposal_skipped: str = ""
     measurement: str = ""
+    shadowed: int = 0
+    shadow_skipped: str = ""
 
 
 def run_cycle(*, now=None) -> CycleResult:
@@ -227,6 +233,11 @@ def run_cycle(*, now=None) -> CycleResult:
         result.proposal_skipped = str(exc)
 
     result.measurement = maybe_measure().reason
+
+    try:
+        result.shadowed = shadow_triage(days=retention)
+    except ContenderNotConfigured as exc:
+        result.shadow_skipped = str(exc)
     return result
 
 
@@ -305,3 +316,128 @@ class IntentPilotMeasureHandler:
             logger.exception("intent_pilot: medição pedida por %s falhou", requested_by or "?")
             raise DirectiveTerminalError(f"medição falhou: {type(exc).__name__}") from exc
         logger.info("intent_pilot: medição pedida por %s: %s", requested_by or "?", measurement.reason)
+
+
+# ── Sombra: o Jev decide, a regra local decide, a casa compara ──────────────
+#
+# A Concierge em ``observe`` não decide nada ao vivo, e a entrada promete que
+# nenhuma mensagem sai da casa no caminho do webhook. A sombra roda aqui, no
+# ciclo do piloto, com o mesmo portão do comparador (``typesafe`` aprovado e
+# ``JEV_API_KEY``). A decisão do Jev é a que a triagem tomaria com
+# ``triage_classifier = "jev"`` (``triage.best_jev_intent``), menos a trava do
+# sensível, que a sombra guarda separada para a casa ver onde ela agiria.
+
+SHADOW_KEY = "triage_shadow"
+SHADOW_BATCH = 60
+
+
+def shadow_triage(*, limit: int = SHADOW_BATCH, days: int = 0, contender=None) -> int:
+    """Grava a decisão da regra e a do Jev nas mensagens novas. Devolve quantas.
+
+    Levanta ``ContenderNotConfigured`` sem aprovação ou sem chave. Falha do
+    provedor para o lote: as que faltaram ficam para o próximo ciclo.
+    """
+    from shopman.shop.models import ConversationMessage
+    from shopman.storefront.concierge import triage
+    from shopman.storefront.concierge.intent_benchmark import JevContender
+
+    if limit <= 0:
+        return 0
+    contender = contender or JevContender(timeout=10.0)
+    candidates = (
+        ConversationMessage.objects.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(text="")
+        .exclude(envelope__has_key=SHADOW_KEY)
+    )
+    if days:
+        candidates = candidates.filter(created_at__gte=timezone.now() - timedelta(days=days))
+    done = 0
+    for message in candidates.order_by("-id")[:limit]:
+        try:
+            prediction = triage.jev_scores(message.text, contender=contender)
+        except ContenderResponseError as exc:
+            logger.warning("intent_pilot: sombra ilegível na mensagem %s: %s", message.pk, exc)
+            continue
+        except Exception as exc:  # rede, cota: o lote para e o próximo ciclo segue
+            logger.warning("intent_pilot: Jev falhou na sombra (%s)", type(exc).__name__)
+            break
+        rules_intent, rules_source = triage.classify_rules(message.text)
+        jev_intent = triage.best_jev_intent(prediction.intents)
+        stamp = {
+            "rules": rules_intent,
+            "rules_source": rules_source,
+            "jev": jev_intent,
+            "jev_scores": {ref: round(p, 3) for ref, p in prediction.intents.items()},
+            "latency_ms": round(prediction.latency_ms),
+            "model": getattr(contender, "model", ""),
+            "at": timezone.now().isoformat(),
+        }
+        envelope = {**(message.envelope or {}), SHADOW_KEY: stamp}
+        ConversationMessage.objects.filter(pk=message.pk).update(envelope=envelope)
+        done += 1
+    return done
+
+
+def shadow_report(*, days: int = 7, examples: int = 15) -> str:
+    """Onde o Jev e a regra local concordam e discordam, em texto para o dono ler."""
+    import statistics
+    from collections import Counter
+
+    from shopman.shop.models import ConversationMessage
+    from shopman.storefront.concierge import triage
+    from shopman.storefront.concierge.observation_privacy import redact_observation_text
+
+    rows = list(
+        ConversationMessage.objects.filter(
+            kind=ConversationMessage.Kind.INBOUND,
+            envelope__has_key=SHADOW_KEY,
+            created_at__gte=timezone.now() - timedelta(days=days),
+        )
+        .order_by("-id")
+        .values_list("id", "text", "envelope")
+    )
+    if not rows:
+        return f"Nenhuma mensagem com sombra do Jev nos últimos {days} dias."
+    label = triage.DEFAULT_LABELS
+    agree = 0
+    pairs: Counter = Counter()
+    sensitive_lost, sensitive_gained, jev_blank = [], [], 0
+    latencies = []
+    disagreements = []
+    for pk, text, envelope in rows:
+        shadow = envelope[SHADOW_KEY]
+        rules_intent, jev_intent = shadow.get("rules", ""), shadow.get("jev", "")
+        latencies.append(shadow.get("latency_ms") or 0)
+        if not jev_intent:
+            jev_blank += 1
+        if rules_intent == jev_intent:
+            agree += 1
+            continue
+        pairs[(rules_intent, jev_intent or "(nenhuma)")] += 1
+        rules_sensitive = rules_intent in triage.SENSITIVE or rules_intent == "special_order"
+        if rules_sensitive:
+            sensitive_lost.append(pk)
+        elif jev_intent in triage.SENSITIVE:
+            sensitive_gained.append(pk)
+        said = redact_observation_text(str(text or "")).text
+        disagreements.append((pk, rules_intent, jev_intent, " ".join(said.split())[:120]))
+
+    total = len(rows)
+    lines = [
+        f"Sombra do Jev, últimos {days} dias: {total} mensagens.",
+        f"Mesma intenção que a regra local: {agree} ({agree * 100 // total}%).",
+        f"Jev sem nenhuma intenção acima do corte: {jev_blank} (aí vale a regra).",
+        f"Tempo do Jev: mediana {statistics.median(latencies):.0f} ms, pior {max(latencies):.0f} ms.",
+        f"Regra viu sensível e o Jev não ({len(sensitive_lost)}): ao vivo a regra vence, nada se perde.",
+        f"Jev viu sensível e a regra não ({len(sensitive_gained)}): ao vivo o Jev escalaria estas.",
+        "",
+        "Discordâncias mais comuns (regra → Jev):",
+    ]
+    for (rules_intent, jev_intent), count in pairs.most_common(10):
+        lines.append(f"  {count:>3}  {label.get(rules_intent, rules_intent)} → {label.get(jev_intent, jev_intent)}")
+    if disagreements:
+        lines += ["", f"Exemplos (até {examples}; texto redigido):"]
+        for pk, rules_intent, jev_intent, text in disagreements[:examples]:
+            lines.append(f"  #{pk}  regra: {rules_intent}  Jev: {jev_intent or '(nenhuma)'}  \"{text}\"")
+    return "\n".join(lines)
+

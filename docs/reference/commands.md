@@ -16,6 +16,7 @@
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
+| [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
@@ -51,7 +52,8 @@
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
 | [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
-| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
+| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
+| [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -549,6 +551,26 @@ python manage.py bootstrap_recipe_book --dry-run   # só conta
 ```
 
 Idempotente: entry com o mesmo `ref` é pulada. O `seed` chama isto no fim das receitas.
+
+### import_recipe_versions
+
+Cria, a partir de um arquivo JSON passado por caminho, uma `RecipeVersion` nova em cada
+`RecipeEntry` existente (`create_version`), com `source.kind="import"`, `origin` = o bloco
+como está na planilha, fórmula em grama, `steps` vazio e o `label` do arquivo. Os valores
+**não** moram no repositório: o arquivo é gerado na hora a partir da planilha do dono e
+apagado depois (WP-RECEITAS-DO-DONO §C.7). Linha que é parte (o levain) entra em `parts`,
+e o que ela carrega entra na base pela composição da parte. `autolyse` passa toda a farinha
+da mistura final pela pasta autolisada só quando a conta fecha exata e cabe na água da
+planilha; senão a receita fica em rascunho e o motivo é dito.
+
+```bash
+python manage.py import_recipe_versions receitas.json                      # só o plano
+python manage.py import_recipe_versions receitas.json --apply              # grava rascunhos
+python manage.py import_recipe_versions receitas.json --apply --publish    # publica, parte antes da massa
+```
+
+Idempotente: rascunho igual é reaproveitado; versão igual já publicada é pulada. A versão
+publicada antes fica "Substituída". O formato do arquivo está na docstring do comando.
 
 ### export_recipe_book_schema
 
@@ -1406,8 +1428,19 @@ cobre o Concierge.
 e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
 por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
 `AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
-conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
-`--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com
+`typesafe` aprovado e `JEV_API_KEY`, grava a sombra do Jev em até 60 mensagens novas por ciclo
+(ver `concierge_triage_shadow`). `--measure-now` força o placar.
+`SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
+### concierge_triage_shadow
+
+**Propósito:** O teste do Jev decidindo a intenção na Concierge (dono, 02/10/2026, D-028), sem
+mudar nada para o cliente. Lê `ConversationMessage.envelope["triage_shadow"]` (a decisão da regra
+local e a do Jev, gravadas pelo `run_intent_pilot`) e diz quantas concordam, as discordâncias
+mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` grava a sombra de até
+N mensagens antes; `--days` (padrão 7) e `--examples`. Para o Jev decidir de verdade quando a
+Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 
 ### run_alias_benchmark
 

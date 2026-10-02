@@ -1409,7 +1409,7 @@ JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
 # redigido, só sai da casa para os provedores desta lista — credencial sozinha
 # nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
 # em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
-# é fornecedor novo e só entra quando ele decidir, pondo o nome aqui pelo ambiente.
+# aprovado por ele em 02/10/2026 (D-028), posto no painel junto com a chave.
 SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
     value.strip().lower()
     for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
@@ -1493,6 +1493,12 @@ SHOPMAN_CONCIERGE = {
     # com falha, vale a regra local. Modelo vazio = o mesmo do concierge.
     "triage_with_model": _env_bool("CONCIERGE_TRIAGE_WITH_MODEL", True),
     "triage_model": os.environ.get("CONCIERGE_TRIAGE_MODEL", ""),
+    # Quem propõe a intenção quando o modelo está ligado: `anthropic` (o modelo
+    # acima) ou `jev` (TypeSafe; pede `typesafe` aprovado e `JEV_API_KEY`). O dono
+    # quer testar o Jev decidindo (02/10/2026, D-028): enquanto a Concierge observa,
+    # o piloto mede o Jev em sombra (`intent_pilot.shadow_triage`); esta chave é a
+    # troca para quando ela atender. A regra local sensível vence os dois.
+    "triage_classifier": os.environ.get("CONCIERGE_TRIAGE_CLASSIFIER", "anthropic"),
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {

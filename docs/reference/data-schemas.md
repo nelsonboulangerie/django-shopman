@@ -158,10 +158,16 @@ ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
 escalated_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
-parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model`, `default`
-ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`.
+parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`.
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
+Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
+`ConversationMessage.envelope["triage_shadow"]` = `{rules, rules_source, jev, jev_scores, latency_ms,
+model, at}`: `rules`/`rules_source` como `triage.classify_rules`; `jev` é a intenção mais provável
+acima de 0,5 (vazio se nenhuma); `jev_scores` é `{ref: probabilidade}` das 12; `latency_ms`
+inteiro; `at` ISO 8601. Escrita só pelo ciclo do piloto, lida por `shadow_report`. Não muda a
+decisão; vence com a mensagem (retenção da observação).
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.

@@ -59,8 +59,17 @@ const pending = computed(() => !catalog.value && (canonicalPending.value || cont
 const error = computed(() => !catalog.value ? (canonicalError.value || continuum?.error.value) : null)
 const continuumPending = computed(() => !!structureCatalog.value && !data.value?.catalog)
 const continuumFailed = computed(() => continuumPending.value && !!canonicalError.value)
-// Sem catálogo ainda, o aviso de navegação "Abrindo o cardápio…" segue a espera.
-usePageContentPending(pending)
+// Um só narrador da espera: o aviso de navegação cobre a espera inteira, da
+// vitrine ("Abrindo o cardápio…") à confirmação de preços e disponibilidade,
+// trocando só a frase. A falha da confirmação não é espera: sai do aviso e fica
+// na página, com "Tentar de novo".
+const confirmingCatalog = computed(() => continuumPending.value && !continuumFailed.value)
+usePageContentPending(
+  () => pending.value || confirmingCatalog.value,
+  () => confirmingCatalog.value
+    ? { title: 'Confirmando preços e disponibilidade…', detail: 'Só um instante.' }
+    : null
+)
 
 async function refresh () {
   await Promise.all([
@@ -559,16 +568,16 @@ useHead({
 
         <template v-else-if="catalog">
           <UiAlert
-            v-if="continuumPending"
-            :variant="continuumFailed ? 'warning' : 'info'"
-            :icon="continuumFailed ? 'lucide:refresh-cw' : 'lucide:loader-circle'"
+            v-if="continuumFailed"
+            variant="warning"
+            icon="lucide:refresh-cw"
             data-continuum-catalog-status
           >
-            <UiAlertTitle>{{ continuumFailed ? 'A vitrine está aberta' : 'Confirmando o cardápio' }}</UiAlertTitle>
+            <UiAlertTitle>A vitrine está aberta</UiAlertTitle>
             <UiAlertDescription>
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <span>{{ continuumFailed ? 'Os produtos já estão visíveis, mas preços e disponibilidade precisam ser consultados novamente.' : 'Preços, disponibilidade e sua sacola chegam logo em seguida.' }}</span>
-                <UiButton v-if="continuumFailed" size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
+                <span>Os produtos já estão visíveis, mas preços e disponibilidade precisam ser consultados novamente.</span>
+                <UiButton size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
               </div>
             </UiAlertDescription>
           </UiAlert>

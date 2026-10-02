@@ -27,13 +27,12 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| T1b | PDV: o "Exato" (tecla `=`) espera a revisão também | `EM_EXECUCAO` (depois do #1380) | coordenacao-pedidos-4f89d4 | `claude/pdv-exato-espera-revisao` | 2026-10-02 16:58 |
 | T6 | PDV > Encomendas: brief do redesenho | `AGUARDA_DONO` (P1 a P7 do brief) | coordenacao-pedidos-4f89d4 | #1379, `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` | 2026-10-02 16:29 |
 | T7 | Primitivas no kit (`OperatorSchedulePicker`, `OperatorReasonDialog`) | `AGUARDA_DONO` (aval do brief T6) | nada | nada | 2026-10-02 16:29 |
 
-**Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4): na fila** #1367 (R1,
-desencalhado), #1379 (T0 + brief T6), #1380 (T1), #1381 (T2), #1382 (T5), #1383 (T3), #1384 (T4).
-Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`.
+**Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
+desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
+#1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`.
 
 ## Fila livre (ninguém pegou)
 
