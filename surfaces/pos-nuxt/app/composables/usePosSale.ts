@@ -79,6 +79,7 @@ import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptCo
 import { closeGuardNotice } from "~/presentation/closeGuard";
 import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
+import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -688,7 +689,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return true;
   }
   const orderSetupComplete = ref(false);
-  const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
+  const orderSetupIssue = computed<OrderSetupIssue>(() => {
     if (cart.salesMode !== "order") return "";
     if (!cart.customerRef.trim()) return "customer";
     if (!cart.fulfillmentConfirmed) return "fulfillment";
