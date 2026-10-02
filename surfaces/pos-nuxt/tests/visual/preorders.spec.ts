@@ -9,7 +9,7 @@ const CASES = [
 async function settle(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
   await page.goto("/preorders");
-  await expect(page.locator("[data-week-grid]:visible, [data-week-list]:visible")).toHaveCount(1);
+  await expect(page.locator("[data-week-grid]:visible")).toHaveCount(1);
   await expect(page.locator("[data-preorder]:visible")).toHaveCount(3);
   await page.evaluate(() => document.fonts.ready);
 }

@@ -420,6 +420,12 @@ describe("Detalhe — cancelar", () => {
 const refsIn = (wrapper: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) =>
   wrapper.findAll("[data-preorder]").map((c) => c.attributes("data-preorder"));
 
+/** "Filtrar" → a dimensão: o segundo passo da barra, com as opções e a contagem. */
+async function pickFilter(wrapper: Awaited<ReturnType<typeof mount>>, dimension: string) {
+  await wrapper.find("[data-filter-trigger]").trigger("click");
+  await wrapper.find(`[data-filter-dimension="${dimension}"]`).trigger("click");
+}
+
 async function typeSearch(wrapper: Awaited<ReturnType<typeof mount>>, value: string) {
   await wrapper.find("[data-preorders-search]").setValue(value);
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -439,7 +445,6 @@ describe("Encomendas — a semana no centro", () => {
     // A mesma árvore responde a qualquer largura: não duplica cards escondidos.
     expect(wrapper.findAll("[data-week-board]")).toHaveLength(1);
     expect(wrapper.find("[data-week-grid]").findAll("[data-preorder]")).toHaveLength(2);
-    expect(wrapper.find("[data-week-list]").exists()).toBe(false);
     expect(wrapper.find("[data-preorders-summary] p").text()).toBe("2 encomendas · R$ 60,00");
     expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber: R$ 36,00");
   });
@@ -452,6 +457,17 @@ describe("Encomendas — a semana no centro", () => {
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
     expect(grid.find('[data-preorder="NB-7"]').attributes("href")).toBe("/preorders/NB-7");
+  });
+
+  it("hoje tem destaque e diz o dia da semana, com 'Hoje' uma vez só", async () => {
+    const wrapper = await mount(PreordersPage);
+    const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-open]");
+    const today = opens[0]!;
+    expect(today.attributes("aria-current")).toBe("date");
+    expect(today.find("[data-week-day-title]").text()).toMatch(/^Hoje, \S+ 26\/09$/);
+    expect(today.text().match(/Hoje/g)).toHaveLength(1);
+    expect(opens[1]!.attributes("aria-current")).toBeUndefined();
+    expect(opens[1]!.find("[data-week-day-title]").text()).not.toContain("Hoje");
   });
 
   it("tocar no dia da grade abre o modo Dia naquela data", async () => {
@@ -490,15 +506,20 @@ describe("Encomendas — o dia", () => {
 });
 
 describe("Encomendas — filtros e 'Imprimir N vias'", () => {
-  it("chips combináveis com contagem; o filtro vai para a URL e muda a lista", async () => {
+  it("filtros numa linha, combináveis e com contagem; o filtro vai para a URL e muda a lista", async () => {
     const wrapper = await mount(PreordersPage);
-    const payChips = wrapper.find('[data-preorders-filter="pay"]').findAll("[data-preorders-filter-chip]");
-    expect(payChips.map((c) => c.attributes("aria-label"))).toEqual([
-      "Pagamento, Todas: 2", "Pagamento, A receber: 1", "Pagamento, Pagas: 1",
-    ]);
-    await wrapper.find('[data-preorders-filter-chip="fulfillment:delivery"]').trigger("click");
+    // Os filtros e o lote moram na MESMA linha, dentro do quadro do período.
+    const row = wrapper.find("[data-preorders-filters]");
+    expect(row.find("[data-preorders-print]").exists()).toBe(true);
+    await pickFilter(wrapper, "pay");
+    expect(wrapper.findAll("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
+      .toEqual([["A receber", "1"], ["Pagas", "1"]]);
+    await wrapper.find("[data-filter-back]").trigger("click");
+    await wrapper.find('[data-filter-dimension="fulfillment"]').trigger("click");
+    await wrapper.find('[data-filter-option="fulfillment:delivery"]').trigger("click");
     await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery" });
+    expect(wrapper.find('[data-filter-chip="fulfillment"]').text()).toContain("Recebimento: Entregas");
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-8"]);
     // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
@@ -507,7 +528,8 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
 
   it("'Falta imprimir' mostra só o que não saiu, e o botão imprime exatamente o visível", async () => {
     const wrapper = await mount(PreordersPage);
-    await wrapper.find('[data-preorders-filter-chip="print:pending"]').trigger("click");
+    await pickFilter(wrapper, "print");
+    await wrapper.find('[data-filter-option="print:pending"]').trigger("click");
     await flushPromises();
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
     const button = wrapper.find("[data-preorders-print]");
@@ -536,7 +558,10 @@ describe("Encomendas — Cliente veio buscar", () => {
   it("o campo está no topo, com a frase que diz o que se pode procurar", async () => {
     const wrapper = await mount(PreordersPage);
     const field = wrapper.find("[data-preorders-search]");
-    expect(field.attributes("placeholder")).toBe("Cliente veio buscar? Nome, telefone, CPF, endereço ou número");
+    // O título diz a tarefa; o campo diz o que se digita, sem repetir o título.
+    expect(wrapper.find("#preorders-search-title").text()).toBe("Cliente veio buscar?");
+    expect(field.attributes("placeholder")).toBe("Nome, telefone, CPF ou CNPJ, endereço ou número do pedido");
+    expect(field.attributes("placeholder")).not.toContain("Cliente veio buscar");
     expect(wrapper.find("[data-preorders-include-completed]").attributes("aria-checked")).toBe("false");
   });
 

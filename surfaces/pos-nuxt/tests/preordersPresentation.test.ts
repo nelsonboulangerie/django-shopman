@@ -17,6 +17,8 @@ import {
   dayToReceiveLine,
   filterChips,
   filterDays,
+  filterDimensions,
+  fromActiveFilters,
   filterEmptyMessage,
   flattenDays,
   groupByWindow,
@@ -38,6 +40,7 @@ import {
   railBadge,
   searchCompletedHeading,
   searchEmptyMessage,
+  toActiveFilters,
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
@@ -215,9 +218,9 @@ describe("contagens — zero é frase, nunca '0'", () => {
     expect(listSummary(3, "R$ 120,00")).toBe("3 encomendas · R$ 120,00");
   });
 
-  it("a coluna de hoje diz que é hoje", () => {
-    expect(dayColumnTitle(day())).toBe("Hoje 28/09");
-    expect(dayColumnTitle(day({ is_today: false, weekday_display: "ter", day_display: "29/09" }))).toBe("ter 29/09");
+  it("a coluna de hoje diz que é hoje SEM perder o dia da semana", () => {
+    expect(dayColumnTitle(day())).toBe("Hoje, seg 28/09");
+    expect(dayColumnTitle(day({ is_today: false, weekday_display: "ter", day_display: "29/09" }))).toBe("Ter 29/09");
   });
 
   it("período vazio por extenso", () => {
@@ -342,6 +345,33 @@ describe("filtros combináveis, com a contagem de cada chip", () => {
     const filtered = filterDays(days, { ...NO_FILTERS, print: "pending" });
     expect(refs(filtered[0]!.orders)).toEqual(["A", "C", "E"]);
     expect(filtered[0]!.total_display).toBe("R$ 180,00");
+  });
+
+  it("na barra de uma linha: sem 'Todas' (filtro ausente É todas), com a mesma contagem", () => {
+    const dimensions = filterDimensions(cards, { fulfillment: "delivery", pay: "all", print: "all" });
+    expect(dimensions.map((d) => [d.id, d.label, d.type])).toEqual([
+      ["fulfillment", "Recebimento", "single-select"],
+      ["pay", "Pagamento", "single-select"],
+      ["print", "Via Pedido", "single-select"],
+    ]);
+    expect(dimensions[0]!.options.map((o) => [o.label, o.count])).toEqual([["Retiradas", 3], ["Entregas", 2]]);
+    expect(dimensions[1]!.options.map((o) => [o.label, o.count])).toEqual([["A receber", 1], ["Pagas", 1]]);
+    expect(dimensions[2]!.options.map((o) => [o.label, o.count])).toEqual([["Falta imprimir", 1]]);
+  });
+
+  it("'A conferir' só vira opção quando já está escolhida, para o chip dizer o que filtra", () => {
+    expect(filterDimensions(cards, NO_FILTERS)[1]!.options.some((o) => o.value === "check")).toBe(false);
+    const checking = filterDimensions(cards, { ...NO_FILTERS, pay: "check" })[1]!;
+    expect(checking.options.at(-1)).toEqual({ value: "check", label: "A conferir", count: 1 });
+  });
+
+  it("traduz o estado da tela e o da barra, nos dois sentidos, sem perder nada", () => {
+    expect(toActiveFilters(NO_FILTERS)).toEqual({});
+    const view = { fulfillment: "pickup", pay: "to_receive", print: "pending" } as const;
+    expect(toActiveFilters(view)).toEqual({ fulfillment: ["pickup"], pay: ["to_receive"], print: ["pending"] });
+    expect(fromActiveFilters(toActiveFilters(view))).toEqual(view);
+    expect(fromActiveFilters({})).toEqual(NO_FILTERS);
+    expect(fromActiveFilters({ pay: ["inventado"] })).toEqual(NO_FILTERS);
   });
 
   it("o filtro que esvazia a lista diz o que não há", () => {
