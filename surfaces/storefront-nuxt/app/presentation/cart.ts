@@ -15,6 +15,23 @@ export function isOptimisticLine (line: CartItemProjection): boolean {
   return line.line_id.startsWith(OPTIMISTIC_LINE_PREFIX)
 }
 
+// Observação por item (meta.notes da linha): teto do backend.
+export const LINE_NOTES_MAX_LENGTH = 280
+
+export type LineNoteCloseIntent = 'close' | 'save' | 'confirm-discard'
+
+// O que fazer quando a folha da observação fecha por gesto (X, alça, fundo, Esc).
+// Fechar não pede para salvar: texto alterado e válido segue para o servidor em
+// segundo plano. Texto apagado não é remoção por gesto (remover é ato explícito),
+// então pergunta antes de jogar fora. Sem alteração, só fecha.
+export function lineNoteCloseIntent (draft: string, saved: string | null | undefined): LineNoteCloseIntent {
+  const next = draft.trim()
+  const current = (saved || '').trim()
+  if (next === current) return 'close'
+  if (next && next.length <= LINE_NOTES_MAX_LENGTH) return 'save'
+  return 'confirm-discard'
+}
+
 function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjection {
   return {
     line_id: `${OPTIMISTIC_LINE_PREFIX}${meta.sku}`,
