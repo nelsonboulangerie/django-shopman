@@ -295,6 +295,9 @@ useSeoMeta({
                     <Icon name="lucide:info" class="size-3.5 shrink-0" />
                     Por hoje, temos {{ formatCount(availabilityCeiling(line)!, 'unidade', 'unidades') }} deste item.
                   </p>
+                  <!-- Observação DESTE item para a cozinha (meta.notes da linha).
+                       A do pedido inteiro continua na finalização. -->
+                  <CartLineNote :line="line" />
                 </div>
               </div>
             </div>

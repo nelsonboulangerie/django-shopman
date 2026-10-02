@@ -23,7 +23,7 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.shop.services.cart import CartDateMismatchError
-from shopman.storefront.api import clean_text
+from shopman.storefront.api import clean_name, clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
 from shopman.storefront.observability import (
@@ -56,7 +56,7 @@ from shopman.storefront.services.cart_mutations import (
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
 from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
-from .serializers import DetailSerializer, SetSkuQtySerializer
+from .serializers import CartLineNotesSerializer, DetailSerializer, SetSkuQtySerializer
 
 logger = logging.getLogger(__name__)
 
@@ -1180,3 +1180,61 @@ class CartSkuQtyView(APIView):
             "summary": summary,
             "cart": _cart_payload_after_mutation(request),
         })
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=["cart"],
+        summary="Set the kitchen note of one cart line, by SKU",
+        request=CartLineNotesSerializer,
+        responses={
+            200: OpenApiResponse(description="Authoritative cart projection with the line note."),
+            400: DetailSerializer,
+            404: DetailSerializer,
+            409: DetailSerializer,
+        },
+    ),
+)
+class CartSkuNotesView(APIView):
+    """PUT /api/v1/cart/skus/{sku}/notes/
+
+    A observação de um item ("sem açúcar", "bem passado") vai para a linha da
+    sacola em ``meta["notes"]`` e daí, pelo pedido, até o ticket da cozinha.
+    Texto vazio apaga.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = CartLineNotesSerializer
+    throttle_classes = []
+
+    def put(self, request, sku: str):
+        from shopman.storefront.cart import CartLineNotesRefused, CartService
+
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-cart-sku-notes",
+            rate="60/m",
+            method="PUT",
+        ):
+            return _rate_limited_response(
+                detail="Muitas alterações na sacola. Aguarde um instante.",
+                retry_after_seconds=CART_RATE_LIMIT_RETRY_SECONDS,
+            )
+
+        serializer = CartLineNotesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        notes = clean_name(serializer.validated_data["notes"], max_length=140)
+        try:
+            session = CartService.set_line_notes(request, sku=sku.strip(), notes=notes)
+        except CartLineNotesRefused as exc:
+            return Response(
+                {"detail": str(exc) or "Esta sacola não aceita mais alterações."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if session is None:
+            return Response(
+                {"detail": "Este item não está na sua sacola."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"cart": _cart_payload_after_mutation(request)})

@@ -294,4 +294,19 @@ describe('useCartState', () => {
     store.dismissCartIssue()
     expect(store.cartIssue.value).toBeNull()
   })
+
+  it('setLineNotes grava a observação do item no endpoint da linha e adota a sacola do servidor', async () => {
+    fetchMock.mockResolvedValue({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty: 2, notes: 'sem açúcar' }] }) })
+    const store = await loadStore()
+
+    const cart = await store.setLineNotes('CROISSANT', 'sem açúcar')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/cart/skus/CROISSANT/notes/')
+    expect(options).toMatchObject({ method: 'PUT', body: { notes: 'sem açúcar' }, credentials: 'include' })
+    expect(cart.items[0]!.notes).toBe('sem açúcar')
+    expect(store.cart.value.items[0]!.notes).toBe('sem açúcar')
+  })
 })
+

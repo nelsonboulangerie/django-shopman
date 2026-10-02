@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.http import HttpRequest
+from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 from shopman.utils.monetary import format_money
 
@@ -12,6 +13,10 @@ from shopman.shop.services import cart as cart_mutations
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF as CHANNEL_REF
 
 logger = logging.getLogger(__name__)
+
+
+class CartLineNotesRefused(Exception):
+    """A sacola não aceita mais a observação (encerrada ou anonimizada)."""
 
 
 class CartService:
@@ -86,8 +91,6 @@ class CartService:
         customer = CartService._customer_link(request)
         if customer is None:
             return False
-        from shopman.orderman.exceptions import SessionError
-
         from shopman.shop.services import account as account_service
         from shopman.shop.services import sessions as session_service
 
@@ -207,6 +210,25 @@ class CartService:
             line_id=line_id,
             sku=sku,
         )
+
+    @staticmethod
+    def set_line_notes(request: HttpRequest, *, sku: str, notes: str) -> Session | None:
+        """Grava a observação do item ``sku``; ``None`` se a sacola não o tem.
+
+        Sacola encerrada ou anonimizada recusa com ``CartLineNotesRefused``.
+        """
+        session_key = CartService._get_session_key(request)
+        if not session_key:
+            return None
+        try:
+            return cart_mutations.set_line_notes(
+                session_key=session_key,
+                channel_ref=CHANNEL_REF,
+                sku=sku,
+                notes=notes,
+            )
+        except SessionError as exc:
+            raise CartLineNotesRefused(str(getattr(exc, "message", "") or "")) from exc
 
     @staticmethod
     def _get_line(session_key: str, line_id: str) -> dict | None:

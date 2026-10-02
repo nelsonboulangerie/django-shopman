@@ -304,6 +304,46 @@ def remove_item(
     )
 
 
+#: Teto da observação de um item. É bilhete para a cozinha, não carta: cabe
+#: no card do KDS sem rolar.
+LINE_NOTES_MAX_LENGTH = 140
+
+
+@transaction.atomic
+def set_line_notes(*, session_key: str, channel_ref: str, sku: str, notes: str) -> Session | None:
+    """Grava (ou apaga, com texto vazio) a observação de UM item da sacola.
+
+    A chave é ``meta["notes"]``, a mesma que o PDV escreve e que o ticket da
+    cozinha lê (``kds._order_to_lines``); ``meta`` é o único lugar da linha que
+    sobrevive ao ``Session._normalize_items``. A linha é reescrita pelo op
+    ``replace_sku`` do Core com o MESMO SKU: é o op que troca o ``meta`` de uma
+    linha mantendo ``line_id`` e quantidade, e passa pela mesma cerca de sessão
+    anonimizada que o ``add_line`` (observação é texto pessoal).
+
+    Devolve ``None`` quando a sacola não tem linha desse SKU.
+    """
+    session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    line = next((item for item in session.items if item.get("sku") == sku), None)
+    if line is None:
+        return None
+    clean = " ".join(str(notes or "").split())[:LINE_NOTES_MAX_LENGTH]
+    meta = dict(line.get("meta") or {})
+    if clean:
+        meta["notes"] = clean
+    else:
+        meta.pop("notes", None)
+    if meta == (line.get("meta") or {}):
+        return session
+    op: dict = {"op": "replace_sku", "line_id": line["line_id"], "sku": sku, "meta": meta}
+    if session.pricing_policy == "external":
+        op["unit_price_q"] = int(line.get("unit_price_q", 0) or 0)
+    return session_service.modify_session(
+        session_key=session_key,
+        channel_ref=channel_ref,
+        ops=[op],
+    )
+
+
 def _whole(value: Decimal):
     """Quantidade de sacola como a tela a lê: inteiro quando é inteiro."""
     value = Decimal(str(value))

@@ -8,6 +8,12 @@ class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
 
 
+class CartLineNotesSerializer(serializers.Serializer):
+    # Observação de UM item, para a cozinha (``meta["notes"]`` da linha). Vazia
+    # apaga. O teto é o do serviço (``shop.services.cart.LINE_NOTES_MAX_LENGTH``).
+    notes = serializers.CharField(allow_blank=True, max_length=140)
+
+
 class CheckoutAddressLabelSerializer(serializers.Serializer):
     key = serializers.ChoiceField(choices=["home", "work", "other"])
     custom = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)

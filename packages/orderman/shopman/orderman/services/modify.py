@@ -380,7 +380,7 @@ class ModifyService:
         if not session.is_anonymized or not isinstance(meta, dict):
             return
         customization = meta.get("customization")
-        has_personal_text = "customer_note" in meta or (
+        has_personal_text = bool({"customer_note", "notes"}.intersection(meta)) or (
             isinstance(customization, dict)
             and bool({"note", "text", "message"}.intersection(customization))
         )

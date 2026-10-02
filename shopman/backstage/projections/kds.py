@@ -1035,7 +1035,9 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
             sku=getattr(item, "sku", "") or "",
             name=getattr(item, "name", "") or getattr(item, "sku", "") or "",
             qty=json_quantity(item.qty),
-            notes=str(getattr(item, "notes", "") or ""),
+            # ``EffectiveItem`` não tem ``.notes``: a observação do item mora em
+            # ``meta["notes"]`` (a mesma chave que o ticket da cozinha lê).
+            notes=str((item.meta or {}).get("notes", "") or ""),
             stock_warning="",
         )
         for item in items
