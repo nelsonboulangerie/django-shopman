@@ -23,6 +23,17 @@ pytestmark = pytest.mark.django_db
 SKU = "PAO-FRANCES"
 
 
+@pytest.fixture(autouse=True)
+def _clear_rate_limit_cache():
+    # O checkout conta tentativas no cache compartilhado; sem limpar, o próximo
+    # teste do mesmo worker herda o contador e recebe 429.
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 def _add(client) -> dict:
     resp = client.put(f"/api/v1/cart/skus/{SKU}/", data={"qty": 2}, content_type="application/json")
     assert resp.status_code == 200, resp.content
