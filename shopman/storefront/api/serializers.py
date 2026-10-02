@@ -10,6 +10,19 @@ class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
 
 
+class CartLineOptionSerializer(serializers.Serializer):
+    # Escolha no produto: só o grupo e a opção, por ``ref``. Preço, nome e
+    # insumo o servidor relê do catálogo (``shopman.shop.product_options``).
+    group = serializers.CharField(max_length=40)
+    ref = serializers.CharField(max_length=40)
+
+
+class AddCartLineSerializer(serializers.Serializer):
+    sku = serializers.CharField(max_length=64)
+    qty = serializers.IntegerField(min_value=1, max_value=99)
+    options = CartLineOptionSerializer(many=True, required=False, default=list)
+
+
 class CartLineNotesSerializer(serializers.Serializer):
     # Observação de UM item, para a cozinha (``meta["notes"]`` da linha). Vazia
     # apaga. O teto é o do serviço, o mesmo do PDV.

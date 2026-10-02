@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from shopman.shop import product_options
 from shopman.shop.projections import cart_context
 
 from .types import CartIntentResult, SetQtyIntent
@@ -24,12 +25,18 @@ def interpret_set_qty(sku: str, qty: int, cart: dict) -> CartIntentResult:
 
     Steps:
      1. Look up published product by SKU
-     2. Find existing cart line for the SKU
+     2. Find existing cart line for the SKU (a linha SEM escolha: linha com
+        escolha no produto só muda pela ``line_id``)
      3. Determine action: "remove" (qty==0) | "update" (line exists) | "add"
      4. Resolve listing price for "add"
     """
     line = next(
-        (item for item in cart.get("items") or [] if item.get("sku") == sku),
+        (
+            item
+            for item in cart.get("items") or []
+            if item.get("sku") == sku
+            and not product_options.own_options(product_options.line_options(item))
+        ),
         None,
     )
     if qty == 0 and line is not None:

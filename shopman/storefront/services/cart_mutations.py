@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
+from types import SimpleNamespace
 from typing import Any
 
 from django.db import transaction
 from django.http import HttpRequest
 from shopman.utils.monetary import format_money
 
+from shopman.shop import product_options
+from shopman.shop.product_options import OptionSelectionError
+from shopman.shop.projections import cart_context
 from shopman.shop.projections.cart import build_minimum_order_progress
 from shopman.shop.services.cart import CartUnavailableError
 from shopman.storefront.cart import CartService
@@ -23,6 +27,15 @@ MAX_CART_LINE_QTY = 99
 
 class CartMutationNotFound(Exception):
     """Raised when a SKU cannot be resolved for a cart mutation."""
+
+
+class CartMutationOptionRefused(Exception):
+    """A escolha no produto não fecha com o cadastro (``option_required`` etc.)."""
+
+    def __init__(self, *, product, error: OptionSelectionError):
+        super().__init__(error.message)
+        self.product = product
+        self.error = error
 
 
 class CartMutationUnavailable(Exception):
@@ -111,9 +124,12 @@ def set_qty_by_sku(
                     qty=intent.qty,
                     unit_price_q=intent.unit_price_q,
                     name=str(getattr(intent.product, "name", "") or ""),
+                    product=intent.product,
                 )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=intent.product, stock_error=exc) from exc
+    except OptionSelectionError as exc:
+        raise CartMutationOptionRefused(product=intent.product, error=exc) from exc
 
     with _perf_step(perf, "payload"):
         if mutated_session is not None:
@@ -125,6 +141,93 @@ def set_qty_by_sku(
             cart = CartService.get_cart_summary(request, include_items=True)
         payload = cart_mutation_payload(intent, cart)
     return CartMutationOutcome(intent=intent, cart=cart, payload=payload)
+
+
+@transaction.atomic
+def add_line_with_options(
+    request: HttpRequest,
+    *,
+    sku: str,
+    qty: int,
+    options: list[dict],
+) -> CartMutationOutcome:
+    """Põe na sacola um item COM escolha no produto (sabor, adicionais).
+
+    A escolha é ``[{group, ref}]``; preço, nome e insumo saem do catálogo. Se a
+    sacola já tem a mesma escolha do mesmo SKU, soma na linha que existe.
+    """
+    key = request.session.get("cart_session_key")
+    if key:
+        from shopman.shop.services.cart import lock_cart_session
+        lock_cart_session(session_key=key, channel_ref=STOREFRONT_CHANNEL_REF)
+    product_ctx = cart_context.product_context(sku, for_add=True, qty=qty)
+    if not product_ctx:
+        raise CartMutationNotFound(sku)
+    intent = SetQtyIntent(
+        sku=sku, qty=qty, action="add", line_id=None,
+        unit_price_q=product_ctx.unit_price_q, product=product_ctx.product,
+    )
+    try:
+        session = CartService.add_item(
+            request,
+            sku=sku,
+            qty=qty,
+            unit_price_q=product_ctx.unit_price_q,
+            name=str(product_ctx.product.name or ""),
+            options=options,
+            product=product_ctx.product,
+        )
+    except CartUnavailableError as exc:
+        raise CartMutationUnavailable(product=product_ctx.product, stock_error=exc) from exc
+    except OptionSelectionError as exc:
+        raise CartMutationOptionRefused(product=product_ctx.product, error=exc) from exc
+    cart = CartService.summary_from_session(session, include_items=True)
+    wanted = product_options.signature(options)
+    line = next(
+        (
+            item
+            for item in cart.get("items") or []
+            if item.get("sku") == sku
+            and product_options.signature(product_options.line_options(item)) == wanted
+        ),
+        None,
+    )
+    intent.line_id = line.get("line_id") if line else None
+    return CartMutationOutcome(intent=intent, cart=cart, payload=cart_mutation_payload(intent, cart))
+
+
+@transaction.atomic
+def set_line_qty(request: HttpRequest, *, line_id: str, qty: int) -> CartMutationOutcome:
+    """Quantidade absoluta de UMA linha (0 remove), pela ``line_id``.
+
+    É o caminho da sacola: com escolha no produto o mesmo SKU pode ter duas
+    linhas, e o ajuste por SKU acertaria a linha errada.
+    """
+    key = request.session.get("cart_session_key")
+    if not key:
+        raise CartMutationNotFound(line_id)
+    from shopman.shop.services.cart import lock_cart_session
+    lock_cart_session(session_key=key, channel_ref=STOREFRONT_CHANNEL_REF)
+    cart = CartService.get_cart_summary(request, include_items=True)
+    line = next((item for item in cart.get("items") or [] if item.get("line_id") == line_id), None)
+    if line is None:
+        raise CartMutationNotFound(line_id)
+    sku = str(line.get("sku") or "")
+    product_ctx = cart_context.product_context(sku, for_add=False)
+    product = product_ctx.product if product_ctx else SimpleNamespace(sku=sku, name=line.get("name") or sku)
+    intent = SetQtyIntent(
+        sku=sku, qty=qty, action="remove" if qty == 0 else "update",
+        line_id=line_id, unit_price_q=0, product=product,
+    )
+    try:
+        if qty == 0:
+            session = CartService.remove_item(request, line_id=line_id, sku=sku)
+        else:
+            session = CartService.update_qty(request, line_id=line_id, qty=qty, sku=sku)
+    except CartUnavailableError as exc:
+        raise CartMutationUnavailable(product=product, stock_error=exc) from exc
+    cart = CartService.summary_from_session(session, include_items=True)
+    return CartMutationOutcome(intent=intent, cart=cart, payload=cart_mutation_payload(intent, cart))
 
 
 def cart_mutation_payload(intent: SetQtyIntent, cart: dict[str, Any]) -> dict[str, Any]:
@@ -152,15 +255,25 @@ def cart_mutation_payload(intent: SetQtyIntent, cart: dict[str, Any]) -> dict[st
 
 
 def cart_line_payload(intent: SetQtyIntent, cart: dict[str, Any]) -> dict[str, Any]:
-    """Return the changed line as a compact JSON object."""
-    line = next(
-        (
-            item
-            for item in cart.get("items") or []
-            if item.get("sku") == intent.sku
-        ),
-        None,
-    )
+    """Return the changed line as a compact JSON object.
+
+    Pela ``line_id`` quando a mutação a conhece (o mesmo SKU pode ter duas
+    linhas, com escolhas diferentes); senão, a linha do SKU sem escolha.
+    """
+    items = cart.get("items") or []
+    line = None
+    if intent.line_id:
+        line = next((item for item in items if item.get("line_id") == intent.line_id), None)
+    if line is None and intent.action != "remove":
+        line = next(
+            (
+                item
+                for item in items
+                if item.get("sku") == intent.sku
+                and not product_options.own_options(product_options.line_options(item))
+            ),
+            None,
+        )
     if line is None:
         return {
             "sku": intent.sku,

@@ -237,6 +237,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(tile["choice_group"], "Chás da casa")
         self.assertEqual(tile["sku"], "POS-HEADLESS-ITEM")
 
+    def test_products_expose_the_option_groups_without_the_ingredient(self) -> None:
+        """Escolhas no produto: o tile leva os grupos no formato público.
+
+        Sem escolha, lista vazia e rótulo vazio. Com escolha, o insumo que cada
+        opção gasta (``consumes``) NÃO sai para a tela: é dado da casa.
+        """
+        tile = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertEqual(tile["option_groups"], [])
+        self.assertEqual(tile["choice_group_label"], "")
+
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        product.metadata = {
+            **(product.metadata or {}),
+            "choice_group_label": "Sabor",
+            "option_groups": [{
+                "ref": "adicionais", "label": "Adicionais", "min": 0, "max": 1,
+                "options": [{"ref": "ovo", "label": "Ovo frito", "price_q": 400, "available": True,
+                             "consumes": [{"sku": "OVOS", "qty": "50", "unit": "g"}]}],
+            }],
+        }
+        product.save(update_fields=["metadata"])
+
+        tile = self.client.get("/api/v1/backstage/pos/").json()["pos"]["products"][0]
+        self.assertEqual(tile["choice_group_label"], "Sabor")
+        self.assertEqual(tile["option_groups"], [{
+            "ref": "adicionais", "label": "Adicionais", "min": 0, "max": 1,
+            "options": [{"ref": "ovo", "label": "Ovo frito", "price_q": 400, "available": True}],
+        }])
+
     def test_products_expose_primary_collection_color_and_icon(self) -> None:
         """Cor (hex NB) e ícone (Lucide) da coleção primária vestem o tile sem
         foto (fundo tintado + ícone + SKU). Produto sem coleção primária expõe

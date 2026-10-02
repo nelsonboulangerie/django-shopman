@@ -155,6 +155,7 @@ def add_offer_items(
     Mesmo idioma do `reorder`: o que não é vendável e o que o Stockman recusa saem da
     sacola e voltam na resposta, para a tela explicar em vez de mentir.
     """
+    from shopman.shop.product_options import OptionSelectionError
     from shopman.shop.services import customer_orders
     from shopman.shop.services.cart import CartUnavailableError
 
@@ -175,6 +176,11 @@ def add_offer_items(
                 unit_price_q=customer_orders._price_q(product, channel_ref=channel_ref),
                 name=product.name,
             )
+        except OptionSelectionError:
+            # Produto com escolha obrigatória (sabor) não entra sem o cliente
+            # escolher: sai da sacola da oferta e a tela explica.
+            skipped.append(SkippedOfferItem(sku=sku, name=product.name or sku))
+            continue
         except CartUnavailableError:
             # Inclui `CartUnavailableError` (estoque recusou). Uma oferta que não pode
             # ser montada inteira ainda vale pelo que couber — melhor sacola parcial

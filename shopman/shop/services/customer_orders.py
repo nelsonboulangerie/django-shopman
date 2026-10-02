@@ -592,6 +592,7 @@ def add_reorder_items(
     channel_ref: str = DEFAULT_CHANNEL_REF,
 ) -> list[str]:
     """Add previous order items to the cart and return display names skipped."""
+    from shopman.shop import product_options
     from shopman.shop.services.cart import CartUnavailableError
 
     if cart_service is None:
@@ -608,14 +609,18 @@ def add_reorder_items(
 
         price_q = _price_q(product, channel_ref=channel_ref)
         try:
+            # A escolha do pedido de antes (sabor, adicionais) volta como
+            # ``[{group, ref}]`` e é conferida contra o cadastro de AGORA: opção
+            # que saiu ou está fora recusa, e o item volta como "não deu".
             cart_service.add_item(
                 request,
                 sku=item.sku,
                 qty=int(item.qty),
                 unit_price_q=price_q,
                 name=product.name,
+                options=product_options.selection_of(product_options.line_options(item)),
             )
-        except CartUnavailableError:
+        except (CartUnavailableError, product_options.OptionSelectionError):
             skipped.append(product.name or item.sku)
         except Exception:
             logger.warning("reorder_add_item_failed order=%s sku=%s", order.ref, item.sku, exc_info=True)

@@ -27,7 +27,10 @@ from shopman.backstage.services.integration_readiness import (
     focus_nfe_readiness,
     payment_link_readiness,
 )
+from shopman.shop import product_options
 from shopman.shop.projections.catalog_context import choice_group as product_choice_group
+from shopman.shop.projections.catalog_context import choice_group_label as product_choice_group_label
+from shopman.shop.projections.catalog_context import option_groups as product_option_groups
 from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
     Action,
@@ -83,6 +86,12 @@ class POSProductProjection:
     # produtos com o mesmo nome aqui viram UM tile na grade, que abre a escolha
     # entre eles. Cada escolha lança o próprio SKU. Vazio = tile próprio.
     choice_group: str = ""
+    # O que se escolhe no cartão ("Sabor"), escrito na aba Escolhas. Vazio = sem rótulo.
+    choice_group_label: str = ""
+    # Escolhas no produto (sabor obrigatório, adicionais com preço), no formato
+    # público de ``catalog_context.option_groups``. Com grupo, tocar o tile abre
+    # a escolha antes de lançar. Vazio = lança direto.
+    option_groups: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -2295,6 +2304,8 @@ def _product_projection(
         sold_out_reason=sold_out_reason,
         sold_by_weight=sold_by_weight,
         choice_group=product_choice_group(product),
+        choice_group_label=product_choice_group_label(product),
+        option_groups=tuple(product_option_groups(product)),
     )
 
 
@@ -2771,6 +2782,9 @@ def build_open_tab(session: Session) -> dict:
             # recalcula o peso pelo catálogo. Ausente na venda por unidade.
             "weighed": _tab_payload_weighed(item),
             "notes": (item.get("meta") or {}).get("notes", ""),
+            # Escolhas no produto da linha (sabor, adicionais), sem o insumo:
+            # o PDV guarda e reenvia no próximo save; o servidor só lê group/ref.
+            "options": product_options.public_line_options(product_options.line_options(item)),
             "fired": item.get("line_id", "") in fired_lines,
             # QUANTAS unidades desta linha foram para a cozinha. O booleano acima
             # já responde "foi?" (a linha vai inteira, não existe meia-linha), e

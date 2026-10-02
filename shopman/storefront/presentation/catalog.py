@@ -138,6 +138,14 @@ class CatalogItemProjection:
     # continua inteiro em ``items`` e nas seções; quem agrupa é a superfície, para
     # cada opção manter o próprio preço e a própria disponibilidade. None = sozinho.
     choice_group: str | None = None
+    # O que se escolhe no cartão ("Sabor"), escrito na aba Escolhas. None = sem rótulo.
+    choice_group_label: str | None = None
+
+    # Escolhas no produto (``Product.metadata["option_groups"]``): sabor
+    # obrigatório, adicionais com preço. Formato público, sem o insumo:
+    # ``[{ref, label, min, max, options: [{ref, label, price_q, available}]}]``.
+    # Vazio = o item entra na sacola direto, como sempre.
+    option_groups: tuple[dict, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -617,6 +625,8 @@ def _build_items(
                 category_color=str(primary_meta.get("color") or "") or None,
                 category_icon=str(primary_meta.get("icon") or "") or None,
                 choice_group=catalog_context.choice_group(p) or None,
+                choice_group_label=catalog_context.choice_group_label(p) or None,
+                option_groups=tuple(catalog_context.option_groups(p)),
             ),
         )
     return result

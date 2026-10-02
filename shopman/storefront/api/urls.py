@@ -58,7 +58,9 @@ from .geocode import ReverseGeocodeView
 from .payment import OrderPaymentMockConfirmView
 from .surface import (
     CartCouponView,
-    CartSkuNotesView,
+    CartLineNotesView,
+    CartLineQtyView,
+    CartLinesView,
     CartSkuQtyView,
     CheckoutDraftView,
     CheckoutLoyaltyView,
@@ -143,7 +145,9 @@ urlpatterns = [
     path("auth/logout/", LogoutView.as_view(), name="api-auth-logout"),
     # Cart
     path("cart/skus/<str:sku>/", CartSkuQtyView.as_view(), name="api-cart-sku-qty"),
-    path("cart/skus/<str:sku>/notes/", CartSkuNotesView.as_view(), name="api-cart-sku-notes"),
+    path("cart/lines/", CartLinesView.as_view(), name="api-cart-lines"),
+    path("cart/lines/<str:line_id>/", CartLineQtyView.as_view(), name="api-cart-line-qty"),
+    path("cart/lines/<str:line_id>/notes/", CartLineNotesView.as_view(), name="api-cart-line-notes"),
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),

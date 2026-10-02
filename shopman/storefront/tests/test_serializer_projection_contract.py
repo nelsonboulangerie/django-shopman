@@ -83,6 +83,8 @@ NON_MIRROR = {
     # Corpos de request (entrada, não projection).
     "SetSkuQtySerializer",
     "CartLineNotesSerializer",
+    "AddCartLineSerializer",
+    "CartLineOptionSerializer",
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",

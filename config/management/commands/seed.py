@@ -2880,8 +2880,58 @@ class Command(BaseCommand):
                     product.metadata = {
                         **(product.metadata if isinstance(product.metadata, dict) else {}),
                         "choice_group": group_name,
+                        # O que se escolhe no cartão (aba Escolhas do Admin).
+                        "choice_group_label": "Sabor",
                     }
                     product.save(update_fields=["metadata"])
+
+        # Escolhas no produto (Fase 1, dono 02/10/2026): sabor obrigatório no
+        # Frappé e adicionais com preço no Croque Monsieur. Dado, não código
+        # (``metadata["option_groups"]``, aba Escolhas do Admin; formato em
+        # ``shopman/shop/product_options.py``). Cada opção declara o insumo que
+        # gasta (``consumes``, na unidade-base do insumo); é registro gravado
+        # na linha, sem baixa de estoque na venda. Frutas vermelhas fica sem
+        # insumo declarado: o cadastro de compra não tem polpa/fruta hoje.
+        option_groups = {
+            "FRAP": [
+                {
+                    "ref": "sabor", "label": "Sabor", "min": 1, "max": 1,
+                    "options": [
+                        {"ref": "cafe", "label": "Café", "price_q": 0, "available": True,
+                         "consumes": [{"sku": "CAFE-TAMURA-CHOCOMELO", "qty": "18", "unit": "g"}]},
+                        {"ref": "chocolate", "label": "Chocolate", "price_q": 0, "available": True,
+                         "consumes": [{"sku": "CHOCOLATE-GOTAS-MEIOAMARGO", "qty": "20", "unit": "g"}]},
+                        {"ref": "frutas-vermelhas", "label": "Frutas vermelhas", "price_q": 0,
+                         "available": True, "consumes": []},
+                    ],
+                },
+            ],
+            "CQMO": [
+                {
+                    "ref": "adicionais", "label": "Adicionais", "min": 0, "max": 2,
+                    "options": [
+                        # Um ovo frito: 50 g de OVOS, como na ficha do Croque Madame.
+                        {"ref": "ovo-frito", "label": "Ovo frito", "price_q": 400, "available": True,
+                         "consumes": [{"sku": "OVOS", "qty": "50", "unit": "g"}]},
+                        # 50 g de salada na proporção da Salada da casa (2:2:1).
+                        {"ref": "salada", "label": "Salada", "price_q": 300, "available": True,
+                         "consumes": [
+                             {"sku": "ALFACE-AMERICANA", "qty": "20", "unit": "g"},
+                             {"sku": "ALFACE-ROXA", "qty": "20", "unit": "g"},
+                             {"sku": "RUCULA", "qty": "10", "unit": "g"},
+                         ]},
+                    ],
+                },
+            ],
+        }
+        for sku, groups in option_groups.items():
+            product = products.get(sku)
+            if product:
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "option_groups": groups,
+                }
+                product.save(update_fields=["metadata"])
 
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:

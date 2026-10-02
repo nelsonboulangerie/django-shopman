@@ -23,6 +23,7 @@ from shopman.orderman.models import Order, Session
 from shopman.utils.monetary import format_money, monetary_mult
 from shopman.utils.names import split_full_name
 
+from shopman.shop import product_options
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
@@ -2159,7 +2160,8 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     cancelamento de venda recente já aplicou: persistir o resolvido, nunca o declarado.
     """
     ops = []
-    for item in payload.get("items", []):
+    resolved_options = _resolve_payload_options(payload)
+    for index, item in enumerate(payload.get("items", [])):
         op = {
             "op": "add_line",
             "sku": item["sku"],
@@ -2178,9 +2180,16 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         if line_id:
             op["line_id"] = line_id
         name = str(item.get("name", "") or "").strip()
+        options = resolved_options.get(index) or []
+        if options:
+            # O nome da linha leva o resumo da escolha; o que veio da tela pode
+            # já trazê-lo, e sai antes de pôr de novo.
+            name = product_options.line_name(product_options.base_name(name, options) or item["sku"], options)
         if name:
             op["name"] = name
         meta: dict = {}
+        if options:
+            meta[product_options.LINE_OPTIONS_KEY] = options
         notes = str(item.get("notes", "") or "").strip()
         if notes:
             meta["notes"] = notes
@@ -2361,6 +2370,61 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         if approved_by:
             ops.append({"op": "set_data", "path": "manual_discount.approved_by", "value": approved_by})
     return ops
+
+
+def _resolve_payload_options(payload: dict) -> dict[int, list[dict]]:
+    """A escolha no produto de cada item da venda, conferida contra o cadastro.
+
+    A tela manda só ``options: [{group, ref}]``; nome, preço e insumo saem do
+    catálogo (``shopman.shop.product_options``). Produto com grupo obrigatório
+    (o sabor do Frappé) não entra sem escolha. Devolve ``{índice: meta.options}``.
+    """
+    items = [item for item in payload.get("items") or [] if isinstance(item, dict)]
+    skus = {str(item.get("sku") or "") for item in items if not _is_delivery_fee_item(item)}
+    skus.discard("")
+    if not skus:
+        return {}
+    from shopman.offerman.models import Product
+
+    products = {
+        product.sku: product
+        for product in Product.objects.filter(sku__in=skus)
+        if product_options.has_options(product)
+    }
+    resolved: dict[int, list[dict]] = {}
+    for index, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        product = products.get(str(item.get("sku") or ""))
+        selection = item.get("options") or []
+        if product is None:
+            if selection:
+                raise PosIntentError(
+                    code="option_unknown",
+                    message=f"{item.get('name') or item.get('sku')} não tem escolhas para fazer.",
+                    field=f"items.{index}.options",
+                    focus="cart",
+                    recovery="Tire a linha e lance o item de novo.",
+                )
+            continue
+        try:
+            resolved[index] = product_options.resolve_selection(
+                product,
+                [
+                    {"group": entry.get("group"), "ref": entry.get("ref")}
+                    for entry in selection
+                    if isinstance(entry, dict)
+                ],
+            )
+        except product_options.OptionSelectionError as exc:
+            raise PosIntentError(
+                code=exc.code,
+                message=exc.message,
+                field=f"items.{index}.options",
+                focus="cart",
+                recovery="Toque no item e refaça a escolha.",
+            ) from None
+    return resolved
 
 
 def _bare_username(value: str) -> str:

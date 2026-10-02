@@ -54,6 +54,7 @@ from django.db import transaction
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money, monetary_mult
 
+from shopman.shop import product_options
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import order_composition, weighed_sale
 
@@ -498,11 +499,18 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
     new_lines: dict[str, dict] = {}
     seen: set[str] = set()
 
-    def add_new(index: int, sku: str, qty: Decimal, *, name: str = "") -> None:
+    def add_new(index: int, sku: str, qty: Decimal, *, name: str = "", options=None) -> None:
         product = pricing.product(sku)
         if product is None:
             raise EditRefused(f"O item {sku} não está no catálogo.", code="unknown_sku", field=f"items.{index}")
-        display = name or product["name"] or sku
+        # Escolha no produto (sabor, adicionais): conferida contra o cadastro de
+        # agora e somada ao preço; a mesma escolha do mesmo SKU é a mesma linha.
+        try:
+            chosen = product_options.resolve_selection(pricing.catalog_product(sku), options or [])
+        except product_options.OptionSelectionError as exc:
+            raise EditRefused(exc.message, code=exc.code, field=f"items.{index}.options") from None
+        display = product_options.base_name(name, chosen) if name else (product["name"] or sku)
+        display = product_options.line_name(display, chosen)
         if weighed_sale.is_sold_by_weight(product["unit"]):
             # A mesma frase da venda: a peça entra pela etiqueta (ou pelo peso).
             raise EditRefused(
@@ -515,7 +523,8 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
                 f"{display} está sem preço no cadastro e não pode entrar na encomenda.",
                 code="price_missing", field=f"items.{index}",
             )
-        key = f"{sku}:{price_q}"
+        price_q = int(price_q) + product_options.options_unit_price_q(pricing.catalog_product(sku), chosen)
+        key = f"{sku}:{price_q}:{product_options.signature(chosen)}"
         if key in new_lines:
             line = new_lines[key]
             line["qty"] = line["qty"] + qty
@@ -529,7 +538,7 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
             "qty": qty,
             "unit_price_q": int(price_q),
             "line_total_q": monetary_mult(qty, int(price_q)),
-            "meta": {"added_by": SOURCE},
+            "meta": {"added_by": SOURCE, **({product_options.LINE_OPTIONS_KEY: chosen} if chosen else {})},
         }
         new_lines[key] = line
         new_line_ids.append(line_id)
@@ -584,13 +593,13 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
         })
         new_line_ids.append(line_id)
 
-    for index, (line_id, sku, qty, weighed) in enumerate(parsed):
+    for index, (line_id, sku, qty, weighed, options) in enumerate(parsed):
         old = by_line.get(line_id) if line_id else None
         if old is None:
             if weighed:
                 add_weighed(index, sku, weighed)
             else:
-                add_new(index, sku, qty)
+                add_new(index, sku, qty, options=options)
             continue
         if line_id in seen:
             raise EditRefused("A mesma linha apareceu duas vezes.", code="duplicate_line", field=f"items.{index}")
@@ -618,14 +627,19 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
         if qty <= old.qty:
             out.append(_kept(old, qty))
             continue
+        old_options = product_options.line_options(old)
         price_q = pricing.price(old.sku)
+        if price_q:
+            price_q = int(price_q) + product_options.options_unit_price_q(
+                pricing.catalog_product(old.sku), old_options,
+            )
         if not price_q or int(price_q) == old.unit_price_q:
             # Mesmo preço (ou catálogo sem preço hoje): a linha cresce no preço
             # vendido — não há "antes" e "depois" diferentes a separar.
             out.append(_kept(old, qty))
             continue
         out.append(_kept(old, old.qty))
-        add_new(index, old.sku, qty - old.qty, name=old.name)
+        add_new(index, old.sku, qty - old.qty, name=old.name, options=product_options.selection_of(old_options))
     return out
 
 
@@ -1165,6 +1179,7 @@ class _Pricing:
         self._customer = None
         self._prices: dict[str, int | None] = {}
         self._products: dict[str, dict | None] = {}
+        self._catalog_products: dict = {}
 
     def _load(self) -> None:
         if self._loaded:
@@ -1206,8 +1221,16 @@ class _Pricing:
             self._products[sku] = {"name": str(row["name"] or ""), "unit": str(row["unit"] or "")} if row else None
         return self._products[sku]
 
+    def catalog_product(self, sku: str):
+        """O ``Product`` inteiro, para as escolhas (``metadata["option_groups"]``)."""
+        if sku not in self._catalog_products:
+            from shopman.offerman.models import Product
 
-def _parse_lines(lines) -> list[tuple[str, str, Decimal, dict | None]]:
+            self._catalog_products[sku] = Product.objects.filter(sku=sku).first()
+        return self._catalog_products[sku]
+
+
+def _parse_lines(lines) -> list[tuple[str, str, Decimal, dict | None, list[dict]]]:
     if not isinstance(lines, list | tuple):
         raise EditRefused("Lista de itens inválida.", code="invalid_items", field="items")
     parsed = []
@@ -1233,7 +1256,15 @@ def _parse_lines(lines) -> list[tuple[str, str, Decimal, dict | None]]:
         weighed = raw.get("weighed")
         if weighed not in (None, "", {}) and not isinstance(weighed, dict):
             raise EditRefused("Venda por peso inválida.", code="invalid_weighed", field=f"items.{index}.weighed")
-        parsed.append((line_id, sku, qty, weighed or None))
+        raw_options = raw.get("options") or []
+        if not isinstance(raw_options, list):
+            raise EditRefused("Escolha do item inválida.", code="invalid_options", field=f"items.{index}.options")
+        options = [
+            {"group": str(entry.get("group") or ""), "ref": str(entry.get("ref") or "")}
+            for entry in raw_options
+            if isinstance(entry, dict)
+        ]
+        parsed.append((line_id, sku, qty, weighed or None, options))
     return parsed
 
 

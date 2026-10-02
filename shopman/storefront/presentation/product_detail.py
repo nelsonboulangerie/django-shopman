@@ -216,6 +216,10 @@ class ProductDetailProjection:
     category_color: str | None = None
     category_icon: str | None = None
 
+    # Escolhas no produto (sabor obrigatório, adicionais com preço), no formato
+    # público de ``catalog_context.option_groups``. Vazio = adiciona direto.
+    option_groups: tuple[dict, ...] = ()
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -417,6 +421,7 @@ def build_product_detail(
         cross_sell_heading=_cross_sell_heading(),
         category_color=str(primary_meta.get("color") or "") or None,
         category_icon=str(primary_meta.get("icon") or "") or None,
+        option_groups=tuple(catalog_context.option_groups(product)),
     )
 
 

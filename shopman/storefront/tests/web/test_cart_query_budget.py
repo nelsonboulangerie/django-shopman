@@ -63,7 +63,10 @@ CART_OVERHEAD_CEILING = 40
 #: 88 consultas; eram 96, com a resposta lendo o estoque duas vezes (linhas e
 #: trilho de sugestão). Sob a transação do teste o ``on_commit`` não roda, então
 #: a observação de falta na prateleira (backstage) fica fora desta conta.
-PUT_CEILING = 90
+#: 02/10/2026 (escolhas no produto): +1, a leitura das linhas da sacola no
+#: ajuste. A reserva é por SKU e o mesmo SKU pode ter duas linhas (Croque com e
+#: sem ovo); mudar uma precisa somar as outras para não soltar a reserva delas.
+PUT_CEILING = 91
 
 
 @pytest.fixture

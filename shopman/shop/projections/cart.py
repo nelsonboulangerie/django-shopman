@@ -20,6 +20,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
+from shopman.shop import product_options
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_STOREFRONT_CHANNEL_REF = "web"
@@ -122,6 +124,11 @@ class CartLineProjection:
 
     # Observação do item para a cozinha (``meta["notes"]``); "" = sem observação.
     notes: str = ""
+
+    # Escolhas no produto (``meta["options"]``): o resumo legível ("+ Ovo frito")
+    # e se a linha tem escolha (aí ela só muda pela ``line_id``).
+    options_summary: str = ""
+    has_options: bool = False
 
 
 @dataclass(frozen=True)
@@ -507,6 +514,8 @@ def _build_line(
         is_made_to_order=is_made_to_order,
         is_notifiable=is_notifiable,
         notes=str((item.get("meta") or {}).get("notes") or ""),
+        options_summary=product_options.summary(product_options.line_options(item)),
+        has_options=bool(product_options.own_options(product_options.line_options(item))),
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,

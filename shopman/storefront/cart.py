@@ -125,8 +125,13 @@ class CartService:
         unit_price_q: int,
         *,
         name: str = "",
+        options: list[dict] | None = None,
+        product=None,
     ) -> Session:
-        """Add item to cart. Merges with existing line if same SKU.
+        """Add item to cart. Merges with existing line if same SKU and same options.
+
+        ``options`` é a escolha do cliente no produto (``[{group, ref}]``);
+        escolha que não fecha com o cadastro levanta ``OptionSelectionError``.
 
         Delegates reservation and session mutation to the shop cart mutation
         facade. On shortage, raises CartUnavailableError with substitutes
@@ -151,6 +156,8 @@ class CartService:
             qty=qty,
             unit_price_q=unit_price_q,
             name=name,
+            options=options,
+            product=product,
         )
         request.session["cart_session_key"] = session_key
         if not existing_key and CartService._link_customer(request, session_key):
@@ -212,8 +219,8 @@ class CartService:
         )
 
     @staticmethod
-    def set_line_notes(request: HttpRequest, *, sku: str, notes: str) -> Session | None:
-        """Grava a observação do item ``sku``; ``None`` se a sacola não o tem.
+    def set_line_notes(request: HttpRequest, *, line_id: str, notes: str) -> Session | None:
+        """Grava a observação da linha ``line_id``; ``None`` se a sacola não a tem.
 
         Sacola encerrada ou anonimizada recusa com ``CartLineNotesRefused``.
         """
@@ -224,7 +231,7 @@ class CartService:
             return cart_mutations.set_line_notes(
                 session_key=session_key,
                 channel_ref=CHANNEL_REF,
-                sku=sku,
+                line_id=line_id,
                 notes=notes,
             )
         except SessionError as exc:
