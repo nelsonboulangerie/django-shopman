@@ -203,11 +203,12 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
         await route.fulfill({ response });
       }
     });
-    // A encomenda nasce guiada: cliente → recebimento → data → "Montar encomenda".
+    // A encomenda nasce guiada: um assistente de etapas (cliente → recebimento
+    // → endereço, se entrega → data) que termina em "Montar encomenda".
     await openFreshTab(page);
     await step(page, "encomenda-nova", async () => {
       await page.getByRole("group", { name: "Modo de atendimento" }).getByRole("button", { name: "Encomendas" }).click();
-      await page.getByRole("button", { name: /Montar encomenda/ }).waitFor();
+      await page.getByRole("button", { name: "Identificar cliente" }).waitFor();
     });
     await step(page, "encomenda-cliente", () => identifyCustomer(page));
     await closeDialog(page);
