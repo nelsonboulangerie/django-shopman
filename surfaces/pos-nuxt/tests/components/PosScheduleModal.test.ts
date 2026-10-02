@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import PosScheduleModal from "~/components/PosScheduleModal.vue";
+import PosSchedulePicker from "~/components/PosSchedulePicker.vue";
 
 afterEach(() => { document.body.innerHTML = ""; });
 
@@ -36,5 +37,26 @@ it("o dia é a escolha rápida do kit: dia fechado apagado com o motivo, a próx
   expect(w.emitted("update:deliveryDate")?.at(-1)).toEqual(["2026-09-14"]);
   // Trocar o dia apaga a janela do dia anterior.
   expect(w.emitted("update:deliveryTimeSlot")?.at(-1)).toEqual([""]);
+  w.unmount();
+});
+
+it("a venda usa o mesmo seletor de dia e horário do reagendar, com o limite de dias da casa", async () => {
+  const w = await mountSuspended(PosScheduleModal, { props });
+  const picker = w.findComponent(PosSchedulePicker);
+  expect(picker.exists()).toBe(true);
+  expect(picker.props("maxDate")).toBe("2026-10-12");
+  w.unmount();
+});
+
+it("a venda avisa quando a janela escolhida ficou impossível", async () => {
+  const w = await mountSuspended(PosScheduleModal, {
+    props: {
+      ...props,
+      deliveryDate: "2026-09-12",
+      deliveryTimeSlot: "slot-09",
+      windows: [{ ref: "slot-09", label: "A partir das 9h", enabled: false, reason: "A baguete sai às 12:00." }],
+    },
+  });
+  expect(document.querySelector("[data-schedule-conflict]")?.textContent).toContain("A baguete sai às 12:00.");
   w.unmount();
 });
