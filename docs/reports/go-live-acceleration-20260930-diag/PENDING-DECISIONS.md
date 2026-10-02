@@ -551,3 +551,40 @@ Produção (quatro, mesmo gesto de "dia de trabalho"); B.I. e Marketing por últ
 de datas e estão fora do go-live (D-017).
 **[INFERÊNCIA]** que os três do PDV divergem entre si no comportamento: o inventário mediu que são
 distintos no código, não comparou o que cada um faz.
+## Atualização de 02/10 (noite): perguntas novas do turno do coordenador noturno
+
+> Threads, Jev e chá com sabor: ver D35, D36 e D34 acima (sessão "Turno: observações do dono"); o documento com o detalhe é `docs/reports/go-live-acceleration-20261002/RESPOSTAS-INTEGRACOES.md` (#1355).
+
+## D38. GitHub Actions não pode abrir PR
+
+**Contexto.** A rotina semanal da base de cidades (GeoLite2) criou o branch e falhou ao abrir o PR:
+"GitHub Actions is not permitted to create or approve pull requests" (run 36712010326). O
+coordenador abriu à mão (#1356). Vai repetir toda quarta.
+**Onde:** GitHub > Settings > Actions > General > Workflow permissions > "Allow GitHub Actions to
+create and approve pull requests". É configuração de segurança do repositório: é sua.
+**Recomendação:** ligar.
+
+## D39. Três itens "pós-v1" com o corte D-017
+
+**Contexto.** Lido ao pé da letra, "fora só Marketing e B.I." traria para o go-live o teleporte de
+endereço, a avaliação do cliente e o mudar telefone, que o `PRODUCT-V1-SCOPE-BACKLOG.md` mantém como
+pós-v1 e que nunca foram frentes da proposta de corte.
+**Recomendação:** continuam fora (nenhum é condição de venda).
+
+## D40. Receitas pela Fx: perguntas 13 a 15 e o aval do plano
+
+**Contexto.** Proposta de estrutura na seção C do `docs/plans/WP-RECEITAS-DO-DONO.md` (#1358).
+13) A farinha Biorgânica (Especial e Integral) é comprada hoje? Sem SKU no sistema, as quatro versões
+não publicam. 14) Água → `AGUA-FILTRADA`, cultura do levain → `LEVAIN-LIQUIDO`, Azeito de Oliva EA →
+`AZEITE-EXTRAVIRGEM`: certo? 15) Com a Fx valendo, a Tradição deixa de usar a Pasta Autolizada e o
+malte? E o **aval escrito** para executar o plano da seção C.7 (nada foi executado). As perguntas 5 a
+12 do WP continuam abertas.
+
+## D41. Concierge: o passo 2 é seu
+
+**Contexto.** Passos 0 e 1 prontos (`WHATSAPP-CONCIERGE-PLAN.md`). O passo 2 para em três coisas
+suas: a FAQ tem 14 perguntas e **0 publicadas** (a busca só lê as publicadas,
+`public_information.py:128,146`), tela `/admin/shop/faqentry/`; a copy `CONCIERGE_GREETING` e a de
+handoff em `/admin/settings/copy/`; e, no ManyChat, o External Request em toda mensagem e a pausa
+com `concierge_handoff == "1"`. Depois: `observe` → `assist` e `SHOPMAN_CONCIERGE_ENABLED=true`
+juntos, no painel (escrita no spec vivo: sua).

@@ -793,3 +793,48 @@ os `_v2` forem aprovados; o nome `_v2` fica (o código liga evento a flow, não 
 
 **Prova.** `docs/reference/whatsapp-templates-meta.md` (corpos marcados "aprovado pelo dono em
 02/10/2026"); envio no ManyChat registrado no HANDOFF.
+
+---
+
+## D-024 · Dependabot do grupo `python-runtime` fechado (#1340)
+
+- **Estado:** `EXECUTADA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** —
+
+**Decisão.** Fechar o #1340: reprova por construção. `pydantic==2.13.5` (constraints.txt:116) exige
+`pydantic_core==2.46.5` exato, e `django-unfold 0.108` fura o teto deliberado `<0.108`
+(pyproject.toml:36), que o gate do Admin confere contra o inventário. Os outros 11 pacotes voltam no
+próximo ciclo do Dependabot. Subir o Unfold é WP própria (issue #574).
+
+**Prova.** Run 36872235671: `ResolutionImpossible`; comentário de fechamento no #1340.
+
+---
+
+## D-025 · Drafts #1220 a #1223 fechados; três branches locais já no `main` apagadas
+
+- **Estado:** `EXECUTADA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** —
+
+**Decisão.** #1220 superado pelo #1233; #1221 e #1222 pelo #1231 (e #1246); #1223 fechado com o
+conteúdo único preservado no branch remoto `codex/root-local-docs-recovery-20260928` (o
+`WHATSAPP-LOGIN-UX-PLAN.md` propõe SMS principal, contra a decisão vigente de WhatsApp primário). As
+branches locais `codex/storefront-focus-ruler-20260928`, `codex/wp-checkout-map-confirmation-20260928`
+e `codex/pos-orders-ux-before-evidence` foram apagadas: `git cherry` deu "-" em todos os commits
+(equivalentes no `main`: 1fe545b69, 5627bb6e2, d79e0eeb5, 31cbb4df9, 7cbcee349). Nenhuma branch remota
+apagada. `codex/print-layouts-20260912` fica: já triada no #1120 (DANFE entrou pelo #1227; o redesign
+visual espera aprovação visual do dono).
+
+**Prova.** Comentários de fechamento nos PRs; `git cherry` registrado acima.
+
+---
+
+## D-026 · Drift do spec em `[FAIL]` por `SHOPMAN_COURIER_ADAPTER` é o desenho do D-020
+
+- **Estado:** `DECIDIDA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** quando a chave entrar no arquivo
+
+**Decisão.** Não declarar exceção no `check_do_spec_drift.py`. Com o interruptor ligado no painel e
+fora do arquivo (D-020), o drift acusa `[FAIL]` só nessa chave, e é o que o teste exige
+(`shopman/shop/tests/test_do_spec_drift_check.py:99-103`): um `apps update --spec` com o arquivo de
+hoje DESLIGARIA a entrega por parceiro. O HANDOFF dizia `[OK]`, que valia antes de o dono ligar a
+chave. Regra: nenhum `apps update --spec` sem repor a chave à mão.
+
+**Prova.** `check_do_spec_drift.py --context shopman-do-app-admin` em 02/10: `[FAIL]` com uma única
+divergência, `SHOPMAN_COURIER_ADAPTER` só no vivo (relatório da Frente 3 deste turno).
