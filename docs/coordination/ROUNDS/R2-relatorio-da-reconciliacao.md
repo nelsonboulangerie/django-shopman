@@ -3,8 +3,8 @@
 - **id:** R2
 - **sessão:** relatorio-entrega-4 (Claude)
 - **branch:** `claude/relatorio-entrega-4-dc88bc`
-- **PR:** ver o PR deste branch (a linha do BOARD não entra: ver "O que mudou")
-- **estado final:** na fila (número no PR)
+- **PR:** #1376 (a linha do BOARD não entra: ver "O que mudou")
+- **estado final:** na fila, #1376
 - **início / fim (UTC):** 2026-10-02 15:50 / 2026-10-02 16:30
 
 Conferência feita contra `origin/main` = `bddd02693` (#1375), 02/10 15:55 UTC. A ordem original
