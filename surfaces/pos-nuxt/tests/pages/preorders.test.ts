@@ -145,6 +145,7 @@ beforeEach(() => {
       edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-edit" },
     },
     managers: [{ username: "gerente", name: "Gerente" }],
+    cancellation_presets: [],
   };
   found = {
     ok: true, query: "ana", today: "2026-09-26", include_completed: false, completed_days: 30,
@@ -440,6 +441,27 @@ describe("Detalhe — cancelar", () => {
     await settle();
     expect(body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!.value).toBe("Cliente desistiu");
     expect(call).not.toHaveBeenCalled();
+  });
+
+  it("os motivos prontos do Gestor chegam ao balcão: um toque escolhe o motivo enviado", async () => {
+    detail.cancellation_presets = [
+      { label: "Cliente", presets: ["Cliente desistiu"] },
+      { label: "", presets: ["Pedido em duplicidade"] },
+    ];
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    const chips = [...body().querySelectorAll<HTMLButtonElement>("[data-reason-preset]")];
+    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(["Cliente desistiu", "Pedido em duplicidade"]);
+    expect(body().querySelector("[data-testid='reason-other']")).not.toBeNull();
+    chips[0]!.click();
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
+    await settle();
+
+    const [path, options] = call.mock.calls[0]!;
+    expect(path).toBe("/api/v1/backstage/orders/NB-7/cancel/");
+    expect(options.body).toMatchObject({ reason: "Cliente desistiu" });
   });
 
   it("sem permissão para cancelar, não há botão", async () => {
