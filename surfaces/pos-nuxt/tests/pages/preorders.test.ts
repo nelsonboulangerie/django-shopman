@@ -542,6 +542,13 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
     expect(wrapper.find("[data-preorder-comment-shortcut]").exists()).toBe(false);
   });
 
+  it("P5: uma etiqueta de estado só, a do balcão; a do pedido (a do Gestor) não aparece no PDV", async () => {
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.findAll("[data-preorder-situation]")).toHaveLength(1);
+    expect(wrapper.find("[data-order-status]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Aceito");
+  });
+
   it("sem permissão para cancelar, o pé do painel some junto com o botão", async () => {
     detail.counter.cancel = { allowed: false, requires_approval: false, block_reason: "" };
     const wrapper = await mount(DetailPage);

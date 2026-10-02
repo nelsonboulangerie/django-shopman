@@ -20,6 +20,8 @@
 //   a própria tela de venda em modo edição (`/?edit=<ref>`); com a NFC-e já
 //   autorizada o servidor fecha a edição e o gesto vira **Cancelar e refazer**;
 // - o atalho **Comentar no histórico**, que leva ao campo do kit;
+// - uma etiqueta de estado só, a do balcão (P5 do dono, 02/10): o resumo do kit
+//   vem sem a etiqueta de status do pedido (`show-status`), que o Gestor mantém;
 // - os diálogos de cada gesto.
 import { toast } from "vue-sonner";
 
@@ -312,6 +314,7 @@ function goBack() {
             class="min-w-0 lg:col-start-1 lg:row-start-1"
             :order="detail"
             :busy="actions.busy.value"
+            :show-status="false"
             @comment="submitComment"
           />
         </div>
