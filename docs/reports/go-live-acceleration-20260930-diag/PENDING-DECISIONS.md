@@ -46,6 +46,19 @@
 |---|---|
 | D32 | ✅ Decidido: "aprovo a triagem" (opção 1, triagem completa). Implementada no #1347. Registro: D-018 em `docs/coordination/DECISIONS.md`; mapeamento e sequência para ligar em `docs/plans/WHATSAPP-CONCIERGE-PLAN.md` |
 
+## Atualização de 02/10 (dia): respondidas pelo dono, achadas na reconciliação
+
+> Ninguém tirou estas da lista quando foram respondidas; a reconciliação de 02/10 (R0,
+> `docs/coordination/ROUNDS/R0-reconciliar-handoff.md`) achou a resposta no `main` e no vivo.
+> A fonte de cada uma é a mensagem do commit citado; não há registro `D-0xx` em `DECISIONS.md`.
+
+| # | Estado |
+|---|---|
+| D34 | ✅ Opção 1 aprovada ("cartão de escolha", chás da casa): #1365 (`ec34787d9`). E foi além: "Escolhas no produto" fase 1 (sabor obrigatório e adicionais com preço, `Product.metadata["option_groups"]`), aprovada em 02/10: #1374 |
+| D36 | ✅ Na prática, opção 1: `JEV_API_KEY` e `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` estão no vivo (drift de 02/10, só no painel) e o placar rodou no alpha (44 chamadas ao Jev, HTTP 400 pelo formato; corrigido no #1373). Não achei a resposta escrita do dono |
+| D37 | ✅ Decidido: dois controles do kit (`OperatorDayPicker`, `OperatorPeriodPicker`). Fase 1 #1371 (PDV, B.I.), fase 2 #1372 (Encomendas, Produção, Compras). Resta só o Marketing, fora do go-live |
+| D40 | ✅ Aval dado e perguntas respondidas: Biorgânica Especial → `FARINHA-NOVARA-T55`, Integral → `FARINHA-INTEGRAL-ORGANICA`; Tradição sem malte, toda a farinha pela Pasta Autolizada ("dono, 02/10"); 14 fichas publicadas no alpha e no seed (#1370, `67f4f7700`). O comando de importação segue no #1367, vermelho |
+
 ## D17 — Balcão: "1 linha = 1 data" NÃO existe hoje
 
 **Contexto.** A premissa era "a comanda pode ter linhas de datas diferentes, e isso já funciona". A
