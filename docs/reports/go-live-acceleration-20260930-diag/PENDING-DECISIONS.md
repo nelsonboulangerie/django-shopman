@@ -614,6 +614,7 @@ tiver mudado, como o checkout da loja já faz (`expected_total_q`, `shop/service
 (sim / não)
 **Recomendação:** sim, depois do go-live. Não é urgente: com a trava desta frente, o total que a tela
 mostra ao lançar já é o revisado.
+**Respondida pelo dono em 02/10 (chat): sim, agora. Entregue no PR #1389.**
 
 ## D43. PDV > Encomendas: o redesenho (brief da Frente 6 do turno de 02/10)
 
