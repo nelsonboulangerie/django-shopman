@@ -1188,6 +1188,19 @@ defineExpose({
     emit("addTender", ref);
     return true;
   },
+  /** "=" é o Exato do teclado físico. Passa pela mesma porta do botão: com a
+   *  revisão do total em trânsito, a linha assumiria o total interino (sem o
+   *  desconto que acabou de mudar) e ninguém a redimensionaria depois. Devolve
+   *  se consumiu a tecla. */
+  pressExact: () => {
+    const awaiting = awaitingReviewReason();
+    if (awaiting) {
+      toast.info(awaiting);
+      return true;
+    }
+    emit("tenderExact");
+    return true;
+  },
   /** I e M — os dois canais do comprovante, pela letra. Com o F do CPF, são as
    *  três teclas da seção Nota fiscal, e `methodShortcuts` reserva as três para
    *  que nenhuma forma de pagamento nova as tome pela inicial do rótulo.
@@ -1461,9 +1474,9 @@ defineExpose({
             <button
               type="button"
               class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
-              :disabled="!numpadActive"
+              :disabled="!numpadActive || !!awaitingReviewReason()"
               aria-label="Exato: a linha assume o restante"
-              title="A forma selecionada assume o que falta para cobrir o total (=)"
+              :title="awaitingReviewReason() || 'A forma selecionada assume o que falta para cobrir o total (=)'"
               @click="$emit('tenderExact')"
             >
               <span>Exato</span>
