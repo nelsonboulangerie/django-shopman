@@ -18,7 +18,7 @@ Estados: `LIVRE` · `EM_EXECUCAO` · `EM_PR` · `AGUARDA_DONO` · `ADIADO`.
 `FEITO` não fica aqui: o histórico é do HANDOFF e o detalhe é de
 `docs/coordination/ROUNDS/<id>-<slug>.md`.
 
-Conferido contra o remoto em 2026-10-02 15:55 UTC (`origin/main` = `bddd02693`, #1375). Registros:
+Linhas do turno conferidas em 2026-10-02 17:05 UTC (fila de merge e `gh pr view`). Quadro conferido contra o remoto em 2026-10-02 15:55 UTC (`origin/main` = `bddd02693`, #1375). Registros:
 `ROUNDS/R0-reconciliar-handoff.md` (a conferência do HANDOFF) e `ROUNDS/R2-relatorio-da-reconciliacao.md`
 (o que o R0 e este quadro ainda erravam). O `make coordination` acusa linha `EM_PR` cujo PR já saiu:
 ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
@@ -27,17 +27,12 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| R1 | Receitas: comando `import_recipe_versions` (C.7 do WP-RECEITAS-DO-DONO) | `EM_PR` **vermelho** | Coordenador noturno 02/10 (achada pela busca de transcrições; o relatório dela diz "na fila de merge", e não está) | #1367 (`claude/receitas-fx-import`) | 2026-10-02 09:12 |
+| T6 | PDV > Encomendas: brief do redesenho | `AGUARDA_DONO` (P1 a P7 do brief) | coordenacao-pedidos-4f89d4 | #1379, `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` | 2026-10-02 16:29 |
+| T7 | Primitivas no kit (`OperatorSchedulePicker`, `OperatorReasonDialog`) | `AGUARDA_DONO` (aval do brief T6) | nada | nada | 2026-10-02 16:29 |
 
-**R1 está parado desde 09:25 UTC.** Auto-merge ligado, `BLOCKED`. Causa: o comando novo importa
-interno do kernel, `import_recipe_versions.py:60` → `shopman.craftsman.contrib.formula.percentages`
-(`test_architecture.py::test_no_deep_kernel_imports_all_apps` e
-`test_import_boundaries.py::test_framework_does_not_import_protected_kernel_internals`, run
-36988496707). Reprovam por isso "Shop rest", "Shop heavy", "Testes (test-shop)" e "Coverage Gate".
-O vermelho do "Marketing — cadeia completa" é o `node-forge` (D-027, não obrigatório). Próximo
-passo: trocar o import pela porta pública do Craftsman, como o #1374 fez em `7979427a1`. As 14
-fichas já estão publicadas no alpha e no seed (#1370): o comando é para a próxima importação, não
-segura o go-live.
+**Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
+desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
+#1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`.
 
 ## Fila livre (ninguém pegou)
 
