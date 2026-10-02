@@ -107,7 +107,7 @@ describe("statusTone", () => {
     expect(statusTone("whatever")).toBe("neutral");
   });
   it("toneBadge returns a class string per tone", () => {
-    expect(toneBadge("danger")).toContain("red");
+    expect(toneBadge("danger")).toContain("text-destructive");
     expect(toneBadge("neutral")).toContain("muted");
   });
 });
