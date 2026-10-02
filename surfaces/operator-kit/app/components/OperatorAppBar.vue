@@ -73,7 +73,9 @@ watch(active, () => nextTick(revealActiveTab));
 
     <!-- min-w-0 + overflow-x-auto: no celular a nav rola DENTRO de si mesma. Sem isso
          ela empurra o cabeçalho e a página inteira ganha rolagem horizontal. -->
+    <!-- Sem seções (a tela tem um destino só), a barra não desenha a cápsula vazia. -->
     <nav
+      v-if="sections.length"
       ref="nav"
       class="flex min-w-0 items-center gap-1 overflow-x-auto rounded-md bg-muted p-1"
       :aria-label="label"

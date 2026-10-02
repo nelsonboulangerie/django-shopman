@@ -5,7 +5,10 @@ import { computed, reactive, ref } from "vue";
 
 import DetailPage from "~/pages/preorders/[ref].vue";
 import PreordersPage from "~/pages/preorders/index.vue";
+import { TO_RECEIVE_CLASS } from "~/presentation/preorders";
 import type { PreorderCard, PreorderDetail, PreorderListResponse, PreorderSearchResponse } from "~/types/preorders";
+
+import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 
 import { makeProjection } from "../composables/_posSaleHarness";
 
@@ -165,7 +168,7 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     expect(text).toContain("Ana Souza");
     expect(wrapper.find("[data-order-detail]").attributes("data-order-context")).toBe("pos");
     expect(wrapper.find("[data-preorder-situation]").text()).toBe("A pagar");
-    expect(wrapper.find("[data-preorder-money]").text()).toBe("R$ 36,00 a receber");
+    expect(wrapper.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
     expect(wrapper.find("[data-order-items]").text()).toContain("Pão");
     expect(text).toContain("Sem açúcar");
     expect(wrapper.find("[data-kitchen-note]").text()).toContain("Separar antes das 9h");
@@ -446,13 +449,13 @@ describe("Encomendas — a semana no centro", () => {
     expect(wrapper.findAll("[data-week-board]")).toHaveLength(1);
     expect(wrapper.find("[data-week-grid]").findAll("[data-preorder]")).toHaveLength(2);
     expect(wrapper.find("[data-preorders-summary] p").text()).toBe("2 encomendas · R$ 60,00");
-    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber: R$ 36,00");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber R$ 36,00");
   });
 
   it("o card da grade: saldo em destaque ou 'pago', e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
-    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00 a receber");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("A receber R$ 36,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00 pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
@@ -491,6 +494,44 @@ describe("Encomendas — a semana no centro", () => {
     const wrapper = await mount(PreordersPage);
     expect(wrapper.find("[data-preorders-empty]").text()).toBe("Nenhuma encomenda nesta semana.");
     expect(wrapper.find("[data-preorders-print]").exists()).toBe(false);
+  });
+});
+
+describe("Encomendas — um controle por estado, uma porta por destino", () => {
+  it("R1: Dia | Semana mora só no Período; a barra do topo não tem abas", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-app-bar]");
+    expect(bar.exists()).toBe(true);
+    expect(bar.find("nav").exists()).toBe(false);
+    expect(bar.findAll("[data-section]")).toHaveLength(0);
+    expect(wrapper.find("[data-period-next]").exists()).toBe(true);
+  });
+
+  it("R2: a barra diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-app-bar]");
+    expect(bar.find("[data-preorders-title]").text()).toBe("Encomendas");
+    expect(bar.findAll("a")).toHaveLength(0);
+  });
+
+  it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período, no dia e na encomenda", async () => {
+    const wrapper = await mount(PreordersPage);
+    const period = wrapper.find("[data-preorders-to-receive]");
+    const day = wrapper.find("[data-week-day-to-receive]");
+    const row = wrapper.find('[data-preorder="NB-7"] [data-preorder-money]');
+    for (const node of [period, day, row]) {
+      expect(node.text()).toBe("A receber R$ 36,00");
+      expect(node.classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+    }
+  });
+
+  it("R4: o selo de situação é a peça do kit, na linha e no detalhe", async () => {
+    const list = await mount(PreordersPage);
+    expect(list.find('[data-preorder="NB-7"] [data-preorder-situation]').classes())
+      .toEqual(expect.arrayContaining(toneBadge("warning").split(" ")));
+    const detail = await mount(DetailPage);
+    expect(detail.find("[data-preorder-situation]").classes())
+      .toEqual(expect.arrayContaining(toneBadge("warning").split(" ")));
   });
 });
 
@@ -539,11 +580,15 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
     expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
   });
 
-  it("filtro que esvazia a semana diz o que não há e oferece mostrar todas", async () => {
+  it("filtro que esvazia a semana diz o que não há; limpar é gesto da barra, e só dela", async () => {
     const wrapper = await mount(PreordersPage);
     route.query.pay = "on_account";
     await flushPromises();
-    expect(wrapper.find("[data-preorders-filter-empty]").text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    const empty = wrapper.find("[data-preorders-filter-empty]");
+    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    // R5: o vazio não repete o "limpar" da barra (antes: um "Mostrar todas" aqui).
+    expect(empty.find("button").exists()).toBe(false);
+    expect(wrapper.find('[data-filter-chip="pay"] [data-filter-remove]').exists()).toBe(true);
     expect(wrapper.find("[data-preorders-print]").text()).toBe("Nenhuma via para imprimir");
   });
 
@@ -551,6 +596,17 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
     week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
     const wrapper = await mount(PreordersPage);
     expect(wrapper.find("[data-preorders-check-notice]").text()).toContain("1 encomenda está com o pagamento a conferir");
+  });
+
+  it("'Mostrar só essas' liga o recorte, e a volta é o X do chip: o aviso não vira segundo 'limpar'", async () => {
+    week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
+    const wrapper = await mount(PreordersPage);
+    await wrapper.find("[data-preorders-check-only]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ pay: "check" });
+    expect(wrapper.find("[data-preorders-check-notice]").exists()).toBe(false);
+    expect(wrapper.find('[data-filter-chip="pay"]').text()).toContain("A conferir");
+    expect(wrapper.text()).not.toContain("Mostrar todas");
   });
 });
 
