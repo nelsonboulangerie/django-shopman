@@ -231,7 +231,7 @@ def jev_http_error(response, body: dict) -> str:
     """Mensagem de falha HTTP do Jev: tipo e mensagem do erro e a forma do pedido."""
     try:
         detail = response.json().get("detail")
-    except Exception:
+    except (ValueError, AttributeError):  # corpo sem JSON ou JSON que não é objeto
         detail = None
     if isinstance(detail, dict):
         reason = f"{detail.get('error_type', '?')}: {detail.get('message', '?')}"
