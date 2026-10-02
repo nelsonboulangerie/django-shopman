@@ -22,7 +22,6 @@ da conferência está em `ROUNDS/R0-reconciliar-handoff.md`.
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| R0 | Reconciliar o HANDOFF; comando de estado; este BOARD | `EM_PR` | reconciliar-handoff-estado | #1375 (`claude/reconciliar-handoff-estado-308593`) | 2026-10-02 14:48 |
 | R1 | Receitas: comando `import_recipe_versions` (C.7 do WP-RECEITAS-DO-DONO) | `EM_PR` **vermelho** | não identificada | #1367 (`claude/receitas-fx-import`) | 2026-10-02 09:12 |
 
 **R1 está parado desde 09:25 UTC.** Auto-merge ligado, `BLOCKED`. Causa: o comando novo importa
