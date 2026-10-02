@@ -102,7 +102,7 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
             @click="goToStep(index)"
           >
             <span
-              class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px]"
+              class="grid size-6 shrink-0 place-items-center rounded-full border text-xs"
               :class="step.key === current ? 'border-primary bg-primary text-primary-foreground' : step.ready ? 'border-success text-success' : 'border-border'"
             >
               <Icon v-if="step.ready" name="lucide:check" class="size-3.5" />
