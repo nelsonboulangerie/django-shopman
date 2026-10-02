@@ -629,3 +629,9 @@ que ainda não saiu? (2) · P3) No detalhe, o saldo e os botões ficam num paine
 detalhe do PDV fica só a etiqueta do balcão, e o Gestor não muda? (sim) · P6) A seção ganha um botão
 "Nova encomenda"? (sim) · P7) O cancelar no balcão usa os mesmos motivos prontos do Gestor? Pede uma
 mudança pequena no servidor. (sim). As primitivas do kit (Frente 7) esperam este aval.
+
+**Respondida pelo dono em 02/10 (chat):** P1 sim · P2 = 2 (o lote imprime só o que ainda não saiu) ·
+P3 sim · P4 = 1 (o seletor de dia e horário é peça do PDV agora; o `OperatorSchedulePicker` no kit
+fica para quando houver um segundo app consumidor) · P5 sim · P6 sim · P7 sim. O brief está aprovado;
+as fatias S2 a S9 entram em execução (BOARD, linhas S*).
+
