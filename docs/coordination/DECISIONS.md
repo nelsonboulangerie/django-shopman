@@ -838,3 +838,19 @@ chave. Regra: nenhum `apps update --spec` sem repor a chave à mão.
 
 **Prova.** `check_do_spec_drift.py --context shopman-do-app-admin` em 02/10: `[FAIL]` com uma única
 divergência, `SHOPMAN_COURIER_ADAPTER` só no vivo (relatório da Frente 3 deste turno).
+
+---
+
+## D-027 · `npm audit` vermelho pelo `node-forge`: esperar a correção upstream
+
+- **Estado:** `DECIDIDA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** quando sair `node-forge` > 1.4.0
+
+**Decisão.** Não silenciar a auditoria nem criar mecanismo de exceção novo. O job "Marketing — cadeia
+completa" (não está entre os 23 obrigatórios de `.github/required-status-checks.json`) fica vermelho
+no passo "Audit operator-kit supply chain" até o `node-forge` publicar correção. Não há para onde
+subir: a cadeia `nuxt` → `@nuxt/cli` 3.37.0 → `listhen` 1.10.1 → `node-forge` 1.4.0 já está na última
+versão, e o `fixAvailable` do npm é rebaixar o Nuxt de major (proibido em
+`docs/plans/NUXT-45-MIGRATION-PLAN.md:343`).
+
+**Prova.** Run 36944715176 (PR #1358): 7 high, todas GHSA-86w9-cpqp-85rv (`<= 1.4.0`,
+`first_patched_version: None` na API de advisories); `npm view node-forge versions` termina em 1.4.0.

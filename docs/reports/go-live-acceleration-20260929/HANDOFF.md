@@ -34,7 +34,7 @@
 | 2 e 3: Concierge (passos 0 e 1), corte de escopo sem contradição, pré-flight, matriz de prontidão | este PR | documentos corrigidos (ver 0.4) |
 | 4: Receitas: estrutura a partir da Fx (sem números) | #1358 | na fila; perguntas 13 a 15 e o aval em D39 |
 | ManyChat: 5 modelos, apagar 3 de Marketing, flows (§0d.1b itens 1 a 3) | #1361 (estado) | **BLOQUEADO**: o acesso ao Chrome para trazer a aba à frente foi negado duas vezes (`request_access` → `user_denied`, 21:20 e de novo pelo coordenador); com a aba em segundo plano (`visibilityState` "hidden") o formulário apaga a digitação. Lido às 21:20: os 5 não existem; `pedido_em_preparo` e `reembolso_processado` já APROVADOS (Utility). Padrão dos botões e campos anotado em `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
-| CI: `npm audit` acusa `node-forge` (7 high, via `listhen` ← `@nuxt/cli`) no job "Marketing — cadeia completa" (não obrigatório) | em curso | agente dedicado; ver o PR `claude/npm-audit-node-forge` |
+| CI: `npm audit` acusa `node-forge` (7 high, via `listhen` ← `@nuxt/cli`) no job "Marketing — cadeia completa" (não obrigatório) | sem PR | **ADIADO, motivo técnico** (D-027): GHSA-86w9-cpqp-85rv não tem versão corrigida (`first_patched_version: None`; última publicada `node-forge` 1.4.0, já travada nos 10 locks); `npm audit fix --force` rebaixaria o Nuxt de major. O job não é obrigatório: não segura a fila. Reabrir quando sair o 1.4.1 |
 | Handoff do turno anterior (pendências vivas) | #1352 | na fila (este PR já está por cima dele) |
 
 ### 0.2 Loja (#1354), o que mudou
