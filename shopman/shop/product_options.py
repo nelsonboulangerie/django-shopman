@@ -188,10 +188,13 @@ class OptionDefinitionError(ValueError):
 
 
 def _recipe_units() -> dict[str, str]:
-    from shopman.craftsman.models.recipe import RECIPE_ITEM_UNIT_VALUES
+    from shopman.craftsman.models import RecipeItem
     from shopman.utils import units
 
-    return {units.normalize(value): value for value in RECIPE_ITEM_UNIT_VALUES}
+    # As unidades das fichas são as choices do ``RecipeItem.unit``
+    # (``RECIPE_ITEM_UNIT_VALUES`` no Craftsman), lidas pela porta pública.
+    values = [value for value, _label in RecipeItem._meta.get_field("unit").choices]
+    return {units.normalize(value): value for value in values}
 
 
 def _decimal_text(value) -> str | None:
