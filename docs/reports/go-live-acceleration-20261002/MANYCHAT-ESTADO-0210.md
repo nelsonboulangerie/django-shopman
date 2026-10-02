@@ -108,3 +108,15 @@ gerar o pagamento do seu pedido {{cuf_15003507}}. Qualquer dúvida, estamos à d
 Chrome visível (janela sem nada por cima, não só a aba na frente) por ~20 minutos: faltam 4
 modelos, depois os flows de `pedido_em_preparo`, `reembolso_processado` e dos que forem
 aprovados.
+
+## Segunda tentativa (02/10/2026, 08:21 a 08:28 BRT)
+
+Avisado que o Chrome estava aberto no ManyChat, visível. A única aba do grupo controlado
+(`tabId 965338406`, a de "Criar modelo") leu `document.visibilityState == "hidden"` e
+`document.hasFocus() == false` em todas as leituras, de 08:21:39 a 08:28:44. A sondagem
+seguinte foi barrada pelo classificador de permissões. Provável causa: o ManyChat visível é
+outra aba ou janela, fora do grupo que a extensão controla. Nada enviado, nenhum flow
+criado, `MANYCHAT_FLOW_MAP` sem alteração.
+
+Para destravar: trazer à frente a própria aba "Criar modelo" do grupo do Claude (não abrir
+uma nova), com a janela sem nada por cima.
