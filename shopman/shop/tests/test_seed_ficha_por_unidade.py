@@ -96,12 +96,13 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
 #: insumos, número de linhas). Uma fórmula por unidade não quer dizer nada — 1 kg
 #: de Massa Tradição não é "uma" de nada.
 FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
-    "creme-levain": ("5", "5.100", 3),
+    # As quatro da aba Fx (dono, 02/10/2026): cópia da versão publicada no alpha.
+    "creme-levain": ("3", "3.000", 4),
     "massa-pasta-autolizada": ("8.4", "8.500", 2),
     "massa-yudane": ("1.9", "2.000", 2),
-    "massa-tradicao": ("10", "10.020", 4),
-    "massa-campagne": ("10", "10.700", 6),
-    "massa-ciabatta": ("10", "10.828", 5),
+    "massa-tradicao": ("1.84", "1.840", 4),
+    "massa-campagne": ("1.8", "1.800", 6),
+    "massa-ciabatta": ("2.02", "2.020", 5),
     "massa-forma": ("8.2", "8.554", 7),
     "massa-croissant": ("9", "9.456", 7),
     "massa-brioche": ("8", "8.040", 6),
@@ -141,6 +142,13 @@ RENDIMENTO_ANTES_DA_FICHA_DA_CASA: dict[str, str] = {
     "salada-da-casa": "1.8",
     "vinagrete-frances": "0.9",
     "creme-leite-ovos": "2",
+    # Mudaram de receita em 02/10/2026, pela aba Fx da planilha de custos
+    # (versão publicada no alpha, `<ref>@2`; «Seed: sim» do dono). A régua da
+    # capacidade continua o rendimento de antes.
+    "creme-levain": "5",
+    "massa-tradicao": "10",
+    "massa-campagne": "10",
+    "massa-ciabatta": "10",
 }
 
 #: Fichas que NASCERAM com a ficha da casa: não há rendimento de antes, e a

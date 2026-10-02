@@ -48,7 +48,7 @@ DENSIDADES = {
 # morta, e se um dia a água vier numa nota a R4 trava e alguém declara ali.
 COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 
-# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 29 linhas: toda
+# (ficha, insumo) → quantidade EM LITRO do cadastro anterior. 25 linhas: toda
 # ocorrência dos quatro insumos no seed, receitas e pré-preparos.
 #
 # ⚠️ Eram 37 até 23/09/2026. A linha que saiu é `("creme-chocolate", "LEITE-INTEGRAL-A")`,
@@ -64,12 +64,8 @@ COMPRADOS_EM_LITRO = ("LEITE-INTEGRAL-A", "AZEITE-EXTRAVIRGEM", "NATA-FRESCA")
 # produto"), e a ficha foi junto. Não é conversão desfeita — é ficha que não
 # existe mais.
 QUANTIDADES_EM_LITRO = {
-    ("creme-levain", "AGUA-FILTRADA"): Decimal("1.700"),
     ("massa-pasta-autolizada", "AGUA-FILTRADA"): Decimal("3.500"),
     ("massa-yudane", "AGUA-FILTRADA"): Decimal("1.000"),
-    ("massa-campagne", "AGUA-FILTRADA"): Decimal("3.500"),
-    ("massa-ciabatta", "AGUA-FILTRADA"): Decimal("4.000"),
-    ("massa-ciabatta", "AZEITE-EXTRAVIRGEM"): Decimal("0.250"),
     ("massa-forma", "LEITE-INTEGRAL-A"): Decimal("1.800"),
     ("massa-croissant", "LEITE-INTEGRAL-A"): Decimal("1.200"),
     ("massa-kuropan", "LEITE-INTEGRAL-A"): Decimal("1.800"),
@@ -123,6 +119,16 @@ NASCIDAS_EM_KG = {
     ("focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.012"),
     ("mini-focaccia-alecrim", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
     ("mini-focaccia-cebola-bacon-tomilho", "AZEITE-EXTRAVIRGEM"): Decimal("0.008"),
+    # ⚠️ Quatro linhas saíram de `QUANTIDADES_EM_LITRO` em 02/10/2026, e saíram
+    # porque a RECEITA mudou: Levain, Campagne e Ciabatta passaram a ser as da
+    # aba Fx da planilha de custos, que pesa a água e o azeite (versão publicada
+    # no alpha, `<ref>@2`; «Seed: sim» do dono). A água da Massa Tradição entrou
+    # pela mesma fórmula.
+    ("creme-levain", "AGUA-FILTRADA"): Decimal("1.000"),
+    ("massa-tradicao", "AGUA-FILTRADA"): Decimal("0.020"),
+    ("massa-campagne", "AGUA-FILTRADA"): Decimal("0.680"),
+    ("massa-ciabatta", "AGUA-FILTRADA"): Decimal("0.800"),
+    ("massa-ciabatta", "AZEITE-EXTRAVIRGEM"): Decimal("0.050"),
 }
 
 # O cadastro guarda três casas. Arredondar ali desloca a massa em no máximo meio

@@ -238,6 +238,178 @@ PRODUCTION_PLAN = [
     ("madeleine", Decimal("68"), (9, 0), (13, 0))
 ]
 
+# A proveniência das quatro fichas que vieram da aba Fx da planilha de custos
+# (dono, 02/10/2026), copiada da versão publicada no alpha (`<ref>@2`): rótulo,
+# fonte, as linhas da planilha como estavam e as notas das decisões do dono.
+# A fórmula e a ficha de execução saem de `_seed_recipes`; isto é só o histórico
+# que diz de onde elas vieram, gravado na versão do inventário depois do
+# bootstrap.
+FX_RECIPE_PROVENANCE = {
+    "creme-levain": {
+        "label": "Fórmula da Fx",
+        "source": {
+            "kind": "import",
+            "text": "ANÁLISE_CUSTOS_CVL_2021, aba Fx"
+        },
+        "origin": {
+            "lines": [
+                {
+                    "name": "Farinha de Trigo Especial Biorgânica",
+                    "unit": "kg",
+                    "quantity": "0.5"
+                },
+                {
+                    "name": "Farinha de Trigo Integral Biorgânica",
+                    "unit": "kg",
+                    "quantity": "0.5"
+                },
+                {
+                    "name": "Água",
+                    "unit": "kg",
+                    "quantity": "1.0"
+                },
+                {
+                    "name": "Levain",
+                    "unit": "kg",
+                    "quantity": "1.0"
+                }
+            ],
+            "title": "LEVAIN",
+            "total": {
+                "unit": "kg",
+                "quantity": "3"
+            }
+        },
+        "notes": "Farinha de Trigo Especial Biorgânica entra como FARINHA-NOVARA-T55 (decisão do dono, 02/10/2026). Farinha de Trigo Integral Biorgânica entra como FARINHA-INTEGRAL-ORGANICA, o único integral do sistema."
+    },
+    "massa-campagne": {
+        "label": "Fórmula da Fx",
+        "source": {
+            "kind": "import",
+            "text": "ANÁLISE_CUSTOS_CVL_2021, aba Fx"
+        },
+        "origin": {
+            "lines": [
+                {
+                    "name": "Farinha de Trigo Especial Biorgânica",
+                    "unit": "kg",
+                    "quantity": "0.7"
+                },
+                {
+                    "name": "Farinha de Trigo Integral Orgânico Paullinia",
+                    "unit": "kg",
+                    "quantity": "0.2"
+                },
+                {
+                    "name": "Farinha de Centeio Integral Paullinia",
+                    "unit": "kg",
+                    "quantity": "0.1"
+                },
+                {
+                    "name": "Sal Refinado",
+                    "unit": "kg",
+                    "quantity": "0.02"
+                },
+                {
+                    "name": "Água",
+                    "unit": "kg",
+                    "quantity": "0.68"
+                },
+                {
+                    "name": "LEVAIN",
+                    "unit": "kg",
+                    "quantity": "0.1"
+                }
+            ],
+            "title": "MASSA CAMPAGNE",
+            "total": {
+                "unit": "kg",
+                "quantity": "1.8"
+            }
+        },
+        "notes": "Farinha de Trigo Especial Biorgânica entra como FARINHA-NOVARA-T55 (decisão do dono, 02/10/2026)."
+    },
+    "massa-ciabatta": {
+        "label": "Fórmula da Fx",
+        "source": {
+            "kind": "import",
+            "text": "ANÁLISE_CUSTOS_CVL_2021, aba Fx"
+        },
+        "origin": {
+            "lines": [
+                {
+                    "name": "Farinha de Trigo Especial Biorgânica",
+                    "unit": "kg",
+                    "quantity": "1.0"
+                },
+                {
+                    "name": "Água",
+                    "unit": "kg",
+                    "quantity": "0.8"
+                },
+                {
+                    "name": "Sal Refinado",
+                    "unit": "kg",
+                    "quantity": "0.02"
+                },
+                {
+                    "name": "Azeito de Oliva EA",
+                    "unit": "kg",
+                    "quantity": "0.05"
+                },
+                {
+                    "name": "LEVAIN",
+                    "unit": "kg",
+                    "quantity": "0.15"
+                }
+            ],
+            "title": "MASSA CIABATTA",
+            "total": {
+                "unit": "kg",
+                "quantity": "2.02"
+            }
+        },
+        "notes": "Farinha de Trigo Especial Biorgânica entra como FARINHA-NOVARA-T55 (decisão do dono, 02/10/2026)."
+    },
+    "massa-tradicao": {
+        "label": "Fórmula da Fx",
+        "source": {
+            "kind": "import",
+            "text": "ANÁLISE_CUSTOS_CVL_2021, aba Fx"
+        },
+        "origin": {
+            "lines": [
+                {
+                    "name": "Farinha de Trigo Especial Biorgânica",
+                    "unit": "kg",
+                    "quantity": "1.0"
+                },
+                {
+                    "name": "Água",
+                    "unit": "kg",
+                    "quantity": "0.72"
+                },
+                {
+                    "name": "Sal Refinado",
+                    "unit": "kg",
+                    "quantity": "0.02"
+                },
+                {
+                    "name": "LEVAIN",
+                    "unit": "kg",
+                    "quantity": "0.1"
+                }
+            ],
+            "title": "MASSA TRADIÇÃO",
+            "total": {
+                "unit": "kg",
+                "quantity": "1.84"
+            }
+        },
+        "notes": "A Fx tem uma linha só de custo, sem ingrediente e sem quantidade; ela não virou insumo. Farinha de Trigo Especial Biorgânica entra como FARINHA-NOVARA-T55 (decisão do dono, 02/10/2026). Toda a farinha da mistura final passa pela Pasta Autolizada; sem malte (dono, 02/10/2026)."
+    }
+}
+
 PREP_DAYS_OF_COVER = Decimal("3")
 
 # Capacidade diária de cada ficha — PROVISÓRIA, preservada em valor ABSOLUTO.
@@ -3425,20 +3597,33 @@ class Command(BaseCommand):
 
         recipes_data = [
             # ── Bases (dono, 26/08: "Levain, Pasta Autolizada, Yudane" são
-            # pré-preparos de verdade). Composições PROPOSTAS para a bancada.
+            # pré-preparos de verdade).
+            #
+            # ⚠️ As 14 fichas marcadas «publicada no alpha» são CÓPIA da ficha de
+            # execução publicada no alpha em 02/10/2026 (inventário versionado,
+            # `<ref>@2`): SKU, quantidade, ordem, rendimento e passos. O dono
+            # autorizou («Seed: sim», 02/10) para que um reseed não volte às
+            # versões antigas. Quatro vêm da aba Fx da planilha de custos
+            # (`FX_RECIPE_PROVENANCE`); as outras dez só trocaram SKU antigo
+            # pelo atual, e o seed já falava o atual. Mudar uma delas aqui sem
+            # mudar no sistema é abrir divergência: a fonte é o publicado.
             {
-                # Alimentação 1:1:1 sobre a cultura (LEVAIN-LIQUIDO).
+                # Publicada no alpha (Fórmula da Fx). Sem passos: a versão
+                # publicada não tem.
                 "ref": "creme-levain",
                 "name": "Levain",
                 "output_sku": "LEVAIN",
-                "batch_size": Decimal("5000"),
+                "batch_size": Decimal("3000"),
+                "steps": [],
                 "items": [
-                    ("LEVAIN-LIQUIDO", Decimal("1700")),
-                    ("FARINHA-NOVARA-T55", Decimal("1700")),
-                    ("AGUA-FILTRADA", Decimal("1700"))
+                    ("FARINHA-NOVARA-T55", Decimal("500")),
+                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("500")),
+                    ("AGUA-FILTRADA", Decimal("1000")),
+                    ("LEVAIN-LIQUIDO", Decimal("1000")),
                 ],
             },
             {
+                # Publicada no alpha (SKU corrigido).
                 "ref": "massa-pasta-autolizada",
                 "name": "Pasta Autolizada",
                 "output_sku": "PASTA-AUTOLIZADA",
@@ -3450,6 +3635,7 @@ class Command(BaseCommand):
             },
             {
                 # Farinha escaldada 1:1 — é o que faz Forma e Kuropan macios.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "massa-yudane",
                 "name": "Yudane",
                 "output_sku": "YUDANE",
@@ -3460,42 +3646,49 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # Publicada no alpha (Fórmula da Fx): toda a farinha da mistura
+                # final passa pela Pasta Autolizada, sem malte (dono, 02/10).
                 "ref": "massa-tradicao",
                 "name": "Massa Tradição",
                 "output_sku": "MASSA-TRADICAO",
-                "batch_size": Decimal("10000"),
+                "batch_size": Decimal("1840"),
+                "steps": [],
                 "items": [
-                    ("PASTA-AUTOLIZADA", Decimal("8400")),
-                    ("LEVAIN", Decimal("1500")),
-                    ("SAL-REFINADO", Decimal("100")),
-                    ("MALTE-EXTRATO", Decimal("20"))
+                    ("AGUA-FILTRADA", Decimal("20")),
+                    ("SAL-REFINADO", Decimal("20")),
+                    ("PASTA-AUTOLIZADA", Decimal("1700")),
+                    ("LEVAIN", Decimal("100")),
                 ],
             },
             {
+                # Publicada no alpha (Fórmula da Fx).
                 "ref": "massa-campagne",
                 "name": "Massa Campagne",
                 "output_sku": "MASSA-CAMPAGNE",
-                "batch_size": Decimal("10000"),
+                "batch_size": Decimal("1800"),
+                "steps": [],
                 "items": [
-                    ("FARINHA-NOVARA-T55", Decimal("2500")),
-                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("2500")),
-                    ("FARINHA-CENTEIO-INTEGRAL-ORGANICA", Decimal("600")),
-                    ("AGUA-FILTRADA", Decimal("3500")),
-                    ("LEVAIN", Decimal("1500")),
-                    ("SAL-REFINADO", Decimal("100"))
+                    ("FARINHA-NOVARA-T55", Decimal("700")),
+                    ("FARINHA-INTEGRAL-ORGANICA", Decimal("200")),
+                    ("FARINHA-CENTEIO-INTEGRAL-ORGANICA", Decimal("100")),
+                    ("SAL-REFINADO", Decimal("20")),
+                    ("AGUA-FILTRADA", Decimal("680")),
+                    ("LEVAIN", Decimal("100")),
                 ],
             },
             {
+                # Publicada no alpha (Fórmula da Fx).
                 "ref": "massa-ciabatta",
                 "name": "Massa Ciabatta",
                 "output_sku": "MASSA-CIABATTA",
-                "batch_size": Decimal("10000"),
+                "batch_size": Decimal("2020"),
+                "steps": [],
                 "items": [
-                    ("FARINHA-ANACONDA-PREMIUM", Decimal("5000")),
-                    ("AGUA-FILTRADA", Decimal("4000")),
-                    ("LEVAIN", Decimal("1500")),
-                    ("AZEITE-EXTRAVIRGEM", Decimal("228")),
-                    ("SAL-REFINADO", Decimal("100"))
+                    ("FARINHA-NOVARA-T55", Decimal("1000")),
+                    ("AGUA-FILTRADA", Decimal("800")),
+                    ("SAL-REFINADO", Decimal("20")),
+                    ("AZEITE-EXTRAVIRGEM", Decimal("50")),
+                    ("LEVAIN", Decimal("150")),
                 ],
             },
             {
@@ -3505,16 +3698,17 @@ class Command(BaseCommand):
                 # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
                 # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
                 # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
+                # Publicada no alpha (SKU corrigido).
                 "batch_size": Decimal("8200"),
                 "items": [
-                    # Com yudane (dono, 26/08) — proposta de bancada.
+                    # Com yudane (dono, 26/08).
                     ("FARINHA-ANACONDA-PREMIUM", Decimal("4400")),
-                    ("YUDANE", Decimal("1000")),
                     ("LEITE-INTEGRAL-A", Decimal("1854")),
                     ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("700")),
                     ("ACUCAR-CRISTAL", Decimal("350")),
                     ("FERMENTO-BIOLOGICO-FRESCO", Decimal("150")),
                     ("SAL-REFINADO", Decimal("100")),
+                    ("YUDANE", Decimal("1000")),
                 ],
             },
             {
@@ -3522,6 +3716,7 @@ class Command(BaseCommand):
                 "name": "Massa Croissant",
                 "output_sku": "MASSA-CROISSANT",
                 # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
+                # Publicada no alpha (SKU corrigido).
                 "batch_size": Decimal("9000"),
                 "items": [
                     ("FARINHA-BAGATELLE-T45", Decimal("4800")),
@@ -3539,6 +3734,7 @@ class Command(BaseCommand):
                 "output_sku": "MASSA-BRIOCHE",
                 # 8,040 kg de insumo → 8 kg de massa (0,5% de perda). Era 10,
                 # o pior dos três: +24,4% de massa saindo do nada.
+                # Publicada no alpha (SKU corrigido).
                 "batch_size": Decimal("8000"),
                 "items": [
                     ("FARINHA-BAGATELLE-T45", Decimal("4000")),
@@ -3570,6 +3766,7 @@ class Command(BaseCommand):
             {
                 # Folhado SEM fermento (dono: Croissant e Folhado são massas
                 # distintas) — chausson, bichon, maçã e folhados salgados.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "massa-folhado",
                 "name": "Massa Folhado",
                 "output_sku": "MASSA-FOLHADO",
@@ -3584,6 +3781,7 @@ class Command(BaseCommand):
             {
                 # A madeleine vira massa nomeada (dono: Madeleine é uma das
                 # massas dos Finos) — proporções da ficha calibrada de antes.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "massa-madeleine",
                 "name": "Massa Madeleine",
                 "output_sku": "MASSA-MADELEINE",
@@ -3599,6 +3797,7 @@ class Command(BaseCommand):
             {
                 # Preparo-base não-massa: a produção real tem recheios, cremes
                 # e infusões prontos ANTES da montagem — não só massas.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "recheio-maca",
                 "name": "Recheio de Maçã & Canela",
                 "output_sku": "RECHEIO-MACA",
@@ -3626,6 +3825,7 @@ class Command(BaseCommand):
                 # ela é este creme mais chocolate, não uma fórmula paralela. Até
                 # 23/09 ela partia de leite, açúcar e manteiga como se fosse uma
                 # ganache — corrigido.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "creme-baunilha",
                 "name": "Creme de Baunilha",
                 "output_sku": "CREME-BAUNILHA",
@@ -3814,7 +4014,8 @@ class Command(BaseCommand):
             {
                 # A "massa de Butter" da casa: família do hot dog, deli, cornet
                 # e — por ora — da challah (dono: "tem sido feita na butter").
-                # Composição proposta (batch 8,5 kg, ~4% de perda de mistura).
+                # Batch 8,5 kg, ~4% de perda de mistura.
+                # Publicada no alpha (SKU corrigido).
                 "ref": "massa-butter",
                 "name": "Massa Butter",
                 "output_sku": "MASSA-BUTTER",
@@ -3824,9 +4025,9 @@ class Command(BaseCommand):
                     ("LEITE-INTEGRAL-A", Decimal("1648")),
                     ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("1200")),
                     ("OVOS", Decimal("400")),
-                    ("ACUCAR-CRISTAL", Decimal("400")),
                     ("FERMENTO-BIOLOGICO-FRESCO", Decimal("150")),
                     ("SAL-REFINADO", Decimal("100")),
+                    ("ACUCAR-CRISTAL", Decimal("400")),
                 ],
             },
             {
@@ -5087,7 +5288,7 @@ class Command(BaseCommand):
                     "name": rd["name"],
                     "output_sku": rd["output_sku"],
                     "batch_size": rd["batch_size"],
-                    "steps": self._production_steps_for_recipe(rd["ref"]),
+                    "steps": rd["steps"] if "steps" in rd else self._production_steps_for_recipe(rd["ref"]),
                     # Ficha de MONTAGEM/BEBIDA nasce inativa: dá custo, insumo
                     # e rótulo, mas não é fornada — `craft.suggest` considera
                     # toda ficha ativa, e croque não entra em plano de forno.
@@ -5163,6 +5364,17 @@ class Command(BaseCommand):
 
         entries_before = RecipeEntry.objects.count()
         call_command("bootstrap_recipe_book", stdout=StringIO())
+        # As quatro fichas da aba Fx guardam de onde vieram, como no alpha. A
+        # versão é a que o bootstrap acabou de escrever a partir da ficha; só
+        # rótulo, fonte, origem e notas mudam.
+        for ref, provenance in FX_RECIPE_PROVENANCE.items():
+            entry = RecipeEntry.objects.select_related("current_version").get(ref=ref)
+            version = entry.current_version
+            version.label = provenance["label"]
+            version.source = provenance["source"]
+            version.origin = provenance["origin"]
+            version.notes = provenance["notes"]
+            version.save(update_fields=["label", "source", "origin", "notes"])
         self.stdout.write(
             f"  ✅ Inventário de receitas: {RecipeEntry.objects.count() - entries_before} entries criadas"
             f" ({RecipeEntry.objects.count()} no total)"
