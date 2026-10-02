@@ -854,3 +854,10 @@ versão, e o `fixAvailable` do npm é rebaixar o Nuxt de major (proibido em
 
 **Prova.** Run 36944715176 (PR #1358): 7 high, todas GHSA-86w9-cpqp-85rv (`<= 1.4.0`,
 `first_patched_version: None` na API de advisories); `npm view node-forge versions` termina em 1.4.0.
+
+**Reconfirmada em 2026-10-02 pelo dono, com o risco medido.** Nada mudou no upstream (`node-forge` 1.4.0,
+`listhen` 1.10.1, `@nuxt/cli` 3.37.0 e `nuxt` 4.5.2 seguem os últimos; `overrides` não tem para onde
+apontar). O pacote não chega ao ar: `npm run build` do Marketing gera um `.output` sem `node-forge` nem
+`listhen`, e `surfaces/Dockerfile.operator-group` copia só o `.output` de cada app para a imagem. O alerta
+vive no servidor de desenvolvimento local. A alternativa de auditar só o que vai ao ar (exceção com
+prazo, ou auditoria do `.output`) foi oferecida e recusada: o vermelho fica até sair o 1.4.1.
