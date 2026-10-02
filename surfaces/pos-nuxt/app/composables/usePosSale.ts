@@ -41,7 +41,7 @@ import { cartQtyForSku } from "~/presentation/catalog";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { lastBookableDate, resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -868,10 +868,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
   /** A última data encomendável. O servidor sempre recusa além dela; isto só
    *  evita que o operador chegue a digitá-la. */
-  const scheduleMaxDate = computed(() => {
-    const dates = schedule.value?.available_dates ?? [];
-    return dates.length ? dates[dates.length - 1]! : "";
-  });
+  const scheduleMaxDate = computed(() => lastBookableDate(schedule.value?.available_dates ?? []));
 
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo.

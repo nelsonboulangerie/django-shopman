@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dateLabel,
   isScheduled,
+  lastBookableDate,
   parseLocalDate,
   readinessNote,
   resolveWindowLabel,
@@ -222,5 +223,14 @@ describe("resolveWindowLabel — o rótulo real antes do deduzido", () => {
 
   it("ref vazio é vazio", () => {
     expect(resolveWindowLabel("", [CANONICOS])).toBe("");
+  });
+});
+
+describe("lastBookableDate — o limite de dias da casa, lido da mesma resposta", () => {
+  it("é a última data ofertada", () => {
+    expect(lastBookableDate(["2026-09-12", "2026-09-14", "2026-10-12"])).toBe("2026-10-12");
+  });
+  it("sem datas, não há teto", () => {
+    expect(lastBookableDate([])).toBe("");
   });
 });

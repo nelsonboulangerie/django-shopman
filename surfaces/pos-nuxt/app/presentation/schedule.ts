@@ -202,6 +202,18 @@ export function selectedWindowConflict(
 }
 
 /**
+ * A última data encomendável: a última que o servidor oferece.
+ *
+ * As datas ofertadas já param no limite da casa (Admin: `max_preorder_days`).
+ * O servidor recusa além dela de qualquer jeito; o teto no seletor só evita que
+ * o operador chegue a escolher um dia que vai ser recusado no confirmar. A venda
+ * e o reagendar leem a mesma resposta (`/pos/schedule/`) e tiram o teto daqui.
+ */
+export function lastBookableDate(availableDates: readonly string[]): string {
+  return availableDates.length ? availableDates[availableDates.length - 1]! : "";
+}
+
+/**
  * A frase única do topo do diálogo quando algo do carrinho segura o pedido.
  *
  * Dita uma vez, no lugar de repetir o mesmo motivo em dez janelas apagadas.
