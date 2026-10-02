@@ -70,8 +70,7 @@ describe("a prontidão tem um dono só", () => {
   const CART_FIELDS = /\b(cart|customerRef|fulfillmentConfirmed|deliveryAddress|deliveryDate|deliveryTimeSlot)\b/;
   const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
+    .replace(/^\s*\/\/.*$/gm, "");
 
   it("nem a apresentação nem o componente leem o carrinho", () => {
     expect(read("../app/presentation/orderSetup.ts")).not.toMatch(CART_FIELDS);
