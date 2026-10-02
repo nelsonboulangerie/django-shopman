@@ -1,25 +1,26 @@
 <script setup lang="ts">
-// ENCOMENDAS — uma tela só, com o panorama da semana no centro (redesenho
-// aprovado pelo dono, 28/09/2026). Chega-se aqui pela barra lateral.
+// ENCOMENDAS: a agenda do balcão, numa tela só (redesenho aprovado pelo dono,
+// 28/09/2026; a tela da seção do brief de 02/10). Chega-se aqui pela barra lateral.
 //
-//   Cliente veio buscar — o campo fica SEMPRE no topo e nasce focado: nome,
-//                         telefone, CPF/CNPJ, endereço ou número (inclusive o do
-//                         iFood). Procura em aberto de QUALQUER data; "Incluir
-//                         concluídas" traz as dos últimos 30 dias numa seção à
-//                         parte, nunca misturadas. Um resultado só: Enter abre.
-//   Dia | Semana        — o Período do kit, no quadro do período (o único lugar:
-//                         a barra do topo não repete abas). ‹ › anda um dia ou
-//                         uma semana, e a data escolhe o dia (a semana é a que o
-//                         contém, de segunda a domingo). Tocar no dia da grade
-//                         abre o Dia.
-//   Filtros             — numa linha (a `FilterBar` do kit, tamanho de toque),
-//                         combináveis: recebimento, pagamento, Via Pedido. Ficam
-//                         no mesmo quadro do período, abaixo do ‹ ›. Limpar é
-//                         gesto da barra (o X do chip, "Limpar filtros"), e só
-//                         dela: o vazio filtrado e o aviso não repetem o gesto.
-//   Imprimir N vias     — o lote da Via Pedido do que está VISÍVEL, na mesma
-//                         linha dos filtros. A tela de lote ("Via Pedido –
-//                         painel") morreu aqui.
+//   Barra               o título e o Período do kit (Dia ou Semana, ‹ › e a data),
+//                       o mesmo lugar em que a Produção, o KDS e o B.I. o põem.
+//                       Durante a busca o Período sai: a busca não tem período.
+//   Cliente veio buscar o campo fica SEMPRE no topo e nasce focado: nome,
+//                       telefone, CPF/CNPJ, endereço ou número (inclusive o do
+//                       iFood). Procura em aberto de QUALQUER data; "Incluir
+//                       concluídas" só aparece com a busca digitada (só vale para
+//                       ela) e traz as dos últimos 30 dias numa seção à parte.
+//                       Um resultado só: Enter abre.
+//   Hoje                o que falta para o dia, sempre de hoje, qualquer que seja
+//                       o período: quantas para entregar, quanto falta receber,
+//                       quantas Vias Pedido faltam, e as de pagamento a conferir.
+//                       Feita com o que as listas já trazem, sem leitura nova.
+//   Recortes            os de todo dia são botões de um toque (A receber, Sem
+//                       Via Pedido, Retiradas, Entregas); o "Filtrar" do kit fica
+//                       para o resto. Na mesma linha, o "Imprimir N vias" do que
+//                       está VISÍVEL.
+//   Período             a grade da semana (uma árvore só) ou o dia por janela, e
+//                       a nota de escopo como legenda abaixo dela.
 //
 // O estado inteiro mora na URL (`presentation/preorders.parseView`): a volta do
 // detalhe cai no mesmo lugar, e o kiosk guarda o favorito.
@@ -43,7 +44,9 @@ import {
   listSummary,
   parseView,
   periodEmptyMessage,
+  periodIsToday,
   periodParams,
+  periodSummaryLabel,
   preorderCountLabel,
   printPlan,
   searchCompletedHeading,
@@ -53,6 +56,8 @@ import {
   searchOpenHeading,
   singleResult,
   toReceiveLine,
+  todayFacts,
+  todayOf,
   viewPath,
   viewQuery,
   type PreorderFilters,
@@ -98,6 +103,12 @@ const summary = computed(() => (list.value ? listSummary(list.value.count, list.
 const toReceive = computed(() => (list.value && list.value.count
   ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display)
   : ""));
+// O resumo do período some quando o período é só hoje: a linha "Hoje" já diz.
+const showSummary = computed(() => !!summary.value && !periodIsToday(view.value, today));
+
+// ── Hoje: do período, quando ele contém hoje; senão, da leitura do selo da barra ──
+const ahead = usePosPreordersAhead();
+const todayLine = computed(() => todayFacts(todayOf(list.value, ahead.value)));
 // O "Período" do kit (Tipo 2) em Dia e Semana: ‹ › andam um dia ou uma semana,
 // e o estado continua na URL (modo + data).
 const periodSelection = computed<PeriodSelection>({
@@ -175,6 +186,18 @@ function refreshAll() {
     wide
     @refresh="refreshAll"
   >
+    <!-- O PERÍODO na barra da seção. Durante a busca ele sai: a busca não tem período. -->
+    <template v-if="!searching" #period>
+      <OperatorPeriodPicker
+        v-model="periodSelection"
+        class="ml-auto min-w-0"
+        :presets="['day', 'week']"
+        :today="today"
+        label="Período das encomendas"
+        align="end"
+      />
+    </template>
+
     <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
     <!-- Uma linha no desktop: o título diz a tarefa, o campo diz o que se digita. -->
     <section
@@ -198,7 +221,8 @@ function refreshAll() {
         data-preorders-search
         @keydown.enter.prevent="openSingle"
       />
-      <label class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
+      <!-- "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece. -->
+      <label v-if="searching" class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
         <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
         Incluir concluídas
       </label>
@@ -298,38 +322,33 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
-      <!-- O PERÍODO e, logo abaixo, os FILTROS com o LOTE: um quadro só, porque o
-           resumo, os filtros e o "Imprimir N vias" falam do mesmo recorte. -->
-      <section class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm" aria-labelledby="preorders-period-title">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 id="preorders-period-title" class="sr-only">Período das encomendas</h2>
-          <OperatorPeriodPicker
-            v-model="periodSelection"
-            :presets="['day', 'week']"
-            :today="today"
-            label="Período das encomendas"
-            align="start"
-          />
-          </div>
-          <p class="flex min-w-[min(100%,14rem)] flex-1 items-start gap-1.5 text-xs text-muted-foreground" data-preorders-scope>
-            <Icon name="lucide:info" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
-            <span>{{ PREORDERS_SCOPE_NOTE }}</span>
-          </p>
-          <div v-if="summary" class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:justify-end" data-preorders-summary>
-            <p class="text-sm tabular-nums text-muted-foreground">{{ summary }}</p>
-            <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
-          </div>
-        </div>
+      <!-- HOJE e os RECORTES com o LOTE: um quadro só. A linha "Hoje" é sempre de
+           hoje; os recortes e o "Imprimir N vias" falam do período na tela. -->
+      <section
+        v-if="todayLine.length || (list && list.count)"
+        class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm"
+        aria-label="Hoje e os recortes das encomendas"
+      >
+        <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-1 text-sm" data-preorders-today>
+          <span class="font-semibold text-primary">Hoje</span>
+          <span
+            v-for="fact in todayLine"
+            :key="fact.key"
+            :class="fact.key === 'to_receive' && fact.urgent
+              ? TO_RECEIVE_CLASS
+              : fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted-foreground'"
+            :data-preorders-today-fact="fact.key"
+          >{{ fact.text }}</span>
+        </p>
 
-        <!-- FILTROS à esquerda, o LOTE à direita, na mesma linha: "Imprimir N vias" imprime o que se vê. -->
+        <!-- RECORTES à esquerda, o LOTE à direita, na mesma linha: "Imprimir N vias" imprime o que se vê. -->
         <PosPreorderFilters
           v-if="list && list.count"
           v-model="filters"
           :cards="allCards"
-          class="border-t pt-2"
+          :class="todayLine.length ? 'border-t pt-2' : ''"
           role="group"
-          aria-label="Refinar e imprimir encomendas"
+          aria-label="Recortar e imprimir encomendas"
         >
           <template #actions>
             <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
@@ -387,6 +406,18 @@ function refreshAll() {
         </section>
 
         <template v-else>
+          <!-- O resumo do PERÍODO: o que falta receber primeiro, o total vendido depois
+               e menor (grandezas diferentes, nunca somadas). -->
+          <div
+            v-if="showSummary"
+            class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-1"
+            data-preorders-summary
+          >
+            <span class="text-sm font-semibold text-muted-foreground">{{ periodSummaryLabel(view.mode) }}</span>
+            <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
+            <p class="text-xs tabular-nums text-muted-foreground" data-preorders-total>{{ summary }}</p>
+          </div>
+
           <p
             v-if="notice"
             class="flex items-start gap-2 rounded-md border p-3 text-sm"
@@ -435,8 +466,11 @@ function refreshAll() {
                      o dia da semana nunca some. -->
                 <button
                   type="button"
-                  class="grid min-h-11 gap-1 rounded-md border-b pb-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  :class="weekDay.is_today ? '-mx-1 -mt-1 border-primary/30 bg-primary/10 px-2 pt-2 hover:bg-primary/15' : 'border-border hover:bg-accent'"
+                  class="grid min-h-11 gap-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  :class="[
+                    weekDay.is_today ? '-mx-1 -mt-1 border-primary/30 bg-primary/10 px-2 pt-2 hover:bg-primary/15' : 'border-border hover:bg-accent',
+                    weekDay.orders.length ? 'border-b pb-3' : 'pb-1',
+                  ]"
                   :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
                   :aria-current="weekDay.is_today ? 'date' : undefined"
                   data-week-day-open
@@ -453,14 +487,21 @@ function refreshAll() {
                     {{ dayToReceiveLine(weekDay) }}
                   </span>
                 </button>
+                <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
                 <div v-if="weekDay.orders.length" class="grid gap-2">
                   <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" />
                 </div>
-                <p v-else class="py-3 text-center text-xs text-muted-foreground">Dia livre de encomendas</p>
               </section>
             </div>
           </div>
         </template>
+
+        <!-- A NOTA DE ESCOPO, como legenda: a ponte da divergência de vocabulário
+             ("encomenda" aqui inclui a retirada de hoje). -->
+        <p class="flex items-start gap-1.5 px-1 text-xs text-muted-foreground" data-preorders-scope>
+          <Icon name="lucide:info" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ PREORDERS_SCOPE_NOTE }}</span>
+        </p>
       </template>
     </template>
   </PosPreordersShell>

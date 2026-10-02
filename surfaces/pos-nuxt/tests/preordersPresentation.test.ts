@@ -8,6 +8,7 @@ import {
   NO_FILTERS,
   NO_WINDOW_LABEL,
   balanceStandsOut,
+  barDimensions,
   canSearch,
   checkCount,
   checkPaymentNotice,
@@ -18,33 +19,46 @@ import {
   filterDays,
   filterDimensions,
   fromActiveFilters,
+  fromBarFilters,
   filterEmptyMessage,
   flattenDays,
   groupByWindow,
   hasFilters,
   isoWeek,
+  itemsCountLabel,
   listSummary,
   matchesFilters,
   mondayOf,
   moneyLine,
+  moneyPieces,
   parsePaymentFilter,
   parseView,
   periodEmptyMessage,
+  periodIsToday,
   periodParams,
+  periodSummaryLabel,
   preorderCountLabel,
   printPlan,
   railAriaLabel,
   railBadge,
+  rowDetailLine,
+  rowShowsSituation,
+  rowWindow,
   searchCompletedHeading,
   searchEmptyMessage,
   toActiveFilters,
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
+  shortcutChips,
   singleResult,
   situationTone,
+  toBarFilters,
   toReceiveLine,
+  todayFacts,
+  todayOf,
   todayPendingCount,
+  toggleShortcut,
   viewPath,
   viewQuery,
   type PreordersView,
@@ -409,5 +423,148 @@ describe("o selo da barra lateral", () => {
     expect(railBadge(list([card({ situation: "delivered" })]))).toBeUndefined();
     expect(railBadge(null)).toBeUndefined();
     expect(railAriaLabel(undefined)).toBe("Encomendas");
+  });
+});
+
+// ── Os recortes de um toque (P1 do dono, 02/10) ─────────────────────────────
+
+describe("os recortes de todo dia viram botões de um toque", () => {
+  const cards = [
+    card({ ref: "A" }),
+    card({ ref: "B", fulfillment_type: "delivery", payment_state: "paid", balance_q: 0, ticket_printed: true }),
+    card({ ref: "C", payment_state: "on_account", balance_q: 0 }),
+  ];
+
+  it("A receber, Sem Via Pedido, Retiradas, Entregas, com a contagem do que cada um mostraria", () => {
+    expect(shortcutChips(cards, NO_FILTERS).map((c) => [c.label, c.count, c.pressed])).toEqual([
+      ["A receber", 1, false],
+      ["Sem Via Pedido", 2, false],
+      ["Retiradas", 2, false],
+      ["Entregas", 1, false],
+    ]);
+  });
+
+  it("botão que não mostraria nada some (zero não é código), a menos que esteja apertado", () => {
+    const deliveries = { ...NO_FILTERS, fulfillment: "delivery" as const };
+    const chips = shortcutChips(cards, deliveries);
+    // Entre as entregas, nenhuma a receber e nenhuma sem Via: os dois botões somem.
+    expect(chips.map((c) => [c.label, c.pressed])).toEqual([["Retiradas", false], ["Entregas", true]]);
+  });
+
+  it("apertar liga o recorte; apertar de novo volta a 'Todas' naquela dimensão", () => {
+    const on = toggleShortcut(NO_FILTERS, { dimension: "pay", value: "to_receive" });
+    expect(on).toEqual({ ...NO_FILTERS, pay: "to_receive" });
+    expect(toggleShortcut(on, { dimension: "pay", value: "to_receive" })).toEqual(NO_FILTERS);
+    // Retiradas e Entregas são a mesma dimensão: uma troca a outra.
+    const pickup = toggleShortcut(NO_FILTERS, { dimension: "fulfillment", value: "pickup" });
+    expect(toggleShortcut(pickup, { dimension: "fulfillment", value: "delivery" }).fulfillment).toBe("delivery");
+  });
+
+  it("o 'Filtrar' fica para o resto: nem opção nem chip do que já tem botão", () => {
+    const dims = barDimensions(cards, NO_FILTERS);
+    expect(dims.map((d) => [d.id, d.options.map((o) => o.value)])).toEqual([["pay", ["paid", "on_account"]]]);
+    expect(toBarFilters({ fulfillment: "delivery", pay: "to_receive", print: "pending" })).toEqual({});
+    expect(toBarFilters({ ...NO_FILTERS, pay: "paid" })).toEqual({ pay: ["paid"] });
+  });
+
+  it("o que a barra devolve não apaga o botão apertado de outra dimensão", () => {
+    const current = { fulfillment: "delivery" as const, pay: "paid" as const, print: "pending" as const };
+    // X do chip "Pagamento: Pagas": só o Pagamento volta a "Todas".
+    expect(fromBarFilters(current, {})).toEqual({ fulfillment: "delivery", pay: "all", print: "pending" });
+    // Escolher "Na conta da casa" no Filtrar troca o Pagamento, e o resto fica.
+    expect(fromBarFilters(current, { pay: ["on_account"] })).toEqual({ fulfillment: "delivery", pay: "on_account", print: "pending" });
+    // Com "A receber" apertado, escolher "Pagas" no Filtrar troca o recorte (mesma dimensão).
+    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, { pay: ["paid"] }).pay).toBe("paid");
+    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, {}).pay).toBe("to_receive");
+  });
+});
+
+// ── A linha "Hoje" ──────────────────────────────────────────────────────────
+
+describe("a linha 'Hoje': o que falta para o dia, sem leitura nova", () => {
+  function list(days: PreorderDay[]): PreorderListResponse {
+    return {
+      ok: true, date_from: HOJE, date_to: "2026-10-04", today: HOJE, count: 0,
+      total_q: 0, total_display: "R$ 0,00", to_receive_q: 0, to_receive_display: "R$ 0,00", max_batch: 200, days,
+    };
+  }
+
+  it("o dia de hoje vem do período quando ele o contém; senão, da leitura do selo da barra", () => {
+    const other = list([day({ is_today: false, date: "2026-10-05" })]);
+    const ahead = list([day({ orders: [card()] })]);
+    expect(todayOf(other, ahead)?.orders).toHaveLength(1);
+    expect(todayOf(list([day({ orders: [card({ ref: "P" })] })]), ahead)?.orders[0]?.ref).toBe("P");
+    expect(todayOf(other, null)).toBeNull();
+    expect(todayFacts(null)).toEqual([]);
+  });
+
+  it("para entregar, a receber, Vias que faltam e, só quando há, o pagamento a conferir", () => {
+    const today = day({
+      to_receive_q: 3600, to_receive_display: "R$ 36,00",
+      orders: [
+        card({ ref: "1" }),
+        card({ ref: "2", payment_state: "paid", balance_q: 0, ticket_printed: true }),
+        card({ ref: "3", payment_state: "check", balance_q: null, situation: "check_payment" }),
+        // A entregue já saiu: não conta nem como "para entregar" nem como Via que falta.
+        card({ ref: "4", situation: "delivered", ticket_printed: false }),
+      ],
+    });
+    expect(todayFacts(today).map((f) => [f.key, f.text, f.urgent])).toEqual([
+      ["leaving", "3 para entregar", false],
+      ["to_receive", "A receber R$ 36,00", true],
+      ["tickets", "2 sem Via Pedido", true],
+      ["check", "1 com pagamento a conferir", true],
+    ]);
+  });
+
+  it("zero é frase: nada a receber, todas as vias impressas, todas entregues, nenhuma encomenda", () => {
+    const settled = day({ orders: [card({ payment_state: "paid", balance_q: 0, ticket_printed: true })] });
+    expect(todayFacts(settled).map((f) => f.text)).toEqual(["1 para entregar", "Nada a receber", "Todas as vias impressas"]);
+    expect(todayFacts(day({ orders: [card({ situation: "delivered" })] })).map((f) => f.text)).toEqual(["Todas entregues"]);
+    expect(todayFacts(day()).map((f) => f.text)).toEqual(["Nenhuma encomenda"]);
+  });
+
+  it("o resumo do período sai quando o período é só hoje (repetiria a linha 'Hoje')", () => {
+    expect(periodIsToday({ mode: "day", date: HOJE }, HOJE)).toBe(true);
+    expect(periodIsToday({ mode: "week", date: HOJE }, HOJE)).toBe(false);
+    expect(periodIsToday({ mode: "day", date: "2026-09-29" }, HOJE)).toBe(false);
+    expect(periodSummaryLabel("week")).toBe("Na semana");
+    expect(periodSummaryLabel("day")).toBe("No dia");
+  });
+});
+
+// ── A linha da encomenda ────────────────────────────────────────────────────
+
+describe("a linha da encomenda: uma forma só", () => {
+  it("a janela primeiro; sem janela, 'A combinar'", () => {
+    expect(rowWindow(card())).toBe("09:00");
+    expect(rowWindow(card({ window_start: "" }))).toBe("A combinar");
+  });
+
+  it("a segunda linha: número, canal, recebimento, a data só na busca, e item é unidade", () => {
+    expect(rowDetailLine(card(), false)).toBe("NB-1 · Loja online · Retirada · 2 itens");
+    expect(rowDetailLine(card({ items_count: 1 }), true)).toBe("NB-1 · Loja online · Retirada · hoje · 1 item");
+    expect(itemsCountLabel(3)).toBe("3 itens");
+    expect(rowDetailLine(card({ items_count: 0 }), false)).toBe("NB-1 · Loja online · Retirada");
+  });
+
+  it("o valor nunca se parte entre o 'R$' e o número", () => {
+    expect(moneyPieces("A receber R$ 12,00 de R$ 1.036,00")).toEqual([
+      { text: "A receber ", amount: false },
+      { text: "R$ 12,00", amount: true },
+      { text: " de ", amount: false },
+      { text: "R$ 1.036,00", amount: true },
+    ]);
+    expect(moneyPieces("R$ 24,00 pago").map((p) => p.text).join("")).toBe("R$ 24,00 pago");
+  });
+
+  it("o selo só quando diz o que o dinheiro não diz", () => {
+    expect(rowShowsSituation("to_pay")).toBe(false);
+    expect(rowShowsSituation("paid")).toBe(false);
+    expect(rowShowsSituation("on_account")).toBe(false);
+    expect(rowShowsSituation("check_payment")).toBe(false);
+    expect(rowShowsSituation("ready")).toBe(true);
+    expect(rowShowsSituation("out_for_delivery")).toBe(true);
+    expect(rowShowsSituation("delivered")).toBe(true);
   });
 });

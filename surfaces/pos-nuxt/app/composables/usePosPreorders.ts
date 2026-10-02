@@ -35,6 +35,16 @@ export function usePosPreorders(params: Ref<Record<string, string>>) {
 }
 
 /**
+ * A leitura que o selo da barra lateral JÁ faz (hoje e os seis dias seguintes),
+ * para a linha "Hoje" quando o período na tela não contém hoje. Só lê o que está
+ * guardado: não pergunta nada ao servidor (a leitura é do rail, que mora na
+ * mesma moldura).
+ */
+export function usePosPreordersAhead() {
+  return useNuxtData<PreorderListResponse>(AHEAD_KEY).data;
+}
+
+/**
  * "Cliente veio buscar": sem período, em aberto de qualquer data e, com
  * `includeCompleted`, as concluídas numa seção à parte.
  *
