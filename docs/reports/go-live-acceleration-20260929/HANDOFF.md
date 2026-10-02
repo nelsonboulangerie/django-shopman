@@ -33,7 +33,8 @@
 | 1D: Threads, Concierge × Jev, chá com sabor, controles de data | #1355 | na fila; perguntas em D34 a D37 |
 | 2 e 3: Concierge (passos 0 e 1), corte de escopo sem contradição, pré-flight, matriz de prontidão | este PR | documentos corrigidos (ver 0.4) |
 | 4: Receitas: estrutura a partir da Fx (sem números) | #1358 | na fila; perguntas 13 a 15 e o aval em D39 |
-| ManyChat: 5 modelos, apagar 3 de Marketing, flows (§0d.1b itens 1 a 3) | — | em andamento num agente dedicado; o estado sai em `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
+| ManyChat: 5 modelos, apagar 3 de Marketing, flows (§0d.1b itens 1 a 3) | #1361 (estado) | **BLOQUEADO**: o acesso ao Chrome para trazer a aba à frente foi negado duas vezes (`request_access` → `user_denied`, 21:20 e de novo pelo coordenador); com a aba em segundo plano (`visibilityState` "hidden") o formulário apaga a digitação. Lido às 21:20: os 5 não existem; `pedido_em_preparo` e `reembolso_processado` já APROVADOS (Utility). Padrão dos botões e campos anotado em `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
+| CI: `npm audit` acusa `node-forge` (7 high, via `listhen` ← `@nuxt/cli`) no job "Marketing — cadeia completa" (não obrigatório) | em curso | agente dedicado; ver o PR `claude/npm-audit-node-forge` |
 | Handoff do turno anterior (pendências vivas) | #1352 | na fila (este PR já está por cima dele) |
 
 ### 0.2 Loja (#1354), o que mudou
@@ -86,7 +87,7 @@
 
 D34 (Threads) · D35 (Jev) · D36 (chá com sabor) · D37 (permissão do GitHub Actions) · D38 (três
 pós-v1) · D39 (receitas 13 a 15 e o aval do plano) · D40 (Concierge passo 2: FAQ, copy, flow) ·
-`fulfillment.courier="auto"` quando quiser (clique pronto: `/admin/shop/channel/66/change/`, aba
+**ManyChat:** deixar a aba "Criar modelo" do ManyChat na frente (ou liberar o Chrome no pedido de acesso) e dizer "segue": a sessão envia os 5 modelos, cria os flows e liga no Admin · `fulfillment.courier="auto"` quando quiser (clique pronto: `/admin/shop/channel/66/change/`, aba
 "Preparo e entrega", acrescentar `"courier": "auto"` ao JSON; chama a TaOn de verdade) · gerar um link
 de pagamento no PDV para provar 0.3 · o Pix real antes da virada (D-016) · e as abertas de antes:
 D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
