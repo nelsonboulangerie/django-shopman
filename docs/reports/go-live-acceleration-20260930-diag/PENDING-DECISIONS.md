@@ -459,3 +459,95 @@ sessão encontrou depois uma repetição na do `pedido_em_preparo` (o `status_no
 - `pontos_fidelidade`: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
 **Recomendação:** aprovar as três; a sessão envia em seguida. `reembolso_processado` não tem defeito,
 só não foi enviado nesta rodada (a aba do ManyChat em segundo plano não aceita digitação).
+
+## D34. Opções de produto (chá, sabor, predefinidos)
+
+**Contexto.** Não existe opção de produto. `shopman/shop/modifiers.py` é modificador de PEDIDO
+(desconto, taxa). Hoje cada sabor é um SKU próprio: os chás da casa são cinco produtos de
+R$ 14,00 a R$ 18,00 (`CHCAM`, `CHROU`, `CHSOP`, `CHBLU`, `CHHIB`, medido no alpha em 01/10;
+`seed.py:1874-1880`). O caso contrário também existe: o `FRAP` (Frappé) é um SKU só, e o sabor
+("café, chocolate ou frutas vermelhas") mora na descrição, sem jeito de o cliente escolher.
+Mexer em opção toca preço (`Product.base_price_q`), estoque por SKU, fiscal (`metadata['fiscal']`),
+projeção do catálogo e o PDV (`usePosSale.ts`, `pushProduct`).
+**Opções.**
+1) **Agrupar os SKUs que já existem** (a mais barata). Um campo de agrupamento no dado do produto
+   (ex.: `metadata.group`), e o cardápio e o PDV mostram um cartão "Chás da casa" que abre a
+   escolha entre os cinco. Cada escolha continua sendo o SKU de hoje: preço, estoque, ficha, nota
+   fiscal e KDS não mudam. Custo: 2 a 3 dias (projeção do catálogo, um componente no storefront e
+   no PDV). Risco baixo. Não resolve o Frappé (sabor sem SKU).
+2) **Escolha predefinida sem preço** ("escolha obrigatória" no produto: lista fechada de textos,
+   ex. café/chocolate/frutas vermelhas). A escolha viaja como observação da linha
+   (`meta["notes"]`, o caminho que o PDV já usa e que a loja ganha nesta rodada) e chega ao KDS.
+   Preço, estoque e fiscal não mudam porque o SKU é um só. Custo: 3 a 4 dias. Risco médio: a
+   receita (ficha) não sabe qual sabor saiu, então o consumo de insumo fica pela média.
+3) **Variante de verdade no Core** (produto pai e filhos com preço, estoque e ficha próprios).
+   Custo: semanas; mexe no `offerman`, no ledger, na nota e em todas as superfícies. Risco alto
+   antes do go-live.
+**Resposta à pergunta "só agrupar resolve o chá?":** sim. Os chás já são SKUs separados com preço,
+ficha e nota próprios; o que falta é a apresentação (cinco cartões quase iguais viram um). Não
+resolve o Frappé, que é o caso da opção 2.
+**Recomendação:** 1 agora para o chá (barata e sem risco); 2 depois do go-live para os
+predefinidos sem preço; 3 só se aparecer opção que muda preço ou estoque e não cabe como SKU.
+
+## D35. Threads
+
+**Contexto.** Não existe publicador de Threads. O token da Meta que o Marketing usa é de Página,
+com permissões de Facebook e Instagram (`config/settings.py:849-851`), e não publica no Threads. O
+Threads exige um app próprio na Meta, autorização própria (`threads_basic` e
+`threads_content_publish`) e revisão da Meta. O código é pequeno porque há molde
+(`marketing_delivery_*`); o processo (app, revisão, conta) é a frente.
+**Resposta ao dono, em três linhas:** hoje o sistema não publica no Threads, e o acesso que já
+temos da Meta não serve para ele. Para ligar, é preciso criar um app do Threads na Meta e passar
+pela revisão deles (dias a semanas, fora do nosso controle). Depois disso, o código é de um a dois
+dias, porque o Instagram e o Facebook já servem de molde.
+**Opções.** 1) Seguir: a sessão prepara o pedido de revisão no painel da Meta (no Chrome do dono) e
+o código em paralelo, desligado. 2) Não agora: fica para depois do go-live (Marketing já está fora
+do escopo do go-live, D-017).
+**Recomendação:** 2, pelo D-017; abrir a revisão da Meta cedo só se o dono quiser o Threads logo
+depois do go-live, porque a espera é deles.
+
+## D36. Jev no comparador de intenções do Concierge
+
+**Contexto.** A premissa "o ManyChat classifica" não vale: o ManyChat manda cinco campos sem
+intenção (`transport.py:319-415`); quem identifica é o nosso código, antes do modelo de resposta
+(`service.py:897-916`), com as 12 intenções de `intent_pilot.DEFAULT_INTENTS` e a regra local
+sempre ligada (`handoff.py`, `triage.py`). O Jev (TypeSafe) existe só no comparador
+(`intent_benchmark.py`, `INTENT-PILOT-PLAN.md`), e está FORA da lista aprovada
+(`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED`, `settings.py:1408-1417`).
+**O que sai da casa com o Jev (decisão do dono):** o texto das mensagens dos clientes, já redigido
+(sem CPF, cartão, contato, endereço e detalhe de saúde), vai para um fornecedor novo, cujos termos
+de guarda e de uso para treino não foram avaliados.
+**Por que o placar não rodou (medido no alpha, 01/10):** três travas, e nenhuma é código.
+1) **Gabarito vazio:** 147 mensagens com intenção *sugerida* e **zero conferidas**; o placar
+   precisa de 30 conferidas (Admin, Clientes, Mensagens para rotular). Sem conferência não há
+   contra o que medir, nem para o Jev nem para os outros.
+2) **Sem chave:** não há `JEV_API_KEY` no spec nem em arquivo local (o cadastro do Jev estava
+   pausado em 23/09).
+3) **Sem aprovação:** `typesafe` fora da lista aprovada.
+**Opções.** 1) Aprovar o envio ao Jev, conseguir a chave, conferir 30 mensagens; a sessão roda o
+placar com regex, embeddings, Haiku e Jev. 2) Medir sem o Jev: conferir as 30 e rodar o placar
+só com o que já é aprovado (nada sai para fornecedor novo). 3) Encerrar o piloto do Jev.
+**Recomendação:** 2. A conferência é pré-requisito de qualquer placar, e o critério de empate do
+plano já prefere o que não sai da casa; o Jev entra depois, se os aprovados não baterem 95% nas
+intenções sensíveis.
+**Armadilhas:** há dois `adr-026` (o do Concierge, "Proposto", e o de superfície de operador,
+"Aceito"). Sem `event_id` verificado o turno do ManyChat é somente leitura; e "escalar" só cala o
+robô se o flow do ManyChat tiver o campo `concierge_handoff` ligado, o que se faz no ManyChat.
+
+## D37. Padronização dos controles de data: por onde começar
+
+**Contexto (inventário de 01/10):** 11 controles de data distintos no operador, nenhum
+compartilhado, mais um no storefront. PDV: `preorders/index.vue:307`, `PosScheduleModal.vue:122`,
+`PosPreorderRescheduleDialog.vue:117`. Produção: `board.vue:154`, `expedite.vue:524`,
+`ProductionStageGrid.vue:626`, `reports.vue:345,355`. B.I.: `BiTopBar.vue:114,122`,
+`forecast.vue:73`. Marketing: `CampaignForm.vue:1045,1059`. Compras: `ReceiptLineSheet.vue:251`.
+O `operator-kit` não tem primitiva de data (o filtro só tem single, multi e boolean). Nesta rodada
+não se cria primitiva.
+**Recomendação: começar pelos três do PDV de Encomendas** (navegador do período, agendar,
+reagendar). São o mesmo gesto ("escolher o dia da encomenda"), no mesmo app, usados pelo balcão
+todo dia e com o cliente na frente; um defeito ali vira encomenda no dia errado. Com eles a
+primitiva nasce com três consumidores reais (a regra da casa para criar abstração). Depois a
+Produção (quatro, mesmo gesto de "dia de trabalho"); B.I. e Marketing por último, que são intervalo
+de datas e estão fora do go-live (D-017).
+**[INFERÊNCIA]** que os três do PDV divergem entre si no comportamento: o inventário mediu que são
+distintos no código, não comparou o que cada um faz.

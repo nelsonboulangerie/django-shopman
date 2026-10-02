@@ -4,12 +4,46 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Atualizado em 2026-10-02** (turno das ordens de 01/10 noite e 02/10).
-> A seção 0 é o estado agora; "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
+> **Atualizado em 2026-10-02** (turno das observações do dono, depois do turno de 01/10 noite e 02/10).
+> A seção 0 é o estado agora; "0-noite", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
 
-## 0. Estado agora (02/10, turno das ordens de 01/10 noite e 02/10)
+## 0. Estado agora (turno das observações do dono: loja, Encomendas, pagamento, integrações)
+
+### 0.1 O que entrou
+
+| Frente | PR | Estado |
+|---|---|---|
+| Ordem 1: link de pagamento no vivo | sem PR | **meia verificação**: cadeia viva confere com o seed; nenhum link saiu depois do #1339; envio de teste não disparado (0.2) |
+| A1: aviso "Abrindo o cardápio" espera a página (`useNavigationPending`) | #1354 | na fila; única falha é `Marketing — cadeia completa` (`npm audit`, alerta novo no `listhen` via `nuxt`/`nitropack`, não é deste PR e não é check obrigatório) |
+| A2: observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1354 | idem. ⚠️ toca o Core: op nova `set_line_meta` no `ModifyService` do orderman, com a cerca de texto pessoal |
+| B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | na fila, 50 de 50 checks verdes. Primeira encomenda sobe 206 px em 1440x900 |
+| C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | este PR (docs) | PENDING D34 a D37 |
+
+### 0.2 Achados do turno (não redescubra)
+
+- **Link de pagamento, o que o vivo mostra (01/10).** Cadeia no banco: `pdv` = `manychat → email → sms`;
+  `web` e `whatsapp` = `manychat → sms → email`. Igual ao seed. Os quatro `payment_link_sent` que
+  existem (30/09 e 01/10 de manhã) são TODOS anteriores ao #1339 e pararam no ManyChat, sem
+  identificador e sem tentativa no e-mail. Nenhum envio depois do #1339, então o "segue para o
+  e-mail" **não está provado no vivo**. O Gestor já mostra a verdade no pedido
+  (`PDV-261001-N83`: "Aceito pelo provedor, sem comprovante").
+- **Por que o teste não rodou:** o token do contexto `shopman-do-app-admin` não tem `exec`
+  (`apps console` devolve 403); o `PDV-261001-N83` já está pago (sem botão de reenvio); uma venda
+  nova no PDV pede o operador. Próximo passo: o dono faz UMA venda por link no PDV para ele mesmo,
+  e a sessão lê a trilha em `orderman_directive.payload->'notification_delivery'->'attempts'`
+  (somente leitura, conexão direta 25060).
+- **Piloto de intenções:** 147 amostras *sugeridas*, **0 conferidas** (o placar pede 30); sem
+  `JEV_API_KEY`; `typesafe` fora da lista aprovada. O placar não roda para ninguém, não só para o
+  Jev (D36).
+- **Encomendas, imagens de referência:** o POS não roda teste visual em nenhum workflow da CI e
+  nenhum workflow regera; as 4 imagens nasceram no ambiente local (Playwright 1.63.0 e chromium-1243,
+  iguais ao lock) e foram regeradas nele.
+- **Filtrar nas Encomendas custa 3 toques** (Filtrar, dimensão, opção) em vez de 1; a contagem por
+  opção foi para o menu. Se o balcão reclamar, é o preço do espaço ganho.
+
+## 0-noite. Estado do turno das ordens de 01/10 noite e 02/10 (histórico)
 
 ### 0.1 O que entrou
 
