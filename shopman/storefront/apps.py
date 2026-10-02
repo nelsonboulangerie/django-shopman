@@ -22,10 +22,13 @@ class StorefrontConfig(AppConfig):
 
         import shopman.storefront.checks  # noqa: F401
         from shopman.storefront.concierge.handler import ConciergeTurnHandler
+        from shopman.storefront.concierge.intent_pilot import IntentPilotMeasureHandler
         from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
         registry.register_directive_handler(ConciergeTurnHandler())
         registry.register_directive_handler(StockAlertDeliveryHandler())
+        # "Medir agora" do placar das intenções (Admin): a medição roda no worker.
+        registry.register_directive_handler(IntentPilotMeasureHandler())
 
         # Stock-back alerts: react to Stockman Move arrivals to notify waiters.
         from django.db.models.signals import post_save

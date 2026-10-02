@@ -1014,6 +1014,18 @@ Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da l
 | `interruption_pk` | `int` | `shop/services/ifood_merchant._enqueue_interruption` | `IFoodMerchantInterruptionHandler` |
 | `state` | `string` | idem (estado no momento do pedido; compõe o `dedupe_key`) | informativo |
 
+#### `intent_pilot.measure`
+
+"Medir agora" do Admin (Placar das intenções): mede o placar fora do relógio semanal
+(`maybe_measure(force=True)`) no worker, nunca na requisição. Uma viva por vez
+(`dedupe_key` fixo = o topic); nasce com `available_at` 2 s à frente para o dispatcher
+por signal não rodá-la inline. Falha é terminal (sem retry: repetir pagaria as chamadas
+de novo).
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `requested_by` | `string` | `storefront/concierge/intent_pilot.enqueue_measurement` (username de quem clicou) | `IntentPilotMeasureHandler` (log) |
+
 ---
 
 ## Channel.config

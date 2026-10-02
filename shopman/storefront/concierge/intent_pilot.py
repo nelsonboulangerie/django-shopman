@@ -243,3 +243,65 @@ def _retention_days() -> int:
         if 1 <= days <= 30:
             windows.append(days)
     return min(windows) if windows else 7
+
+
+# ── "Medir agora": o placar fora do relógio semanal ─────────────────────────
+#
+# O ciclo mede sozinho a cada ``MEASURE_EVERY``. Quando a casa quer o placar já
+# (concorrente novo ligado, gabarito que cresceu), o Admin enfileira uma medição:
+# são dezenas de chamadas a modelos, então roda no worker de diretivas, nunca
+# dentro da requisição.
+
+MEASURE_TOPIC = "intent_pilot.measure"
+MEASURE_DEDUPE_KEY = MEASURE_TOPIC
+
+
+def measurement_pending() -> bool:
+    """Já há uma medição na fila ou rodando."""
+    from shopman.orderman.models import Directive
+
+    return Directive.objects.filter(
+        topic=MEASURE_TOPIC, dedupe_key=MEASURE_DEDUPE_KEY, status__in=("queued", "running"),
+    ).exists()
+
+
+def enqueue_measurement(*, requested_by: str = "") -> bool:
+    """Enfileira uma medição forçada. ``False`` quando já havia uma pendente.
+
+    ``available_at`` no futuro: o dispatcher por signal pula a diretiva e ela fica
+    para o worker. Sem isso a medição rodaria INLINE, no fim da requisição do Admin.
+    """
+    from shopman.shop.directives import create_deduped
+
+    if measurement_pending():
+        return False
+    created = create_deduped(
+        MEASURE_TOPIC,
+        payload={"requested_by": requested_by[:150]},
+        dedupe_key=MEASURE_DEDUPE_KEY,
+        available_at=timezone.now() + timedelta(seconds=2),
+    )
+    return created is not None
+
+
+class IntentPilotMeasureHandler:
+    """Mede agora e guarda o placar. Topic: ``intent_pilot.measure``.
+
+    Falha é terminal de propósito: repetir a medição cinco vezes seria pagar
+    cinco vezes pelas mesmas chamadas. Quem pediu vê o placar não chegar e pede
+    de novo.
+    """
+
+    topic = MEASURE_TOPIC
+
+    def handle(self, *, message, ctx: dict) -> None:
+        from shopman.orderman.exceptions import DirectiveTerminalError
+
+        del ctx
+        requested_by = (message.payload or {}).get("requested_by", "")
+        try:
+            measurement = maybe_measure(force=True)
+        except Exception as exc:
+            logger.exception("intent_pilot: medição pedida por %s falhou", requested_by or "?")
+            raise DirectiveTerminalError(f"medição falhou: {type(exc).__name__}") from exc
+        logger.info("intent_pilot: medição pedida por %s: %s", requested_by or "?", measurement.reason)
