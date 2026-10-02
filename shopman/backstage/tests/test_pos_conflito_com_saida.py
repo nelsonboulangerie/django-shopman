@@ -104,6 +104,11 @@ class POSConflitoComSaidaTests(TestCase):
         return payload
 
     def _post(self, url: str, payload: dict):
+        if url == CLOSE_URL:
+            # O PDV fecha com o total que a tela mostrou (D42).
+            from shopman.backstage.tests.pos_test_runtime import with_screen_total
+
+            payload = with_screen_total(payload)
         return self.client.post(url, data=json.dumps(payload), content_type="application/json")
 
     def _customer(self, ref: str, first: str, last: str, **extra) -> Customer:

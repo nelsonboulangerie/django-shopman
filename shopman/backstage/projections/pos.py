@@ -1231,7 +1231,9 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/sale/close/",
             payload_schema={
-                "required": ["tab_session_key", "items", "payment_method"],
+                # ``expected_total_q``: o total que a tela mostrou (D42); diferente
+                # do recalculado pelo servidor, a venda é recusada sem fechar.
+                "required": ["tab_session_key", "items", "payment_method", "expected_total_q"],
                 "optional": [
                     "customer_name",
                     "customer_phone",

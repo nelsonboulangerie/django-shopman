@@ -33,9 +33,11 @@ import {
   cartTotalQ,
   concreteActionHref,
   formatBRL,
+  isTotalChangedRefusal,
   moneyInputToQ,
   newLineId,
   resolvePayment,
+  withExpectedTotal,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
@@ -2731,7 +2733,7 @@ export function usePosSale(deps: PosSaleDeps) {
     | { kind: "invalid" }
     | { kind: "blocked" };
 
-  async function requestCloseUnderGuard(): Promise<GuardedCloseResult> {
+  async function requestCloseUnderGuard(expectedTotalQ: number): Promise<GuardedCloseResult> {
     const lockManager = globalThis.navigator?.locks;
     if (!lockManager?.request) {
       closeOutcomeUncertain.value = true;
@@ -2771,7 +2773,7 @@ export function usePosSale(deps: PosSaleDeps) {
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-            { body: buildCurrentIntent() },
+            { body: withExpectedTotal(buildCurrentIntent(), expectedTotalQ) },
           );
           const response = rawResponse && typeof rawResponse === "object"
             ? rawResponse as Partial<POSCloseSaleResponse>
@@ -2847,7 +2849,10 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
     busy.value = true;
     try {
-      const guarded = await requestCloseUnderGuard();
+      // O total que a tela MOSTROU viaja junto (D42): o servidor recalcula e,
+      // se o dele for outro, recusa sem fechar. É o da revisão viva, que o
+      // `if (!review.value)` acima garante existir neste ponto.
+      const guarded = await requestCloseUnderGuard(review.value.total_q);
       if (guarded.kind === "blocked") return;
       if (guarded.kind === "invalid") {
         serverError.value = closeOutcomeUncertainMessage;
@@ -2976,6 +2981,20 @@ export function usePosSale(deps: PosSaleDeps) {
         };
       } | null)?.error;
       if (handleReceiptIdentityFailure(error, "close")) return;
+      if (isTotalChangedRefusal(failure?.code)) {
+        // O total do servidor não é o que a tela mostrou: nada fechou. A frase
+        // do servidor diz os dois valores; a revisão é refeita para o operador
+        // conferir o total novo com o cliente e finalizar de novo.
+        serverError.value = httpErrorMessage(error, "O total mudou. Confira com o cliente antes de cobrar.");
+        review.value = null;
+        try {
+          await reviewSale();
+          reviewFailed.value = false;
+        } catch {
+          reviewFailed.value = true;
+        }
+        return;
+      }
       // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
       // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
       // aqui o catch nem procurava por ela. O operador lia um toast que sumia,

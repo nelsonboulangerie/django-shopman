@@ -190,6 +190,17 @@ Demais chaves canônicas (cliente e data são obrigatórios em `order`, como aci
 - fulfillment: `delivery_date`, `delivery_time_slot`, `delivery_fee_q`,
   `order_notes`.
 - payment: `payment_collection`, `payment_tenders`, `tendered_q`.
+- total esperado (D42, 02/10/2026): `expected_total_q`, o total da revisão que a
+  tela MOSTROU ao operador, em centavos. **Obrigatório no `close_sale` HTTP**
+  (ausente = 422 `expected_total_required`); o `review_sale` o ignora. O servidor
+  recalcula pela mesma conta da revisão e, se o dele for outro, para cima ou para
+  baixo, recusa sem fechar nada: 422 `error.code = total_changed`, `field =
+  expected_total_q`, `errors`, `error.context = {old_total_q, new_total_q}` e a
+  frase "O total mudou de R$ X para R$ Y. Confira com o cliente antes de cobrar."
+  A tela refaz a revisão e o operador finaliza de novo. Campo à parte: não muda o
+  valor de nenhuma linha de pagamento (o lançamento único não-dinheiro segue só
+  com o método). A retentativa da mesma venda (`client_request_id` que já virou
+  pedido) devolve a venda feita, nunca esta recusa. Mesmo nome do checkout da loja.
 - fiscal/receipt: `issue_fiscal_document`, `receipt_channels` (multi: `print`/`email`; vazio = sem comprovante), `receipt_email`.
 - cadastro a partir do comprovante: `save_receipt_contact`, `save_receipt_tax_id`
   (booleanos). São a ORDEM EXPLÍCITA do operador para que o e-mail do

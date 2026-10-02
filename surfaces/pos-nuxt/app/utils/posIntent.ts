@@ -83,6 +83,26 @@ export function resolvePayment(tenders: POSPaymentTenderDraft[], totalQ: number)
   return { paymentMethod: "", paymentTenders: [], tenderedQ: null };
 }
 
+/**
+ * O fechamento leva o total que a tela MOSTROU (`expected_total_q`, D42).
+ *
+ * Campo à parte, de propósito: no lançamento único não-dinheiro o contrato manda
+ * só o método (`resolvePayment`), e nenhuma linha de pagamento muda de valor por
+ * causa dele. O servidor recalcula; diferente, recusa a venda sem fechar nada
+ * (`total_changed`). Mesmo nome do checkout da loja.
+ */
+export function withExpectedTotal(
+  intent: Record<string, unknown>,
+  expectedTotalQ: number,
+): Record<string, unknown> {
+  return { ...intent, expected_total_q: Math.max(0, Math.round(expectedTotalQ)) };
+}
+
+/** A recusa do fechamento que diz "o total que a tela mostrou não é mais este". */
+export function isTotalChangedRefusal(code: string | undefined): boolean {
+  return code === "total_changed";
+}
+
 export function actionHref(
   actions: Action[] | undefined,
   ref: string,

@@ -111,7 +111,7 @@ def test_a_porta_http_devolve_422_com_a_frase(minimum, client, monkeypatch):
     from django.contrib.contenttypes.models import ContentType
     from shopman.cashman.models import Shift
 
-    from shopman.backstage.tests.pos_test_runtime import bind_station
+    from shopman.backstage.tests.pos_test_runtime import bind_station, with_screen_total
     from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
 
     operator, shift = minimum
@@ -130,7 +130,7 @@ def test_a_porta_http_devolve_422_com_a_frase(minimum, client, monkeypatch):
     monkeypatch.setattr(session_service, "commit_session", refuse)
     response = client.post(
         "/api/v1/backstage/pos/sale/close/",
-        data={**_payload(shift, "min-6"), "intent_version": POS_SALE_INTENT_VERSION},
+        data=with_screen_total({**_payload(shift, "min-6"), "intent_version": POS_SALE_INTENT_VERSION}),
         content_type="application/json",
     )
     assert response.status_code == 422, response.content
