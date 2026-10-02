@@ -9,14 +9,24 @@
 //     mostram (etiquetas circulam só com o código) — aqui é a visão de gestor.
 // Sem gráficos: tabelas caladas e números pré-formatados pelas projections.
 import { isStale, isoForOffset } from "~/presentation/production";
+import {
+  periodAnchor,
+  periodOfDay,
+  resolvePeriod,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
 import { REPORT_KINDS, type ReportFiltersQuery } from "~/presentation/reports";
 
 // ── Gestão do dia (KPIs + atrasos + mapa cego) ─────────────────────────────
-const selectedDate = ref(isoForOffset(0));
-const dateChips = [
-  { iso: isoForOffset(-1), label: "Ontem" },
-  { iso: isoForOffset(0), label: "Hoje" },
-];
+// O "Período" do kit em Dia (Tipo 2): ‹ recua um dia; o futuro não tem gestão.
+const todayISO = isoForOffset(0);
+const selectedDate = ref(todayISO);
+const managementPeriod = computed<PeriodSelection>({
+  get: () => periodOfDay("day", selectedDate.value, todayISO),
+  set: (next) => {
+    selectedDate.value = periodAnchor(next, todayISO);
+  },
+});
 
 const {
   management,
@@ -50,6 +60,18 @@ const {
   openCursor,
 } = useReportFilters(initialFilters);
 const activeKind = computed(() => filters.value.report_kind);
+
+// O intervalo do relatório é o "Período" do kit (Tipo 2) com personalizado: os
+// últimos 7 dias por padrão, ‹ › andam um período igual, e a troca já aplica (o
+// resto do filtro continua esperando o "Aplicar").
+const reportPeriod = ref<PeriodSelection>({ preset: "7d", from: "", to: "" });
+function changeReportPeriod(next: PeriodSelection) {
+  reportPeriod.value = next;
+  const range = resolvePeriod(next, { today: todayISO, max: todayISO });
+  filterDraft.date_from = range.date_from;
+  filterDraft.date_to = range.date_to;
+  applyFilters();
+}
 const exportEligible = computed(
   () => !filtersDirty.value && !filterError.value,
 );
@@ -134,28 +156,14 @@ function refreshAll() {
       <!-- ── Gestão do dia ─────────────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
         <h2 class="text-lg font-semibold">Gestão do dia</h2>
-        <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
-          aria-label="Data da gestão"
-        >
-          <!-- Segmento compacto de período; a seleção é o próprio controle, não um UiButton solto. -->
-          <button
-            v-for="chip in dateChips"
-            :key="chip.iso"
-            type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              selectedDate === chip.iso
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="selectedDate === chip.iso"
-            @click="selectedDate = chip.iso"
-          >
-            {{ chip.label }}
-          </button>
-        </div>
+        <OperatorPeriodPicker
+          v-model="managementPeriod"
+          :presets="['day']"
+          :today="todayISO"
+          :max="todayISO"
+          label="Data da gestão"
+          align="start"
+        />
         <span v-if="management" class="text-sm text-muted-foreground">{{
           management.selected_date_display
         }}</span>
@@ -340,26 +348,19 @@ function refreshAll() {
       <div
         class="mb-3 flex flex-wrap items-end gap-3 rounded-md border bg-card p-3"
       >
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          De
-          <UiInput
-            v-model="filterDraft.date_from"
-            type="date"
-            class="w-auto"
-            :aria-invalid="!!filterError"
-            aria-describedby="report-date-help"
+        <div class="grid gap-1 text-xs font-medium text-muted-foreground">
+          Período
+          <OperatorPeriodPicker
+            :model-value="reportPeriod"
+            :presets="['day', 'week', 'month', '7d', '28d']"
+            custom
+            :today="todayISO"
+            :max="todayISO"
+            label="Período do relatório"
+            align="start"
+            @update:model-value="changeReportPeriod"
           />
-        </label>
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Até
-          <UiInput
-            v-model="filterDraft.date_to"
-            type="date"
-            class="w-auto"
-            :aria-invalid="!!filterError"
-            aria-describedby="report-date-help"
-          />
-        </label>
+        </div>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Ficha técnica
           <UiNativeSelect v-model="filterDraft.recipe_ref" class="w-auto">
@@ -435,7 +436,7 @@ function refreshAll() {
         >
           {{
             filterError ||
-            "Período máximo: 93 dias. Os filtros só mudam ao aplicar."
+            "Período máximo: 93 dias. O período vale na hora; os outros filtros, ao aplicar."
           }}
         </p>
       </div>

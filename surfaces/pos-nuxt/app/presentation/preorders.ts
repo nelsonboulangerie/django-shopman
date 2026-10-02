@@ -29,7 +29,7 @@ import type {
 } from "~/types/preorders";
 
 import { addDays } from "./orderTickets";
-import { dateLabel, parseLocalDate, shortDate } from "./schedule";
+import { parseLocalDate } from "./schedule";
 
 /** A frase que diz o corte da seção. */
 export const PREORDERS_SCOPE_NOTE = "Retiradas e entregas de todos os canais, pela data combinada.";
@@ -161,38 +161,6 @@ export function periodParams(view: Pick<PreordersView, "mode" | "date">): Record
   return view.mode === "day"
     ? { date_from: view.date, date_to: view.date }
     : { week: isoWeek(view.date) };
-}
-
-/** ‹ › — um dia no modo Dia, uma semana no modo Semana. */
-export function stepDate(view: Pick<PreordersView, "mode" | "date">, direction: -1 | 1): string {
-  return addDays(view.date, direction * (view.mode === "day" ? 1 : 7));
-}
-
-/** O período mostrado contém hoje? Sem isso, a tela oferece "Voltar para hoje". */
-export function showsToday(view: Pick<PreordersView, "mode" | "date">, today: string): boolean {
-  if (view.mode === "day") return view.date === today;
-  return mondayOf(view.date) === mondayOf(today);
-}
-
-/**
- * O período em palavras. Dia: "Hoje, 28/09" · "Amanhã, 29/09" · "qua, 30/09".
- * Semana: "Esta semana: 28/09 a 04/10" · "Semana de 05/10 a 11/10".
- */
-export function periodTitle(view: Pick<PreordersView, "mode" | "date">, today: string): string {
-  if (view.mode === "day") {
-    const label = dateLabel(view.date, today);
-    return label === "Hoje" || label === "Amanhã" ? `${label}, ${shortDate(view.date)}` : label;
-  }
-  const monday = mondayOf(view.date);
-  const span = `${shortDate(monday)} a ${shortDate(addDays(monday, 6))}`;
-  return showsToday(view, today) ? `Esta semana: ${span}` : `Semana de ${span}`;
-}
-
-/** Os rótulos de ‹ ›, por extenso para o leitor de tela. */
-export function stepLabels(mode: PreordersMode): { prev: string; next: string } {
-  return mode === "day"
-    ? { prev: "Dia anterior", next: "Próximo dia" }
-    : { prev: "Semana anterior", next: "Próxima semana" };
 }
 
 // ── Contagens e frases ──────────────────────────────────────────────────────

@@ -228,7 +228,7 @@ const arrowClass =
                 type="date"
                 :min="min"
                 :max="max"
-                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
                 data-period-custom-from
               />
             </label>
@@ -239,7 +239,7 @@ const arrowClass =
                 type="date"
                 :min="min"
                 :max="max"
-                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
                 data-period-custom-to
               />
             </label>
@@ -263,7 +263,7 @@ const arrowClass =
               type="date"
               :min="min"
               :max="max"
-              class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
+              class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
               data-period-jump
             />
           </label>
@@ -274,7 +274,7 @@ const arrowClass =
             data-period-jump-apply
             @click="submitJump"
           >
-            Ir para o dia
+            Mostrar esta data
           </button>
         </template>
       </div>

@@ -33,7 +33,6 @@ import {
   parseView,
   periodEmptyMessage,
   periodParams,
-  periodTitle,
   preorderCountLabel,
   printPlan,
   railAriaLabel,
@@ -44,11 +43,8 @@ import {
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
-  showsToday,
   singleResult,
   situationTone,
-  stepDate,
-  stepLabels,
   toReceiveLine,
   todayPendingCount,
   viewPath,
@@ -178,29 +174,6 @@ describe("a semana começa na SEGUNDA (decisão do dono, 28/09)", () => {
   it("o período pedido ao servidor: o dia pelas datas, a semana pela semana ISO", () => {
     expect(periodParams({ mode: "day", date: "2026-10-01" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
     expect(periodParams({ mode: "week", date: "2026-10-01" })).toEqual({ week: "2026-W40" });
-  });
-
-  it("‹ › anda um dia no Dia e uma semana na Semana", () => {
-    expect(stepDate({ mode: "day", date: HOJE }, 1)).toBe("2026-09-29");
-    expect(stepDate({ mode: "day", date: HOJE }, -1)).toBe("2026-09-27");
-    expect(stepDate({ mode: "week", date: HOJE }, 1)).toBe("2026-10-05");
-    expect(stepDate({ mode: "week", date: HOJE }, -1)).toBe("2026-09-21");
-    expect(stepLabels("week")).toEqual({ prev: "Semana anterior", next: "Próxima semana" });
-  });
-
-  it("'Voltar para hoje' só quando o período não contém hoje", () => {
-    expect(showsToday({ mode: "day", date: HOJE }, HOJE)).toBe(true);
-    expect(showsToday({ mode: "day", date: "2026-09-29" }, HOJE)).toBe(false);
-    expect(showsToday({ mode: "week", date: "2026-10-04" }, HOJE)).toBe(true);
-    expect(showsToday({ mode: "week", date: "2026-10-05" }, HOJE)).toBe(false);
-  });
-
-  it("o período em palavras", () => {
-    expect(periodTitle({ mode: "day", date: HOJE }, HOJE)).toBe("Hoje, 28/09");
-    expect(periodTitle({ mode: "day", date: "2026-09-29" }, HOJE)).toBe("Amanhã, 29/09");
-    expect(periodTitle({ mode: "day", date: "2026-10-01" }, HOJE)).toBe("qui, 01/10");
-    expect(periodTitle({ mode: "week", date: "2026-10-01" }, HOJE)).toBe("Esta semana: 28/09 a 04/10");
-    expect(periodTitle({ mode: "week", date: "2026-10-07" }, HOJE)).toBe("Semana de 05/10 a 11/10");
   });
 });
 

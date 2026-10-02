@@ -10,7 +10,12 @@ import type {
   ProductionShortageError,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
-import { isStale } from "~/presentation/production";
+import { isStale, isoForOffset } from "~/presentation/production";
+import {
+  periodAnchor,
+  periodOfDay,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
 import {
   hasOpenDialogOutside,
   isEditableKeyboardTarget,
@@ -61,8 +66,17 @@ watch(
   },
 );
 
-// ── Data: Hoje · Outra data (a fornada esquecida de ontem fecha por aqui) ───
-const isCustomDate = computed(() => selectedDate.value !== "");
+// ── Data: o "Período" do kit em Dia (Tipo 2). A fornada esquecida de ontem
+// fecha por aqui, a um toque de ‹. Vazio é hoje (o servidor resolve), e o
+// futuro não tem lote para fechar.
+const todayISO = isoForOffset(0);
+const period = computed<PeriodSelection>({
+  get: () => periodOfDay("day", selectedDate.value, todayISO),
+  set: (next) => {
+    const day = periodAnchor(next, todayISO);
+    selectedDate.value = day === todayISO ? "" : day;
+  },
+});
 // Menu ⋯ do painel — a exceção mora aqui, fora de evidência.
 const menuOpen = ref(false);
 
@@ -312,7 +326,7 @@ function cardAnchor(order: QCOrderCardProjection): string {
 const oven = useFloorTimers();
 const quickFinishAvailable = computed(
   () =>
-    !isCustomDate.value &&
+    selectedDate.value === "" &&
     (kiosk.value?.recipes ?? []).some((recipe) => quickRecipeAvailable(recipe)),
 );
 // O countdown é local; o FATO (enfornou/retirou) é declarado ao servidor.
@@ -491,44 +505,14 @@ function onTimerKeydown(event: KeyboardEvent) {
     <!-- Painel de lotes do dia. -->
     <div v-else class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
       <div class="flex items-center justify-between gap-3">
-        <!-- Data: mesmo padrão de chips das outras telas do backstage. -->
-        <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
-          aria-label="Data dos lotes"
-        >
-          <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
-          <button
-            type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              !isCustomDate
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            @click="selectedDate = ''"
-          >
-            Hoje
-          </button>
-          <label
-            class="date-input-hit-area relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              isCustomDate
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-          >
-            <span aria-hidden="true">{{
-              isCustomDate ? kiosk?.selected_date_display : "Outra data"
-            }}</span>
-            <input
-              v-model="selectedDate"
-              type="date"
-              class="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Escolher a data dos lotes"
-            />
-          </label>
-        </div>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="['day']"
+          :today="todayISO"
+          :max="todayISO"
+          label="Data dos lotes"
+          align="start"
+        />
 
         <UiPopover
           v-if="quickFinishAvailable"

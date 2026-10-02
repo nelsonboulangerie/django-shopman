@@ -256,31 +256,24 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   ).toBe(0);
 });
 
-for (const { route, label, endpoint } of [
-  { route: "/", label: "Escolher outra data", endpoint: "/production/?" },
-  {
-    route: "/board",
-    label: "Escolher outra data",
-    endpoint: "/production/forecast/?",
-  },
-  {
-    route: "/expedite",
-    label: "Escolher a data dos lotes",
-    endpoint: "/production/qc/?",
-  },
+for (const { route, endpoint, offset } of [
+  { route: "/", endpoint: "/production/?", offset: 2 },
+  { route: "/board", endpoint: "/production/forecast/?", offset: 2 },
+  // A Expedição não anda para o futuro (não há lote para fechar): o dia é atrás.
+  { route: "/expedite", endpoint: "/production/qc/?", offset: -2 },
 ]) {
   test(`${route} usa o controle nativo de data sem depender de showPicker`, async ({
     context,
     page,
   }) => {
     // A data escolhida NÃO pode ser o hoje da página: o valor igual ao atual
-    // não dispara `change`, não sai request, e o teste morre em timeout — foi
+    // não muda a seleção, não sai request, e o teste morre em timeout — foi
     // exatamente o que aconteceu em 17/09/2026, dia em que o literal
-    // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias à
-    // frente cobre o fuso do runner (UTC) contra o da loja (-03:00).
+    // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias de
+    // distância cobrem o fuso do runner (UTC) contra o da loja (-03:00).
     const target = (() => {
       const day = new Date();
-      day.setUTCDate(day.getUTCDate() + 2);
+      day.setUTCDate(day.getUTCDate() + offset);
       return day.toISOString().slice(0, 10);
     })();
     await page.addInitScript(() => {
@@ -296,7 +289,10 @@ for (const { route, label, endpoint } of [
     await context.addCookies([authed]);
     await page.goto(route);
 
-    const input = page.getByLabel(label);
+    // O "Período" do kit: o botão abre o popover, e o dia se escolhe no campo
+    // nativo dele ("Ir para o dia").
+    await page.locator("[data-period-button]").first().click();
+    const input = page.getByLabel("Ir para o dia");
     await input.click();
     await expect(input).toBeFocused();
     expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
@@ -304,14 +300,9 @@ for (const { route, label, endpoint } of [
       (request) =>
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
-    await input.evaluate((node: HTMLInputElement, value: string) => {
-      node.value = value;
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-      node.dispatchEvent(new Event("change", { bubbles: true }));
-      node.dataset.e2eChangeObserved = "true";
-    }, target);
+    await input.fill(target);
     await expect(input).toHaveValue(target);
-    await expect(input).toHaveAttribute("data-e2e-change-observed", "true");
+    await page.getByRole("button", { name: "Mostrar esta data" }).click();
     await changedRequest;
   });
 }
@@ -359,17 +350,13 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   );
 
   await context.addCookies([authed]);
-  for (const { route, label } of [
-    { route: "/", label: "Escolher outra data" },
-    { route: "/board", label: "Escolher outra data" },
-    { route: "/expedite", label: "Escolher a data dos lotes" },
-  ]) {
+  for (const route of ["/", "/board", "/expedite"]) {
     await page.goto(route);
-    const dateInput = page.getByLabel(label);
+    await page.locator("[data-period-button]").first().click();
+    const dateInput = page.getByLabel("Ir para o dia");
     await dateInput.focus();
     await expect(dateInput).toBeFocused();
-    const visibleTarget = dateInput.locator("..");
-    const outline = await visibleTarget.evaluate((node) => {
+    const outline = await dateInput.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
         style: style.outlineStyle,

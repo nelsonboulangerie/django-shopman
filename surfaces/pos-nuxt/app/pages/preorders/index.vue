@@ -42,7 +42,6 @@ import {
   parseView,
   periodEmptyMessage,
   periodParams,
-  periodTitle,
   preorderCountLabel,
   printPlan,
   searchCompletedHeading,
@@ -50,16 +49,19 @@ import {
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
-  showsToday,
   singleResult,
-  stepDate,
-  stepLabels,
   toReceiveLine,
   viewPath,
   viewQuery,
   type PreorderFilters,
+  type PreordersMode,
   type PreordersView,
 } from "~/presentation/preorders";
+import {
+  periodAnchor,
+  periodOfDay,
+  type PeriodSelection,
+} from "../../../../operator-kit/app/presentation/dates";
 import type { PreorderDay } from "~/types/preorders";
 
 useHead({ title: "Encomendas" });
@@ -95,7 +97,12 @@ const summary = computed(() => (list.value ? listSummary(list.value.count, list.
 const toReceive = computed(() => (list.value && list.value.count
   ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display)
   : ""));
-const steps = computed(() => stepLabels(view.value.mode));
+// O "Período" do kit (Tipo 2) em Dia e Semana: ‹ › andam um dia ou uma semana,
+// e o estado continua na URL (modo + data).
+const periodSelection = computed<PeriodSelection>({
+  get: () => periodOfDay(view.value.mode, view.value.date, today),
+  set: (next) => update({ mode: next.preset as PreordersMode, date: periodAnchor(next, today) }),
+});
 
 // ── Imprimir N vias (o que está visível) ──
 const tickets = usePosOrderTickets(pos);
@@ -297,24 +304,14 @@ function refreshAll() {
       <section class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm" aria-labelledby="preorders-period-title">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <UiButton variant="outline" size="icon" :aria-label="steps.prev" data-period-prev @click="update({ date: stepDate(view, -1) })">
-            <Icon name="lucide:chevron-left" class="size-5" />
-          </UiButton>
-          <h2 id="preorders-period-title" class="min-w-0 text-lg font-semibold" data-period-title>{{ periodTitle(view, today) }}</h2>
-          <UiButton variant="outline" size="icon" :aria-label="steps.next" data-period-next @click="update({ date: stepDate(view, 1) })">
-            <Icon name="lucide:chevron-right" class="size-5" />
-          </UiButton>
-          <UiInput
-            type="date"
-            class="h-11 w-auto"
-            aria-label="Escolher a data"
-            :model-value="view.date"
-            data-period-date
-            @update:model-value="(value: string) => value && update({ date: value })"
+          <h2 id="preorders-period-title" class="sr-only">Período das encomendas</h2>
+          <OperatorPeriodPicker
+            v-model="periodSelection"
+            :presets="['day', 'week']"
+            :today="today"
+            label="Período das encomendas"
+            align="start"
           />
-          <UiButton v-if="!showsToday(view, today)" variant="ghost" size="sm" data-period-today @click="update({ date: today })">
-            Voltar para hoje
-          </UiButton>
           </div>
           <p class="flex min-w-[min(100%,14rem)] flex-1 items-start gap-1.5 text-xs text-muted-foreground" data-preorders-scope>
             <Icon name="lucide:info" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
