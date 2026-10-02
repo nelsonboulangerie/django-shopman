@@ -7,8 +7,10 @@
 // pedido remoto, antes do pagamento... para todos os pedidos da semana, por
 // exemplo. Assim fica fácil de visualizar em um painel físico."
 //
-// Desde 28/09 o lote não tem tela própria: é o botão "Imprimir N vias" da tela
-// das Encomendas, que imprime o que está VISÍVEL (período + filtros). Aqui mora
+// Desde 28/09 o lote não tem tela própria: é o botão "Imprimir N vias que
+// faltam" da tela das Encomendas, que imprime do que está VISÍVEL (período +
+// filtros) só as vias que ainda não saíram (P2 do dono, 02/10). A via que já
+// saiu se reimprime no detalhe da encomenda, uma por vez. Aqui mora
 // só o FORMATO do gesto e a aritmética de datas; quem decide que pedidos entram
 // é o servidor (`/orders/tickets/escpos/`), e quem compõe os bytes da bobina é
 // o `receipt_escpos` — a tela nunca desenha papel.
@@ -57,12 +59,16 @@ export function ticketCountLabel(count: number): string {
 }
 
 /**
- * O texto do CTA. O número entra no botão porque é o que ninguém quer errar —
- * e zero não é número de botão: sem via para imprimir, a frase inteira.
+ * O texto do CTA do lote. O número entra no botão porque é o que ninguém quer
+ * errar, e o botão diz que são as que FALTAM: as já impressas na tela não vão.
+ * Zero não é número de botão: com a tela vazia, "Nenhuma via para imprimir";
+ * com tudo impresso, a frase diz por que o botão está desligado.
+ *
+ * `missing` são as vias que o lote leva; `shown`, as encomendas na tela.
  */
-export function printCtaLabel(count: number): string {
-  if (count <= 0) return "Nenhuma via para imprimir";
-  return count === 1 ? "Imprimir 1 via" : `Imprimir ${count} vias`;
+export function printCtaLabel(missing: number, shown: number): string {
+  if (missing <= 0) return shown > 0 ? "Todas as vias impressas" : "Nenhuma via para imprimir";
+  return missing === 1 ? "Imprimir 1 via que falta" : `Imprimir ${missing} vias que faltam`;
 }
 
 export interface BatchNotice {

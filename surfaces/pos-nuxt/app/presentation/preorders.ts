@@ -3,7 +3,7 @@
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
 // buscar" sempre no topo, o Período do kit na barra (Dia ou Semana, ‹ › e a data),
 // a linha "Hoje", os recortes de todo dia em botões de um toque com o "Filtrar"
-// do kit para o resto, e o "Imprimir N vias" do que está visível. O estado inteiro
+// do kit para o resto, e o lote das vias que faltam no que está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
 // mesmo lugar e para o kiosk guardar o favorito.
 //
@@ -436,22 +436,25 @@ export function balanceStandsOut(card: Pick<PreorderCard, "payment_state" | "bal
   return card.payment_state === "to_receive" && (card.balance_q ?? 0) > 0;
 }
 
-// ── Imprimir N vias (o que está visível) ────────────────────────────────────
+// ── O lote: as vias que faltam, do que está visível ─────────────────────────
 
 export interface PrintPlan {
   date_from: string;
   date_to: string;
-  /** Os refs visíveis, na ordem da tela (que é a do painel). */
+  /** Os refs visíveis ainda sem Via Pedido, na ordem da tela (que é a do painel). */
   refs: string[];
 }
 
 /**
- * O lote do botão "Imprimir N vias": o período que a tela mostra e só os
- * pedidos que os filtros deixaram visíveis. O servidor recorta o período por
- * esses refs e nunca alarga (`order_ticket.select_refs`).
+ * O lote do botão "Imprimir N vias que faltam": o período que a tela mostra e,
+ * dos pedidos que os filtros deixaram visíveis, só os que ainda não têm a Via
+ * Pedido (P2 do dono, 02/10: o lote nunca reimprime; a via que já saiu se
+ * reimprime no detalhe). O servidor recorta o período por esses refs e nunca
+ * alarga (`order_ticket.select_refs`).
  */
 export function printPlan(list: Pick<PreorderListResponse, "date_from" | "date_to">, visibleDays: readonly PreorderDay[]): PrintPlan {
-  return { date_from: list.date_from, date_to: list.date_to, refs: flattenDays(visibleDays).map((card) => card.ref) };
+  const refs = flattenDays(visibleDays).filter((card) => !card.ticket_printed).map((card) => card.ref);
+  return { date_from: list.date_from, date_to: list.date_to, refs };
 }
 
 // ── Cliente veio buscar ─────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 // A tela única das Encomendas: o estado na URL, a semana de segunda a domingo,
-// os filtros combináveis, o "Imprimir N vias" do visível, a busca e as frases
+// os filtros combináveis, o lote das vias que faltam, a busca e as frases
 // que o balcão lê. O corte é do servidor; aqui se prende o FORMATO.
 import { describe, expect, it } from "vitest";
 
@@ -346,9 +346,9 @@ describe("filtros combináveis, com a contagem de cada chip", () => {
   });
 });
 
-// ── Imprimir N vias ─────────────────────────────────────────────────────────
+// ── O lote: as vias que faltam ──────────────────────────────────────────────
 
-describe("Imprimir N vias — o que está visível", () => {
+describe("o lote: as vias que faltam, do que está visível", () => {
   it("o período da resposta e só os refs que os filtros deixaram, na ordem da tela", () => {
     const list = { date_from: "2026-09-28", date_to: "2026-10-04" } as PreorderListResponse;
     const visible = filterDays([
@@ -357,6 +357,16 @@ describe("Imprimir N vias — o que está visível", () => {
     ], { ...NO_FILTERS, print: "pending" });
     expect(printPlan(list, visible)).toEqual({ date_from: "2026-09-28", date_to: "2026-10-04", refs: ["A", "C"] });
     expect(flattenDays(visible).length).toBe(2);
+  });
+
+  it("P2: sem recorte, a via que já saiu fica de fora do lote (reimprimir é no detalhe)", () => {
+    const list = { date_from: "2026-09-28", date_to: "2026-10-04" } as PreorderListResponse;
+    const visible = filterDays([
+      day({ orders: [card({ ref: "A" }), card({ ref: "B", ticket_printed: true })] }),
+      day({ date: "2026-09-29", is_today: false, orders: [card({ ref: "C" })] }),
+    ], NO_FILTERS);
+    expect(flattenDays(visible).length).toBe(3);
+    expect(printPlan(list, visible).refs).toEqual(["A", "C"]);
   });
 });
 

@@ -57,10 +57,11 @@ describe("quantas vias vão sair", () => {
     expect(canPrintBatch(200, 200)).toBe(true);
   });
 
-  it("o número entra no CTA — e zero não é número de botão", () => {
-    expect(printCtaLabel(0)).toBe("Nenhuma via para imprimir");
-    expect(printCtaLabel(1)).toBe("Imprimir 1 via");
-    expect(printCtaLabel(34)).toBe("Imprimir 34 vias");
+  it("o número entra no CTA, e diz que são as que faltam; zero não é número de botão", () => {
+    expect(printCtaLabel(0, 0)).toBe("Nenhuma via para imprimir");
+    expect(printCtaLabel(0, 3)).toBe("Todas as vias impressas");
+    expect(printCtaLabel(1, 4)).toBe("Imprimir 1 via que falta");
+    expect(printCtaLabel(34, 40)).toBe("Imprimir 34 vias que faltam");
   });
 
   it("a contagem fala português no singular e no zero", () => {

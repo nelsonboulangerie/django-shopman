@@ -12,8 +12,8 @@ import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 
 import { makeProjection } from "../composables/_posSaleHarness";
 
-// A tela única das Encomendas (busca no topo, Dia | Semana, filtros, "Imprimir N
-// vias") e o detalhe — que imprime a Via Pedido e oferece cada gesto (entregar,
+// A tela única das Encomendas (busca no topo, Dia | Semana, filtros, o lote das
+// vias que faltam) e o detalhe — que imprime a Via Pedido e oferece cada gesto (entregar,
 // editar, reagendar, cancelar) só quando o servidor diz que pode.
 
 const printOne = vi.fn().mockResolvedValue(true);
@@ -182,6 +182,16 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
   it("imprime a Via Pedido pela impressão individual que já existe", async () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-print]").trigger("click");
+    await flushPromises();
+    expect(printOne).toHaveBeenCalledWith("NB-7");
+  });
+
+  it("P2: a via que já saiu se reimprime aqui, uma por vez (o lote da seção só leva o que falta)", async () => {
+    detail.counter.ticket_printed = true;
+    const wrapper = await mount(DetailPage);
+    const button = wrapper.find("[data-preorder-print]");
+    expect(button.text()).toBe("Imprimir a Via Pedido de novo");
+    await button.trigger("click");
     await flushPromises();
     expect(printOne).toHaveBeenCalledWith("NB-7");
   });
@@ -571,7 +581,7 @@ describe("Encomendas — o dia", () => {
   });
 });
 
-describe("Encomendas — filtros e 'Imprimir N vias'", () => {
+describe("Encomendas — filtros e o lote das vias que faltam", () => {
   it("filtros numa linha, combináveis e com contagem; o filtro vai para a URL e muda a lista", async () => {
     const wrapper = await mount(PreordersPage);
     // Os recortes e o lote moram na MESMA linha, dentro do quadro do período.
@@ -596,7 +606,18 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
       .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
   });
 
-  it("'Falta imprimir' mostra só o que não saiu, e o botão imprime exatamente o visível", async () => {
+  it("P2: o lote imprime só a via que ainda não saiu, mesmo com a impressa na tela", async () => {
+    const wrapper = await mount(PreordersPage);
+    // Sem recorte, as duas estão na grade: NB-8 já tem a Via Pedido, NB-7 não.
+    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7", "NB-8"]);
+    const button = wrapper.find("[data-preorders-print]");
+    expect(button.text()).toBe("Imprimir 1 via que falta");
+    await button.trigger("click");
+    await flushPromises();
+    expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
+  });
+
+  it("'Sem Via Pedido' mostra só o que não saiu, e o lote leva as mesmas", async () => {
     const wrapper = await mount(PreordersPage);
     // "Falta imprimir" é o botão de um toque "Sem Via Pedido" (P1): o mesmo `?print=pending`.
     await wrapper.find('[data-preorders-shortcut="print:pending"]').trigger("click");
@@ -604,10 +625,21 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
     expect(route.query).toEqual({ print: "pending" });
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
     const button = wrapper.find("[data-preorders-print]");
-    expect(button.text()).toBe("Imprimir 1 via");
+    expect(button.text()).toBe("Imprimir 1 via que falta");
     await button.trigger("click");
     await flushPromises();
     expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
+  });
+
+  it("P2: com todas as vias impressas o lote não reimprime, e o botão desligado diz por quê", async () => {
+    week.days[0]!.orders[0] = card({ ticket_printed: true });
+    const wrapper = await mount(PreordersPage);
+    const button = wrapper.find("[data-preorders-print]");
+    expect(button.text()).toBe("Todas as vias impressas");
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    await flushPromises();
+    expect(printBatch).not.toHaveBeenCalled();
   });
 
   it("filtro que esvazia a semana diz o que não há; limpar é gesto da barra, e só dela", async () => {
