@@ -11,9 +11,27 @@
 >
 > **Seção 0 escrita em 2026-10-02 02:15 UTC** (23:15 de 01/10 em Brasília; turno do coordenador
 > noturno). **Reconciliada em 2026-10-02 14:48 UTC** (R0): ver "0-rec" logo abaixo.
-> A seção 0 é o estado agora; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
+> A seção 0 é o estado agora, com "0-turno" e "0-rec" por cima; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
+
+## 0-turno. Observações do dono, 02/10 16:29 a 17:10 UTC (o que mudou depois do 0-rec)
+
+> Ordem: `docs/coordination/ORDERS/2026-10-03-turno.md`. Registro de cada frente em
+> `docs/coordination/ROUNDS/` (R1, T0 a T6). Estado vivo no `BOARD.md`.
+
+- **Mergeados:** #1367 (o import do Craftsman pela porta pública), #1380 (PDV: as formas de pagamento
+  esperam a revisão do total), #1381 (loja: um só aviso no cardápio).
+- **Na fila (17:40 UTC):** #1382 (Encomendas: R1 a R5 saíram), #1383 (loja: observação por item em
+  folha), #1384 (PDV: o modo Encomendas virou assistente), #1385 (o "Exato" espera a revisão também),
+  #1379 (ordem, BOARD, ROUNDS, brief, esta seção).
+- **Esperando o dono:** D42 (o PDV manda o total esperado e o servidor recusa se mudou?) e D43 (P1 a
+  P7 do brief `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md`); a Frente 7 (primitivas no kit)
+  espera o D43.
+- **Corrigido aqui:** a observação por item é por LINHA (`cart/lines/<line_id>/notes/`), não por SKU;
+  ver o item "Observação por item" mais abaixo.
+- **NÃO VERIFICADO no navegador:** o cardápio com a flag do Continuum ligada (#1381) e o assistente
+  de Encomendas (#1384, exige Django com PIN). A folha da observação foi vista no desktop, não no celular.
 
 ## 0-rec. Reconciliação de 02/10 14:48 UTC (o que mudou depois da seção 0)
 
@@ -75,8 +93,12 @@
   próprio dado; o `NavigationFeedback` só termina quando o dado chega (teto de 15 s mantido). `lazy` e o
   limiar de 200 ms intocados. Desde o #1362 toda página preguiçosa declara, e o `performanceGuardrails.test.ts` trava.
   O teste novo reprova contra o `NavigationFeedback.vue` anterior (prova do defeito).
-- **Observação por item:** `PUT /api/v1/cart/skus/<sku>/notes/` grava `meta["notes"]` pelo op
-  `replace_sku` que já existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo).
+- **Observação por item:** `PUT /api/v1/cart/lines/<line_id>/notes/` (`shopman/storefront/api/urls.py:150`,
+  view `CartLineNotesView` em `surface.py:1334`) grava `meta["notes"]` pelo op `replace_sku` que já
+  existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo). ⚠️ **É por LINHA, não
+  por SKU, de propósito** (`shopman/shop/services/cart.py:384-386`): com escolhas no produto o mesmo
+  SKU tem duas linhas, e um editor por SKU faria uma observação sobrescrever a outra. (Corrigido em
+  02/10: esta linha dizia `cart/skus/<sku>/notes/`, rota que não existe.)
   280 caracteres, o mesmo teto do PDV (`LINE_NOTES_MAX_LENGTH`, `shopman/shop/services/cart.py`; #1362). `meta.notes` é texto pessoal: a sessão anonimizada recusa, a exclusão
   de conta apaga (o PDV também não apagava: corrigido), a exportação inclui.
 - **A Saída:** `backstage/projections/kds.py` lê `meta["notes"]` (lia `item.notes`, que não existe).

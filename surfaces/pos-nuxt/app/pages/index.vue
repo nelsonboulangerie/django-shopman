@@ -700,6 +700,7 @@ const paymentWorkspaceRef = ref<{
   openDiscount: () => void;
   openSplit: () => void;
   pressMethodKey: (letter: string) => boolean;
+  pressExact: () => boolean;
   pressReceiptKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => boolean;
 } | null>(null);
@@ -790,10 +791,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     }
     // "=" é o Exato do teclado físico: a linha selecionada assume o que as
-    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela.
+    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela,
+    // pela mesma porta: com a revisão do total em trânsito, ele espera.
     if (event.key === "=") {
       event.preventDefault();
-      tenderExact();
+      paymentWorkspaceRef.value?.pressExact();
       return;
     }
   }
@@ -1326,10 +1328,12 @@ onBeforeUnmount(() => {
           ref="orderEntryRef"
           v-else-if="inSaleView && orderSetupPending"
           :issue="orderSetupIssue"
+          :delivery="cart.fulfillmentConfirmed && cart.fulfillmentType === 'delivery'"
           :item-count="itemCount"
           :customer-name="cart.customerName"
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
+          :schedule-window="deliveryWindowLabel"
           :loading="busy"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
