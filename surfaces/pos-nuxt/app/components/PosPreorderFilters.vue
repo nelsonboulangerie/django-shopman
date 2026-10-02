@@ -10,7 +10,10 @@
 // o "Imprimir N vias" da tela).
 //
 // Pagamento a conferir não é opção escondida: é aviso próprio, com o gesto de
-// ver só elas — "não sei" nunca some dentro de "a receber" ou de "pagas".
+// ver só elas — "não sei" nunca some dentro de "a receber" ou de "pagas". Ligado
+// o recorte, o aviso sai: o chip "Pagamento: A conferir" diz o que se vê, e o X
+// dele (ou "Limpar filtros") é o único jeito de voltar. Limpar filtro é gesto da
+// barra, e só dela.
 import {
   checkCount,
   checkPaymentNotice,
@@ -32,8 +35,8 @@ const active = computed<ActiveFilters>({
 });
 const notice = computed(() => checkPaymentNotice(checkCount(props.cards, filters.value)));
 
-function toggleCheck() {
-  filters.value = { ...filters.value, pay: filters.value.pay === "check" ? "all" : "check" };
+function showOnlyCheck() {
+  filters.value = { ...filters.value, pay: "check" };
 }
 </script>
 
@@ -52,18 +55,18 @@ function toggleCheck() {
       <slot name="actions" />
     </div>
     <div
-      v-if="notice || filters.pay === 'check'"
+      v-if="notice && filters.pay !== 'check'"
       class="flex flex-wrap items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
       data-preorders-check-notice
     >
       <Icon name="lucide:circle-help" class="size-4 shrink-0" />
-      <span class="min-w-0 flex-1">{{ notice || "Mostrando só as encomendas com o pagamento a conferir." }}</span>
+      <span class="min-w-0 flex-1">{{ notice }}</span>
       <UiButton
         variant="outline"
-        data-preorders-check-toggle
-        @click="toggleCheck"
+        data-preorders-check-only
+        @click="showOnlyCheck"
       >
-        {{ filters.pay === "check" ? "Mostrar todas" : "Mostrar só essas" }}
+        Mostrar só essas
       </UiButton>
     </div>
   </div>
