@@ -6,7 +6,7 @@
 // resto (despertador, lembrete, estoque, produção) é o orquestrador; aqui só se
 // escolhe e se confirma.
 import { rescheduleChanged, rescheduleConfirmLabel } from "~/presentation/preorderActions";
-import { dateLabel, readinessNote, scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { readinessNote, scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
 import type { POSScheduleResponse } from "~/types/pos";
 
 const props = defineProps<{
@@ -32,6 +32,7 @@ const reason = ref("");
 const schedule = ref<POSScheduleResponse | null>(null);
 const loading = ref(false);
 const failed = ref(false);
+const storeToday = ref("");
 let seq = 0;
 
 async function load() {
@@ -45,7 +46,10 @@ async function load() {
     const response = await $fetch<POSScheduleResponse>(apiPath(`/api/v1/backstage/pos/schedule/?${query.toString()}`), {
       method: "GET", credentials: "include",
     });
-    if (mine === seq) schedule.value = response;
+    if (mine === seq) {
+      schedule.value = response;
+      if (response.today) storeToday.value = response.today;
+    }
   } catch {
     if (mine === seq) {
       schedule.value = null;
@@ -73,8 +77,9 @@ function pickDate(iso: string) {
   void load();
 }
 
-const today = computed(() => schedule.value?.today || "");
-const quickDates = computed(() => (schedule.value?.available_dates ?? []).slice(0, 7));
+// O hoje da loja sobrevive a uma busca que falhou: os dias continuam escolhíveis.
+const today = computed(() => schedule.value?.today || storeToday.value);
+const availableDates = computed(() => schedule.value?.available_dates ?? []);
 const windows = computed<ScheduleWindow[]>(() => schedule.value?.windows ?? []);
 const note = computed(() => readinessNote(schedule.value?.bottleneck_name || "", schedule.value?.ready_at || ""));
 const changed = computed(() => rescheduleChanged({ date: props.currentDate, slot: props.currentSlot }, { date: date.value, slot: slot.value }));
@@ -98,29 +103,20 @@ function confirm() {
       <form class="grid gap-4" @submit.prevent="confirm">
         <div class="grid gap-2">
           <span class="text-sm font-medium">Dia</span>
-          <div class="flex flex-wrap gap-2">
-            <UiButton
-              v-for="iso in quickDates"
-              :key="iso"
-              type="button"
-              variant="outline"
-              size="sm"
-              :class="date === iso ? 'border-primary bg-primary/5 font-semibold' : ''"
-              :data-reschedule-date="iso"
-              @click="pickDate(iso)"
-            >
-              {{ dateLabel(iso, today) }}
-            </UiButton>
-          </div>
-          <label class="grid gap-1 text-sm">
-            <span class="text-xs text-muted-foreground">Outra data</span>
-            <UiInput
-              :model-value="date"
-              type="date"
-              :min="today"
-              @update:model-value="pickDate(String($event || ''))"
-            />
-          </label>
+          <!-- A "Escolha rápida de dia" do kit (Tipo 1). Antes da primeira resposta
+               não se sabe o hoje da loja nem os dias fechados. -->
+          <OperatorDayPicker
+            v-if="today"
+            :model-value="date"
+            :today="today"
+            :min="today"
+            :available-dates="availableDates"
+            label="Novo dia da encomenda"
+            @update:model-value="pickDate"
+          />
+          <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+            {{ failed ? "Não deu para carregar os dias. Tente de novo." : "Carregando os dias…" }}
+          </p>
         </div>
 
         <p v-if="note" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">{{ note }}</p>

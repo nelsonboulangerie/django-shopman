@@ -246,87 +246,6 @@ export const EXPLORE_EXAMPLES = [
   { name: "Quebra de caixa por operador", config: { metric: "cash_difference", by: "operator", by2: "" } },
 ] as const;
 
-export interface WindowPreset {
-  key: string;
-  label: string;
-  days?: number; // só nas janelas móveis; calendário resolve por regra
-}
-
-/** Período CORRENTE do calendário — a semana começa na segunda. */
-export const WINDOW_PRESETS_CALENDAR: readonly WindowPreset[] = [
-  { key: "day", label: "Dia" },
-  { key: "week", label: "Semana" },
-  { key: "month", label: "Mês" },
-  { key: "year", label: "Ano" },
-];
-
-/** Janelas móveis terminando hoje. */
-export const WINDOW_PRESETS_ROLLING: readonly WindowPreset[] = [
-  { key: "7d", label: "7D", days: 7 },
-  // 28 e não 30: quatro semanas exatas têm o mesmo mix de dias-da-semana,
-  // então médias e comparações não mentem (sábado ≠ terça numa padaria).
-  { key: "28d", label: "28D", days: 28 },
-  { key: "3m", label: "3M", days: 90 },
-  { key: "6m", label: "6M", days: 180 },
-  { key: "1y", label: "1A", days: 365 },
-  { key: "5y", label: "5A", days: 1826 },
-  { key: "max", label: "Máx" },
-];
-
-export const WINDOW_PRESETS: readonly WindowPreset[] = [
-  ...WINDOW_PRESETS_CALENDAR,
-  ...WINDOW_PRESETS_ROLLING,
-];
-
-export interface WindowSelection {
-  preset: string; // key de WINDOW_PRESETS ou "custom"
-  from: string; // ISO, só para custom
-  to: string; // ISO, só para custom
-}
-
-/** Rótulo do botão de período: preset + a janela efetiva, sempre à vista. */
-export function windowButtonLabel(
-  selection: WindowSelection,
-  range: { date_from: string; date_to: string },
-): string {
-  const preset = WINDOW_PRESETS.find((p) => p.key === selection.preset);
-  const name = selection.preset === "custom" ? "Personalizado" : (preset?.label ?? "Período");
-  if (range.date_from === range.date_to) return `${name} · ${shortDate(range.date_from)}`;
-  return `${name} · ${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
-}
-
-/** Resolve a seleção em date_from/date_to (o backend normaliza e clampa). */
-export function resolveWindowRange(
-  selection: WindowSelection,
-  today: Date = new Date(),
-): { date_from: string; date_to: string } {
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const to = iso(today);
-  if (selection.preset === "custom" && selection.from && selection.to) {
-    return { date_from: selection.from, date_to: selection.to };
-  }
-  if (selection.preset === "day") {
-    return { date_from: to, date_to: to };
-  }
-  if (selection.preset === "week") {
-    const monday = new Date(today.getTime());
-    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-    return { date_from: iso(monday), date_to: to };
-  }
-  if (selection.preset === "month") {
-    return { date_from: `${to.slice(0, 7)}-01`, date_to: to };
-  }
-  if (selection.preset === "year") {
-    return { date_from: `${today.getFullYear()}-01-01`, date_to: to };
-  }
-  if (selection.preset === "max") {
-    return { date_from: DATA_EPOCH, date_to: to };
-  }
-  const preset = WINDOW_PRESETS.find((p) => p.key === selection.preset);
-  const days = preset?.days ?? 28;
-  return { date_from: iso(new Date(today.getTime() - (days - 1) * 86_400_000)), date_to: to };
-}
-
 // ── Agrupamento de séries longas ─────────────────────────────────────────────
 
 export type BucketSpan = "day" | "week" | "month";
@@ -547,12 +466,6 @@ export function missingLabel(reason: string): string {
 export function rangeLabel(low: number, high: number): string {
   return `${formatMoneyCompact(low)} a ${formatMoneyCompact(high)}`;
 }
-
-export const HORIZON_LABELS = [
-  { key: "day", label: "O dia" },
-  { key: "week", label: "A semana" },
-  { key: "month", label: "O mês" },
-] as const;
 
 /**
  * ISO "2025-06-12" → "12/06/2025". O ano é obrigatório quando as linhas são
