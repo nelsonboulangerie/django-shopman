@@ -456,3 +456,92 @@ def test_label_queue_is_observed_corpus_and_needs_the_observation_permission(cat
     client.force_login(manager)
     assert client.get(changelist).status_code == 200
     assert client.get(change).status_code == 200
+
+
+# ── "Medir agora" ───────────────────────────────────────────────────────────
+
+MEASURE_NOW_URL = "admin:storefront_intentpilotreport_measure_now"
+SUBMIT = {"_form_submitted": "on"}  # o POST do diálogo do Unfold
+
+
+def _measure_directives():
+    from shopman.orderman.models import Directive
+
+    from shopman.storefront.concierge.intent_pilot import MEASURE_TOPIC
+
+    return Directive.objects.filter(topic=MEASURE_TOPIC)
+
+
+@pytest.mark.django_db
+def test_measure_now_queues_one_directive_for_the_worker(admin_client, categories, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+
+    calls = []
+    monkeypatch.setattr(intent_pilot, "maybe_measure", lambda **kw: calls.append(kw))
+    _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
+    url = reverse(MEASURE_NOW_URL)
+
+    response = admin_client.post(url, SUBMIT, follow=True)
+    assert "Medição enfileirada. O placar aparece aqui em alguns minutos." in response.content.decode()
+    directive = _measure_directives().get()
+    assert directive.status == "queued" and directive.payload == {"requested_by": "admin"}
+    assert calls == []  # nada roda na requisição: fica para o worker
+
+    response = admin_client.post(url, SUBMIT, follow=True)
+    assert "Já há uma medição na fila." in response.content.decode()
+    assert _measure_directives().count() == 1  # pendente não duplica
+
+
+@pytest.mark.django_db
+def test_measure_now_without_gold_queues_nothing(admin_client, categories):
+    response = admin_client.post(reverse(MEASURE_NOW_URL), SUBMIT, follow=True)
+    assert "Nenhuma mensagem conferida ainda." in response.content.decode()
+    assert not _measure_directives().exists()
+
+
+@pytest.mark.django_db
+def test_measure_handler_forces_the_measurement(monkeypatch):
+    from shopman.orderman import registry
+
+    from shopman.storefront.concierge import intent_pilot
+
+    calls = []
+    monkeypatch.setattr(
+        intent_pilot, "maybe_measure",
+        lambda **kw: calls.append(kw) or intent_pilot.Measurement(None, "medido"),
+    )
+    handler = registry.get_directive_handler(intent_pilot.MEASURE_TOPIC)
+    handler.handle(message=SimpleNamespace(payload={"requested_by": "admin"}), ctx={})
+    assert calls == [{"force": True}]
+
+
+@pytest.mark.django_db
+def test_measure_now_needs_the_observation_permission(categories):
+    from django.contrib.auth.models import Permission
+
+    Shop.objects.create(name="Test Shop", brand_name="Test", short_name="TS", primary_color="#C5A55A", default_ddd="43")
+    _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
+    manager = User.objects.create_user("gerente", password="pass", is_staff=True)
+    manager.user_permissions.add(Permission.objects.get(codename="view_intentpilotreport"))
+    client = Client()
+    client.force_login(manager)
+
+    assert client.post(reverse(MEASURE_NOW_URL), SUBMIT).status_code == 403
+    assert not _measure_directives().exists()
+
+    manager.user_permissions.add(Permission.objects.get(codename="review_conversation_observations"))
+    client.force_login(User.objects.get(pk=manager.pk))
+    client.post(reverse(MEASURE_NOW_URL), SUBMIT)
+    assert _measure_directives().count() == 1
+
+
+@pytest.mark.django_db
+def test_report_list_shows_who_was_left_out(admin_client, categories, settings, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+
+    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 1)
+    _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
+    intent_pilot.maybe_measure()
+    page = admin_client.get(reverse("admin:storefront_intentpilotreport_changelist")).content.decode()
+    assert "Fora do placar" in page and "llm" in page and "Medir agora" in page

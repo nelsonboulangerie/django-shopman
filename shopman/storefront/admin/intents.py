@@ -6,7 +6,9 @@ pré-marca: a pessoa lê a mensagem **redigida** (o mesmo texto que os
 classificadores recebem), vê as intenções sugeridas, corrige o que discorda e
 salva — ou, na lista, confere várias de uma vez com "Confirmar sugestões". Salvar
 carimba quem e quando; a fila anda sozinha para a próxima. **Placar das
-intenções** é só leitura: o que o ciclo mediu, sem texto de cliente.
+intenções** é só leitura: o que o ciclo mediu, sem texto de cliente. O "Medir
+agora" do topo da lista enfileira uma medição fora do relógio semanal (worker de
+diretivas, nunca na requisição) e pede a mesma permissão da fila.
 
 A mensagem nunca é editada aqui, nem copiada: a amostra aponta para ela, e
 apagar a mensagem (retenção, pedido do titular) apaga a amostra junto.
@@ -21,11 +23,12 @@ fila de conferência seria uma porta lateral para o corpus que a Conversa escond
 from __future__ import annotations
 
 from django import forms
-from django.contrib import admin
-from django.http import HttpResponseRedirect
+from django.contrib import admin, messages
+from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from unfold.admin import ModelAdmin
-from unfold.decorators import display
+from unfold.decorators import action, display
+from unfold.forms import BaseDialogForm
 from unfold.widgets import UnfoldAdminCheckboxSelectMultipleWidget
 
 from shopman.storefront.models import IntentCategory, IntentPilotReport, MessageIntentSample, SampleStatus
@@ -164,15 +167,80 @@ class MessageIntentSampleAdmin(ModelAdmin):
         self.message_user(request, f"{count} mensagem(ns) pulada(s): ficam fora do gabarito.")
 
 
+class MeasureNowConfirmForm(BaseDialogForm):
+    """Confirmação do "Medir agora", sem campo, só o POST.
+
+    O diálogo é o que faz a ação exigir POST com CSRF: o Unfold renderiza ação de
+    ``actions_list`` como ``<a href>``, e sem ele um link aberto por quem está
+    logado gastaria uma medição inteira. Mesma lição do ``issue_own_pin``.
+    """
+
+
+def _back_to_report_list(request) -> HttpResponse:
+    """Volta para a lista de um jeito que a mensagem chegue junto (HTMX do diálogo)."""
+    url = reverse("admin:storefront_intentpilotreport_changelist")
+    if request.headers.get("HX-Request"):
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = url
+        return response
+    return HttpResponseRedirect(url)
+
+
 @admin.register(IntentPilotReport)
 class IntentPilotReportAdmin(ModelAdmin):
-    list_display = ("created_at", "samples", "contenders")
+    list_display = ("created_at", "samples", "contenders", "skipped_display")
     ordering = ("-created_at",)
     fields = ("created_at", "samples", "contenders", "report", "skipped")
     readonly_fields = fields
+    actions_list = ["measure_now"]
 
     def has_add_permission(self, request):
         return False
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    @display(description="fora do placar")
+    def skipped_display(self, obj):
+        # Só o nome de cada concorrente; o motivo inteiro está no placar aberto.
+        names = [line.split(":", 1)[0].strip() for line in (obj.skipped or "").splitlines() if line.strip()]
+        return ", ".join(names) or "nenhum"
+
+    @action(
+        description="Medir agora",
+        url_path="measure-now",
+        icon="play_arrow",
+        # Sem ponto de propósito: permissão pontuada faz o system check do Unfold
+        # consultar `auth_permission` (ver `issue_own_pin`). O portão é o método.
+        permissions=["measure_now"],
+        dialog={
+            "title": "Medir o placar agora?",
+            "description": (
+                "Mede todos os concorrentes contra as mensagens conferidas, sem esperar a "
+                "medição semanal. Roda em segundo plano e consome chamadas aos modelos."
+            ),
+            "form_class": MeasureNowConfirmForm,
+            "form_submit_text": "Medir agora",
+        },
+    )
+    def measure_now(self, request, form):
+        from shopman.storefront.concierge.intent_pilot import enqueue_measurement
+
+        if not MessageIntentSample.objects.filter(status=SampleStatus.LABELED).exists():
+            self.message_user(
+                request,
+                "Nenhuma mensagem conferida ainda. O placar mede contra as conferidas.",
+                level=messages.WARNING,
+            )
+        elif enqueue_measurement(requested_by=request.user.get_username()):
+            self.message_user(request, "Medição enfileirada. O placar aparece aqui em alguns minutos.")
+        else:
+            self.message_user(
+                request,
+                "Já há uma medição na fila. O placar aparece aqui em alguns minutos.",
+                level=messages.WARNING,
+            )
+        return _back_to_report_list(request)
+
+    def has_measure_now_permission(self, request) -> bool:
+        return request.user.has_perm(OBSERVATION_PERMISSION) and self.has_view_permission(request)
