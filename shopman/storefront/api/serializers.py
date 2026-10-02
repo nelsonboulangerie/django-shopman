@@ -3,6 +3,8 @@ from __future__ import annotations
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
+from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH
+
 
 class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
@@ -10,8 +12,8 @@ class SetSkuQtySerializer(serializers.Serializer):
 
 class CartLineNotesSerializer(serializers.Serializer):
     # Observação de UM item, para a cozinha (``meta["notes"]`` da linha). Vazia
-    # apaga. O teto é o do serviço (``shop.services.cart.LINE_NOTES_MAX_LENGTH``).
-    notes = serializers.CharField(allow_blank=True, max_length=140)
+    # apaga. O teto é o do serviço, o mesmo do PDV.
+    notes = serializers.CharField(allow_blank=True, max_length=LINE_NOTES_MAX_LENGTH)
 
 
 class CheckoutAddressLabelSerializer(serializers.Serializer):

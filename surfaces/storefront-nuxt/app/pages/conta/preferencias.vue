@@ -19,6 +19,7 @@ const { data: summary, pending, refresh: refreshSummary } = await useFetch<Accou
   headers: requestHeaders,
   lazy: true
 })
+usePageContentPending(pending)
 
 async function toggleFood (pref: { key: string, is_active: boolean }) {
   preferencePending.value = { ...preferencePending.value, [pref.key]: true }

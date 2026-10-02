@@ -58,6 +58,7 @@ const { data: accessesResponse, pending: accessesPending, refresh: refreshAccess
   headers: requestHeaders,
   lazy: true
 })
+usePageContentPending(() => devicesPending.value || accessesPending.value)
 const recentAccesses = computed(() => accessesResponse.value?.accesses || [])
 const activeAccesses = computed(() => recentAccesses.value.filter(access => access.is_active))
 const customerAccessLabel = (label: string) => label.replace(/^dispositivo/i, 'Aparelho')

@@ -304,9 +304,10 @@ def remove_item(
     )
 
 
-#: Teto da observação de um item. É bilhete para a cozinha, não carta: cabe
-#: no card do KDS sem rolar.
-LINE_NOTES_MAX_LENGTH = 140
+#: Teto da observação de um item. É o mesmo do PDV (``pos_intent``, 280): as
+#: duas portas escrevem o mesmo ``meta["notes"]`` que o card do KDS mostra
+#: inteiro, com quebra de linha e sem corte.
+LINE_NOTES_MAX_LENGTH = 280
 
 
 @transaction.atomic

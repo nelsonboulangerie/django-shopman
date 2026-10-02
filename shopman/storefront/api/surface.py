@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
-from shopman.shop.services.cart import CartDateMismatchError
+from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchError
 from shopman.storefront.api import clean_name, clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
@@ -1224,7 +1224,7 @@ class CartSkuNotesView(APIView):
 
         serializer = CartLineNotesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        notes = clean_name(serializer.validated_data["notes"], max_length=140)
+        notes = clean_name(serializer.validated_data["notes"], max_length=LINE_NOTES_MAX_LENGTH)
         try:
             session = CartService.set_line_notes(request, sku=sku.strip(), notes=notes)
         except CartLineNotesRefused as exc:
