@@ -11,6 +11,7 @@ import type {
 import { formatMoney, formatQty, receiptLineLabel, receiptLineStatus, receiptLineStatusBadge } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_BADGE } from "~/utils/receiptLineStatus";
 import { FLASH_RING } from "~/utils/receiptFocus";
+import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation/dates";
 
 /**
  * UM item da entrada, aberto por inteiro — e o nome dele SEMPRE à vista.
@@ -90,6 +91,7 @@ function lineField<K extends keyof ReceiptLine>(key: K, fallback: ReceiptLine[K]
 const purchaseQty = lineField("purchaseQty", 0);
 const costInput = lineField("costInput", "");
 const expiryDate = lineField("expiryDate", "");
+const todayIso = todayIsoDate();
 const invoiceLot = lineField("invoiceLot", "");
 const lineNote = lineField("lineNote", "");
 
@@ -245,13 +247,14 @@ function onCheck(checked: boolean) {
           title="Informe a validade"
           icon="lucide:calendar-clock"
         >
-          <div class="grid gap-3 sm:grid-cols-2">
-            <label class="block text-xs font-medium text-muted-foreground">
+          <div class="grid gap-3">
+            <!-- A validade é a "Escolha rápida de dia" do kit (Tipo 1). -->
+            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
               Validade
-              <input v-model="expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
-              <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
-              <span v-else-if="preview.needsExpiry" class="mt-1 block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
-            </label>
+              <OperatorDayPicker v-model="expiryDate" :today="todayIso" label="Validade" />
+              <span v-if="preview.line.expiryFromInvoice" class="block text-xs font-normal text-muted-foreground">Veio na nota</span>
+              <span v-else-if="preview.needsExpiry" class="block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
+            </div>
             <label class="block text-xs font-medium text-muted-foreground">
               Lote do fornecedor
               <input v-model="invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />

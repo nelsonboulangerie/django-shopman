@@ -16,8 +16,12 @@ import {
   isStale,
   isoForOffset,
   resolveDayRollover,
-  weekdayLabel,
 } from "~/presentation/production";
+import {
+  periodAnchor,
+  periodOfDay,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
 
 const { rows, selectedDate, pending, error } = useProductionForecast();
 // Kiosk aberto o dia todo: se o sinal cair, mantém o último quadro no ar (dado velho
@@ -38,19 +42,20 @@ function setBoardList(el: unknown) {
 // Reativo: à meia-noite a TV precisa VIRAR o dia sozinha (senão amanhece nas
 // lotes de ontem). O tick do relógio (abaixo) chama rollDay() a cada segundo.
 const todayISO = ref(isoForOffset(0));
-const tomorrowISO = ref(isoForOffset(1));
 function rollDay(): void {
   const r = resolveDayRollover(todayISO.value, selectedDate.value);
   if (!r.rolled) return;
   todayISO.value = r.todayISO;
-  tomorrowISO.value = r.tomorrowISO;
   selectedDate.value = r.selectedDate;
 }
-const isCustomDate = computed(
-  () =>
-    selectedDate.value !== todayISO.value &&
-    selectedDate.value !== tomorrowISO.value,
-);
+// O "Período" do kit em Dia (Tipo 2): ‹ › andam um dia; o toque destrava o som.
+const period = computed<PeriodSelection>({
+  get: () => periodOfDay("day", selectedDate.value, todayISO.value),
+  set: (next) => {
+    sound.unlock();
+    selectedDate.value = periodAnchor(next, todayISO.value);
+  },
+});
 // ── Relógio vivo ────────────────────────────────────────────────────────────
 const clock = ref("--:--");
 let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -118,48 +123,15 @@ const STATUS_CHARS = 10; // CONFIRMADO
           <span>sem sinal</span>
         </span>
         <span aria-hidden="true">·</span>
-        <div class="flex items-center gap-2.5" role="group" aria-label="Data">
-          <!-- Teclas pertencem ao painel Solari de kiosk e usam sua escala visual própria. -->
-          <button
-            type="button"
-            class="board-datekey"
-            :class="{ 'board-datekey--active': selectedDate === todayISO }"
-            :aria-pressed="selectedDate === todayISO"
-            @click="
-              sound.unlock();
-              selectedDate = todayISO;
-            "
-          >
-            Hoje
-          </button>
-          <button
-            type="button"
-            class="board-datekey"
-            :class="{ 'board-datekey--active': selectedDate === tomorrowISO }"
-            :aria-pressed="selectedDate === tomorrowISO"
-            @click="
-              sound.unlock();
-              selectedDate = tomorrowISO;
-            "
-          >
-            Amanhã
-          </button>
-          <label
-            class="date-input-hit-area board-datekey relative cursor-pointer"
-            :class="{ 'board-datekey--active': isCustomDate }"
-          >
-            <span aria-hidden="true">
-              {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra" }}
-            </span>
-            <input
-              v-model="selectedDate"
-              type="date"
-              class="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Escolher outra data"
-              @click="sound.unlock()"
-            />
-          </label>
-        </div>
+        <!-- O controle de período da casa, vestido com a paleta do painel. -->
+        <OperatorPeriodPicker
+          v-model="period"
+          class="board-period"
+          :presets="['day']"
+          :today="todayISO"
+          label="Data"
+          align="start"
+        />
         <div class="ml-auto flex items-center gap-2.5">
           <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->
           <button
@@ -343,22 +315,20 @@ const STATUS_CHARS = 10; // CONFIRMADO
   color: var(--board-dim);
 }
 
-.board-datekey {
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--board-dim);
-  border-bottom: 1px solid transparent;
-  padding-bottom: 1px;
-  transition:
-    color 150ms,
-    border-color 150ms;
-}
-.board-datekey:hover {
-  color: var(--board-text);
-}
-.board-datekey--active {
-  color: var(--board-text);
-  border-color: var(--board-text);
+/* O controle do kit desenha com os tokens da casa; aqui eles viram os do painel. */
+.board-period {
+  --background: var(--board-panel);
+  --card: var(--board-panel);
+  --foreground: var(--board-text);
+  --muted: var(--board-bg);
+  --muted-foreground: var(--board-dim);
+  --border: var(--board-line);
+  --accent: var(--board-line);
+  --primary: var(--board-text);
+  --primary-foreground: var(--board-bg);
+  --ring: var(--board-text);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .board-key {

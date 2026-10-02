@@ -28,8 +28,12 @@ import {
   rowCommitments,
   rowCommittedUnits,
   rowLabel,
-  weekdayLabel,
 } from "~/presentation/production";
+import {
+  periodAnchor,
+  periodOfDay,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
 import type {
   ProductionMatrixRowProjection,
   ProductionShortageError,
@@ -83,12 +87,14 @@ watch(
   },
 );
 
-// ── Data: Hoje · Amanhã · Outra data (chip com o picker embutido) ───────────
+// ── Data: o "Período" do kit em Dia (Tipo 2), com ‹ › que andam um dia ─────
 const todayISO = isoForOffset(0);
-const tomorrowISO = isoForOffset(1);
-const isCustomDate = computed(
-  () => selectedDate.value !== todayISO && selectedDate.value !== tomorrowISO,
-);
+const period = computed<PeriodSelection>({
+  get: () => periodOfDay("day", selectedDate.value, todayISO),
+  set: (next) => {
+    selectedDate.value = periodAnchor(next, todayISO);
+  },
+});
 // ── Filtro por ficha-base (higiene visual por grupo de massa) ───────────────
 const baseFilter = ref("");
 const baseOptions = computed(() => board.value?.base_recipes ?? []);
@@ -580,60 +586,13 @@ const headerCount = computed(() => {
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
-          aria-label="Data"
-        >
-          <!-- Seletor segmentado de data; mantém três escolhas no mesmo gesto compacto. -->
-          <button
-            type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              selectedDate === todayISO
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="selectedDate === todayISO"
-            @click="selectedDate = todayISO"
-          >
-            Hoje
-          </button>
-          <button
-            type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              selectedDate === tomorrowISO
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="selectedDate === tomorrowISO"
-            @click="selectedDate = tomorrowISO"
-          >
-            Amanhã
-          </button>
-          <label
-            class="date-input-hit-area relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              isCustomDate
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-          >
-            <span aria-hidden="true">
-              {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
-            </span>
-            <input
-              v-model="selectedDate"
-              type="date"
-              class="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Escolher outra data"
-            />
-          </label>
-        </div>
-        <span class="text-sm text-muted-foreground">{{
-          fullDateLabel(selectedDate)
-        }}</span>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="['day']"
+          :today="todayISO"
+          label="Data"
+          align="start"
+        />
         <UiNativeSelect
           v-if="baseOptions.length"
           v-model="baseFilter"

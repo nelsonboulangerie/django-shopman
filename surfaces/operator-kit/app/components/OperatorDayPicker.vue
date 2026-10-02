@@ -185,7 +185,7 @@ const tileClass = (selected: boolean, blocked: boolean) => [
       <input
         ref="otherInput"
         type="date"
-        class="min-h-control w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+        class="min-h-control w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
         :value="otherSelected ? modelValue : ''"
         :min="min"
         :max="max"

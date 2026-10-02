@@ -12,16 +12,25 @@ import type { MiseEnPlaceLineProjection } from "~/types/production";
 import type { ProductionPrintingSourceProjection } from "~/types/productionPrinting";
 import { isStale, isoForOffset } from "~/presentation/production";
 import {
+  periodAnchor,
+  periodOfDay,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
+import {
   operationalTargetDisplay,
   projectedQuantityDisplay,
 } from "~/presentation/weighing";
 
 // Preparação olha hoje por padrão (a pesagem é do dia); amanhã na véspera.
-const selectedDate = ref(isoForOffset(0));
-const dateChips = [
-  { iso: isoForOffset(0), label: "Hoje" },
-  { iso: isoForOffset(1), label: "Amanhã" },
-];
+// O "Período" do kit em Dia (Tipo 2): ‹ › andam um dia (amanhã é um toque).
+const todayISO = isoForOffset(0);
+const selectedDate = ref(todayISO);
+const period = computed<PeriodSelection>({
+  get: () => periodOfDay("day", selectedDate.value, todayISO),
+  set: (next) => {
+    selectedDate.value = periodAnchor(next, todayISO);
+  },
+});
 
 const { stationRef } = useOperatorLock("backstage.operate_production");
 
@@ -169,28 +178,13 @@ function refreshAll() {
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4 print:hidden">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
-          aria-label="Data da preparação"
-        >
-          <!-- Data em segmento compacto: uma escolha exclusiva dentro do mesmo controle. -->
-          <button
-            v-for="chip in dateChips"
-            :key="chip.iso"
-            type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              selectedDate === chip.iso
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="selectedDate === chip.iso"
-            @click="selectedDate = chip.iso"
-          >
-            {{ chip.label }}
-          </button>
-        </div>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="['day']"
+          :today="todayISO"
+          label="Data da preparação"
+          align="start"
+        />
 
         <div
           class="flex items-center gap-1 rounded-md border bg-background p-0.5"

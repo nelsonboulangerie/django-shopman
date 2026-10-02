@@ -683,7 +683,12 @@ no popover dele. Acrescido de ‹ › e de "Voltar para hoje".
 - **O valor** é `{ preset, from, to }`. No calendário (`day`/`week`/`month`/`year`), `from`
   é a âncora e `""` é "o período que contém hoje" (acompanha a virada do dia); na janela
   móvel (`7d`…`5y`), `to` é o último dia e `""` é "termina hoje"; em `custom`, o intervalo.
-  O estado é do consumidor: quem guarda na URL guarda na URL.
+  O estado é do consumidor: quem guarda na URL guarda na URL. Quadro que guarda UM dia
+  (Produção, Expedição, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
+  `periodAnchor(seleção, hoje)` num `computed` com setter.
+- **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia e Semana), Produção
+  (grade, Expedição, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
+  de dia.
 - **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
   anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias
   antes. "Máx" não anda. A seta que sairia de `min`/`max` fica desabilitada.

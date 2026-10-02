@@ -8,7 +8,9 @@ import {
   isCurrentPeriod,
   isoDate,
   otherDayCaption,
+  periodAnchor,
   periodLabel,
+  periodOfDay,
   quickDayOptions,
   resolvePeriod,
   stepPeriod,
@@ -145,6 +147,16 @@ describe("Tipo 2: período", () => {
     expect(withPreset(sel("day", "2026-09-30"), "week", bi)).toEqual(sel("week"));
     expect(withPreset(sel("day", "2026-09-24"), "28d", bi)).toEqual(sel("28d"));
     expect(goToDate(sel("week"), "2026-10-20", { today: TODAY })).toEqual(sel("week", "2026-10-20"));
+  });
+
+  it("a ponte dos quadros: um dia vira seleção e volta", () => {
+    expect(periodOfDay("day", "", TODAY)).toEqual(sel("day"));
+    expect(periodOfDay("day", TODAY, TODAY)).toEqual(sel("day"));
+    expect(periodOfDay("day", "2026-10-02", TODAY)).toEqual(sel("day", "2026-10-02"));
+    // Um dia qualquer da semana de hoje é a semana de hoje.
+    expect(periodOfDay("week", "2026-10-03", TODAY)).toEqual(sel("week"));
+    expect(periodAnchor(sel("day"), TODAY)).toBe(TODAY);
+    expect(periodAnchor(sel("week", "2026-10-07"), TODAY)).toBe("2026-10-07");
   });
 
   it("o rótulo diz o dia da semana e o intervalo, sem travessão", () => {

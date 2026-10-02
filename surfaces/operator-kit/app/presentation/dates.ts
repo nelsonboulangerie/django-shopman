@@ -410,6 +410,20 @@ export function withPreset(selection: PeriodSelection, key: string, bounds: Peri
   return { preset: key, from: contains(range, bounds.today) ? "" : anchor, to: "" };
 }
 
+/**
+ * A ponte para os quadros que guardam UM dia (a Produção, a Expedição, o quadro
+ * da TV, as Encomendas): o dia do consumidor vira a seleção do período, e volta.
+ * Dia vazio é hoje.
+ */
+export function periodOfDay(preset: string, iso: string, today: string): PeriodSelection {
+  return withPreset({ preset, from: iso || today, to: "" }, preset, { today });
+}
+
+/** O dia que a seleção aponta: a âncora, ou hoje quando ela acompanha a virada. */
+export function periodAnchor(selection: PeriodSelection, today: string): string {
+  return anchorOf(selection, today);
+}
+
 /** Ir para um dia, mantendo a granularidade de calendário (ou caindo em Dia). */
 export function goToDate(selection: PeriodSelection, iso: string, bounds: PeriodBounds): PeriodSelection {
   const preset = findPreset(selection.preset);
