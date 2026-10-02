@@ -40,6 +40,7 @@ const { data: profile, pending } = await useFetch<AccountProfile>(apiPath('/api/
   headers: requestHeaders,
   lazy: true
 })
+usePageContentPending(pending)
 
 // Labels e textos vêm do registro omotenashi (configurável no Admin), com fallback
 // para não quebrar se a API degradar. Fonte única, sem hardcode.

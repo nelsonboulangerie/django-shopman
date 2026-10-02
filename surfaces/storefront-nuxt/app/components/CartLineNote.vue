@@ -6,7 +6,7 @@ import type { CartItemProjection } from '~/types/shopman'
 // para a linha da sacola (`meta.notes`) e, pelo pedido, até o ticket do KDS.
 // Discreta de propósito: a maioria das linhas não tem observação, e o convite
 // não pode competir com a quantidade nem com o preço.
-const LINE_NOTES_MAX_LENGTH = 140
+const LINE_NOTES_MAX_LENGTH = 280
 
 const props = defineProps<{
   line: CartItemProjection

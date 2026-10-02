@@ -83,7 +83,7 @@ def test_empty_note_removes_it(client, in_cart):
 
 
 def test_note_longer_than_the_limit_is_refused_in_the_error_dialect(client, in_cart):
-    resp = _put_notes(client, in_cart.sku, "x" * 141)
+    resp = _put_notes(client, in_cart.sku, "x" * 281)
 
     assert resp.status_code == 400
     assert resp.json()["field"] == "notes"

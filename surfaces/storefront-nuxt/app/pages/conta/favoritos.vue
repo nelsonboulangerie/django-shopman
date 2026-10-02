@@ -11,6 +11,7 @@ const { data, pending, error, refresh } = await useFetch<FavoritesResponse>(
   apiPath('/api/v1/account/favorites/'),
   { credentials: 'include', headers: requestHeaders, lazy: true }
 )
+usePageContentPending(pending)
 
 const items = computed(() => data.value?.items || [])
 // Copy do empty-state vem do backend; os literais atuais seguem como fallback.

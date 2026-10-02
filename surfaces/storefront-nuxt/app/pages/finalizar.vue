@@ -296,6 +296,7 @@ const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPa
   query: checkoutQuery,
   lazy: true
 })
+usePageContentPending(pending)
 
 // Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
 // dela. Os demais campos da projection (datas/slots/copy) continuam úteis, mas

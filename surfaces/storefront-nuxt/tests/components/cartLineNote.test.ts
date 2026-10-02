@@ -1,4 +1,4 @@
-// Observação por item na sacola: convite discreto, campo com teto de 140
+// Observação por item na sacola: convite discreto, campo com teto de 280
 // caracteres e o texto salvo só depois que o servidor o gravou na linha.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
@@ -53,13 +53,13 @@ describe('CartLineNote', () => {
     fetchMock.mockReset()
   })
 
-  it('abre o campo, limita a 140 caracteres e salva na linha do SKU', async () => {
+  it('abre o campo, limita a 280 caracteres e salva na linha do SKU', async () => {
     fetchMock.mockResolvedValue({ cart: { items: [line({ notes: 'sem gergelim' })] } })
     const wrapper = await mountSuspended(CartLineNote, { props: { line: line() } })
 
     await wrapper.get('[data-cart-line-note-open]').trigger('click')
     const input = wrapper.get('[data-cart-line-note-input]')
-    expect(input.attributes('maxlength')).toBe('140')
+    expect(input.attributes('maxlength')).toBe('280')
     await input.setValue('sem gergelim')
     await wrapper.get('[data-cart-line-note-save]').trigger('click')
     await flush()
