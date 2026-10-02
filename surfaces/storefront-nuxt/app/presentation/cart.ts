@@ -181,17 +181,35 @@ export function substituteSwapPlan (
   }
 }
 
+// O PUT por SKU mexe na linha SEM opções daquele SKU; linha com opções só muda
+// pela `line_id` (applyLineQty), então o otimista também não encosta nela.
+function isPlainSkuLine (line: CartItemProjection, sku: string): boolean {
+  return line.sku === sku && !line.has_options
+}
+
 export function applySkuQty (cart: CartProjection, meta: ProductMutationMeta, qty: number): CartProjection {
-  const hasLine = cart.items.some(line => line.sku === meta.sku)
+  const hasLine = cart.items.some(line => isPlainSkuLine(line, meta.sku))
   let items: CartItemProjection[]
   if (qty <= 0) {
-    items = cart.items.filter(line => line.sku !== meta.sku)
+    items = cart.items.filter(line => !isPlainSkuLine(line, meta.sku))
   } else if (hasLine) {
-    items = cart.items.map(line => (line.sku === meta.sku ? withQty(line, qty) : line))
+    items = cart.items.map(line => (isPlainSkuLine(line, meta.sku) ? withQty(line, qty) : line))
   } else {
     items = [...cart.items, optimisticLine(meta, qty)]
   }
+  return withItems(cart, items)
+}
 
+// Linha já gravada muda pela `line_id`: o mesmo SKU pode estar em duas linhas
+// (Croque com ovo e Croque sem ovo), e o PUT por SKU acertaria a errada.
+export function applyLineQty (cart: CartProjection, lineId: string, qty: number): CartProjection {
+  const items = qty <= 0
+    ? cart.items.filter(line => line.line_id !== lineId)
+    : cart.items.map(line => (line.line_id === lineId ? withQty(line, qty) : line))
+  return withItems(cart, items)
+}
+
+function withItems (cart: CartProjection, items: CartItemProjection[]): CartProjection {
   const itemsCount = cartItemsCount(items)
   return {
     ...cart,
@@ -200,4 +218,14 @@ export function applySkuQty (cart: CartProjection, meta: ProductMutationMeta, qt
     is_empty: itemsCount === 0,
     summary_pending: true
   }
+}
+
+/** Quantas unidades do SKU a sacola tem, somando todas as linhas dele. */
+export function cartQtyForSku (items: ReadonlyArray<Pick<CartItemProjection, 'sku' | 'qty'>>, sku: string): number {
+  return items.reduce((total, line) => (line.sku === sku ? total + line.qty : total), 0)
+}
+
+/** A linha SEM opções do SKU (a que o stepper por SKU controla), ou 0. */
+export function plainQtyForSku (items: ReadonlyArray<CartItemProjection>, sku: string): number {
+  return items.find(line => isPlainSkuLine(line, sku))?.qty || 0
 }

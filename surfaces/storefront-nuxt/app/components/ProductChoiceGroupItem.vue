@@ -95,6 +95,9 @@ const cover = computed(() => props.group.cover)
       description="Toque no + para pôr na sacola, ou no nome para ver os detalhes."
       data-product-choice-group-sheet
     >
+      <p v-if="group.choiceLabel" class="px-4 pt-4 shop-item-title" data-product-choice-group-label>
+        {{ group.choiceLabel }}
+      </p>
       <div class="grid grid-cols-1 px-4 pb-4">
         <ProductListItem
           v-for="option in group.options"

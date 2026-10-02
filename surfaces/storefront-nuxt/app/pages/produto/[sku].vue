@@ -11,7 +11,8 @@ import {
   productJsonLd
 } from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
-import { compactUnitWeightLabel } from '~/utils/display'
+import { hasOptionGroups } from '~/presentation/productOptions'
+import { compactUnitWeightLabel, formatCount } from '~/utils/display'
 
 const route = useRoute()
 const apiPath = useShopmanApiPath()
@@ -340,6 +341,9 @@ useHead({
                     {{ product.unit_weight_label }}
                   </p>
                 </div>
+                <p v-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
+                  {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
+                </p>
               </div>
               <div class="hidden md:block">
                 <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" />
@@ -350,6 +354,7 @@ useHead({
                   :qty="currentQty"
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
+                  :option-groups="product.option_groups"
                   add-label="Adicionar"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
@@ -448,6 +453,7 @@ useHead({
               :qty="currentQty"
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
+              :option-groups="product.option_groups"
               add-label="Adicionar"
               tone="inverted"
             />

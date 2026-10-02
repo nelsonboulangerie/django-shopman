@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySkuQty, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
+import { applyLineQty, applySkuQty, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
 import type { CartItemProjection, CartProjection, ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
 function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection {
@@ -247,5 +247,36 @@ describe('cart presentation — holdBannerVariant', () => {
 
   it('returns null when there is no banner', () => {
     expect(holdBannerVariant(null)).toBeNull()
+  })
+})
+
+// Escolhas no produto: o mesmo SKU em duas linhas (com ovo e sem ovo).
+describe('linhas do mesmo SKU', () => {
+  const comOvo = line({ line_id: 'L-1', sku: 'CQMO', qty: 2, unit_price_q: 3600, has_options: true, options_summary: '+ Ovo frito' })
+  const semOvo = line({ line_id: 'L-2', sku: 'CQMO', qty: 1, unit_price_q: 3200, has_options: false, options_summary: '' })
+
+  it('applyLineQty muda só a linha da line_id', () => {
+    const next = applyLineQty(cart([comOvo, semOvo]), 'L-1', 3)
+    expect(next.items.map(item => [item.line_id, item.qty])).toEqual([['L-1', 3], ['L-2', 1]])
+    expect(next.items[0]!.total_price_q).toBe(10800)
+    expect(next.items_count).toBe(4)
+    expect(next.summary_pending).toBe(true)
+  })
+
+  it('applyLineQty com 0 remove só aquela linha', () => {
+    const next = applyLineQty(cart([comOvo, semOvo]), 'L-2', 0)
+    expect(next.items.map(item => item.line_id)).toEqual(['L-1'])
+  })
+
+  it('applySkuQty (stepper por SKU) não encosta na linha com escolhas', () => {
+    const meta = { sku: 'CQMO', name: 'Croque', price_q: 3200, price_display: 'R$ 32,00', image_url: null }
+    const next = applySkuQty(cart([comOvo, semOvo]), meta, 5)
+    expect(next.items.map(item => [item.line_id, item.qty])).toEqual([['L-1', 2], ['L-2', 5]])
+  })
+
+  it('cartQtyForSku soma as linhas; plainQtyForSku lê só a sem escolhas', () => {
+    expect(cartQtyForSku([comOvo, semOvo], 'CQMO')).toBe(3)
+    expect(cartQtyForSku([comOvo, semOvo], 'OUTRO')).toBe(0)
+    expect(plainQtyForSku([comOvo, semOvo], 'CQMO')).toBe(1)
   })
 })

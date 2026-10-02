@@ -613,6 +613,9 @@ export type ChoiceGroupCard = {
   summary: string
   // A foto do cartão é a da primeira opção disponível que tem foto.
   cover: CatalogItemProjection
+  // O que se escolhe ("Sabor"), escrito no Admin. '' = a folha abre sem título
+  // da escolha, como sempre.
+  choiceLabel: string
 }
 
 export type MenuEntry =
@@ -654,10 +657,14 @@ export function choiceGroupCard (name: string, options: CatalogItemProjection[])
     || options.find(option => option.image_url)
     || orderable[0]
     || options[0]!
+  const choiceLabel = options
+    .map(option => (option.choice_group_label || '').trim())
+    .find(label => label) || ''
   return {
     name,
     options,
     priceLabel,
+    choiceLabel,
     allUnavailable: orderable.length === 0,
     summary: `${formatCount(options.length, 'opção', 'opções')}: ${options.map(option => option.name).join(', ')}`,
     cover

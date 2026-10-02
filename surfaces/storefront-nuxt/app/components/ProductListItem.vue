@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
+import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
-import { compactUnitWeightLabel } from '~/utils/display'
+import { compactUnitWeightLabel, formatCount } from '~/utils/display'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
@@ -25,6 +26,9 @@ const meta = computed<ProductMutationMeta>(() => ({
   image_url: props.item.image_url
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
+// Com escolhas, o "+" abre a folha e nunca vira pílula de quantidade; a contagem
+// da sacola (somando as linhas do SKU) aparece ao lado do preço.
+const withOptions = computed(() => hasOptionGroups(props.item.option_groups))
 const badge = computed(() => tileBadge(props.item))
 </script>
 
@@ -50,6 +54,7 @@ const badge = computed(() => tileBadge(props.item))
         <span v-if="item.original_price_display" class="shop-meta">antes <span class="line-through">{{ item.original_price_display }}</span></span>
         <span class="shop-price">{{ item.price_display }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
+        <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>
     </div>
 
@@ -118,6 +123,7 @@ const badge = computed(() => tileBadge(props.item))
           :qty="currentQty"
           :disabled="!item.can_add_to_cart"
           :max-qty="item.available_qty"
+          :option-groups="item.option_groups"
           compact
           add-icon-only
         />
