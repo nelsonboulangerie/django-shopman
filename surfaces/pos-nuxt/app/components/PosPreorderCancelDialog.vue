@@ -1,15 +1,17 @@
 <script setup lang="ts">
 // Cancelar uma encomenda pelo PDV. A régua, a política e a permissão são as do
 // Gestor (a rota é a mesma), e o diálogo também: é o `OperatorReasonDialog` do
-// operator-kit. Aqui o operador confirma e, se quiser, escreve o motivo que vai
-// para o cliente. Pedido pago pede o PIN de um gerente, que sobe por cima deste
+// operator-kit. Aqui o operador confirma e, se quiser, escolhe um dos motivos
+// prontos da casa (os do Gestor) ou escreve o motivo que vai para o cliente. Pedido pago pede o PIN de um gerente, que sobe por cima deste
 // diálogo (`OperatorManagerAuth`, na página); o motivo digitado fica.
-import type { ReasonChoice } from "../../../operator-kit/app/types/reason";
+import type { ReasonChoice, ReasonPresetGroup } from "../../../operator-kit/app/types/reason";
 
 const props = defineProps<{
   open: boolean;
   customerName: string;
   requiresApproval: boolean;
+  /** Os motivos prontos da casa, os mesmos do Gestor. */
+  presets?: ReasonPresetGroup[];
   busy?: boolean;
 }>();
 
@@ -32,6 +34,7 @@ const description = computed(() =>
     confirm-label="Cancelar encomenda"
     reason-label="Motivo para o cliente (opcional)"
     :maxlength="200"
+    :presets="presets ?? []"
     :busy="busy"
     @update:open="(value: boolean) => emit('update:open', value)"
     @confirm="(choice: ReasonChoice) => emit('confirm', choice.reason)"

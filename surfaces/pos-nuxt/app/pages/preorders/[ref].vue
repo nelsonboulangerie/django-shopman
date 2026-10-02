@@ -294,6 +294,7 @@ function goBack() {
         v-model:open="cancelOpen"
         :customer-name="customerLine(card)"
         :requires-approval="counter.cancel.requires_approval"
+        :presets="detail.cancellation_presets"
         :busy="actions.busy.value"
         @confirm="(reason: string) => confirmCancel(reason)"
       />

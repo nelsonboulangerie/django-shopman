@@ -1373,13 +1373,16 @@ mecânica do `LoyaltyConfig`): defaults sensatos, `deep_merge` com
 ## Shop.cancellation_presets
 
 Motivos prontos que o operador escolhe com um toque ao **recusar** ou **cancelar** um
-pedido no Gestor (canais que não são iFood; o iFood usa a lista de códigos dele).
+pedido no Gestor, e ao **cancelar** uma encomenda no balcão do PDV (canais que não são iFood;
+o iFood usa a lista de códigos dele).
 
 **Campo**: `Shop.cancellation_presets` (JSONField, `shopman/shop/models/shop.py`).
 **Escrito por**: Admin → Loja → Pedidos e entrega → "Motivos de cancelamento e recusa"; `seed`
 (`CANCELLATION_PRESETS`); migração `shop.0085` (leva a lista velha do seed até a aprovada).
 **Lido por**: `backstage.projections.order_queue._cancellation_presets` →
-`OperatorOrderProjection.cancellation_presets` → `OrderReasonDialog.vue`.
+`OperatorOrderProjection.cancellation_presets` (nos dois contextos, Gestor e balcão) →
+`OperatorReasonDialog.vue` do operator-kit, pelo `OrderReasonDialog.vue` do Gestor e pelo
+`PosPreorderCancelDialog.vue` do PDV.
 
 Lista; cada item é **um dos dois**:
 

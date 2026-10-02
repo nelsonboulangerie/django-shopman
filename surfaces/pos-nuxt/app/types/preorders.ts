@@ -5,6 +5,7 @@
 // `POST /api/v1/backstage/pos/preorders/<ref>/hand-over/`.
 
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
+import type { ReasonPresetGroup } from "../../../operator-kit/app/types/reason";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -126,6 +127,8 @@ export interface PreorderDetail extends OperatorOrderDetail {
   counter: PreorderCounter;
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
+  /** Os motivos prontos de cancelar, os mesmos do Gestor (Admin, `Shop.cancellation_presets`). */
+  cancellation_presets: ReasonPresetGroup[];
 }
 
 /** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */
