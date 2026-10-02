@@ -1,18 +1,13 @@
 <script setup lang="ts">
-// Reject/cancel reason dialog. Two shapes, decided by the order's channel:
-//   - Marketplace (iFood): a coded picker from the provider's live per-order list.
-//     The provider REQUIRES one of its codes; the picked description is mirrored into
-//     the customer-facing reason. (Mirrors what the board's Recusar dialog does.)
-//   - Other channels: store-configured presets (one tap), grouped under the store's
-//     headings, + an "Outros" chip that hands the reason to the free text.
-// Presentational: the parent owns the fetch (reasons/loading) and the write action;
-// this component owns only the in-dialog input state and emits the chosen reason+code.
-//
-// "Outros" is NOT a reason: the customer reads the reason as "Motivo: <reason>.", and
-// "Motivo: Outros." tells them nothing. Picking it clears the preset and focuses the
-// text; with "Outros" picked, an empty text never goes out (reject or cancel).
-import { nextTick } from "vue";
-
+// Recusar ou cancelar um pedido no Gestor. O diálogo é o `OperatorReasonDialog` do
+// operator-kit, o mesmo do cancelar no PDV; aqui mora só o que é do Gestor:
+//   - Marketplace (iFood): o seletor de códigos da lista viva do pedido. O iFood EXIGE
+//     um dos códigos dele; a descrição escolhida vira o motivo que o cliente lê.
+//   - Outros canais: os motivos prontos da casa (Admin/Unfold), agrupados, mais
+//     "Outros" e o texto livre.
+// Recusar exige motivo (o cliente é avisado com ele); cancelar pode sair em branco,
+// com o texto genérico que a página aplica.
+import type { ReasonChoice } from "../../../operator-kit/app/types/reason";
 import type { CancellationPresetGroupProjection, CancellationReason } from "~/types/orders";
 
 const props = defineProps<{
@@ -33,66 +28,9 @@ const emit = defineEmits<{
   confirm: [payload: { reason: string; cancellationCode: string }];
 }>();
 
-const reason = ref("");
-const code = ref("");
-const other = ref(false);
-const reasonInput = ref<HTMLTextAreaElement | null>(null);
-
-// Fresh state every time the dialog opens (a reused order ref must not leak its
-// previous pick).
-watch(
-  () => props.open,
-  (open) => { if (open) { reason.value = ""; code.value = ""; other.value = false; } },
-);
-
-const presetGroups = computed(() => props.presets.filter((group) => group.presets.length));
-
-const dirty = computed(() => props.open && Boolean(reason.value.trim() || code.value));
-watch(dirty, value => emit("dirty-change", value), { immediate: true });
-function requestOpen(open: boolean) {
-  if (!open && (props.busy || (dirty.value && !window.confirm("Descartar o motivo digitado?")))) return;
-  emit("update:open", open);
-}
-
-const isMarketplace = computed(() => props.marketplace);
-
-const canConfirm = computed(() => {
-  if (props.loading || props.error) return false;
-  if (isMarketplace.value) return props.reasons.some((r) => r.code === code.value);
-  // Free text: a reject needs a reason (the customer is told why); a cancel may go
-  // out with the generic fallback, so an empty reason is allowed, unless the
-  // operator picked "Outros", which promises a written reason.
-  if (other.value || props.mode === "reject") return reason.value.trim() !== "";
-  return true;
-});
-
-function onCodeChange() {
-  // Mirror the picked reason's text into the customer-facing reason.
-  const picked = props.reasons.find((r) => r.code === code.value);
-  if (picked) reason.value = picked.description;
-}
-
-function applyPreset(text: string) {
-  other.value = false;
-  reason.value = text;
-}
-
-function chooseOther() {
-  other.value = true;
-  reason.value = "";
-  void nextTick(() => reasonInput.value?.focus());
-}
-
-const presetPressed = (text: string) => !other.value && reason.value === text;
-
-function submit() {
-  if (!canConfirm.value || props.busy) return;
-  emit("confirm", { reason: reason.value.trim(), cancellationCode: code.value });
-}
-
 const title = computed(() => (props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido"));
 const description = computed(() =>
-  isMarketplace.value
+  props.marketplace
     ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
     : props.mode === "reject"
       ? "Informe o motivo. O cliente recebe o aviso com ele."
@@ -101,97 +39,25 @@ const description = computed(() =>
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="requestOpen">
-    <UiDialogContent class="sm:max-w-md">
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <UiDialogDescription>{{ description }}</UiDialogDescription>
-      </UiDialogHeader>
-
-      <p v-if="loading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
-
-      <div v-else-if="error" role="alert" class="text-sm text-destructive">
-        <p>{{ error }}</p>
-        <button type="button" class="min-h-control min-w-control underline" @click="emit('retry')">Consultar novamente</button>
-      </div>
-      <p v-else-if="isMarketplace && !reasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
-
-      <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-      <UiNativeSelect
-        v-else-if="isMarketplace"
-        v-model="code"
-        class="w-full"
-        aria-label="Motivo exigido pelo iFood"
-        @change="onCodeChange"
-      >
-        <option value="" disabled>Selecione o motivo…</option>
-        <option v-for="r in reasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-      </UiNativeSelect>
-
-      <!-- Other channels: one-tap presets (Admin/Unfold), grouped, + "Outros" + free text -->
-      <template v-else>
-        <div v-if="presetGroups.length" class="space-y-2.5" data-testid="reason-presets">
-          <div
-            v-for="(group, gi) in presetGroups"
-            :key="gi"
-            role="group"
-            :aria-label="group.label || undefined"
-            data-testid="reason-preset-group"
-          >
-            <p v-if="group.label" class="mb-1 text-xs font-semibold text-muted-foreground">{{ group.label }}</p>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="(preset, i) in group.presets"
-                :key="i"
-                type="button"
-                :aria-pressed="presetPressed(preset)"
-                class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
-                :class="presetPressed(preset) ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
-                @click="applyPreset(preset)"
-              >
-                {{ preset }}
-              </button>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              :aria-pressed="other"
-              data-testid="reason-other"
-              class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
-              :class="other ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
-              @click="chooseOther"
-            >
-              Outros
-            </button>
-          </div>
-        </div>
-        <textarea
-          ref="reasonInput"
-          v-model="reason"
-          rows="3"
-          :placeholder="other ? 'Escreva o motivo que o cliente vai ler…' : mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
-          class="min-h-control min-w-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Motivo"
-        />
-        <p v-if="other && !reason.trim()" class="text-xs text-muted-foreground" data-testid="reason-other-hint">
-          Com “Outros”, escreva o motivo antes de confirmar.
-        </p>
-      </template>
-
-      <UiDialogFooter>
-        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"  :disabled="busy" @click="requestOpen(false)">
-          Voltar
-        </button>
-        <button
-          type="button"
-          :disabled="busy || !canConfirm"
-          class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-          @click="submit"
-        >
-          {{ mode === "reject" ? "Recusar pedido" : "Confirmar" }}
-        </button>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+  <OperatorReasonDialog
+    :open="open"
+    :title="title"
+    :description="description"
+    :confirm-label="mode === 'reject' ? 'Recusar pedido' : 'Confirmar'"
+    :required="mode === 'reject'"
+    :presets="presets"
+    :coded="marketplace"
+    :coded-reasons="reasons"
+    coded-label="Motivo exigido pelo iFood"
+    coded-empty-text="O iFood não oferece motivos de cancelamento neste momento."
+    :loading="loading"
+    loading-text="Carregando motivos do iFood…"
+    :error="error"
+    :busy="busy"
+    :placeholder="mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
+    @update:open="(value: boolean) => emit('update:open', value)"
+    @dirty-change="(value: boolean) => emit('dirty-change', value)"
+    @retry="emit('retry')"
+    @confirm="(choice: ReasonChoice) => emit('confirm', { reason: choice.reason, cancellationCode: choice.code })"
+  />
 </template>
