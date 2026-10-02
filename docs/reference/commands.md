@@ -51,7 +51,8 @@
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
 | [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
 | [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
-| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede); roda no `maintenance_worker` |
+| [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
+| [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1406,8 +1407,19 @@ cobre o Concierge.
 e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
 por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
 `AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
-conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana.
-`--measure-now` força o placar. `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com
+`typesafe` aprovado e `JEV_API_KEY`, grava a sombra do Jev em até 60 mensagens novas por ciclo
+(ver `concierge_triage_shadow`). `--measure-now` força o placar.
+`SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
+
+### concierge_triage_shadow
+
+**Propósito:** O teste do Jev decidindo a intenção na Concierge (dono, 02/10/2026, D-028), sem
+mudar nada para o cliente. Lê `ConversationMessage.envelope["triage_shadow"]` (a decisão da regra
+local e a do Jev, gravadas pelo `run_intent_pilot`) e diz quantas concordam, as discordâncias
+mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` grava a sombra de até
+N mensagens antes; `--days` (padrão 7) e `--examples`. Para o Jev decidir de verdade quando a
+Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 
 ### run_alias_benchmark
 

@@ -138,6 +138,15 @@ python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --csv
   errado custa mais que o agente.
 - Empate: o que não sai da casa (`embed`) > o que já sai (`llm`) > fornecedor novo (`jev`).
 
+## 7b. O Jev decidindo, em sombra (02/10/2026, D-028)
+
+O dono testou o Jev, achou o desempenho equivalente ao dos LLMs, mais rápido e mais barato, e
+pediu para testá-lo decidindo a intenção na Concierge. Como a Concierge está em `observe`, o
+teste é em sombra: a cada ciclo, `shadow_triage` grava em cada mensagem nova a decisão da regra
+local e a do Jev; `manage.py concierge_triage_shadow` mostra onde discordam. A troca de verdade é
+`CONCIERGE_TRIAGE_CLASSIFIER=jev`, e mesmo nela o sensível da regra local vence (a regra do §7:
+somar, nunca substituir de cara).
+
 ## 8. O que não se sabe ainda
 
 - **Volume real de mensagens:** depende de quantas perguntas a observação captura por dia; o

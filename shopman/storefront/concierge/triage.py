@@ -20,7 +20,9 @@ garantia: o que ela reconhece como sensível (pessoa, reclamação, alergia,
 encomenda especial) escala mesmo que o modelo discorde. Quando
 ``triage_with_model`` está ligado e há credencial, o modelo da Anthropic propõe
 intenção, urgência e o resumo de uma ou duas linhas; se ele falhar ou responder
-fora da lista, vale a regra local. Nenhuma categoria nasce aqui: resposta fora
+fora da lista, vale a regra local. Com ``triage_classifier = "jev"`` quem propõe a
+intenção é o Jev (TypeSafe, D-028): uma pergunta sim/não por intenção, vence a mais
+provável acima do corte; urgência e resumo ficam com a tabela e a regra local. Nenhuma categoria nasce aqui: resposta fora
 das 12 intenções ou das 3 urgências é descartada.
 """
 
@@ -132,8 +134,8 @@ class Triage:
     urgency: str
     destination: str
     summary: str
-    #: ``rules`` (regra local), ``model`` (modelo), ``default`` (nada casou) ou
-    #: ``failures`` (duas tentativas sem resposta útil).
+    #: ``rules`` (regra local), ``model`` (modelo da Anthropic), ``jev`` (Jev),
+    #: ``default`` (nada casou) ou ``failures`` (duas tentativas sem resposta útil).
     source: str
     #: Por que o destino não é o da tabela, quando não é: ``order_not_closed``
     #: (segundo turno seguido de pedido que o chat não fecha) ou
@@ -225,6 +227,13 @@ def _model_enabled() -> bool:
     )
 
 
+def _model_toggle() -> bool:
+    """A chave ``triage_with_model`` sozinha: o Jev não depende da credencial da Anthropic."""
+    from .service import config
+
+    return bool(config().get("triage_with_model"))
+
+
 def _model_name() -> str:
     from .service import config
 
@@ -292,6 +301,67 @@ def classify_with_model(text: str, context: list[tuple[str, str]], *, client=Non
     }
 
 
+# ── Jev ───────────────────────────────────────────────────────────────
+
+
+def classifier() -> str:
+    """Quem propõe a intenção: ``anthropic`` (padrão) ou ``jev``."""
+    from .service import config
+
+    return str(config().get("triage_classifier") or "anthropic").strip().casefold()
+
+
+def jev_categories() -> list:
+    """As 12 intenções, com a descrição que o dono deu no Admin quando houver."""
+    from .intent_benchmark import Category, load_categories
+
+    try:
+        edited = {category.ref: category for category in load_categories()}
+    except Exception:  # banco indisponível: vale a descrição padrão
+        logger.warning("concierge.triage.jev_categories_failed", exc_info=True)
+        edited = {}
+    return [
+        edited.get(ref) or Category(ref, name, description, sensitive)
+        for ref, name, description, sensitive in DEFAULT_INTENTS
+    ]
+
+
+def jev_scores(text: str, *, contender=None):
+    """A probabilidade de cada uma das 12 intenções pelo Jev (``Prediction``).
+
+    O texto vai REDIGIDO (``redact_observation_text``), o mesmo que o comparador
+    manda: a aprovação do dono (D-028) é para texto redigido. Levanta
+    ``ContenderNotConfigured`` sem aprovação ou chave, e o erro do provedor como
+    veio; quem chama decide se é silêncio.
+    """
+    from .intent_benchmark import JevContender, Sample
+    from .observation_privacy import redact_observation_text
+
+    contender = contender or JevContender(timeout=10.0)
+    sample = Sample(0, redact_observation_text(text).text, frozenset())
+    return contender.scores(sample, jev_categories())
+
+
+def best_jev_intent(scores: dict[str, float]) -> str:
+    """A intenção mais provável acima do corte, ou vazio quando nenhuma passa."""
+    from .intent_benchmark import PRESENT_AT
+
+    ranked = sorted(
+        ((p, ref) for ref, p in scores.items() if ref in ROUTES and p >= PRESENT_AT), reverse=True
+    )
+    return ranked[0][1] if ranked else ""
+
+
+def classify_with_jev(text: str, *, contender=None) -> dict | None:
+    """Proposta do Jev no formato da do modelo, sem urgência nem resumo; ou None."""
+    try:
+        intent = best_jev_intent(jev_scores(text, contender=contender).intents)
+    except Exception as exc:  # sem aprovação, sem chave, rede, resposta ilegível: vale a regra
+        logger.warning("concierge.triage.jev_failed exception_type=%s", type(exc).__name__)
+        return None
+    return {"intent": intent, "urgency": "", "summary": ""} if intent else None
+
+
 # ── Decisão ───────────────────────────────────────────────────────────
 
 
@@ -315,12 +385,16 @@ def decide(
     if previous and set(previous.get("message_ids") or ()) & set(message_ids):
         previous = None
     rules_intent, rules_source = classify_rules(text)
-    proposal = classify_with_model(text, list(context), client=client)
+    with_jev = classifier() == "jev"
+    if with_jev:
+        proposal = classify_with_jev(text, contender=client) if _model_toggle() else None
+    else:
+        proposal = classify_with_model(text, list(context), client=client)
 
     if rules_intent in SENSITIVE or rules_intent == "special_order":
         intent, source = rules_intent, "rules"
     elif proposal is not None:
-        intent, source = proposal["intent"], "model"
+        intent, source = proposal["intent"], ("jev" if with_jev else "model")
     else:
         intent, source = rules_intent, rules_source
 

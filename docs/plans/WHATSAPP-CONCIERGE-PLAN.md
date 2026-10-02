@@ -101,6 +101,10 @@ onde rodava a regex de handoff (`service.run_turn`). Duas camadas:
    `AI_ASSIST_API_KEY`; modelo `CONCIERGE_TRIAGE_MODEL`, vazio = o mesmo do Concierge): propõe
    intenção, urgência e o resumo. Resposta fora das 12 intenções ou das 3 urgências é descartada;
    falha de rede vira regra local.
+   **Jev no lugar do modelo** (`CONCIERGE_TRIAGE_CLASSIFIER=jev`, dono 02/10/2026, D-028): a
+   intenção é a mais provável do Jev acima de 0,5, com o texto redigido; urgência e resumo ficam
+   com a tabela e a regra local. Enquanto a Concierge observa, o Jev decide em sombra a cada ciclo
+   do piloto (`concierge_triage_shadow` mostra onde ele e a regra discordam).
 
 O sensível reconhecido pela regra local (pessoa, reclamação, alergia, encomenda especial) vence o
 modelo. O sensível proposto pelo modelo também escala.

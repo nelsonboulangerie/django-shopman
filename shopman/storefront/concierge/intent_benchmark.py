@@ -18,7 +18,7 @@ Concorrentes:
 **Texto de cliente só sai da casa para provedor aprovado.** Os dois últimos
 mandam a mensagem (redigida) para fora; cada um só entra se o provedor dele
 estiver em ``SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED`` (``anthropic`` aprovado
-pelo dono em 23/09/2026; ``typesafe`` não) — o desenho do Marketing, em que
+pelo dono em 23/09/2026; ``typesafe`` em 02/10/2026, D-028) — o desenho do Marketing, em que
 credencial sozinha nunca liga provedor. Todos recebem o MESMO texto: a versão
 redigida que a pessoa confere (``redact_observation_text``).
 """
@@ -300,7 +300,11 @@ class JevContender:
             },
         }
 
-    def predict(self, sample: Sample, categories: list[Category]) -> Prediction:
+    def scores(self, sample: Sample, categories: list[Category]) -> Prediction:
+        """A probabilidade de TODAS as intenções, inclusive as abaixo do corte.
+
+        A triagem da Concierge escolhe a mais provável; a sombra guarda todas.
+        """
         started = time.perf_counter()
         body = self.build_request(sample, categories)
         response = self.session.post(
@@ -313,17 +317,17 @@ class JevContender:
         if response.status_code >= 400:
             raise ContenderResponseError(jev_http_error(response, body))
         payload = response.json()
-        intents = {}
-        for category in categories:
-            probability = parse_jev_boolean(payload, question=category.ref)
-            if probability >= PRESENT_AT:
-                intents[category.ref] = probability
         usage = payload.get("usage") or {}
         return Prediction(
-            intents=intents,
+            intents={c.ref: parse_jev_boolean(payload, question=c.ref) for c in categories},
             latency_ms=latency_ms,
             input_tokens=int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0),
         )
+
+    def predict(self, sample: Sample, categories: list[Category]) -> Prediction:
+        prediction = self.scores(sample, categories)
+        prediction.intents = {ref: p for ref, p in prediction.intents.items() if p >= PRESENT_AT}
+        return prediction
 
 
 def parse_jev_boolean(payload: dict, *, question: str) -> float:
