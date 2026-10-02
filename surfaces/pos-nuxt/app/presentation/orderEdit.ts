@@ -7,6 +7,7 @@
 
 import { formatBRL } from "../../../operator-kit/app/utils/money";
 import type { OrderEditOriginal, OrderEditPreview } from "~/types/preorders";
+import { optionsIntent } from "~/presentation/productOptions";
 
 export type DeliveryPaymentMethod = "cash" | "debit" | "credit";
 
@@ -14,7 +15,13 @@ export type DeliveryPaymentMethod = "cash" | "debit" | "credit";
 export type OrderEditWeighed = { entry: "label"; label_q: number } | { entry: "weight"; weight_g: number };
 
 export interface OrderEditBody {
-  items: { line_id: string; sku: string; qty: number | string; weighed?: OrderEditWeighed }[];
+  items: {
+    line_id: string;
+    sku: string;
+    qty: number | string;
+    weighed?: OrderEditWeighed;
+    options?: { group: string; ref: string }[];
+  }[];
   notes?: string;
   fulfillment?: {
     type: "pickup" | "delivery";
@@ -71,11 +78,15 @@ export function orderEditBody(
       // A peça pesada NOVA entra pela etiqueta (ou pelo peso), como na venda; a
       // que já estava o servidor reconhece pelo `line_id` e mantém a vendida.
       const weighed = weighedOf(item.weighed);
+      // As escolhas da linha (sabor, adicionais) seguem junto: o servidor relê
+      // o preço do catálogo e recusa a escolha que não vale mais.
+      const options = optionsIntent(Array.isArray(item.options) ? (item.options as { group: string; ref: string }[]) : []);
       return {
         line_id: String(item.line_id ?? ""),
         sku: String(item.sku ?? ""),
         qty: item.qty as number | string,
         ...(weighed ? { weighed } : {}),
+        ...(options.length ? { options } : {}),
       };
     }),
   };

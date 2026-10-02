@@ -2,6 +2,7 @@
 import type { POSProductProjection } from "~/types/pos";
 import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
 import { productBlockedLabel } from "~/presentation/weighed";
+import { hasOptionGroups } from "~/presentation/productOptions";
 
 const props = defineProps<{
   product: POSProductProjection;
@@ -16,6 +17,8 @@ defineEmits<{
 // Inerte com selo: esgotado, ou sem preço no catálogo (nenhum canal vende preço zero).
 const blockedLabel = computed(() => productBlockedLabel(props.product) || (props.disabled ? "Esgotado" : ""));
 const inert = computed(() => Boolean(blockedLabel.value));
+// Com escolhas (sabor, adicionais), o toque abre o diálogo em vez de somar 1.
+const opensChoice = computed(() => hasOptionGroups(props.product));
 
 const hasImage = computed(() => Boolean(props.product.image_url?.trim()));
 
@@ -35,6 +38,8 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
       inert ? 'cursor-not-allowed opacity-50 hover:border-border hover:shadow-none active:translate-y-0' : '',
     ]"
     :disabled="inert"
+    :aria-label="opensChoice ? `${product.name}: abre as escolhas` : undefined"
+    :data-pos-product-options="opensChoice ? '' : undefined"
     @click="$emit('add', product)"
   >
     <div class="relative aspect-[4/3] w-full overflow-hidden">
@@ -57,6 +62,13 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         </div>
       </div>
 
+      <span
+        v-if="opensChoice"
+        class="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-xs font-semibold shadow-sm"
+      >
+        <Icon name="lucide:list-checks" class="size-3.5" />
+        Escolhas
+      </span>
       <UiBadge
         v-if="qty > 0"
         class="absolute right-1.5 top-1.5 tabular-nums shadow-sm"

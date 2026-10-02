@@ -73,7 +73,8 @@ function choose(product: POSProductProjection) {
         <UiDialogTitle>{{ group.name }}</UiDialogTitle>
         <UiDialogDescription>Toque no produto para lançar no pedido.</UiDialogDescription>
       </UiDialogHeader>
-      <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+      <p v-if="group.label" class="text-sm font-semibold" data-pos-choice-group-label>{{ group.label }}</p>
+      <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3" :aria-label="group.label || undefined">
         <PosProductTile
           v-for="option in group.options"
           :key="option.sku"

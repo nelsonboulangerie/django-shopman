@@ -1,6 +1,7 @@
 import type { POSCartItem, POSIntentCartState, POSPaymentTenderDraft, Action } from "~/types/pos";
 import { POS_SALE_INTENT_VERSION } from "~/generated/posContract";
 import { lineAmountQ, weighedIntent } from "~/presentation/weighed";
+import { optionsIntent } from "~/presentation/productOptions";
 
 export { POS_SALE_INTENT_VERSION };
 
@@ -130,6 +131,9 @@ export function buildPosSaleIntent(
       // Linha pesada: vai o que o operador DIGITOU (etiqueta ou peso). O peso
       // de verdade e o preço do quilo o servidor resolve pelo catálogo.
       ...(item.weighed ? { weighed: weighedIntent(item.weighed) } : {}),
+      // Escolhas no produto: só `{group, ref}`. Preço e nome o servidor relê do
+      // catálogo (o `unit_price_q` acima já soma os acréscimos, por cortesia).
+      ...(item.options?.length ? { options: optionsIntent(item.options) } : {}),
       ...(item.discount && item.discount.value > 0
         ? {
             discount: {
