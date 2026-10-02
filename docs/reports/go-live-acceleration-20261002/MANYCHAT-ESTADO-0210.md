@@ -63,3 +63,48 @@ Os demais da lista (todos Aprovados, Utility salvo indicação): `fila_vaga_libe
 
 Com a permissão do Chrome concedida (ou a aba do ManyChat na frente), os 5 envios seguem o
 roteiro do HANDOFF §0.1b, item 1.
+
+## Rodada da manhã (02/10/2026, 05:44 a 06:06 BRT)
+
+O dono deixou a aba do ManyChat na frente. A aba alternou entre visível e oculta
+(`document.visibilityState` lido por JS: oculta às 05:44, visível às 05:48 e 05:51,
+oculta de 05:56 até 06:06 sem voltar). Parei às 06:06, depois de 10 minutos oculta.
+
+### Modelos (lido na tela, Configurações > WhatsApp > Modelos de Mensagem, 05:58)
+
+| Modelo | Estado lido | Observação |
+|---|---|---|
+| `pagamento_falhou` | **Revisar** (em análise), Utility | enviado às 05:54 com o corpo aprovado de 02/10, amostras `Ana`/`A47`, botão URL `Tentar de novo` → `https://www.nelsonboulangerie.com.br/pedido/` + `order_ref` |
+| `pontos_fidelidade` | não existe | a digitação sumiu com a aba oculta (05:55); não enviado |
+| `pedido_entregue_v2` | não existe | não enviado |
+| `fila_vaga_disponivel_v2` | não existe | não enviado |
+| `produto_chegou_v2` | não existe | não enviado |
+| `pedido_em_preparo` | Aprovado, Utility | sem flow |
+| `reembolso_processado` | Aprovado, Utility | sem flow |
+| `pedido_entregue`, `fila_vaga_disponivel`, `produto_chegou` | Aprovado, Marketing | **não apagados**: nenhum `_v2` aprovado |
+
+Corpo compilado do `pagamento_falhou`, lido na tela: `Oi, {{cuf_14859629}}. Não conseguimos
+gerar o pagamento do seu pedido {{cuf_15003507}}. Qualquer dúvida, estamos à disposição.`
+
+### Flows e ligação do evento
+
+- Nenhum flow criado (a aba ficou oculta antes de chegar lá).
+- **A ligação evento → flow não é pelo Admin.** O campo `whatsapp_flow_ns` é somente leitura
+  no `NotificationTemplateAdmin` desde 25/09
+  (`docs/runbooks/ativar-whatsapp-transacional.md`, seção "Onde se configura"). Os dois
+  eventos já ligados (`order_rescheduled`, `order_updated`) estão no `MANYCHAT_FLOW_MAP` de
+  `config/settings.py`. O padrão para os próximos é o mesmo: criar o flow, copiar o `ns`,
+  acrescentar a linha no mapa num PR. Nada foi alterado no Admin do alpha.
+
+### Armadilha nova (medida nesta rodada)
+
+- Coordenada de clique na aba: a página está com zoom 75% (`innerWidth` 1813, `devicePixelRatio`
+  0.75) e o clique por coordenada usa CSS × 0,75. Clique por referência (`find`) é o caminho
+  seguro; para ícone sem referência (lixeira, `{}`), medir o retângulo por JS e multiplicar.
+- O ícone `{}` tem `data-test-id="vars-tool"`.
+
+### Para destravar
+
+Chrome visível (janela sem nada por cima, não só a aba na frente) por ~20 minutos: faltam 4
+modelos, depois os flows de `pedido_em_preparo`, `reembolso_processado` e dos que forem
+aprovados.
