@@ -25,9 +25,11 @@
 - **Na fila (17:40 UTC):** #1382 (Encomendas: R1 a R5 saíram), #1383 (loja: observação por item em
   folha), #1384 (PDV: o modo Encomendas virou assistente), #1385 (o "Exato" espera a revisão também),
   #1379 (ordem, BOARD, ROUNDS, brief, esta seção).
-- **Esperando o dono:** D42 (o PDV manda o total esperado e o servidor recusa se mudou?) e D43 (P1 a
-  P7 do brief `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md`); a Frente 7 (primitivas no kit)
-  espera o D43.
+- **Depois, no mesmo dia (02/10 18:10 a 23:10 UTC):** o dono respondeu D42 (sim, agora) e D43 (P1 sim,
+  P2 = 2, P3 sim, P4 = 1, P5 sim, P6 sim, P7 sim). Entraram D42 #1389 (o PDV manda o total mostrado; o
+  servidor recusa `total_changed` se mudou) e o redesenho inteiro da seção Encomendas: S3 #1388, S4 #1391,
+  S8 #1387, S7 #1390, S7b #1392, S9 #1393, S2 #1394, S5 #1396, S6 #1397. Registros em
+  `docs/coordination/ROUNDS/`. Nada espera o dono desta frente.
 - **Corrigido aqui:** a observação por item é por LINHA (`cart/lines/<line_id>/notes/`), não por SKU;
   ver o item "Observação por item" mais abaixo.
 - **NÃO VERIFICADO no navegador:** o cardápio com a flag do Continuum ligada (#1381) e o assistente

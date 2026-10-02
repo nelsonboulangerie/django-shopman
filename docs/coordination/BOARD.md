@@ -27,11 +27,10 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| S2→S5→S6 | Encomendas: cor do selo por token no kit, detalhe com painel à direita (P3), etiqueta única (P5); um PR por vez | `EM_EXECUCAO` | coordenacao-pedidos-4f89d4 | `claude/kit-selo-por-token` (depois `encomendas-detalhe-painel`, `encomendas-etiqueta-unica`) | 2026-10-02 20:50 |
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
-#1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`. Fatias do redesenho mergeadas: S3 #1388, S4 #1391, S7 #1390, S7b #1392, S8 #1387, S9 #1393; D42 #1389. Registros em `ROUNDS/S*-*.md` e `ROUNDS/D42-*.md`.
+#1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`. Fatias do redesenho mergeadas: S3 #1388, S4 #1391, S7 #1390, S7b #1392, S8 #1387, S9 #1393, S2 #1394, S5 #1396, S6 #1397; D42 #1389. O brief das Encomendas (T6) está entregue inteiro. Registros em `ROUNDS/S*-*.md` e `ROUNDS/D42-*.md`.
 
 ## Fila livre (ninguém pegou)
 
