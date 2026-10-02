@@ -3,8 +3,10 @@
 > Pedido do dono em 02/10/2026: *"Prefiro que lance uma WP dedicada, onde você vai ter
 > que vasculhar e tentar extrair receitas"*.
 
-**Estado:** inventário feito, **parado esperando a confirmação do dono**. Nada foi
-mapeado para o modelo do sistema, nada entrou em banco, seed ou fixture.
+**Estado:** inventário feito (seções A e B). O dono respondeu às perguntas 1 a 4 em
+02/10/2026, e a **proposta de estrutura** para Tradição, Campagne, Ciabatta e Levain,
+a partir da Fx, está na seção C. **Parado esperando o aval escrito do dono** para
+executar. Nada entrou em banco, seed ou fixture.
 
 ## Fontes (só estas, indicadas pelo dono em 02/10/2026)
 
@@ -368,6 +370,260 @@ temperatura.
 
 ---
 
+## C) Proposta de estrutura (a partir da Fx)
+
+> Autorizada pelo dono em 02/10/2026 (HANDOFF §0.1b, PR #1352): **(1)** a Fx (fonte 3) é a
+> fonte para Tradição, Campagne e Ciabatta; **(2)** etapas, tempos e temperaturas não
+> existem, ele edita depois; **(3)** para o levain vale a Fx; **(4)** PH é massa de Tradição
+> e Focaccia é massa de ciabatta. As perguntas 5 a 12 seguem abertas e **não** foram
+> decididas aqui.
+>
+> Esta seção é **proposta**. Nada foi executado, nada entrou em banco, seed ou fixture.
+> Como as seções A e B, ela diz *o que existe* e *onde cada coisa entraria*, nunca *quanto*:
+> nenhuma quantidade, porcentagem, preço ou custo da planilha foi escrito aqui.
+
+### C.1 Como a Fx foi lida desta vez
+
+- O conector do Google Drive (`download_file_content`, exportação xlsx) devolveu a
+  planilha inteira; foram abertas **só** as abas Fx e MP, pelo valor exibido da célula.
+  O arquivo baixado foi apagado ao final; nada ficou em disco nem no repositório.
+- Os quatro blocos usados: **MASSA TRADIÇÃO**, **LEVAIN**, **MASSA CAMPAGNE** e **MASSA
+  CIABATTA**. Cada bloco tem as colunas Ingrediente, Preço/kg, Quant (kg) e Subtotal, e as
+  linhas Total e Custo/kg. Nenhum dos quatro tem bloco em porcentagem de padeiro (PP %).
+- A MP foi lida só para conferir a grafia e a marca de cada farinha.
+
+### C.2 O modelo do sistema que recebe a receita
+
+Lido em `origin/main` (02/10/2026):
+
+- **`RecipeEntry`** (`packages/craftsman/shopman/craftsman/models/recipe_book.py`) é a
+  receita do inventário, com a linhagem de versões. As quatro já existem por bootstrap do
+  seed, com o mesmo ref da ficha: `massa-tradicao`, `massa-campagne`, `massa-ciabatta`,
+  `creme-levain` (`bootstrap_entry_from_recipe`, `services/recipe_book.py`).
+- **`RecipeVersion`** é a fórmula congelada: `formula` (schema no
+  `docs/plans/RECIPE-INVENTORY-PLAN.md` §3), `origin` ("a receita como chegou",
+  imutável), `source`, `yield_quantity` + `yield_unit` (padrão **grama**, ADR-024, emenda
+  de 24/09/2026), `steps`, `notes`, `label`.
+- **`Recipe`** + **`RecipeItem`** (`models/recipe.py`) é a ficha de execução (o BOM da
+  fornada): `batch_size` (rendimento base), itens por `input_sku` em grama. Só a
+  **publicação** de uma versão escreve a ficha (`publish_version`).
+- **Sub-receita:** na `formula`, o levain entra em `parts` como
+  `{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}`; os `items` são a
+  fórmula base com **toda** a farinha (a do levain inclusive), e a mistura final é
+  calculada (`analyze` → `final_mix`), nunca digitada. Ao publicar, o BOM vira "mistura
+  final + LEVAIN como item", que é exatamente como o seed já liga a massa ao levain hoje
+  (`RecipeItem` com `input_sku="LEVAIN"`, saída da ficha `creme-levain`).
+- **Publicar exige todo `sku` preenchido** (`ITEM_WITHOUT_SKU`). Rascunho aceita
+  ingrediente com `sku=""`.
+
+### C.3 Como cada bloco da Fx vira receita
+
+**Regra de unidade, igual para os quatro.** A Fx escreve tudo em **kg** (coluna "Quant
+(kg)"), inclusive a água e o azeite. O sistema guarda em **grama**: cada quantidade da Fx
+entra multiplicada por 1000, sem arredondar. Nenhum líquido da Fx está em litro, então
+não há densidade a declarar. O `origin` da versão guarda a Fx **como está** (em kg, com a
+grafia da planilha, inclusive "Azeito de Oliva EA"); a conversão para grama mora só na
+`formula`.
+
+**Rendimento.** A Fx dá só a linha **Total** do bloco, que é a soma das quantidades dos
+insumos (a massa total da fórmula). Mapeia para `RecipeVersion.yield_quantity` (em grama)
+e, ao publicar, para `Recipe.batch_size`. O sistema aceita rendimento igual à soma dos
+insumos (`_validate_mass_balance` só recusa rendimento **maior**). **A planilha não diz**:
+perda de mistura, perda no forno, quantas peças a massa rende, nem massa velha. A Fx não
+tem margem de segurança nem massa velha; essas linhas existem só na fonte 1, que não é a
+fonte desta proposta.
+
+**Etapas, tempo, temperatura: a planilha não diz; o dono edita depois** (resposta 2). As
+versões nascem com `steps` vazio. A proposta das 92 etapas de 05/09 não preenche nada.
+
+#### LEVAIN → `creme-levain` (saída `LEVAIN`)
+
+| Insumo, como a Fx escreve | SKU no sistema |
+|---|---|
+| Farinha de Trigo Especial Biorgânica | **sem SKU correspondente** (ver C.4) |
+| Farinha de Trigo Integral Biorgânica | **sem SKU correspondente**: o único integral do sistema é `FARINHA-INTEGRAL-ORGANICA`, de marca Paullinia, não Biorgânica |
+| Água | `AGUA-FILTRADA` (provável: a Fx diz só "Água") |
+| Levain (a cultura que se alimenta) | `LEVAIN-LIQUIDO` (provável: é a cultura, "Fermento natural (levain)" no cadastro) |
+
+O levain é a raiz: não tem sub-receita. A Fx escreve a cultura como um ingrediente comum
+do bloco; no sistema ela é o insumo `LEVAIN-LIQUIDO`, e a saída da receita é `LEVAIN`.
+
+#### MASSA TRADIÇÃO → `massa-tradicao` (saída `MASSA-TRADICAO`)
+
+| Insumo, como a Fx escreve | SKU no sistema |
+|---|---|
+| Farinha de Trigo Especial Biorgânica | **sem SKU correspondente** |
+| Água | `AGUA-FILTRADA` (provável) |
+| Sal Refinado | `SAL-REFINADO` |
+| LEVAIN | `LEVAIN` = parte (pré-fermento) com `entry_ref: creme-levain` |
+
+**Como a Fx expressa o levain:** como **uma linha de ingrediente pronto** ("LEVAIN", em
+kg, com preço próprio), igual às outras. Ela não diz quanto da farinha da massa passou
+pelo levain. No sistema, essa linha vira a parte `LEVAIN` em `parts`, com a quantidade
+que a Fx escreve; a farinha e a água que o levain carrega entram na fórmula base pela
+composição da versão atual do `creme-levain` (é o que `_dissolve` faz no bootstrap). Por
+isso **o levain tem de entrar primeiro**: a composição que a massa herda é a do
+`creme-levain` publicado na hora. O `origin` guarda a linha da Fx do jeito que está.
+
+Ambiguidade do bloco: há uma linha só com **subtotal de custo**, sem nome de ingrediente
+e sem quantidade, que entra no custo total e não entra na massa total. Ela **não vira
+insumo** (não se sabe o que é); fica registrada na nota da versão como "linha de custo
+sem ingrediente na Fx".
+
+#### MASSA CAMPAGNE → `massa-campagne` (saída `MASSA-CAMPAGNE`)
+
+| Insumo, como a Fx escreve | SKU no sistema |
+|---|---|
+| Farinha de Trigo Especial Biorgânica | **sem SKU correspondente** |
+| Farinha de Trigo Integral Orgânico Paullinia | `FARINHA-INTEGRAL-ORGANICA` (marca Paullinia no cadastro) |
+| Farinha de Centeio Integral Paullinia | `FARINHA-CENTEIO-INTEGRAL-ORGANICA` (marca Paullinia no cadastro) |
+| Sal Refinado | `SAL-REFINADO` |
+| Água | `AGUA-FILTRADA` (provável) |
+| LEVAIN | `LEVAIN` = parte (pré-fermento), `entry_ref: creme-levain` |
+
+#### MASSA CIABATTA → `massa-ciabatta` (saída `MASSA-CIABATTA`)
+
+| Insumo, como a Fx escreve | SKU no sistema |
+|---|---|
+| Farinha de Trigo Especial Biorgânica | **sem SKU correspondente** |
+| Água | `AGUA-FILTRADA` (provável) |
+| Sal Refinado | `SAL-REFINADO` |
+| Azeito de Oliva EA | `AZEITE-EXTRAVIRGEM` (provável: a Fx e a MP não dizem a marca; o cadastro diz Luglio; "EA" não está explicado) |
+| LEVAIN | `LEVAIN` = parte (pré-fermento), `entry_ref: creme-levain` |
+
+### C.4 A farinha que não tem SKU
+
+As quatro receitas usam **Farinha de Trigo Especial Biorgânica**, e o levain usa também a
+**Farinha de Trigo Integral Biorgânica**. Nenhum dos cinco cadastros de farinha do
+sistema é Biorgânica (`config/management/commands/seed.py`, `SUPPLIER_BY_MATERIAL`):
+
+- `FARINHA-NOVARA-T55` (Novara/Pasini) e `FARINHA-ANACONDA-PREMIUM` (Novara/Pasini,
+  alternativa Anaconda);
+- `FARINHA-BAGATELLE-T45` (Foricher);
+- `FARINHA-INTEGRAL-ORGANICA` e `FARINHA-CENTEIO-INTEGRAL-ORGANICA` (Paullinia).
+
+A MP lista "Farinha de Trigo Especial Biorgânica" e "Farinha de Trigo Integral
+Biorgânica" como matérias-primas próprias, separadas das Paullinia, da Anaconda e da Rio
+Azul. Nenhum SKU foi criado. Enquanto o dono não disser, as versões das quatro receitas
+**ficam em rascunho** (`sku=""` nessas linhas), porque publicar exige todo SKU.
+
+### C.5 Peças por família (só nomes e o vínculo massa → peça)
+
+Pesos fora: a pergunta 5 segue aberta. A ficha de cada peça diz "N g de Massa X" e não
+leva fórmula própria (`bootstrap_entry_from_recipe`, "peça não tem fórmula fabricada");
+o vínculo é o `RecipeItem` da peça com `input_sku` = a saída da massa.
+
+| Massa | Peças (fonte 1, abas TRAD/CIAB/CAMP) | Ficha de peça que já existe no seed |
+|---|---|---|
+| **Tradição** (`MASSA-TRADICAO`) | [PH] Pão de Hambúrguer Rústico (resposta 4) · [TB] Tabatière · [FE] Fendu · [MIB] Mini Baguete · [DBP] Baguette Pequena · [DB] Demi Baguete · [BF] Baguete Francesa · [BA] Bâtard · [BL] Boule · [BAX] Batard Grande · [BAXG] Batard XG | BF → `baguete` · BA → `batard` · BAX → `italiano-rustico` (provável) |
+| **Ciabatta** (`MASSA-CIABATTA`) | [CI] Ciabatta · Ciabatta Peq (CIP) · [CIQ] Ciabatta Quadrada · [CIM] Mini Ciabatta · [BE] Baguete Gergelim · [BEP] Baguete Gergelim Peq · [BAP] Baguetinha Peq · [FOA] Focaccia Alecrim · [FOC] Focaccia de Cebola Roxa · [CBT] Focaccia de Bacon,C&T · [FOL] Fougasse aux Olives e Lardons · Mini Focaccia (MIF) · Vulcão de Alho (VQA) · [EP] Pain d'Êpi · [MEP] Mini Êpi | CI → `ciabatta` · BEP → `baguete-gergelim-pequena` · BAP → `baguete-lanche` (provável) · FOA → `focaccia-dia` · FOC → `focaccia-cebola-roxa` · CBT → `focaccia-cebola-bacon-tomilho` · MIF → `mini-focaccia-alecrim` (provável) |
+| **Campagne** (`MASSA-CAMPAGNE`) | [CGO] Pain de Campagne Oval · [CGR] Pain de Campagne Redondo · [CF] Baguette Campagne · [CFP] Baguette Campagne Peq · [CP] Petit Campagne · Campagne Passas & Cast Peq (CPXP) · [CPX] Campagne Passas & Castanha Grande · Campagne Figos & Amêndoas (CFA) · Mega Campagne · Pão do Croque CW | CGO → `campagne` · CGR → `campagne-redondo` · CF → `baguette-campagne` |
+
+Observações, sem decidir:
+
+- O seed tem duas minis que a fonte 1 não separa: `mini-focaccia-cebola-bacon-tomilho` e
+  `mini-focaccia-cebola-roxa`, ambas sobre `MASSA-CIABATTA`. A fonte 1 traz uma linha só,
+  "Mini Focaccia".
+- As peças com recheio (CPXP, CPX, CFA) levam um recheio cuja composição não está na fonte
+  1 nem foi confirmada na Fx (pergunta 6, aberta). O vínculo massa → peça vale; o recheio
+  fica de fora.
+- Peça da fonte 1 sem ficha no seed continua sem ficha: criar ficha de peça precisa do
+  peso (pergunta 5) e, para virar produto, de decisão de catálogo.
+
+### C.6 Divergências entre a Fx e o seed de hoje (só o tipo, sem números)
+
+Comparado com `_seed_recipes` em `config/management/commands/seed.py` (`origin/main`).
+
+**Levain (`creme-levain`)**
+- Farinha diferente: o seed usa `FARINHA-NOVARA-T55`; a Fx usa a Especial Biorgânica.
+- Insumo a mais na Fx: farinha integral (Integral Biorgânica). O seed não tem integral no
+  levain.
+- A proporção entre cultura, farinha (somada) e água é a mesma nas duas.
+- O rendimento do seed é menor que a soma dos insumos (o seed desconta perda); a Fx
+  rende exatamente a soma.
+
+**Massa Tradição (`massa-tradicao`)**
+- Estrutura diferente: o seed monta a massa sobre a sub-receita `PASTA-AUTOLIZADA`
+  (farinha + água autolisadas, `massa-pasta-autolizada`); a Fx lista farinha e água
+  direto, e não diz se há autólise.
+- Farinha diferente: no seed, `FARINHA-NOVARA-T55` (dentro da autolizada); na Fx, a
+  Especial Biorgânica.
+- Insumo a menos na Fx: **malte** (`MALTE-EXTRATO` está no seed, não está na Fx).
+- Proporção de água e de levain diferente.
+
+**Massa Campagne (`massa-campagne`)**
+- Mesmos tipos de insumo nos dois (três farinhas, água, sal, levain).
+- Farinha branca diferente: `FARINHA-NOVARA-T55` no seed; Especial Biorgânica na Fx. As
+  duas outras farinhas (integral e centeio Paullinia) batem.
+- Proporção entre as três farinhas diferente; proporção de água, de sal e de levain
+  diferente.
+
+**Massa Ciabatta (`massa-ciabatta`)**
+- Mesmos tipos de insumo nos dois (farinha, água, sal, azeite, levain).
+- Farinha diferente: `FARINHA-ANACONDA-PREMIUM` no seed; Especial Biorgânica na Fx.
+- Proporção de azeite e de levain diferente; água e sal batem.
+
+**As três massas:** no seed o rendimento é um número redondo, menor que a soma dos
+insumos; na Fx o rendimento é a soma exata.
+
+**O que a Fx não toca e continua no seed:** `massa-pasta-autolizada` deixa de ser usada
+pela Tradição se a Fx valer como está, mas a ficha continua existindo (decisão de
+apagar ou manter é do dono). O seed também ainda usa `FARINHA-NOVARA-T55` em outras
+fichas, então nenhum insumo sai do cadastro por causa desta proposta.
+
+### C.7 Plano de entrada no sistema
+
+> ⛔ **Pede o aval escrito do dono antes de executar.** Nada abaixo foi feito.
+
+1. **Resolver a farinha Biorgânica** (C.4): o dono diz se é um insumo novo (aí o cadastro
+   de compra nasce pelo caminho normal do Compras, com o SKU que ele aprovar) ou se a
+   casa hoje usa outra farinha no lugar. Sem isso, os passos 3 e 4 param em rascunho.
+2. **Confirmar as correspondências "provável"**: Água → `AGUA-FILTRADA`; Levain da Fx →
+   `LEVAIN-LIQUIDO`; Azeito de Oliva EA → `AZEITE-EXTRAVIRGEM`.
+3. **Um comando de importação** (management command, idempotente, com `--apply`; sem
+   `--apply` só mostra o que faria), que lê os valores **digitados pelo dono ou exportados
+   por ele na hora**, nunca de um arquivo versionado no repositório, e para cada receita:
+   - cria uma versão nova (`create_version`) na `RecipeEntry` existente, com
+     `source = {"kind": "import", "text": "ANÁLISE_CUSTOS_CVL_2021, aba Fx"}`,
+     `origin` = o bloco da Fx como está (kg, grafia da planilha), `formula` em grama,
+     `yield_quantity` = a linha Total convertida para grama, `steps` vazio,
+     `label` = "Fórmula da Fx";
+   - na ordem: **`creme-levain` primeiro**, depois as três massas (que herdam a
+     composição do levain pela parte `LEVAIN`);
+   - deixa a versão em **rascunho**.
+4. **Publicar** (`publish_version`) só depois do aval, receita por receita, na mesma
+   ordem. A publicação reescreve a ficha de execução (`Recipe`/`RecipeItem`), e daí em
+   diante a fornada, a sugestão de compra e o rótulo de ingredientes passam a ler a Fx.
+   A versão anterior fica como "Substituída", consultável e comparável (`diff_versions`).
+5. **Seed**: alinhar `_seed_recipes` às versões publicadas é um passo separado, também
+   com aval, porque o seed é o que reconstrói o alpha num reseed (e reseed pede a palavra
+   do dono).
+6. **Etapas**: o dono escreve na tela da receita quando quiser (resposta 2). Nenhuma
+   etapa é pré-preenchida.
+
+### C.8 O que a planilha não diz (para estas quatro receitas)
+
+- Etapas, ordem, tempos e temperaturas (resposta 2: o dono edita depois).
+- Se a Tradição tem autólise.
+- Perda de mistura e perda no forno; quantas peças cada massa rende.
+- Massa velha e margem de segurança (só existem na fonte 1).
+- Marca do azeite e o que quer dizer "EA".
+- O que é a linha de custo sem ingrediente no bloco da Tradição.
+- Validade da massa e do levain.
+
+### C.9 Perguntas novas desta seção
+
+13. **Farinha Biorgânica** (Especial e Integral): é insumo que a casa compra hoje? Se
+    sim, nasce cadastro de compra próprio; se não, qual farinha a substitui nas quatro
+    receitas?
+14. As três correspondências "provável" (Água, Levain da Fx, Azeito de Oliva EA) estão
+    certas?
+15. Com a Fx valendo, a Tradição deixa de usar a Pasta Autolizada e o malte. É isso?
+
+As perguntas 5 a 12 continuam abertas, como estavam.
+
+---
+
 ## Perguntas abertas para o dono
 
 1. **Qual versão vale** para Tradição, Campagne e Ciabatta: a da RECEITAS 2.4 ou a da Fx?
@@ -398,6 +654,7 @@ temperatura.
 
 ## Próximo passo
 
-**Espera a confirmação do dono do inventário antes de propor estrutura.** Nada será
-mapeado para `Recipe`, `RecipeVersion` ou etapas, e nada entra em seed, banco ou fixture,
-até ele responder às perguntas acima por escrito.
+**Espera o aval escrito do dono sobre a seção C** e as respostas às perguntas 13 a 15
+(C.9). As perguntas 1 a 4 foram respondidas em 02/10/2026 (HANDOFF §0.1b, PR #1352);
+5 a 12 seguem abertas. Nada é executado (comando, versão, publicação, seed) antes
+disso.
