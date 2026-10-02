@@ -39,6 +39,42 @@ export interface POSProductProjection {
    *  com o mesmo nome viram UM tile na grade, que abre a escolha entre eles.
    *  Vazio = tile próprio. */
   choice_group?: string;
+  /** O rótulo do que se escolhe no cartão de escolha (ex.: "Sabor"). "" quando
+   *  o Admin não deu nome: o diálogo fica como sempre foi. */
+  choice_group_label?: string;
+  /** Escolhas no produto (sabor obrigatório, adicionais com preço). `[]` quando
+   *  não tem: o toque soma uma unidade, como sempre. Com grupo, o toque abre a
+   *  escolha. */
+  option_groups?: POSProductOptionGroup[];
+}
+
+/** Uma opção de um grupo de escolha do produto. */
+export interface POSProductOption {
+  ref: string;
+  label: string;
+  /** Acréscimo por unidade, em centavos (0 = não muda o preço). */
+  price_q: number;
+  /** `false` = existe, mas está fora hoje: aparece desabilitada. */
+  available: boolean;
+}
+
+/** Grupo de escolha do produto: `min` obrigatórias (0 = opcional), até `max`. */
+export interface POSProductOptionGroup {
+  ref: string;
+  label: string;
+  min: number;
+  max: number;
+  options: POSProductOption[];
+}
+
+/** A escolha gravada na linha. O servidor só lê `group` e `ref`; o resto é para
+ *  a tela não precisar reabrir o catálogo. */
+export interface POSCartItemOption {
+  group: string;
+  ref: string;
+  group_label: string;
+  name: string;
+  unit_price_q: number;
 }
 
 /** O que o operador digitou numa linha vendida por peso. `weight_g` é sempre o
@@ -610,6 +646,10 @@ export interface POSCartItem {
   /** Venda por peso: o que o operador digitou (etiqueta ou peso). A linha
    *  pesada é sempre UMA peça, e o valor é `peso × preço do quilo`. */
   weighed?: POSWeighedEntry | null;
+  /** Escolhas no produto. A linha é a mesma só com o mesmo SKU E a mesma
+   *  assinatura de escolhas (`optionsSignature`); `price_q` já soma os
+   *  acréscimos e `name` já traz o resumo ("Croque Monsieur (+ Ovo frito)"). */
+  options?: POSCartItemOption[];
   notes: string;
   fired?: boolean;
   /** QUANTAS unidades desta linha foram à cozinha. A linha vai INTEIRA (não

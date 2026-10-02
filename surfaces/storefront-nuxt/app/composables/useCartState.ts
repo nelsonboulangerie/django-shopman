@@ -1,5 +1,5 @@
-import { applySkuQty, substituteSwapPlan } from '~/presentation/cart'
-import type { CartMutationResponse, CartProjection, ProductMutationMeta, Action, SubstituteProjection } from '~/types/shopman'
+import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
+import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
 export interface CartIssue {
   title: string
@@ -42,6 +42,25 @@ interface RateLimitRecovery {
 interface CartMutationSnapshot {
   meta: ProductMutationMeta
   qty: number
+  // Linha já gravada: a mutação mira a `line_id` (PUT /cart/lines/<id>/).
+  lineId?: string
+  // Inclusão com escolhas: POST /cart/lines/ com estas opções; `qty` é quanto somar.
+  options?: ProductOptionSelection[]
+}
+
+function isOptionErrorCode (code: unknown): boolean {
+  return typeof code === 'string' && code.startsWith('option_')
+}
+
+/** A meta de mutação de uma linha da sacola (nome já com o resumo das escolhas). */
+export function metaForCartLine (line: CartItemProjection): ProductMutationMeta {
+  return {
+    sku: line.sku,
+    name: line.name,
+    price_q: line.unit_price_q,
+    price_display: line.price_display,
+    image_url: line.image_url
+  }
 }
 
 function emptyCart (): CartProjection {
@@ -280,8 +299,10 @@ export function useCartState () {
     rollbackCart.value = null
   }
 
+  // Soma todas as linhas do SKU: com escolhas, o mesmo produto pode estar em
+  // duas linhas (Croque com ovo e Croque sem ovo).
   function qtyForSku (sku: string): number {
-    return cart.value.items.find(item => item.sku === sku)?.qty || 0
+    return cartQtyForSku(cart.value.items, sku)
   }
 
   function isPending (sku: string): boolean {
@@ -306,29 +327,36 @@ export function useCartState () {
     return refreshCart()
   }
 
-  async function setSkuQty (meta: ProductMutationMeta, qty: number): Promise<CartMutationResponse> {
+  // Toda mutação de quantidade passa por aqui: otimista (quando há), fila serial,
+  // reconciliação no drain e os três ramos de erro (409 substitutos, 429, genérico).
+  // Muda só o ALVO: o SKU (produto sem opções), a linha (`line_id`) ou a inclusão
+  // com opções (POST, que soma na linha igual).
+  async function runQtyMutation (
+    snapshot: CartMutationSnapshot,
+    optimistic: (current: CartProjection) => CartProjection,
+    request: () => Promise<CartMutationResponse>,
+    // PUT de quantidade é absoluto: repetir após um soluço de rede é seguro. O
+    // POST da inclusão com escolhas SOMA; repetir poderia pôr o item duas vezes.
+    { idempotent = true }: { idempotent?: boolean } = {}
+  ): Promise<CartMutationResponse> {
+    const { meta } = snapshot
     lastError.value = null
     cartIssue.value = null
     rateLimitRecovery.value = null
-    lastMutation.value = { meta: { ...meta }, qty }
+    lastMutation.value = { ...snapshot, meta: { ...meta } }
 
     // A primeira mutação da rajada guarda a última verdade visível. Respostas
     // intermediárias avançam esse ponto de recuo sem atropelar otimismos posteriores.
     if (queueDepth === 0) rollbackCart.value = cart.value
     // Otimista: a linha muda na hora; o resumo fica pendente até a verdade do servidor.
-    cart.value = applySkuQty(cart.value, meta, qty)
+    cart.value = optimistic(cart.value)
     bumpPending(meta.sku)
     beginMutation()
 
     try {
       let response: CartMutationResponse
       try {
-        response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
-          method: 'PUT',
-          headers: await csrfHeaders(),
-          body: { qty },
-          credentials: 'include'
-        })))
+        response = await enqueueMutation(async () => (idempotent ? retryWithBackoff(request) : request()))
       } finally {
         // Um decremento só por mutação, venha resposta ou erro. Com o decremento
         // repetido no catch, um erro DEPOIS da resposta descontava duas vezes, a
@@ -370,6 +398,10 @@ export function useCartState () {
           retryAfterSeconds: typeof data?.retry_after_seconds === 'number' ? data.retry_after_seconds : null
         }
         lastError.value = detail
+      } else if (status === 400 && isOptionErrorCode(data?.error_code)) {
+        // Escolha recusada (obrigatória faltando, opção que saiu): a folha de
+        // opções mostra o `detail` no lugar, ao lado do que precisa mudar.
+        lastError.value = String(data?.detail || 'Revise as escolhas deste item.')
       } else {
         // Erro genérico não tem UI própria → o toast é a única forma de avisar.
         lastError.value = String(data?.detail || 'Não foi possível atualizar o carrinho.')
@@ -377,6 +409,61 @@ export function useCartState () {
       }
       throw error
     }
+  }
+
+  async function setSkuQty (meta: ProductMutationMeta, qty: number): Promise<CartMutationResponse> {
+    return runQtyMutation(
+      { meta, qty },
+      current => applySkuQty(current, meta, qty),
+      async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { qty },
+        credentials: 'include'
+      })
+    )
+  }
+
+  function putLineQty (meta: ProductMutationMeta, lineId: string, qty: number): Promise<CartMutationResponse> {
+    return runQtyMutation(
+      { meta, qty, lineId },
+      current => applyLineQty(current, lineId, qty),
+      async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/lines/${encodeURIComponent(lineId)}/`), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { qty },
+        credentials: 'include'
+      })
+    )
+  }
+
+  // Quantidade DAQUELA linha (0 remove). A linha otimista ainda não existe no
+  // servidor; ela só nasce de produto sem opções, então segue pelo SKU.
+  async function setLineQty (line: CartItemProjection, qty: number): Promise<CartMutationResponse> {
+    if (isOptimisticLine(line)) return setSkuQty(metaForCartLine(line), qty)
+    return putLineQty(metaForCartLine(line), line.line_id, qty)
+  }
+
+  // Inclusão com escolhas: `qty` é quanto SOMAR (linha igual soma; escolhas
+  // diferentes viram linha nova). Sem otimismo de linha: o nome com o resumo e o
+  // preço com as opções são do servidor, e a folha mostra o "Adicionando".
+  async function addLineWithOptions (
+    meta: ProductMutationMeta,
+    qty: number,
+    options: ProductOptionSelection[]
+  ): Promise<CartMutationResponse> {
+    const chosen = options.map(option => ({ group: option.group, ref: option.ref }))
+    return runQtyMutation(
+      { meta, qty, options: chosen },
+      current => ({ ...current, summary_pending: true }),
+      async () => $fetch<CartMutationResponse>(apiPath('/api/v1/cart/lines/'), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        body: { sku: meta.sku, qty, options: chosen },
+        credentials: 'include'
+      }),
+      { idempotent: false }
+    )
   }
 
   async function mutateCoupon (method: 'POST' | 'DELETE', body?: Record<string, unknown>) {
@@ -412,11 +499,12 @@ export function useCartState () {
   // Observação de UM item para a cozinha. Não é otimista: o texto só aparece
   // como salvo depois que o servidor o gravou na linha. Entra na mesma fila das
   // quantidades, para nunca ultrapassar uma mutação anterior da mesma sacola.
-  async function setLineNotes (sku: string, notes: string) {
+  // Vai pela `line_id`: com escolhas, o mesmo SKU pode ter duas linhas.
+  async function setLineNotes (lineId: string, notes: string) {
     beginMutation()
     let response: { cart: CartProjection }
     try {
-      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(sku)}/notes/`), {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath(`/api/v1/cart/lines/${encodeURIComponent(lineId)}/notes/`), {
         method: 'PUT',
         headers: await csrfHeaders(),
         body: { notes },
@@ -429,17 +517,29 @@ export function useCartState () {
     return response.cart
   }
 
+  function replay (mutation: CartMutationSnapshot, qty: number) {
+    if (mutation.options) return addLineWithOptions(mutation.meta, qty, mutation.options)
+    if (mutation.lineId) return putLineQty(mutation.meta, mutation.lineId, qty)
+    return setSkuQty(mutation.meta, qty)
+  }
+
   async function retryLastMutation () {
     const mutation = lastMutation.value
     if (!mutation) return null
-    return setSkuQty(mutation.meta, mutation.qty)
+    return replay(mutation, mutation.qty)
   }
 
   async function acceptAvailableQty () {
     const mutation = lastMutation.value
     const issue = cartIssue.value
     if (!mutation || !issue || !issueAdvancesLine(issue)) return null
-    return setSkuQty(mutation.meta, issue.available_qty!)
+    // O teto do 409 é ABSOLUTO (até onde a linha vai). A inclusão com escolhas
+    // SOMA na linha igual, então manda só a diferença.
+    if (mutation.options) {
+      const delta = issue.available_qty! - (issue.line_qty ?? 0)
+      return delta > 0 ? replay(mutation, delta) : null
+    }
+    return replay(mutation, issue.available_qty!)
   }
 
   function dismissCartIssue () {
@@ -472,6 +572,8 @@ export function useCartState () {
     qtyForSku,
     isPending,
     setSkuQty,
+    setLineQty,
+    addLineWithOptions,
     applyCoupon,
     removeCoupon,
     setLineNotes,

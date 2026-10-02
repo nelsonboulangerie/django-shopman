@@ -371,4 +371,9 @@ describe('cartão de escolha (choice_group)', () => {
     expect(choiceGroupCard(group, [off, withPhoto]).cover.sku).toBe('CHROU')
     expect(choiceGroupCard(group, [camille, rouge]).cover.sku).toBe('CHCAM')
   })
+
+  it('rótulo da escolha vem de choice_group_label; ausente, fica vazio', () => {
+    expect(choiceGroupCard(group, [camille, rouge]).choiceLabel).toBe('')
+    expect(choiceGroupCard(group, [item({ ...camille, choice_group_label: null }), item({ ...rouge, choice_group_label: ' Sabor ' })]).choiceLabel).toBe('Sabor')
+  })
 })

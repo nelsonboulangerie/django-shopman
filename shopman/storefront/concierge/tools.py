@@ -199,9 +199,18 @@ def _set_session_data(ctx: ToolContext, session_key: str, values: dict):
 
 
 def _line_for_sku(session, sku: str) -> dict | None:
+    """A linha do SKU SEM escolha no produto.
+
+    A concierge não escolhe sabor nem adicional (Fase 1): a linha que o cliente
+    montou com escolha na loja não é dela para mudar pelo SKU.
+    """
+    from shopman.shop import product_options
+
     wanted = _fold(sku)
     for item in session.items or []:
-        if _fold(item.get("sku", "")) == wanted:
+        if _fold(item.get("sku", "")) == wanted and not product_options.own_options(
+            product_options.line_options(item)
+        ):
             return item
     return None
 
@@ -623,6 +632,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
     Reserva estoque pelo caminho da loja; quando não há, devolve o saldo real e
     os substitutos que o Stockman sugere. Preço vem do listing, nunca do texto.
     """
+    from shopman.shop.product_options import OptionSelectionError
     from shopman.shop.services import cart as cart_service
     from shopman.shop.services.cart import CartDateMismatchError, CartUnavailableError
 
@@ -706,6 +716,10 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
             cart_date=exc.cart_date.isoformat(),
             item_date=exc.item_date.isoformat(),
         )
+    except OptionSelectionError as exc:
+        # Produto com escolha obrigatória (o sabor do Frappé): a concierge não
+        # escolhe pelo cliente. Diz o que falta; a escolha se faz na loja.
+        return _error(exc.code, f"{exc.message} Essa escolha se faz pela loja.", sku=sku)
     except CartUnavailableError as exc:
         # ``available_qty`` já é o TETO da linha (o que ela segura + o livre),
         # tanto no ajuste quanto na linha nova: é o que existe para o cliente.
@@ -1531,6 +1545,7 @@ def _copy_cart_to_web(ctx: ToolContext) -> str:
     """Transferência conservadora: qualquer conflito reverte origem, destino e reservas."""
     from shopman.orderman.models import Session
 
+    from shopman.shop import product_options
     from shopman.shop.services import cart as cart_service
     from shopman.shop.services import sessions
     if not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
@@ -1563,9 +1578,12 @@ def _copy_cart_to_web(ctx: ToolContext) -> str:
             precision = Decimal(1).scaleb(-SessionItem._meta.get_field("qty").decimal_places)
             if not qty.is_finite() or qty <= 0 or qty != qty.quantize(precision):
                 raise ValueError("unsupported_quantity")
+            # A escolha da linha (sabor, adicionais) viaja como ``[{group, ref}]``
+            # e é conferida de novo contra o cadastro; recusa reverte a transferência.
             _, web_key = cart_service.add_item(session_key=web_key, channel_ref=web_ref,
                 origin_channel=_transport_origin(ctx), sku=str(item["sku"]), qty=qty,
-                unit_price_q=int(item.get("unit_price_q") or 0), name=str(item.get("name") or ""))
+                unit_price_q=int(item.get("unit_price_q") or 0), name=str(item.get("name") or ""),
+                options=product_options.selection_of(product_options.line_options(item)))
         values = {key: value for key, value in source.data.items() if key in {
             "customer", "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
             "delivery_time_slot", "order_notes", "coupon_code", "is_gift", "recipient", "gift_message", "gift_hide_values",

@@ -64,6 +64,27 @@ def choice_group(product) -> str:
     return " ".join(raw.split())
 
 
+def choice_group_label(product) -> str:
+    """O que se escolhe no cartão de escolha ("Sabor"), ou ``""``.
+
+    ``Product.metadata["choice_group_label"]``, escrito na aba Escolhas do Admin.
+    """
+    from shopman.shop import product_options
+
+    return product_options.choice_group_label(product)
+
+
+def option_groups(product) -> list[dict]:
+    """Escolhas do produto no formato público (sem o insumo que cada opção gasta).
+
+    ``[{ref, label, min, max, options: [{ref, label, price_q, available}]}]``;
+    ``[]`` quando o produto não tem escolha. Fonte: ``shopman.shop.product_options``.
+    """
+    from shopman.shop import product_options
+
+    return product_options.public_groups(product)
+
+
 def commercial_identity(product) -> CommercialIdentity:
     from shopman.offerman import get_social_attributes
 

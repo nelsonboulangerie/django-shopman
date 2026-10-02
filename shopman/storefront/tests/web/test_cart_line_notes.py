@@ -1,4 +1,4 @@
-"""Observação por item na sacola da loja (``PUT /api/v1/cart/skus/<sku>/notes/``).
+"""Observação por item na sacola da loja (``PUT /api/v1/cart/lines/<line_id>/notes/``).
 
 O PDV já mandava a observação de cada item à cozinha (``meta["notes"]`` da
 linha → ticket do KDS). A loja só tinha a observação do pedido inteiro: quem
@@ -22,9 +22,9 @@ from shopman.storefront.tests.web.conftest import _ensure_listing_item
 pytestmark = pytest.mark.django_db
 
 
-def _put_notes(client, sku, notes):
+def _put_notes(client, line_id, notes):
     return client.put(
-        f"/api/v1/cart/skus/{sku}/notes/",
+        f"/api/v1/cart/lines/{line_id}/notes/",
         data=json.dumps({"notes": notes}),
         content_type="application/json",
     )
@@ -32,6 +32,10 @@ def _put_notes(client, sku, notes):
 
 def _session(client) -> Session:
     return Session.objects.get(session_key=client.session["cart_session_key"])
+
+
+def _line_id(client) -> str:
+    return _session(client).items[0]["line_id"]
 
 
 @pytest.fixture
@@ -52,7 +56,7 @@ def in_cart(client, channel, product):
 
 
 def test_note_is_written_on_the_line_and_comes_back_in_the_cart(client, in_cart):
-    resp = _put_notes(client, in_cart.sku, "  sem   gergelim  ")
+    resp = _put_notes(client, _line_id(client), "  sem   gergelim  ")
 
     assert resp.status_code == 200, resp.content[:400]
     line = next(item for item in resp.json()["cart"]["items"] if item["sku"] == in_cart.sku)
@@ -73,9 +77,9 @@ def test_note_is_written_on_the_line_and_comes_back_in_the_cart(client, in_cart)
 
 
 def test_empty_note_removes_it(client, in_cart):
-    _put_notes(client, in_cart.sku, "bem assado")
+    _put_notes(client, _line_id(client), "bem assado")
 
-    resp = _put_notes(client, in_cart.sku, "")
+    resp = _put_notes(client, _line_id(client), "")
 
     assert resp.status_code == 200
     assert resp.json()["cart"]["items"][0]["notes"] == ""
@@ -83,14 +87,14 @@ def test_empty_note_removes_it(client, in_cart):
 
 
 def test_note_longer_than_the_limit_is_refused_in_the_error_dialect(client, in_cart):
-    resp = _put_notes(client, in_cart.sku, "x" * 281)
+    resp = _put_notes(client, _line_id(client), "x" * 281)
 
     assert resp.status_code == 400
     assert resp.json()["field"] == "notes"
 
 
 def test_note_for_an_item_outside_the_cart_is_404(client, in_cart):
-    resp = _put_notes(client, "OUTRO-SKU", "sem sal")
+    resp = _put_notes(client, "L-nao-existe", "sem sal")
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Este item não está na sua sacola."
@@ -101,7 +105,7 @@ def test_the_note_reaches_the_kitchen_ticket_lines(client, in_cart):
 
     from shopman.shop.services import kds
 
-    _put_notes(client, in_cart.sku, "sem gergelim")
+    _put_notes(client, _line_id(client), "sem gergelim")
     line = _session(client).items[0]
     # O CommitService copia ``meta`` da linha da sessão para o ``OrderItem``
     # (``commit.py``); aqui o pedido nasce com a linha como a sessão a tinha.
@@ -118,7 +122,7 @@ def test_anonymized_cart_refuses_a_new_note(client, in_cart):
     session = _session(client)
     Session.objects.filter(pk=session.pk).update(handle_type="anonymized", handle_ref="anon")
 
-    resp = _put_notes(client, in_cart.sku, "sem sal")
+    resp = _put_notes(client, _line_id(client), "sem sal")
 
     assert resp.status_code == 409
     assert "notes" not in _session(client).items[0]["meta"]

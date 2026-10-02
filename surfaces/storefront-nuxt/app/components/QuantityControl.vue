@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProductMutationMeta } from '~/types/shopman'
+import type { CartItemProjection, ProductMutationMeta } from '~/types/shopman'
 
 // Pílula de quantidade (padrão iFood): opaca, mesma geometria do botão "+"
 // que a origina. Não é campo de formulário — toques entram na fila otimista.
@@ -11,13 +11,16 @@ const props = defineProps<{
   minQty?: number
   compact?: boolean
   tone?: 'default' | 'inverted'
+  // Na sacola, a pílula age sobre a LINHA (`line_id`): com escolhas, o mesmo SKU
+  // pode estar em duas linhas, e o PUT por SKU acertaria a errada.
+  line?: CartItemProjection
 }>()
 
 const emit = defineEmits<{
   changed: [qty: number]
 }>()
 
-const { setSkuQty } = useCartState()
+const { setSkuQty, setLineQty } = useCartState()
 
 const floorQty = computed(() => props.minQty ?? 0)
 const atMax = computed(() => props.maxQty != null && props.qty >= props.maxQty)
@@ -28,7 +31,8 @@ function commit (value: number) {
   const next = clampQuantity(value, props.maxQty, floorQty.value)
   if (next === props.qty) return
   // Rajadas entram na fila serial do carrinho; o estado otimista mantém a UI viva.
-  void setSkuQty(props.meta, next).then(() => emit('changed', next)).catch(() => {})
+  const mutation = props.line ? setLineQty(props.line, next) : setSkuQty(props.meta, next)
+  void mutation.then(() => emit('changed', next)).catch(() => {})
 }
 </script>
 

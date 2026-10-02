@@ -49,14 +49,22 @@ from shopman.storefront.presentation import (
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
     CartMutationNotFound,
+    CartMutationOptionRefused,
     CartMutationUnavailable,
+    add_line_with_options,
+    set_line_qty,
     set_qty_by_sku,
 )
 
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
 from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
-from .serializers import CartLineNotesSerializer, DetailSerializer, SetSkuQtySerializer
+from .serializers import (
+    AddCartLineSerializer,
+    CartLineNotesSerializer,
+    DetailSerializer,
+    SetSkuQtySerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1163,6 +1171,8 @@ class CartSkuQtyView(APIView):
             )
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartMutationOptionRefused as refused:
+            return _option_refused_response(refused)
         except CartMutationUnavailable as unavailable:
             return Response(
                 _stock_error_payload(
@@ -1173,19 +1183,145 @@ class CartSkuQtyView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        mutation = dict(outcome.payload)
-        summary = mutation.pop("cart")
-        return Response({
-            **mutation,
-            "summary": summary,
-            "cart": _cart_payload_after_mutation(request),
-        })
+        return _cart_mutation_response(request, outcome)
+
+
+def _cart_mutation_response(request, outcome) -> Response:
+    mutation = dict(outcome.payload)
+    summary = mutation.pop("cart")
+    return Response({
+        **mutation,
+        "summary": summary,
+        "cart": _cart_payload_after_mutation(request),
+    })
+
+
+def _option_refused_response(refused: CartMutationOptionRefused) -> Response:
+    """A escolha no produto não fecha: 400 no dialeto ``{detail, field, errors}``."""
+    error = refused.error
+    return Response(
+        {
+            "detail": error.message,
+            "field": "options",
+            "errors": {"options": [error.message]},
+            "error_code": error.code,
+            "group": error.group,
+            "sku": str(getattr(refused.product, "sku", "") or ""),
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _cart_rate_limited(request, *, group: str, method: str):
+    if _request_is_rate_limited(request, group=group, rate="120/m", method=method):
+        return _rate_limited_response(
+            detail="Muitas alterações na sacola. Aguarde um instante.",
+            retry_after_seconds=CART_RATE_LIMIT_RETRY_SECONDS,
+        )
+    return None
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["cart"],
+        summary="Add a cart line with product options (flavor, add-ons)",
+        request=AddCartLineSerializer,
+        responses={
+            200: OpenApiResponse(description="Cart mutation response plus authoritative cart projection."),
+            400: OpenApiResponse(
+                description="Escolha que não fecha com o cadastro (error_code option_required, "
+                "option_unknown ou option_unavailable).",
+            ),
+            404: DetailSerializer,
+            409: OpenApiResponse(description="Estoque insuficiente, ou item de outra data."),
+        },
+    ),
+)
+class CartLinesView(APIView):
+    """POST /api/v1/cart/lines/
+
+    Item com escolha no produto: ``{sku, qty, options: [{group, ref}]}``. A
+    mesma escolha do mesmo SKU soma na linha que existe; escolha diferente é
+    outra linha.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = AddCartLineSerializer
+    throttle_classes = []
+
+    def post(self, request):
+        limited = _cart_rate_limited(request, group="storefront-api-cart-lines", method="POST")
+        if limited is not None:
+            return limited
+        serializer = AddCartLineSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            outcome = add_line_with_options(
+                request,
+                sku=data["sku"].strip(),
+                qty=data["qty"],
+                options=[{"group": o["group"].strip(), "ref": o["ref"].strip()} for o in data["options"]],
+            )
+        except CartMutationNotFound:
+            return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartMutationOptionRefused as refused:
+            return _option_refused_response(refused)
+        except CartMutationUnavailable as unavailable:
+            return Response(
+                _stock_error_payload(unavailable.stock_error, product=unavailable.product, request=request),
+                status=status.HTTP_409_CONFLICT,
+            )
+        return _cart_mutation_response(request, outcome)
 
 
 @extend_schema_view(
     put=extend_schema(
         tags=["cart"],
-        summary="Set the kitchen note of one cart line, by SKU",
+        summary="Set absolute quantity of one cart line (0 removes)",
+        request=SetSkuQtySerializer,
+        responses={
+            200: OpenApiResponse(description="Cart mutation response plus authoritative cart projection."),
+            404: DetailSerializer,
+            409: OpenApiResponse(description="Estoque insuficiente, ou item de outra data."),
+        },
+    ),
+)
+class CartLineQtyView(APIView):
+    """PUT /api/v1/cart/lines/{line_id}/
+
+    A sacola muda a quantidade pela linha: o mesmo SKU pode ter duas linhas
+    (Croque com ovo e sem ovo).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = SetSkuQtySerializer
+    throttle_classes = []
+
+    def put(self, request, line_id: str):
+        limited = _cart_rate_limited(request, group="storefront-api-cart-line-qty", method="PUT")
+        if limited is not None:
+            return limited
+        serializer = SetSkuQtySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            outcome = set_line_qty(request, line_id=line_id.strip(), qty=serializer.validated_data["qty"])
+        except CartMutationNotFound:
+            return Response({"detail": "Este item não está na sua sacola."}, status=status.HTTP_404_NOT_FOUND)
+        except CartMutationUnavailable as unavailable:
+            return Response(
+                _stock_error_payload(unavailable.stock_error, product=unavailable.product, request=request),
+                status=status.HTTP_409_CONFLICT,
+            )
+        return _cart_mutation_response(request, outcome)
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=["cart"],
+        summary="Set the kitchen note of one cart line",
         request=CartLineNotesSerializer,
         responses={
             200: OpenApiResponse(description="Authoritative cart projection with the line note."),
@@ -1195,8 +1331,8 @@ class CartSkuQtyView(APIView):
         },
     ),
 )
-class CartSkuNotesView(APIView):
-    """PUT /api/v1/cart/skus/{sku}/notes/
+class CartLineNotesView(APIView):
+    """PUT /api/v1/cart/lines/{line_id}/notes/
 
     A observação de um item ("sem açúcar", "bem passado") vai para a linha da
     sacola em ``meta["notes"]`` e daí, pelo pedido, até o ticket da cozinha.
@@ -1208,12 +1344,12 @@ class CartSkuNotesView(APIView):
     serializer_class = CartLineNotesSerializer
     throttle_classes = []
 
-    def put(self, request, sku: str):
+    def put(self, request, line_id: str):
         from shopman.storefront.cart import CartLineNotesRefused, CartService
 
         if _request_is_rate_limited(
             request,
-            group="storefront-api-cart-sku-notes",
+            group="storefront-api-cart-line-notes",
             rate="60/m",
             method="PUT",
         ):
@@ -1226,7 +1362,7 @@ class CartSkuNotesView(APIView):
         serializer.is_valid(raise_exception=True)
         notes = clean_name(serializer.validated_data["notes"], max_length=LINE_NOTES_MAX_LENGTH)
         try:
-            session = CartService.set_line_notes(request, sku=sku.strip(), notes=notes)
+            session = CartService.set_line_notes(request, line_id=line_id.strip(), notes=notes)
         except CartLineNotesRefused as exc:
             return Response(
                 {"detail": str(exc) or "Esta sacola não aceita mais alterações."},

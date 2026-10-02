@@ -174,6 +174,9 @@ const {
   weighedPrompt,
   addWeighedProduct,
   cancelWeighedPrompt,
+  optionsPrompt,
+  addOptionsProduct,
+  cancelOptionsPrompt,
   setQty,
   restoreItem,
   setLineNotes,
@@ -1524,6 +1527,13 @@ onBeforeUnmount(() => {
       :weight-entry-enabled="Boolean(pos?.weighed_weight_entry)"
       @confirm="addWeighedProduct"
       @cancel="cancelWeighedPrompt"
+    />
+
+    <!-- Escolhas no produto: sabor obrigatório, adicionais com preço. -->
+    <PosProductOptionsDialog
+      :product="optionsPrompt"
+      @confirm="addOptionsProduct"
+      @cancel="cancelOptionsPrompt"
     />
 
     <PosMoveLinesDialog

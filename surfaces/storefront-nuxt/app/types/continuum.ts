@@ -1,4 +1,4 @@
-import type { CategoryProjection, EmptyStateCtaCopy } from '~/types/shopman'
+import type { CategoryProjection, EmptyStateCtaCopy, ProductOptionGroup } from '~/types/shopman'
 
 export interface ContinuumVersion {
   cursor: {
@@ -25,6 +25,8 @@ export interface CatalogStructureItem {
   category_color: string | null
   category_icon: string | null
   choice_group?: string | null
+  choice_group_label?: string | null
+  option_groups?: ProductOptionGroup[]
 }
 
 export interface CatalogStructureState {

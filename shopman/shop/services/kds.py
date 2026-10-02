@@ -24,6 +24,7 @@ from decimal import Decimal
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.shop import product_options
 from shopman.shop.services import payment_gate
 from shopman.shop.services.order_helpers import (
     get_commitment_date,
@@ -471,10 +472,14 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
         meta = ln.get("meta") or {}
         if meta.get("non_production") or meta.get("type") == "delivery_fee":
             continue
-        notes = ln.get("notes") or meta.get("notes", "")
+        # Escolhas no produto: o card mostra o produto pelo nome e o que foi
+        # escolhido na observação ("+ Ovo frito", depois a nota do cliente). O
+        # resumo é derivado de ``meta["options"]`` aqui, nunca gravado em
+        # ``meta["notes"]``; opção sem ``ref`` (iFood) já vem na nota dele.
+        notes = product_options.kitchen_note({**meta, "notes": ln.get("notes") or meta.get("notes", "")})
         line_id = ln.get("line_id", "")
         qty = Decimal(str(ln["qty"]))
-        name = ln.get("name") or ln["sku"]
+        name = product_options.base_name(ln.get("name") or ln["sku"], product_options.line_options(meta))
         components = bundle_components.get(ln["sku"], [])
         if components:
             for comp_sku, comp_name, comp_qty in components:

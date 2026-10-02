@@ -142,6 +142,9 @@ export interface POSChoiceGroup {
   allBlocked: boolean;
   /** A foto do tile: a da primeira opção vendável que tem foto. */
   cover: POSProductProjection;
+  /** O que se escolhe (`choice_group_label`, ex.: "Sabor"): o título da escolha
+   *  no diálogo. "" quando o Admin não deu nome. */
+  label: string;
 }
 
 export type POSGridEntry =
@@ -180,7 +183,8 @@ export function choiceGroup(name: string, options: POSProductProjection[]): POSC
     options.find((option) => option.image_url?.trim()) ||
     sellable[0] ||
     options[0]!;
-  return { name, options, priceLabel, allBlocked: sellable.length === 0, cover };
+  const label = options.map((option) => (option.choice_group_label || "").trim()).find(Boolean) || "";
+  return { name, options, priceLabel, allBlocked: sellable.length === 0, cover, label };
 }
 
 /**

@@ -102,6 +102,11 @@ class CartItemProjection:
     # Observação do item para a cozinha, escrita pelo cliente ("" = nenhuma).
     notes: str = ""
 
+    # Escolhas no produto: resumo ("+ Ovo frito · Salada"; o nome da linha já o
+    # traz) e se a linha tem escolha. Linha com escolha muda pela ``line_id``.
+    options_summary: str = ""
+    has_options: bool = False
+
 
 @dataclass(frozen=True)
 class MinimumOrderProgressProjection:
@@ -369,6 +374,8 @@ def _present_line(
         planned_for_date=line.planned_for_date,
         planned_for_notice=_planned_for_notice(line, planned_notice_template),
         notes=line.notes,
+        options_summary=line.options_summary,
+        has_options=line.has_options,
     )
 
 

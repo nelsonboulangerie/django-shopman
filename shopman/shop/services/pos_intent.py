@@ -383,8 +383,30 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             entry["discount"] = line_discount
         if weighed:
             entry["weighed"] = weighed
+        # Escolha no produto (sabor, adicionais): só ``{group, ref}`` passa daqui.
+        # Nome, preço e insumo o serviço relê do cadastro (``product_options``).
+        options = _options(item.get("options"), f"items.{idx}.options")
+        if options:
+            entry["options"] = options
         items.append(entry)
     return items
+
+
+def _options(raw, field: str) -> list[dict]:
+    if raw in (None, "", []):
+        return []
+    if not isinstance(raw, list) or len(raw) > 20:
+        raise PosIntentError("invalid_options", "Escolha do item inválida.", field=field, focus="cart")
+    out = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise PosIntentError("invalid_options", "Escolha do item inválida.", field=field, focus="cart")
+        group = _text(entry.get("group"), limit=40)
+        ref = _text(entry.get("ref"), limit=40)
+        if not group or not ref:
+            raise PosIntentError("invalid_options", "Escolha do item inválida.", field=field, focus="cart")
+        out.append({"group": group, "ref": ref})
+    return out
 
 
 #: Onde a autoria mora na linha da sessão (``items[].meta``). Ver
@@ -482,6 +504,7 @@ def _payload_line_content(item: dict) -> tuple:
         str(item.get("notes") or "").strip(),
         _discount_input(item.get("discount")),
         weighed,
+        _options_key(item.get("options")),
     )
 
 
@@ -494,7 +517,14 @@ def _session_line_content(item: dict) -> tuple:
         str(meta.get("notes") or "").strip(),
         _discount_input(meta.get("manual_discount")),
         weighed,
+        _options_key(meta.get("options")),
     )
+
+
+def _options_key(options) -> str:
+    from shopman.shop import product_options
+
+    return product_options.signature(options if isinstance(options, list) else [])
 
 
 def _weighed(raw, field: str) -> dict | None:

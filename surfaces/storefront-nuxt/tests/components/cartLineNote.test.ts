@@ -53,7 +53,7 @@ describe('CartLineNote', () => {
     fetchMock.mockReset()
   })
 
-  it('abre o campo, limita a 280 caracteres e salva na linha do SKU', async () => {
+  it('abre o campo, limita a 280 caracteres e salva pela line_id', async () => {
     fetchMock.mockResolvedValue({ cart: { items: [line({ notes: 'sem gergelim' })] } })
     const wrapper = await mountSuspended(CartLineNote, { props: { line: line() } })
 
@@ -65,7 +65,7 @@ describe('CartLineNote', () => {
     await flush()
 
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/cart/skus/PAO-GERGELIM/notes/')
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/cart/lines/L-1/notes/')
     expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: 'PUT', body: { notes: 'sem gergelim' } })
     expect(wrapper.find('[data-cart-line-note-input]').exists()).toBe(false)
   })

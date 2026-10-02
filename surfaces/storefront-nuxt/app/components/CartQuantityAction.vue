@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ProductMutationMeta } from '~/types/shopman'
+import { hasOptionGroups } from '~/presentation/productOptions'
+import type { ProductMutationMeta, ProductOptionGroup } from '~/types/shopman'
 import { claimEarlyTap } from '~/utils/earlyTap'
 
 const props = withDefaults(defineProps<{
@@ -12,6 +13,9 @@ const props = withDefaults(defineProps<{
   addTargetQty?: number
   addIconOnly?: boolean
   tone?: 'default' | 'inverted'
+  // Produto com escolhas (sabor, adicionais): o botão abre a folha de opções e
+  // nunca vira stepper por SKU (cada combinação é uma linha própria na sacola).
+  optionGroups?: ProductOptionGroup[] | null
 }>(), {
   addLabel: 'Adicionar',
   tone: 'default'
@@ -25,6 +29,8 @@ const { setSkuQty, isPending } = useCartState()
 const hydrated = ref(false)
 const actionRoot = ref<HTMLElement | null>(null)
 const pending = computed(() => isPending(props.meta.sku))
+const withOptions = computed(() => hasOptionGroups(props.optionGroups))
+const optionsOpen = ref(false)
 
 // O botão nasce ATIVO no HTML do servidor (D1, opção 3). Enquanto o app não montou,
 // ele carrega a chave do toque precoce: o script inline do <head> guarda o toque e
@@ -42,7 +48,12 @@ onMounted(() => {
 })
 
 async function addOne () {
-  if (props.disabled || pending.value) return
+  if (props.disabled) return
+  if (withOptions.value) {
+    optionsOpen.value = true
+    return
+  }
+  if (pending.value) return
   const nextQty = props.addTargetQty ?? 1
   const keepKeyboardFocus = import.meta.client && actionRoot.value?.contains(document.activeElement)
   const mutation = setSkuQty(props.meta, nextQty)
@@ -66,7 +77,7 @@ async function addOne () {
 <template>
   <span ref="actionRoot" class="contents">
     <QuantityControl
-      v-if="qty > 0"
+      v-if="qty > 0 && !withOptions"
       :meta="meta"
       :qty="qty"
       :disabled="disabled"
@@ -101,5 +112,12 @@ async function addOne () {
     >
       {{ addLabel }}
     </UiButton>
+    <ProductOptionsSheet
+      v-if="withOptions"
+      v-model:open="optionsOpen"
+      :meta="meta"
+      :option-groups="optionGroups || []"
+      @added="emit('changed', qty + 1)"
+    />
   </span>
 </template>

@@ -299,14 +299,159 @@ describe('useCartState', () => {
     fetchMock.mockResolvedValue({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty: 2, notes: 'sem açúcar' }] }) })
     const store = await loadStore()
 
-    const cart = await store.setLineNotes('CROISSANT', 'sem açúcar')
+    const cart = await store.setLineNotes('L-7', 'sem açúcar')
 
     expect(fetchMock).toHaveBeenCalledOnce()
     const [url, options] = fetchMock.mock.calls[0]!
-    expect(String(url)).toContain('/api/v1/cart/skus/CROISSANT/notes/')
+    expect(String(url)).toContain('/api/v1/cart/lines/L-7/notes/')
     expect(options).toMatchObject({ method: 'PUT', body: { notes: 'sem açúcar' }, credentials: 'include' })
     expect(cart.items[0]!.notes).toBe('sem açúcar')
     expect(store.cart.value.items[0]!.notes).toBe('sem açúcar')
+  })
+})
+
+// Escolhas no produto (Fase 1): o mesmo SKU pode estar em duas linhas (Croque com
+// ovo e Croque sem ovo). A inclusão com escolhas vai por POST /cart/lines/, e
+// quantidade/observação de uma linha mudam pela `line_id`, nunca pelo SKU.
+describe('useCartState com escolhas no produto', () => {
+  const croque: ProductMutationMeta = {
+    sku: 'CQMO',
+    name: 'Croque Monsieur',
+    price_q: 3200,
+    price_display: 'R$ 32,00',
+    image_url: null
+  }
+
+  function line (overrides: Record<string, unknown>) {
+    return {
+      line_id: 'L-1',
+      sku: 'CQMO',
+      name: 'Croque Monsieur',
+      qty: 1,
+      unit_price_q: 3200,
+      total_price_q: 3200,
+      price_display: 'R$ 32,00',
+      total_display: 'R$ 32,00',
+      image_url: null,
+      is_available: true,
+      available_qty: null,
+      notes: '',
+      options_summary: '',
+      has_options: false,
+      ...overrides
+    }
+  }
+
+  const twoLines = () => [
+    line({ line_id: 'L-1', qty: 2, name: 'Croque Monsieur (+ Ovo frito)', options_summary: '+ Ovo frito', has_options: true, unit_price_q: 3600 }),
+    line({ line_id: 'L-2', qty: 1 })
+  ]
+
+  beforeEach(() => {
+    document.cookie = 'csrftoken=testtoken'
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it('addLineWithOptions manda só {group, ref} no POST da linha e adota a sacola do servidor', async () => {
+    fetchMock.mockResolvedValue({ cart: serverCart({ items: twoLines(), items_count: 3 }) })
+    const store = await loadStore()
+
+    await store.addLineWithOptions(croque, 1, [{ group: 'adicionais', ref: 'ovo' }])
+
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/cart/lines/')
+    expect(String(url)).not.toContain('/skus/')
+    expect(options).toMatchObject({
+      method: 'POST',
+      body: { sku: 'CQMO', qty: 1, options: [{ group: 'adicionais', ref: 'ovo' }] },
+      credentials: 'include'
+    })
+    expect(store.cart.value.items).toHaveLength(2)
+  })
+
+  it('qtyForSku soma todas as linhas do mesmo SKU', async () => {
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+
+    expect(store.qtyForSku('CQMO')).toBe(3)
+  })
+
+  it('setLineQty muda só AQUELA linha, otimista, pela line_id', async () => {
+    let resolveFetch: (value: unknown) => void = () => {}
+    const gate = new Promise(resolve => { resolveFetch = resolve })
+    fetchMock.mockImplementationOnce(() => gate)
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+
+    const pending = store.setLineQty(store.cart.value.items[0]! as never, 3)
+    // Otimista: a linha com ovo vai a 3, a sem ovo fica como estava.
+    expect(store.cart.value.items.map(item => [item.line_id, item.qty])).toEqual([['L-1', 3], ['L-2', 1]])
+    expect(store.cart.value.items_count).toBe(4)
+
+    resolveFetch({ cart: serverCart({ items: twoLines(), items_count: 3 }) })
+    await pending
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/cart/lines/L-1/')
+    expect(options).toMatchObject({ method: 'PUT', body: { qty: 3 } })
+  })
+
+  it('setLineQty com 0 remove só aquela linha', async () => {
+    let resolveFetch: (value: unknown) => void = () => {}
+    const gate = new Promise(resolve => { resolveFetch = resolve })
+    fetchMock.mockImplementationOnce(() => gate)
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+
+    const pending = store.setLineQty(store.cart.value.items[1]! as never, 0)
+    expect(store.cart.value.items.map(item => item.line_id)).toEqual(['L-1'])
+
+    resolveFetch({ cart: serverCart({ items: [twoLines()[0]], items_count: 2 }) })
+    await pending
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/cart/lines/L-2/')
+  })
+
+  it('escolha recusada (400 option_*) não vira toast nem cartIssue: a folha mostra o detail', async () => {
+    fetchMock
+      .mockRejectedValueOnce(fetchError(400, { detail: 'Escolha o sabor.', error_code: 'option_required', field: 'options' }))
+      .mockResolvedValueOnce({ cart: serverCart() })
+    const store = await loadStore()
+
+    await expect(store.addLineWithOptions(croque, 1, [])).rejects.toThrow()
+
+    expect(store.lastError.value).toBe('Escolha o sabor.')
+    expect(store.cartIssue.value).toBeNull()
+  })
+
+  it('409 na inclusão com escolhas: "Levar N" manda só a diferença, com as mesmas escolhas', async () => {
+    fetchMock
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CQMO', available_qty: 3, line_qty: 2 }))
+      .mockResolvedValueOnce({ cart: serverCart() })
+      .mockResolvedValueOnce({ cart: serverCart({ items: twoLines() }) })
+    const store = await loadStore()
+
+    await expect(store.addLineWithOptions(croque, 2, [{ group: 'adicionais', ref: 'ovo' }])).rejects.toThrow()
+    expect(store.cartIssue.value?.available_qty).toBe(3)
+
+    await store.acceptAvailableQty()
+
+    const [url, options] = fetchMock.mock.calls[2]!
+    expect(String(url)).toContain('/api/v1/cart/lines/')
+    expect(options).toMatchObject({ method: 'POST', body: { sku: 'CQMO', qty: 1, options: [{ group: 'adicionais', ref: 'ovo' }] } })
+  })
+
+  it('setSkuQty (produto sem escolhas) não encosta na linha com escolhas do mesmo SKU', async () => {
+    let resolveFetch: (value: unknown) => void = () => {}
+    const gate = new Promise(resolve => { resolveFetch = resolve })
+    fetchMock.mockImplementationOnce(() => gate)
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+
+    const pending = store.setSkuQty(croque, 0)
+    expect(store.cart.value.items.map(item => item.line_id)).toEqual(['L-1'])
+
+    resolveFetch({ cart: serverCart({ items: [twoLines()[0]] }) })
+    await pending
   })
 })
 

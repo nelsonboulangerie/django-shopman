@@ -152,6 +152,8 @@ class BackstageConfig(AppConfig):
             install_material_enrichment_review,
         )
         from shopman.backstage.admin.product_enrichment import install_enrichment_review
+        from shopman.backstage.admin.product_options import install_product_options_admin
 
+        install_product_options_admin()
         install_enrichment_review()
         install_material_enrichment_review()

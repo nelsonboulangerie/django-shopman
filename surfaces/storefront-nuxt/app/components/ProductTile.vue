@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
+import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
-import { compactUnitWeightLabel } from '~/utils/display'
+import { compactUnitWeightLabel, formatCount } from '~/utils/display'
 
 const props = defineProps<{
   item: CatalogItemProjection
@@ -19,6 +20,9 @@ const meta = computed<ProductMutationMeta>(() => ({
   image_url: props.item.image_url
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
+// Com escolhas, o botão segue "Adicionar" (abre a folha) e a contagem da sacola,
+// somando as linhas do SKU, aparece ao lado do preço.
+const withOptions = computed(() => hasOptionGroups(props.item.option_groups))
 
 function productRoute (sku: string) {
   return `/produto/${encodeURIComponent(sku)}`
@@ -100,6 +104,9 @@ function productRoute (sku: string) {
             <p v-if="item.unit_weight_label" class="shop-meta">
               {{ compactUnitWeightLabel(item.unit_weight_label) }}
             </p>
+            <p v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>
+              {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
+            </p>
           </div>
 
           <div class="ml-auto shrink-0">
@@ -114,6 +121,7 @@ function productRoute (sku: string) {
               :disabled="!item.can_add_to_cart"
               :max-qty="item.available_qty"
               :add-label="item.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+              :option-groups="item.option_groups"
               compact
             />
           </div>

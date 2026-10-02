@@ -12,6 +12,7 @@ import type {
   POSCustomerMergeResponse,
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
+  POSCartItemOption,
   POSPaymentDeliveryProjection,
   POSProductProjection,
   POSWeighedEntry,
@@ -38,6 +39,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
+import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
@@ -1255,8 +1257,15 @@ export function usePosSale(deps: PosSaleDeps) {
    * lança a linha — pelo mesmo `addProduct`, com a trava da gaveta e tudo.
    */
   const weighedPrompt = ref<POSProductProjection | null>(null);
+  /**
+   * O produto com escolhas (sabor, adicionais) que está pedindo a escolha. A
+   * mesma trava do peso: o toque, o Enter da busca e o leitor abrem o diálogo,
+   * e só a confirmação lança a linha, pelo mesmo `addProduct`. Produto só com
+   * grupo opcional também abre: é o momento de oferecer o adicional.
+   */
+  const optionsPrompt = ref<POSProductProjection | null>(null);
 
-  function addProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
+  function addProduct(product: POSProductProjection, weighed?: POSWeighedEntry, options?: POSCartItemOption[]) {
     if (!canUseCart.value) {
       requestTabAssociation("cart");
       return;
@@ -1269,15 +1278,20 @@ export function usePosSale(deps: PosSaleDeps) {
       weighedPrompt.value = product;
       return;
     }
+    if (!product.sold_by_weight && hasOptionGroups(product) && options === undefined) {
+      if (orderSetupPending.value) return;
+      optionsPrompt.value = product;
+      return;
+    }
     // Balcão sem agente não tem trava nenhuma (gaveta de chave): pular o
     // `guard` aqui não muda o resultado — `readState` responderia "não sei", que
     // nunca trava — e evita atravessar um `await` no gesto mais quente do PDV.
     const startsNewSale = drawer.canKick.value && !hasOpenTab.value && !cart.items.length;
     if (startsNewSale) {
-      void drawerLock.guard(async () => pushProduct(product, weighed));
+      void drawerLock.guard(async () => pushProduct(product, weighed, options));
       return;
     }
-    pushProduct(product, weighed);
+    pushProduct(product, weighed, options);
   }
 
   /** A confirmação do diálogo de peso: a peça entra como linha própria. */
@@ -1290,6 +1304,16 @@ export function usePosSale(deps: PosSaleDeps) {
     weighedPrompt.value = null;
   }
 
+  /** A confirmação do diálogo de escolhas (lista vazia = nada do opcional). */
+  function addOptionsProduct(product: POSProductProjection, options: POSCartItemOption[]) {
+    optionsPrompt.value = null;
+    addProduct(product, undefined, options);
+  }
+
+  function cancelOptionsPrompt() {
+    optionsPrompt.value = null;
+  }
+
   /**
    * ⚠️ AGREGA ENQUANTO NÃO FOI PARA A COZINHA, e nunca depois.
    *
@@ -1300,7 +1324,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * de uma linha marcada "enviada". A partir daí o toque cria uma linha NOVA,
    * com identidade nova — que é o que a cozinha precisa para receber um ticket.
    */
-  function pushProduct(product: POSProductProjection, weighed?: POSWeighedEntry) {
+  function pushProduct(product: POSProductProjection, weighed?: POSWeighedEntry, options?: POSCartItemOption[]) {
     if (orderSetupPending.value) return;
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
@@ -1322,7 +1346,13 @@ export function usePosSale(deps: PosSaleDeps) {
       });
       return;
     }
-    const openLine = cart.items.find((item) => item.sku === product.sku && !item.fired);
+    // A LINHA é o SKU com AS MESMAS escolhas: Croque com ovo e Croque sem ovo
+    // são duas linhas; com ovo duas vezes é uma linha com qty 2.
+    const chosen = options?.length ? options.map((option) => ({ ...option })) : [];
+    const signature = optionsSignature(chosen);
+    const openLine = cart.items.find(
+      (item) => item.sku === product.sku && !item.fired && !item.weighed && optionsSignature(item.options) === signature,
+    );
     if (openLine) {
       openLine.qty += 1;
       return;
@@ -1330,9 +1360,11 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.items.push({
       line_id: newLineId(),
       sku: product.sku,
-      name: product.name,
-      price_q: product.price_q,
+      // Nome com o resumo e preço com os acréscimos, como o servidor devolve.
+      name: optionLineName(product.name, chosen),
+      price_q: lineUnitPriceQ(product.price_q, chosen),
       qty: 1,
+      ...(chosen.length ? { options: chosen } : {}),
       notes: "",
     });
   }
@@ -2465,7 +2497,9 @@ export function usePosSale(deps: PosSaleDeps) {
   function addProductQty(product: POSProductProjection, qty: number) {
     // Produto por peso não se repete por quantidade: a peça de hoje tem outra
     // etiqueta. Abre o diálogo uma vez.
-    if (product.sold_by_weight) {
+    // Produto com escolhas também abre o diálogo UMA vez: a escolha de hoje
+    // não se adivinha a partir do pedido de ontem.
+    if (product.sold_by_weight || hasOptionGroups(product)) {
       addProduct(product);
       return;
     }
@@ -3390,6 +3424,9 @@ export function usePosSale(deps: PosSaleDeps) {
     weighedPrompt,
     addWeighedProduct,
     cancelWeighedPrompt,
+    optionsPrompt,
+    addOptionsProduct,
+    cancelOptionsPrompt,
     lineQty,
     addProduct,
     setQty,

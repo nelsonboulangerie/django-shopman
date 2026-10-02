@@ -5,6 +5,32 @@ export interface CategoryProjection {
   url: string
 }
 
+// Escolhas no produto (Fase 1): grupos de opções do produto (sabor obrigatório,
+// adicionais com preço). `min` = quantas são obrigatórias (0 = opcional); `max` =
+// teto de opções no grupo. Cada opção se escolhe no máximo uma vez.
+export interface ProductOption {
+  ref: string
+  label: string
+  price_q: number
+  // false = existe mas está fora hoje: aparece desabilitada, "Indisponível".
+  available: boolean
+}
+
+export interface ProductOptionGroup {
+  ref: string
+  label: string
+  min: number
+  max: number
+  options: ProductOption[]
+}
+
+// O que a loja manda por opção escolhida: só a referência. Preço e nome o
+// servidor relê do catálogo.
+export interface ProductOptionSelection {
+  group: string
+  ref: string
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -48,6 +74,12 @@ export interface CatalogItemProjection {
   // com o mesmo nome viram UM cartão no cardápio, que abre a escolha entre eles.
   // Cada opção continua sendo o próprio SKU. null/ausente = card próprio.
   choice_group?: string | null
+  // Rótulo do que se escolhe no cartão de escolha (ex.: "Sabor"). null/ausente =
+  // o cartão abre como sempre, sem título da escolha.
+  choice_group_label?: string | null
+  // Grupos de opções do produto; [] quando não tem. Com grupos, o card não usa o
+  // stepper por SKU: "Adicionar" abre a folha de opções.
+  option_groups?: ProductOptionGroup[]
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
@@ -190,6 +222,8 @@ export interface ProductDetailProjection {
   // e nome de ícone Lucide — vestem o hero-fallback da PDP sem foto.
   category_color: string | null
   category_icon: string | null
+  // Grupos de opções do produto; [] quando não tem (ver CatalogItemProjection).
+  option_groups?: ProductOptionGroup[]
 }
 
 export interface MinimumOrderProgressProjection {
@@ -246,6 +280,11 @@ export interface CartItemProjection {
   planned_for_notice: string | null
   // Observação deste item para a cozinha (`meta.notes` da linha); '' = nenhuma.
   notes: string
+  // Escolhas da linha. O `name` já vem com o resumo ("Croque (+ Ovo frito)");
+  // `options_summary` é só o resumo ('' sem opções). Linha com opções muda
+  // SEMPRE pela `line_id`: duas linhas podem ter o mesmo SKU.
+  options_summary?: string
+  has_options?: boolean
 }
 
 export interface CartProjection {

@@ -35,6 +35,8 @@ from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order, Session
 
+from shopman.shop import product_options
+
 logger = logging.getLogger(__name__)
 
 HANDLE_TYPE = "pos_edit"
@@ -143,6 +145,11 @@ def cart_payload(order) -> dict:
             line["weighed"] = weighed
         if meta.get("notes"):
             line["notes"] = str(meta["notes"])
+        # Escolhas no produto (sabor, adicionais), sem o insumo: o PDV guarda e
+        # reenvia; a edição relê pelo ``{group, ref}``.
+        options = product_options.public_line_options(product_options.line_options(meta))
+        if options:
+            line["options"] = options
         items.append(line)
     structured = data.get("delivery_address_structured") if isinstance(data.get("delivery_address_structured"), dict) else {}
     payload = {
@@ -318,6 +325,8 @@ def redo_payload(order, *, channel_ref: str) -> dict:
     pesada vai pela etiqueta; pelo peso só se a loja lança pelo peso — senão a
     etiqueta é o valor que a peça valia.
     """
+    from shopman.offerman.models import Product
+
     from shopman.shop.handlers.pricing import OffermanPricingBackend
     from shopman.shop.models import Channel
     from shopman.shop.services import weighed_sale
@@ -343,6 +352,10 @@ def redo_payload(order, *, channel_ref: str) -> dict:
             line["weighed"] = {k: v for k, v in weighed.items() if k in ("entry", "label_q", "weight_g")}
         price = backend.get_price(line["sku"], channel, qty=1) if channel is not None else None
         if price:
+            # Venda nova, preço de hoje: o produto MAIS as opções relidas no cadastro.
+            if line.get("options"):
+                product = Product.objects.filter(sku=line["sku"]).first()
+                price = int(price) + product_options.options_unit_price_q(product, line["options"])
             line["unit_price_q"] = int(price)
         items.append(line)
     payload["items"] = items

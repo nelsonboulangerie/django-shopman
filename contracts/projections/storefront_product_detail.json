@@ -38,6 +38,7 @@
   "mpn": "",
   "name": "Croissant do Contrato",
   "nutrition": null,
+  "option_groups": [],
   "original_price_display": null,
   "price_display": "R$ 12,00",
   "promotion_label": null,

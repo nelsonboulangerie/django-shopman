@@ -171,8 +171,32 @@ def add_item(
     qty: int,
     unit_price_q: int,
     name: str = "",
+    options: list[dict] | None = None,
+    product=None,
 ) -> tuple[Session, str]:
-    """Reserve stock and add or merge a cart line."""
+    """Reserve stock and add or merge a cart line.
+
+    ``options`` é a escolha do cliente no produto, ``[{group, ref}]`` e nada
+    mais (``shopman.shop.product_options``). Ela é conferida contra o cadastro
+    ANTES de reservar: produto com grupo obrigatório recusa sem escolha
+    (``OptionSelectionError``). Linha igual = mesmo SKU + mesma escolha; o Croque
+    com ovo e o Croque sem ovo são duas linhas. A linha guarda o que foi
+    escolhido em ``meta["options"]`` e o nome com o resumo; o preço das opções
+    entra pelo modifier de preço (relido do catálogo).
+    """
+    from shopman.shop import product_options
+
+    # ``product`` é o ``Product`` que o chamador já leu (a loja lê para achar o
+    # preço); sem ele, uma consulta.
+    if product is None or getattr(product, "sku", None) != sku:
+        product = _catalog_product(sku)
+    resolved = product_options.resolve_selection(product, options) if product is not None else []
+    if product is None and options:
+        raise product_options.OptionSelectionError(
+            "option_unknown", "Este item não tem escolhas para fazer.",
+        )
+    wanted = product_options.signature(resolved)
+
     session, resolved_key = get_or_create_session(
         session_key=session_key,
         channel_ref=channel_ref,
@@ -180,7 +204,15 @@ def add_item(
     )
 
     session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
-    existing = next((item for item in session.items if item.get("sku") == sku), None)
+    existing = next(
+        (
+            item
+            for item in session.items
+            if item.get("sku") == sku
+            and product_options.signature(product_options.line_options(item)) == wanted
+        ),
+        None,
+    )
     hold_id = _reserve_or_raise(
         sku=sku,
         qty=qty,
@@ -202,14 +234,24 @@ def add_item(
         )
 
     op: dict = {"op": "add_line", "sku": sku, "qty": qty, "unit_price_q": unit_price_q}
-    if name:
+    if resolved:
+        # O nome que chega pode já trazer o resumo (a sacola transferida, a
+        # recompra): tira antes de pôr, para não sair "Croque (+ Ovo) (+ Ovo)".
+        product_name = product_options.base_name(name, resolved) if name else str(getattr(product, "name", "") or sku)
+        op["name"] = product_options.line_name(product_name, resolved)
+    elif name:
         op["name"] = name
+    meta: dict = {}
+    if resolved:
+        meta[product_options.LINE_OPTIONS_KEY] = resolved
     # O lote que a reserva ancorou vira flag durável de linha (``meta``, único
     # lugar que sobrevive ao ``_normalize_items``). É daqui que o
     # LotDiscountModifier lê o desconto congelado no lote — ADR-017 §7.
     batch_ref = lot_pricing.batch_ref_for_hold(hold_id)
     if batch_ref:
-        op["meta"] = {"batch_ref": batch_ref}
+        meta["batch_ref"] = batch_ref
+    if meta:
+        op["meta"] = meta
     return (
         session_service.modify_session(
             session_key=resolved_key,
@@ -217,6 +259,29 @@ def add_item(
             ops=[op],
         ),
         resolved_key,
+    )
+
+
+def _catalog_product(sku: str):
+    from shopman.offerman.models import Product
+
+    return Product.objects.filter(sku=sku).first()
+
+
+def _other_lines_qty(session: Session, *, sku: str, line_id: str) -> Decimal:
+    """Quanto as OUTRAS linhas do mesmo SKU seguram na sacola.
+
+    A reserva é por (sacola, SKU), não por linha: com escolhas no produto o
+    mesmo SKU pode ter duas linhas (Croque com ovo e sem ovo), e mudar uma não
+    pode soltar a reserva da outra.
+    """
+    return sum(
+        (
+            Decimal(str(item.get("qty") or 0))
+            for item in session.items
+            if item.get("sku") == sku and item.get("line_id") != line_id
+        ),
+        Decimal("0"),
     )
 
 
@@ -230,23 +295,25 @@ def update_qty(
     sku: str | None = None,
 ) -> Session:
     """Reconcile holds and update a cart line quantity in one local commit."""
-    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
         line_sku = line["sku"] if line is not None else None
     if line_sku is not None:
+        others = _other_lines_qty(session, sku=line_sku, line_id=line_id)
         result = availability.reconcile(
             sku=line_sku,
-            new_qty=Decimal(str(qty)),
+            new_qty=Decimal(str(qty)) + others,
             session_key=session_key,
             channel_ref=channel_ref,
         )
         if not result["ok"]:
             # A recusa não toca na reserva que existia: o teto da linha é o que
-            # ela segura mais o livre que o ``check`` do acréscimo leu.
+            # a sacola segura do SKU mais o livre que o ``check`` do acréscimo
+            # leu, menos o que as outras linhas do mesmo SKU já usam.
             free = Decimal(str(result["available_qty"]))
-            ceiling = availability.session_line_held_qty(session_key, line_sku) + free
+            ceiling = availability.session_line_held_qty(session_key, line_sku) + free - others
             line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
             line_qty = Decimal(str(line["qty"])) if line is not None else None
             raise CartUnavailableError(
@@ -283,7 +350,7 @@ def remove_item(
     sku: str | None = None,
 ) -> Session:
     """Reconcile holds and remove a cart line in one local commit."""
-    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -291,7 +358,7 @@ def remove_item(
     if line_sku is not None:
         availability.reconcile(
             sku=line_sku,
-            new_qty=Decimal("0"),
+            new_qty=_other_lines_qty(session, sku=line_sku, line_id=line_id),
             session_key=session_key,
             channel_ref=channel_ref,
         )
@@ -311,20 +378,22 @@ LINE_NOTES_MAX_LENGTH = 280
 
 
 @transaction.atomic
-def set_line_notes(*, session_key: str, channel_ref: str, sku: str, notes: str) -> Session | None:
-    """Grava (ou apaga, com texto vazio) a observação de UM item da sacola.
+def set_line_notes(*, session_key: str, channel_ref: str, line_id: str, notes: str) -> Session | None:
+    """Grava (ou apaga, com texto vazio) a observação de UMA linha da sacola.
 
-    A chave é ``meta["notes"]``, a mesma que o PDV escreve e que o ticket da
-    cozinha lê (``kds._order_to_lines``); ``meta`` é o único lugar da linha que
-    sobrevive ao ``Session._normalize_items``. A linha é reescrita pelo op
+    Pela ``line_id``, não pelo SKU: com escolhas no produto o mesmo SKU pode ter
+    duas linhas (Croque com ovo e sem ovo), e a nota de uma não vaza para a
+    outra. A chave é ``meta["notes"]``, a mesma que o PDV escreve e que o ticket
+    da cozinha lê (``kds._order_to_lines``); ``meta`` é o único lugar da linha
+    que sobrevive ao ``Session._normalize_items``. A linha é reescrita pelo op
     ``replace_sku`` do Core com o MESMO SKU: é o op que troca o ``meta`` de uma
     linha mantendo ``line_id`` e quantidade, e passa pela mesma cerca de sessão
     anonimizada que o ``add_line`` (observação é texto pessoal).
 
-    Devolve ``None`` quando a sacola não tem linha desse SKU.
+    Devolve ``None`` quando a sacola não tem essa linha.
     """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
-    line = next((item for item in session.items if item.get("sku") == sku), None)
+    line = next((item for item in session.items if item.get("line_id") == line_id), None)
     if line is None:
         return None
     clean = " ".join(str(notes or "").split())[:LINE_NOTES_MAX_LENGTH]
@@ -335,7 +404,7 @@ def set_line_notes(*, session_key: str, channel_ref: str, sku: str, notes: str) 
         meta.pop("notes", None)
     if meta == (line.get("meta") or {}):
         return session
-    op: dict = {"op": "replace_sku", "line_id": line["line_id"], "sku": sku, "meta": meta}
+    op: dict = {"op": "replace_sku", "line_id": line["line_id"], "sku": line["sku"], "meta": meta}
     if session.pricing_policy == "external":
         op["unit_price_q"] = int(line.get("unit_price_q", 0) or 0)
     return session_service.modify_session(

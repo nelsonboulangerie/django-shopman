@@ -72,6 +72,9 @@ class ItemPricingModifier:
         modified = False
 
         customer = ctx.get("customer")
+        option_products = (
+            _products_with_line_options(items) if session.pricing_policy == "internal" else {}
+        )
         for item in items:
             sku = item["sku"]
 
@@ -93,6 +96,16 @@ class ItemPricingModifier:
                 if customer is not None:
                     kwargs["customer"] = customer
                 price = self.backend.get_price(sku, channel, **kwargs)
+                if price is not None and sku in option_products:
+                    # Escolhas no produto: o preço da linha é o do produto MAIS as
+                    # opções, relidas pelo ``ref`` no catálogo de agora (o cliente
+                    # nunca manda preço). O ``_list_q`` abaixo herda o total, então
+                    # descontos de linha incidem sobre produto + opções.
+                    from shopman.shop import product_options
+
+                    price += product_options.options_unit_price_q(
+                        option_products[sku], product_options.line_options(item),
+                    )
                 if price is not None:
                     if item.get("unit_price_q") != price:
                         item["unit_price_q"] = price
@@ -144,6 +157,23 @@ class ItemPricingModifier:
             if not session.pricing_trace:
                 session.pricing_trace = []
             session.pricing_trace.extend(trace)
+
+
+def _products_with_line_options(items) -> dict:
+    """Produtos das linhas que têm escolha desta casa (``meta["options"]`` com ``ref``)."""
+    from shopman.shop import product_options
+
+    skus = {
+        item.get("sku")
+        for item in items
+        if product_options.own_options(product_options.line_options(item))
+    }
+    skus.discard(None)
+    if not skus:
+        return {}
+    from shopman.offerman.models import Product
+
+    return {product.sku: product for product in Product.objects.filter(sku__in=skus)}
 
 
 class SessionTotalModifier:

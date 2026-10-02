@@ -16,7 +16,7 @@ const { setLineNotes } = useCartState()
 const editing = ref(false)
 const draft = ref('')
 const saving = ref(false)
-const fieldId = computed(() => `cart-line-note-${props.line.sku}`)
+const fieldId = computed(() => `cart-line-note-${props.line.line_id}`)
 // Linha otimista ainda não existe no servidor: não há onde gravar.
 const writable = computed(() => !isOptimisticLine(props.line))
 
@@ -34,7 +34,7 @@ async function save () {
   if (saving.value) return
   saving.value = true
   try {
-    await setLineNotes(props.line.sku, draft.value.trim())
+    await setLineNotes(props.line.line_id, draft.value.trim())
     editing.value = false
   } catch {
     if (import.meta.client) useSonner.error('Não conseguimos salvar a observação. Tente de novo.')

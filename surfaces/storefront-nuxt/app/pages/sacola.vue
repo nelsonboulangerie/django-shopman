@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState } from '~/presentation/cart'
-import type { CartItemProjection, ProductMutationMeta } from '~/types/shopman'
+import { metaForCartLine } from '~/composables/useCartState'
+import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
 
 const { outcome: reorderOutcome } = useReorder()
@@ -9,6 +10,7 @@ const {
   rateLimitRecovery,
   hasPendingMutations,
   setSkuQty,
+  setLineQty,
   refreshCart
 } = useCartState()
 
@@ -47,42 +49,39 @@ onBeforeUnmount(() => {
   if (holdPollTimer) clearInterval(holdPollTimer)
 })
 
-function metaForLine (line: CartItemProjection): ProductMutationMeta {
-  return {
-    sku: line.sku,
-    name: line.name,
-    price_q: line.unit_price_q,
-    price_display: line.price_display,
-    image_url: line.image_url
-  }
-}
-
 function holdFor (line: CartItemProjection) {
   return lineHoldState(line)
 }
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
-// responder; a trava é por linha (remover A não trava B).
-const { run: removeLine, isPending: removingLine } = usePendingAction(removeLineNow, { key: line => line.sku })
-const { run: adjustToAvailable, isPending: adjustingLine } = usePendingAction(adjustToAvailableNow, { key: line => line.sku })
+// responder; a trava é por linha (remover A não trava B). A chave é a `line_id`:
+// com escolhas, o mesmo SKU pode estar em duas linhas.
+const { run: removeLine, isPending: removingLine } = usePendingAction(removeLineNow, { key: line => line.line_id })
+const { run: adjustToAvailable, isPending: adjustingLine } = usePendingAction(adjustToAvailableNow, { key: line => line.line_id })
 
 async function removeLineNow (line: CartItemProjection) {
-  const meta = metaForLine(line)
+  const meta = metaForCartLine(line)
   const prevQty = line.qty
-  await setSkuQty(meta, 0)
+  const hadOptions = !!line.has_options
+  await setLineQty(line, 0)
+  if (!import.meta.client) return
   // Desfazer: re-adiciona a quantidade anterior (toque acidental é recuperável).
-  if (import.meta.client) {
-    useSonner(`${line.name} removido`, {
-      action: { label: 'Desfazer', onClick: () => { void setSkuQty(meta, prevQty) } }
-    })
+  // A linha com escolhas não volta pelo SKU (sairia sem as escolhas): o aviso
+  // fica sem o Desfazer, e o caminho é escolher de novo no cardápio.
+  if (hadOptions) {
+    useSonner(`${line.name} removido`)
+    return
   }
+  useSonner(`${line.name} removido`, {
+    action: { label: 'Desfazer', onClick: () => { void setSkuQty(meta, prevQty) } }
+  })
 }
 
 // Linha indisponível com algum estoque: ajusta para a quantidade disponível,
 // em vez de só permitir remover (consistente com o fluxo de erro 409).
 async function adjustToAvailableNow (line: CartItemProjection) {
   if (line.available_qty && line.available_qty > 0) {
-    await setSkuQty(metaForLine(line), line.available_qty)
+    await setLineQty(line, line.available_qty)
   }
 }
 
@@ -215,7 +214,7 @@ useSeoMeta({
                       icon="lucide:trash-2"
                       class="-mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-destructive"
                       :aria-label="`Remover ${line.name}`"
-                      :loading="removingLine(line.sku)"
+                      :loading="removingLine(line.line_id)"
                       @click="removeLine(line)"
                     />
                   </div>
@@ -258,7 +257,8 @@ useSeoMeta({
 
                   <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
                     <QuantityControl
-                      :meta="metaForLine(line)"
+                      :meta="metaForCartLine(line)"
+                      :line="line"
                       :qty="line.qty"
                       :disabled="!line.is_available"
                       :max-qty="line.available_qty"
@@ -269,7 +269,7 @@ useSeoMeta({
                       v-if="!line.is_available && !holdFor(line) && line.available_qty && line.available_qty > 0"
                       size="sm"
                       variant="outline"
-                      :loading="adjustingLine(line.sku)"
+                      :loading="adjustingLine(line.line_id)"
                       @click="adjustToAvailable(line)"
                     >
                       Usar {{ line.available_qty }} disponíve{{ line.available_qty > 1 ? 'is' : 'l' }}

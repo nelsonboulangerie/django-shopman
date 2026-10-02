@@ -88,6 +88,8 @@ def catalog_structure_state_from_projection(data: dict[str, Any]) -> dict[str, A
         "category_color",
         "category_icon",
         "choice_group",
+        "choice_group_label",
+        "option_groups",
     )
     items = {
         item["sku"]: {field: item.get(field) for field in item_fields}
