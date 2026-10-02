@@ -20,11 +20,11 @@
 > Ordem: `docs/coordination/ORDERS/2026-10-03-turno.md`. Registro de cada frente em
 > `docs/coordination/ROUNDS/` (R1, T0 a T6). Estado vivo no `BOARD.md`.
 
-- **Na fila de merge (17:05 UTC):** #1367 (o import do Craftsman pela porta pública; não está mais
-  vermelho), #1380 (PDV: as formas de pagamento esperam a revisão do total), #1381 (loja: um só aviso
-  no cardápio), #1382 (Encomendas: R1 a R5 saíram), #1383 (loja: observação por item em folha),
-  #1384 (PDV: o modo Encomendas virou assistente), #1379 (ordem, BOARD, brief, esta seção).
-- **Em execução:** T1b, o "Exato" (tecla `=`) espera a revisão também; PR depois do #1380.
+- **Mergeados:** #1367 (o import do Craftsman pela porta pública), #1380 (PDV: as formas de pagamento
+  esperam a revisão do total), #1381 (loja: um só aviso no cardápio).
+- **Na fila (17:40 UTC):** #1382 (Encomendas: R1 a R5 saíram), #1383 (loja: observação por item em
+  folha), #1384 (PDV: o modo Encomendas virou assistente), #1385 (o "Exato" espera a revisão também),
+  #1379 (ordem, BOARD, ROUNDS, brief, esta seção).
 - **Esperando o dono:** D42 (o PDV manda o total esperado e o servidor recusa se mudou?) e D43 (P1 a
   P7 do brief `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md`); a Frente 7 (primitivas no kit)
   espera o D43.
