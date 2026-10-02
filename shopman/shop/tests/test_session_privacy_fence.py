@@ -272,7 +272,11 @@ def test_set_line_meta_can_still_clear_a_line_note_after_anonymization():
         ops=[{"op": "set_line_meta", "line_id": "LINE-NOTE", "meta": {"notes": None}}],
     )
 
-    assert updated.items[0]["meta"] == {"batch_ref": "LOT-1"}
+    # O modifier de preço pode carimbar ``_list_q``; o que importa é a nota
+    # fora e o dado comercial intacto.
+    meta = updated.items[0]["meta"]
+    assert "notes" not in meta
+    assert meta["batch_ref"] == "LOT-1"
 
 
 def test_replace_sku_cannot_add_personal_line_metadata_after_anonymization():
