@@ -382,11 +382,11 @@ describe("Detalhe — cancelar", () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    const reason = body().querySelector<HTMLInputElement>("[data-preorder-cancel-reason]")!;
+    const reason = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
     reason.value = "Cliente desistiu";
     reason.dispatchEvent(new Event("input"));
     await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
     const [path, options] = call.mock.calls[0]!;
@@ -400,7 +400,7 @@ describe("Detalhe — cancelar", () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
     const auth = wrapper.findComponent({ name: "OperatorManagerAuth" });
@@ -412,6 +412,24 @@ describe("Detalhe — cancelar", () => {
     expect(call.mock.calls[1]![1].body.manager_approval).toEqual({ username: "gerente", pin: "1234" });
     // Mesma tentativa, mesma chave: a primeira foi recusada antes de gravar.
     expect(call.mock.calls[1]![1].body.idempotency_key).toBe(call.mock.calls[0]![1].body.idempotency_key);
+  });
+
+  it("o diálogo é o do kit, o mesmo do Gestor: fechar com motivo digitado pergunta na própria tela", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    expect(wrapper.findComponent({ name: "OperatorReasonDialog" }).exists()).toBe(true);
+    const reason = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
+    reason.value = "Cliente desistiu";
+    reason.dispatchEvent(new Event("input"));
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-back]")!.click();
+    await settle();
+    expect(body().querySelector("[data-reason-discard]")).not.toBeNull();
+    body().querySelector<HTMLButtonElement>("[data-reason-keep]")!.click();
+    await settle();
+    expect(body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!.value).toBe("Cliente desistiu");
+    expect(call).not.toHaveBeenCalled();
   });
 
   it("sem permissão para cancelar, não há botão", async () => {
