@@ -27,7 +27,7 @@
 | 0: drafts #1220 a #1223 | — | fechados com prova (D-025) |
 | 0: base de cidades GeoLite2 (rotina semanal que não abre PR sozinha, D37) | #1356 | na fila |
 | 0: branches sem PR | — | 3 locais apagadas (já no `main`); `print-layouts` fica (triada no #1120); `geolite2` virou #1356 (D-025) |
-| 1A: loja: aviso "Abrindo o cardápio" espera a página; observação por item da sacola ao KDS; a Saída mostra a observação | #1354 | ver 0.2 |
+| 1A: loja: aviso "Abrindo o cardápio" espera a página; observação por item da sacola ao KDS; a Saída mostra a observação | #1357 | ✅ mergeado (`880d35d58`); o #1354, aberto 1 min antes pela sessão "Turno: observações do dono" para o mesmo pedido, foi fechado como duplicado. Seguimento (pendente em todas as páginas preguiçosas, limite igual ao PDV): PR `claude/loja-pendente-em-todas-as-paginas` |
 | 1B: PDV > Encomendas: filtros numa linha, busca sem repetição, hoje com dia da semana | #1353 | na fila (sessão "Turno: observações do dono") |
 | 1C: o link de pagamento sai? | sem PR | respondido em 0.3 |
 | 1D: Threads, Concierge × Jev, chá com sabor, controles de data | #1355 | na fila; perguntas em D34 a D37 |
@@ -37,17 +37,18 @@
 | CI: `npm audit` acusa `node-forge` (7 high, via `listhen` ← `@nuxt/cli`) no job "Marketing — cadeia completa" (não obrigatório) | sem PR | **ADIADO, motivo técnico** (D-027): GHSA-86w9-cpqp-85rv não tem versão corrigida (`first_patched_version: None`; última publicada `node-forge` 1.4.0, já travada nos 10 locks); `npm audit fix --force` rebaixaria o Nuxt de major. O job não é obrigatório: não segura a fila. Reabrir quando sair o 1.4.1 |
 | Handoff do turno anterior (pendências vivas) | #1352 | na fila (este PR já está por cima dele) |
 
-### 0.2 Loja (#1354), o que mudou
+### 0.2 Loja (#1357), o que mudou
 
-- **Aviso de navegação:** `useNavigationPending(pending)` (`surfaces/storefront-nuxt/app/composables/useNavigationPending.ts`):
-  cada página preguiçosa diz que ainda espera o próprio dado; o `NavigationFeedback` só termina quando
-  a rota terminou E nenhuma página está pendente. `lazy` e o limiar de 200 ms intocados;
-  `performanceGuardrails.test.ts` ganhou a trava "toda página preguiçosa chama `useNavigationPending(`".
-- **Observação por item:** op nova `set_line_meta` no `ModifyService` do orderman (mescla no `meta` da
-  linha sem trocar o `line_id`; sem migração); `PUT /api/v1/cart/lines/<line_id>/notes/`; teto de 280
-  caracteres (igual ao PDV); `meta["notes"]` entra na cerca de anonimização e no esquecimento.
-  Componente `CartLineNote.vue` na `/sacola`.
-- **A Saída:** `_build_expedition_card` lia `item.notes` (atributo que não existe); agora lê `meta["notes"]`.
+- **Aviso de navegação:** `usePageContentPending.ts` (storefront-nuxt): a página diz que ainda espera o
+  próprio dado; o `NavigationFeedback` só termina quando o dado chega (teto de 15 s mantido). `lazy` e o
+  limiar de 200 ms intocados. Hoje só a `/menu` declara; o seguimento estende às outras.
+  O teste novo reprova contra o `NavigationFeedback.vue` anterior (prova do defeito).
+- **Observação por item:** `PUT /api/v1/cart/skus/<sku>/notes/` grava `meta["notes"]` pelo op
+  `replace_sku` que já existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo).
+  140 caracteres (o PDV usa 280). `meta.notes` é texto pessoal: a sessão anonimizada recusa, a exclusão
+  de conta apaga (o PDV também não apagava: corrigido), a exportação inclui.
+- **A Saída:** `backstage/projections/kds.py` lê `meta["notes"]` (lia `item.notes`, que não existe).
+- NÃO VERIFICADO no navegador (só teste).
 
 ### 0.3 O link de pagamento sai? (pergunta do dono)
 
