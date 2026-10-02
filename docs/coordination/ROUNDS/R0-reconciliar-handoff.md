@@ -3,8 +3,8 @@
 - **id:** R0
 - **sessão:** reconciliar-handoff-estado (Claude)
 - **branch:** `claude/reconciliar-handoff-estado-308593`
-- **PR:** ver o PR deste branch
-- **estado final:** na fila (o número do PR fica no BOARD até mergear)
+- **PR:** #1375
+- **estado final:** na fila, #1375
 - **início / fim (UTC):** 2026-10-02 14:20 / 2026-10-02 15:00
 
 ## O que mudou
