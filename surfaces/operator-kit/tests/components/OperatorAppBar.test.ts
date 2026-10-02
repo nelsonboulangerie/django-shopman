@@ -30,6 +30,14 @@ afterEach(() => {
 });
 
 describe("OperatorAppBar", () => {
+  it("sem seções, a barra não desenha a cápsula vazia", async () => {
+    // As Encomendas do PDV têm um destino só: o modo Dia | Semana mora no Período,
+    // e a barra fica com o rail e o título.
+    const wrapper = await mountBar({ sections: [] });
+    expect(wrapper.find("[data-operator-app-bar]").exists()).toBe(true);
+    expect(wrapper.find("nav").exists()).toBe(false);
+  });
+
   it("toda aba tem o alvo de toque da casa", async () => {
     // O B.I. e o Compras estavam em `h-8` — metade do token `--spacing-control`, numa
     // barra que se usa com a mão ocupada.

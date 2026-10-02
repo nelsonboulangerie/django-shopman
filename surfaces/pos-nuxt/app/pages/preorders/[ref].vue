@@ -24,6 +24,7 @@ import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
+import { toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 
 const route = useRoute();
 const ref_ = computed(() => String(route.params.ref || ""));
@@ -110,13 +111,6 @@ function signWithBadge(badge: string) {
   void confirmCancel(cancelReason.value, { badge });
 }
 
-const TONE_CLASS: Record<string, string> = {
-  warning: "border-warning/40 bg-warning/10 text-warning",
-  success: "border-success/40 bg-success/10 text-success",
-  info: "border-info/40 bg-info/10 text-info",
-  neutral: "border-border bg-muted text-muted-foreground",
-};
-
 // A volta respeita de onde o operador veio: o recorte da lista (modo, data,
 // filtros) mora na URL dela — `?back=` ou o histórico —, e só sem nenhum dos
 // dois a volta é a casa da seção.
@@ -129,7 +123,7 @@ function goBack() {
 </script>
 
 <template>
-  <PosPreordersShell current="" :pos="pos" :pending="posPending || pending" @refresh="refreshPos(); refresh()">
+  <PosPreordersShell :pos="pos" :pending="posPending || pending" @refresh="refreshPos(); refresh()">
     <div>
       <UiButton variant="ghost" size="sm" data-preorder-back @click="goBack">
         <Icon name="lucide:arrow-left" class="size-4" />
@@ -177,7 +171,7 @@ function goBack() {
           <p class="flex flex-wrap items-center gap-2 pt-1">
             <span
               class="rounded-md border px-2 py-0.5 text-sm font-medium"
-              :class="TONE_CLASS[situationTone(card.situation)]"
+              :class="toneBadge(situationTone(card.situation))"
               data-preorder-situation
             >{{ card.situation_label }}</span>
             <span class="text-base font-semibold tabular-nums" data-preorder-money>{{ moneyLine(card) }}</span>

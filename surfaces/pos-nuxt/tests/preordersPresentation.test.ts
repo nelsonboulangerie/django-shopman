@@ -11,7 +11,6 @@ import {
   canSearch,
   checkCount,
   checkPaymentNotice,
-  compactMoneyLine,
   customerLine,
   dayColumnTitle,
   dayToReceiveLine,
@@ -26,7 +25,6 @@ import {
   isoWeek,
   listSummary,
   matchesFilters,
-  modeSections,
   mondayOf,
   moneyLine,
   parsePaymentFilter,
@@ -139,18 +137,6 @@ describe("o estado da tela mora na URL", () => {
     const state = view({ mode: "day", date: "2026-10-02", fulfillment: "pickup", pay: "paid", completed: true, q: "rua" });
     expect(parseView(viewQuery(state, HOJE), HOJE)).toEqual(state);
   });
-
-  it("as abas Dia | Semana levam a data e os filtros, e deixam a busca", () => {
-    const sections = modeSections(view({ date: "2026-10-02", print: "pending", q: "ana" }), HOJE);
-    expect(sections.map((s) => [s.label, s.to])).toEqual([
-      ["Dia", "/preorders?mode=day&date=2026-10-02&print=pending"],
-      ["Semana", "/preorders?date=2026-10-02&print=pending"],
-    ]);
-  });
-
-  it("sem estado (o detalhe), as abas levam a hoje", () => {
-    expect(modeSections(null, HOJE).map((s) => s.to)).toEqual(["/preorders?mode=day", "/preorders"]);
-  });
 });
 
 // ── A semana ────────────────────────────────────────────────────────────────
@@ -201,8 +187,8 @@ describe("contagens — zero é frase, nunca '0'", () => {
     expect(periodEmptyMessage("week")).toBe("Nenhuma encomenda nesta semana.");
   });
 
-  it("A receber: valor por extenso, e zero é frase", () => {
-    expect(toReceiveLine(6200, "R$ 62,00")).toBe("A receber: R$ 62,00");
+  it("A receber: a mesma frase no período e no dia, e zero é frase", () => {
+    expect(toReceiveLine(6200, "R$ 62,00")).toBe("A receber R$ 62,00");
     expect(toReceiveLine(0, "R$ 0,00")).toBe("Nada a receber");
     expect(dayToReceiveLine(day({ to_receive_q: 1200, to_receive_display: "R$ 12,00" }))).toBe("A receber R$ 12,00");
     expect(dayToReceiveLine(day())).toBe("");
@@ -211,24 +197,17 @@ describe("contagens — zero é frase, nunca '0'", () => {
 
 describe("a linha de dinheiro — saldo primeiro, 'não sei' nunca vira 'pago'", () => {
   it("nada pago: o total inteiro a receber", () => {
-    expect(moneyLine(card())).toBe("R$ 36,00 a receber");
+    expect(moneyLine(card())).toBe("A receber R$ 36,00");
   });
 
   it("parte paga: quanto falta e de quanto", () => {
-    expect(moneyLine(card({ balance_q: 1100, balance_display: "R$ 11,00" }))).toBe("Falta receber R$ 11,00 de R$ 36,00");
+    expect(moneyLine(card({ balance_q: 1100, balance_display: "R$ 11,00" }))).toBe("A receber R$ 11,00 de R$ 36,00");
   });
 
   it("pago · na conta da casa · a conferir", () => {
     expect(moneyLine(card({ balance_q: 0, situation: "paid" }))).toBe("R$ 36,00 pago");
     expect(moneyLine(card({ balance_q: 0, situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
     expect(moneyLine(card({ balance_q: null, situation: "check_payment" }))).toBe("R$ 36,00 · pagamento a conferir");
-  });
-
-  it("no card estreito da grade: o saldo em destaque, ou só a palavra", () => {
-    expect(compactMoneyLine(card())).toBe("R$ 36,00 a receber");
-    expect(compactMoneyLine(card({ balance_q: 0, payment_state: "paid" }))).toBe("pago");
-    expect(compactMoneyLine(card({ balance_q: 0, payment_state: "on_account" }))).toBe("na conta da casa");
-    expect(compactMoneyLine(card({ balance_q: null, payment_state: "check" }))).toBe("conferir pagamento");
   });
 
   it("o saldo ganha destaque só quando é para cobrar", () => {

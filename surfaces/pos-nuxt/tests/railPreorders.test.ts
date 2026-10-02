@@ -47,3 +47,29 @@ describe("Encomendas na barra lateral do PDV", () => {
     expect(CASH).not.toContain("preorders:");
   });
 });
+
+// Sessão Encomendas, 02/10: uma porta por destino e uma peça por estilo. A varredura
+// reprova se a segunda navegação, as abas ou a cópia do selo voltarem.
+describe("Encomendas sem redundância (varredura do fonte)", () => {
+  const SHELL = readFileSync(app("components", "PosPreordersShell.vue"), "utf8");
+  const ROW = readFileSync(app("components", "PosPreorderRow.vue"), "utf8");
+  const DETAIL = readFileSync(app("pages", "preorders", "[ref].vue"), "utf8");
+  const PRESENTATION = readFileSync(app("presentation", "preorders.ts"), "utf8");
+
+  it("R2: a moldura não leva segundo link para a casa da seção; a porta é o rail", () => {
+    expect(SHELL).not.toMatch(/<NuxtLink[^>]*to="\/preorders"/);
+    expect(SHELL).not.toContain("navigateTo('/preorders')");
+  });
+
+  it("R1: nenhuma aba Dia | Semana na barra; o modo é do Período do kit", () => {
+    expect(SHELL).toContain(':sections="[]"');
+    expect(PRESENTATION).not.toContain("modeSections");
+  });
+
+  it("R4: o selo de situação vem do kit, sem cópia local das classes", () => {
+    for (const source of [ROW, DETAIL]) {
+      expect(source).toContain("toneBadge(situationTone(");
+      expect(source).not.toContain("TONE_CLASS");
+    }
+  });
+});

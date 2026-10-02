@@ -7,12 +7,16 @@
 //                         iFood). Procura em aberto de QUALQUER data; "Incluir
 //                         concluídas" traz as dos últimos 30 dias numa seção à
 //                         parte, nunca misturadas. Um resultado só: Enter abre.
-//   Dia | Semana        — as abas da barra. ‹ › anda um dia ou uma semana, e a
-//                         data escolhe o dia (a semana é a que o contém, de
-//                         segunda a domingo). Tocar no dia da grade abre o Dia.
+//   Dia | Semana        — o Período do kit, no quadro do período (o único lugar:
+//                         a barra do topo não repete abas). ‹ › anda um dia ou
+//                         uma semana, e a data escolhe o dia (a semana é a que o
+//                         contém, de segunda a domingo). Tocar no dia da grade
+//                         abre o Dia.
 //   Filtros             — numa linha (a `FilterBar` do kit, tamanho de toque),
 //                         combináveis: recebimento, pagamento, Via Pedido. Ficam
-//                         no mesmo quadro do período, abaixo do ‹ ›.
+//                         no mesmo quadro do período, abaixo do ‹ ›. Limpar é
+//                         gesto da barra (o X do chip, "Limpar filtros"), e só
+//                         dela: o vazio filtrado e o aviso não repetem o gesto.
 //   Imprimir N vias     — o lote da Via Pedido do que está VISÍVEL, na mesma
 //                         linha dos filtros. A tela de lote ("Via Pedido –
 //                         painel") morreu aqui.
@@ -28,6 +32,7 @@ import {
   SEARCH_LABEL,
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
+  TO_RECEIVE_CLASS,
   canSearch,
   dayColumnTitle,
   dayToReceiveLine,
@@ -35,10 +40,7 @@ import {
   filterEmptyMessage,
   flattenDays,
   groupByWindow,
-  hasFilters,
   listSummary,
-  modeSections,
-  NO_FILTERS,
   parseView,
   periodEmptyMessage,
   periodParams,
@@ -77,7 +79,6 @@ function update(patch: Partial<PreordersView>) {
   void router.replace({ path: "/preorders", query: viewQuery({ ...view.value, ...patch }, today) });
 }
 
-const sections = computed(() => modeSections(view.value, today));
 // O recorte de agora: cada linha o leva ao detalhe (`?back=`), e a volta cai nele.
 const back = computed(() => viewPath(view.value, today));
 
@@ -171,8 +172,6 @@ function refreshAll() {
   <PosPreordersShell
     :pos="pos"
     :pending="posPending || period.pending.value || search.pending.value"
-    :sections="sections"
-    :current="searching ? '' : view.mode"
     wide
     @refresh="refreshAll"
   >
@@ -319,7 +318,7 @@ function refreshAll() {
           </p>
           <div v-if="summary" class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:justify-end" data-preorders-summary>
             <p class="text-sm tabular-nums text-muted-foreground">{{ summary }}</p>
-            <p v-if="toReceive" class="text-sm font-semibold tabular-nums text-foreground" data-preorders-to-receive>{{ toReceive }}</p>
+            <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           </div>
         </div>
 
@@ -400,13 +399,10 @@ function refreshAll() {
 
           <section
             v-if="!shownCount"
-            class="flex flex-wrap items-center justify-center gap-3 rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
+            class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
             data-preorders-filter-empty
           >
-            <span>{{ filterEmptyMessage(view.mode) }}</span>
-            <UiButton v-if="hasFilters(filters)" variant="outline" size="sm" @click="filters = { ...NO_FILTERS }">
-              Mostrar todas
-            </UiButton>
+            {{ filterEmptyMessage(view.mode) }}
           </section>
 
           <!-- DIA: por janela, a linha inteira de cada encomenda. -->
@@ -453,7 +449,7 @@ function refreshAll() {
                     <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>
                     <template v-else>Nenhuma encomenda</template>
                   </span>
-                  <span v-if="dayToReceiveLine(weekDay)" class="text-xs font-semibold tabular-nums text-foreground" data-week-day-to-receive>
+                  <span v-if="dayToReceiveLine(weekDay)" :class="TO_RECEIVE_CLASS" data-week-day-to-receive>
                     {{ dayToReceiveLine(weekDay) }}
                   </span>
                 </button>

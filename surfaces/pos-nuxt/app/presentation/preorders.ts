@@ -1,7 +1,7 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, os modos Dia | Semana com ‹ › e a data, os filtros
+// buscar" sempre no topo, o Período do kit (Dia ou Semana, ‹ › e a data), os filtros
 // combináveis numa linha (a `FilterBar` do kit) e o "Imprimir N vias" do que
 // está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
@@ -17,7 +17,6 @@
 // (`PREORDERS_SCOPE_NOTE`), para ninguém procurar a retirada de hoje no Gestor e
 // achar que ela sumiu.
 
-import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type {
   PreorderCard,
@@ -118,19 +117,6 @@ export function viewPath(view: PreordersView, today: string): string {
   return params ? `/preorders?${params}` : "/preorders";
 }
 
-/**
- * As abas Dia | Semana da barra da seção, levando o resto do estado junto
- * (a data e os filtros): trocar de modo não perde o que o operador escolheu.
- * Sem estado (o detalhe), as abas levam ao dia e à semana de hoje.
- */
-export function modeSections(view: PreordersView | null, today: string): OperatorSection[] {
-  const base = view ?? { mode: DEFAULT_MODE, date: today, ...NO_FILTERS, q: "", completed: false };
-  return [
-    { key: "day", label: "Dia", icon: "lucide:calendar-check", to: viewPath({ ...base, mode: "day", q: "", completed: false }, today) },
-    { key: "week", label: "Semana", icon: "lucide:calendar-days", to: viewPath({ ...base, mode: "week", q: "", completed: false }, today) },
-  ];
-}
-
 // ── A semana (de segunda a domingo) ─────────────────────────────────────────
 
 /** A segunda-feira da semana de `iso` (decisão do dono: a semana começa na segunda). */
@@ -203,23 +189,11 @@ export function moneyLine(card: Pick<PreorderCard, "balance_q" | "balance_displa
   if (card.balance_q === null) return `${card.total_display} · pagamento a conferir`;
   if (card.balance_q > 0) {
     return card.balance_q >= card.total_q
-      ? `${card.total_display} a receber`
-      : `Falta receber ${card.balance_display} de ${card.total_display}`;
+      ? toReceiveLabel(card.total_display)
+      : `${toReceiveLabel(card.balance_display)} de ${card.total_display}`;
   }
   if (card.situation === "on_account") return `${card.total_display} na conta da casa`;
   return `${card.total_display} pago`;
-}
-
-/**
- * O dinheiro do card estreito da grade: o saldo quando há ("R$ 36,00 a
- * receber"), senão só a palavra ("pago", "na conta da casa", "conferir
- * pagamento"). O total do dia está no topo da coluna.
- */
-export function compactMoneyLine(card: Pick<PreorderCard, "balance_q" | "balance_display" | "situation" | "payment_state">): string {
-  if (card.balance_q === null || card.payment_state === "check") return "conferir pagamento";
-  if (card.balance_q > 0) return `${card.balance_display} a receber`;
-  if (card.payment_state === "on_account") return "na conta da casa";
-  return "pago";
 }
 
 export type SituationTone = "warning" | "success" | "info" | "neutral";
@@ -431,14 +405,30 @@ export function filterEmptyMessage(mode: PreordersMode): string {
     : "Nenhuma encomenda com estes filtros nesta semana.";
 }
 
-/** "A receber: R$ 62,00" — ou, sem nada, a frase inteira. Zero não é código. */
-export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
-  return toReceiveQ > 0 ? `A receber: ${toReceiveDisplay}` : "Nada a receber";
+// ── "A receber": uma grandeza, uma apresentação ─────────────────────────────
+//
+// O que falta cobrar aparece em três alturas da tela (o período, o dia da grade
+// e a encomenda) e diz a MESMA coisa nas três: a mesma frase ("A receber R$ X")
+// e o mesmo peso (`TO_RECEIVE_CLASS`). Antes eram três escalas: "A receber:" com
+// dois-pontos no topo, sem eles no dia, e "R$ X a receber" de trás para a frente
+// na linha, cada uma num tamanho de letra.
+
+/** O peso do "A receber" onde quer que ele apareça. */
+export const TO_RECEIVE_CLASS = "text-sm font-semibold tabular-nums text-foreground";
+
+/** "A receber R$ 62,00". A frase única do que falta cobrar. */
+export function toReceiveLabel(display: string): string {
+  return `A receber ${display}`;
 }
 
-/** O dinheiro de uma coluna da grade, só quando há o que receber. */
+/** O "A receber" do período; sem nada, a frase inteira. Zero não é código. */
+export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
+  return toReceiveQ > 0 ? toReceiveLabel(toReceiveDisplay) : "Nada a receber";
+}
+
+/** O "A receber" de um dia da grade, só quando há o que receber. */
 export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display">): string {
-  return day.to_receive_q > 0 ? `A receber ${day.to_receive_display}` : "";
+  return day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "";
 }
 
 /** O saldo pede destaque na linha: é o que o balcão cobra. */
