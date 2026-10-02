@@ -6,7 +6,7 @@
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
-import { cartQtyForSku, enterTargetProduct, filterProducts, orderCollections } from "~/presentation/catalog";
+import { cartQtyForSku, enterTargetProduct, filterProducts, gridEntries, orderCollections } from "~/presentation/catalog";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -53,6 +53,10 @@ const orderedCollections = computed(() => orderCollections(props.collections, pr
 const filteredProducts = computed(() =>
   filterProducts(props.products, { collectionRef: activeCollection.value, query: search.value }),
 );
+
+// Cartão de escolha: sem busca, produtos do mesmo `choice_group` viram um tile só
+// que abre a escolha; com busca, cada produto aparece sozinho (o Enter lança).
+const entries = computed(() => gridEntries(filteredProducts.value, props.products, search.value));
 
 function productQty(sku: string): number {
   return cartQtyForSku(props.cartItems, sku);
@@ -155,14 +159,21 @@ function onSearchEscape() {
         Nenhum produto encontrado.
       </div>
       <div v-else class="grid gap-2.5" :class="densityCols">
-        <PosProductTile
-          v-for="product in filteredProducts"
-          :key="product.sku"
-          :product="product"
-          :qty="productQty(product.sku)"
-          :disabled="product.sold_out"
-          @add="emit('add', $event)"
-        />
+        <template v-for="entry in entries" :key="entry.key">
+          <PosProductGroupTile
+            v-if="entry.kind === 'group'"
+            :group="entry.group"
+            :cart-items="cartItems"
+            @add="emit('add', $event)"
+          />
+          <PosProductTile
+            v-else
+            :product="entry.product"
+            :qty="productQty(entry.product.sku)"
+            :disabled="entry.product.sold_out"
+            @add="emit('add', $event)"
+          />
+        </template>
       </div>
     </div>
   </section>

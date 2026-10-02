@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dynamicCollectionMenuTarget, resolveCatalogSections } from '~/presentation/menu'
+import { choiceGroupsByName, dynamicCollectionMenuTarget, resolveCatalogSections, sectionEntries } from '~/presentation/menu'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -54,6 +54,8 @@ const section = computed(() => {
   return sections.find(s => s.ref === collectionRef.value) || sections[0] || null
 })
 const items = computed(() => section.value?.items || catalog.value?.items || [])
+// Cartões de escolha (mesmo `choice_group`) entre os itens desta coleção.
+const entries = computed(() => sectionEntries(items.value, choiceGroupsByName(items.value)))
 const title = computed(() => section.value?.label || 'Coleção')
 const description = computed(() => section.value?.description || '')
 
@@ -148,13 +150,20 @@ useHead({
 
         <template v-else-if="items.length">
           <div class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
-            <ProductListItem
-              v-for="item in items"
-              :key="item.sku"
-              :item="item"
-              framed
-              class="border-b"
-            />
+            <template v-for="entry in entries" :key="entry.key">
+              <ProductChoiceGroupItem
+                v-if="entry.kind === 'group'"
+                :group="entry.group"
+                framed
+                class="border-b"
+              />
+              <ProductListItem
+                v-else
+                :item="entry.item"
+                framed
+                class="border-b"
+              />
+            </template>
           </div>
 
           <div data-collection-end-actions class="pt-4">

@@ -595,3 +595,95 @@ export function searchPanelView (input: {
     products: productSearchOptions(items, search, sectionBySku, sectionsBySku)
   }
 }
+
+// ── Cartão de escolha ──────────────────────────────────────────────────────
+// Itens com o mesmo `choice_group` (dado do Admin, ex.: "Chás da casa") viram UM
+// cartão no cardápio, que abre a escolha entre eles. Nada aqui conhece "chá": o
+// grupo é o nome que veio do servidor. Cada opção segue sendo o card do próprio
+// SKU (preço, disponibilidade, sacola); o cartão só resume.
+
+export type ChoiceGroupCard = {
+  name: string
+  options: CatalogItemProjection[]
+  // "R$ 14,00" quando todas custam o mesmo; "a partir de R$ 14,00" quando não.
+  // Vazio enquanto o preço não chegou (quadro estrutural do continuum).
+  priceLabel: string
+  // "Indisponível" só quando NENHUMA opção pode ser pedida.
+  allUnavailable: boolean
+  summary: string
+  // A foto do cartão é a da primeira opção disponível que tem foto.
+  cover: CatalogItemProjection
+}
+
+export type MenuEntry =
+  | { kind: 'item', key: string, item: CatalogItemProjection }
+  | { kind: 'group', key: string, group: ChoiceGroupCard }
+
+function choiceGroupName (item: Pick<CatalogItemProjection, 'choice_group'>): string {
+  return (item.choice_group || '').trim()
+}
+
+// Grupo com uma opção só não é escolha: o item aparece sozinho.
+export function choiceGroupsByName (
+  items: ReadonlyArray<CatalogItemProjection>
+): Map<string, CatalogItemProjection[]> {
+  const groups = new Map<string, CatalogItemProjection[]>()
+  for (const item of uniqueItemsBySku(items)) {
+    const name = choiceGroupName(item)
+    if (!name) continue
+    const members = groups.get(name) || []
+    members.push(item)
+    groups.set(name, members)
+  }
+  for (const [name, members] of groups) {
+    if (members.length < 2) groups.delete(name)
+  }
+  return groups
+}
+
+export function choiceGroupCard (name: string, options: CatalogItemProjection[]): ChoiceGroupCard {
+  const orderable = options.filter(option => option.availability !== 'unavailable')
+  const priced = options.filter(option => option.price_display && option.base_price_q > 0)
+  let priceLabel = ''
+  if (priced.length) {
+    const cheapest = priced.reduce((min, option) => option.base_price_q < min.base_price_q ? option : min)
+    const samePrice = priced.every(option => option.base_price_q === cheapest.base_price_q)
+    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`
+  }
+  const cover = orderable.find(option => option.image_url)
+    || options.find(option => option.image_url)
+    || orderable[0]
+    || options[0]!
+  return {
+    name,
+    options,
+    priceLabel,
+    allUnavailable: orderable.length === 0,
+    summary: `${formatCount(options.length, 'opção', 'opções')}: ${options.map(option => option.name).join(', ')}`,
+    cover
+  }
+}
+
+// O cartão entra no lugar do PRIMEIRO membro do grupo na seção, e os outros
+// membros da seção saem dela. As opções do cartão são o grupo inteiro do
+// cardápio (`groups`), não só os da seção: o cartão abre a mesma escolha em
+// qualquer seção onde aparece.
+export function sectionEntries (
+  sectionItems: ReadonlyArray<CatalogItemProjection>,
+  groups: Map<string, CatalogItemProjection[]>
+): MenuEntry[] {
+  const entries: MenuEntry[] = []
+  const placed = new Set<string>()
+  for (const item of sectionItems) {
+    const name = choiceGroupName(item)
+    const members = name ? groups.get(name) : undefined
+    if (!members) {
+      entries.push({ kind: 'item', key: `item:${item.sku}`, item })
+      continue
+    }
+    if (placed.has(name)) continue
+    placed.add(name)
+    entries.push({ kind: 'group', key: `group:${name}`, group: choiceGroupCard(name, members) })
+  }
+  return entries
+}

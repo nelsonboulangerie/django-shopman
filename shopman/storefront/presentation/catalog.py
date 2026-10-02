@@ -133,6 +133,12 @@ class CatalogItemProjection:
     category_color: str | None = None
     category_icon: str | None = None
 
+    # Cartão de escolha (``Product.metadata["choice_group"]``): itens com o mesmo
+    # nome aqui viram UM cartão na tela, que abre a escolha entre eles. O item
+    # continua inteiro em ``items`` e nas seções; quem agrupa é a superfície, para
+    # cada opção manter o próprio preço e a própria disponibilidade. None = sozinho.
+    choice_group: str | None = None
+
 
 @dataclass(frozen=True)
 class CatalogSectionProjection:
@@ -610,6 +616,7 @@ def _build_items(
                 allergens=allergens,
                 category_color=str(primary_meta.get("color") or "") or None,
                 category_icon=str(primary_meta.get("icon") or "") or None,
+                choice_group=catalog_context.choice_group(p) or None,
             ),
         )
     return result

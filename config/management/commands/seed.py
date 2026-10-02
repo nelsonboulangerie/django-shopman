@@ -2693,6 +2693,24 @@ class Command(BaseCommand):
                 }
                 product.save(update_fields=["metadata"])
 
+        # Cartão de escolha (D34 opção 1, dono 02/10/2026): os chás da casa viram
+        # UM cartão na loja e no PDV, que abre a escolha entre os cinco. Cada
+        # escolha continua sendo o SKU de sempre (preço, estoque, ficha, nota).
+        # O grupo é dado (``metadata["choice_group"]``, campo "Cartão de escolha"
+        # no Admin), não código: este é só o valor da casa.
+        choice_groups = {
+            "Chás da casa": ["CHCAM", "CHROU", "CHSOP", "CHBLU", "CHHIB"],
+        }
+        for group_name, group_skus in choice_groups.items():
+            for sku in group_skus:
+                product = products.get(sku)
+                if product:
+                    product.metadata = {
+                        **(product.metadata if isinstance(product.metadata, dict) else {}),
+                        "choice_group": group_name,
+                    }
+                    product.save(update_fields=["metadata"])
+
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:
         # ``auto_filled=False`` in nutrition_facts blocks any later derivation.

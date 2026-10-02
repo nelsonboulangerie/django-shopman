@@ -44,6 +44,10 @@ export interface CatalogItemProjection {
   // e nome de ícone Lucide — vestem o card-fallback de produto sem foto.
   category_color: string | null
   category_icon: string | null
+  // Cartão de escolha (Product.metadata["choice_group"], escrito no Admin): itens
+  // com o mesmo nome viram UM cartão no cardápio, que abre a escolha entre eles.
+  // Cada opção continua sendo o próprio SKU. null/ausente = card próprio.
+  choice_group?: string | null
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o

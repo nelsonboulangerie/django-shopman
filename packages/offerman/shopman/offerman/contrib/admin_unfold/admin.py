@@ -371,7 +371,7 @@ class ProductAdmin(_ProductImportExportBase):
         (
             "Publicação e venda",
             {
-                "fields": ("is_published", "is_sellable"),
+                "fields": ("is_published", "is_sellable", "choice_group"),
                 "classes": ("tab",),
                 "description": "“Publicado” controla a exposição no catálogo; “vendável” controla se o produto está comercialmente habilitado.",
             },

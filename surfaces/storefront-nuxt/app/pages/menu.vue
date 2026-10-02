@@ -2,11 +2,13 @@
 import {
   FILTERED_SECTION_VALUE,
   buildSectionsBySku,
+  choiceGroupsByName,
   collectionDisplayLabel,
   dynamicCollectionPublicSlug,
   filteredSections,
   resolveCatalogSections,
   resolveSectionRefFromParam,
+  sectionEntries,
   uniqueItemsBySku
 } from '~/presentation/menu'
 import {
@@ -83,6 +85,9 @@ const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
 const favoriteRef = computed(() => catalog.value?.favorite_category_ref || '')
 const hasAppliedFilters = computed(() => appliedFilterKeys.value.length > 0)
 const sectionsBySku = computed(() => buildSectionsBySku(sections.value))
+// Cartões de escolha (mesmo `choice_group`): o grupo inteiro do cardápio, para o
+// cartão abrir a mesma escolha em qualquer seção onde aparece.
+const choiceGroups = computed(() => choiceGroupsByName(allItems.value))
 // O toggle só faz sentido quando o cliente logado tem preferências que geram aviso.
 const hasDietaryPrefs = computed(() => allItems.value.some(item => item.dietary_warnings.length > 0))
 const activeSections = computed(() => {
@@ -611,14 +616,22 @@ useHead({
                   <p v-if="section.description" class="shop-muted">{{ section.description }}</p>
                 </div>
                 <div class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
-                  <ProductListItem
-                    v-for="item in section.items"
-                    :key="`${section.ref}-${item.sku}`"
-                    :item="item"
-                    :pending="continuumPending"
-                    framed
-                    class="border-b"
-                  />
+                  <template v-for="entry in sectionEntries(section.items, choiceGroups)" :key="`${section.ref}-${entry.key}`">
+                    <ProductChoiceGroupItem
+                      v-if="entry.kind === 'group'"
+                      :group="entry.group"
+                      :pending="continuumPending"
+                      framed
+                      class="border-b"
+                    />
+                    <ProductListItem
+                      v-else
+                      :item="entry.item"
+                      :pending="continuumPending"
+                      framed
+                      class="border-b"
+                    />
+                  </template>
                 </div>
               </div>
             </div>

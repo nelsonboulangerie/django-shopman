@@ -732,6 +732,48 @@ class TestAdHocSkuCardsRespectTheChannelGate:
         assert len(self._cards(product.sku, channel)) == 1
 
 
+class TestChoiceGroup:
+    """``choice_group`` vem de ``Product.metadata["choice_group"]`` (dado do Admin).
+
+    A projeção NÃO funde os itens: cada um segue inteiro, com preço e
+    disponibilidade próprios; quem junta no cartão é a superfície.
+    """
+
+    def test_item_exposes_the_group_name_normalized(self, listing, product):
+        product.metadata = {"choice_group": "  Chás   da casa "}
+        product.save(update_fields=["metadata"])
+        _publish_on_listing(listing, product)
+        item = _find_item(build_catalog(channel_ref="web"), product.sku)
+        assert item is not None
+        assert item.choice_group == "Chás da casa"
+
+    def test_item_without_group_stays_alone(self, listing, product):
+        _publish_on_listing(listing, product)
+        item = _find_item(build_catalog(channel_ref="web"), product.sku)
+        assert item is not None
+        assert item.choice_group is None
+
+    def test_malformed_group_is_ignored(self, listing, product):
+        product.metadata = {"choice_group": ["Chás"]}
+        product.save(update_fields=["metadata"])
+        _publish_on_listing(listing, product)
+        item = _find_item(build_catalog(channel_ref="web"), product.sku)
+        assert item is not None
+        assert item.choice_group is None
+
+    def test_group_travels_in_the_continuum_structure(self, listing, product):
+        from shopman.storefront.api.projections import projection_data
+        from shopman.storefront.continuum import catalog_structure_state_from_projection
+
+        product.metadata = {"choice_group": "Chás da casa"}
+        product.save(update_fields=["metadata"])
+        _publish_on_listing(listing, product)
+        state = catalog_structure_state_from_projection(
+            projection_data(build_catalog(channel_ref="web")),
+        )
+        assert state["items"][product.sku]["choice_group"] == "Chás da casa"
+
+
 class TestCategoryPresentation:
     """``category_color``/``category_icon`` vêm da coleção PRIMÁRIA do produto.
 

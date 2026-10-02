@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   appliedFilterChips,
   buildSectionsBySku,
+  choiceGroupCard,
+  choiceGroupsByName,
   collectionDisplayLabel,
   collectionTargetForSearchOption,
   collectionSearchOptions,
@@ -21,6 +23,7 @@ import {
   searchPanelView,
   searchTextMatches,
   searchTokens,
+  sectionEntries,
   sectionPublicSlug,
   tileBadge,
   uniqueItemsBySku
@@ -321,5 +324,51 @@ describe('menu presentation — search options', () => {
     expect(view.collections).toHaveLength(0)
     expect(view.products.map(p => p.value)).toEqual(['CROIS-001'])
     expect(view.chips.every(c => c.kind !== 'product')).toBe(true)
+  })
+})
+
+describe('cartão de escolha (choice_group)', () => {
+  const group = 'Chás da casa'
+  const camille = item({ sku: 'CHCAM', name: 'Chá Camille', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group, image_url: '/camille.jpg' })
+  const rouge = item({ sku: 'CHROU', name: 'Chá Rouge', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group })
+  const hibisco = item({ sku: 'CHHIB', name: 'Chá Hibisco', base_price_q: 1800, price_display: 'R$ 18,00', choice_group: group })
+  const espresso = item({ sku: 'SP', name: 'Espresso', base_price_q: 800, price_display: 'R$ 8,00' })
+
+  it('junta os itens do mesmo grupo num cartão só, no lugar do primeiro', () => {
+    const groups = choiceGroupsByName([espresso, camille, rouge, hibisco])
+    const entries = sectionEntries([espresso, camille, rouge], groups)
+    expect(entries.map(entry => entry.key)).toEqual(['item:SP', `group:${group}`])
+    const card = entries[1]
+    expect(card?.kind).toBe('group')
+    if (card?.kind !== 'group') return
+    // As opções são o grupo inteiro do cardápio, não só as da seção.
+    expect(card.group.options.map(option => option.sku)).toEqual(['CHCAM', 'CHROU', 'CHHIB'])
+    expect(card.group.summary).toBe('3 opções: Chá Camille, Chá Rouge, Chá Hibisco')
+  })
+
+  it('grupo de uma opção só não vira cartão', () => {
+    const groups = choiceGroupsByName([espresso, hibisco])
+    expect(groups.size).toBe(0)
+    expect(sectionEntries([hibisco], groups).map(entry => entry.key)).toEqual(['item:CHHIB'])
+  })
+
+  it('preço: igual diz o preço; diferente diz "a partir de" o menor', () => {
+    expect(choiceGroupCard(group, [camille, rouge]).priceLabel).toBe('R$ 14,00')
+    expect(choiceGroupCard(group, [hibisco, camille]).priceLabel).toBe('a partir de R$ 14,00')
+    // Quadro estrutural (sem preço ainda): nada de inventar número.
+    expect(choiceGroupCard(group, [item({ ...camille, price_display: '', base_price_q: 0 }), item({ ...rouge, price_display: '', base_price_q: 0 })]).priceLabel).toBe('')
+  })
+
+  it('só diz Indisponível quando nenhuma opção pode ser pedida', () => {
+    const off = (option: CatalogItemProjection) => item({ ...option, availability: 'unavailable', can_add_to_cart: false })
+    expect(choiceGroupCard(group, [off(camille), rouge]).allUnavailable).toBe(false)
+    expect(choiceGroupCard(group, [off(camille), off(rouge)]).allUnavailable).toBe(true)
+  })
+
+  it('a foto do cartão é a da primeira opção disponível com foto', () => {
+    const off = item({ ...camille, availability: 'unavailable' })
+    const withPhoto = item({ ...rouge, image_url: '/rouge.jpg' })
+    expect(choiceGroupCard(group, [off, withPhoto]).cover.sku).toBe('CHROU')
+    expect(choiceGroupCard(group, [camille, rouge]).cover.sku).toBe('CHCAM')
   })
 })

@@ -35,6 +35,10 @@ export interface POSProductProjection {
   /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
    *  da etiqueta (ou o peso) em vez de somar uma unidade. */
   sold_by_weight?: boolean;
+  /** Cartão de escolha (`metadata["choice_group"]`, escrito no Admin): produtos
+   *  com o mesmo nome viram UM tile na grade, que abre a escolha entre eles.
+   *  Vazio = tile próprio. */
+  choice_group?: string;
 }
 
 /** O que o operador digitou numa linha vendida por peso. `weight_g` é sempre o

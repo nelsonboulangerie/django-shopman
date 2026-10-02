@@ -165,6 +165,18 @@ class ProductAdminForm(forms.ModelForm):
             "sobre conferir estoque."
         ),
     )
+    choice_group = forms.CharField(
+        label="Cartão de escolha",
+        required=False,
+        max_length=60,
+        widget=UnfoldAdminTextInputWidget,
+        help_text=(
+            "Nome do cartão que reúne este produto a outros parecidos na loja e no "
+            "PDV (ex.: Chás da casa). Produtos com o mesmo nome aqui viram um cartão "
+            "só, que abre a escolha entre eles; cada um mantém preço, estoque e nota "
+            "próprios. Em branco, o produto aparece sozinho."
+        ),
+    )
     ready_from = forms.CharField(
         label="Pronto a partir de",
         required=False,
@@ -219,6 +231,8 @@ class ProductAdminForm(forms.ModelForm):
             )
             self.fields["made_to_order"].initial = bool(metadata.get("made_to_order", False))
             self.fields["ready_from"].initial = str(metadata.get("ready_from") or "")
+            raw_group = metadata.get("choice_group")
+            self.fields["choice_group"].initial = raw_group if isinstance(raw_group, str) else ""
 
     def clean_ready_from(self):
         """Hora inválida é RECUSADA na porta, não guardada para falhar depois.
@@ -280,6 +294,14 @@ class ProductAdminForm(forms.ModelForm):
             metadata["ready_from"] = ready_from
         else:
             metadata.pop("ready_from", None)
+
+        # O nome É a identidade do grupo: espaço repetido não pode separar
+        # "Chás da casa" de "Chás  da casa". Em branco apaga a chave.
+        choice_group = " ".join((cleaned.get("choice_group") or "").split())
+        if choice_group:
+            metadata["choice_group"] = choice_group
+        else:
+            metadata.pop("choice_group", None)
 
         cleaned["metadata"] = metadata
 
