@@ -22,7 +22,7 @@ novo para ela, e nenhuma proposta abaixo cria um.
 
 | Fonte | Comando (somente leitura) | Resultado |
 |---|---|---|
-| Apps e specs | `doctl --context shopman-spec-update apps list -o json` | 3 apps; componentes, slugs, contagens, região |
+| Apps e specs | `doctl --context shopman-do-app-admin apps list -o json` | 3 apps; componentes, slugs, contagens, região |
 | Preço dos slugs de app | `doctl apps tier instance-size list` | tabela de preços **da própria API**, 17/09/2026 |
 | Bancos | `doctl databases list/get/pool list/replica list/backups/configuration get` | 2 clusters, 1 pool, 0 réplicas |
 | Registry | `doctl registry get -o json`, `registry repository list-v2`, `list-tags`, `list-manifests`, `garbage-collection list` | 12,43 GB, 1 repositório, 752 tags, nenhum GC já rodado |

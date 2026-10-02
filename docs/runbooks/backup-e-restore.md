@@ -105,7 +105,7 @@ para ler a connection string do cluster novo.
 > tarefa da seção 3) — ou faça tudo pelo painel, onde a permissão é a do login.
 
 > **Atualização em 29/09/2026:** o contexto `shopman-alpha-deploy` continua
-> sem `database:read`, mas o contexto já existente `shopman-spec-update` possui
+> sem `database:read`, mas o contexto já existente `shopman-do-app-admin` possui
 > leitura. A [auditoria somente leitura](../reports/2026-09-29-backup-pitr-verification.md)
 > confirmou o cluster de staging online e oito backups diários consecutivos.
 > Não gere outro token apenas para listar backups. Isso não prova que o contexto
@@ -113,8 +113,8 @@ para ler a connection string do cluster novo.
 
 > **30/09/2026:** o contexto `shopman-alpha-deploy` foi **removido** do doctl
 > local (token cego para databases e, pior, era o default). Use
-> `--context shopman-spec-update` explícito; o default agora é o contexto vazio
-> `default`, que falha alto.
+> `--context shopman-do-app-admin` explícito; o default agora é o contexto vazio
+> `default`, que falha alto. O `shopman-do-app-admin` se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto.
 
 > **01/10/2026:** nesta máquina restam só dois contextos, `default` (vazio) e
 > **`shopman-do-app-admin`**. `shopman-spec-update` e `shopman-alpha-deploy` **não

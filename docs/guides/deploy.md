@@ -31,23 +31,22 @@ Nao ha `django-redis`, Celery ou broker adicional neste contrato.
 
 ## Fluxo hospedado atual
 
-Na baseline de 2026-09-29, deployment de código não é exclusivamente manual:
+Desde 30/09/2026 o deployment de código é **um por run**:
 
 1. merge em `main` dispara o workflow **Deploy Images**;
 2. imagens alteradas são publicadas no DOCR e registradas em manifesto;
-3. componentes com `deploy_on_push=true` iniciam o deployment na DigitalOcean,
-   um por tag publicada (até quatro por run);
-4. **Pre-go-live Smoke** espera o deployment correspondente ficar `ACTIVE` e
-   verifica `/ready/`, menu, checkout não mutante e SSR.
+3. `deploy_on_push` está desligado nos oito componentes de imagem do spec vivo,
+   então publicar a tag não dispara nada; o job `manifest` cria UM deployment
+   (`POST /v2/apps/{id}/deployments`, causa `manual`, segredo
+   `DIGITALOCEAN_APP_DEPLOY_TOKEN` com `app` read+update), espera `ACTIVE` e
+   grava `deploy_mode: single_deployment` e o id no manifesto;
+4. **Pre-go-live Smoke** confere esse deployment `ACTIVE` e verifica `/ready/`,
+   menu, checkout não mutante e SSR.
 
-O job `manifest` do Deploy Images já sabe o outro modo, que é UM deployment
-por run: com `deploy_on_push` desligado em todos os componentes de imagem do
-spec vivo, ele cria um deployment depois de publicar tudo
-(`POST /v2/apps/{id}/deployments`), espera `ACTIVE` e grava o id no
-manifesto, que o smoke então confere. O modo é lido do spec vivo a cada run.
-Para ligar, nesta ordem: segredo `DIGITALOCEAN_APP_DEPLOY_TOKEN` (escopo
-`app` read+update) no repositório, depois `deploy_on_push: false` nos oito
-componentes de imagem do spec vivo, editado a partir do spec vivo.
+O modo é lido do spec vivo a cada run: com `deploy_on_push` ligado em todos os
+componentes de imagem, o workflow cai no modo antigo (um deployment por tag
+publicada) e registra `deploy_mode: deploy_on_push`; ligado só em parte, o run
+falha.
 
 `Deploy Images` verde prova publicação; só o smoke posterior prova que o
 deployment correspondente chegou ao ambiente. Nenhum dos dois autoriza

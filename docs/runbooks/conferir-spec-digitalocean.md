@@ -2,8 +2,8 @@
 
 > # ⛔ NUNCA rode `doctl apps update --spec` sem passar o drift-check antes.
 >
-> `make deploy-spec-drift context=shopman-spec-update` tem que sair **[OK]**,
-> imediatamente antes do update. Se a saída listar qualquer coisa em
+> `make deploy-spec-drift context=shopman-do-app-admin` tem que sair **[OK]**,
+> imediatamente antes do update. (O contexto se chamava `shopman-spec-update` até 30/09/2026; foi renomeado para nomear o papel, não o comando perigoso (`apps update`). Em 01/10/2026 o token foi rotacionado (D-022 em `docs/coordination/DECISIONS.md`), mesmo nome de contexto.) Se a saída listar qualquer coisa em
 > **SUMIRIAM**, não rode o update: traga a coisa para o arquivo primeiro. Isto
 > vale para env, **domínio**, **regra de ingress**, **banco anexado** e
 > **componente**: todos somem do mesmo jeito.
@@ -94,7 +94,7 @@ do doctl local no mesmo dia, depois desta medição),
 `doctl apps spec get` devolve **hoje**, com o app já corrigido, o `databases`
 exatamente nesse formato mutilado. O token de deploy não tem escopo de
 database, e o App Platform **apaga os campos na leitura em vez de recusar**.
-Com `shopman-spec-update` o bloco vem inteiro. Um `spec get` com o token de
+Com `shopman-do-app-admin` o bloco vem inteiro. Um `spec get` com o token de
 deploy seguido de `apps update` reproduz o incidente sem ninguém editar nada.
 (É o mecanismo mais provável; o comando exato de 29/09 não ficou registrado.)
 

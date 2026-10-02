@@ -34,7 +34,8 @@ de ausência de backup:
 
 - `shopman-alpha-deploy` (contexto removido do doctl local em 30/09/2026) continua sem `database:read` e recebe 403 em
   `GET /v2/databases`;
-- o contexto já existente `shopman-spec-update` acessa os mesmos apps e possui
+- o contexto já existente `shopman-do-app-admin` (na data desta auditoria ainda
+  chamado `shopman-spec-update`; renomeado em 30/09/2026; token rotacionado em 01/10, D-022) acessa os mesmos apps e possui
   leitura de databases/backups; nenhum token ou valor secreto foi exibido;
 - listar backups exige `database:read`, conforme a API oficial.
 
@@ -50,11 +51,11 @@ Os identificadores internos do app e do cluster foram resolvidos em memória e
 não aparecem na saída. Os comandos abaixo são de leitura:
 
 ```bash
-doctl --context shopman-spec-update apps list --output json
-doctl --context shopman-spec-update databases list --output json
-doctl --context shopman-spec-update databases get <cluster-id> --output json
-doctl --context shopman-spec-update databases backups <cluster-id> --output json
-doctl --context shopman-spec-update databases events list <cluster-id> --output json
+doctl --context shopman-do-app-admin apps list --output json
+doctl --context shopman-do-app-admin databases list --output json
+doctl --context shopman-do-app-admin databases get <cluster-id> --output json
+doctl --context shopman-do-app-admin databases backups <cluster-id> --output json
+doctl --context shopman-do-app-admin databases events list <cluster-id> --output json
 ```
 
 Fontes do contrato do provedor:
