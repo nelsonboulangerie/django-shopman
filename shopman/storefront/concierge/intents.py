@@ -221,7 +221,8 @@ _SPLIT_RE = re.compile(
     r"[?\n;]+|(?<=[.!])\s+"
     r"|,?\s+(?:e|mas|ah|alias|tambem)\s+(?=(?:o|a|os|as|tem|teria|meu|minha|quero|queria|pode|"
     + _NEXT_PART[3:-1] + r")\b)"
-    r"|,\s*(?=" + _NEXT_PART + r"\b)",
+    r"|,\s*(?=" + _NEXT_PART + r"\b)"
+    r"|,?\s+mas\s+antes\b:?|:\s+(?=(?:voces?|vcs?|qual|quanto|que\s+horas|tem|quero)\b)",
 )
 
 
@@ -430,7 +431,7 @@ def parse_acts(raw: str, text: str) -> list[Act]:
         qty = qty if isinstance(qty, int) and not isinstance(qty, bool) and 0 <= qty <= MAX_QTY else 0
         # Produto que não está na fala não existe: o modelo não acrescenta nome.
         if product and _fold(product) not in folded_text:
-            words = [w for w in re.findall(r"[a-z0-9]{3,}", _fold(product))]
+            words = re.findall(r"[a-z0-9]{3,}", _fold(product))
             if not words or not all(w in folded_text for w in words):
                 product = ""
         acts.append(Act(name, span=span, product=product, qty=qty))
@@ -489,13 +490,11 @@ def plan(
     """A lista de partes do turno: o porteiro decide; a leitura entra quando ele hesita."""
     decided = gate(text, rules_intent=rules_intent, rules_source=rules_source, jev_scores=jev_scores)
     if decided.direct:
-        acts = local_acts(text)
-        parts = [act for act in acts if act.act not in COURTESY]
-        if len(parts) <= 1:
-            courtesy = [act for act in acts if act.act in COURTESY]
-            span = parts[0].span if parts else text
-            qty = parts[0].qty if parts else _qty(text)
-            acts = [*courtesy, Act(decided.intent, span=span, qty=qty)]
+        # Uma parte, com certeza: a intenção do porteiro sobre a fala inteira (sem a cortesia).
+        from .small_talk import strip_small_talk
+
+        courtesy = [act for act in local_acts(text) if act.act in COURTESY]
+        acts = [*courtesy, Act(decided.intent, span=strip_small_talk(text) or text.strip(), qty=_qty(text))]
         found = Plan(acts=acts, source="gate", reason=decided.reason, jev=dict(jev_scores or {}))
         found.acts = _with_rules(found.acts, text, rules_intent)
         return found

@@ -13,10 +13,12 @@ from django.core.management.base import BaseCommand, CommandError
 
 from shopman.storefront.concierge.reply_eval import (
     CLASSIFIERS,
+    READERS,
     house_rules_summary,
     load_golden,
     production_summary,
     run,
+    run_plural,
 )
 
 
@@ -35,6 +37,14 @@ class Command(BaseCommand):
         parser.add_argument("--golden", default="", help="Outro arquivo de casos (default: concierge/golden_set.json).")
         parser.add_argument("--limit", type=int, default=0, help="Só os N primeiros casos.")
         parser.add_argument("--show-misses", type=int, default=15, help="Quantos erros listar (default 15).")
+        parser.add_argument(
+            "--plural", action="store_true",
+            help="Mede as intenções no plural (OBS0310-Q): partes achadas antes (uma intenção) e depois.",
+        )
+        parser.add_argument(
+            "--reader", choices=READERS, default="local",
+            help="Com --plural: local (divisão local, sem rede) ou model (leitura com o modelo pequeno; custa).",
+        )
         parser.add_argument("--production", action="store_true", help="Resume a régua gravada nas respostas reais.")
         parser.add_argument("--days", type=int, default=7, help="Janela do --production, em dias (default 7).")
 
@@ -47,6 +57,15 @@ class Command(BaseCommand):
             cases = cases[: options["limit"]]
         if not cases:
             raise CommandError("Conjunto vazio.")
+        if options["plural"]:
+            try:
+                plural = run_plural(cases, reader=options["reader"])
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+            self.stdout.write(self.style.SUCCESS("═══ Intenções no plural (golden set) ═══"))
+            self.stdout.write(plural.render(show_misses=options["show_misses"]))
+            self.stdout.write("Nada foi gravado: o comando só mede.")
+            return
         try:
             report = run(cases, classifier=options["classifier"], model=options["model"])
         except ValueError as exc:
