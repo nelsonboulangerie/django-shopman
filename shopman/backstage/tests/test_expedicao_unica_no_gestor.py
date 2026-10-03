@@ -294,3 +294,19 @@ def test_leaving_order_does_not_offer_back_to_the_station(client, expeditor, caf
 
     station = _card(client, order.ref)["kitchen"]["stations"][0]
     assert station["recall_ticket_pk"] is None
+
+
+def test_the_narrow_rule_does_not_depend_on_staff_flags(client, expeditor):
+    """Quem entra pelo quadro sem gerenciar pedidos cai na régua estreita, sempre."""
+    preparing = _order("EXP-NOSTAFF", status=Order.Status.PREPARING)
+    client.force_login(expeditor)
+    mark_ready = _action(_card(client, preparing.ref), "advance")
+    User.objects.filter(pk=expeditor.pk).update(is_staff=False)
+
+    response = client.post(
+        reverse("api-backstage-order-advance", args=[preparing.ref]),
+        _intent(mark_ready), content_type="application/json",
+    )
+    assert response.status_code in (400, 403)
+    preparing.refresh_from_db()
+    assert preparing.status == Order.Status.PREPARING

@@ -2052,7 +2052,9 @@ class OrderAdvanceView(_OrderActionBase):
                     order, actor=_actor(request), operator=request.user,
                     change_out_raw=None if change_out is None else str(change_out),
                     equipment=equipment, expected_revision=base, target_status=target, trip_ref=trip_ref,
-                    expedite_only=operator_orders.expedites_only(request.user),
+                    # Entrou pelo quadro sem gerenciar pedidos = só expede. A pergunta
+                    # é a negativa de propósito: qualquer outra porta cai na régua estreita.
+                    expedite_only=not request.user.has_perm("shop.manage_orders"),
                 )
             except orders_service.OrderChangeOutRequired as exc:
                 return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
