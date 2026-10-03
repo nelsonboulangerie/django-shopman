@@ -19,6 +19,7 @@ import {
   changeMixLabel,
   coinFloorHint,
   coverageLabel,
+  startedAssumedHint,
   delta,
   formatExploreValue,
   formatHours,
@@ -110,6 +111,11 @@ describe("presentation/bi", () => {
     expect(coverageLabel(0, 0)).toBe("Sem lotes no período");
   });
 
+  it("o aproveitamento diz quando o previsto foi assumido, sem esconder", () => {
+    expect(startedAssumedHint(0, 12)).toBe("Realizado ÷ previsto");
+    expect(startedAssumedHint(2, 12)).toBe("Realizado ÷ previsto; previsto assumido em 2 de 12 lotes");
+  });
+
   it("delta honesto: sem base vira travessão; tom segue melhorou/piorou", () => {
     expect(delta(100, 0)).toEqual({ text: "—", tone: "neutral" });
     expect(delta(120, 100)).toEqual({ text: "▲ 20% vs Período anterior", tone: "positive" });
@@ -181,7 +187,7 @@ describe("bucketSalesDays", () => {
 describe("aggregateBucket — a série longa não soma o que não se soma", () => {
   // ⚠️ Antes disto a página somava TUDO. Com "1 ano" + "Ticket médio" + "Tempo",
   // a barra da semana mostrava ~7× o ticket real — formatada como reais,
-  // "R$ 178,50", perfeitamente convincente. Rendimento passava de 100%.
+  // "R$ 178,50", perfeitamente convincente. Aproveitamento passava de 100%.
   const semana = [10000, 12000, 11000, 9000, 13000, 14000, 10500];
 
   it("soma o que é aditivo (faturamento, pedidos, quantidade)", () => {
@@ -199,7 +205,7 @@ describe("aggregateBucket — a série longa não soma o que não se soma", () =
     expect(aggregateBucket([4, 9, 6], "max")).toBe(9);
   });
 
-  it("rendimento agregado não passa de 100%", () => {
+  it("aproveitamento agregado não passa de 100%", () => {
     expect(aggregateBucket([98, 95, 101, 99], "mean")).toBeLessThan(101);
   });
 

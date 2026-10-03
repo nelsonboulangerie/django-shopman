@@ -168,7 +168,7 @@ def _production_inputs(date_from: date, date_to: date) -> dict:
         "oven_coverage_percent": production.oven_coverage_percent,
         "days": [
             {
-                "date": day.date, "planned": day.planned, "finished": day.finished,
+                "date": day.date, "planned": day.planned, "started": day.started, "finished": day.finished,
                 "loss": day.loss, "yield_percent": day.yield_percent,
             }
             for day in production.days

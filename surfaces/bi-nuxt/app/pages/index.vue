@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Produção — a âncora do B.I.: série do que saiu do forno, rendimento e o
+// Produção — a âncora do B.I.: série do que saiu do forno, aproveitamento e o
 // tempo REAL de forno (só o par armar→Concluir mede; a cobertura declara o
 // resto — ADR-021 §4).
 import type { BIProductionReport } from "~/types/bi";
@@ -12,6 +12,7 @@ import {
   formatInt,
   formatMinutes,
   formatQty,
+  startedAssumedHint,
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BIProductionReport>("production");
@@ -30,7 +31,7 @@ const finishedSeries = computed(() => {
     previous: sum(bucket.rows.map((d) => d.prev_finished)),
     detail: [
       BUCKET_SPAN_LABELS[bucket.span],
-      `previsto ${formatQty(String(sum(bucket.rows.map((d) => d.planned))))}`,
+      `previsto ${formatQty(String(sum(bucket.rows.map((d) => d.started))))}`,
       `perda ${formatQty(String(sum(bucket.rows.map((d) => d.loss))))}`,
     ]
       .filter(Boolean)
@@ -40,12 +41,12 @@ const finishedSeries = computed(() => {
 
 const yieldSeries = computed(() =>
   bucketRows(report.value?.days ?? []).map((bucket) => {
-    const planned = sum(bucket.rows.map((d) => d.planned));
+    const started = sum(bucket.rows.map((d) => d.started));
     const finished = sum(bucket.rows.map((d) => d.finished));
     return {
       label: bucketLabel(bucket.date, bucket.span),
-      value: planned ? Math.round((finished * 100) / planned) : 0,
-      detail: planned
+      value: started ? Math.round((finished * 100) / started) : 0,
+      detail: started
         ? [
             BUCKET_SPAN_LABELS[bucket.span],
             `cheio ${formatQty(String(sum(bucket.rows.map((d) => d.full_price))))}`,
@@ -66,15 +67,19 @@ const finishedTotal = computed(() =>
   (report.value?.days ?? []).reduce((sum, day) => sum + Number(day.finished), 0),
 );
 
-// Rendimento do período inteiro: realizado ÷ previsto (previsto = realizado + perda).
-const yieldPercent = (finished: number, loss: number) =>
-  finished + loss ? Math.round((finished * 100) / (finished + loss)) : 0;
+const startedTotal = computed(() =>
+  (report.value?.days ?? []).reduce((sum, day) => sum + Number(day.started), 0),
+);
 
-const yieldTotal = computed(() => yieldPercent(finishedTotal.value, lossTotal.value));
+// Aproveitamento do período inteiro: realizado ÷ previsto (UX-PROD-AF).
+const yieldPercent = (finished: number, started: number) =>
+  started ? Math.round((finished * 100) / started) : 0;
+
+const yieldTotal = computed(() => yieldPercent(finishedTotal.value, startedTotal.value));
 const yieldPrevious = computed(() => {
   const prev = report.value?.previous;
   if (!prev) return 0;
-  return yieldPercent(Number(prev.finished_total), Number(prev.loss_total));
+  return yieldPercent(Number(prev.finished_total), Number(prev.started_total));
 });
 
 const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
@@ -114,10 +119,10 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           hint="Unidades que não saíram do forno"
         />
         <StatTile
-          label="Rendimento do período"
+          label="Aproveitamento do período"
           :value="`${yieldTotal}%`"
           :delta="delta(yieldTotal, yieldPrevious)"
-          hint="Realizado ÷ previsto"
+          :hint="startedAssumedHint(report.batches_started_assumed, report.batches_finished)"
         />
       </div>
 
@@ -130,7 +135,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
       </section>
 
       <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Rendimento por dia</h2>
+        <h2 class="text-lg font-semibold text-foreground">Aproveitamento por dia</h2>
         <p class="mb-3 text-xs text-muted-foreground">Realizado ÷ previsto, em %</p>
         <ChartBarSeries :points="yieldSeries" :format="(v) => `${v}%`" />
       </section>

@@ -67,7 +67,7 @@ Medido sobre `origin/main` em `1f1ff5afb`. **NOSSO** = código da casa;
 | # | Item do escopo | Estado | NOSSO (código) | META/MANYCHAT |
 |---|---|---|---|---|
 | 1 | FAQ: horários, políticas, funcionamento | **PRONTO** | [FATO] `search_storefront` busca catálogo + FAQ + horários numa porta só (`shopman/storefront/concierge/tools.py:449`); FAQ editável no Admin (`shopman/shop/models/faq.py:12`, `shopman/shop/admin/faq.py`); horários vêm de `_format_opening_hours` (`shopman/storefront/presentation/public_information.py:9`, `:32-68`, `:133`) | Nada além do flow ligado |
-| 2a | Informação de produto | **PARCIAL** | [FATO] Nome, preço, disponibilidade viva, descrição curta, promoção e unidade (`tools.py:209-223`). Não há ingrediente nem alérgeno no payload; pergunta de alergia vai para a equipe pela regex (`handoff.py`), menos a só de glúten, que a Concierge responde com o aviso da casa (03/10/2026, `gluten.py`) | Nada |
+| 2a | Informação de produto | **PARCIAL** | [FATO] Nome, preço, disponibilidade viva, descrição curta, promoção e unidade (`tools.py:209-223`). Não há ingrediente nem alérgeno no payload; pergunta de alérgeno a Concierge responde com o aviso da casa e os alérgenos declarados do produto citado (dono, 03/10/2026, `allergens.py`); reação alérgica e o que as fontes não cobrem vão para a equipe | Nada |
 | 2b | Informação de pedido | **PARCIAL** | [FATO] `order_status` e `last_order` existem (`tools.py:1366`, `:1419`) e estão liberados mesmo em modo só leitura (`tools.py:1964-1976`). Mas dependem de identidade: com `CONCIERGE_IDENTITY_LINK_ENABLED=false` (`.do/app.alpha-subdomains.yaml:581-584`) a identidade não é resolvida (`transport.py:229`) e a resposta é "Ainda não sei quem é o cliente." (`tools.py:1377-1378`) | `getInfo` do ManyChat para o telefone do assinante (`transport.py:570-581`) |
 | 3 | Montar o pedido completo, confirmando | **PARCIAL (bloqueado pelo provedor)** | [FATO] `set_item`, `set_fulfillment`, `review_order`, `place_order` com token de orçamento e "sim" explícito existem (`tools.py:620`, `:787`, `:1028`, `:1204`). [FATO] Não rodam pelo ManyChat: o turno fica só leitura quando o ingresso não tem identificador verificado (`service.py:835-839`) e o servidor nem oferece essas ferramentas ao modelo (`tools.py:1964-1976`) | [FATO] O corpo do External Request não tem identificador de mensagem (`docs/guides/whatsapp-concierge.md:118-141`) |
 | 4a | Endereço | **PARCIAL** | [FATO] Composição de endereço por texto, pin e cadastro (`shopman/storefront/concierge/address.py:120`, `:142`, `:158`, `:200`); geocodificação pela chave do Maps (`.do/app.alpha-subdomains.yaml:788-790`). Mutação: cai na mesma trava do item 3 | [FATO] Campos de pin ainda não mapeados no flow (`whatsapp-concierge.md:60`) |
@@ -121,7 +121,7 @@ modelo. O sensível proposto pelo modelo também escala.
 | `human` | equipe, sino do Gestor | agora |
 | `complaint` | equipe, sino do Gestor | agora |
 | `allergy` | equipe, sino do Gestor | agora |
-| `allergy` só de glúten (dono, 03/10/2026) | responde sozinho, com o aviso da casa | hoje |
+| `allergy` que as fontes da casa cobrem (dono, 03/10/2026) | responde sozinho, com o aviso da casa e os alérgenos declarados; alergia sem dizer a quê recebe "a quê?" | hoje |
 | `special_order` | equipe, sino do Gestor | hoje |
 | `order` que o chat não fecha | equipe, sino do Gestor | agora |
 | `job`, `partnership`, `supplier_offer` | outra mesa (Admin, sem sino) | pode esperar |
@@ -130,20 +130,27 @@ modelo. O sensível proposto pelo modelo também escala.
 O modelo pode mudar a urgência das intenções que o bot responde e de `special_order`; nunca a das
 sensíveis (sempre agora) nem a da outra mesa (sempre pode esperar).
 
-**Glúten saiu da lista sensível (decisão do dono, 03/10/2026).** A pergunta que é SÓ de glúten
-("tem algo sem glúten?", "sou celíaco, posso comer o croissant?", "o levain tem glúten?") não vai
-mais para a equipe: a resposta é categórica (a casa usa farinha de trigo em tudo o que assa e não
-oferece nada sem glúten, pela contaminação cruzada). A Concierge responde, sem modelo e sem busca,
-com o aviso de produção compartilhada da casa (`Shop.food_safety_notice`, editável no Admin, o
-mesmo texto da página de cada produto em Ingredientes e restrições) e, se a fala cita um produto do
-cardápio, os alérgenos declarados dele. Uma fonte só: editar o aviso muda a loja e a Concierge
-juntas. A triagem grava `intent=allergy`, `destination=answer`, `answered_by=gluten_notice`
-(`shopman/storefront/concierge/gluten.py`). Regras de segurança: nada afirma "sem glúten" nem
-apresenta produto como seguro (lista de alérgenos vazia não vira "não tem"); glúten junto de outra
-alergia manda a mensagem INTEIRA para a equipe (responder metade daria a impressão de que a outra
-metade foi respondida); alergia sem dizer a quê, as outras alergias ("tem castanha no panetone?"),
-reclamação e pedido de pessoa seguem com a equipe; sem aviso cadastrado, glúten também vai para a
-equipe.
+**Alergia saiu da lista sensível (decisões do dono, 03/10/2026: glúten na OBS0310-H, todas as
+alergias na OBS0310-I).** A pergunta de alergia ou alérgeno ("tem castanha no panetone?", "tem
+leite no croissant?", "sou celíaco, posso comer o croissant?", "tem glúten ou castanha no
+panetone?") a Concierge responde sozinha, sem modelo e sem busca, com uma fonte só: o aviso de
+produção compartilhada da casa (`Shop.food_safety_notice`, editável no Admin, o mesmo texto da
+página de cada produto em Ingredientes e restrições) e, se a fala cita um produto do cardápio, os
+alérgenos declarados dele. Toda resposta termina com a oferta da equipe para alergia grave
+(`CONCIERGE_ALLERGY_TEAM_OFFER`, Copy Omotenashi); "sim" logo depois chama a equipe
+(`escalated_by=allergy_offer_accepted`). A triagem grava `intent=allergy`, `destination=answer` e
+`answered_by` = `allergy_notice`, `allergy_ask_which` (alergia sem dizer a quê: a Concierge
+pergunta, `CONCIERGE_ALLERGY_ASK_WHICH`) ou `allergy_notice_after_ask` (a resposta a essa
+pergunta, respondida com o produto da primeira mensagem) (`shopman/storefront/concierge/allergens.py`).
+
+Regras de segurança: nada afirma ausência ("sem leite", "não tem castanha") nem lista produto como
+"pode comer"; produto citado sem alérgeno declarado aparece com a linha "ainda não há lista de
+alérgenos cadastrada, então vale o aviso abaixo (pode conter traços)"; alérgeno de que nem o aviso
+nem o produto citado falam (hoje soja, amendoim, peixe) e restrição que não é alérgeno (vegano,
+diabetes, kosher) vão para a equipe, porque responder só com o aviso deixaria deduzir uma ausência
+que ninguém afirmou; a resposta a "a quê?" que ainda não diz vai para a equipe; reação alérgica ou
+pessoa passando mal ("meu filho teve reação depois do pão de ontem") é `complaint`, equipe, agora
+(`handoff.py`); casa sem aviso cadastrado, toda alergia vai para a equipe.
 
 **Onde a proposta não dizia, o lado seguro (escalar ou não acordar ninguém):**
 
