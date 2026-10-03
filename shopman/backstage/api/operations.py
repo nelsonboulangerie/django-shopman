@@ -76,6 +76,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
     ProductionQualityCorrectionMutationSerializer,
+    ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
     ProductionStartMutationSerializer,
@@ -3875,6 +3876,59 @@ class WorkOrderQualityReviewView(_ProductionActionBase):
                 "wo_ref": work_order.ref,
                 "quantity": _production_quantity(work_order.finished or 0),
                 "current": _current_work_order_projection(work_order.pk),
+            }
+        )
+
+
+def _quality_review_batch_action_ref(body: dict) -> str:
+    from shopman.backstage.projections.production import quality_review_batch_ref
+
+    return quality_review_batch_ref(body["items"])
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Confirm the quality of every clean finished batch of a day at once (all or nothing)",
+        responses={200: OpenApiResponse(description="Quality review recorded for every batch in the set.")},
+    ),
+)
+class WorkOrderQualityReviewBatchView(_ProductionActionBase):
+    required_production_capability = "can_correct_qc"
+
+    def post(self, request):
+        body = validated_body(
+            request,
+            ProductionQualityReviewBatchMutationSerializer,
+            projection_kind="qc",
+            action_kind="review_qc_batch",
+            action_href="/api/v1/backstage/production/quality-review/batch/",
+            action_ref=_quality_review_batch_action_ref,
+        )
+        for item in body["items"]:
+            _require_projected_work_order(
+                request,
+                item["work_order_id"],
+                committed_replay=body.get("_committed_replay", False),
+            )
+        try:
+            work_orders = production_service.apply_quality_review_batch(
+                items=body["items"],
+                target_date=body["target_date"],
+                actor=_production_actor(request),
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        return Response(
+            {
+                "ok": True,
+                "reviewed_count": len(work_orders),
+                "current": [_current_work_order_projection(work_order.pk) for work_order in work_orders],
             }
         )
 

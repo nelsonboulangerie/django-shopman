@@ -151,6 +151,64 @@ describe("useQcKiosk — guarded writes", () => {
     );
   });
 
+  it("confirms every clean lot of the day in one guarded request", async () => {
+    const card = (pk: number, rev: number, extra = {}) => ({
+      pk,
+      rev,
+      closed: true,
+      quality_reviewed: false,
+      quality_exception: false,
+      ...extra,
+    });
+    env.fetchData.value = qcPayload({
+      orders: [
+        card(42, 4),
+        card(43, 2),
+        card(44, 1, { quality_exception: true }),
+        card(45, 3, { quality_reviewed: true }),
+        card(46, 0, { closed: false }),
+      ],
+      actions: [
+        {
+          ref: "review_qc_batch:digest",
+          kind: "review_qc_batch",
+          enabled: true,
+          proof: "batch-proof",
+          expected_rev: null,
+        },
+      ],
+    });
+    const { reviewQualityBatch } = useQcKiosk();
+
+    expect((await reviewQualityBatch()).ok).toBe(true);
+
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/quality-review/batch/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          target_date: "2026-09-08",
+          items: [
+            { work_order_id: 42, expected_rev: 4 },
+            { work_order_id: 43, expected_rev: 2 },
+          ],
+          action_ref: "review_qc_batch:digest",
+          action_proof: "batch-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("does nothing when the projection offers no batch action", async () => {
+    env.fetchData.value = qcPayload();
+    const { reviewQualityBatch } = useQcKiosk();
+
+    expect((await reviewQualityBatch()).ok).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
   it("sends one guarded quality correction with audit metadata while pending", async () => {
     env.fetchData.value = qcPayload();
     let resolveRequest!: (value: unknown) => void;
