@@ -3,7 +3,7 @@
 - **id:** OBS0310-Q
 - **sessão:** shopman-improvements-fixes-bd04d4 (Claude; frente executada por subagente em worktree próprio)
 - **branch:** claude/obs0310-concierge-intencoes
-- **PR:** (preenchido no relatório da PR)
+- **PR:** #1449
 - **início (UTC):** 2026-10-03
 - **estudo:** `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`, bloco 1 (fatia F4, fase 1). Teste de campo:
   `docs/reports/concierge-teste-campo-20261003.md`.
