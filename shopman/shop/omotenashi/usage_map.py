@@ -134,6 +134,42 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
+    "CONCIERGE_MEMORY_ARRIVED_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_PRODUCT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_QTY_PRODUCT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_WHAT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_WHICH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_DECLINED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ORDER_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
     ),

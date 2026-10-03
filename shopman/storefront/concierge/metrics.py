@@ -34,6 +34,7 @@ JEV_PRICE_IN_PER_M = 0.042
 
 #: Quem respondeu o turno, no vocabulário das camadas do estudo (seção 6).
 LAYER_COURTESY = "courtesy"  # C1: cortesia, frase da casa, sem modelo
+LAYER_CONTEXT = "context"  # memória: a casa resolveu ou perguntou pela conversa, sem modelo
 LAYER_MEDIA = "media"  # C1: mídia sem texto, mensagem fixa
 LAYER_TURN_LIMIT = "turn_limit"  # teto diário de turnos
 LAYER_AGENT = "agent"  # C6: o laço com o modelo e as ferramentas (o de hoje)
