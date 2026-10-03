@@ -562,7 +562,6 @@ _ORDERS_FLOW_OFF = {
     "advance_block_label": "",
     "advance_block_reason": "",
     "can_settle_delivery_cash": False,
-    "cancellation_presets": (),
     "kitchen_note_tags": (),
 }
 
@@ -809,6 +808,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
             payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
             counter=preorders.build_counter_block(order, user=user),
+            # O cancelar do balcão usa os MESMOS motivos prontos do Gestor (decisão
+            # do dono, P7 do redesenho das Encomendas): a lista é uma só, no Admin.
+            cancellation_presets=_cancellation_presets(),
         )
 
     bloqueio = operator_orders.gestor_advance_block(order)

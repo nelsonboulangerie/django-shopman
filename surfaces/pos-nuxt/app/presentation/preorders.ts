@@ -1,9 +1,9 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, os modos Dia | Semana com ‹ › e a data, os filtros
-// combináveis numa linha (a `FilterBar` do kit) e o "Imprimir N vias" do que
-// está visível. O estado inteiro
+// buscar" sempre no topo, o Período do kit na barra (Dia ou Semana, ‹ › e a data),
+// a linha "Hoje", os recortes de todo dia em botões de um toque com o "Filtrar"
+// do kit para o resto, e o lote das vias que faltam no que está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
 // mesmo lugar e para o kiosk guardar o favorito.
 //
@@ -17,7 +17,6 @@
 // (`PREORDERS_SCOPE_NOTE`), para ninguém procurar a retirada de hoje no Gestor e
 // achar que ela sumiu.
 
-import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type {
   PreorderCard,
@@ -118,19 +117,6 @@ export function viewPath(view: PreordersView, today: string): string {
   return params ? `/preorders?${params}` : "/preorders";
 }
 
-/**
- * As abas Dia | Semana da barra da seção, levando o resto do estado junto
- * (a data e os filtros): trocar de modo não perde o que o operador escolheu.
- * Sem estado (o detalhe), as abas levam ao dia e à semana de hoje.
- */
-export function modeSections(view: PreordersView | null, today: string): OperatorSection[] {
-  const base = view ?? { mode: DEFAULT_MODE, date: today, ...NO_FILTERS, q: "", completed: false };
-  return [
-    { key: "day", label: "Dia", icon: "lucide:calendar-check", to: viewPath({ ...base, mode: "day", q: "", completed: false }, today) },
-    { key: "week", label: "Semana", icon: "lucide:calendar-days", to: viewPath({ ...base, mode: "week", q: "", completed: false }, today) },
-  ];
-}
-
 // ── A semana (de segunda a domingo) ─────────────────────────────────────────
 
 /** A segunda-feira da semana de `iso` (decisão do dono: a semana começa na segunda). */
@@ -203,23 +189,11 @@ export function moneyLine(card: Pick<PreorderCard, "balance_q" | "balance_displa
   if (card.balance_q === null) return `${card.total_display} · pagamento a conferir`;
   if (card.balance_q > 0) {
     return card.balance_q >= card.total_q
-      ? `${card.total_display} a receber`
-      : `Falta receber ${card.balance_display} de ${card.total_display}`;
+      ? toReceiveLabel(card.total_display)
+      : `${toReceiveLabel(card.balance_display)} de ${card.total_display}`;
   }
   if (card.situation === "on_account") return `${card.total_display} na conta da casa`;
   return `${card.total_display} pago`;
-}
-
-/**
- * O dinheiro do card estreito da grade: o saldo quando há ("R$ 36,00 a
- * receber"), senão só a palavra ("pago", "na conta da casa", "conferir
- * pagamento"). O total do dia está no topo da coluna.
- */
-export function compactMoneyLine(card: Pick<PreorderCard, "balance_q" | "balance_display" | "situation" | "payment_state">): string {
-  if (card.balance_q === null || card.payment_state === "check") return "conferir pagamento";
-  if (card.balance_q > 0) return `${card.balance_display} a receber`;
-  if (card.payment_state === "on_account") return "na conta da casa";
-  return "pago";
 }
 
 export type SituationTone = "warning" | "success" | "info" | "neutral";
@@ -431,14 +405,30 @@ export function filterEmptyMessage(mode: PreordersMode): string {
     : "Nenhuma encomenda com estes filtros nesta semana.";
 }
 
-/** "A receber: R$ 62,00" — ou, sem nada, a frase inteira. Zero não é código. */
-export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
-  return toReceiveQ > 0 ? `A receber: ${toReceiveDisplay}` : "Nada a receber";
+// ── "A receber": uma grandeza, uma apresentação ─────────────────────────────
+//
+// O que falta cobrar aparece em três alturas da tela (o período, o dia da grade
+// e a encomenda) e diz a MESMA coisa nas três: a mesma frase ("A receber R$ X")
+// e o mesmo peso (`TO_RECEIVE_CLASS`). Antes eram três escalas: "A receber:" com
+// dois-pontos no topo, sem eles no dia, e "R$ X a receber" de trás para a frente
+// na linha, cada uma num tamanho de letra.
+
+/** O peso do "A receber" onde quer que ele apareça. */
+export const TO_RECEIVE_CLASS = "text-sm font-semibold tabular-nums text-foreground";
+
+/** "A receber R$ 62,00". A frase única do que falta cobrar. */
+export function toReceiveLabel(display: string): string {
+  return `A receber ${display}`;
 }
 
-/** O dinheiro de uma coluna da grade, só quando há o que receber. */
+/** O "A receber" do período; sem nada, a frase inteira. Zero não é código. */
+export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
+  return toReceiveQ > 0 ? toReceiveLabel(toReceiveDisplay) : "Nada a receber";
+}
+
+/** O "A receber" de um dia da grade, só quando há o que receber. */
 export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display">): string {
-  return day.to_receive_q > 0 ? `A receber ${day.to_receive_display}` : "";
+  return day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "";
 }
 
 /** O saldo pede destaque na linha: é o que o balcão cobra. */
@@ -446,22 +436,25 @@ export function balanceStandsOut(card: Pick<PreorderCard, "payment_state" | "bal
   return card.payment_state === "to_receive" && (card.balance_q ?? 0) > 0;
 }
 
-// ── Imprimir N vias (o que está visível) ────────────────────────────────────
+// ── O lote: as vias que faltam, do que está visível ─────────────────────────
 
 export interface PrintPlan {
   date_from: string;
   date_to: string;
-  /** Os refs visíveis, na ordem da tela (que é a do painel). */
+  /** Os refs visíveis ainda sem Via Pedido, na ordem da tela (que é a do painel). */
   refs: string[];
 }
 
 /**
- * O lote do botão "Imprimir N vias": o período que a tela mostra e só os
- * pedidos que os filtros deixaram visíveis. O servidor recorta o período por
- * esses refs e nunca alarga (`order_ticket.select_refs`).
+ * O lote do botão "Imprimir N vias que faltam": o período que a tela mostra e,
+ * dos pedidos que os filtros deixaram visíveis, só os que ainda não têm a Via
+ * Pedido (P2 do dono, 02/10: o lote nunca reimprime; a via que já saiu se
+ * reimprime no detalhe). O servidor recorta o período por esses refs e nunca
+ * alarga (`order_ticket.select_refs`).
  */
 export function printPlan(list: Pick<PreorderListResponse, "date_from" | "date_to">, visibleDays: readonly PreorderDay[]): PrintPlan {
-  return { date_from: list.date_from, date_to: list.date_to, refs: flattenDays(visibleDays).map((card) => card.ref) };
+  const refs = flattenDays(visibleDays).filter((card) => !card.ticket_printed).map((card) => card.ref);
+  return { date_from: list.date_from, date_to: list.date_to, refs };
 }
 
 // ── Cliente veio buscar ─────────────────────────────────────────────────────
@@ -536,3 +529,196 @@ export function railAriaLabel(badge: string | undefined): string {
   if (!badge) return "Encomendas";
   return badge === "1" ? "Encomendas: 1 para entregar hoje" : `Encomendas: ${badge} para entregar hoje`;
 }
+
+// ── Os recortes de um toque (decisão do dono, P1 de 02/10) ──────────────────
+//
+// Os recortes de todo dia do balcão saem de trás do menu de dois passos e viram
+// botões de um toque: A receber, Sem Via Pedido, Retiradas, Entregas. Cada um
+// liga e desliga o MESMO estado da URL que o "Filtrar" escrevia (nenhum estado
+// novo). O "Filtrar" do kit fica para o resto (Pagas, Na conta da casa, e o
+// "A conferir" que o aviso liga): um recorte mora num lugar só, e a barra não
+// repete em chip o botão que já está apertado.
+
+export interface Shortcut {
+  /** A dimensão do estado que o botão escreve. */
+  dimension: keyof PreorderFilters;
+  value: string;
+  label: string;
+}
+
+export const SHORTCUTS: readonly Shortcut[] = [
+  { dimension: "pay", value: "to_receive", label: "A receber" },
+  { dimension: "print", value: "pending", label: "Sem Via Pedido" },
+  { dimension: "fulfillment", value: "pickup", label: "Retiradas" },
+  { dimension: "fulfillment", value: "delivery", label: "Entregas" },
+];
+
+export interface ShortcutChip extends Shortcut {
+  count: number;
+  pressed: boolean;
+}
+
+function isShortcut(dimension: keyof PreorderFilters, value: string | undefined): boolean {
+  return SHORTCUTS.some((shortcut) => shortcut.dimension === dimension && shortcut.value === value);
+}
+
+/**
+ * Os botões de um toque, com a contagem do que cada um mostraria com os outros
+ * filtros como estão (a mesma conta do "Filtrar"). Botão que não mostraria nada
+ * não aparece, a menos que esteja apertado: zero não é código.
+ */
+export function shortcutChips(cards: readonly FilterCard[], filters: PreorderFilters): ShortcutChip[] {
+  const chips = filterChips(cards, filters);
+  return SHORTCUTS.map((shortcut) => {
+    const options = chips[shortcut.dimension] as FilterChip<string>[];
+    const count = options.find((chip) => chip.key === shortcut.value)?.count ?? 0;
+    return { ...shortcut, count, pressed: filters[shortcut.dimension] === shortcut.value };
+  }).filter((chip) => chip.pressed || chip.count > 0);
+}
+
+/** Apertar o botão liga o recorte; apertado, desliga (a dimensão volta a "Todas"). */
+export function toggleShortcut(filters: PreorderFilters, shortcut: Pick<Shortcut, "dimension" | "value">): PreorderFilters {
+  const pressed = filters[shortcut.dimension] === shortcut.value;
+  return fromActiveFilters({
+    ...toActiveFilters(filters),
+    [shortcut.dimension]: pressed ? [] : [shortcut.value],
+  });
+}
+
+/** O "Filtrar" sem o que já tem botão: só as dimensões e as opções que sobram. */
+export function barDimensions(cards: readonly FilterCard[], filters: PreorderFilters): FilterDimension[] {
+  return filterDimensions(cards, filters)
+    .map((dimension) => ({
+      ...dimension,
+      options: dimension.options.filter((option) => !isShortcut(dimension.id as keyof PreorderFilters, option.value)),
+    }))
+    .filter((dimension) => dimension.options.length > 0);
+}
+
+/** O estado da tela → o da barra do "Filtrar", sem os recortes que moram nos botões. */
+export function toBarFilters(filters: PreorderFilters): ActiveFilters {
+  return Object.fromEntries(Object.entries(toActiveFilters(filters))
+    .filter(([key, values]) => !isShortcut(key as keyof PreorderFilters, values[0])));
+}
+
+/**
+ * O que a barra devolveu → o estado da tela. A barra só fala do que ela mostra:
+ * a dimensão que ela não traz e que está num botão apertado continua como está.
+ */
+export function fromBarFilters(current: PreorderFilters, bar: ActiveFilters): PreorderFilters {
+  const merged: ActiveFilters = {};
+  for (const key of Object.keys(FILTER_LABELS) as (keyof PreorderFilters)[]) {
+    const fromBar = bar[key];
+    if (fromBar?.length) merged[key] = fromBar;
+    else if (isShortcut(key, current[key])) merged[key] = [current[key]];
+  }
+  return fromActiveFilters(merged);
+}
+
+// ── A linha "Hoje" ──────────────────────────────────────────────────────────
+//
+// O que falta para o dia, sempre de HOJE, qualquer que seja o período na tela.
+// Feita só com o que a lista já traz: o dia de hoje vem do período (quando ele
+// contém hoje) ou da leitura que o selo da barra lateral já faz (hoje e os seis
+// dias seguintes). Nenhuma leitura nova. Conta, não decide: saldo, Via Pedido e
+// pagamento são do servidor.
+
+/** O dia de hoje, da primeira lista que o tiver. */
+export function todayOf(...lists: (Pick<PreorderListResponse, "days"> | null | undefined)[]): PreorderDay | null {
+  for (const list of lists) {
+    const day = list?.days.find((candidate) => candidate.is_today);
+    if (day) return day;
+  }
+  return null;
+}
+
+export interface TodayFact {
+  key: "leaving" | "to_receive" | "tickets" | "check";
+  text: string;
+  /** O fato pede gesto do balcão (cobrar, imprimir, conferir). */
+  urgent: boolean;
+}
+
+/**
+ * Os fatos de hoje, na ordem em que o balcão age: quantas faltam entregar,
+ * quanto falta receber, quantas Vias Pedido faltam e, só quando há, quantas
+ * estão com o pagamento a conferir. A entregue já saiu e não conta. Zero é
+ * frase, nunca "0".
+ */
+export function todayFacts(day: PreorderDay | null): TodayFact[] {
+  if (!day) return [];
+  if (!day.orders.length) return [{ key: "leaving", text: "Nenhuma encomenda", urgent: false }];
+  const pending = day.orders.filter((card) => card.situation !== "delivered");
+  if (!pending.length) return [{ key: "leaving", text: "Todas entregues", urgent: false }];
+
+  const tickets = pending.filter((card) => !card.ticket_printed).length;
+  const check = pending.filter((card) => card.payment_state === "check").length;
+  const facts: TodayFact[] = [
+    { key: "leaving", text: `${pending.length} para entregar`, urgent: false },
+    {
+      key: "to_receive",
+      text: day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "Nada a receber",
+      urgent: day.to_receive_q > 0,
+    },
+    {
+      key: "tickets",
+      text: tickets > 0 ? `${tickets} sem Via Pedido` : "Todas as vias impressas",
+      urgent: tickets > 0,
+    },
+  ];
+  if (check > 0) facts.push({ key: "check", text: `${check} com pagamento a conferir`, urgent: true });
+  return facts;
+}
+
+/** O período na tela é só o dia de hoje: o resumo dele repetiria a linha "Hoje". */
+export function periodIsToday(view: Pick<PreordersView, "mode" | "date">, today: string): boolean {
+  return view.mode === "day" && view.date === today;
+}
+
+/** O rótulo do resumo do período. */
+export function periodSummaryLabel(mode: PreordersMode): string {
+  return mode === "day" ? "No dia" : "Na semana";
+}
+
+// ── A linha da encomenda (uma forma só: dia, semana e busca) ────────────────
+
+/** A janela primeiro, porque é a ordem em que o balcão trabalha. */
+export function rowWindow(card: Pick<PreorderCard, "window_start">): string {
+  return card.window_start || "A combinar";
+}
+
+/** "1 item" / "3 itens": item é unidade, nunca linha. */
+export function itemsCountLabel(count: number): string {
+  return count === 1 ? "1 item" : `${count} itens`;
+}
+
+/** A segunda linha: número, canal, recebimento, a data (na busca) e quantos itens. */
+export function rowDetailLine(
+  card: Pick<PreorderCard, "ref" | "channel_label" | "fulfillment_label" | "commitment_date_display" | "items_count">,
+  showDate: boolean,
+): string {
+  const parts = [card.ref, card.channel_label, card.fulfillment_label];
+  if (showDate) parts.push(card.commitment_date_display);
+  if (card.items_count > 0) parts.push(itemsCountLabel(card.items_count));
+  return parts.filter(Boolean).join(" · ");
+}
+
+/**
+ * O selo de situação só quando diz o que o dinheiro não diz. "A pagar", "Pago",
+ * "Na conta da casa" e "Conferir pagamento" já estão na linha do dinheiro;
+ * "Pronto", "Saiu para entrega" e "Entregue" não estão.
+ */
+export function rowShowsSituation(situation: PreorderSituation): boolean {
+  return situation === "ready" || situation === "out_for_delivery" || situation === "delivered";
+}
+
+/**
+ * A frase do dinheiro em pedaços, com cada valor ("R$ 86,00") inteiro: na coluna
+ * estreita a linha quebra entre as palavras, nunca entre o "R$" e o número.
+ */
+export function moneyPieces(text: string): { text: string; amount: boolean }[] {
+  return text.split(/(R\$\s[\d.,]+)/).filter(Boolean).map((piece) => ({ text: piece, amount: /^R\$\s/.test(piece) }));
+}
+
+/** A Via Pedido que já saiu, escrita: o ícone sozinho não diz. */
+export const PRINTED_LABEL = "Via impressa";

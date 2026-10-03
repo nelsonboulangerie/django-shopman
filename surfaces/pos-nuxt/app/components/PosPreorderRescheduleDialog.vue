@@ -6,7 +6,7 @@
 // resto (despertador, lembrete, estoque, produção) é o orquestrador; aqui só se
 // escolhe e se confirma.
 import { rescheduleChanged, rescheduleConfirmLabel } from "~/presentation/preorderActions";
-import { readinessNote, scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { lastBookableDate, scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
 import type { POSScheduleResponse } from "~/types/pos";
 
 const props = defineProps<{
@@ -71,17 +71,19 @@ watch(() => props.open, (open) => {
 function pickDate(iso: string) {
   if (!iso || iso === date.value) return;
   date.value = iso;
-  // A janela escolhida era do dia anterior: no dia novo ela precisa ser
-  // escolhida de novo (ou fica "a combinar").
-  slot.value = "";
+  // A janela do dia anterior já foi limpa pelo `PosSchedulePicker`: no dia novo
+  // ela precisa ser escolhida de novo (ou fica "a combinar").
   void load();
 }
 
 // O hoje da loja sobrevive a uma busca que falhou: os dias continuam escolhíveis.
 const today = computed(() => schedule.value?.today || storeToday.value);
 const availableDates = computed(() => schedule.value?.available_dates ?? []);
+// O limite de dias da casa sai da MESMA resposta que a venda lê: a última data
+// ofertada. Sem ele, o operador escolhia um dia além do limite e só descobria
+// no confirmar, quando o servidor recusava.
+const maxDate = computed(() => lastBookableDate(availableDates.value));
 const windows = computed<ScheduleWindow[]>(() => schedule.value?.windows ?? []);
-const note = computed(() => readinessNote(schedule.value?.bottleneck_name || "", schedule.value?.ready_at || ""));
 const changed = computed(() => rescheduleChanged({ date: props.currentDate, slot: props.currentSlot }, { date: date.value, slot: slot.value }));
 const target = computed(() => (changed.value ? scheduleLabel(date.value, windowLabel(windows.value, slot.value), today.value) : ""));
 const currentLabel = computed(() => scheduleLabel(props.currentDate, windowLabel([], props.currentSlot), today.value));
@@ -101,60 +103,24 @@ function confirm() {
       </UiDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="confirm">
-        <div class="grid gap-2">
-          <span class="text-sm font-medium">Dia</span>
-          <!-- A "Escolha rápida de dia" do kit (Tipo 1). Antes da primeira resposta
-               não se sabe o hoje da loja nem os dias fechados. -->
-          <OperatorDayPicker
-            v-if="today"
-            :model-value="date"
-            :today="today"
-            :min="today"
-            :available-dates="availableDates"
-            label="Novo dia da encomenda"
-            @update:model-value="pickDate"
-          />
-          <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-            {{ failed ? "Não deu para carregar os dias. Tente de novo." : "Carregando os dias…" }}
-          </p>
-        </div>
-
-        <p v-if="note" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">{{ note }}</p>
-
-        <div class="grid gap-2">
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="text-sm font-medium">Horário</span>
-            <button
-              v-if="slot"
-              type="button"
-              class="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              @click="slot = ''"
-            >
-              A combinar
-            </button>
-          </div>
-          <div v-if="windows.length" class="grid gap-1.5 sm:grid-cols-2">
-            <button
-              v-for="window in windows"
-              :key="window.ref"
-              type="button"
-              class="rounded-md border px-3 py-2 text-left text-sm transition"
-              :class="[
-                window.enabled === false ? 'cursor-not-allowed border-dashed opacity-50' : 'hover:bg-accent',
-                slot === window.ref ? 'border-primary bg-primary/5 font-semibold' : 'border-border',
-              ]"
-              :disabled="window.enabled === false"
-              :data-reschedule-slot="window.ref"
-              @click="slot = window.ref"
-            >
-              <span class="block tabular-nums">{{ window.label }}</span>
-              <span v-if="window.enabled === false && window.reason" class="block text-xs opacity-80">{{ window.reason }}</span>
-            </button>
-          </div>
-          <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-            {{ loading ? "Carregando os horários…" : failed ? "Não deu para carregar os horários. Tente de novo." : "Não há horário combinável neste dia." }}
-          </p>
-        </div>
+        <!-- O mesmo seletor da venda: o limite de dias da casa, a janela
+             impossível apagada com o motivo e o aviso quando a janela combinada
+             não cabe mais no preparo destes itens. -->
+        <PosSchedulePicker
+          :today="today"
+          :date="date"
+          :time-slot="slot"
+          :available-dates="availableDates"
+          :max-date="maxDate"
+          :windows="windows"
+          :bottleneck-name="schedule?.bottleneck_name || ''"
+          :ready-at="schedule?.ready_at || ''"
+          :pending="loading"
+          :failed="failed"
+          day-label="Novo dia da encomenda"
+          @update:date="pickDate"
+          @update:time-slot="slot = $event"
+        />
 
         <label class="grid gap-1.5">
           <span class="text-sm font-medium">Motivo (opcional)</span>

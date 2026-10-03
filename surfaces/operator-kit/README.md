@@ -495,6 +495,34 @@ o "Adicionar" nasce ativo no HTML do servidor, um script inline no `<head>` guar
 toque que chega antes do app e o mostra girando, e o componente o executa uma vez ao
 montar.
 
+## Diálogo de motivo (`OperatorReasonDialog`)
+
+O gesto destrutivo que o cliente vai ler (cancelar, recusar) pergunta o motivo, diz a
+consequência e confirma num diálogo só. Consumidores: o cancelar da encomenda no PDV
+(`PosPreorderCancelDialog`) e o recusar/cancelar do Gestor (`OrderReasonDialog`).
+
+```html
+<OperatorReasonDialog
+  :open="open" title="Cancelar pedido" :description="consequence"
+  confirm-label="Confirmar" :presets="cancellation_presets" :busy="busy"
+  @update:open="open = $event" @confirm="({ reason, code }) => cancelOrder(reason, code)" />
+```
+
+Contrato:
+
+- **A consequência é obrigatória** (`description`): reembolso, para onde vai o motivo.
+- **Motivos prontos** (`presets`, os grupos cadastrados no Admin) são um toque; com
+  eles vem o "Outros", que exige texto. "Outros" nunca é o motivo enviado.
+- **Motivo codificado** (`coded` + `codedReasons`): o iFood exige um código da lista
+  dele; a descrição escolhida vira o texto que o cliente lê.
+- `required` diz se confirmar em branco é permitido (recusar exige; cancelar não).
+- **Fechar com texto digitado pergunta dentro do diálogo**, nunca por
+  `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
+- A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
+  motivo digitado continua embaixo.
+- ⚠️ Usa `UiDialog`, `UiButton` e `UiTextarea` do app hospedeiro, o mesmo limite do
+  `OperatorManagerAuth`.
+
 ## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
 
 Até 18/09/2026 **todo** checkbox e **todo** rádio das nove superfícies era o controle

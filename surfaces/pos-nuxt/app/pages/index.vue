@@ -5,6 +5,7 @@ import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
+import { wantsNewOrder } from "~/presentation/orderSetup";
 import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import { rollStyle } from "~/presentation/printGeometry";
@@ -46,6 +47,10 @@ const editRef = String(useRoute().query.edit || "").trim();
 // cancelamento. Sem caixa aberto a antesala manda abrir o caixa antes, como em
 // qualquer venda — a comanda espera no quadro.
 const redoRef = String(useRoute().query.redo || "").trim();
+// NOVA ENCOMENDA: `/?new=order` (o botão da seção Encomendas) abre a próxima
+// comanda livre já no modo Encomendas, com o assistente na primeira etapa que
+// falta. A venda que estava em andamento continua na comanda dela, no quadro.
+const newOrder = wantsNewOrder(useRoute().query);
 const router = useRouter();
 
 // ANTESALA (benchmark Odoo): sem turno aberto não há venda — o operador cai no
@@ -85,6 +90,7 @@ const {
   orderSetupIssue,
   completeOrderSetup,
   setSalesMode,
+  openNewOrder,
   itemCount,
   tabInput,
   busy,
@@ -270,6 +276,15 @@ async function openRedoTab(ref: string) {
     toast.error(`${httpErrorMessage(err, "Não deu para abrir a venda nova.")} Busque a comanda "${redoTabLabel(ref)}" no quadro.`);
   } finally {
     // Recarregar a página não pode montar a venda de novo.
+    void router.replace({ path: "/", query: {} });
+  }
+}
+
+/** Abre a encomenda nova e limpa a URL (recarregar não abre outra comanda). */
+async function startNewOrder() {
+  try {
+    await openNewOrder();
+  } finally {
     void router.replace({ path: "/", query: {} });
   }
 }
@@ -700,6 +715,7 @@ const paymentWorkspaceRef = ref<{
   openDiscount: () => void;
   openSplit: () => void;
   pressMethodKey: (letter: string) => boolean;
+  pressExact: () => boolean;
   pressReceiptKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => boolean;
 } | null>(null);
@@ -790,10 +806,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     }
     // "=" é o Exato do teclado físico: a linha selecionada assume o que as
-    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela.
+    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela,
+    // pela mesma porta: com a revisão do total em trânsito, ele espera.
     if (event.key === "=") {
       event.preventDefault();
-      tenderExact();
+      paymentWorkspaceRef.value?.pressExact();
       return;
     }
   }
@@ -951,6 +968,7 @@ function restoreUncertainCloseFromStorage() {
 onMounted(() => {
   if (editRef) void startOrderEdit(editRef);
   else if (redoRef) void openRedoTab(redoRef);
+  else if (newOrder) void startNewOrder();
   void restoreUncertainClose();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
@@ -1326,10 +1344,12 @@ onBeforeUnmount(() => {
           ref="orderEntryRef"
           v-else-if="inSaleView && orderSetupPending"
           :issue="orderSetupIssue"
+          :delivery="cart.fulfillmentConfirmed && cart.fulfillmentType === 'delivery'"
           :item-count="itemCount"
           :customer-name="cart.customerName"
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
+          :schedule-window="deliveryWindowLabel"
           :loading="busy"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"

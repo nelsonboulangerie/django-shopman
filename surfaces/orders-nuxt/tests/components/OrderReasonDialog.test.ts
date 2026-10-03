@@ -3,6 +3,7 @@ import { computed, defineComponent, h, mergeProps, ref, watch } from "vue";
 
 import { mount } from "@vue/test-utils";
 
+import OperatorReasonDialog from "../../../operator-kit/app/components/OperatorReasonDialog.vue";
 import OrderReasonDialog from "../../app/components/OrderReasonDialog.vue";
 import type { CancellationPresetGroupProjection, CancellationReason } from "../../app/types/orders";
 
@@ -36,7 +37,30 @@ const nativeSelect = defineComponent({
       );
   },
 });
+// Botão e campo da casa viram o elemento nativo: o que se testa é o contrato do
+// diálogo de motivo (o `OperatorReasonDialog` do operator-kit entra de verdade).
+const button = defineComponent({
+  inheritAttrs: false,
+  props: { loading: Boolean, variant: { type: String, default: undefined } },
+  setup(_props, { attrs, slots }) {
+    return () => h("button", attrs, slots.default?.());
+  },
+});
+const textarea = defineComponent({
+  inheritAttrs: false,
+  props: { modelValue: { type: String, default: "" } },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h("textarea", mergeProps(attrs, {
+        value: props.modelValue,
+        onInput: (event: Event) => emit("update:modelValue", (event.target as HTMLTextAreaElement).value),
+      }));
+  },
+});
 const stubs = {
+  UiButton: button,
+  UiTextarea: textarea,
   UiDialog: passthrough,
   UiDialogContent: passthrough,
   UiDialogHeader: passthrough,
@@ -58,7 +82,7 @@ function mountDialog(props: Partial<{
 }> = {}, options: { attachTo?: HTMLElement } = {}) {
   return mount(OrderReasonDialog, {
     props: { marketplace: Boolean(props.reasons?.length), open: true, mode: "reject", loading: false, reasons: [], presets: [], busy: false, ...props },
-    global: { stubs },
+    global: { stubs, components: { OperatorReasonDialog } },
     ...options,
   });
 }
@@ -251,39 +275,41 @@ describe("motivos indisponíveis", () => {
 
 
 describe("descarte explícito do motivo", () => {
+  // A confirmação mora DENTRO do diálogo (contrato de modal da casa): nada de
+  // `window.confirm`, que o navegador desenha fora da tela do operador.
   beforeEach(() => { window.confirm = vi.fn(); });
   afterEach(() => vi.restoreAllMocks());
   it("preserva texto quando a pessoa recusa descartar", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const w = mountDialog();
     await w.find("textarea").setValue("Contexto importante");
     await confirmBtn(w, "Voltar").trigger("click");
     expect(w.emitted("update:open")).toBeUndefined();
+    expect(w.find("[data-reason-discard]").exists()).toBe(true);
+    await confirmBtn(w, "Continuar escrevendo").trigger("click");
+    expect(w.emitted("update:open")).toBeUndefined();
+    expect(w.find("[data-reason-discard]").exists()).toBe(false);
     expect(w.find("textarea").element.value).toBe("Contexto importante");
-    expect(confirm).toHaveBeenCalledTimes(1);
-    confirm.mockRestore();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
   it("permite descartar explicitamente e informa o estado do draft", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const w = mountDialog();
     await w.find("textarea").setValue("Contexto importante");
     expect(w.emitted("dirty-change")?.at(-1)).toEqual([true]);
     await confirmBtn(w, "Voltar").trigger("click");
+    await confirmBtn(w, "Descartar").trigger("click");
     expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(window.confirm).not.toHaveBeenCalled();
     await w.setProps({ open: false });
     expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
     await w.setProps({ open: true });
     expect(w.find("textarea").element.value).toBe("");
-    confirm.mockRestore();
+    expect(w.find("[data-reason-discard]").exists()).toBe(false);
   });
   it("fecha draft vazio sem confirmação redundante", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const w = mountDialog();
     await confirmBtn(w, "Voltar").trigger("click");
     expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
-    expect(confirm).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    expect(w.find("[data-reason-discard]").exists()).toBe(false);
   });
   it("não dispensa o editor enquanto a operação está pendente", async () => {
     const w = mountDialog({ busy: true });

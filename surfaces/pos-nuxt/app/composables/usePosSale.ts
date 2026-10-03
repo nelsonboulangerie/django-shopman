@@ -33,15 +33,17 @@ import {
   cartTotalQ,
   concreteActionHref,
   formatBRL,
+  isTotalChangedRefusal,
   moneyInputToQ,
   newLineId,
   resolvePayment,
+  withExpectedTotal,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { lastBookableDate, resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -52,6 +54,7 @@ import {
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
+  nextFreeNumericTabRef,
   numericRefsZeroPaddedTo,
   requiresOpenTabForCart,
   requiresTabBeforeSave,
@@ -79,6 +82,7 @@ import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptCo
 import { closeGuardNotice } from "~/presentation/closeGuard";
 import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
+import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -688,7 +692,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return true;
   }
   const orderSetupComplete = ref(false);
-  const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
+  const orderSetupIssue = computed<OrderSetupIssue>(() => {
     if (cart.salesMode !== "order") return "";
     if (!cart.customerRef.trim()) return "customer";
     if (!cart.fulfillmentConfirmed) return "fulfillment";
@@ -868,10 +872,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
   /** A última data encomendável. O servidor sempre recusa além dela; isto só
    *  evita que o operador chegue a digitá-la. */
-  const scheduleMaxDate = computed(() => {
-    const dates = schedule.value?.available_dates ?? [];
-    return dates.length ? dates[dates.length - 1]! : "";
-  });
+  const scheduleMaxDate = computed(() => lastBookableDate(schedule.value?.available_dates ?? []));
 
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo.
@@ -1605,7 +1606,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openTab(
     tab: POSTabProjection | string,
-    options: { preserveDraft?: boolean; drawerChecked?: boolean } = {},
+    options: { preserveDraft?: boolean; drawerChecked?: boolean; salesMode?: "counter" | "order" } = {},
   ) {
     if (busy.value) return; // guarda de reentrância
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
@@ -1645,6 +1646,11 @@ export function usePosSale(deps: PosSaleDeps) {
         review.value = null;
       } else {
         await setFromTabPayload(payload);
+        // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
+        // seção Encomendas). Só numa comanda VAZIA: se outra estação a ocupou no
+        // meio do caminho, ela abre como está, e a venda de quem a ocupou não
+        // troca de modo pelas costas.
+        if (options.salesMode && !(payload.items || []).length) setSalesMode(options.salesMode);
       }
       tabInput.value = "";
       await refresh();
@@ -1653,6 +1659,18 @@ export function usePosSale(deps: PosSaleDeps) {
     } finally {
       busy.value = false;
     }
+  }
+
+  /**
+   * "Nova encomenda" (seção Encomendas): a próxima comanda LIVRE, a mesma do
+   * "Próxima livre" do quadro, aberta já no modo Encomendas. Nunca a comanda de
+   * uma venda em andamento: essa fica no quadro, como estava. A trava da gaveta
+   * vale, como em qualquer venda que começa (`openTab`).
+   */
+  async function openNewOrder() {
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return;
+    await openTab(tabRef, { salesMode: "order" });
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {
@@ -2731,7 +2749,7 @@ export function usePosSale(deps: PosSaleDeps) {
     | { kind: "invalid" }
     | { kind: "blocked" };
 
-  async function requestCloseUnderGuard(): Promise<GuardedCloseResult> {
+  async function requestCloseUnderGuard(expectedTotalQ: number): Promise<GuardedCloseResult> {
     const lockManager = globalThis.navigator?.locks;
     if (!lockManager?.request) {
       closeOutcomeUncertain.value = true;
@@ -2771,7 +2789,7 @@ export function usePosSale(deps: PosSaleDeps) {
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-            { body: buildCurrentIntent() },
+            { body: withExpectedTotal(buildCurrentIntent(), expectedTotalQ) },
           );
           const response = rawResponse && typeof rawResponse === "object"
             ? rawResponse as Partial<POSCloseSaleResponse>
@@ -2847,7 +2865,10 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
     busy.value = true;
     try {
-      const guarded = await requestCloseUnderGuard();
+      // O total que a tela MOSTROU viaja junto (D42): o servidor recalcula e,
+      // se o dele for outro, recusa sem fechar. É o da revisão viva, que o
+      // `if (!review.value)` acima garante existir neste ponto.
+      const guarded = await requestCloseUnderGuard(review.value.total_q);
       if (guarded.kind === "blocked") return;
       if (guarded.kind === "invalid") {
         serverError.value = closeOutcomeUncertainMessage;
@@ -2976,6 +2997,20 @@ export function usePosSale(deps: PosSaleDeps) {
         };
       } | null)?.error;
       if (handleReceiptIdentityFailure(error, "close")) return;
+      if (isTotalChangedRefusal(failure?.code)) {
+        // O total do servidor não é o que a tela mostrou: nada fechou. A frase
+        // do servidor diz os dois valores; a revisão é refeita para o operador
+        // conferir o total novo com o cliente e finalizar de novo.
+        serverError.value = httpErrorMessage(error, "O total mudou. Confira com o cliente antes de cobrar.");
+        review.value = null;
+        try {
+          await reviewSale();
+          reviewFailed.value = false;
+        } catch {
+          reviewFailed.value = true;
+        }
+        return;
+      }
       // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
       // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
       // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
@@ -3310,6 +3345,7 @@ export function usePosSale(deps: PosSaleDeps) {
     orderSetupIssue,
     completeOrderSetup,
     setSalesMode,
+    openNewOrder,
     // draft + flags
     cart,
     tabInput,

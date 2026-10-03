@@ -5,12 +5,15 @@ import { computed, reactive, ref } from "vue";
 
 import DetailPage from "~/pages/preorders/[ref].vue";
 import PreordersPage from "~/pages/preorders/index.vue";
+import { TO_RECEIVE_CLASS } from "~/presentation/preorders";
 import type { PreorderCard, PreorderDetail, PreorderListResponse, PreorderSearchResponse } from "~/types/preorders";
+
+import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 
 import { makeProjection } from "../composables/_posSaleHarness";
 
-// A tela única das Encomendas (busca no topo, Dia | Semana, filtros, "Imprimir N
-// vias") e o detalhe — que imprime a Via Pedido e oferece cada gesto (entregar,
+// A tela única das Encomendas (busca no topo, Dia | Semana, filtros, o lote das
+// vias que faltam) e o detalhe — que imprime a Via Pedido e oferece cada gesto (entregar,
 // editar, reagendar, cancelar) só quando o servidor diz que pode.
 
 const printOne = vi.fn().mockResolvedValue(true);
@@ -66,8 +69,12 @@ let week: PreorderListResponse;
 let detail: PreorderDetail;
 let found: PreorderSearchResponse;
 const searched = vi.fn();
+const listed = vi.fn();
 
-registerEndpoint("/api/v1/backstage/pos/preorders/", () => week);
+registerEndpoint("/api/v1/backstage/pos/preorders/", (event) => {
+  listed(event.path);
+  return week;
+});
 registerEndpoint("/api/v1/backstage/pos/preorders/search/", (event) => {
   searched(event.path);
   return found;
@@ -138,6 +145,7 @@ beforeEach(() => {
       edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-edit" },
     },
     managers: [{ username: "gerente", name: "Gerente" }],
+    cancellation_presets: [],
   };
   found = {
     ok: true, query: "ana", today: "2026-09-26", include_completed: false, completed_days: 30,
@@ -147,6 +155,7 @@ beforeEach(() => {
   printBatch.mockClear();
   replace.mockClear();
   searched.mockClear();
+  listed.mockClear();
   call.mockReset();
   call.mockResolvedValue({ ok: true, received_q: 3600, status: "completed" });
   kick.mockClear();
@@ -165,7 +174,7 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     expect(text).toContain("Ana Souza");
     expect(wrapper.find("[data-order-detail]").attributes("data-order-context")).toBe("pos");
     expect(wrapper.find("[data-preorder-situation]").text()).toBe("A pagar");
-    expect(wrapper.find("[data-preorder-money]").text()).toBe("R$ 36,00 a receber");
+    expect(wrapper.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
     expect(wrapper.find("[data-order-items]").text()).toContain("Pão");
     expect(text).toContain("Sem açúcar");
     expect(wrapper.find("[data-kitchen-note]").text()).toContain("Separar antes das 9h");
@@ -174,6 +183,16 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
   it("imprime a Via Pedido pela impressão individual que já existe", async () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-print]").trigger("click");
+    await flushPromises();
+    expect(printOne).toHaveBeenCalledWith("NB-7");
+  });
+
+  it("P2: a via que já saiu se reimprime aqui, uma por vez (o lote da seção só leva o que falta)", async () => {
+    detail.counter.ticket_printed = true;
+    const wrapper = await mount(DetailPage);
+    const button = wrapper.find("[data-preorder-print]");
+    expect(button.text()).toBe("Imprimir a Via Pedido de novo");
+    await button.trigger("click");
     await flushPromises();
     expect(printOne).toHaveBeenCalledWith("NB-7");
   });
@@ -374,11 +393,11 @@ describe("Detalhe — cancelar", () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    const reason = body().querySelector<HTMLInputElement>("[data-preorder-cancel-reason]")!;
+    const reason = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
     reason.value = "Cliente desistiu";
     reason.dispatchEvent(new Event("input"));
     await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
     const [path, options] = call.mock.calls[0]!;
@@ -392,7 +411,7 @@ describe("Detalhe — cancelar", () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-cancel-confirm]")!.click();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
     const auth = wrapper.findComponent({ name: "OperatorManagerAuth" });
@@ -406,6 +425,45 @@ describe("Detalhe — cancelar", () => {
     expect(call.mock.calls[1]![1].body.idempotency_key).toBe(call.mock.calls[0]![1].body.idempotency_key);
   });
 
+  it("o diálogo é o do kit, o mesmo do Gestor: fechar com motivo digitado pergunta na própria tela", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    expect(wrapper.findComponent({ name: "OperatorReasonDialog" }).exists()).toBe(true);
+    const reason = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
+    reason.value = "Cliente desistiu";
+    reason.dispatchEvent(new Event("input"));
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-back]")!.click();
+    await settle();
+    expect(body().querySelector("[data-reason-discard]")).not.toBeNull();
+    body().querySelector<HTMLButtonElement>("[data-reason-keep]")!.click();
+    await settle();
+    expect(body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!.value).toBe("Cliente desistiu");
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("os motivos prontos do Gestor chegam ao balcão: um toque escolhe o motivo enviado", async () => {
+    detail.cancellation_presets = [
+      { label: "Cliente", presets: ["Cliente desistiu"] },
+      { label: "", presets: ["Pedido em duplicidade"] },
+    ];
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    const chips = [...body().querySelectorAll<HTMLButtonElement>("[data-reason-preset]")];
+    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(["Cliente desistiu", "Pedido em duplicidade"]);
+    expect(body().querySelector("[data-testid='reason-other']")).not.toBeNull();
+    chips[0]!.click();
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
+    await settle();
+
+    const [path, options] = call.mock.calls[0]!;
+    expect(path).toBe("/api/v1/backstage/orders/NB-7/cancel/");
+    expect(options.body).toMatchObject({ reason: "Cliente desistiu" });
+  });
+
   it("sem permissão para cancelar, não há botão", async () => {
     detail.counter.cancel = {
       allowed: false,
@@ -414,6 +472,87 @@ describe("Detalhe — cancelar", () => {
     };
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-cancel]").exists()).toBe(false);
+  });
+});
+
+describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
+  it("P3: o saldo e os gestos moram num painel à parte do detalhe do kit, fixo à direita em tela larga", async () => {
+    const wrapper = await mount(DetailPage);
+    const layout = wrapper.find("[data-preorder-layout]");
+    expect(layout.classes()).toEqual(expect.arrayContaining(["grid", "lg:grid-cols-[minmax(0,1fr)_23rem]"]));
+    const panel = layout.find("[data-preorder-counter-panel]");
+    expect(panel.attributes("aria-label")).toBe("Balcão");
+    expect(panel.classes()).toEqual(expect.arrayContaining(["lg:sticky", "lg:col-start-2", "lg:row-start-1"]));
+    expect(panel.find("h1").text()).toBe("Ana Souza");
+    expect(panel.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
+    expect(panel.find("[data-preorder-hand-over]").exists()).toBe(true);
+    // O detalhe do kit fica sem o que é do balcão (o PDV não usa #summary nem #actions).
+    const kit = layout.find("[data-order-detail]");
+    expect(kit.classes()).toContain("lg:col-start-1");
+    expect(kit.find("[data-preorder-money]").exists()).toBe(false);
+    expect(kit.find("[data-preorder-hand-over]").exists()).toBe(false);
+    // Tela estreita: uma árvore só, e o painel vem ANTES do detalhe.
+    const children = [...layout.element.children];
+    expect(children.indexOf(panel.element)).toBeLessThan(children.indexOf(kit.element));
+  });
+
+  it("o nome no topo do painel não repete o número e o canal, que o resumo do kit já diz", async () => {
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-counter-panel]").text()).not.toContain("Loja online");
+    expect(wrapper.find("[data-order-summary]").text()).toContain("web");
+  });
+
+  it("hierarquia dos gestos: o principal na largura, os médios lado a lado, Cancelar separado no pé", async () => {
+    const wrapper = await mount(DetailPage);
+    const panel = wrapper.find("[data-preorder-counter-panel]");
+    expect(panel.find("[data-preorder-hand-over]").classes()).toContain("w-full");
+    const middle = panel.find("[data-preorder-actions]");
+    expect(middle.classes()).toEqual(expect.arrayContaining(["flex", "flex-wrap"]));
+    for (const gesture of ["reschedule", "print", "edit"]) {
+      const button = middle.find(`[data-preorder-${gesture}]`);
+      expect(button.classes()).toContain("flex-auto");
+      expect(button.classes()).not.toContain("w-full");
+    }
+    // Cancelar não está entre os gestos do dia a dia: fica no pé, separado por um
+    // traço, e sem borda nem fundo (ação perigosa não ganha destaque maior).
+    expect(middle.find("[data-preorder-cancel]").exists()).toBe(false);
+    const zone = panel.find("[data-preorder-cancel-zone]");
+    expect(zone.classes()).toContain("border-t");
+    expect(panel.element.lastElementChild).toBe(zone.element);
+    const cancel = zone.find("[data-preorder-cancel]");
+    expect(cancel.classes()).toContain("text-destructive");
+    expect(cancel.classes()).not.toContain("border");
+  });
+
+  it("Comentar no painel leva ao campo do histórico, que continua do kit", async () => {
+    const wrapper = await mount(DetailPage);
+    const shortcut = wrapper.find("[data-preorder-counter-panel] [data-preorder-comment-shortcut]");
+    expect(shortcut.text()).toBe("Comentar no histórico");
+    const field = wrapper.find("[data-order-comment] textarea").element as HTMLTextAreaElement;
+    const focus = vi.spyOn(field, "focus");
+    await shortcut.trigger("click");
+    await settle();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    expect(focus).toHaveBeenCalled();
+  });
+
+  it("sem a ação de comentar, o painel não oferece o atalho", async () => {
+    detail.actions = [];
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-comment-shortcut]").exists()).toBe(false);
+  });
+
+  it("P5: uma etiqueta de estado só, a do balcão; a do pedido (a do Gestor) não aparece no PDV", async () => {
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.findAll("[data-preorder-situation]")).toHaveLength(1);
+    expect(wrapper.find("[data-order-status]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Aceito");
+  });
+
+  it("sem permissão para cancelar, o pé do painel some junto com o botão", async () => {
+    detail.counter.cancel = { allowed: false, requires_approval: false, block_reason: "" };
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-preorder-cancel-zone]").exists()).toBe(false);
   });
 });
 
@@ -445,14 +584,14 @@ describe("Encomendas — a semana no centro", () => {
     // A mesma árvore responde a qualquer largura: não duplica cards escondidos.
     expect(wrapper.findAll("[data-week-board]")).toHaveLength(1);
     expect(wrapper.find("[data-week-grid]").findAll("[data-preorder]")).toHaveLength(2);
-    expect(wrapper.find("[data-preorders-summary] p").text()).toBe("2 encomendas · R$ 60,00");
-    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber: R$ 36,00");
+    expect(wrapper.find("[data-preorders-total]").text()).toBe("2 encomendas · R$ 60,00");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber R$ 36,00");
   });
 
   it("o card da grade: saldo em destaque ou 'pago', e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
-    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00 a receber");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("A receber R$ 36,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00 pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
@@ -494,6 +633,46 @@ describe("Encomendas — a semana no centro", () => {
   });
 });
 
+describe("Encomendas — um controle por estado, uma porta por destino", () => {
+  it("R1: Dia | Semana mora só no Período; a barra do topo não tem abas", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-app-bar]");
+    expect(bar.exists()).toBe(true);
+    expect(bar.find("nav").exists()).toBe(false);
+    expect(bar.findAll("[data-section]")).toHaveLength(0);
+    expect(wrapper.find("[data-period-next]").exists()).toBe(true);
+  });
+
+  it("R2: a barra diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-app-bar]");
+    expect(bar.find("[data-preorders-title]").text()).toBe("Encomendas");
+    expect(bar.findAll("a")).toHaveLength(0);
+  });
+
+  it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período, no dia e na encomenda", async () => {
+    const wrapper = await mount(PreordersPage);
+    const period = wrapper.find("[data-preorders-to-receive]");
+    const day = wrapper.find("[data-week-day-to-receive]");
+    const row = wrapper.find('[data-preorder="NB-7"] [data-preorder-money]');
+    for (const node of [period, day, row]) {
+      expect(node.text()).toBe("A receber R$ 36,00");
+      expect(node.classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+    }
+  });
+
+  it("R4: o selo de situação é a peça do kit, na linha e no detalhe", async () => {
+    // Na linha, o selo só aparece quando diz o que o dinheiro não diz ("Pronto").
+    week.days[0]!.orders[0] = card({ situation: "ready", situation_label: "Pronto" });
+    const list = await mount(PreordersPage);
+    expect(list.find('[data-preorder="NB-7"] [data-preorder-situation]').classes())
+      .toEqual(expect.arrayContaining(toneBadge("success").split(" ")));
+    const detail = await mount(DetailPage);
+    expect(detail.find("[data-preorder-situation]").classes())
+      .toEqual(expect.arrayContaining(toneBadge("warning").split(" ")));
+  });
+});
+
 describe("Encomendas — o dia", () => {
   it("o modo Dia agrupa pela janela, com a linha inteira", async () => {
     const wrapper = await mount(PreordersPage);
@@ -505,45 +684,76 @@ describe("Encomendas — o dia", () => {
   });
 });
 
-describe("Encomendas — filtros e 'Imprimir N vias'", () => {
+describe("Encomendas — filtros e o lote das vias que faltam", () => {
   it("filtros numa linha, combináveis e com contagem; o filtro vai para a URL e muda a lista", async () => {
     const wrapper = await mount(PreordersPage);
-    // Os filtros e o lote moram na MESMA linha, dentro do quadro do período.
+    // Os recortes e o lote moram na MESMA linha, dentro do quadro do período.
     const row = wrapper.find("[data-preorders-filters]");
     expect(row.find("[data-preorders-print]").exists()).toBe(true);
+    // O "Filtrar" fica para o resto: o que tem botão de um toque não se repete nele.
     await pickFilter(wrapper, "pay");
     expect(wrapper.findAll("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
-      .toEqual([["A receber", "1"], ["Pagas", "1"]]);
+      .toEqual([["Pagas", "1"]]);
     await wrapper.find("[data-filter-back]").trigger("click");
-    await wrapper.find('[data-filter-dimension="fulfillment"]').trigger("click");
-    await wrapper.find('[data-filter-option="fulfillment:delivery"]').trigger("click");
+    expect(wrapper.find('[data-filter-dimension="fulfillment"]').exists()).toBe(false);
+    await wrapper.find("[data-filter-trigger]").trigger("click");
+    // Entregas é um toque só (P1), e o botão apertado é o que diz o recorte.
+    await wrapper.find('[data-preorders-shortcut="fulfillment:delivery"]').trigger("click");
     await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery" });
-    expect(wrapper.find('[data-filter-chip="fulfillment"]').text()).toContain("Recebimento: Entregas");
+    expect(wrapper.find('[data-preorders-shortcut="fulfillment:delivery"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find('[data-filter-chip="fulfillment"]').exists()).toBe(false);
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-8"]);
     // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
       .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
   });
 
-  it("'Falta imprimir' mostra só o que não saiu, e o botão imprime exatamente o visível", async () => {
+  it("P2: o lote imprime só a via que ainda não saiu, mesmo com a impressa na tela", async () => {
     const wrapper = await mount(PreordersPage);
-    await pickFilter(wrapper, "print");
-    await wrapper.find('[data-filter-option="print:pending"]').trigger("click");
-    await flushPromises();
-    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
+    // Sem recorte, as duas estão na grade: NB-8 já tem a Via Pedido, NB-7 não.
+    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7", "NB-8"]);
     const button = wrapper.find("[data-preorders-print]");
-    expect(button.text()).toBe("Imprimir 1 via");
+    expect(button.text()).toBe("Imprimir 1 via que falta");
     await button.trigger("click");
     await flushPromises();
     expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
   });
 
-  it("filtro que esvazia a semana diz o que não há e oferece mostrar todas", async () => {
+  it("'Sem Via Pedido' mostra só o que não saiu, e o lote leva as mesmas", async () => {
+    const wrapper = await mount(PreordersPage);
+    // "Falta imprimir" é o botão de um toque "Sem Via Pedido" (P1): o mesmo `?print=pending`.
+    await wrapper.find('[data-preorders-shortcut="print:pending"]').trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ print: "pending" });
+    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
+    const button = wrapper.find("[data-preorders-print]");
+    expect(button.text()).toBe("Imprimir 1 via que falta");
+    await button.trigger("click");
+    await flushPromises();
+    expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
+  });
+
+  it("P2: com todas as vias impressas o lote não reimprime, e o botão desligado diz por quê", async () => {
+    week.days[0]!.orders[0] = card({ ticket_printed: true });
+    const wrapper = await mount(PreordersPage);
+    const button = wrapper.find("[data-preorders-print]");
+    expect(button.text()).toBe("Todas as vias impressas");
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    await flushPromises();
+    expect(printBatch).not.toHaveBeenCalled();
+  });
+
+  it("filtro que esvazia a semana diz o que não há; limpar é gesto da barra, e só dela", async () => {
     const wrapper = await mount(PreordersPage);
     route.query.pay = "on_account";
     await flushPromises();
-    expect(wrapper.find("[data-preorders-filter-empty]").text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    const empty = wrapper.find("[data-preorders-filter-empty]");
+    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    // R5: o vazio não repete o "limpar" da barra (antes: um "Mostrar todas" aqui).
+    expect(empty.find("button").exists()).toBe(false);
+    expect(wrapper.find('[data-filter-chip="pay"] [data-filter-remove]').exists()).toBe(true);
     expect(wrapper.find("[data-preorders-print]").text()).toBe("Nenhuma via para imprimir");
   });
 
@@ -551,6 +761,111 @@ describe("Encomendas — filtros e 'Imprimir N vias'", () => {
     week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
     const wrapper = await mount(PreordersPage);
     expect(wrapper.find("[data-preorders-check-notice]").text()).toContain("1 encomenda está com o pagamento a conferir");
+  });
+
+  it("'Mostrar só essas' liga o recorte, e a volta é o X do chip: o aviso não vira segundo 'limpar'", async () => {
+    week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
+    const wrapper = await mount(PreordersPage);
+    await wrapper.find("[data-preorders-check-only]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ pay: "check" });
+    expect(wrapper.find("[data-preorders-check-notice]").exists()).toBe(false);
+    expect(wrapper.find('[data-filter-chip="pay"]').text()).toContain("A conferir");
+    expect(wrapper.text()).not.toContain("Mostrar todas");
+  });
+});
+
+describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
+  it("o Período mora na barra da seção, e sai durante a busca", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-app-bar]");
+    expect(bar.find("[data-period-picker]").exists()).toBe(true);
+    expect(wrapper.findAll("[data-period-picker]")).toHaveLength(1);
+    await typeSearch(wrapper, "Ana");
+    expect(wrapper.find("[data-period-picker]").exists()).toBe(false);
+  });
+
+  it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
+    const wrapper = await mount(PreordersPage);
+    const today = wrapper.find("[data-preorders-today]");
+    expect(today.findAll("[data-preorders-today-fact]").map((f) => f.text()))
+      .toEqual(["2 para entregar", "A receber R$ 36,00", "1 sem Via Pedido"]);
+    expect(today.find('[data-preorders-today-fact="to_receive"]').classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+  });
+
+  it("'Hoje' é sempre de hoje: fora da semana de hoje, vem da leitura do selo, sem pergunta nova", async () => {
+    week = { ...week, days: week.days.map((d) => ({ ...d, is_today: false })) };
+    clearNuxtData();
+    useNuxtData<PreorderListResponse>("pos-preorders-ahead").data.value = {
+      ...week,
+      days: [{ ...week.days[0]!, is_today: true, orders: [card({ ref: "HOJE-1", ticket_printed: true })] }],
+    };
+    const wrapper = await mountSuspended(PreordersPage as never, {
+      global: { stubs: { PosFunctionRail: true, RailToggle: true, MoreBelow: true } },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.findAll("[data-preorders-today-fact]").map((f) => f.text()))
+      .toEqual(["1 para entregar", "A receber R$ 36,00", "Todas as vias impressas"]);
+    // Uma leitura só: a do período. A linha "Hoje" não pergunta nada ao servidor.
+    expect(listed).toHaveBeenCalledTimes(1);
+  });
+
+  it("o resumo do período diz de que período fala, e some quando o período é só hoje", async () => {
+    const wrapper = await mount(PreordersPage);
+    expect(wrapper.find("[data-preorders-summary]").text()).toContain("Na semana");
+    // Um dia que não é hoje (a data do teste é fixa; o relógio, não).
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-summary]").text()).toContain("No dia");
+    // O dia de hoje (sem `date` na URL): a linha "Hoje" já diz, o resumo sai.
+    route.query = { mode: "day" };
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-summary]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorders-today]").exists()).toBe(true);
+  });
+
+  it("os recortes de todo dia são um toque, e outro toque desliga", async () => {
+    const wrapper = await mount(PreordersPage);
+    const shortcuts = wrapper.find("[data-preorders-shortcuts]");
+    expect(shortcuts.findAll("button").map((b) => b.text().replace(/\s+/g, " ")))
+      .toEqual(["A receber 1", "Sem Via Pedido 1", "Retiradas 1", "Entregas 1"]);
+    await wrapper.find('[data-preorders-shortcut="pay:to_receive"]').trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ pay: "to_receive" });
+    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
+    // A volta do detalhe cai no recorte.
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"]').attributes("href"))
+      .toBe("/preorders/NB-7?back=%2Fpreorders%3Fpay%3Dto_receive");
+    await wrapper.find('[data-preorders-shortcut="pay:to_receive"]').trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({});
+  });
+
+  it("a linha da encomenda: a janela primeiro, o número e os itens, e 'Via impressa' escrita", async () => {
+    const wrapper = await mount(PreordersPage);
+    const ana = wrapper.find('[data-week-grid] [data-preorder="NB-7"]');
+    expect(ana.find("[data-preorder-window]").text()).toBe("09:00");
+    expect(ana.text()).toContain("NB-7 · Loja online · Retirada · 2 itens");
+    // "A pagar" já está no dinheiro: o selo não repete.
+    expect(ana.find("[data-preorder-situation]").exists()).toBe(false);
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"] [data-preorder-printed]').text()).toBe("Via impressa");
+  });
+
+  it("R7: o dia vazio diz uma vez só, no cabeçalho", async () => {
+    const wrapper = await mount(PreordersPage);
+    const empty = wrapper.find("[data-week-grid]").findAll("[data-week-day]")[1]!;
+    expect(empty.text()).toBe(empty.find("[data-week-day-open]").text());
+    expect(empty.text().match(/encomenda/gi)).toHaveLength(1);
+    expect(wrapper.text()).not.toContain("Dia livre");
+  });
+
+  it("a nota de escopo é legenda: vem depois da grade, não na linha do período", async () => {
+    const wrapper = await mount(PreordersPage);
+    const html = wrapper.html();
+    expect(html.indexOf("data-preorders-scope")).toBeGreaterThan(html.indexOf("data-week-board"));
+    expect(wrapper.find("[data-preorders-scope]").text()).toBe("Retiradas e entregas de todos os canais, pela data combinada.");
   });
 });
 
@@ -562,6 +877,9 @@ describe("Encomendas — Cliente veio buscar", () => {
     expect(wrapper.find("#preorders-search-title").text()).toBe("Cliente veio buscar?");
     expect(field.attributes("placeholder")).toBe("Nome, telefone, CPF ou CNPJ, endereço ou número do pedido");
     expect(field.attributes("placeholder")).not.toContain("Cliente veio buscar");
+    // "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece.
+    expect(wrapper.find("[data-preorders-include-completed]").exists()).toBe(false);
+    await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-preorders-include-completed]").attributes("aria-checked")).toBe("false");
   });
 
@@ -604,5 +922,24 @@ describe("Encomendas — Cliente veio buscar", () => {
     await typeSearch(wrapper, "Ana");
     await wrapper.find("[data-preorders-search]").trigger("keydown", { key: "Enter" });
     expect(navigate).toHaveBeenCalledWith("/preorders/NB-7?back=%2Fpreorders%3Fq%3DAna");
+  });
+});
+
+describe("Encomendas — Nova encomenda (S9, P6 do dono)", () => {
+  it("a seção tem a porta: leva à venda já no modo Encomendas", async () => {
+    const wrapper = await mount(PreordersPage);
+    const button = wrapper.find("[data-preorders-new]");
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toBe("Nova encomenda");
+    await button.trigger("click");
+    expect(navigate).toHaveBeenCalledWith({ path: "/", query: { new: "order" } });
+  });
+
+  it("a porta fica ao lado da busca e não sai durante ela: quem não achou a encomenda anota uma nova", async () => {
+    const wrapper = await mount(PreordersPage);
+    const search = wrapper.find("[data-preorders-search-block]");
+    expect(search.element.parentElement?.contains(wrapper.find("[data-preorders-new]").element)).toBe(true);
+    await typeSearch(wrapper, "Ana");
+    expect(wrapper.find("[data-preorders-new]").exists()).toBe(true);
   });
 });

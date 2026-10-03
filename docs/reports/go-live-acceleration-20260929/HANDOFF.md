@@ -4,15 +4,36 @@
 > DSH, quem for) começa aqui e só depois abre os outros, na ordem da seção 0m.2. O
 > `docs/plans/NIGHT-SHIFT-BRIEF-2026-09-30.md` aponta para cá.
 >
-> **Antes de ler a prosa: `make coordination`** (`python3 scripts/coordination_status.py`, só git,
-> sem `gh`). Ele diz o que está no `main`, na fila, em PR aberto e em branch sem PR, medido no
-> remoto. Depois o `docs/coordination/BOARD.md` (quem está com o quê). Esta prosa vem por último.
+> **Antes de ler a prosa: `make coordination`** (`python3 scripts/coordination_status.py`; roda só
+> com git, e com `gh` autenticado mede também CI e auto-merge). Ele diz o que está no `main`, na
+> fila, em PR aberto (vermelho ou não), em branch sem PR ou com PR fechado, e se o BOARD cita PR
+> que já saiu, medido no remoto. Depois o `docs/coordination/BOARD.md` (quem está com o quê). Esta prosa vem por último.
 >
 > **Seção 0 escrita em 2026-10-02 02:15 UTC** (23:15 de 01/10 em Brasília; turno do coordenador
 > noturno). **Reconciliada em 2026-10-02 14:48 UTC** (R0): ver "0-rec" logo abaixo.
-> A seção 0 é o estado agora; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
+> A seção 0 é o estado agora, com "0-turno" e "0-rec" por cima; "0-obs", "0-dia", "0-tarde", "0-manhã" e as seções 1 a 5 são histórico: valem as armadilhas, não a fila.
 
 ---
+
+## 0-turno. Observações do dono, 02/10 16:29 a 17:10 UTC (o que mudou depois do 0-rec)
+
+> Ordem: `docs/coordination/ORDERS/2026-10-03-turno.md`. Registro de cada frente em
+> `docs/coordination/ROUNDS/` (R1, T0 a T6). Estado vivo no `BOARD.md`.
+
+- **Mergeados:** #1367 (o import do Craftsman pela porta pública), #1380 (PDV: as formas de pagamento
+  esperam a revisão do total), #1381 (loja: um só aviso no cardápio).
+- **Na fila (17:40 UTC):** #1382 (Encomendas: R1 a R5 saíram), #1383 (loja: observação por item em
+  folha), #1384 (PDV: o modo Encomendas virou assistente), #1385 (o "Exato" espera a revisão também),
+  #1379 (ordem, BOARD, ROUNDS, brief, esta seção).
+- **Depois, no mesmo dia (02/10 18:10 a 23:10 UTC):** o dono respondeu D42 (sim, agora) e D43 (P1 sim,
+  P2 = 2, P3 sim, P4 = 1, P5 sim, P6 sim, P7 sim). Entraram D42 #1389 (o PDV manda o total mostrado; o
+  servidor recusa `total_changed` se mudou) e o redesenho inteiro da seção Encomendas: S3 #1388, S4 #1391,
+  S8 #1387, S7 #1390, S7b #1392, S9 #1393, S2 #1394, S5 #1396, S6 #1397. Registros em
+  `docs/coordination/ROUNDS/`. Nada espera o dono desta frente.
+- **Corrigido aqui:** a observação por item é por LINHA (`cart/lines/<line_id>/notes/`), não por SKU;
+  ver o item "Observação por item" mais abaixo.
+- **NÃO VERIFICADO no navegador:** o cardápio com a flag do Continuum ligada (#1381) e o assistente
+  de Encomendas (#1384, exige Django com PIN). A folha da observação foi vista no desktop, não no celular.
 
 ## 0-rec. Reconciliação de 02/10 14:48 UTC (o que mudou depois da seção 0)
 
@@ -32,9 +53,11 @@
   evento → flow é linha no `MANYCHAT_FLOW_MAP` num PR, **não** o Admin (o campo é somente leitura).
 - **Em PR, vermelho:** #1367 (`import_recipe_versions`), import interno do Craftsman na linha 60.
 - **Checks obrigatórios:** 23, confirmado contra a proteção viva.
-- **Branches sem PR:** nenhuma com trabalho novo. `claude/wp-telas-de-parede` (patch já no `main`)
-  apagada; `dsh/handoff-onda1-e-p7-20260930` tem o conteúdo no `main` mas está em uso numa worktree
-  do DeepSeek Harness, fica; 15 `rescue/*` esperam triagem (BOARD F2).
+- **Branches sem PR:** nenhuma sem PR nenhum, mas **29 com PR fechado sem merge e commits fora
+  do `main`** (corrigido pelo R2, 02/10 15:55 UTC: a primeira versão do comando contava PR fechado
+  como "tem PR"), mais 7 com conteúdo já no `main`. `claude/wp-telas-de-parede` (patch já no
+  `main`) apagada; `dsh/handoff-onda1-e-p7-20260930` em uso numa worktree do DeepSeek Harness, fica;
+  15 `rescue/*`. Triagem de tudo: BOARD F2.
 - **Não reconferido no vivo:** "nenhum pedido desde 01/10 14:44" (§0.3) e se o `courier="auto"`
   foi ligado (§0.5). Valiam quando a seção 0 foi escrita.
 
@@ -72,8 +95,12 @@
   próprio dado; o `NavigationFeedback` só termina quando o dado chega (teto de 15 s mantido). `lazy` e o
   limiar de 200 ms intocados. Desde o #1362 toda página preguiçosa declara, e o `performanceGuardrails.test.ts` trava.
   O teste novo reprova contra o `NavigationFeedback.vue` anterior (prova do defeito).
-- **Observação por item:** `PUT /api/v1/cart/skus/<sku>/notes/` grava `meta["notes"]` pelo op
-  `replace_sku` que já existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo).
+- **Observação por item:** `PUT /api/v1/cart/lines/<line_id>/notes/` (`shopman/storefront/api/urls.py:150`,
+  view `CartLineNotesView` em `surface.py:1334`) grava `meta["notes"]` pelo op `replace_sku` que já
+  existia no Core (mesmo SKU, mantém `line_id` e quantidade; nenhum op novo). ⚠️ **É por LINHA, não
+  por SKU, de propósito** (`shopman/shop/services/cart.py:384-386`): com escolhas no produto o mesmo
+  SKU tem duas linhas, e um editor por SKU faria uma observação sobrescrever a outra. (Corrigido em
+  02/10: esta linha dizia `cart/skus/<sku>/notes/`, rota que não existe.)
   280 caracteres, o mesmo teto do PDV (`LINE_NOTES_MAX_LENGTH`, `shopman/shop/services/cart.py`; #1362). `meta.notes` é texto pessoal: a sessão anonimizada recusa, a exclusão
   de conta apaga (o PDV também não apagava: corrigido), a exportação inclui.
 - **A Saída:** `backstage/projections/kds.py` lê `meta["notes"]` (lia `item.notes`, que não existe).
@@ -133,7 +160,7 @@ D2, D8, D18 (b, d, e), D22, D23, D25, D26, D27, D30, D31.
 | Frente | PR | Estado |
 |---|---|---|
 | Ordem 1: link de pagamento no vivo | sem PR | **meia verificação**: cadeia viva confere com o seed; nenhum link saiu depois do #1339; envio de teste não disparado (0.2) |
-| A1 e A2: aviso do cardápio segue o dado; observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1357 | ✅ mergeado (outra sessão, aberto um minuto depois do #1354; reusa `replace_sku`, Core intocado). O #1354 desta sessão foi fechado como duplicado |
+| A1 e A2: aviso do cardápio segue o dado; observação por item da loja chega ao KDS; Saída lê `meta["notes"]` | #1357 | ✅ mergeado (outra sessão, aberto 18 minutos depois do #1354, 23:46 → 00:04 UTC; reusa `replace_sku`, Core intocado). O #1354 desta sessão foi fechado como duplicado |
 | A1 resto: aviso espera TODAS as páginas preguiçosas (o #1357 cobriu só `/menu`) e limite de 280 caracteres como no PDV (o #1357 pôs 140) | #1362 | aberto, de outra sessão |
 | B1 a B4: Encomendas do PDV, filtros numa linha (`FilterBar` com opção `touch`), busca sem repetição, "Hoje, ter 29/09" | #1353 | ✅ mergeado. Primeira encomenda sobe 206 px em 1440x900 |
 | C1 opções de produto, C2 controles de data, C3 Threads, C4 Jev | #1360 | ✅ mergeado; PENDING D34 a D37 |

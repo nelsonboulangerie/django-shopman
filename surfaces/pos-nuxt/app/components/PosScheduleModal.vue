@@ -14,11 +14,7 @@
 // A tela NÃO decide o que a casa pode prometer. As datas ofertadas já pulam dia
 // fechado e feriado; as janelas já vêm anotadas com a prontidão do carrinho. Ela
 // mostra o que o servidor resolveu, e diz o porquê.
-import {
-  readinessNote,
-  selectedWindowConflict,
-  type ScheduleWindow,
-} from "~/presentation/schedule";
+import type { ScheduleWindow } from "~/presentation/schedule";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
@@ -56,21 +52,10 @@ const isOpen = computed({
   set: (value: boolean) => emit("update:open", value),
 });
 
-// O dia é a "Escolha rápida de dia" do kit (Tipo 1): Hoje, Amanhã, a próxima data
-// em que a casa abre e Outra data. Dia fechado aparece apagado com o motivo.
+// Na encomenda o dia é explícito (nada marcado até o operador escolher); no
+// balcão vale o hoje que o servidor devolveu. O dia, a janela, a prontidão e o
+// aviso de horário impossível são o `PosSchedulePicker`, o mesmo do reagendar.
 const chosenDate = computed(() => (props.salesMode === "order" ? props.deliveryDate ?? "" : props.deliveryDateEffective));
-
-const note = computed(() => readinessNote(props.bottleneckName, props.readyAt));
-const conflict = computed(() => selectedWindowConflict(props.windows, props.deliveryTimeSlot));
-
-// Três estados, três frases. "Sem janela neste dia" é um FATO; "ainda não sei" é
-// outra coisa; e "não consegui perguntar" é uma terceira, que estava se passando
-// por "carregando" para sempre quando o endpoint errava.
-const emptyMessage = computed(() => {
-  if (props.pending) return "Carregando os horários…";
-  if (props.failed) return "Não deu para carregar os horários. Tente de novo.";
-  return "Não há horário combinável neste dia.";
-});
 
 /**
  * No balcão, "sem agendamento" é UM gesto, não "apagar a data e depois apagar a
@@ -78,14 +63,6 @@ const emptyMessage = computed(() => {
  */
 function backToToday() {
   emit("update:deliveryDate", "");
-  emit("update:deliveryTimeSlot", "");
-}
-
-function pickDate(iso: string) {
-  emit("update:deliveryDate", iso);
-  // A janela escolhida pertencia ao dia ANTERIOR. Mantê-la faria o operador
-  // levar "10:00 às 10:30" de quinta para um sábado que fecha às 11h, e a
-  // promessa sairia errada sem ninguém ter tocado no horário.
   emit("update:deliveryTimeSlot", "");
 }
 </script>
@@ -98,77 +75,24 @@ function pickDate(iso: string) {
         <UiDialogDescription>{{ fulfillmentType === "delivery" ? "Entrega" : fulfillmentType === "pickup" ? "Retirada" : "Pedido" }}: combine o dia e o horário. Agendamento exige cliente identificado.</UiDialogDescription>
       </UiDialogHeader>
 
-      <div class="grid gap-4">
-        <!-- HOJE é o padrão, e ele é uma AFIRMAÇÃO: a esmagadora maioria das
-             vendas é para agora, e a caixa não pode parecer que falta preencher
-             alguma coisa. -->
-        <div class="grid gap-2">
-          <span class="text-sm font-medium text-muted-foreground">Dia</span>
-          <OperatorDayPicker
-            :model-value="chosenDate"
-            :today="today"
-            :min="today"
-            :max="maxDate || undefined"
-            :available-dates="availableDates"
-            label="Dia do pedido"
-            @update:model-value="pickDate"
-          />
-        </div>
-
-        <!-- O motivo dito UMA vez, no topo, em vez de repetido em dez janelas
-             apagadas. É a frase que o operador repete ao cliente. -->
-        <p v-if="note" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
-          {{ note }}
-        </p>
-
-        <div class="grid gap-2">
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="text-sm font-medium text-muted-foreground">Horário</span>
-            <button
-              v-if="deliveryTimeSlot"
-              type="button"
-              class="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              @click="$emit('update:deliveryTimeSlot', '')"
-            >
-              A combinar
-            </button>
-          </div>
-
-          <!-- A janela impossível APARECE, desabilitada, com o motivo. Sumir com
-               ela deixa o operador sem resposta para "e às 9h não dá?", e ele
-               acaba prometendo por fora do sistema. -->
-          <div v-if="windows.length" class="grid gap-1.5 sm:grid-cols-2">
-            <button
-              v-for="slot in windows"
-              :key="slot.ref"
-              type="button"
-              class="rounded-md border px-3 py-2 text-left text-sm transition"
-              :class="[
-                slot.enabled === false
-                  ? 'cursor-not-allowed border-dashed opacity-50'
-                  : 'hover:bg-accent',
-                deliveryTimeSlot === slot.ref ? 'border-primary bg-primary/5 font-semibold' : 'border-border',
-              ]"
-              :disabled="slot.enabled === false"
-              :title="slot.reason || ''"
-              @click="$emit('update:deliveryTimeSlot', slot.ref)"
-            >
-              <span class="block tabular-nums">{{ slot.label }}</span>
-              <span v-if="slot.enabled === false && slot.reason" class="block text-xs opacity-80">
-                {{ slot.reason }}
-              </span>
-            </button>
-          </div>
-          <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-            {{ emptyMessage }}
-          </p>
-
-          <!-- A escolha que virou impossível SOZINHA: o operador marcou 09:00 e
-               só depois lançou a baguete. Descobrir isso na tela de pagamento é
-               tarde — o cliente já ouviu o horário. -->
-          <p v-if="conflict" class="text-xs font-medium text-destructive">{{ conflict }}</p>
-        </div>
-      </div>
+      <!-- HOJE é o padrão, e ele é uma AFIRMAÇÃO: a esmagadora maioria das
+           vendas é para agora, e a caixa não pode parecer que falta preencher
+           alguma coisa. -->
+      <PosSchedulePicker
+        :today="today"
+        :date="chosenDate"
+        :time-slot="deliveryTimeSlot"
+        :available-dates="availableDates"
+        :max-date="maxDate"
+        :windows="windows"
+        :bottleneck-name="bottleneckName"
+        :ready-at="readyAt"
+        :pending="pending"
+        :failed="failed"
+        day-label="Dia do pedido"
+        @update:date="$emit('update:deliveryDate', $event)"
+        @update:time-slot="$emit('update:deliveryTimeSlot', $event)"
+      />
 
       <UiDialogFooter class="gap-2 sm:justify-between">
         <UiButton v-if="fulfillmentType !== 'delivery' && salesMode !== 'order'" variant="outline" @click="backToToday">Sem agendamento · levar agora</UiButton>

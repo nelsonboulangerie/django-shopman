@@ -17,6 +17,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.models import OperatorAlert, POSTab
 from shopman.backstage.projections.pos import build_pos
+from shopman.backstage.tests.pos_test_runtime import with_screen_total
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
@@ -491,7 +492,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
 
@@ -665,7 +666,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         for n in (1, 2):
             response = self.client.post(
                 "/api/v1/backstage/pos/sale/close/",
-                data=json.dumps({
+                data=json.dumps(with_screen_total({
                     "intent_version": POS_SALE_INTENT_VERSION,
                     "items": [{
                         "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
@@ -681,7 +682,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                         "field": "email", "value": "cliente@example.org", "customer_ref": "", "owner_ref": "",
                         "choice": "receipt_only", "client_request_id": f"pos-receipt-email-{n}",
                     }],
-                }),
+                })),
                 content_type="application/json",
             )
             self.assertEqual(response.status_code, 200, response.content)
@@ -709,7 +710,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "client_request_id": "pos-receipt-email-alheio",
         }
         response = self.client.post(
-            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(with_screen_total(payload)), content_type="application/json",
         )
         self.assertEqual(response.status_code, 422, response.content)
         self.assertEqual(response.json()["error"]["code"], "receipt_identity_conflict")
@@ -719,7 +720,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "choice": "receipt_only", "client_request_id": payload["client_request_id"],
         }]
         response = self.client.post(
-            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(with_screen_total(payload)), content_type="application/json",
         )
         self.assertEqual(response.status_code, 200, response.content)
         order = Order.objects.get(ref=response.json()["order_ref"])
@@ -762,7 +763,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 }]
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
@@ -800,7 +801,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
 
@@ -846,7 +847,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
 
@@ -978,7 +979,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
 
@@ -1007,7 +1008,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
 
@@ -1050,14 +1051,14 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # sai na retirada" (PDV-260930-R62). A recusa é antes do commit.
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps({
+            data=json.dumps(with_screen_total({
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "sales_mode": "counter",
                 "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
                 "customer_phone": "43999990000",
                 "payment_tenders": [{"method": "link", "amount_q": 1300, "collection": "terminal"}],
                 "client_request_id": "pos-headless-link-counter-001",
-            }),
+            })),
             content_type="application/json",
         )
 
@@ -1101,16 +1102,16 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
         missing_close = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(base_payload),
+            data=json.dumps(with_screen_total(base_payload)),
             content_type="application/json",
         )
         mismatch_close = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps({
+            data=json.dumps(with_screen_total({
                 **base_payload,
                 "client_request_id": "pos-headless-split-error-002",
                 "payment_tenders": [{"method": "cash", "amount_q": 1000, "collection": "terminal"}],
-            }),
+            })),
             content_type="application/json",
         )
 
@@ -1165,7 +1166,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         close = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps(payload),
+            data=json.dumps(with_screen_total(payload)),
             content_type="application/json",
         )
         self.assertEqual(close.status_code, 200)
@@ -1545,7 +1546,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         tab = opened.json()
         closed = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps({
+            data=json.dumps(with_screen_total({
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "tab_ref": tab["tab_ref"],
                 "tab_session_key": tab["tab_session_key"],
@@ -1554,7 +1555,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 "payment_method": "cash",
                 "payment_collection": "terminal",
                 "client_request_id": request_id,
-            }),
+            })),
             content_type="application/json",
         )
         self.assertEqual(closed.status_code, 200)

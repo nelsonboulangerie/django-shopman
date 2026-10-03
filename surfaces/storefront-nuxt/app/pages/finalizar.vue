@@ -2199,7 +2199,8 @@ useSeoMeta({
                   <UiBadge v-if="line.is_made_to_order && line.made_to_order_label" variant="outline" class="ml-1 align-middle">
                     {{ line.made_to_order_label }}
                   </UiBadge>
-                  <span v-if="line.notes" class="block shop-meta" data-review-line-note>Obs.: {{ line.notes }}</span>
+                  <!-- Observação do item: a MESMA marca da sacola (selo + uma linha). -->
+                  <CartLineNoteMark v-if="line.notes" :notes="line.notes" class="mt-1" data-review-line-note />
                 </li>
               </ul>
 

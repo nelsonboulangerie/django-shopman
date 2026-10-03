@@ -601,3 +601,37 @@ suas: a FAQ tem 14 perguntas e **0 publicadas** (a busca só lê as publicadas,
 handoff em `/admin/settings/copy/`; e, no ManyChat, o External Request em toda mensagem e a pausa
 com `concierge_handoff == "1"`. Depois: `observe` → `assist` e `SHOPMAN_CONCIERGE_ENABLED=true`
 juntos, no painel (escrita no spec vivo: sua).
+
+## D42. PDV: o envio da venda diz o total que o operador viu?
+
+**Contexto.** No PDV, abrir o checkout ou mexer no desconto zera a revisão antes de o servidor
+responder. As formas de pagamento agora esperam a revisão voltar, como o "Validar" já esperava
+(`PosPaymentWorkspace.vue`, `awaitingReviewReason`, PR desta frente). O servidor já protege o
+dinheiro: exige revisão, recalcula o total e recusa pagamento abaixo dele. O que ainda não existe é
+o segundo cinto: a tela mandar no envio o total que mostrou e o servidor recusar a venda se ele
+tiver mudado, como o checkout da loja já faz (`expected_total_q`, `shop/services/checkout.py:85-126`).
+**Pergunta:** o PDV passa a mandar o total esperado e o servidor recusa a venda quando ele mudou?
+(sim / não)
+**Recomendação:** sim, depois do go-live. Não é urgente: com a trava desta frente, o total que a tela
+mostra ao lançar já é o revisado.
+**Respondida pelo dono em 02/10 (chat): sim, agora. Entregue no PR #1389.**
+
+## D43. PDV > Encomendas: o redesenho (brief da Frente 6 do turno de 02/10)
+
+**Contexto.** Brief em `docs/plans/WP-POS-ENCOMENDAS-REDESENHO-BRIEF.md` (#1379): a seção vira a
+agenda do balcão (quem está na minha frente, o que sai hoje, como está a semana). As redundâncias
+R1 a R5 já saíram sem aval (#1382) e o modo Encomendas da venda virou assistente (#1384). O resto
+espera estas respostas (recomendação entre parênteses):
+P1) Os recortes de todo dia (A receber, Sem Via Pedido, Retiradas, Entregas) viram botões de um
+toque? (sim) · P2) O lote imprime 1 = tudo o que está na tela, inclusive o que já saiu, ou 2 = só o
+que ainda não saiu? (2) · P3) No detalhe, o saldo e os botões ficam num painel fixo à direita? (sim)
+· P4) O seletor de dia e horário vira 1 = peça do PDV agora, ou 2 = já nasce no kit? (1) · P5) No
+detalhe do PDV fica só a etiqueta do balcão, e o Gestor não muda? (sim) · P6) A seção ganha um botão
+"Nova encomenda"? (sim) · P7) O cancelar no balcão usa os mesmos motivos prontos do Gestor? Pede uma
+mudança pequena no servidor. (sim). As primitivas do kit (Frente 7) esperam este aval.
+
+**Respondida pelo dono em 02/10 (chat):** P1 sim · P2 = 2 (o lote imprime só o que ainda não saiu) ·
+P3 sim · P4 = 1 (o seletor de dia e horário é peça do PDV agora; o `OperatorSchedulePicker` no kit
+fica para quando houver um segundo app consumidor) · P5 sim · P6 sim · P7 sim. O brief está aprovado;
+as fatias S2 a S9 entram em execução (BOARD, linhas S*).
+
