@@ -1,7 +1,8 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, o Período do kit na barra (Dia ou Semana, ‹ › e a data),
+// buscar" sempre no topo, o Período do kit na barra (o dia, a semana, os próximos
+// dias, um intervalo; ‹ › e a data),
 // a linha "Hoje", os recortes de todo dia em botões de um toque com o "Filtrar"
 // do kit para o resto, e o lote das vias que faltam no que está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
@@ -27,6 +28,12 @@ import type {
   PreorderSituation,
 } from "~/types/preorders";
 
+import {
+  CUSTOM_PERIOD,
+  resolvePeriod,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
+
 import { addDays } from "./orderTickets";
 import { parseLocalDate } from "./schedule";
 
@@ -35,7 +42,19 @@ export const PREORDERS_SCOPE_NOTE = "Retiradas e entregas de todos os canais, pe
 
 // ── O estado da tela (a URL) ────────────────────────────────────────────────
 
-export type PreordersMode = "day" | "week";
+/**
+ * O que o Período das Encomendas oferece (o `presets` do controle do kit). O
+ * balcão olha sobretudo para a frente: o dia, a semana, o mês, os próximos dias;
+ * e, para conferir o que passou, os últimos dias e o personalizado.
+ */
+export const PREORDERS_PERIOD_PRESETS = ["day", "week", "month", "next7d", "next14d", "next28d", "7d", "28d"] as const;
+
+/** O teto do intervalo que o servidor aceita (`projections.preorders.MAX_SPAN_DAYS`). */
+export const PREORDERS_MAX_SPAN_DAYS = 62;
+
+export type PreordersMode = (typeof PREORDERS_PERIOD_PRESETS)[number] | typeof CUSTOM_PERIOD;
+
+const PREORDERS_MODES: readonly PreordersMode[] = [...PREORDERS_PERIOD_PRESETS, CUSTOM_PERIOD];
 export type FulfillmentFilter = "all" | "pickup" | "delivery";
 export type PrintFilter = "all" | "pending";
 export type PaymentFilter = "all" | PreorderPaymentState;
@@ -48,8 +67,13 @@ export interface PreorderFilters {
 
 export interface PreordersView extends PreorderFilters {
   mode: PreordersMode;
-  /** O dia escolhido. No modo Semana, a semana é a que contém este dia. */
+  /**
+   * O dia escolhido. Na semana e no mês, o período é o que contém este dia; nos
+   * próximos dias e no personalizado, é o primeiro dia; nos últimos dias, o último.
+   */
   date: string;
+  /** O último dia, só no personalizado ("" nos outros modos). */
+  to: string;
   /** A busca "Cliente veio buscar" (vazia = a tela mostra o período). */
   q: string;
   /** "Incluir concluídas" — só vale para a busca. */
@@ -87,9 +111,14 @@ export function parsePaymentFilter(raw: unknown): PaymentFilter {
 /** A URL → o estado da tela. Valor ilegível cai no padrão, nunca em erro. */
 export function parseView(query: Record<string, unknown>, today: string): PreordersView {
   const date = first(query.date);
+  const to = first(query.to);
+  let mode = oneOf(query.mode, PREORDERS_MODES, DEFAULT_MODE);
+  // Personalizado sem a data final não é intervalo: cai no padrão.
+  if (mode === CUSTOM_PERIOD && !(parseLocalDate(date) && parseLocalDate(to))) mode = DEFAULT_MODE;
   return {
-    mode: oneOf(query.mode, ["day", "week"] as const, DEFAULT_MODE),
+    mode,
     date: parseLocalDate(date) ? date : today,
+    to: mode === CUSTOM_PERIOD ? to : "",
     fulfillment: oneOf(query.fulfillment, FULFILLMENT_FILTERS, "all"),
     pay: parsePaymentFilter(query.pay),
     print: oneOf(query.print, PRINT_FILTERS, "all"),
@@ -102,7 +131,8 @@ export function parseView(query: Record<string, unknown>, today: string): Preord
 export function viewQuery(view: PreordersView, today: string): Record<string, string> {
   const query: Record<string, string> = {};
   if (view.mode !== DEFAULT_MODE) query.mode = view.mode;
-  if (view.date !== today) query.date = view.date;
+  if (view.date !== today || view.mode === CUSTOM_PERIOD) query.date = view.date;
+  if (view.mode === CUSTOM_PERIOD && view.to) query.to = view.to;
   if (view.fulfillment !== "all") query.fulfillment = view.fulfillment;
   if (view.pay !== "all") query.pay = view.pay;
   if (view.print !== "all") query.print = view.print;
@@ -142,11 +172,41 @@ export function isoWeek(iso: string): string {
   return `${year}-W${String(week).padStart(2, "0")}`;
 }
 
+// ── A ponte com o Período do kit ────────────────────────────────────────────
+
+/**
+ * O estado da URL → a seleção do controle. A data de hoje vira âncora vazia, que
+ * é como o controle sabe que o período acompanha hoje (e mostra "Voltar para
+ * hoje" quando não acompanha).
+ */
+export function periodSelectionOf(view: Pick<PreordersView, "mode" | "date" | "to">, today: string): PeriodSelection {
+  if (view.mode === CUSTOM_PERIOD) return { preset: CUSTOM_PERIOD, from: view.date, to: view.to };
+  const anchor = view.date === today ? "" : view.date;
+  if (view.mode === "7d" || view.mode === "28d") return { preset: view.mode, from: "", to: anchor };
+  if (view.mode === "day" || view.mode.startsWith("next")) return { preset: view.mode, from: anchor, to: "" };
+  // Semana e mês: hoje dentro do período é o período de hoje.
+  const range = resolvePeriod({ preset: view.mode, from: view.date, to: "" }, { today });
+  const containsToday = range.date_from <= today && today <= range.date_to;
+  return { preset: view.mode, from: containsToday ? "" : view.date, to: "" };
+}
+
+/** A seleção do controle → o que muda na URL. */
+export function viewOfPeriod(selection: PeriodSelection, today: string): Pick<PreordersView, "mode" | "date" | "to"> {
+  const mode = PREORDERS_MODES.includes(selection.preset as PreordersMode)
+    ? (selection.preset as PreordersMode)
+    : DEFAULT_MODE;
+  if (mode === CUSTOM_PERIOD) return { mode, date: selection.from, to: selection.to };
+  const date = mode === "7d" || mode === "28d" ? selection.to : selection.from;
+  return { mode, date: date || today, to: "" };
+}
+
 /** O que a tela pede ao servidor para o período do estado. */
-export function periodParams(view: Pick<PreordersView, "mode" | "date">): Record<string, string> {
-  return view.mode === "day"
-    ? { date_from: view.date, date_to: view.date }
-    : { week: isoWeek(view.date) };
+export function periodParams(view: Pick<PreordersView, "mode" | "date" | "to">): Record<string, string> {
+  if (view.mode === "day") return { date_from: view.date, date_to: view.date };
+  if (view.mode === "week") return { week: isoWeek(view.date) };
+  // O resto pelas datas: a seleção com a âncora explícita resolve sem depender de hoje.
+  const range = resolvePeriod(periodSelectionOf(view, ""), { today: view.date });
+  return { date_from: range.date_from, date_to: range.date_to };
 }
 
 // ── Contagens e frases ──────────────────────────────────────────────────────
@@ -175,7 +235,15 @@ export function dayColumnTitle(day: Pick<PreorderDay, "is_today" | "weekday_disp
 
 /** O período vazio, por extenso. */
 export function periodEmptyMessage(mode: PreordersMode): string {
-  return mode === "day" ? "Nenhuma encomenda neste dia." : "Nenhuma encomenda nesta semana.";
+  return `Nenhuma encomenda ${periodPhrase(mode)}.`;
+}
+
+/** "neste dia", "nesta semana", "neste mês", "neste período". */
+function periodPhrase(mode: PreordersMode): string {
+  if (mode === "day") return "neste dia";
+  if (mode === "week") return "nesta semana";
+  if (mode === "month") return "neste mês";
+  return "neste período";
 }
 
 /**
@@ -400,9 +468,7 @@ export function checkPaymentNotice(count: number): string {
 
 /** O que a lista diz quando os filtros esvaziaram o período. */
 export function filterEmptyMessage(mode: PreordersMode): string {
-  return mode === "day"
-    ? "Nenhuma encomenda com estes filtros neste dia."
-    : "Nenhuma encomenda com estes filtros nesta semana.";
+  return `Nenhuma encomenda com estes filtros ${periodPhrase(mode)}.`;
 }
 
 // ── "A receber": uma grandeza, uma apresentação ─────────────────────────────
@@ -677,7 +743,10 @@ export function periodIsToday(view: Pick<PreordersView, "mode" | "date">, today:
 
 /** O rótulo do resumo do período. */
 export function periodSummaryLabel(mode: PreordersMode): string {
-  return mode === "day" ? "No dia" : "Na semana";
+  if (mode === "day") return "No dia";
+  if (mode === "week") return "Na semana";
+  if (mode === "month") return "No mês";
+  return "No período";
 }
 
 // ── A linha da encomenda (uma forma só: dia, semana e busca) ────────────────

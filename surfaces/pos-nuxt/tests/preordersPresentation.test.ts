@@ -36,6 +36,7 @@ import {
   periodEmptyMessage,
   periodIsToday,
   periodParams,
+  periodSelectionOf,
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
@@ -60,6 +61,7 @@ import {
   todayPendingCount,
   toggleShortcut,
   viewPath,
+  viewOfPeriod,
   viewQuery,
   type PreordersView,
 } from "../app/presentation/preorders";
@@ -113,7 +115,7 @@ function day(partial: Partial<PreorderDay> = {}): PreorderDay {
 }
 
 function view(partial: Partial<PreordersView> = {}): PreordersView {
-  return { mode: "week", date: HOJE, ...NO_FILTERS, q: "", completed: false, ...partial };
+  return { mode: "week", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
 }
 
 // ── O estado na URL ─────────────────────────────────────────────────────────
@@ -172,8 +174,60 @@ describe("a semana começa na SEGUNDA (decisão do dono, 28/09)", () => {
   });
 
   it("o período pedido ao servidor: o dia pelas datas, a semana pela semana ISO", () => {
-    expect(periodParams({ mode: "day", date: "2026-10-01" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
-    expect(periodParams({ mode: "week", date: "2026-10-01" })).toEqual({ week: "2026-W40" });
+    expect(periodParams({ mode: "day", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
+    expect(periodParams({ mode: "week", date: "2026-10-01", to: "" })).toEqual({ week: "2026-W40" });
+  });
+});
+
+// ── O Período universal do kit ──────────────────────────────────────────────
+
+describe("o Período das Encomendas olha para a frente (e para trás, quando pedido)", () => {
+  it("o servidor recebe as datas de cada modo, dentro do teto", () => {
+    expect(periodParams({ mode: "next7d", date: HOJE, to: "" })).toEqual({ date_from: HOJE, date_to: "2026-10-04" });
+    expect(periodParams({ mode: "next28d", date: "2026-10-20", to: "" })).toEqual({ date_from: "2026-10-20", date_to: "2026-11-16" });
+    expect(periodParams({ mode: "7d", date: HOJE, to: "" })).toEqual({ date_from: "2026-09-22", date_to: HOJE });
+    expect(periodParams({ mode: "month", date: "2026-10-15", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-31" });
+    expect(periodParams({ mode: "custom", date: "2026-10-01", to: "2026-10-20", })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-20" });
+  });
+
+  it("a URL guarda o modo, a data e, no personalizado, o fim", () => {
+    const custom = view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
+    expect(viewQuery(custom, HOJE)).toEqual({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
+    expect(parseView(viewQuery(custom, HOJE), HOJE)).toEqual(custom);
+    const ahead = view({ mode: "next7d" });
+    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next7d" });
+    expect(parseView(viewQuery(ahead, HOJE), HOJE)).toEqual(ahead);
+    // Personalizado sem o fim não é intervalo.
+    expect(parseView({ mode: "custom", date: "2026-10-01" }, HOJE)).toEqual(view({ date: "2026-10-01" }));
+    // O fim só vale no personalizado.
+    expect(parseView({ mode: "day", to: "2026-10-20" }, HOJE)).toEqual(view({ mode: "day" }));
+  });
+
+  it("a ponte com o controle vai e volta, e hoje é âncora vazia", () => {
+    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "week", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-01" }), HOJE)).toEqual({ preset: "week", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "week", from: "2026-10-07", to: "" });
+    expect(periodSelectionOf(view({ mode: "next7d" }), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view({ mode: "7d", date: "2026-09-20" }), HOJE)).toEqual({ preset: "7d", from: "", to: "2026-09-20" });
+    for (const state of [
+      view({ mode: "day", date: "2026-10-02" }),
+      view({ mode: "week", date: "2026-10-07" }),
+      view({ mode: "month", date: "2026-11-03" }),
+      view({ mode: "next14d", date: "2026-10-12" }),
+      view({ mode: "28d", date: "2026-09-01" }),
+      view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" }),
+    ]) {
+      const back = viewOfPeriod(periodSelectionOf(state, HOJE), HOJE);
+      expect({ ...state, ...back }).toEqual(state);
+    }
+  });
+
+  it("as frases dizem o período, qualquer que seja", () => {
+    expect(periodEmptyMessage("month")).toBe("Nenhuma encomenda neste mês.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda neste período.");
+    expect(filterEmptyMessage("custom")).toBe("Nenhuma encomenda com estes filtros neste período.");
+    expect(periodSummaryLabel("month")).toBe("No mês");
+    expect(periodSummaryLabel("next28d")).toBe("No período");
   });
 });
 
