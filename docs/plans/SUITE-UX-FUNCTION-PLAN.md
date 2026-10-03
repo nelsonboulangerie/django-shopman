@@ -558,6 +558,17 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
   no celular **sim**; feriados e clima automáticos **sim, feriados com confirmação do gestor**; regras
   de disparo do Marketing ficam no Admin **sim**; etiquetas de consumo e lugares do salão: explicados
   ao dono, decisão pendente.
+- iFood e Meta/Google passam a respeitar o estoque (no lugar da pausa automática): **sim**.
+- Etiqueta de consumo do produto: o dono propõe o nome **"Perfil de consumo"** e quer o campo no
+  **cadastro do produto no Gestor (Catálogo, painel do produto)**. Hoje o painel não tem o campo; o dado
+  mora em `ProductConsumptionTag` (separado do produto de propósito, chaveado por SKU texto para o
+  histórico externo). A tela escreve nesse modelo; o modelo não muda. Produto novo sem perfil vira
+  aviso para classificar com um toque. ⚠️ Colisão de nome com a seção "Perfis" do B.I. a resolver.
+- Lugares do salão: o dono teme trabalho manual que envelheça. Não há mapa nem gesto por venda: o
+  cadastro é a lista de mesas e lugares (`SeatingSpot`, uma vez, muda só quando muda o mobiliário) e a
+  lotação é calculada sozinha pela comanda (abre/paga) e pelo modo de consumo (`services/room.py`).
+  Proposta: fica como está, e o B.I. mostra "calculado com N lugares, cadastrados em dd/mm" para o
+  dono notar se envelhecer.
 
 1. **As sete leis** (§2) como filtro de toda tela.
 2. **As sete formas, os oito gestos e o contrato de chrome** (§3 e §4) como gramática única.
