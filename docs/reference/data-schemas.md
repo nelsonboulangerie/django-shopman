@@ -2203,6 +2203,8 @@ quem confirmou, de qual NF, com que preço — mais **uma** estruturada:
 | `purchase_qty` · `purchase_base_qty` | `str` (Decimal) | quantidade **na unidade de compra** e **na unidade-base** — é o par que prova a conversão |
 | `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo por unidade de compra |
 | `converted_via` | `{label: str, factor: str, approximate: bool}` | **a ponte que a quantidade atravessou** — ver abaixo |
+| `purchase_line_attested_by` | `"line_check" \| "volume_count"` | como a linha foi assinada: o ok dela, ou a contagem de volumes do recebimento por exceção (UX-C1). Quem contou é o `Move.user` |
+| `purchase_volumes_counted` · `purchase_volumes_expected` | `int` | só com `volume_count`: quantos volumes o recebedor contou na doca e quantos deviam ser |
 
 `converted_via` só existe quando houve conversão: entrada na própria unidade-base
 não carimba nada, porque não houve ponte, e uma chave com `null` fingiria que

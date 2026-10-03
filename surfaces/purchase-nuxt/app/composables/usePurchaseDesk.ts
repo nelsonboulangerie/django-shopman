@@ -30,11 +30,13 @@ import {
   isApproximateCost,
   parseMoneyInput,
   quotePreview as buildQuotePreview,
+  receiptExceptionView as buildReceiptExceptionView,
   receiptFirstBlocker as receiptFirstReceiptBlocker,
   receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
   receiptLineRows,
   receiptPendingItems,
+  receiptVolumesStep as buildReceiptVolumesStep,
   reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
   supplierCostRows,
@@ -93,6 +95,10 @@ export function usePurchaseDesk() {
   const receiptSupplierRef = useState("purchase-receipt-supplier", () => "");
   const receiptNote = useState("purchase-receipt-note", () => "");
   const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => []);
+  // Os volumes que a nota declara (0 quando não declara) e o ATO FÍSICO do
+  // recebedor: quantos ele contou na doca. `null` = ainda não contou.
+  const receiptInvoiceVolumes = useState("purchase-receipt-invoice-volumes", () => 0);
+  const receiptVolumesCounted = useState<number | null>("purchase-receipt-volumes-counted", () => null);
   // Confirmar zera o rascunho, e um rascunho zerado nao sabe dizer o que acabou
   // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
   // o aviso de sucesso mostra.
@@ -232,7 +238,21 @@ export function usePurchaseDesk() {
   );
   // A lista da entrada: uma linha por item, com o estado dela. É por ela que o
   // operador enxerga a nota inteira sem rolar dez formulários abertos.
-  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value));
+  // Recebimento por exceção: o que bate com a nota entra pela contagem de
+  // volumes, sem o ok da linha; o que não bate pede o seu.
+  const receiptException = computed(() =>
+    buildReceiptExceptionView(
+      receiptLinePreviews.value,
+      receiptMode.value,
+      receiptInvoiceVolumes.value,
+      receiptVolumesCounted.value,
+    ),
+  );
+  const receiptMatchedIds = computed<ReadonlySet<string>>(() =>
+    receiptException.value.available ? new Set(receiptException.value.matched.map((preview) => preview.line.id)) : new Set(),
+  );
+  const receiptVolumesStep = computed(() => buildReceiptVolumesStep(receiptException.value));
+  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value, receiptMatchedIds.value));
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
@@ -247,7 +267,7 @@ export function usePurchaseDesk() {
   // O painel listava as pendências ACHATADAS — dez pílulas "Definir insumo"
   // iguais, sem dizer de qual item, e a lista ficava inútil justamente quando
   // era mais necessária (nota grande). Uma linha por item, com nome e gesto.
-  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value));
+  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value, receiptMatchedIds.value));
   const receiptDocumentBlockers = computed(() =>
     receiptIsBlank.value ? []
     : receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"]
@@ -263,9 +283,16 @@ export function usePurchaseDesk() {
       receiptSupplierBlockers.value,
       receiptPendingLines.value,
       receiptLinePreviews.value.length > 0,
+      receiptVolumesStep.value,
     ),
   );
-  const receiptCheckedCount = computed(() => receiptLinePreviews.value.filter((preview) => preview.line.checked).length);
+  // Conferido = com o ok da linha, ou coberto pela contagem de volumes que fechou.
+  const receiptCheckedCount = computed(
+    () =>
+      receiptLinePreviews.value.filter(
+        (preview) => preview.line.checked || (receiptException.value.countOk && receiptMatchedIds.value.has(preview.line.id)),
+      ).length,
+  );
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
   );
@@ -278,6 +305,7 @@ export function usePurchaseDesk() {
       receiptDocumentBlockers.value.length === 0 &&
       receiptSupplierBlockers.value.length === 0 &&
       receiptBlockers.value.length === 0 &&
+      receiptVolumesStep.value === "" &&
       receiptCheckedCount.value === receiptLinePreviews.value.length,
   );
 
@@ -561,6 +589,7 @@ export function usePurchaseDesk() {
       invoiceInput: invoiceInput.value,
       note: receiptNote.value,
       lines: receiptLines.value,
+      invoiceVolumes: receiptInvoiceVolumes.value,
     },
   }));
 
@@ -637,6 +666,8 @@ export function usePurchaseDesk() {
       invoiceInput.value = next.activeReceipt.invoiceInput || "";
       receiptNote.value = next.activeReceipt.note || "";
       receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
+      receiptInvoiceVolumes.value = Number(next.activeReceipt.invoiceVolumes) || 0;
+      receiptVolumesCounted.value = null;
       receiptOutcome.value = null;
       receiptHydrated.value = true;
     }
@@ -735,6 +766,14 @@ export function usePurchaseDesk() {
     receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
     receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
     receiptLines.value = [];
+    receiptInvoiceVolumes.value = 0;
+    receiptVolumesCounted.value = null;
+  }
+
+  /** O ato físico: "Contei N volumes". `null` desfaz a contagem. */
+  function setReceiptVolumesCounted(counted: number | null) {
+    receiptOutcome.value = null;
+    receiptVolumesCounted.value = counted !== null && Number.isFinite(counted) && counted > 0 ? Math.round(counted) : null;
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
@@ -901,6 +940,8 @@ export function usePurchaseDesk() {
           invoiceAccessKey: invoiceStatus.value.accessKey,
           note: receiptNote.value,
           lines: receiptLines.value,
+          invoiceVolumes: receiptInvoiceVolumes.value,
+          ...(receiptVolumesCounted.value !== null ? { volumes: { counted: receiptVolumesCounted.value } } : {}),
         }),
       { receipt: true, quiet: true },
     );
@@ -1149,6 +1190,12 @@ export function usePurchaseDesk() {
     invoiceStatus,
     receiptLinePreviews,
     receiptRows,
+    receiptException,
+    receiptMatchedIds,
+    receiptVolumesStep,
+    receiptVolumesCounted,
+    receiptInvoiceVolumes,
+    setReceiptVolumesCounted,
     receiptBlockers,
     receiptWatchWarnings,
     receiptPendingLines,

@@ -92,6 +92,10 @@ const {
   invoiceStatus,
   receiptLinePreviews,
   receiptRows,
+  receiptException,
+  receiptInvoiceVolumes,
+  receiptVolumesStep,
+  setReceiptVolumesCounted,
   receiptWatchWarnings,
   receiptPendingLines,
   receiptDocumentBlockers,
@@ -272,7 +276,11 @@ const invoiceShortKey = computed(() =>
 // realmente segura o `Confirmar entrada`, inclusive a linha pronta que ninguém
 // marcou como conferida.
 const receiptTotalPending = computed(
-  () => receiptPendingLines.value.length + receiptDocumentBlockers.value.length + receiptSupplierBlockers.value.length,
+  () =>
+    receiptPendingLines.value.length +
+    receiptDocumentBlockers.value.length +
+    receiptSupplierBlockers.value.length +
+    (receiptVolumesStep.value ? 1 : 0),
 );
 const purchaseTotalQ = computed(() =>
   reorderRows.value.reduce((total, row) => total + (row.estimatedCostQ ?? 0), 0),
@@ -616,6 +624,15 @@ async function focusReceiptLine(lineId: string, field: ReceiptFieldAnchor | null
   const target = await waitForElement(receiptFieldSelector(lineId, field));
   if (!target) return;
   revealTarget(target, field ? `${lineId}:${field}` : lineId);
+}
+
+// Recebimento por exceção: o que a conferência do topo pede, ela mesma grava.
+function onExceptionCount(counted: number | null) {
+  setReceiptVolumesCounted(counted);
+}
+
+function onExceptionExpiry(lineId: string, date: string) {
+  updateReceiptLine(lineId, { expiryDate: date });
 }
 
 function focusReceiptAnchor(anchor: ReceiptDocumentAnchor) {
@@ -1089,6 +1106,23 @@ onBeforeUnmount(stopInvoiceScanner);
           </div>
         </section>
 
+        <!-- Recebimento por exceção (com NF): o que bate entra pela contagem de
+             volumes; a validade é pedida uma linha por vez; só o que não bate
+             pede atenção. A lista completa continua logo abaixo. -->
+        <ReceiptExceptionFlow
+          v-if="receiptMode === 'invoice' && receiptLinePreviews.length"
+          :view="receiptException"
+          :materials="materials"
+          :line-count="receiptLinePreviews.length"
+          :total-cost-q="receiptTotalCostQ"
+          :declared-volumes="receiptInvoiceVolumes"
+          :pending="readonlyFallback || actionPending"
+          :volumes-ring="anchorRing('volumes')"
+          @count="onExceptionCount"
+          @expiry="onExceptionExpiry"
+          @open="openReceiptLine"
+        />
+
         <section class="rounded-md border border-border bg-card">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
             <div>
@@ -1210,7 +1244,7 @@ onBeforeUnmount(stopInvoiceScanner);
 
         <!-- Toda pendência é um GESTO: clicar leva ao campo que falta, não a
              uma acusação parada no rodapé. -->
-        <div v-else-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
+        <div v-else-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptVolumesStep || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
           <button
             v-for="blocker in receiptDocumentBlockers"
             :key="blocker"
@@ -1230,6 +1264,15 @@ onBeforeUnmount(stopInvoiceScanner);
             @click="focusReceiptAnchor('supplier')"
           >
             {{ blocker }}
+          </button>
+          <button
+            v-if="receiptVolumesStep"
+            type="button"
+            class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
+            :class="receiptWarningClasses.block"
+            @click="focusReceiptAnchor('volumes')"
+          >
+            {{ receiptVolumesStep }}
           </button>
           <button
             v-for="item in receiptPendingLines"
