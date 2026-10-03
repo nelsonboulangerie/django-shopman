@@ -751,7 +751,7 @@ def team_triage(run: Execution, decision):
     urgency = triage.CAN_WAIT if only_other_desk else triage.NOW
     return triage.Triage(
         intent, urgency, destination, team_summary(run)[:480], "intents",
-        str(getattr(decision, "escalated_by", "") or ""),
+        "cancel_order" if first.act == CANCEL else str(getattr(decision, "escalated_by", "") or ""),
         jev_scores=dict(getattr(decision, "jev_scores", {}) or {}),
     )
 
@@ -816,10 +816,12 @@ def run(conversation, *, binding, decision, client=None):
         client=reader,
         use_model=reader is not None or has_key,
     )
-    if getattr(decision, "escalates", False) and decision.intent in TEAM_ACTS | OTHER_DESK_ACTS | {ALLERGY}:
+    if getattr(decision, "escalates", False):
         # A triagem (regra, modelo ou Jev) mandou para a equipe: essa parte fica, nunca sai.
-        if decision.intent not in {act.act for act in found.acts}:
-            found.acts.append(Act(decision.intent, span=text.strip()[:300]))
+        # O cancelamento a triagem grava como pedido (``escalated_by=cancel_order``, R4).
+        needed = CANCEL if decision.escalated_by == "cancel_order" else decision.intent
+        if needed in TEAM_ACTS | OTHER_DESK_ACTS | {ALLERGY} and needed not in {act.act for act in found.acts}:
+            found.acts.append(Act(needed, span=text.strip()[:300]))
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)

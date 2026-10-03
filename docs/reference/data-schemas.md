@@ -162,6 +162,14 @@ parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model
 `jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
+Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`, atrás de
+`CONCIERGE_INTENTS_PLURAL`): a triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
+neste turno (as 12 intenções e `multiple_parts`, a pergunta "a mensagem traz mais de uma coisa?",
+feita só com a chave ligada; vazio sem Jev). Com parte sensível no turno, a triagem gravada é a do
+turno inteiro: `source=intents`, `intent` a primeira parte de equipe (cancelamento grava
+`intent=order`, `escalated_by=cancel_order`), `summary` com cada parte numerada e o que houve com ela
+(`respondida`, `com a equipe`, `suspenso, a equipe fecha`). Alergia respondida pelo aviso da casa
+dentro de uma mensagem com várias partes grava `source=intents` e o `answered_by` de sempre.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
 `ConversationMessage.envelope["triage_shadow"]` = `{rules, rules_source, jev, jev_scores, latency_ms,
 model, at}`: `rules`/`rules_source` como `triage.classify_rules`; `jev` é a intenção mais provável
@@ -188,6 +196,12 @@ e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `a
 `model` (soma das idas ao modelo da resposta), `tools` (soma das ferramentas). Os contadores da
 `Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
 como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
+Com as intenções no plural (OBS0310-Q): `layer` pode ser `intents` (cada parte pelo executor da
+casa, uma resposta), a etapa `intents` aparece em `latency_ms` (porteiro, leitura e execução) e em
+`calls` (`stage: intents`, a leitura com o modelo pequeno, quando houve), e `usage.intents` =
+`{acts: [{act, span, product, qty}], source: gate|model|local, reason, read_ms, read_error?}`: as
+partes na ordem do cliente (`act` da lista fechada `intents.ACT_NAMES`), quem as decidiu (o porteiro
+sozinho, a leitura com o modelo, ou a divisão local quando a leitura falhou) e por quê.
 Registros anteriores a 03/10/2026 têm `usage = {}`.
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive

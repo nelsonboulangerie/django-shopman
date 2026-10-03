@@ -596,8 +596,10 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
                 client=metered,
                 use_model=reader == "model",
             )
-            if decision.escalates and decision.intent not in {act.act for act in found.acts}:
-                found.acts.append(intents.Act(decision.intent, span=text))
+            if decision.escalates:
+                needed = intents.CANCEL if decision.escalated_by == "cancel_order" else decision.intent
+                if needed not in {act.act for act in found.acts}:
+                    found.acts.append(intents.Act(needed, span=text))
             elapsed = (_time.perf_counter() - started) * 1000
             usage = meter.as_usage()
             after = [act.act for act in found.acts]
