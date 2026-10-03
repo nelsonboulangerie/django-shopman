@@ -59,3 +59,11 @@ Admin, CSV de relatórios.
 - Cenários salvos por gestores com o nome "Rendimento…" são dado do usuário, não código.
 - No B.I. o número é agregado (dia, receita, forno), não por lote: o previsto assumido é
   sinalizado como contagem na dica do bloco, não lote a lote.
+
+## Evidência
+
+- Backstage completo + `shop/tests/test_production_yield_ledger.py` e
+  `test_production_notifications.py`: `8755 passed, 59 skipped`.
+- `ruff`: `All checks passed!`. `makemigrations --check`: `No changes detected`.
+- bi-nuxt: vitest `62 passed`, `eslint` 0, `nuxi typecheck` 0.
+- operator-kit (vocabulário, travessão, identificadores, texto truncado): `14 passed`.
