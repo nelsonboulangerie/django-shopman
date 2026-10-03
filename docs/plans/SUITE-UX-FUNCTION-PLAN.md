@@ -670,3 +670,39 @@ a Cozinha fica com as estações e o "em preparo". Aguarda o dono.
   com que frequência, e decide por frequência × papel.
 - **Nome.** O sistema se chama **Shopman** na frente do operador. Para a home ("Shopman Apps"), opções
   em aberto (§13): "Central" (já é o endereço `central.`), "Início", ou só "Shopman".
+
+## 16. Rodada de 03/10 (noite)
+
+**Decidido pelo dono:** tudo do §15 aprovado, incluindo **uma Saída só, no Gestor**; a home se chama
+**Central** (de Apps); a contingência vira WP de infraestrutura (abaixo).
+
+**Como o tablet abre a gaveta.** A gaveta abre pelo pulso que passa pela impressora do Balcão
+(RJ11), comandado pelo agente local do PC do Balcão (`127.0.0.1:47811`, `services/pos_hardware.py`);
+o tablet não alcança esse agente. Mas o backstage já tem o **relay de impressão** (`PrintJob`
+`transport=relay`, alvo = terminal, quem busca é o agente daquele terminal; hoje leva a DANFE de um
+tablet sem impressora para a impressora do despacho). Proposta: um tipo novo de job, o **pulso de
+gaveta**, pelo mesmo relay. O dinheiro fecha a comanda na mesa; o tablet guarda um cartão pendente
+"Dinheiro da Mesa 6 · troco R$ 45,00"; **na frente da gaveta**, o atendente toca "Abrir gaveta do
+Balcão" e ela abre em segundos; a tela do Balcão registra "gaveta aberta pelo tablet (JO) · Mesa 6".
+Nunca abre sozinha com o atendente ainda na mesa. Sem energia, abre na chave.
+
+**O "dia estranho" fica registrado.** Hoje o fechamento só tem `DayClosing.notes` (texto livre). A
+resposta (motivo da lista, detalhe, quem respondeu) passa a morar no registro do dia, junto do
+contexto que já existe (`DayContext`: feriado e clima), para o B.I. marcar o dia ("sábado com
+chuva"), não ensinar a projeção com ele como se fosse normal, e o dono conferir na leitura do dia.
+
+**Colunas do Gestor ajustáveis e colapsáveis.** Entrada, Preparo e Saída podem ser redimensionadas
+e colapsadas numa faixa estreita com nome, contagem e ponto de urgência (tocar abre de novo; no
+desktop, 1/2/3). O layout fica guardado por posto/dispositivo no servidor (L7). O **posto Saída é o
+Gestor com Entrada e Preparo colapsadas**: a mesma tela, nenhum painel a mais. Prévia:
+`gestor-colunas.jpg`.
+
+**Nome para o operador.** Em aberto: "Shopman", "Shopman Nelson" ou "Nelson Shopman". Recomendação:
+**"Shopman"**, com a loja como contexto (selo e nome da loja vindos do `Shop`, como "Shopman ·
+Nelson Boulangerie" na Central e no login), porque o tenant é config e dados, não código: o nome do
+produto não muda de cliente para cliente.
+
+**UX-17 (infra) Contingência.** Decidir de vez entre (a) um modo de contingência (fila local no
+dispositivo, com o `client_request_id` que já dá idempotência no servidor) ou (b) servir o sistema
+na loja com no-break, backup na nuvem e o Storefront na nuvem. Fora deste plano de UX; muda deploy,
+dados e a fronteira loja × nuvem.
