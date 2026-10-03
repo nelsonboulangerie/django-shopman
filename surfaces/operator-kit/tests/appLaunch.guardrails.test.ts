@@ -68,7 +68,7 @@ describe("link para outro app de operador", () => {
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles do Shopman Apps, o "Voltar ao Shopman Apps" da tela sem
+    // Hoje são os tiles da Central, o "Voltar à Central" da tela sem
     // acesso do Marketing e as três travessias do PDV (duas para a Produção no
     // fechamento e a da trava de cobrança). O aviso de saldo na retirada deixou de
     // ser travessia: o PDV recebe em Encomendas, no próprio app.

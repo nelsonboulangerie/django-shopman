@@ -1,6 +1,6 @@
 {
   "operator-floor": {
-    "description": "Chão da loja: PDV, cozinha, pedidos, produção e Shopman Apps.",
+    "description": "Chão da loja: PDV, cozinha, pedidos, produção e Central.",
     "apps": [
       { "id": "pos", "surface": "pos-nuxt" },
       { "id": "kds", "surface": "kds-nuxt" },

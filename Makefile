@@ -382,7 +382,7 @@ test-surface-versions: ## Gate: mesma versão dos pacotes compartilhados nas 10 
 	$(PYTHON) scripts/check_surface_versions.py
 
 # Todo lugar que enumera superfícies (Dependabot, gate, SURFACES, grupos, Dockerfile,
-# specs da DO, CSRF de dev, Shopman Apps, identidade, docs) concorda com
+# specs da DO, CSRF de dev, Central, identidade, docs) concorda com
 # surfaces/registry.json. Falha com o arquivo que diverge.
 test-surface-registry: ## Gate: todo lugar concorda com surfaces/registry.json
 	@echo "── Registro de superfícies ──"

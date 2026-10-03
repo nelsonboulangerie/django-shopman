@@ -5,8 +5,8 @@
     "dir: diretório em surfaces/. kind: `customer` (voz própria, não estende a layer) ou `operator` (estende `../operator-kit`). dev_port: porta do `npm run dev`.",
     "service: componente do spec da DigitalOcean que serve o app — o próprio para a loja, o GRUPO para os apps de operador (ADR-030). ready_path: só quando o app tem readiness própria além do /health/live.",
     "subdomain: rótulo do hostname em STORE_DOMAIN (`pdv` → pdv.boulangerie.com.br). A loja não tem: é a rota catch-all do ingress. Hostname é DNS e decisão do dono — o registro ANOTA o que existe, não escolhe.",
-    "base_url_env: env do Django com a URL pública do app (links do Admin e tiles do Shopman Apps). O próprio Shopman Apps não tem: ele não se lista.",
-    "hub_tile: chave do tile no Shopman Apps (`shopman/backstage/projections/hub.py` e `SHOPMAN_SURFACE_URLS`). Não é o id: o Gestor é `gestor` e a Loja é `loja` desde antes deste registro."
+    "base_url_env: env do Django com a URL pública do app (links do Admin e tiles da Central). A própria Central não tem: ela não se lista.",
+    "hub_tile: chave do tile na Central (`shopman/backstage/projections/hub.py` e `SHOPMAN_SURFACE_URLS`). Não é o id: o Gestor é `gestor` e a Loja é `loja` desde antes deste registro."
   ],
   "surfaces": {
     "storefront": {
@@ -93,7 +93,7 @@
     }
   },
   "operator_groups": {
-    "operator-floor": "Chão da loja: PDV, cozinha, pedidos, produção e Shopman Apps.",
+    "operator-floor": "Chão da loja: PDV, cozinha, pedidos, produção e Central.",
     "operator-office": "Gestão: marketing, B.I. e compras."
   }
 }
