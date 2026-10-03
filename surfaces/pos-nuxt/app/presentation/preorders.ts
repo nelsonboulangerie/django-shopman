@@ -576,6 +576,28 @@ export function shortcutChips(cards: readonly FilterCard[], filters: PreorderFil
   }).filter((chip) => chip.pressed || chip.count > 0);
 }
 
+export interface ShortcutBlock {
+  dimension: keyof PreorderFilters;
+  /** O nome do bloco para o leitor de tela ("Pagamento", "Via Pedido", "Recebimento"). */
+  label: string;
+  chips: ShortcutChip[];
+}
+
+/**
+ * Os botões de um toque em BLOCOS, um por dimensão, na ordem dos botões: as
+ * pílulas da mesma pergunta ficam juntas (Retiradas e Entregas se excluem; A
+ * receber e Sem Via Pedido somam), e o bloco diz qual é a pergunta.
+ */
+export function shortcutBlocks(chips: readonly ShortcutChip[]): ShortcutBlock[] {
+  const blocks: ShortcutBlock[] = [];
+  for (const chip of chips) {
+    const block = blocks.find((candidate) => candidate.dimension === chip.dimension);
+    if (block) block.chips.push(chip);
+    else blocks.push({ dimension: chip.dimension, label: FILTER_LABELS[chip.dimension], chips: [chip] });
+  }
+  return blocks;
+}
+
 /** Apertar o botão liga o recorte; apertado, desliga (a dimensão volta a "Todas"). */
 export function toggleShortcut(filters: PreorderFilters, shortcut: Pick<Shortcut, "dimension" | "value">): PreorderFilters {
   const pressed = filters[shortcut.dimension] === shortcut.value;
@@ -723,3 +745,99 @@ export function moneyPieces(text: string): { text: string; amount: boolean }[] {
 
 /** A Via Pedido que já saiu, escrita: o ícone sozinho não diz. */
 export const PRINTED_LABEL = "Via impressa";
+
+// ── Grade ou lista (preferência do dispositivo) ─────────────────────────────
+//
+// Como os cards se arrumam é preferência de quem olha, não estado do recorte:
+// mora no dispositivo (como a densidade da grade de produtos do balcão), e não
+// na URL. A volta do detalhe e o favorito continuam dizendo QUE encomendas; a
+// grade ou a lista é de cada balcão.
+//
+//   Semana · grade   os sete dias lado a lado (a árvore responsiva de sempre)
+//   Semana · lista   os dias um embaixo do outro, cada um com as suas linhas
+//   Dia · grade      cada janela com os seus cards em colunas
+//   Dia · lista      cada janela com a linha inteira de cada encomenda
+//   Busca            o mesmo: cards em colunas ou linhas inteiras
+
+export type PreordersLayout = "grid" | "list";
+
+export const DEFAULT_LAYOUT: PreordersLayout = "grid";
+
+export const LAYOUT_STORAGE_KEY = "pos.preordersLayout";
+
+export interface LayoutOption {
+  value: PreordersLayout;
+  label: string;
+  icon: string;
+}
+
+/** Os dois botões do alternador, com o rótulo que o leitor de tela diz. */
+export const LAYOUT_OPTIONS: readonly LayoutOption[] = [
+  { value: "grid", label: "Ver em grade", icon: "lucide:layout-grid" },
+  { value: "list", label: "Ver em lista", icon: "lucide:list" },
+];
+
+/** O que veio guardado no dispositivo; qualquer outra coisa é a grade. */
+export function parseLayout(raw: unknown): PreordersLayout {
+  return raw === "list" ? "list" : DEFAULT_LAYOUT;
+}
+
+// ── Mudar a encomenda de dia (arrastar na semana, ou o menu do card) ────────
+//
+// Mudar de dia é REAGENDAR: ato de negócio, com aviso ao cliente. Quem valida e
+// move o resto (despertador, lembrete, estoque, produção) é o orquestrador, pela
+// MESMA rota do Reagendar do detalhe. Aqui mora só o que a tela decide: que card
+// se pode pegar, onde se pode soltar e as frases da pergunta.
+
+/** As que a régua do orquestrador recusa de saída (`reschedule._REFUSED_STATUSES`): nem pegam. */
+const UNMOVABLE: readonly PreorderSituation[] = ["ready", "out_for_delivery", "delivered"];
+
+/** O card se pode pegar para mudar de dia? (O servidor confere de novo ao soltar.) */
+export function canMoveCard(card: Pick<PreorderCard, "situation">): boolean {
+  return !UNMOVABLE.includes(card.situation);
+}
+
+/** Soltar aqui muda alguma coisa? Outro dia, de hoje em diante. */
+export function canDropOn(date: string, card: Pick<PreorderCard, "commitment_date" | "situation">, today: string): boolean {
+  return canMoveCard(card) && Boolean(date) && date >= today && date !== card.commitment_date;
+}
+
+export interface MoveTarget {
+  date: string;
+  label: string;
+}
+
+/** Os dias da tela para onde o menu do card oferece mudar (o mesmo que arrastar). */
+export function moveTargets(
+  days: readonly Pick<PreorderDay, "date" | "is_today" | "weekday_display" | "day_display">[],
+  card: Pick<PreorderCard, "commitment_date" | "situation">,
+  today: string,
+): MoveTarget[] {
+  return days
+    .filter((day) => canDropOn(day.date, card, today))
+    .map((day) => ({ date: day.date, label: dayColumnTitle(day) }));
+}
+
+/** O dia no meio da frase: "amanhã", "hoje", "qui, 09/10". */
+function dayInSentence(label: string): string {
+  return label === "Hoje" || label === "Amanhã" ? label.toLowerCase() : label;
+}
+
+/** "Mudar a encomenda de Maria para qui, 09/10?" */
+export function moveQuestion(customerName: string, dayLabel: string): string {
+  const name = customerName.trim();
+  const who = name ? `a encomenda de ${name}` : "a encomenda";
+  return `Mudar ${who} para ${dayInSentence(dayLabel)}?`;
+}
+
+/** O que acontece junto: o aviso ao cliente e o horário, que continua o combinado. */
+export function moveDescription(windowLabel: string): string {
+  const window = windowLabel.trim();
+  const keeps = window ? ` O horário combinado continua: ${window.charAt(0).toLowerCase()}${window.slice(1)}.` : "";
+  return `O cliente será avisado da nova data.${keeps}`;
+}
+
+/** O botão que confirma: para onde vai. */
+export function moveConfirmLabel(dayLabel: string): string {
+  return `Mudar para ${dayInSentence(dayLabel)}`;
+}

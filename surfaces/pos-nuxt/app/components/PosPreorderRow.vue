@@ -17,6 +17,11 @@
 // - o selo de situação (a peça do kit, `toneBadge`) só quando diz o que o
 //   dinheiro não diz: "Pronto", "Saiu para entrega", "Entregue";
 // - "Via impressa" escrita, além do ícone.
+//
+// Na semana o card também se ARRASTA para outro dia (`movable`): o invólucro é que
+// se pega, e o link não (senão o navegador arrastaria o endereço). O gesto
+// equivalente por teclado e toque mora no slot `aside`, ao lado do link e fora
+// dele (botão dentro de link não é HTML válido nem alvo de toque honesto).
 import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 import { fulfillmentIcon } from "~/presentation/orderTickets";
 import { preorderDetailPath } from "~/presentation/preorderDetail";
@@ -40,7 +45,11 @@ const props = withDefaults(defineProps<{
   showDate?: boolean;
   /** O recorte da lista de onde a linha foi aberta: a volta do detalhe cai nele. */
   back?: string;
-}>(), { showDate: false, back: "" });
+  /** O card se arrasta para outro dia (só na semana, e só o que pode mudar de data). */
+  movable?: boolean;
+}>(), { showDate: false, back: "", movable: false });
+
+const slots = useSlots();
 
 const toneClass = computed(() => toneBadge(situationTone(props.card.situation)));
 // O saldo a cobrar é o número que decide o gesto do balcão: ganha o peso do
@@ -52,50 +61,62 @@ const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
 </script>
 
 <template>
-  <NuxtLink
-    :to="preorderDetailPath(card.ref, back)"
-    class="flex min-h-11 items-start gap-3 rounded-md border border-border bg-card p-3 text-left transition hover:border-primary/50 hover:bg-accent hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    :data-preorder="card.ref"
+  <div
+    class="flex min-w-0 items-stretch rounded-md border border-border bg-card transition hover:border-primary/50 hover:shadow-sm"
+    :draggable="movable ? 'true' : undefined"
+    :data-preorder-card="card.ref"
+    :data-preorder-movable="movable ? '' : undefined"
   >
-    <!-- A janela, e embaixo dela o recebimento. -->
-    <span class="grid shrink-0 justify-items-start gap-1">
-      <span
-        class="tabular-nums"
-        :class="card.window_start ? 'text-sm font-semibold' : 'pt-0.5 text-xs text-muted-foreground'"
-        :title="card.window_label || undefined"
-        data-preorder-window
-      >{{ rowWindow(card) }}</span>
-      <Icon
-        :name="fulfillmentIcon(card.fulfillment_type)"
-        class="size-4 text-muted-foreground"
-        :aria-label="card.fulfillment_label"
-      />
-    </span>
-    <!-- Quem, e embaixo o número, o canal, o recebimento e os itens. -->
-    <span class="grid min-w-28 flex-1 basis-0 gap-0.5">
-      <p class="truncate text-sm font-medium" :title="customerLine(card)">{{ customerLine(card) }}</p>
-      <p class="text-xs text-muted-foreground">{{ detailLine }}</p>
-    </span>
-    <!-- O dinheiro, e embaixo o que ele não diz: o selo e a Via impressa. -->
-    <span class="grid min-w-0 justify-items-end gap-1 text-right">
-      <span
-        :class="moneyClass"
-        :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'"
-      ><span
-        v-for="(piece, index) in moneyPieces(moneyLine(card))"
-        :key="index"
-        :class="piece.amount ? 'whitespace-nowrap' : undefined"
-      >{{ piece.text }}</span></span>
-      <span
-        v-if="rowShowsSituation(card.situation)"
-        class="rounded-md border px-1.5 py-0.5 text-xs font-medium"
-        :class="toneClass"
-        data-preorder-situation
-      >{{ card.situation_label }}</span>
-      <span v-if="card.ticket_printed" class="inline-flex items-center gap-1 text-xs text-muted-foreground" data-preorder-printed>
-        <Icon name="lucide:printer-check" class="size-3.5" aria-hidden="true" />
-        {{ PRINTED_LABEL }}
+    <NuxtLink
+      :to="preorderDetailPath(card.ref, back)"
+      class="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      :class="slots.aside ? 'rounded-l-md' : 'rounded-md'"
+      :draggable="movable ? 'false' : undefined"
+      :data-preorder="card.ref"
+    >
+      <!-- A janela, e embaixo dela o recebimento. -->
+      <span class="grid shrink-0 justify-items-start gap-1">
+        <span
+          class="tabular-nums"
+          :class="card.window_start ? 'text-sm font-semibold' : 'pt-0.5 text-xs text-muted-foreground'"
+          :title="card.window_label || undefined"
+          data-preorder-window
+        >{{ rowWindow(card) }}</span>
+        <Icon
+          :name="fulfillmentIcon(card.fulfillment_type)"
+          class="size-4 text-muted-foreground"
+          :aria-label="card.fulfillment_label"
+        />
       </span>
-    </span>
-  </NuxtLink>
+      <!-- Quem, e embaixo o número, o canal, o recebimento e os itens. -->
+      <span class="grid min-w-28 flex-1 basis-0 gap-0.5">
+        <p class="truncate text-sm font-medium" :title="customerLine(card)">{{ customerLine(card) }}</p>
+        <p class="text-xs text-muted-foreground">{{ detailLine }}</p>
+      </span>
+      <!-- O dinheiro, e embaixo o que ele não diz: o selo e a Via impressa. -->
+      <span class="grid min-w-0 justify-items-end gap-1 text-right">
+        <span
+          :class="moneyClass"
+          :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'"
+        ><span
+          v-for="(piece, index) in moneyPieces(moneyLine(card))"
+          :key="index"
+          :class="piece.amount ? 'whitespace-nowrap' : undefined"
+        >{{ piece.text }}</span></span>
+        <span
+          v-if="rowShowsSituation(card.situation)"
+          class="rounded-md border px-1.5 py-0.5 text-xs font-medium"
+          :class="toneClass"
+          data-preorder-situation
+        >{{ card.situation_label }}</span>
+        <span v-if="card.ticket_printed" class="inline-flex items-center gap-1 text-xs text-muted-foreground" data-preorder-printed>
+          <Icon name="lucide:printer-check" class="size-3.5" aria-hidden="true" />
+          {{ PRINTED_LABEL }}
+        </span>
+      </span>
+    </NuxtLink>
+    <div v-if="slots.aside" class="flex shrink-0 border-l border-border">
+      <slot name="aside" />
+    </div>
+  </div>
 </template>

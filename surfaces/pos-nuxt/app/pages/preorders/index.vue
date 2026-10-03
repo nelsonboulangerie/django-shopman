@@ -2,30 +2,36 @@
 // ENCOMENDAS: a agenda do balcão, numa tela só (redesenho aprovado pelo dono,
 // 28/09/2026; a tela da seção do brief de 02/10). Chega-se aqui pela barra lateral.
 //
-//   Barra               o título e o Período do kit (Dia ou Semana, ‹ › e a data),
-//                       o mesmo lugar em que a Produção, o KDS e o B.I. o põem.
-//                       Durante a busca o Período sai: a busca não tem período.
-//   Cliente veio buscar o campo fica SEMPRE no topo e nasce focado: nome,
+// A arrumação é a do balcão (pedido do dono, 03/10, OBS0310-D): de cima para
+// baixo, o cabeçalho, a busca, as pílulas e os cards.
+//
+//   Cabeçalho           o título e o Período do kit (Dia ou Semana, ‹ › e a data),
+//                       o mesmo lugar em que a Produção, o KDS e o B.I. o põem; à
+//                       direita, o que age sobre o que a tela mostra: grade ou
+//                       lista (o par de botões de ícone do kit, como o quadro de
+//                       comandas do balcão) e o lote das Vias Pedido. Durante a
+//                       busca o Período e o lote saem: a busca não tem período.
+//   Cliente veio buscar o campo de busca do balcão (`PosSearchField`, o mesmo da
+//                       grade de produtos), SEMPRE no topo e já focado: nome,
 //                       telefone, CPF/CNPJ, endereço ou número (inclusive o do
 //                       iFood). Procura em aberto de QUALQUER data; "Incluir
 //                       concluídas" só aparece com a busca digitada (só vale para
 //                       ela) e traz as dos últimos 30 dias numa seção à parte.
-//                       Um resultado só: Enter abre.
+//                       Um resultado só: Enter abre. Ao lado, Nova encomenda.
+//   Pílulas             os recortes de todo dia (A receber, Sem Via Pedido,
+//                       Retiradas, Entregas) são a pílula de filtro do kit, em
+//                       blocos por pergunta; o "Filtrar" do kit fica para o resto.
 //   Hoje                o que falta para o dia, sempre de hoje, qualquer que seja
 //                       o período: quantas para entregar, quanto falta receber,
 //                       quantas Vias Pedido faltam, e as de pagamento a conferir.
-//                       Feita com o que as listas já trazem, sem leitura nova.
-//   Recortes            os de todo dia são botões de um toque (A receber, Sem
-//                       Via Pedido, Retiradas, Entregas); o "Filtrar" do kit fica
-//                       para o resto. Na mesma linha, o lote: do que está
-//                       VISÍVEL, só as vias que ainda não saíram (P2 do dono,
-//                       02/10). Reimprimir é no detalhe, uma por vez.
-//   Período             a grade da semana (uma árvore só) ou o dia por janela, e
-//                       a nota de escopo como legenda abaixo dela.
-//   Nova encomenda      ao lado da busca: leva à venda já no modo Encomendas, na
-//                       próxima comanda livre, com o assistente na primeira etapa
-//                       que falta (P6 do dono, 02/10). A venda que estiver em
-//                       andamento fica na comanda dela, no quadro.
+//                       Feita com o que as listas já trazem, sem leitura nova. Na
+//                       mesma linha, o resumo do período.
+//   Cards               a semana (sete dias lado a lado, ou um embaixo do outro)
+//                       ou o dia por janela, em grade ou lista. Na semana o card
+//                       se ARRASTA para outro dia: é reagendar (a rota do
+//                       Reagendar do detalhe, com a pergunta do kit e o aviso ao
+//                       cliente). O menu "Mudar de dia" do card é o mesmo gesto
+//                       por teclado e toque.
 //
 // O estado inteiro mora na URL (`presentation/preorders.parseView`): a volta do
 // detalhe cai no mesmo lugar, e o kiosk guarda o favorito.
@@ -35,11 +41,15 @@ import { batchNotice, canPrintBatch, isoDate, printCtaLabel } from "~/presentati
 import { preorderDetailPath } from "~/presentation/preorderDetail";
 import { NEW_ORDER_ROUTE } from "~/presentation/orderSetup";
 import {
+  LAYOUT_OPTIONS,
+  LAYOUT_STORAGE_KEY,
   PREORDERS_SCOPE_NOTE,
   SEARCH_LABEL,
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
   TO_RECEIVE_CLASS,
+  canDropOn,
+  canMoveCard,
   canSearch,
   dayColumnTitle,
   dayToReceiveLine,
@@ -48,6 +58,8 @@ import {
   flattenDays,
   groupByWindow,
   listSummary,
+  moveTargets,
+  parseLayout,
   parseView,
   periodEmptyMessage,
   periodIsToday,
@@ -67,6 +79,7 @@ import {
   viewPath,
   viewQuery,
   type PreorderFilters,
+  type PreordersLayout,
   type PreordersMode,
   type PreordersView,
 } from "~/presentation/preorders";
@@ -75,7 +88,7 @@ import {
   periodOfDay,
   type PeriodSelection,
 } from "../../../../operator-kit/app/presentation/dates";
-import type { PreorderDay } from "~/types/preorders";
+import type { PreorderCard, PreorderDay } from "~/types/preorders";
 
 useHead({ title: "Encomendas" });
 
@@ -178,6 +191,87 @@ useEventListener(typeof window === "undefined" ? null : window, "keydown", (even
   searchField.value?.inputRef?.focus();
 });
 
+// ── Grade ou lista: preferência deste dispositivo (como a densidade da grade de
+//    produtos do balcão). O servidor desenha a grade; a escolha guardada entra
+//    depois de montar, para a hidratação não divergir. ──
+const layout = ref<PreordersLayout>("grid");
+onMounted(() => {
+  try {
+    layout.value = parseLayout(localStorage.getItem(LAYOUT_STORAGE_KEY));
+  } catch {
+    // Armazenamento bloqueado (janela anônima, quiosque): fica a grade.
+  }
+});
+function setLayout(value: PreordersLayout) {
+  layout.value = value;
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, value);
+  } catch {
+    // Sem armazenamento a escolha vale até sair da tela.
+  }
+}
+const asGrid = computed(() => layout.value === "grid");
+// Cards em colunas (grade) ou a linha inteira de cada um (lista).
+const cardsClass = computed(() => (asGrid.value
+  ? "grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] items-start gap-2"
+  : "grid gap-2"));
+
+// ── Mudar de dia: arrastar o card na semana, ou o menu do card ──
+// O hoje da LOJA (o servidor diz na lista), e não o relógio deste dispositivo:
+// é ele que decide se um dia já passou.
+const storeToday = computed(() => list.value?.today || today);
+const move = usePosPreorderMove({ pos, today: storeToday, refresh: () => period.refresh() });
+const dragging = ref<PreorderCard | null>(null);
+const dropDate = ref("");
+const inWeek = computed(() => view.value.mode === "week");
+
+function movable(card: PreorderCard): boolean {
+  return inWeek.value && canMoveCard(card) && !move.busy.value;
+}
+
+function targetsFor(card: PreorderCard) {
+  return moveTargets(list.value?.days ?? [], card, storeToday.value);
+}
+
+function onDragStart(event: DragEvent, card: PreorderCard) {
+  dragging.value = card;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.ref);
+  }
+}
+
+function onDragOver(event: DragEvent, date: string) {
+  if (!dragging.value || !canDropOn(date, dragging.value, storeToday.value)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  dropDate.value = date;
+}
+
+function onDragLeave(event: DragEvent, date: string) {
+  const zone = event.currentTarget as HTMLElement | null;
+  if (zone?.contains(event.relatedTarget as Node | null)) return;
+  if (dropDate.value === date) dropDate.value = "";
+}
+
+function endDrag() {
+  dragging.value = null;
+  dropDate.value = "";
+}
+
+function onDrop(date: string) {
+  const card = dragging.value;
+  endDrag();
+  if (card && canDropOn(date, card, storeToday.value)) void move.moveTo(card, date);
+}
+
+/** O dia como alvo do arrasto: onde se pode soltar ganha contorno; o de baixo do card, destaque. */
+function dropClass(date: string): string {
+  if (!dragging.value) return "";
+  if (dropDate.value === date) return "border-primary ring-2 ring-primary/40";
+  return canDropOn(date, dragging.value, storeToday.value) ? "border-dashed border-primary/50" : "opacity-60";
+}
+
 function refreshAll() {
   void refreshPos();
   void period.refresh();
@@ -204,13 +298,41 @@ function refreshAll() {
       />
     </template>
 
-    <!-- A LINHA DO BALCÃO: quem veio buscar (a urgência, já focada) e, ao lado, a
+    <!-- À DIREITA DA BARRA: grade ou lista, e o lote das Vias Pedido do que se vê. -->
+    <template #actions>
+      <div class="flex items-center gap-1" role="group" aria-label="Arrumação das encomendas" data-preorders-layout>
+        <UiIconButton
+          v-for="option in LAYOUT_OPTIONS"
+          :key="option.value"
+          :icon="option.icon"
+          :label="option.label"
+          :active="layout === option.value"
+          :aria-pressed="layout === option.value"
+          :data-preorders-layout-option="option.value"
+          @click="setLayout(option.value)"
+        />
+      </div>
+      <template v-if="!searching && list && list.count">
+        <p v-if="!tickets.hasPrinter.value" class="max-w-56 text-right text-xs text-muted-foreground" data-preorders-no-printer>
+          {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
+        </p>
+        <UiButton
+          :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
+          :loading="tickets.printing.value"
+          data-preorders-print
+          @click="printMissing"
+        >
+          <Icon name="lucide:printer" class="size-4" />
+          {{ printCtaLabel(printCount, shownCount) }}
+        </UiButton>
+      </template>
+    </template>
+
+    <!-- A LINHA DA BUSCA: quem veio buscar (a urgência, já focada) e, ao lado, a
          porta para anotar uma encomenda nova. -->
     <div class="flex flex-wrap items-center gap-2">
-      <!-- CLIENTE VEIO BUSCAR: a urgência do balcão é a primeira região, já focada. -->
-      <!-- Uma linha no desktop: o título diz a tarefa, o campo diz o que se digita. -->
       <section
-        class="flex min-w-0 flex-[1_1_28rem] flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-primary/20 bg-primary/5 p-2.5 shadow-sm"
+        class="flex min-w-0 flex-[1_1_28rem] flex-wrap items-center gap-x-3 gap-y-2"
         aria-labelledby="preorders-search-title"
         data-preorders-search-block
       >
@@ -218,13 +340,12 @@ function refreshAll() {
           <Icon name="lucide:package-search" class="size-5 text-primary" aria-hidden="true" />
           Cliente veio buscar?
         </h1>
-        <UiInput
+        <PosSearchField
           ref="searchField"
           v-model="typed"
-          type="search"
           inputmode="search"
           autocomplete="off"
-          class="h-11 min-w-[min(100%,18rem)] flex-1 bg-background text-base shadow-sm"
+          class="min-w-[min(100%,18rem)]"
           :placeholder="SEARCH_PLACEHOLDER"
           :aria-label="SEARCH_LABEL"
           data-preorders-search
@@ -293,13 +414,23 @@ function refreshAll() {
           <!-- EM ABERTO: de qualquer data. -->
           <section
             v-if="result.open_count"
-            class="grid max-w-3xl gap-2"
+            class="grid gap-2"
+            :class="asGrid ? '' : 'max-w-3xl'"
             data-preorders-results="open"
           >
             <h2 class="text-sm font-semibold text-muted-foreground">{{ searchOpenHeading(result.open_count) }}</h2>
-            <ul class="grid gap-2">
+            <ul :class="cardsClass">
               <li v-for="card in result.open" :key="card.ref">
-                <PosPreorderRow :back="back" :card="card" show-date />
+                <PosPreorderRow :back="back" :card="card" show-date>
+                  <template v-if="canMoveCard(card)" #aside>
+                    <PosPreorderMoveMenu
+                      :customer-name="card.customer_name"
+                      :targets="[]"
+                      :busy="move.busy.value || move.loading.value === card.ref"
+                      @other="move.chooseOther(card)"
+                    />
+                  </template>
+                </PosPreorderRow>
               </li>
             </ul>
             <p v-if="openLimit" class="text-sm text-muted-foreground">{{ openLimit }}</p>
@@ -326,13 +457,14 @@ function refreshAll() {
           <!-- CONCLUÍDAS: seção à parte, nunca misturada com as em aberto. -->
           <section
             v-if="result.include_completed"
-            class="grid max-w-3xl gap-2 border-t border-border pt-4"
+            class="grid gap-2 border-t border-border pt-4"
+            :class="asGrid ? '' : 'max-w-3xl'"
             data-preorders-results="completed"
           >
             <h2 class="text-sm font-semibold text-muted-foreground">
               {{ searchCompletedHeading(result.completed_count, result.completed_days) }}
             </h2>
-            <ul class="grid gap-2">
+            <ul :class="cardsClass">
               <li v-for="card in result.completed" :key="card.ref">
                 <PosPreorderRow :back="back" :card="card" show-date />
               </li>
@@ -345,14 +477,25 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
-      <!-- HOJE e os RECORTES com o LOTE: um quadro só. A linha "Hoje" é sempre de
-           hoje; os recortes e o lote falam do período na tela. -->
-      <section
-        v-if="todayLine.length || (list && list.count)"
-        class="grid gap-2 rounded-md border bg-card p-2.5 shadow-sm"
-        aria-label="Hoje e os recortes das encomendas"
+      <!-- AS PÍLULAS: os recortes de todo dia, em blocos, e o "Filtrar" para o resto. -->
+      <PosPreorderFilters
+        v-if="list && list.count"
+        v-model="filters"
+        :cards="allCards"
+        role="group"
+        aria-label="Recortar encomendas"
+      />
+
+      <!-- HOJE (sempre de hoje) e, na mesma linha, o resumo do PERÍODO na tela: o
+           que falta receber primeiro, o total vendido depois e menor (grandezas
+           diferentes, nunca somadas). -->
+      <div
+        v-if="todayLine.length || (list && list.count && showSummary)"
+        class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-1"
+        aria-label="Hoje e o resumo do período"
+        role="group"
       >
-        <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-1 text-sm" data-preorders-today>
+        <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm" data-preorders-today>
           <span class="font-semibold text-primary">Hoje</span>
           <span
             v-for="fact in todayLine"
@@ -363,34 +506,16 @@ function refreshAll() {
             :data-preorders-today-fact="fact.key"
           >{{ fact.text }}</span>
         </p>
-
-        <!-- RECORTES à esquerda, o LOTE à direita, na mesma linha: imprime, do que se vê, as vias que faltam. -->
-        <PosPreorderFilters
-          v-if="list && list.count"
-          v-model="filters"
-          :cards="allCards"
-          :class="todayLine.length ? 'border-t pt-2' : ''"
-          role="group"
-          aria-label="Recortar e imprimir encomendas"
+        <div
+          v-if="list && list.count && showSummary"
+          class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"
+          data-preorders-summary
         >
-          <template #actions>
-            <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
-              <p v-if="!tickets.hasPrinter.value" class="max-w-64 text-right text-xs text-muted-foreground" data-preorders-no-printer>
-                {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
-              </p>
-              <UiButton
-                :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
-                :loading="tickets.printing.value"
-                data-preorders-print
-                @click="printMissing"
-              >
-                <Icon name="lucide:printer" class="size-4" />
-                {{ printCtaLabel(printCount, shownCount) }}
-              </UiButton>
-            </div>
-          </template>
-        </PosPreorderFilters>
-      </section>
+          <span class="text-sm font-semibold text-muted-foreground">{{ periodSummaryLabel(view.mode) }}</span>
+          <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
+          <p class="text-xs tabular-nums text-muted-foreground" data-preorders-total>{{ summary }}</p>
+        </div>
+      </div>
 
       <section
         v-if="period.pending.value && !list"
@@ -429,18 +554,6 @@ function refreshAll() {
         </section>
 
         <template v-else>
-          <!-- O resumo do PERÍODO: o que falta receber primeiro, o total vendido depois
-               e menor (grandezas diferentes, nunca somadas). -->
-          <div
-            v-if="showSummary"
-            class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-1"
-            data-preorders-summary
-          >
-            <span class="text-sm font-semibold text-muted-foreground">{{ periodSummaryLabel(view.mode) }}</span>
-            <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
-            <p class="text-xs tabular-nums text-muted-foreground" data-preorders-total>{{ summary }}</p>
-          </div>
-
           <p
             v-if="notice"
             class="flex items-start gap-2 rounded-md border p-3 text-sm"
@@ -459,40 +572,65 @@ function refreshAll() {
             {{ filterEmptyMessage(view.mode) }}
           </section>
 
-          <!-- DIA: por janela, a linha inteira de cada encomenda. -->
-          <div v-else-if="view.mode === 'day' && day" class="grid max-w-4xl gap-4" data-preorders-day>
+          <!-- DIA: por janela; em grade, os cards em colunas; em lista, a linha inteira. -->
+          <div v-else-if="view.mode === 'day' && day" class="grid gap-4" :class="asGrid ? '' : 'max-w-4xl'" data-preorders-day>
             <section v-for="group in groupByWindow(day.orders)" :key="group.key" class="grid gap-2 rounded-md border bg-card p-3" data-preorders-window>
               <h3 class="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                 <Icon name="lucide:clock-3" class="size-4" aria-hidden="true" />
                 {{ group.label }}
               </h3>
-              <ul class="grid gap-2">
+              <ul :class="cardsClass">
                 <li v-for="card in group.orders" :key="card.ref">
-                  <PosPreorderRow :back="back" :card="card" />
+                  <PosPreorderRow :back="back" :card="card">
+                    <template v-if="canMoveCard(card)" #aside>
+                      <PosPreorderMoveMenu
+                        :customer-name="card.customer_name"
+                        :targets="targetsFor(card)"
+                        :busy="move.busy.value || move.loading.value === card.ref"
+                        @move="(date) => move.moveTo(card, date)"
+                        @other="move.chooseOther(card)"
+                      />
+                    </template>
+                  </PosPreorderRow>
                 </li>
               </ul>
             </section>
           </div>
 
-          <!-- SEMANA: uma única árvore responsiva. Cada dia conserva largura
-               útil; a leitura não troca de DOM nem comprime sete cards frágeis. -->
+          <!-- SEMANA: uma única árvore responsiva. Em grade, os dias lado a lado,
+               cada um com largura útil; em lista, um embaixo do outro. Cada dia é
+               também onde se SOLTA o card arrastado (reagendar). -->
           <div v-else data-week-board>
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-3" data-week-grid>
+            <div
+              :class="asGrid
+                ? 'grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-3'
+                : 'grid max-w-4xl gap-3'"
+              :data-week-grid="asGrid ? '' : undefined"
+              :data-week-list="asGrid ? undefined : ''"
+            >
               <section
                 v-for="weekDay in days"
                 :key="weekDay.date"
-                class="flex min-w-0 flex-col gap-2 rounded-md border bg-card p-3 shadow-sm"
-                :class="weekDay.is_today ? 'border-primary/60 ring-1 ring-primary/10' : 'border-border'"
+                class="flex min-w-0 flex-col gap-2 rounded-md border bg-card p-3 shadow-sm transition"
+                :class="[
+                  weekDay.is_today ? 'border-primary/60 ring-1 ring-primary/10' : 'border-border',
+                  dropClass(weekDay.date),
+                ]"
                 :data-week-day="weekDay.date"
+                :data-drop-target="dropDate === weekDay.date ? 'over' : undefined"
+                @dragover="onDragOver($event, weekDay.date)"
+                @dragleave="onDragLeave($event, weekDay.date)"
+                @drop.prevent="onDrop(weekDay.date)"
               >
                 <!-- Hoje: o cabeçalho ganha fundo da cor primária e diz "Hoje, ter 29/09";
-                     o dia da semana nunca some. -->
+                     o dia da semana nunca some. Na lista, o cabeçalho é uma linha só. -->
                 <button
                   type="button"
                   class="grid min-h-11 gap-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   :class="[
                     weekDay.is_today ? '-mx-1 -mt-1 border-primary/30 bg-primary/10 px-2 pt-2 hover:bg-primary/15' : 'border-border hover:bg-accent',
                     weekDay.orders.length ? 'border-b pb-3' : 'pb-1',
+                    asGrid ? '' : 'sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-4',
                   ]"
                   :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
                   :aria-current="weekDay.is_today ? 'date' : undefined"
@@ -512,7 +650,25 @@ function refreshAll() {
                 </button>
                 <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
                 <div v-if="weekDay.orders.length" class="grid gap-2">
-                  <PosPreorderRow v-for="card in weekDay.orders" :key="card.ref" :back="back" :card="card" />
+                  <PosPreorderRow
+                    v-for="card in weekDay.orders"
+                    :key="card.ref"
+                    :back="back"
+                    :card="card"
+                    :movable="movable(card)"
+                    @dragstart="onDragStart($event, card)"
+                    @dragend="endDrag"
+                  >
+                    <template v-if="canMoveCard(card)" #aside>
+                      <PosPreorderMoveMenu
+                        :customer-name="card.customer_name"
+                        :targets="targetsFor(card)"
+                        :busy="move.busy.value || move.loading.value === card.ref"
+                        @move="(date) => move.moveTo(card, date)"
+                        @other="move.chooseOther(card)"
+                      />
+                    </template>
+                  </PosPreorderRow>
                 </div>
               </section>
             </div>
@@ -527,5 +683,19 @@ function refreshAll() {
         </p>
       </template>
     </template>
+
+    <!-- O REAGENDAR completo, o mesmo do detalhe: "Outra data ou horário…" no menu
+         do card, ou depois de o servidor recusar o dia em que o card foi solto. -->
+    <PosPreorderRescheduleDialog
+      v-if="move.detail.value"
+      v-model:open="move.dialogOpen.value"
+      :customer-name="move.detail.value.customer_name"
+      :current-date="move.detail.value.counter.reschedule.date"
+      :current-slot="move.detail.value.counter.reschedule.slot"
+      :skus="move.detail.value.counter.reschedule.skus"
+      :initial-date="move.dialogDate.value"
+      :busy="move.busy.value"
+      @confirm="move.confirmDialog"
+    />
   </PosPreordersShell>
 </template>
