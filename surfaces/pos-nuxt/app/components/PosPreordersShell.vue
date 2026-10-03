@@ -65,9 +65,12 @@ function openCustomerDisplay() {
             Encomendas
           </p>
           <slot name="period" />
-        </template>
-        <template v-if="$slots.actions" #end>
-          <slot name="actions" />
+          <!-- As ações também entram no `start`, e não no `end` do kit, pela mesma
+               razão do Período: o invólucro do `end` não encolhe, e no celular o
+               lote passava da borda. Aqui elas quebram de linha. -->
+          <div v-if="$slots.actions" class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2" data-preorders-actions>
+            <slot name="actions" />
+          </div>
         </template>
       </OperatorAppBar>
 

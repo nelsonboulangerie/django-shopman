@@ -290,7 +290,7 @@ function refreshAll() {
     <template v-if="!searching" #period>
       <OperatorPeriodPicker
         v-model="periodSelection"
-        class="ml-auto min-w-0"
+        class="min-w-0"
         :presets="['day', 'week']"
         :today="today"
         label="Período das encomendas"
@@ -313,9 +313,6 @@ function refreshAll() {
         />
       </div>
       <template v-if="!searching && list && list.count">
-        <p v-if="!tickets.hasPrinter.value" class="max-w-56 text-right text-xs text-muted-foreground" data-preorders-no-printer>
-          {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
-        </p>
         <UiButton
           :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
           :loading="tickets.printing.value"
@@ -345,7 +342,6 @@ function refreshAll() {
           v-model="typed"
           inputmode="search"
           autocomplete="off"
-          class="min-w-[min(100%,18rem)]"
           :placeholder="SEARCH_PLACEHOLDER"
           :aria-label="SEARCH_LABEL"
           data-preorders-search
@@ -477,6 +473,16 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
+      <!-- Sem impressora nesta estação, o lote da barra avisa aqui por que não sai. -->
+      <p
+        v-if="list && list.count && !tickets.hasPrinter.value"
+        class="flex items-start gap-1.5 px-1 text-xs text-muted-foreground"
+        data-preorders-no-printer
+      >
+        <Icon name="lucide:printer" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+        <span>{{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.</span>
+      </p>
+
       <!-- AS PÍLULAS: os recortes de todo dia, em blocos, e o "Filtrar" para o resto. -->
       <PosPreorderFilters
         v-if="list && list.count"

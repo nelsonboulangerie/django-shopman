@@ -7,7 +7,8 @@
 //   09:00    Ana Souza                           A receber R$ 48,00
 //   [ícone]  NB-7 · WhatsApp · Retirada · 2 itens      Via impressa
 //
-// Na coluna estreita da semana o nome guarda pelo menos 7rem: o dinheiro quebra
+// Na coluna estreita da semana o nome guarda pelo menos 5rem (7rem antes do botão
+// "Mudar de dia" ao lado): o dinheiro quebra
 // a linha antes de esmagar quem é. Três pilhas lado a lado (janela, quem,
 // dinheiro), e não uma grade de duas linhas, para o dinheiro que quebra não
 // afastar o nome da linha de baixo.
@@ -89,7 +90,7 @@ const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
         />
       </span>
       <!-- Quem, e embaixo o número, o canal, o recebimento e os itens. -->
-      <span class="grid min-w-28 flex-1 basis-0 gap-0.5">
+      <span class="grid min-w-20 flex-1 basis-0 gap-0.5">
         <p class="truncate text-sm font-medium" :title="customerLine(card)">{{ customerLine(card) }}</p>
         <p class="text-xs text-muted-foreground">{{ detailLine }}</p>
       </span>

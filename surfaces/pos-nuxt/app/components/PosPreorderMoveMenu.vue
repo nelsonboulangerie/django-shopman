@@ -37,7 +37,7 @@ function other() {
       <UiButton
         variant="ghost"
         size="icon"
-        class="h-full min-h-control w-10 rounded-none rounded-r-md text-muted-foreground"
+        class="h-full min-h-control w-9 rounded-none rounded-r-md text-muted-foreground"
         :aria-label="label"
         title="Mudar de dia"
         :disabled="busy"

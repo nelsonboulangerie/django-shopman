@@ -6,7 +6,9 @@
 //
 // Atributos (placeholder, aria-label, data-*, `@keydown`) vão para o INPUT, não para
 // o invólucro: é nele que o leitor de tela, o teste e o atalho mexem. O invólucro
-// ocupa o espaço que sobra na linha (`flex-1`), como a busca da venda sempre fez.
+// ocupa o espaço que sobra na linha (`flex-1`), como a busca da venda sempre fez, e
+// nunca fica menor que 16rem (ou a linha inteira, no celular): espremido ao lado de
+// um título, o campo não mostrava nem o começo do que se pode procurar.
 defineOptions({ inheritAttrs: false });
 
 const model = defineModel<string>({ required: true });
@@ -21,7 +23,7 @@ defineExpose({ inputRef });
 </script>
 
 <template>
-  <div class="relative min-w-0 flex-1">
+  <div class="relative min-w-[min(100%,16rem)] flex-1">
     <Icon
       name="lucide:search"
       class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
