@@ -94,7 +94,7 @@ class AccessLinkCreateView(View):
                         "O ManyChat mandou a variavel sem renderizar em: "
                         + ", ".join(unrendered)
                         + ". Insira a variavel pelo seletor do ManyChat em vez de digitar "
-                        "o nome entre chaves — nome digitado a mao nao e substituido."
+                        "o nome entre chaves: nome digitado a mao nao e substituido."
                     ),
                     "error_code": "unrendered_variable",
                     "fields": unrendered,

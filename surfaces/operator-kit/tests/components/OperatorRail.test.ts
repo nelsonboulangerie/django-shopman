@@ -152,7 +152,7 @@ describe("OperatorRail — trava de giro", () => {
 
     await wrapper.get("[data-orientation-lock]").trigger("click");
     await vi.waitFor(() => expect(sonner.warning).toHaveBeenCalledWith(
-      "Este dispositivo não deixa o app travar o giro — use o bloqueio de rotação do sistema.",
+      "Este dispositivo não deixa o app travar o giro. Use o bloqueio de rotação do sistema.",
     ));
     expect(sonner.success).not.toHaveBeenCalled();
     expect(wrapper.get("[data-orientation-lock]").attributes("aria-pressed")).toBe("false");

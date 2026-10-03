@@ -377,7 +377,7 @@ async function confirmSubmit() {
             >{{ countedTotal }} de {{ countItems.length }} contados</span>
           </div>
           <p class="text-sm text-muted-foreground">
-            Conte o que sobrou do que a casa produz — revenda não entra. Nada sobrou? Digite 0.
+            Conte o que sobrou do que a casa produz (revenda não entra). Nada sobrou? Digite 0.
             O sistema trata destino e perdas.
           </p>
           <p v-if="!closing.has_items" class="text-sm text-muted-foreground">Nada produzido na casa em estoque para contar.</p>

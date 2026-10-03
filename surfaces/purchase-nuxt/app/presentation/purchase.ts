@@ -1010,7 +1010,7 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
       key: "no-consumption",
       headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
       detail:
-        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor. Defina o estoque mínimo do insumo para comprar mesmo assim.",
       count: semConsumo.length,
       action: { label: "Abrir Insumos", baseView: "materials" },
     });
@@ -1023,7 +1023,7 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
       key: "no-preferred-cost",
       headline: `${semCusto.length} de ${active.length} insumos sem custo preferencial`,
       detail:
-        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos — dá para lançar vários de uma vez pelo mesmo fornecedor.",
+        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos (dá para lançar vários de uma vez pelo mesmo fornecedor).",
       count: semCusto.length,
       action: { label: "Abrir Custos", baseView: "costs" },
     });

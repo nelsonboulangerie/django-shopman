@@ -55,7 +55,7 @@ def _situacao(block: dict, pending: dict) -> str:
     foto = block.get("reference_photo")
     if foto:
         linhas.append(
-            f"Foto de referência — {foto.get('url')} · licença: {foto.get('license')} · "
+            f"Foto de referência: {foto.get('url')} · licença: {foto.get('license')} · "
             f"atribuição: {foto.get('attribution')}. Não vai para a vitrine: a vitrine usa foto da casa."
         )
     aceitos = block.get("accepted") or {}

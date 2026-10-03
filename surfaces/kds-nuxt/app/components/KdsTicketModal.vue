@@ -46,7 +46,7 @@ const fill = computed(() =>
         >Pedido {{ ticket.order_ref }}</UiDialogTitle
       >
       <UiDialogDescription class="sr-only">
-        {{ ticket.customer_name || "Sem cliente" }} — {{ ticket.status_label }},
+        {{ ticket.customer_name || "Sem cliente" }}: {{ ticket.status_label }},
         {{ ticket.items.length }} {{ ticket.items.length === 1 ? "item" : "itens" }}.
       </UiDialogDescription>
       <!-- header -->

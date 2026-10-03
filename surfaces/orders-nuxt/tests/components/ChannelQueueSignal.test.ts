@@ -52,14 +52,14 @@ describe("aviso de canal na fila de Pedidos", () => {
     attention.value = projection({
       count: 3, label: "2 desligados · 1 divergente",
       queue: [
-        item("web", "sale", "off", "Loja online: pedidos desligados — Loja cheia"),
+        item("web", "sale", "off", "Loja online: pedidos desligados (Loja cheia)"),
         item("ifood", "sale", "diverges", "iFood fechado com a loja aberta: nenhum pedido do iFood entra"),
       ],
     });
     const wrapper = mount(ChannelQueueSignal, { global: { stubs } });
     const links = wrapper.findAll("[data-channel-signal-link]");
     expect(links.map((link) => link.text())).toEqual([
-      "Loja online: pedidos desligados — Loja cheia",
+      "Loja online: pedidos desligados (Loja cheia)",
       "iFood fechado com a loja aberta: nenhum pedido do iFood entra",
     ]);
     expect(links.map((link) => link.attributes("data-to"))).toEqual(["/feeds?focus=web", "/feeds?focus=ifood"]);

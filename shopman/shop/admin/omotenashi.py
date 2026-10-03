@@ -104,4 +104,4 @@ class OmotenashiCopyAdmin(ModelAdmin):
 
         updated = queryset.update(active=False)
         invalidate_cache()
-        self.message_user(request, f"{updated} cópia(s) desativada(s) — voltam ao padrão do código.")
+        self.message_user(request, f"{updated} cópia(s) desativada(s): voltam ao padrão do código.")

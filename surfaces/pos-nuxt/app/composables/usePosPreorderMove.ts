@@ -72,7 +72,9 @@ export function usePosPreorderMove(options: {
     if (!ready) return false;
     const rule = ready.counter.reschedule;
     const day = dateLabel(date, options.today.value);
+    // Mudar de dia é ato normal, não perda: o botão sai na cor da casa (`tone`).
     const agreed = await confirm({
+      tone: "primary",
       title: moveQuestion(card.customer_name, day),
       description: moveDescription(card.window_label),
       confirmLabel: moveConfirmLabel(day),

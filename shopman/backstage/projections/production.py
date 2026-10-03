@@ -1715,7 +1715,7 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
         if not free:
             raise RuntimeError(
                 "Sem código cego disponível: espaço esgotado no dia e na janela "
-                "de expediente — verifique refs duplicadas."
+                "de expediente. Verifique refs duplicadas."
             )
         candidate = secrets.choice(free)
         try:
@@ -1740,7 +1740,7 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
             row.delete()
             continue
         return candidate
-    raise RuntimeError("Alocação de código cego não convergiu — investigar concorrência.")
+    raise RuntimeError("Alocação de código cego não convergiu: investigar concorrência.")
 
 
 def _blind_window(selected_date: date) -> tuple[date, date, date]:

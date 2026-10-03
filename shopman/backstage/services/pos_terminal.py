@@ -112,7 +112,7 @@ def printer_geometry(config: dict) -> PrinterGeometry:
         printable = _ROLL_PRINT_WIDTH_MM.get(roll)
         if printable is None:
             return PrinterGeometry(
-                problem=f"rolo de {roll}mm fora do padrão — declare print_width_mm",
+                problem=f"rolo de {roll}mm fora do padrão: declare print_width_mm",
             )
     else:
         printable = _positive_int(raw_print)

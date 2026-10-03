@@ -847,7 +847,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
     out += _centered((shop_name or "NELSON BOULANGERIE").upper())
     # O nome da via no alto, e não só no rodapé de quem programou: duas pessoas
     # segurando papéis diferentes precisam saber qual é qual antes de comparar.
-    out += _centered("Via do entregador — Identificada" if identificada else "Via do entregador — Anônima")
+    out += _centered("Via do entregador (identificada)" if identificada else "Via do entregador (anônima)")
     if reprint:
         # Mesma regra do recibo e da ficha: sem a marca, dois papéis idênticos
         # circulam e a segunda via passa por original — aqui, duas pessoas

@@ -57,7 +57,7 @@ def cash_shift_required() -> PosErrorFragment:
 
 
 def empty_cart() -> PosErrorFragment:
-    return PosErrorFragment(title="Carrinho vazio — adicione produtos antes de fechar.")
+    return PosErrorFragment(title="Carrinho vazio. Adicione produtos antes de fechar.")
 
 
 def invalid_payload() -> PosErrorFragment:

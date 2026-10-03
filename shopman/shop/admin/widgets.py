@@ -22,7 +22,7 @@ class FontPreviewWidget(UnfoldAdminSelectWidget):
     """
 
     def __init__(self, *args, sample_text: str = "", **kwargs):
-        self.sample_text = sample_text or "Aa Bb Cc — O sabor que encanta"
+        self.sample_text = sample_text or "Aa Bb Cc. O sabor que encanta"
         super().__init__(*args, **kwargs)
 
     def render(self, name, value, attrs=None, renderer=None):

@@ -94,7 +94,7 @@ def test_reagenda_e_aparece_no_historico(client, operator, order):
     assert "schedule" in body["order"]["revisions"]
     timeline = [e for e in body["order"]["timeline"] if e["event_type"] == "order_rescheduled"]
     assert timeline and timeline[0]["label"] == "Data combinada alterada"
-    assert timeline[0]["detail"] == f"{_day(3):%d/%m} → {_day(5):%d/%m} — cliente pediu"
+    assert timeline[0]["detail"] == f"{_day(3):%d/%m} → {_day(5):%d/%m}: cliente pediu"
 
 
 def test_recusa_sai_no_dialeto_de_campo(client, operator, order):

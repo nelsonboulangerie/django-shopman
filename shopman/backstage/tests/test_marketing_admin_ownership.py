@@ -128,7 +128,7 @@ def test_sidebar_separates_cockpit_from_read_only_audit():
     marketing_app = next(item for item in apps["items"] if item["title"] == "Marketing")
     assert marketing_app["link"] == "https://marketing.example.com"
 
-    audit = next(group for group in groups if group["title"] == "Marketing — auditoria")
+    audit = next(group for group in groups if group["title"] == "Marketing · auditoria")
     assert [item["title"] for item in audit["items"]] == [
         "Anúncios",
         "Comprovantes",

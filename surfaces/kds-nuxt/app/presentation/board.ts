@@ -154,7 +154,7 @@ export function ticketAction(
   if (state.blocked)
     return {
       kind: "blocked",
-      label: "Item cancelado — veja o cartão vermelho",
+      label: "Item cancelado: veja o cartão vermelho",
       icon: "lucide:ban",
       enabled: true,
     };

@@ -2587,7 +2587,7 @@ def _event_detail(payload: dict) -> str:
     if payload.get("to_date"):
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
-        return f"{moved} — {payload['reason']}" if payload.get("reason") else moved
+        return f"{moved}: {payload['reason']}" if payload.get("reason") else moved
     if payload.get("source") == "pos:edit" and payload.get("customer_note"):
         # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
         # mudou, o total novo e o destino da diferença.

@@ -323,7 +323,7 @@ function refreshAll() {
             class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
           >
             <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-            <span>Sem atualizar — mostrando a última lista carregada.</span>
+            <span>Sem atualizar: mostrando a última lista carregada.</span>
           </div>
           <!-- A margem já está somada nas quantidades. Ela precisa de motivo à
                vista: no modo explodido a linha do preparo some, e este
@@ -565,7 +565,7 @@ function refreshAll() {
           >
             <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
             <span
-              >Sem atualizar — mostrando os últimos preparos carregados.</span
+              >Sem atualizar: mostrando os últimos preparos carregados.</span
             >
           </div>
           <p
@@ -585,7 +585,7 @@ function refreshAll() {
                 <div class="flex min-w-0 items-start gap-2">
                   <span
                     class="shrink-0 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
-                    title="Código cego do dia — vai nas etiquetas no lugar do nome"
+                    title="Código cego do dia: vai nas etiquetas no lugar do nome"
                     >{{ ticket.blind_code }}</span
                   >
                   <div class="min-w-0">

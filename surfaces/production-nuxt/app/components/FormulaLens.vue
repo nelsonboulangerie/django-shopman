@@ -123,8 +123,8 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
         </table>
       </div>
       <p v-if="unmatched.length" class="text-xs text-muted-foreground">
-        {{ unmatched.length === 1 ? "1 ingrediente ainda sem insumo" : `${unmatched.length} ingredientes ainda sem insumo` }}
-        — publicar exige todos casados.
+        {{ unmatched.length === 1 ? "1 ingrediente ainda sem insumo" : `${unmatched.length} ingredientes ainda sem insumo` }}.
+        Publicar exige todos casados.
       </p>
 
       <!-- Métricas de padaria (só âncora `flour`) -->

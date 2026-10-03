@@ -273,7 +273,7 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
                 severity="warning",
                 message=(
                     f"Item {item['qty']}× {item['name'] or sku} da comanda {session_key} "
-                    "NÃO foi roteado para nenhuma estação KDS — a cozinha não vai vê-lo. "
+                    "NÃO foi roteado para nenhuma estação KDS: a cozinha não vai vê-lo. "
                     "Confira as estações ativas e suas coleções."
                 ),
                 dedupe_key=f"kds_unrouted:{session_key}:{sku}",

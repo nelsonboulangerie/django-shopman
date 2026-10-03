@@ -197,7 +197,7 @@ describe("useCounterAgent — impressora e gaveta são capacidades SEPARADAS", (
   it("a recusa do servidor chega inteira, sem ser trocada pela da gaveta", async () => {
     const counter = makeDrawer(AGENT, {
       can_print: false,
-      reason: "A impressora deste terminal está sem token — salve o terminal no gestor para gerar um.",
+      reason: "A impressora deste terminal está sem token. Salve o terminal no gestor para gerar um.",
     });
 
     expect((await counter.print("Zm9v", "recibo")).detail).toContain("sem token");
@@ -220,7 +220,7 @@ describe("useCounterAgent — a tela diz por que não dá", () => {
   it("usa o motivo que o servidor mandou", () => {
     const drawer = makeDrawer({
       adapter: "manual", can_kick: false, open_on_cash_sale: false,
-      reason: "Este balcão abre a gaveta com a chave — o PDV não tem como abrir.",
+      reason: "Este balcão abre a gaveta com a chave: o PDV não tem como abrir.",
     });
     expect(drawer.unavailableReason.value).toContain("chave");
   });

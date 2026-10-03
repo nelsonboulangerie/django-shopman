@@ -134,7 +134,7 @@ class AttributeDefinitionAdmin(ModelAdmin):
     @display(description="opções")
     def options_display(self, obj):
         if not obj.is_choice:
-            return f"— {obj.unit}" if obj.unit else "—"
+            return f"({obj.unit})" if obj.unit else "—"
         values = obj.option_values()
         shown = ", ".join(values[:4])
         return f"{shown}…" if len(values) > 4 else shown

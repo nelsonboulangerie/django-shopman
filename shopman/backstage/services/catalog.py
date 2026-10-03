@@ -1238,7 +1238,7 @@ def _ai_assist_prompt(product, field: str, current_value: str) -> str:
         "Contexto do produto:",
         _ai_assist_context(product),
         "",
-        f"Tarefa — campo \"{spec['label']}\":",
+        f"Tarefa (campo \"{spec['label']}\"):",
         spec["instruction"],
     ]
     if current_value.strip():

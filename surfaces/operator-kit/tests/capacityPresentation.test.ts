@@ -95,7 +95,7 @@ describe("textos em pt-BR", () => {
 
   it("rótulo acessível carrega estado e números — a cor nunca é a única pista", () => {
     expect(capacityAriaLabel(reading(93, 20), "critical")).toBe(
-      "Capacidade do serviço: Crítica — Memória 93% · CPU 20%",
+      "Capacidade do serviço: Crítica. Memória 93% · CPU 20%",
     );
     expect(capacityAriaLabel(null, "unknown")).toBe("Capacidade do serviço: Sem leitura");
   });

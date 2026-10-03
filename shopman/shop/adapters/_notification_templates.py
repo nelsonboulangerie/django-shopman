@@ -182,7 +182,7 @@ def render_message(event: str, context: dict, fallback_templates: dict[str, str]
         return _with_fiscal_note(_with_stock_alert_management(event, render_template(tpl, ctx), ctx), ctx)
 
     order_ref = ctx.get("order_ref", "")
-    return f"Notificação: {event} — Pedido {order_ref}" if order_ref else f"Notificação: {event}"
+    return f"Notificação: {event}, pedido {order_ref}" if order_ref else f"Notificação: {event}"
 
 
 def _with_stock_alert_management(event: str, rendered: str, context: dict) -> str:

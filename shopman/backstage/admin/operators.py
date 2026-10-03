@@ -171,7 +171,7 @@ class PinCredentialAdmin(ModelAdmin):
         if temps:
             self.message_user(
                 request,
-                "PIN temporário (anote e informe ao operador — não será mostrado de novo): "
+                "PIN temporário (anote e informe ao operador, porque não será mostrado de novo): "
                 + " · ".join(temps),
                 level=messages.WARNING,
             )
@@ -214,7 +214,7 @@ class PinCredentialAdmin(ModelAdmin):
         )
         self.message_user(
             request,
-            f"Seu PIN temporário (anote — não será mostrado de novo): {temp}. "
+            f"Seu PIN temporário (anote, porque não será mostrado de novo): {temp}. "
             "No próximo destrave do PDV, a tela pede para você trocá-lo.",
             level=messages.WARNING,
         )
@@ -234,7 +234,7 @@ class PinCredentialAdmin(ModelAdmin):
         if len(creds) != 1:
             self.message_user(
                 request,
-                "Selecione um operador por vez — o código do crachá aparece uma vez só.",
+                "Selecione um operador por vez: o código do crachá aparece uma vez só.",
                 level=messages.ERROR,
             )
             return None

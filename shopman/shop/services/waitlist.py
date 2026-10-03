@@ -1121,7 +1121,7 @@ def _alert_store(order, *, sku: str, qty: Decimal, reason: str) -> None:
         severity="warning",
         message=(
             f"Pedido {order.ref} saiu da fila de espera ({reason}). "
-            f"{qty} un. de {sku or 'item'} voltaram a ficar disponíveis — "
+            f"{qty} un. de {sku or 'item'} voltaram a ficar disponíveis: "
             f"a fila serve o próximo; a gôndola é decisão sua."
         ),
         order_ref=order.ref,

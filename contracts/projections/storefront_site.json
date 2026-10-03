@@ -55,7 +55,7 @@
       "ref": "hours"
     },
     {
-      "answer": "Ficamos em Rua do Contrato, 100, Centro, Londrina — PR — CEP 86000-000.",
+      "answer": "Ficamos em Rua do Contrato, 100, Centro, Londrina/PR, CEP 86000-000.",
       "question": "Onde vocês ficam?",
       "ref": "location"
     },
