@@ -104,8 +104,8 @@ uma.
 A forma:
 
 ```
-Sem conexão — o que está na tela é de {hora}.
-Sem conexão — o que está na tela pode estar velho.    (quando não há hora)
+Sem conexão. O que está na tela é de {hora}.
+Sem conexão. O que está na tela pode estar velho.    (quando não há hora)
 ```
 
 Duas exceções legítimas, e só duas:
