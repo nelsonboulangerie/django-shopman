@@ -43,6 +43,7 @@ LAYER_LABELS = {
     "agent": "conversa solta",
     "team": "equipe",
     "other_desk": "outra mesa",
+    "house_rule": "regra da casa",
 }
 #: Quem responde no caminho de hoje (``current_layer``).
 TODAY_LABELS = {
@@ -245,6 +246,93 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
                 )
             )
     return report
+
+
+def house_rules_summary(cases: list[dict]) -> str:
+    """As regras da casa (OBS0310-M) contra o conjunto: exemplos da tabela e respostas da casa.
+
+    - **Exemplos**: cada regra contra os próprios exemplos (os que precisam disparar e os
+      que não podem).
+    - **Respostas da casa no conjunto**: as falas "Casa" gravadas nos casos (``previous``),
+      que eram texto livre do modelo (teste do dono, 04 a 12/09). Antes: o que elas quebram.
+      Depois: o que sairia com a tabela aplicada (conserto, ou a resposta segurada e a
+      conversa na equipe). Os recibos da época não estão no caso, então toda promessa
+      conta como sem recibo comprovável.
+    - **Entrada**: quantas falas do conjunto ganham frase fixa (R7, R8) ou cortesia (R9).
+    """
+    from . import house_rules
+
+    lines = ["", "Regras da casa (tabela v" + str(house_rules.VERSION) + ", 14 regras):"]
+    ok = total = 0
+    failed: list[str] = []
+    for rule in house_rules.RULES:
+        ctx = house_rules.ReplyContext(origin=rule.examples_origin)
+        for text in rule.must_flag:
+            total += 1
+            hit = bool(rule.output_check(text, ctx))
+            ok += hit
+            if not hit:
+                failed.append(f"{rule.id} deveria disparar: {text}")
+        for text in rule.must_pass:
+            total += 1
+            hit = bool(rule.output_check(text, ctx))
+            ok += not hit
+            if hit:
+                failed.append(f"{rule.id} não deveria disparar: {text}")
+        for text in rule.entry_flag:
+            total += 1
+            hit = bool(rule.entry_check(text))
+            ok += hit
+            if not hit:
+                failed.append(f"{rule.id} deveria disparar na entrada: {text}")
+        for text in rule.entry_pass:
+            total += 1
+            hit = bool(rule.entry_check(text))
+            ok += not hit
+            if hit:
+                failed.append(f"{rule.id} não deveria disparar na entrada: {text}")
+    lines.append(f"  Exemplos da tabela: {ok}/{total} certos")
+    lines.extend(f"    {line}" for line in failed[:10])
+
+    replies = list(dict.fromkeys(
+        line["text"] for case in cases for line in case.get("previous", []) if line.get("who") == "Casa"
+    ))
+    if replies:
+        model_ctx = house_rules.ReplyContext(origin=house_rules.MODEL)
+        before: Counter = Counter()
+        with_violation = held = repaired_only = after = 0
+        for text in replies:
+            found = house_rules.check(text, model_ctx)
+            before.update({v.rule for v in found})
+            with_violation += bool(found)
+            reviewed = house_rules.review([text], model_ctx)
+            if reviewed.held:
+                held += 1  # não sai: equipe, com o aviso de handoff (que passa nas regras)
+                continue
+            repaired_only += bool(reviewed.repaired)
+            after += bool(house_rules.check(reviewed.texts[0], model_ctx))
+        lines.append(
+            f"  Respostas da casa gravadas no conjunto (texto do modelo, alpha 04 a 12/09): {len(replies)}"
+        )
+        lines.append(
+            f"    Antes: {with_violation}/{len(replies)} quebram alguma regra · por regra: "
+            + ", ".join(f"{rid} {before[rid]}" for rid in sorted(before, key=lambda r: int(r[1:])))
+        )
+        lines.append(
+            f"    Depois: {held} seguradas (equipe), {repaired_only} consertadas, "
+            f"{len(replies) - held - repaired_only} sem mudança · violações no que sai: {after}"
+        )
+
+    fixed = Counter()
+    for case in cases:
+        rule_id, _text = house_rules.fixed_reply_for(case["text"], copy=lambda key: key)
+        if rule_id:
+            fixed[rule_id] += 1
+    lines.append(
+        "  Entrada: falas do conjunto com frase fixa: "
+        + (", ".join(f"{rid} {n}" for rid, n in sorted(fixed.items())) or "nenhuma")
+    )
+    return "\n".join(lines)
 
 
 def production_summary(*, days: int = 7) -> str:
