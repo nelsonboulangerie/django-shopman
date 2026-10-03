@@ -77,7 +77,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/usePwaUpdate.ts` | `usePwaUpdate` | worker em espera + `update()` (skipWaiting + reload) + `checkForUpdate()` (sonda) |
 | `app/composables/usePwaAutoUpdate.ts` | `usePwaAutoUpdate` | sonda periódica/no foco e aplicação automática em momento seguro — ver "Atualização do app instalado" |
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
-| `app/composables/useConfirm.ts` | `useConfirm` | a pergunta antes de descartar o que não foi salvo, no diálogo da casa: devolve `Promise<boolean>` (ver "Pergunta antes de descartar") |
+| `app/composables/useConfirm.ts` | `useConfirm` | a pergunta antes de descartar o que não foi salvo (ou de um ato normal, `tone: "primary"`), no diálogo da casa: devolve `Promise<boolean>` (ver "Pergunta antes de descartar") |
 | `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
@@ -562,6 +562,11 @@ Contrato:
   ("Descartar e sair", "Descartar e trocar" quando o gesto continua). O que fica:
   `cancelLabel`, padrão "Continuar editando" ("Continuar escrevendo" para um motivo, o
   mesmo par do `OperatorReasonDialog`; "Continuar revisando" numa revisão).
+- **O tom diz o que o ato é (`tone`).** `"danger"` é o padrão: botão vermelho, para
+  descartar ou perder. `"primary"` é o ato normal que só merece confirmação (mudar a
+  encomenda de dia, enviar): botão da cor da casa, e aí `confirmLabel` e `cancelLabel`
+  são obrigatórios no tipo, porque os padrões falam de perda. Vermelho num ato normal é
+  rótulo que mente.
 - **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
   toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
