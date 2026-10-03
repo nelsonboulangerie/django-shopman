@@ -482,8 +482,10 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
     for alert in rows:
         app = ""
         surface = ""
-        if alert.type in OperatorAlert.PRODUCTION_TYPES and can_production:
-            app = "production"
+        if alert.type in OperatorAlert.PRODUCTION_TYPES:
+            # Alerta de produção carrega o ref do LOTE em ``order_ref``: nunca vira "Abrir o
+            # pedido" no Gestor. Sem a Produção, ele fica no sino de quem a opera.
+            app = "production" if can_production else ""
         elif can_orders and (alert.audience == "orders" or alert.order_ref) and alert.type not in alert_service.ORDERS_SCOPE_EXCLUDED:
             app, surface = "gestor", "orders"
         if not app:

@@ -1,12 +1,35 @@
 <script setup lang="ts">
-// Central — a home do Shopman e o launcher pós-login. Lê a projection do hub
-// (tiles já filtrados por permissão) e a apresenta como uma grade de ícones fortes.
+// Central: a home do Shopman e o launcher pós-login. Lê a projection do hub e mostra,
+// no topo, "Precisa de você" (a fila das filas: o item exato de cada app, com o gesto que
+// abre o lugar exato) e, embaixo, os blocos dos apps com a linha de estado de cada um.
+// Tudo já vem filtrado por permissão.
 // Sem CRUD: cada tile abre a superfície dedicada (ou deep-linka pro Unfold, no caso da
 // Loja). Herda do kit o OfflineBanner, o re-gate de 401 (useOperatorSession) e
 // httpErrorMessage.
+import { useNow } from "@vueuse/core";
 import type { HubFailure } from "~/presentation/hub";
-import type { HubTileProjection } from "~/types/hub";
-import { HUB_NAMED_OF, hubBrandLine, hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
+import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
+import {
+  HUB_NAMED_OF,
+  QUEUE_EMPTY_COPY,
+  QUEUE_HINT_COPY,
+  hubBrandLine,
+  hubFailure,
+  hubFailureCopy,
+  hubGreeting,
+  hubIsEmpty,
+  queueActionAriaLabel,
+  queueCount,
+  queueDetailLine,
+  queueMoreLabel,
+  queueTimeLabel,
+  serverClockOffset,
+  tileForItem,
+  tileIcon,
+  tileIconUrl,
+  tileLinkAttrs,
+  tileStatus,
+} from "~/presentation/hub";
 
 // Como cada tile abre depende de a Central estar instalada (janela própria por app)
 // ou ser uma aba comum. A leitura é reativa: instalar com a tela aberta já muda o link.
@@ -26,7 +49,23 @@ const brandLine = hubBrandLine(house);
 // máquina de quem desenvolve). É o que o operador lê para o suporte ao relatar algo.
 const appVersion = String(useRuntimeConfig().public.appVersion || "local");
 
-const { tiles, operatorName, error, refresh } = await useOperatorHub();
+const { tiles, queue, operatorName, error, refresh } = await useOperatorHub();
+
+// Precisa de você. O relógio anda a cada segundo (a contagem "aceita sozinho em 2:40" não
+// congela entre uma leitura e outra) e conta pela hora do servidor, não pela do dispositivo.
+const queueItems = computed(() => queue.value?.items ?? []);
+const queueTotal = computed(() => queueCount(queue.value));
+const queueMore = computed(() => queueMoreLabel(queue.value?.more_count ?? 0));
+const clockOffset = ref(0);
+watch(
+  () => queue.value?.server_now,
+  (serverNow) => {
+    clockOffset.value = serverNow ? serverClockOffset(serverNow, Date.now()) : 0;
+  },
+  { immediate: true },
+);
+const deviceNow = useNow({ interval: 1000 });
+const nowMs = computed(() => deviceNow.value.getTime() + clockOffset.value);
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
 const { onReconnect } = useConnectivity();
@@ -59,6 +98,19 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
 const brokenTileIcons = reactive(new Set<string>());
 function tileImageSrc(tile: HubTileProjection): string | null {
   return brokenTileIcons.has(tile.ref) ? null : tileIconUrl(tile);
+}
+
+// A linha da fila usa o ícone do app de destino (o mesmo do bloco) e abre do mesmo jeito
+// que o bloco abriria: na janela própria do app quando a Central está instalada.
+function itemIconSrc(item: HubQueueItemProjection): string | null {
+  const tile = tileForItem(tiles.value, item);
+  return tile ? tileImageSrc(tile) : null;
+}
+function itemIcon(item: HubQueueItemProjection): string {
+  return tileIcon(tileForItem(tiles.value, item)?.icon || "circle-dot");
+}
+function itemLinkAttrs(item: HubQueueItemProjection) {
+  return tileLinkAttrs({ kind: "launch", url: item.url }, linkContext.value);
 }
 </script>
 
@@ -124,64 +176,170 @@ function tileImageSrc(tile: HubTileProjection): string | null {
             </div>
           </header>
 
-          <section class="mx-auto w-full max-w-4xl p-4">
-        <div v-if="isEmpty" class="grid place-items-center gap-3 rounded-md border border-dashed p-10 text-center">
-          <Icon name="lucide:inbox" class="size-8 text-muted-foreground" />
-          <div class="grid gap-1">
-            <p class="text-base font-semibold">Nenhum app liberado</p>
-            <p class="text-sm text-muted-foreground">
-              Sua conta ainda não tem acesso a nenhuma superfície. Fale com o gerente.
-            </p>
-          </div>
-        </div>
+          <div class="mx-auto grid w-full max-w-6xl gap-8 p-4 sm:p-6">
+            <div v-if="isEmpty" class="grid place-items-center gap-3 rounded-md border border-dashed p-10 text-center">
+              <Icon name="lucide:inbox" class="size-8 text-muted-foreground" />
+              <div class="grid gap-1">
+                <p class="text-base font-semibold">Nenhum app liberado</p>
+                <p class="text-sm text-muted-foreground">
+                  Sua conta ainda não tem acesso a nenhuma superfície. Fale com o gerente.
+                </p>
+              </div>
+            </div>
 
-        <ul v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <li v-for="tile in tiles" :key="tile.ref">
-            <a
-              :href="tile.url"
-              :target="tileLinkAttrs(tile, linkContext).target"
-              :rel="tileLinkAttrs(tile, linkContext).rel"
-              class="flex h-38 flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
-                   Lucide de fallback, senão vira moldura nos cantos do ícone. -->
-              <span
-                class="grid size-11 place-items-center overflow-hidden rounded-md text-primary"
-                :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
-              >
-                <img
-                  v-if="tileImageSrc(tile)"
-                  :src="tileImageSrc(tile)!"
-                  class="size-11 rounded-md"
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  @error="brokenTileIcons.add(tile.ref)"
+            <template v-else>
+              <!-- Precisa de você: a fila das filas (UX-H1). O item exato primeiro, ordenado
+                   por urgência entre apps; cada linha com um gesto que abre o lugar exato no
+                   app certo. O fato em si é declarado lá, na forma única do trabalho. -->
+              <section aria-labelledby="hub-queue-title" data-hub-queue class="grid gap-3">
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 id="hub-queue-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Precisa de você
+                    <span v-if="queueTotal" class="ml-1.5 tabular-nums text-foreground">{{ queueTotal }}</span>
+                  </h2>
+                  <p class="hidden text-xs text-muted-foreground sm:block">{{ QUEUE_HINT_COPY }}</p>
+                </div>
+
+                <p
+                  v-if="!queueItems.length"
+                  data-hub-queue-empty
+                  class="rounded-md border border-border bg-card px-4 py-5 text-sm text-muted-foreground"
                 >
-                <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
-              </span>
-              <!-- Altura FIXA e conteúdo no topo: no celular a grade tem duas colunas
-                   estreitas, e cada tile parava numa altura diferente conforme o nome e a
-                   frase quebrassem em uma ou duas linhas — a grade ficava serrilhada e o
-                   olho perdia a coluna. O teto é duas linhas para cada um; o que passa
-                   disso é cortado com reticências pelo `line-clamp`, e o `h-38` reserva o
-                   pior caso, de modo que nenhum tile encolhe quando o texto é curto. -->
-              <span class="grid min-w-0">
-                <span data-tile-title class="line-clamp-2 text-sm font-semibold leading-tight">{{ tile.label }}</span>
-                <span data-tile-description class="line-clamp-2 text-xs text-muted-foreground">{{ tile.description }}</span>
-              </span>
-            </a>
-          </li>
-          </ul>
-          <OperatorPushSettings />
+                  {{ QUEUE_EMPTY_COPY }}
+                </p>
 
-          <!-- Carimbo da versão publicada. Ele morava colado no título dos avisos e se
-               lia como se fosse propriedade do aviso ("local"); é a versão do build que
-               está no ar, e é assim que ele se apresenta agora. -->
-          <p class="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
-            Versão {{ HUB_NAMED_OF }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
-          </p>
-          </section>
+                <ol v-else class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+                  <li
+                    v-for="item in queueItems"
+                    :key="item.key"
+                    data-hub-queue-item
+                    class="grid gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[9rem_minmax(0,1fr)_auto_auto] sm:items-center"
+                  >
+                    <!-- App: ícone ao lado do nome. No celular, divide a linha com o tempo. -->
+                    <div class="flex min-w-0 items-center justify-between gap-3 sm:contents">
+                      <span class="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                        <span
+                          class="grid size-7 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
+                          :class="itemIconSrc(item) ? '' : 'bg-primary/10'"
+                        >
+                          <img
+                            v-if="itemIconSrc(item)"
+                            :src="itemIconSrc(item)!"
+                            class="size-7 rounded-md"
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            @error="brokenTileIcons.add(item.app)"
+                          >
+                          <Icon v-else :name="itemIcon(item)" class="size-4" />
+                        </span>
+                        <span>{{ item.app_label }}</span>
+                      </span>
+                      <span
+                        class="shrink-0 text-sm tabular-nums sm:hidden"
+                        :class="item.attention ? 'font-semibold text-warning' : 'text-muted-foreground'"
+                      >{{ queueTimeLabel(item, nowMs) }}</span>
+                    </div>
+
+                    <div class="min-w-0">
+                      <p class="text-sm font-semibold leading-snug">{{ item.title }}</p>
+                      <p class="text-xs text-muted-foreground">{{ queueDetailLine(item, nowMs) }}</p>
+                    </div>
+
+                    <span
+                      data-hub-queue-time
+                      class="hidden text-right text-sm tabular-nums sm:block"
+                      :class="item.attention ? 'font-semibold text-warning' : 'text-muted-foreground'"
+                    >{{ queueTimeLabel(item, nowMs) }}</span>
+
+                    <a
+                      :href="item.url"
+                      :target="itemLinkAttrs(item).target"
+                      :rel="itemLinkAttrs(item).rel"
+                      :aria-label="queueActionAriaLabel(item)"
+                      data-hub-queue-action
+                      class="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-w-36"
+                    >
+                      {{ item.action_label }}
+                      <Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />
+                    </a>
+                  </li>
+                </ol>
+
+                <p v-if="queueMore" class="text-xs text-muted-foreground" data-hub-queue-more>{{ queueMore }}</p>
+              </section>
+
+              <!-- Os apps: a aparência calma aprovada, mais compacta, com o ícone ao lado do
+                   nome e a linha de estado que concorda com a fila acima. -->
+              <section aria-labelledby="hub-apps-title" class="grid gap-3">
+                <h2 id="hub-apps-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Apps <span class="ml-1.5 tabular-nums text-foreground">{{ tiles.length }}</span>
+                </h2>
+                <ul class="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <li v-for="tile in tiles" :key="tile.ref" class="h-full">
+                    <a
+                      :href="tile.url"
+                      :target="tileLinkAttrs(tile, linkContext).target"
+                      :rel="tileLinkAttrs(tile, linkContext).rel"
+                      class="flex h-full min-h-28 gap-3 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
+                           Lucide de fallback, senão vira moldura nos cantos do ícone. -->
+                      <span
+                        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
+                        :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
+                      >
+                        <img
+                          v-if="tileImageSrc(tile)"
+                          :src="tileImageSrc(tile)!"
+                          class="size-11 rounded-md"
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          @error="brokenTileIcons.add(tile.ref)"
+                        >
+                        <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
+                      </span>
+                      <!-- Altura ÚNICA: a grade tem linhas de mesma altura (`auto-rows-fr`) e cada
+                           bloco ocupa a linha inteira. Sem isso a grade ficava serrilhada (cada
+                           bloco parava numa altura) e o olho perdia a coluna. Nome e frase param em
+                           duas linhas; a linha de estado é aviso e nunca se corta (quebra a linha),
+                           e ocupa o lugar mesmo vazia, para nenhum bloco encolher. -->
+                      <span class="grid min-w-0 content-start gap-0.5">
+                        <span data-tile-title class="line-clamp-2 text-base font-semibold leading-tight">{{ tile.label }}</span>
+                        <span data-tile-description class="line-clamp-2 text-sm text-muted-foreground">{{ tile.description }}</span>
+                        <span data-tile-status class="mt-2 flex min-h-4 min-w-0 items-start gap-2 text-xs leading-4">
+                          <template v-if="tileStatus(tile).hasStatus">
+                            <span
+                              class="mt-1 size-2 shrink-0 rounded-full"
+                              :class="tileStatus(tile).attention ? 'bg-warning' : 'bg-muted-foreground/40'"
+                              aria-hidden="true"
+                            />
+                            <span class="min-w-0">
+                              <span v-if="tileStatus(tile).attention" class="font-semibold text-warning">{{ tileStatus(tile).attention }}</span>
+                              <span v-if="tileStatus(tile).attention && tileStatus(tile).summary" class="text-muted-foreground"> · </span>
+                              <span v-if="tileStatus(tile).summary" class="text-muted-foreground">{{ tileStatus(tile).summary }}</span>
+                            </span>
+                          </template>
+                        </span>
+                      </span>
+                    </a>
+                  </li>
+                </ul>
+              </section>
+            </template>
+
+            <div class="grid gap-4">
+              <OperatorPushSettings />
+
+              <!-- Carimbo da versão publicada. Ele morava colado no título dos avisos e se
+                   lia como se fosse propriedade do aviso ("local"); é a versão do build que
+                   está no ar, e é assim que ele se apresenta agora. -->
+              <p class="border-t border-border pt-4 text-xs text-muted-foreground">
+                Versão {{ HUB_NAMED_OF }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </template>

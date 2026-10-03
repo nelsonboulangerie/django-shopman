@@ -394,3 +394,22 @@ def test_staff_sem_app_recebe_fila_vazia(client):
     queue = _hub(client, plain)["queue"]
 
     assert queue["items"] == [] and queue["total_count"] == 0
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_aviso_de_lote_nunca_vira_abrir_o_pedido_no_gestor(client):
+    """O alerta de produção guarda o ref do LOTE em ``order_ref``. Quem lê o público de
+    produção mas não opera o app da Produção não recebe o item, nem como pedido no Gestor."""
+    OperatorAlert.objects.create(
+        type="production_forgotten",
+        severity="error",
+        message="Lote WO-001 planejado nunca iniciado.",
+        order_ref="WO-001",
+    )
+    gerente = _operator("hub-q-gerente", ("shop", "manage_orders"), ("shop", "manage_production"))
+    padeiro = _operator("hub-q-padeiro-2", ("backstage", "operate_production"), ("shop", "manage_production"))
+
+    assert _hub(client, gerente)["queue"]["items"] == []
+    items = _hub(client, padeiro)["queue"]["items"]
+    assert [item["app"] for item in items] == ["production"]
+    assert items[0]["url"].startswith("https://prod.example.test/plan?q=WO-001")

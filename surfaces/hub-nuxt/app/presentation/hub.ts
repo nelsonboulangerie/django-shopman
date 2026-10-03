@@ -4,7 +4,7 @@ import {
   EXTERNAL_LINK_ATTRS,
   type CrossAppLinkAttrs,
 } from "../../../operator-kit/app/presentation/appLaunch";
-import type { HubTileProjection } from "~/types/hub";
+import type { HubQueueItemProjection, HubQueueProjection, HubTileProjection } from "~/types/hub";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
 
@@ -159,3 +159,116 @@ export function hubFailureCopy(failure: HubFailure): { title: string; hint: stri
       return { title: "", hint: "", retry: false };
   }
 }
+
+// ── Precisa de você: a fila das filas (UX-H1) ────────────────────────────────
+//
+// O Django manda os instantes (ISO) e a Central conta o tempo aqui, com um relógio que anda
+// a cada segundo: "aceita sozinho em 2:40" não pode congelar entre uma leitura e outra. A
+// conta usa a hora do SERVIDOR (`server_now`) como referência, para um dispositivo com o
+// relógio errado não dizer "há 3 horas" de um pedido que chegou agora.
+
+/** Diferença entre o relógio do servidor e o do dispositivo, em ms (somar ao `Date.now()`). */
+export function serverClockOffset(serverNowIso: string, deviceNowMs: number): number {
+  const server = Date.parse(serverNowIso || "");
+  return Number.isFinite(server) ? server - deviceNowMs : 0;
+}
+
+/** "5 min", "1h 05": a duração como o operador lê, sem segundos. */
+export function durationLabel(seconds: number): string {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${String(rest).padStart(2, "0")}` : `${hours}h`;
+}
+
+/** "2:40": a contagem regressiva até o prazo; "0:00" quando já venceu. */
+export function countdownLabel(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function secondsBetween(fromIso: string, nowMs: number): number | null {
+  const from = Date.parse(fromIso || "");
+  return Number.isFinite(from) ? (nowMs - from) / 1000 : null;
+}
+
+/**
+ * O tempo da linha, à direita: há quanto o item espera ("há 14 min") ou quanto falta para
+ * o prazo ("em 27 min"). Prazo vencido diz que passou ("passou há 3 min"), nunca um
+ * número negativo.
+ */
+export function queueTimeLabel(item: HubQueueItemProjection, nowMs: number): string {
+  if (item.time_mode === "until") {
+    const elapsed = secondsBetween(item.due_at, nowMs);
+    if (elapsed === null) return "";
+    if (elapsed >= 60) return `passou há ${durationLabel(elapsed)}`;
+    if (elapsed > -60) return "agora";
+    return `em ${durationLabel(-elapsed)}`;
+  }
+  const waited = secondsBetween(item.waiting_since, nowMs);
+  if (waited === null) return "";
+  return waited < 60 ? "agora" : `há ${durationLabel(waited)}`;
+}
+
+/**
+ * O prazo dentro da frase do item: "aceita sozinho em 2:40", "retira às 10:30",
+ * "decide até 10:15". Contagem vencida some: o que ela anunciava já aconteceu, e a
+ * próxima leitura traz o item no estado novo.
+ */
+export function queueDueText(item: HubQueueItemProjection, nowMs: number): string {
+  if (!item.due_label) return "";
+  if (item.due_style === "clock") return item.due_clock ? `${item.due_label} ${item.due_clock}` : "";
+  if (item.due_style === "countdown") {
+    const elapsed = secondsBetween(item.due_at, nowMs);
+    if (elapsed === null || elapsed >= 0) return "";
+    return `${item.due_label} ${countdownLabel(-elapsed)}`;
+  }
+  return "";
+}
+
+/** A linha de baixo do item: o essencial da decisão e, quando há, o prazo. */
+export function queueDetailLine(item: HubQueueItemProjection, nowMs: number): string {
+  return [item.detail, queueDueText(item, nowMs)].filter(Boolean).join(" · ");
+}
+
+/** O nome acessível do gesto: o verbo sozinho ("Revisar") não diz o quê. */
+export function queueActionAriaLabel(item: HubQueueItemProjection): string {
+  return `${item.action_label}: ${item.title}`;
+}
+
+/** Quantos itens a fila tem ao todo (os em foco e o excedente). */
+export function queueCount(queue: HubQueueProjection | null | undefined): number {
+  return queue?.total_count ?? 0;
+}
+
+/** O excedente vira número, nunca página: "Mais 3 esperando nos apps abaixo." */
+export function queueMoreLabel(more: number): string {
+  if (more <= 0) return "";
+  return more === 1 ? "Mais 1 esperando nos apps abaixo." : `Mais ${more} esperando nos apps abaixo.`;
+}
+
+/** Fila vazia: a frase calma que diz que nada espera, sem comemorar. */
+export const QUEUE_EMPTY_COPY = "Nada esperando por você agora.";
+
+/** O subtítulo da seção: de onde vem a fila e quando um item sai dela. */
+export const QUEUE_HINT_COPY = "A soma das filas dos seus papéis, o mais urgente primeiro. Some quando resolvido.";
+
+/** O tile de destino de um item (para o ícone do app na linha), ou `null`. */
+export function tileForItem(tiles: HubTileProjection[], item: Pick<HubQueueItemProjection, "app">): HubTileProjection | null {
+  return tiles.find((tile) => tile.ref === item.app) ?? null;
+}
+
+/** A linha de estado do bloco do app: a parte que pede alguém vem primeiro, em âmbar. */
+export function tileStatus(tile: Pick<HubTileProjection, "status_attention" | "status_summary">): {
+  attention: string;
+  summary: string;
+  hasStatus: boolean;
+} {
+  const attention = (tile.status_attention || "").trim();
+  const summary = (tile.status_summary || "").trim();
+  return { attention, summary, hasStatus: Boolean(attention || summary) };
+}
+
+/** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */
+export const QUEUE_POLL_MS = 30_000;

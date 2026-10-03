@@ -10,16 +10,43 @@ const HUB = {
   hub: {
     operator_name: "Ana",
     tiles: [
-      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch" },
-      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch" },
+      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch", status_attention: "", status_summary: "2 encomendas para retirar hoje" },
+      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch", status_attention: "1 para aceitar", status_summary: "11 ativos" },
       // Os dois tiles com o texto MAIS LONGO do registro real
       // (`shopman/backstage/projections/hub.py`): é neles que a grade de duas colunas do
       // celular quebrava em alturas diferentes. Trocar o registro sem trocar estes dois
       // deixa a medida do `mobileTiles.spec.ts` medindo um caso fácil.
-      { ref: "purchase", label: "Compras", description: "Comprar e receber insumos", icon: "package", url: "http://127.0.0.1:3008/", kind: "launch" },
-      { ref: "production", label: "Produção", description: "Produção e lotes", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch" },
-      { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external" },
+      { ref: "purchase", label: "Compras", description: "Comprar e receber insumos", icon: "package", url: "http://127.0.0.1:3008/", kind: "launch", status_attention: "", status_summary: "" },
+      { ref: "production", label: "Produção", description: "Produção e lotes", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch", status_attention: "", status_summary: "5 de 15 lotes finalizados hoje" },
+      { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external", status_attention: "", status_summary: "" },
     ],
+    // "Precisa de você" (UX-H1). Os instantes são relativos ao boot do mock: o teste lê o
+    // item e o gesto, não o número de minutos.
+    queue: {
+      items: [
+        {
+          key: "gestor:order:WEB-20261003-K7Q2",
+          app: "gestor",
+          app_label: "Gestor de Pedidos",
+          kind: "order_to_accept",
+          title: "Pedido K7Q2 para aceitar",
+          detail: "iFood · Ana Ferreira · R$ 58,40",
+          waiting_since: new Date(Date.now() - 120_000).toISOString(),
+          due_at: "",
+          due_label: "",
+          due_style: "",
+          due_clock: "",
+          time_mode: "since",
+          attention: false,
+          action_label: "Abrir pedido",
+          url: "http://127.0.0.1:3004/WEB-20261003-K7Q2",
+          slack_seconds: 120,
+        },
+      ],
+      total_count: 3,
+      more_count: 2,
+      server_now: new Date().toISOString(),
+    },
   },
 };
 
