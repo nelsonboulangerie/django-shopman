@@ -38,7 +38,7 @@ const presentation = computed(() => {
       icon: "lucide:map-pin-off",
       title: "Esta página não existe",
       detail:
-        "O endereço pode estar incompleto ou o item pode ter sido removido. Volte ao painel para continuar.",
+        "O endereço pode estar incompleto ou o item pode ter sido removido. Volte às decisões para continuar.",
       retry: false,
     };
   if (status.value === 426 || code.value === "unsupported_contract")
