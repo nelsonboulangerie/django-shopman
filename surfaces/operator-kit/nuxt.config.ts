@@ -19,6 +19,16 @@ export default defineNuxtConfig({
   // que components/composables/utils/plugins em `app/` sejam auto-importados via extends.
   future: { compatibilityVersion: 4 },
 
+  // Um reka-ui só no bundle do app. Sem isto, o componente do kit que importa
+  // `reka-ui` resolve o `operator-kit/node_modules` e o app resolve o dele. Medido
+  // no build do Gestor (03/10/2026): duas cópias do DismissableLayer no bundle; com
+  // `dedupe`, uma. Duas cópias são duas pilhas de camadas, e o `OperatorConfirmDialog`
+  // aberto sobre um `UiDialog` do app não seria a camada de cima: o diálogo de baixo
+  // tomaria o toque dentro da pergunta como toque fora e puxaria o foco de volta.
+  vite: {
+    resolve: { dedupe: ["reka-ui"] },
+  },
+
   runtimeConfig: {
     // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o IP
     // do operador um salto mais fundo no X-Forwarded-For (server/utils/djangoProxy.ts).

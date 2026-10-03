@@ -82,9 +82,14 @@ const reasonDirty = ref(false);
 const negotiationDirty = ref(false);
 const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value || negotiationDirty.value);
 // Session-only drafts: leaving requires an explicit discard while text is dirty.
+const confirmDiscard = useConfirm();
 onBeforeRouteLeave(() => {
   if (!hasUnsavedText.value) return true;
-  return window.confirm("Há texto não salvo neste pedido. Descartar e sair?");
+  return confirmDiscard({
+    title: "Sair sem salvar o texto deste pedido?",
+    description: "O que você digitou neste pedido e ainda não salvou se perde: observação para a cozinha, comentário, motivo ou resposta ao iFood.",
+    confirmLabel: "Descartar e sair",
+  });
 });
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!hasUnsavedText.value) return;

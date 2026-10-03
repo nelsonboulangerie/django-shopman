@@ -210,12 +210,22 @@ const rejectReason = ref("");
 const rejectReasons = ref<CancellationReason[]>([]);
 const rejectCode = ref("");
 const rejectDirty = computed(() => rejectRef.value !== null && Boolean(rejectReason.value.trim() || rejectCode.value));
-function closeReject() {
+const confirmDiscard = useConfirm();
+async function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
-  if (rejectDirty.value && !window.confirm("Descartar o motivo digitado?")) return;
+  if (rejectDirty.value && !(await confirmDiscard({
+    title: "Descartar o motivo digitado?",
+    description: "O motivo que você escreveu se perde, e o pedido não é recusado.",
+    cancelLabel: "Continuar escrevendo",
+  }))) return;
   rejectRef.value = null;
 }
-onBeforeRouteLeave(() => !rejectDirty.value || window.confirm("Há um motivo não salvo. Descartar e sair?"));
+onBeforeRouteLeave(() => !rejectDirty.value || confirmDiscard({
+  title: "Sair sem recusar o pedido?",
+  description: "O motivo que você escreveu se perde, e o pedido não é recusado.",
+  confirmLabel: "Descartar e sair",
+  cancelLabel: "Continuar escrevendo",
+}));
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!rejectDirty.value) return;
   event.preventDefault();
