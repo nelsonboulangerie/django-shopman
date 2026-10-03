@@ -3,7 +3,7 @@
 - **id:** OBS0310-K
 - **sessão:** shopman-improvements-fixes-bd04d4 (Claude; frente executada por subagente em worktree próprio)
 - **branch:** claude/obs0310-concierge-regua
-- **PR:** (preenchido na abertura)
+- **PR:** #1437
 - **início (UTC):** 2026-10-03
 - **estudo:** `docs/plans/CONCIERGE-ARQUITETURA-ALVO.md` (PR #1435), fatia F1. O cliente não vê nada mudar.
 
