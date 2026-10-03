@@ -58,7 +58,12 @@ com `backstage.operate_kds`. O POSTO se chama "Expedição" (UX-POSTO1); a COLUN
 - kds-nuxt: vitest 7 arquivos, 101 passed; typecheck 0; eslint limpo.
 - operator-kit: vitest 104 arquivos, 1120 passed (inclui `guardrails.vocabulary` e `guardrails.noEmDash`).
 - `scripts/check_surface_registry.py` e `check_surface_versions.py` → ok. `ruff` limpo.
-- Suítes inteiras backstage + shop: ver PR (rodada local abaixo).
+- Suítes inteiras locais (`-n 6`): backstage 8672 passed / 10 failed; em série, 7 desses passam e
+  sobram 2 de estado local (`test_pos_headless_surface_contract`: nome da loja do banco local) e o
+  `test_hub_projection_identity[gestor]`, que era meu e foi corrigido (tile da Central). shop
+  10929 passed / 45 failed, todos de ambiente (ManyChat, calendário, `audit_branches` com git
+  local); o CI do PR acusou só 2 no shop, ambos meus e corrigidos
+  (`test_eventstream_permissions`, `test_permissions::TestKitchenGroup`).
 
 ## Fora
 - E2E Playwright (`kds-nuxt/tests/e2e/exitMoved.spec.ts`, novo) não rodou: sem Chromium aqui.
@@ -66,7 +71,9 @@ com `backstage.operate_kds`. O POSTO se chama "Expedição" (UX-POSTO1); a COLUN
   posto "Expedição" é da UX-POSTO1.
 - Quem só expede ainda recebe 403 silencioso de `channels/attention` (sinal de Canais) no
   quadro; não aparece na tela.
-- Tile do Gestor na Central continua só para `shop.manage_orders`.
+- Tile do Gestor na Central passa a aparecer para quem expede (`can_expedite`): o tile pergunta o
+  que a porta pergunta (`test_hub_projection_identity`). A fila da Central (`hub_queue`) segue só
+  para quem gerencia.
 
 ## Pergunta ao dono
 Quem expede hoje é quem tem `backstage.operate_kds`, e isso inclui todo cozinheiro de estação.
