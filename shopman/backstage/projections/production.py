@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from decimal import ROUND_CEILING, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from django.conf import settings
@@ -222,8 +222,30 @@ class PositionOptionProjection:
 
 
 @dataclass(frozen=True)
+class SuggestionMaterialShortageProjection:
+    """Um insumo que não cobre a sugestão, lido antes de planejar (L3).
+
+    ``fits_quantity`` é quantas unidades do produto ESTE insumo cobre sozinho
+    ("Manteiga: dá para 40"). O saldo é o mesmo que o guardrail do fechamento
+    lê (``INVENTORY_BACKEND``), contra a sugestão desta linha isolada: dois
+    produtos que dividem a manteiga não somam aqui.
+    """
+
+    sku: str
+    name: str
+    missing_display: str
+    fits_quantity: str
+
+
+@dataclass(frozen=True)
 class ProductionSuggestionProjection:
-    """A suggested production row from Craftsman demand planning."""
+    """A suggested production row from Craftsman demand planning.
+
+    O ``basis`` do ``craft.suggest()`` chega estruturado, para a superfície
+    montar a conta sem reinterpretar frase: ``projected + committed + margin =
+    quantity`` fecha em unidades inteiras (a margem absorve a segurança, o
+    reforço de sexta/sábado e o arredondamento).
+    """
 
     recipe_pk: int
     recipe_ref: str
@@ -236,8 +258,16 @@ class ProductionSuggestionProjection:
     confidence: str
     sample_size: int
     high_demand_applied: bool
-    explanation_parts: tuple[str, ...]
-    # O basis do craft.suggest() em frases de gente — a superfície só renderiza.
+    projected: str
+    margin: str
+    safety_percent: int
+    same_weekday: bool
+    season_label: str
+    soldout_days: int
+    waste_percent: int
+    waste_discounted: bool
+    material_shortages: tuple[SuggestionMaterialShortageProjection, ...] = ()
+    fits_quantity: str = ""
 
 
 @dataclass(frozen=True)
@@ -866,6 +896,9 @@ class ProductionBoardProjection:
     default_position_pk: int | None
     access: ProductionSurfaceAccess
     actions: tuple[ProductionActionProjection, ...] = ()
+    # Onde pedir o insumo que falta ("Pedir no Compras"). Vazio quando quem lê
+    # não opera Compras ou a superfície não tem URL: o atalho some.
+    purchase_url: str = ""
     generated_at: str = ""
     source_revision: str = ""
     fresh_until: str = ""
@@ -1151,6 +1184,7 @@ def build_production_board(
     operator_ref: str = "",
     base_recipe: str = "",
     access: ProductionSurfaceAccess | None = None,
+    purchase_url: str = "",
 ) -> ProductionBoardProjection:
     """Build the production board projection."""
     selected_date = selected_date or timezone.localdate()
@@ -1207,7 +1241,19 @@ def build_production_board(
         )
         for p in positions_qs
     )
-    suggestions = tuple(_build_suggestion(suggestion) for suggestion in raw_suggestions)
+    material_checks = (
+        _suggestion_material_checks(
+            raw_suggestions,
+            all_recipes,
+            skip_skus={wo.output_sku for wo in wos if wo.status != WorkOrder.Status.VOID},
+        )
+        if access.can_view_suggested
+        else {}
+    )
+    suggestions = tuple(
+        _build_suggestion(suggestion, material_check=material_checks.get(suggestion.recipe.output_sku))
+        for suggestion in raw_suggestions
+    )
     visible_suggestions = suggestions if access.can_view_suggested else ()
     all_matrix_rows = _build_matrix_rows(matrix_recipes, wo_cards, visible_suggestions)
     base_recipes = _build_group_options(all_matrix_rows)
@@ -1243,6 +1289,7 @@ def build_production_board(
             position_ref=position_ref or (default_pos.ref if default_pos else ""),
             access=access,
         ),
+        purchase_url=purchase_url if access.can_view_suggested else "",
     )
 
 
@@ -2982,11 +3029,27 @@ def _production_suggestions(selected_date: date) -> list:
         return []
 
 
-def _build_suggestion(suggestion) -> ProductionSuggestionProjection:
+#: A fórmula do Core só desconta a perda acima deste teto
+#: (``CraftQueries.suggest``, passo 6). O sinal "sobra" usa a mesma régua:
+#: abaixo dela a sobra não mudou o número, e avisar seria ruído.
+SUGGESTION_WASTE_DISCOUNT_THRESHOLD = Decimal("0.15")
+
+_SEASON_LABELS = {"hot": "estação quente", "cold": "estação fria", "mild": "estação amena"}
+
+
+def _build_suggestion(
+    suggestion,
+    *,
+    material_check: tuple[tuple[SuggestionMaterialShortageProjection, ...], str] | None = None,
+) -> ProductionSuggestionProjection:
     basis = suggestion.basis or {}
     avg = _decimal_value(basis.get("avg_demand", Decimal("0")))
     committed = _decimal_value(basis.get("committed", Decimal("0")))
     confidence = str(basis.get("confidence", "") or "")
+    quantity = _decimal_value(suggestion.quantity)
+    projected = avg.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    waste = _decimal_value(basis.get("waste_rate"))
+    shortages, fits = material_check or ((), "")
     base_usages = _base_recipe_usages(suggestion.recipe)
     return ProductionSuggestionProjection(
         recipe_pk=suggestion.recipe.pk,
@@ -3004,42 +3067,107 @@ def _build_suggestion(suggestion) -> ProductionSuggestionProjection:
         }.get(confidence, "Sem histórico"),
         sample_size=int(basis.get("sample_size") or 0),
         high_demand_applied=bool(basis.get("high_demand_applied")),
-        explanation_parts=_suggestion_explanation_parts(basis),
+        projected=_qty(projected),
+        margin=_signed_qty(quantity - projected - committed),
+        safety_percent=int(_decimal_value(basis.get("safety_pct")) * 100),
+        same_weekday=bool(basis.get("same_weekday")),
+        season_label=_SEASON_LABELS.get(str(basis.get("season") or ""), ""),
+        soldout_days=int(basis.get("soldout_days") or 0),
+        waste_percent=int(waste * 100),
+        waste_discounted=waste > SUGGESTION_WASTE_DISCOUNT_THRESHOLD,
+        material_shortages=shortages,
+        fits_quantity=fits,
     )
 
 
-def _suggestion_explanation_parts(basis: dict) -> tuple[str, ...]:
-    """O basis do ``craft.suggest()`` em frases curtas — "por que este número?"."""
-    parts: list[str] = []
+def _signed_qty(value: Decimal) -> str:
+    """``_qty`` que não engole o sinal: margem negativa é fato, não zero."""
+    if value < 0:
+        return f"-{_qty(-value)}"
+    return _qty(value)
 
-    avg = _decimal_value(basis.get("avg_demand", Decimal("0")))
-    sample = int(basis.get("sample_size") or 0)
-    if avg and sample:
-        avg_display = format(avg.quantize(Decimal("0.1")).normalize(), "f").replace(".", ",")
-        weekday_note = ", mesmo dia da semana" if basis.get("same_weekday") else ""
-        day_word = "dia" if sample == 1 else "dias"
-        parts.append(f"Média de venda: {avg_display}/dia ({sample} {day_word} de histórico{weekday_note})")
 
-    committed = _decimal_value(basis.get("committed", Decimal("0")))
-    if committed:
-        parts.append(f"Encomendas já confirmadas: {_qty(committed)}")
+def _suggestion_material_checks(
+    raw_suggestions,
+    recipes: tuple[Recipe, ...],
+    *,
+    skip_skus: set[str],
+) -> dict[str, tuple[tuple[SuggestionMaterialShortageProjection, ...], str]]:
+    """Falta de insumo para a sugestão, por SKU, ANTES de planejar (P05/L3).
 
-    safety = _decimal_value(basis.get("safety_pct", Decimal("0")))
-    if safety and parts:
-        parts.append(f"Margem de segurança: {int(safety * 100)}%")
+    Mesma régua do guardrail que recusa o fechamento (``INVENTORY_BACKEND``,
+    ``check_finish_materials``): quem planeja vê a falta onde decide, e não na
+    recusa da Expedição. Só matéria-prima (pré-preparo é feito na hora, como
+    na lista de separação) e só linhas ainda sem lote na data (``skip_skus``):
+    a linha já planejada mostra o estado dela. Sem backend, ou com falha de
+    leitura, devolve vazio: o aviso some, a sugestão não muda.
 
-    waste = basis.get("waste_rate")
-    if waste:
-        parts.append(f"Desconto por perda histórica: {int(_decimal_value(waste) * 100)}%")
+    Um saldo por insumo, lido uma vez para a grade inteira.
+    """
+    from shopman.craftsman.conf import get_setting
 
-    if basis.get("high_demand_applied"):
-        parts.append("Reforço de sexta/sábado aplicado")
+    backend_path = get_setting("INVENTORY_BACKEND")
+    if not backend_path:
+        return {}
+    by_pk = {recipe.pk: recipe for recipe in recipes}
+    produced_here = {recipe.output_sku for recipe in recipes}
 
-    season = basis.get("season")
-    if season:
-        parts.append(f"Histórico filtrado pela estação: {season}")
+    per_unit: dict[str, list[tuple[str, Decimal, str]]] = {}
+    for suggestion in raw_suggestions:
+        recipe = by_pk.get(suggestion.recipe.pk)
+        sku = suggestion.recipe.output_sku
+        if recipe is None or sku in skip_skus or _decimal_value(suggestion.quantity) <= 0:
+            continue
+        batch_size = _decimal_value(recipe.batch_size)
+        if batch_size <= 0:
+            continue
+        per_unit[sku] = [
+            (item.input_sku, _decimal_value(item.quantity) / batch_size, item.unit)
+            for item in recipe.items.all()
+            if not item.is_optional and item.input_sku and item.input_sku not in produced_here
+        ]
 
-    return tuple(parts)
+    material_skus = sorted({input_sku for items in per_unit.values() for input_sku, _, _ in items})
+    if not material_skus:
+        return {}
+    try:
+        from django.utils.module_loading import import_string
+        from shopman.craftsman.protocols.inventory import MaterialNeed
+
+        result = import_string(backend_path)().available(
+            [MaterialNeed(sku=material, quantity=Decimal("0")) for material in material_skus]
+        )
+        on_hand = {status.sku: _decimal_value(status.available) for status in result.materials}
+    except Exception:
+        logger.warning("production.suggestion_material_check_failed", exc_info=True)
+        return {}
+
+    names = _product_names(set(material_skus))
+    quantities = {s.recipe.output_sku: _decimal_value(s.quantity) for s in raw_suggestions}
+    checks: dict[str, tuple[tuple[SuggestionMaterialShortageProjection, ...], str]] = {}
+    for sku, items in per_unit.items():
+        wanted = quantities[sku]
+        shortages = []
+        fits_all: Decimal | None = None
+        for input_sku, need_per_unit, unit in items:
+            if need_per_unit <= 0:
+                continue
+            available = max(on_hand.get(input_sku, Decimal("0")), Decimal("0"))
+            fits = (available / need_per_unit).to_integral_value(rounding=ROUND_FLOOR)
+            fits_all = fits if fits_all is None else min(fits_all, fits)
+            needed = need_per_unit * wanted
+            if available < needed:
+                shortages.append(
+                    SuggestionMaterialShortageProjection(
+                        sku=input_sku,
+                        name=names.get(input_sku) or input_sku,
+                        missing_display=_preparation_measure(needed - available, unit),
+                        fits_quantity=_qty(fits),
+                    )
+                )
+        if shortages:
+            checks[sku] = (tuple(shortages), _qty(fits_all or Decimal("0")))
+    return checks
 
 
 def _build_matrix_rows(

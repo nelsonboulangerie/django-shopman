@@ -156,6 +156,14 @@ export interface PositionOptionProjection {
   is_default: boolean;
 }
 
+/** Um insumo que não cobre a sugestão, lido antes de planejar (L3). */
+export interface SuggestionMaterialShortageProjection {
+  sku: string;
+  name: string;
+  missing_display: string;
+  fits_quantity: string;
+}
+
 /** A suggested production row from Craftsman demand planning. */
 export interface ProductionSuggestionProjection {
   recipe_pk: number;
@@ -169,7 +177,16 @@ export interface ProductionSuggestionProjection {
   confidence: string;
   sample_size: number;
   high_demand_applied: boolean;
-  explanation_parts: string[];
+  projected: string;
+  margin: string;
+  safety_percent: number;
+  same_weekday: boolean;
+  season_label: string;
+  soldout_days: number;
+  waste_percent: number;
+  waste_discounted: boolean;
+  material_shortages: SuggestionMaterialShortageProjection[];
+  fits_quantity: string;
 }
 
 /** A high-volume production matrix row grouped by SKU. */
@@ -250,6 +267,7 @@ export interface ProductionBoardProjection {
   default_position_pk: number | null;
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];
+  purchase_url: string;
   generated_at: string;
   source_revision: string;
   fresh_until: string;
