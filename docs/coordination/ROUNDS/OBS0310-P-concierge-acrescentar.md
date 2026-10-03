@@ -3,6 +3,7 @@
 - **id:** OBS0310-P
 - **sessão:** shopman-improvements-fixes-bd04d4 (Claude; frente executada por subagente em worktree próprio)
 - **branch:** claude/obs0310-concierge-acrescentar
+- **PR:** #1447
 - **início (UTC):** 2026-10-03
 - **pré-requisitos:** #1443 (memória da Concierge, pergunta "1 acrescentar / 2 pedido novo") e #1442 (regras da casa)
 
@@ -30,13 +31,18 @@ O site NÃO deixa o cliente acrescentar item a um pedido já feito, em etapa nen
   pelo `ORDER_PATCHED` do iFood. Ela decide diferença a mais (saldo a receber) e a menos (estorno pelo
   mesmo meio), coisas que o site nunca expôs ao cliente.
 
-## O que mudou
-Nada no código. Pela regra do pedido ("se o site não tem essa capacidade em etapa nenhuma, não invente
-backend"), a escolha "1" continua indo para a equipe (`dialogue.resolve`, `reason="add_to_open_order"`,
-#1443), e o cliente recebe o aviso de atendimento humano, que a regra R6 (#1442) só deixa sair com o
-recibo do handoff. Nenhuma frase promete o acréscimo.
+## Decisão do dono (03/10)
+Ele imaginava acrescentar ANTES de fechar o pedido: na sacola (sessão), que já é mutável e que a
+Concierge já edita (`set_item`). Não era editar pedido fechado.
 
-## Pergunta ao dono
-Abrir ao cliente, no site, "acrescentar item ao pedido" (pelo `order_edit`, até "em preparo", com a
-diferença virando saldo a receber ou novo Pix)? Se sim, a Concierge passa a fazer o mesmo, pelo mesmo
-caminho. 1 = sim, abrir no site e na Concierge; 2 = não, acréscimo segue com a equipe.
+- **Pedido fechado não recebe acréscimo pela Concierge.** Ela não usa o `order_edit`, que segue sendo
+  só do operador.
+- **"Mais X" depois de fechado vira pedido novo ou equipe.** É o que a pergunta "1 acrescentar / 2
+  pedido novo" da memória (#1443) já faz: o "1" vai para a equipe (que edita pelo PDV/Gestor), o "2"
+  monta um pedido novo.
+- Uma rodada intermediária chegou a pedir a implementação pelo `order_edit`; foi suspensa antes de
+  qualquer código.
+
+## O que mudou
+Nada no código. Só este registro. As regras R4 e R6 (#1442) ficam como estão: a frase de equipe só sai
+com o recibo do handoff, e nenhuma frase promete o acréscimo.
