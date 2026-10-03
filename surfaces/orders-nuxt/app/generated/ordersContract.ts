@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -782,4 +782,51 @@ export interface MergeAuditRowProjection {
 export interface MergeAuditListProjection {
   items: MergeAuditRowProjection[];
   undo_window_hours: number;
+}
+
+/** HistoryFacetOption(value: 'str', label: 'str', count: 'int') */
+export interface HistoryFacetOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+/** HistoryFacet(id: 'str', label: 'str', options: 'tuple[HistoryFacetOption, ...]') */
+export interface HistoryFacet {
+  id: string;
+  label: string;
+  options: HistoryFacetOption[];
+}
+
+/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str') */
+export interface OrderHistoryRowProjection {
+  ref: string;
+  status: string;
+  status_label: string;
+  status_tone: string;
+  channel_ref: string;
+  channel_label: string;
+  customer_label: string;
+  fulfillment: string;
+  fulfillment_label: string;
+  payment_method: string;
+  payment_label: string;
+  total_q: number;
+  total_display: string;
+  closed_at: string;
+  closed_display: string;
+}
+
+/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+export interface OrderHistoryProjection {
+  date_from: string;
+  date_to: string;
+  query: string;
+  facets: HistoryFacet[];
+  items: OrderHistoryRowProjection[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  total_label: string;
 }
