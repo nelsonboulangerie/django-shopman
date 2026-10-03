@@ -46,14 +46,11 @@ usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.valu
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
 useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
 
-// Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
-// Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com
-// senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
-// resposta certa é "agora não".
-const setupDismissed = ref(false);
-const needsStationSetup = computed(
-  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value,
-);
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): o gestor entra
+// com senha uma vez e diz em que posto ele fica. Enquanto ninguém fizer isso, o
+// dispositivo não tem antessala. A oferta é dispensável de propósito: no PC pessoal
+// do gestor a resposta certa é "usar sem vincular".
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
 // não auto-travam). Vale em qualquer rota de operador (venda ou antesala).
@@ -80,13 +77,6 @@ usePosAutoLock({
 const needsLogin = computed(
   () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
 );
-
-// Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
-// passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
-// mais caminho para dar errado do que um reload numa tela que acontece uma vez.
-function reloadIntoStation() {
-  if (import.meta.client) window.location.reload();
-}
 
 </script>
 
@@ -123,9 +113,10 @@ function reloadIntoStation() {
     />
 
     <OperatorStationSetup
-      v-else-if="needsStationSetup"
-      @done="reloadIntoStation"
-      @dismiss="setupDismissed = true"
+      v-else-if="stationSetup.offer.value"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
     />
 
     <NuxtPage v-else />

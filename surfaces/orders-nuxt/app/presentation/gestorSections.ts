@@ -9,12 +9,20 @@ export interface GestorSectionsInput {
   // operando. Desconhecido (carregando, erro) esconde: a aba não aparece para depois
   // levar a uma recusa.
   canManageCustomers: boolean;
+  // `true` só quando a antessala confirmou `cashman.manage_operators`: Postos é o
+  // cadastro de quem vincula dispositivos. Desconhecido esconde, como em Clientes.
+  canManageWorkstations?: boolean;
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: a barra fica só com Pedidos. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
 }
 
-export function gestorSections({ channelsAttention, canManageCustomers, expeditesOnly = false }: GestorSectionsInput): OperatorSection[] {
+export function gestorSections({
+  channelsAttention,
+  canManageCustomers,
+  canManageWorkstations = false,
+  expeditesOnly = false,
+}: GestorSectionsInput): OperatorSection[] {
   if (expeditesOnly) return [{ key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" }];
   return [
     { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" },
@@ -33,5 +41,10 @@ export function gestorSections({ channelsAttention, canManageCustomers, expedite
       match: ["/channels"],
       attention: channelsAttention || undefined,
     },
+    // Onde cada dispositivo fica (UX-POSTO1). O rótulo da aba é o mesmo `manage_title`
+    // da copy do servidor; aqui ele precisa existir antes de qualquer leitura.
+    ...(canManageWorkstations
+      ? [{ key: "workstations", label: "Postos", icon: "lucide:map-pin", to: "/workstations" }]
+      : []),
   ];
 }

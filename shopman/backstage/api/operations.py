@@ -698,6 +698,9 @@ _OPERATOR_UNLOCK_PERMS = {
     # por ela para mostrar a aba só a quem pode usá-la (decisão do dono,
     # 24/09/2026) — a resposta é sim/não sobre quem está operando, nunca a lista.
     "shop.manage_customers",
+    # Postos do Gestor: mesma lógica de Clientes. A barra pergunta para mostrar a aba
+    # só a quem gere operadores (quem vincula dispositivos e cadastra postos).
+    "cashman.manage_operators",
 }
 
 
@@ -738,7 +741,8 @@ class OperatorSessionView(APIView):
 
     def get(self, request):
         from shopman.backstage.services.operator import operator_card, pin_must_change
-        from shopman.backstage.station_trust import station_ref
+        from shopman.backstage.services.workstations import card as workstation_card
+        from shopman.backstage.station_trust import station_ref, station_workstation
 
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
@@ -760,6 +764,8 @@ class OperatorSessionView(APIView):
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
             # há mais conta de máquina.
             "station": station_ref(request),
+            # O posto que a estação nomeia, para o rail dizer "Posto Expedição".
+            "workstation": workstation_card(station_workstation(request)),
             "operator": operator_card(operador) if operador else None,
             "locked": locked,
             "pin_must_change": pin_must_change(operador),
@@ -1079,7 +1085,7 @@ class OperatorPinChangeView(APIView):
 
 
 class StationProvisionView(APIView):
-    """Torna ESTE dispositivo uma estação da loja — ou tira essa condição dele.
+    """Vincula ESTE dispositivo a um posto de trabalho, ou o desvincula dele.
 
     É o que faltava para tudo o mais existir: sem provisionamento, nenhum
     dispositivo é reconhecido, o balcão amanhece sem antessala e a única entrada é
@@ -1087,90 +1093,86 @@ class StationProvisionView(APIView):
     quem entrega a chave.
 
     O ato é de GESTÃO e acontece UMA vez por dispositivo: alguém com
-    ``cashman.manage_operators`` entra com senha naquele balcão e diz "este
-    computador é o pdv-main". A partir daí o cookie HttpOnly durável responde por
-    ele, revogável no Admin (lista de dispositivos) ou aqui mesmo, com a máquina
-    na mão. É o mesmo caminho do quadro de menu, que já roda em produção — nada
-    de token em URL, nada de re-digitar a cada duas semanas.
+    ``cashman.manage_operators`` entra com senha naquele dispositivo e diz "este
+    fica no posto Expedição". A partir daí o cookie HttpOnly durável responde por
+    ele, revogável no cadastro de Postos ou aqui mesmo, com a máquina na mão.
 
-    ``GET`` responde o que a tela de provisionamento precisa: que estação este
-    dispositivo é hoje (``""`` quando nenhuma) e os terminais disponíveis.
+    O posto é um só para todos os apps (o cookie vale no domínio inteiro); o
+    ``?surface=<app>`` só escolhe quais postos aquele app oferece
+    (``workstation_vocabulary.SURFACE_KINDS``). A copy da tela vem junto, da fonte
+    única, para renomear em uma linha.
     """
 
     permission_classes = [HasBackstagePermission]
     required_permission = station_trust.PROVISION_PERM
 
     def get(self, request):
-        from shopman.cashman import services as cash
-        from shopman.cashman.models import Terminal
+        from shopman.backstage.services import workstations
 
-        # A ocupação de cada balcão: vários dispositivos no mesmo terminal dividem
-        # a gaveta e o turno (D-007). Quem escolhe o balcão precisa ver isso.
+        surface = str(request.query_params.get("surface") or "").strip()
         return Response(
-            {
-                "station": station_trust.station_ref(request),
-                "terminals": [
-                    {
-                        "ref": t.ref,
-                        "label": t.label or t.ref,
-                        "active_devices": len(station_trust.active_station_devices(t.ref)),
-                        "has_open_shift": cash.open_shift_for_terminal(t) is not None,
-                    }
-                    for t in Terminal.objects.filter(is_active=True).order_by("ref")
-                ],
-            }
+            workstations.provision_state(surface=surface, current_ref=station_trust.station_ref(request))
         )
 
     def post(self, request):
-        from shopman.cashman.models import Terminal
+        from shopman.backstage.services import workstations
+        from shopman.backstage.workstation_vocabulary import COPY
 
         body = request.data or {}
-        ref = str(body.get("terminal_ref") or "").strip()
-        if not Terminal.objects.filter(ref=ref, is_active=True).exists():
-            # Um ref inexistente gravaria uma confiança que nunca resolve terminal:
-            # o dispositivo passaria no gate e cairia no `Terminal.default()`, que é a
-            # gaveta errada. Recusar aqui é mais barato que caçar isso no balcão.
+        ref = str(body.get("workstation_ref") or "").strip()
+        workstation = workstations.get_active(ref)
+        if workstation is None or (workstation.terminal_id and not workstation.terminal.is_active):
+            # Um ref inexistente gravaria uma confiança que nunca resolve posto.
             return Response(
-                {"detail": "Terminal não encontrado.", "error": {"code": "terminal_unknown"}},
+                {
+                    "detail": COPY["unknown"],
+                    "field": "workstation_ref",
+                    "errors": {"workstation_ref": [COPY["unknown"]]},
+                    "error": {"code": "workstation_unknown"},
+                },
                 status=400,
             )
-        # Balcão com outro dispositivo: avisa e pede confirmação, nunca recusa (D-007).
-        # O próprio navegador reprovisionando não conta como "outro".
-        proprios = station_trust.presented_station_device_ids(request)
-        outros = [d for d in station_trust.active_station_devices(ref) if d.pk not in proprios]
-        if outros and str(body.get("confirm") or "").strip().lower() not in {"1", "true", "yes", "sim"}:
-            return _terminal_shared_response(ref, len(outros))
-        resposta = Response({"ok": True, "station": ref})
+        # Caixa com outro dispositivo: avisa e pede confirmação, nunca recusa (D-007),
+        # porque dividem a gaveta e o turno. Posto sem caixa (duas telas na Sala Forno)
+        # não divide nada que precise de segunda palavra.
+        # O próprio navegador revinculando não conta como "outro".
+        if workstation.has_cash_desk:
+            proprios = station_trust.presented_station_device_ids(request)
+            outros = [d for d in station_trust.active_station_devices(ref) if d.pk not in proprios]
+            if outros and str(body.get("confirm") or "").strip().lower() not in {"1", "true", "yes", "sim"}:
+                return _cash_desk_shared_response(ref, len(outros))
+        resposta = Response({"ok": True, "station": ref, "workstation": workstations.card(workstation)})
         station_trust.provision(request, resposta, ref)
         return resposta
 
     def delete(self, request):
-        ref = str(request.query_params.get("terminal_ref") or station_trust.station_ref(request)).strip()
+        from shopman.backstage.workstation_vocabulary import COPY
+
+        ref = str(request.query_params.get("workstation_ref") or station_trust.station_ref(request)).strip()
         if not ref:
-            return Response({"detail": "Este dispositivo não é uma estação."}, status=400)
+            return Response({"detail": COPY["not_a_workstation"]}, status=400)
         resposta = Response({"ok": True, "station": ""})
         station_trust.revoke(request, resposta, ref)
         return resposta
 
 
-def _terminal_shared_response(terminal_ref: str, others: int) -> Response:
-    """409 que pede a segunda palavra: o balcão já tem outro dispositivo."""
+def _cash_desk_shared_response(workstation_ref: str, others: int) -> Response:
+    """409 que pede a segunda palavra: o caixa já tem outro dispositivo."""
+    from shopman.backstage.workstation_vocabulary import COPY
+
     outros = "1 outro dispositivo" if others == 1 else f"{others} outros dispositivos"
-    message = (
-        f"Este balcão já tem {outros}. Todos vão usar a mesma gaveta e o mesmo turno de caixa. "
-        "Confirme para iniciar este dispositivo no mesmo balcão."
-    )
+    message = COPY["shared_cash_desk"].format(others=outros)
     return Response(
         {
             "detail": message,
             "field": "confirm",
             "errors": {"confirm": [message]},
             "error": {
-                "code": "station_terminal_shared",
+                "code": "station_cash_desk_shared",
                 "message": message,
                 "field": "confirm",
-                "recovery": "Confirme, ou escolha outro balcão.",
-                "context": {"terminal_ref": terminal_ref, "other_devices": others},
+                "recovery": "Confirme, ou escolha outro posto.",
+                "context": {"workstation_ref": workstation_ref, "other_devices": others},
             },
         },
         status=409,

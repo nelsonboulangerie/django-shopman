@@ -99,8 +99,8 @@ def is_production_surface(request) -> bool:
     return str(caminho).startswith(PRODUCTION_API_PREFIX)
 
 
-def station_cookie_name(terminal_ref: str) -> str:
-    """O nome do cookie de estação daquele terminal — uma pergunta, um dono.
+def station_cookie_name(workstation_ref: str) -> str:
+    """O nome do cookie de estação daquele posto — uma pergunta, um dono.
 
     O ``doorman`` sanitiza o ``ref`` dentro do nome. Montá-lo à mão aqui
     (``f"{base}_{ref}"``) funcionava por acaso enquanto todo terminal se chamou
@@ -109,7 +109,7 @@ def station_cookie_name(terminal_ref: str) -> str:
     """
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    return DeviceTrustService.cookie_name_for(SubjectType.STATION, terminal_ref)
+    return DeviceTrustService.cookie_name_for(SubjectType.STATION, workstation_ref)
 
 
 def station_ref(request) -> str:
@@ -140,15 +140,15 @@ def station_device_id(request) -> str:
     return next(iter(devices)) if len(devices) == 1 else ""
 
 
-def active_station_devices(terminal_ref: str) -> list:
-    """Os dispositivos com confiança VÁLIDA neste terminal, do mais recente ao mais antigo.
+def active_station_devices(workstation_ref: str) -> list:
+    """Os dispositivos com confiança VÁLIDA neste posto, do mais recente ao mais antigo.
 
     Vários dispositivos no mesmo balcão é postura decidida (D-007): dividem a
     gaveta e o turno. Isto não recusa nada; é o que torna isso visível.
     """
     from shopman.doorman.models import TrustedDevice
 
-    ref = str(terminal_ref or "").strip()
+    ref = str(workstation_ref or "").strip()
     if not ref:
         return []
     return [device for device in TrustedDevice.active_for(SubjectType.STATION, ref) if device.is_valid]
@@ -198,6 +198,19 @@ def _present_station_bindings(request):
         if device is not None and device.subject_type == SubjectType.STATION:
             bindings.append((nome, device))
     return bindings
+
+
+def station_workstation(request):
+    """O POSTO de trabalho desta requisição (``backstage.Workstation``), ou ``None``.
+
+    ``station_ref`` é a identidade do cookie; isto é o posto que ela nomeia, com nome
+    e tipo para a tela. Posto desativado responde ``None`` (desativar já desvincula os
+    dispositivos; isto cobre a corrida). A gaveta NÃO se resolve por aqui: ela é do
+    ``Terminal`` com o mesmo ref, e só o posto Caixa tem um.
+    """
+    from shopman.backstage.services.workstations import get_active
+
+    return get_active(station_ref(request))
 
 
 def is_trusted_station(request) -> bool:
@@ -326,8 +339,8 @@ def station_operator(request):
 
 
 @transaction.atomic
-def provision(request, response, terminal_ref: str):
-    """Torna ESTE dispositivo uma estação confiável para ``terminal_ref``.
+def provision(request, response, workstation_ref: str):
+    """Vincula ESTE dispositivo ao posto ``workstation_ref`` (``backstage.Workstation``).
 
     Chamado a partir de uma tela que já exigiu ``PROVISION_PERM``: quem provisiona
     está logado e autorizado, e é esse ato — não o cookie — que carrega a decisão.
@@ -340,15 +353,15 @@ def provision(request, response, terminal_ref: str):
     Também é a reparação explícita do caso legado em que o navegador acumulou
     dois vínculos. Só os tokens apresentados por ESTE request são revogados; os
     demais dispositivos do mesmo terminal continuam ativos. A escolha vem do
-    ``terminal_ref`` validado pela view autorizada — nunca da ordem dos cookies.
+    ``workstation_ref`` validado pela view autorizada — nunca da ordem dos cookies.
     """
     from shopman.doorman.conf import doorman_settings
     from shopman.doorman.models import TrustedDevice
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    ref = str(terminal_ref or "").strip()
+    ref = str(workstation_ref or "").strip()
     if not ref:
-        raise ValueError("estação precisa de um terminal")
+        raise ValueError("estação precisa de um posto")
 
     if not doorman_settings.DEVICE_TRUST_ENABLED:
         return response
@@ -400,8 +413,8 @@ def provision(request, response, terminal_ref: str):
 
 
 @transaction.atomic
-def revoke(request, response, terminal_ref: str):
-    """Tira a confiança DESTE dispositivo para aquele terminal.
+def revoke(request, response, workstation_ref: str):
+    """Desvincula ESTE dispositivo daquele posto.
 
     O dispositivo perdido continua revogável pelo Admin (é lá que a lista de
     dispositivos vive); isto é o caminho local, para quem está com a máquina na
@@ -409,7 +422,7 @@ def revoke(request, response, terminal_ref: str):
     """
     from shopman.doorman.models import TrustedDevice
 
-    ref = str(terminal_ref or "").strip()
+    ref = str(workstation_ref or "").strip()
     nome = station_cookie_name(ref)
     token = request.COOKIES.get(nome)
     if token:

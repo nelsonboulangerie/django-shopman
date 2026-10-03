@@ -12,6 +12,8 @@
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
 import { computed, ref } from "vue";
 import { OPERATOR_APPS, operatorAppNamed } from "../../appIdentity";
+import { workstationKindIcon } from "../presentation/workstation";
+import type { OperatorSession } from "../types/operator";
 
 /** O nome da home sai da identidade canônica, como o nome de qualquer app. */
 const HUB_LABEL = OPERATOR_APPS.hub.label;
@@ -45,6 +47,13 @@ const label = computed(() => props.appLabel || identity?.label || "");
 const iconSrc = computed(() => props.appIconSrc || identity?.iconSrc);
 
 const emit = defineEmits<{ lock: [] }>();
+
+// O posto deste dispositivo ("Posto Expedição"), como contexto: lido da antessala que
+// o shell já buscou (`useOperatorLock`, chave `operator-session`), sem fetch a mais.
+// Dispositivo que não é posto não mostra nada.
+const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
+const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
+const workstationIcon = computed(() => workstationKindIcon(operatorSession.value?.workstation?.kind ?? ""));
 
 const { state, isCollapsed, isExtended } = useRailState();
 
@@ -164,6 +173,19 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
       <ClientOnly>
         <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
       </ClientOnly>
+
+      <!-- Contexto, não ação: o posto onde este dispositivo está vinculado. -->
+      <div
+        v-if="workstationContext"
+        class="flex h-11 items-center rounded-md text-rail-foreground/80"
+        :class="isExtended ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
+        :title="isExtended ? undefined : workstationContext"
+        data-rail-workstation
+      >
+        <Icon :name="workstationIcon" class="size-5 shrink-0" aria-hidden="true" />
+        <span v-if="isExtended" class="min-w-0 text-sm leading-tight">{{ workstationContext }}</span>
+        <span v-else class="sr-only">{{ workstationContext }}</span>
+      </div>
 
       <RailItem
         v-if="operatorName"

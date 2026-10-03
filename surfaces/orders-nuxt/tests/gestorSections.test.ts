@@ -24,4 +24,14 @@ describe("gestorSections", () => {
     expect(quiet?.attention).toBeUndefined();
     expect(loud?.attention).toBe("1 desligado");
   });
+
+  it("Postos aparece por último, só para quem gere operadores", () => {
+    const keys = gestorSections({ channelsAttention: "", canManageCustomers: false, canManageWorkstations: true }).map(
+      (s) => s.key,
+    );
+    expect(keys).toEqual(["orders", "history", "catalog", "feeds", "workstations"]);
+    expect(gestorSections({ channelsAttention: "", canManageCustomers: false }).map((s) => s.key)).not.toContain(
+      "workstations",
+    );
+  });
 });

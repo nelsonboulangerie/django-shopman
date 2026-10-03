@@ -6,11 +6,14 @@
 // lock overlay (Opção C). The overlay covers the OPERATOR screens only — never the
 // PUBLIC customer pickup board (/pickup), which has no auth. Gated OFF → never shows.
 const OPERATOR_PERM = "backstage.operate_kds";
-const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } =
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
 
 const route = useRoute();
 const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
+// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -61,6 +64,12 @@ async function goToStations() {
     <OperatorLock
       v-else-if="(locked || mustChange) && !isCustomerBoard"
       :perm="OPERATOR_PERM"
+    />
+    <OperatorStationSetup
+      v-if="stationSetup.offer.value && !isCustomerBoard"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
     />
     <OperatorSonner />
     <OperatorPwaRuntime />

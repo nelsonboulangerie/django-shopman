@@ -12,7 +12,12 @@ const {
   operator,
   lock,
   refresh: refreshSession,
+  locked,
+  stationRef,
 } = useOperatorLock(OPERATOR_PERM);
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
+// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
@@ -138,6 +143,12 @@ watch(sessionState, async (next, previous) => {
         :reload-on-success="false"
       />
       <OperatorLock v-else :perm="OPERATOR_PERM" />
+      <OperatorStationSetup
+        v-if="stationSetup.offer.value"
+        @done="stationSetup.done()"
+        @dismiss="stationSetup.dismiss()"
+        @unavailable="stationSetup.dismiss({ remember: false })"
+      />
       <OperatorSonner />
       <OperatorPwaRuntime />
     </div>

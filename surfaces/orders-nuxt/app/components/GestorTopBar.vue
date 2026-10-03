@@ -24,10 +24,19 @@ const { data: customersAccess } = useFetch<{ authorized?: boolean }>("/api/v1/ba
 
 const { expeditesOnly } = useGestorAccess();
 
+// Postos só para quem gere operadores (vincula dispositivos e cadastra postos).
+const { data: workstationsAccess } = useFetch<{ authorized?: boolean }>("/api/v1/backstage/operator/session/", {
+  key: useOperatorResourceKey("workstations-access"),
+  query: { perm: "cashman.manage_operators" },
+  server: true,
+  watch: [operatorId],
+});
+
 const sections = computed(() =>
   gestorSections({
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
+    canManageWorkstations: workstationsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
   }),
 );
