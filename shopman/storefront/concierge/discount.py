@@ -8,7 +8,7 @@ O que isto garante, e onde:
 
 - **O teto é do Admin**: ``ChannelConfig.pricing.concierge_discount_max_percent``
   (``Channel.config`` do canal da Concierge, ou ``Shop.defaults``), em % do
-  subtotal; padrão 2, 0 desliga.
+  subtotal; padrão 2,5 (aceita decimal), 0 desliga.
 - **O valor é do sistema**: ``amount_for`` calcula a partir da sacola; a IA não
   digita número nenhum (regras da casa R1 e R5). A preferência é o arredondamento
   simpático: o total desce até o maior degrau redondo cuja diferença cabe no teto.

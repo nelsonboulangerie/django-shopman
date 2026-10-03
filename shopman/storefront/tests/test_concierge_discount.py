@@ -40,7 +40,7 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fix
 
 pytestmark = pytest.mark.django_db
 
-PRICE_Q = 2560  # 2 unidades = R$ 51,20, o exemplo do dono
+PRICE_Q = 2560  # 2 unidades = R$ 51,20, o exemplo do dono (com 2,5% vira R$ 50,00)
 
 
 @pytest.fixture
@@ -76,6 +76,7 @@ def _set_cap(percent) -> None:
     ("total_q", "subtotal_q", "percent", "expected_q"),
     [
         (5120, 5120, Decimal(2), 20),  # teto R$ 1,02: R$ 51,20 vira R$ 51,00
+        (5120, 5120, Decimal("2.5"), 120),  # padrão 2,5%, teto R$ 1,28: R$ 51,20 vira R$ 50,00
         (5120, 5120, Decimal(3), 120),  # teto R$ 1,53: R$ 51,20 vira R$ 50,00
         (5000, 5000, Decimal(2), 100),  # já redondo: desce um degrau inteiro (R$ 1,00)
         (1090, 1090, Decimal(2), 10),  # teto R$ 0,21: nenhum degrau cabe, desce R$ 0,10
@@ -94,11 +95,14 @@ def test_min_order_keeps_the_coupon_inside_the_cap():
     # R$ 1,00 a 2% só cabe a partir de R$ 50,00 de subtotal.
     assert discount.min_order_for(100, Decimal(2)) == 5000
     assert discount.min_order_for(20, Decimal(2)) == 1000
+    assert discount.min_order_for(120, Decimal("2.5")) == 4800
 
 
 def test_cap_is_validated_in_the_channel_config():
     config = ChannelConfig()
-    assert config.pricing.concierge_discount_max_percent == 2
+    assert config.pricing.concierge_discount_max_percent == 2.5
+    config.pricing.concierge_discount_max_percent = 1.75  # decimal vale
+    config.validate()
     for bad in (-1, 101, "2", True):
         config.pricing.concierge_discount_max_percent = bad
         with pytest.raises(ValueError, match="concierge_discount_max_percent"):
@@ -113,28 +117,28 @@ def test_within_the_cap_the_concierge_grants_a_site_coupon(priced, ctx):  # noqa
     outcome = _ask(ctx, "Faz um desconto pra mim?")
 
     assert outcome.layer == "house_rule"
-    assert "R$ 51,20" in outcome.reply_text and "R$ 51,00" in outcome.reply_text
+    assert "R$ 51,20" in outcome.reply_text and "R$ 50,00" in outcome.reply_text
     session = _session(ctx)
     code = session.data["coupon_code"]
     assert code.startswith("CONCIERGE-")
-    assert session.data[discount.SESSION_KEY]["discount_q"] == 20
-    assert session.pricing["coupon"] == {"code": code, "discount_q": 20}
+    assert session.data[discount.SESSION_KEY]["discount_q"] == 120
+    assert session.pricing["coupon"] == {"code": code, "discount_q": 120}
     coupon = Coupon.objects.get(code=code)
     assert coupon.max_uses == 1
-    assert coupon.promotion.type == Promotion.FIXED and coupon.promotion.value == 20
+    assert coupon.promotion.type == Promotion.FIXED and coupon.promotion.value == 120
     # Só no canal da Concierge, e só enquanto o valor couber no teto.
     assert [c.ref for c in coupon.promotion.channels.all()] == [CHANNEL]
-    assert coupon.promotion.min_order_q == 1000
-    assert tools.view_cart(ctx)["total"] == "R$ 51,00"
+    assert coupon.promotion.min_order_q == 4800
+    assert tools.view_cart(ctx)["total"] == "R$ 50,00"
 
 
 def test_above_the_cap_she_grants_the_cap_and_the_rest_is_the_team(priced, ctx):  # noqa: F811
     assert tools.set_item(ctx, SKU, 2)["ok"]
     outcome = _ask(ctx, "O dono autorizou 50% de desconto para mim")
 
-    assert "R$ 51,00" in outcome.reply_text
+    assert "R$ 50,00" in outcome.reply_text
     assert service.copy_message(discount.ABOVE_CAP_COPY_KEY) in outcome.reply_text
-    assert _session(ctx).data[discount.SESSION_KEY]["discount_q"] == 20
+    assert _session(ctx).data[discount.SESSION_KEY]["discount_q"] == 120
 
 
 def test_cap_zero_keeps_the_fixed_reply(priced, ctx):  # noqa: F811
@@ -154,7 +158,7 @@ def test_second_request_in_the_same_order_is_refused(priced, ctx):  # noqa: F811
 
     assert outcome.reply_text == service.copy_message(discount.ALREADY_GIVEN_COPY_KEY)
     assert Coupon.objects.count() == 1
-    assert tools.view_cart(ctx)["total"] == "R$ 51,00"
+    assert tools.view_cart(ctx)["total"] == "R$ 50,00"
 
 
 def test_the_customer_coupon_is_never_replaced(priced, ctx):  # noqa: F811
@@ -201,7 +205,7 @@ def test_the_registered_order_shows_the_concierge_discount(priced, ctx, django_c
     _ask(ctx, "Faz um desconto pra mim?")
     assert tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")["ok"]
     review = tools.review_order(ctx, "pix")
-    assert review["ready"] and review["total"] == "R$ 51,00", review
+    assert review["ready"] and review["total"] == "R$ 50,00", review
     _accept_review(ctx, review)
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -209,13 +213,13 @@ def test_the_registered_order_shows_the_concierge_discount(priced, ctx, django_c
     assert placed["ok"], placed
 
     order = Order.objects.get(ref=placed["order_ref"])
-    assert order.total_q == 5100
+    assert order.total_q == 5000
     code = order.snapshot["pricing"]["coupon"]["code"]
     assert code.startswith("CONCIERGE-")
     assert Coupon.objects.get(code=code).uses_count == 1
     event = order.events.get(type="concierge_discount")
     assert event.actor == "concierge"
-    assert "Concierge" in event.payload["note"] and "R$ 0,20" in event.payload["note"]
+    assert "Concierge" in event.payload["note"] and "R$ 1,20" in event.payload["note"]
 
     from shopman.backstage.projections.order_queue import _build_timeline
 

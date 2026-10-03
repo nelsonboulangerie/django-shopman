@@ -1191,7 +1191,7 @@ Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
-| `concierge_discount_max_percent` | `number` | `2` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola; `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+| `concierge_discount_max_percent` | `number` | `2.5` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola (aceita decimal); `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
 
 Lido por: `storefront/concierge/discount.py`.
 

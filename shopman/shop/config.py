@@ -282,10 +282,11 @@ class ChannelConfig:
         policy: str = "internal"
         # "internal" — preço resolvido pelo backend (padrão para canais próprios)
         # "external" — preço definido externamente (marketplace)
-        concierge_discount_max_percent: float = 2
+        concierge_discount_max_percent: float = 2.5
         # Teto do desconto que a Concierge concede sozinha quando o cliente pede,
         # em % do subtotal da sacola (dono, 03/10/2026: "algo como arredondar um
-        # valor até 2%"). 0 desliga. O desconto entra como cupom de uso único,
+        # valor até 2%"; padrão 2,5%, decidido por ele no mesmo dia). Aceita decimal;
+        # 0 desliga. O desconto entra como cupom de uso único,
         # pelo mesmo caminho do cupom do site (``storefront/concierge/discount.py``).
 
     # ── 7. Editing ──

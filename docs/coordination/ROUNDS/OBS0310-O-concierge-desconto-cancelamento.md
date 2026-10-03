@@ -11,11 +11,11 @@
 
 ## A) Desconto da Concierge com teto configurável
 - **Teto no Admin:** `ChannelConfig.pricing.concierge_discount_max_percent` (`Channel.config` do canal
-  `whatsapp` ou `Shop.defaults`), em % do subtotal; padrão 2 (o exemplo do dono), 0 desliga, validado
-  entre 0 e 100.
+  `whatsapp` ou `Shop.defaults`), em % do subtotal; padrão 2,5 (decisão do dono, 03/10; aceita decimal), 0 desliga,
+  validado entre 0 e 100.
 - **O valor é do sistema** (R1, R5): `discount.amount_for` arredonda o total para baixo no maior degrau
-  redondo (R$ 10, 5, 1, 0,50, 0,10) cuja diferença cabe no teto. Com 2%, R$ 51,20 vira R$ 51,00 (o
-  R$ 50,00 do exemplo pede 2,34%; com teto de 3% sai R$ 50,00).
+  redondo (R$ 10, 5, 1, 0,50, 0,10) cuja diferença cabe no teto. Com 2,5%, R$ 51,20 vira R$ 50,00
+  (o exemplo do dono, que pede 2,34%); com 2% sairia R$ 51,00.
 - **O caminho é o do site:** um cupom de uso único `CONCIERGE-…` (`promotions.issue_concierge_coupon`,
   Promotion de valor fixo restrita ao canal da Concierge, pedido mínimo = o subtotal em que o valor ainda
   cabe no teto) aplicado por `cart.validate_and_apply_coupon`, as mesmas portas do cupom digitado na loja.
@@ -51,6 +51,10 @@
 pytest shopman/storefront/tests/test_concierge_discount.py shopman/storefront/tests/test_concierge_cancellation.py
 pytest shopman/storefront/tests -k concierge
 ```
+
+## Respostas do dono (03/10)
+- Pedido pago NÃO é cancelado pela Concierge: segue com a equipe, como está.
+- Teto padrão do desconto: 2,5%.
 
 ## Fora desta frente
 - Pedido pago não é cancelado pela Concierge: o site também não deixa o cliente (o estorno de pedido pago
