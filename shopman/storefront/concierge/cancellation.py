@@ -155,7 +155,7 @@ def _items_summary(order) -> str:
     for item in order.items.all()[:4]:
         qty = Decimal(str(item.qty))
         qty_text = str(int(qty)) if qty == qty.to_integral_value() else str(qty.normalize()).replace(".", ",")
-        parts.append(f"{qty_text} {item.name or item.sku}")
+        parts.append(f"{qty_text} × {item.name or item.sku}")
     if order.items.count() > 4:
         parts.append("e mais itens")
     return ", ".join(parts)

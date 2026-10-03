@@ -60,7 +60,7 @@ def test_within_the_window_she_asks_and_cancels_on_yes(placed, conversation, out
 
     assert not asked.handoff
     assert asked.triage.answered_by == "self_cancel"
-    assert outbox.sent[-1] == f"Cancelo o pedido {placed.ref}, com 2 Pão Francês? Responda sim ou não."
+    assert outbox.sent[-1] == f"Cancelo o pedido {placed.ref}, com 2 × Pão Francês? Responda sim ou não."
     placed.refresh_from_db()
     assert placed.status == "new"
 
