@@ -12,6 +12,10 @@ O destino sai de uma tabela fixa, a da proposta aprovada:
   fase 1 recebe o link da loja);
 - ``team``: vai para uma pessoa, com o bot calado naquela conversa (pediu pessoa,
   reclamação, alergia, encomenda especial e o pedido que o chat não fecha);
+  **exceção do glúten** (dono, 03/10/2026): a pergunta que é SÓ de glúten, trigo
+  ou doença celíaca sai da lista sensível e o Concierge responde com o aviso de
+  produção compartilhada da casa (``gluten.py``). Glúten junto de outra alergia,
+  ou sem aviso cadastrado, segue para a equipe;
 - ``other_desk``: vaga, parceria e fornecedor. Também cala o bot, mas o aviso
   fica no Admin e não chega ao sino do Gestor de pedidos: não acorda o balcão.
 
@@ -37,6 +41,7 @@ from dataclasses import asdict, dataclass
 from django.conf import settings
 from django.utils import timezone
 
+from . import gluten
 from .handoff import classify_handoff_request
 from .intent_benchmark import REGEX_TO_INTENT
 from .intent_pilot import DEFAULT_INTENTS
@@ -142,6 +147,10 @@ class Triage:
     #: (segundo turno seguido de pedido que o chat não fecha) ou
     #: ``no_useful_answer`` (duas falhas seguidas da resposta automática).
     escalated_by: str = ""
+    #: Por que o Concierge responde uma intenção que a tabela manda para a
+    #: equipe: ``gluten_notice`` (pergunta só de glúten, respondida com o aviso
+    #: da casa, decisão do dono em 03/10/2026).
+    answered_by: str = ""
 
     @property
     def intent_label(self) -> str:
@@ -387,6 +396,18 @@ def decide(
         previous = None
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
+    gluten_answer = (
+        gluten.is_gluten_question(text)
+        # Pessoa, reclamação, encomenda especial e outra mesa continuam vencendo.
+        and rules_intent not in {"human", "complaint", "special_order", "job", "partnership", "supplier_offer"}
+        and bool(gluten.house_notice())
+    )
+    if gluten_answer:
+        # Glúten (dono, 03/10/2026): a concierge responde com o aviso da casa.
+        # Fica registrado como alergia, respondida, sem consultar modelo nem Jev.
+        intent = "allergy"
+        summary = rules_summary(intent, text)
+        return Triage(intent, TODAY, ANSWER, summary, "rules", answered_by="gluten_notice")
     if small_talk_kind(text):
         # "Bom dia", "obrigado", "tchau": não há intenção a propor, e a concierge
         # responde a cortesia sem ferramenta. Nem Jev nem modelo são consultados.

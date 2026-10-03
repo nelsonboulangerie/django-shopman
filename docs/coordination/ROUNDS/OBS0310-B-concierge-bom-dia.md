@@ -35,5 +35,6 @@ dog), "tudo"/"bem"/"dia" casaram por substring nas FAQs ("todos os dias").
   Continuam indo ao modelo, e sem fato encontrado recebem a frase fixa "Preciso consultar os dados...".
 - O prompt ainda chama a concierge de "o concierge" e a copy `CONCIERGE_GREETING` também. Hoje o texto
   do modelo nunca chega ao cliente, então não muda resposta; fica para a frente de voz.
-- "o pão leviano tem glúten?" vai para a equipe pela triagem (alergia é sensível, D32). A busca, se
-  chamada, traz o leviano e só a FAQ de glúten.
+- "o levain tem glúten?" ia para a equipe pela triagem (alergia era sensível, D32). Desde a
+  OBS0310-H (03/10) a pergunta só de glúten é respondida com o aviso da casa. (Este registro dizia
+  "pão leviano", nome que não existe na casa; corrigido na OBS0310-H.)

@@ -27,7 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import small_talk
+from . import gluten, small_talk
 from . import tools as tools_module
 from .tools import ToolContext
 
@@ -281,6 +281,15 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 customer_text, kind=courtesy, shop_name=shop_name, is_first_turn=is_first_turn
             )
         )
+
+    if gluten.is_gluten_question(customer_text):
+        # Glúten (dono, 03/10/2026): a resposta é o aviso da casa, o mesmo da
+        # página do produto, e os alérgenos declarados do produto citado. Sem
+        # modelo: nada aqui pode ser parafraseado em "sem glúten". Sem aviso
+        # cadastrado a triagem já mandou a conversa para a equipe.
+        reply = gluten.reply_for(customer_text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
+        if reply:
+            return AgentOutcome(reply_text=reply)
 
     client = client or build_client()
     ctx = ToolContext(

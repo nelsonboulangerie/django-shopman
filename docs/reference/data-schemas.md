@@ -155,11 +155,11 @@ transferência para consultar o recibo canônico da mesma intenção. Não é ou
 Triagem (D32, 02/10/2026; `shopman/storefront/concierge/triage.py`): cada entrada do turno
 ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
 `Conversation.flags["triage"]`, ambos `{intent, urgency, destination, summary, source,
-escalated_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
+escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`.
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`; `answered_by` é vazio ou `gluten_notice` (pergunta só de glúten, `intent=allergy` e `destination=answer`, respondida com o aviso de produção compartilhada da casa; dono, 03/10/2026).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha

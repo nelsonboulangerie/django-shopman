@@ -719,6 +719,16 @@ system check `SHOPMAN_W022`/`SHOPMAN_W023` e `manage.py concierge_check` (`shopm
 Testes em `shopman/storefront/tests/test_concierge_triage.py`. Ligar continua sendo do dono, no
 painel, pela sequência do `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`.
 
+**Ajuste do dono, 03/10/2026: glúten saiu da lista sensível.** A pergunta que é SÓ de glúten
+(glúten, trigo como restrição, doença celíaca) a Concierge responde sozinha, porque a resposta é
+categórica: a casa usa farinha de trigo em tudo o que assa e não tem nada sem glúten. A resposta é
+o aviso de produção compartilhada da casa (`Shop.food_safety_notice`, o mesmo da página de cada
+produto), mais os alérgenos declarados do produto citado; nenhum texto próprio da Concierge, então
+o gestor edita no Admin e as duas superfícies mudam juntas. Glúten junto de outra alergia, outras
+alergias, reclamação, pedido de pessoa e casa sem aviso cadastrado seguem para a equipe.
+Código em `shopman/storefront/concierge/gluten.py`; registro em
+`docs/coordination/ROUNDS/OBS0310-H-concierge-gluten.md`.
+
 ---
 
 ## D-019 · Botão do `link_pagamento_enviado` vai para a tela do pedido

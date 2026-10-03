@@ -41,7 +41,7 @@ def test_courtesy_alone_is_small_talk(text, kind):
     [
         "tem croissant hoje?",
         "Bom dia, tem croissant hoje?",
-        "o pão leviano tem glúten?",
+        "o levain tem glúten?",
         "oi, quero falar com uma pessoa",
         "como está o meu pedido?",
         "ok",
