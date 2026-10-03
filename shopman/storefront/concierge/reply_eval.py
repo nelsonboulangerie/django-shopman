@@ -44,6 +44,7 @@ LAYER_LABELS = {
     "team": "equipe",
     "other_desk": "outra mesa",
     "house_rule": "regra da casa",
+    "intents": "intenções no plural",
 }
 #: Quem responde no caminho de hoje (``current_layer``).
 TODAY_LABELS = {
