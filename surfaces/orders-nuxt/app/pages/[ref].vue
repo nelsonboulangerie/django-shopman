@@ -13,6 +13,8 @@ import {
   changeBackSuggestionQ,
   moneyInput,
   splitRef,
+  statusTone,
+  toneBadge,
   undoLine,
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
@@ -254,21 +256,41 @@ const { denied: stationLocked } = useStationLock();
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-4 p-4 md:p-6">
-    <!-- header -->
-    <header class="flex items-center gap-3">
-      <NuxtLink :to="backLocation" class="grid min-h-control min-w-control shrink-0 place-items-center rounded-md border bg-card text-foreground transition hover:bg-accent" :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'">
-        <Icon name="lucide:arrow-left" class="size-4" />
-      </NuxtLink>
-      <div class="min-w-0">
-        <p class="text-xs text-muted-foreground">{{ code.prefix }}</p>
-        <h1 class="truncate text-3xl font-bold leading-tight tabular-nums">{{ code.code }}</h1>
-      </div>
-      <button type="button" class="min-h-control min-w-control ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
-        <Icon name="lucide:refresh-cw" class="size-4" />
-      </button>
-    </header>
+  <main class="flex min-h-0 flex-1 flex-col">
+    <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-detail3.html`): o caminho
+         de volta, o pedido, o estado e o ao vivo. -->
+    <OperatorPageHeader :title="`Pedido ${code.code}`">
+      <template #lead>
+        <NuxtLink
+          :to="backLocation"
+          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+        >
+          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
+          <span class="max-md:sr-only">{{ fromHistory ? "Histórico" : "Pedidos" }}</span>
+        </NuxtLink>
+        <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
+      </template>
+      <template #status>
+        <span
+          v-if="order?.status_label"
+          class="hidden h-6 shrink-0 items-center gap-1.5 rounded-full border border-transparent px-2 text-xs font-semibold md:inline-flex"
+          :class="toneBadge(statusTone(order.status))"
+        >
+          <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+          {{ order.status_label }}
+        </span>
+        <span class="hidden op-micro text-muted-foreground lg:inline">{{ code.prefix }}</span>
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
+        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+      </template>
+    </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-6 md:pt-4">
 
     <p v-if="pending && !order" class="text-sm text-muted-foreground">Carregando…</p>
     <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
@@ -554,5 +576,6 @@ const { denied: stationLocked } = useStationLock();
       @authorize="signWithPin"
       @authorize-badge="signWithBadge"
     />
+    </div>
   </main>
 </template>
