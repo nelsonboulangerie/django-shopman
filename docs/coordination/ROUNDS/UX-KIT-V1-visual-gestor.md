@@ -2,7 +2,7 @@
 
 - **id:** UX-KIT-V1
 - **branch:** claude/ux-kit-v1-visual-gestor
-- **PR:** draft (o dono aprova as capturas antes do merge; sem auto-merge)
+- **PR:** #1448 (draft: o dono aprova as capturas antes do merge; sem auto-merge)
 - **estado:** esperando o dono (capturas prévia | real)
 - **início (UTC):** 2026-10-03
 
