@@ -6,6 +6,7 @@
 - **base:** começou sobre `claude/obs0310-concierge-regua` (PR #1437, golden set e `concierge_reply_eval`);
   a #1437 e a #1438 entraram no `main` durante a frente, e o `main` foi trazido para o branch.
 - **estudo:** `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md` (PR #1438), seção 7 e fatia F3.
+- **PR:** #1442
 - **início (UTC):** 2026-10-03
 
 ## O que mudou
