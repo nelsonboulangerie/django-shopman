@@ -51,6 +51,13 @@ function handleSoundAction() {
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
+// O ponto ao lado do título: verde só com o SSE vivo; leitura que falhou fala em
+// vermelho e por extenso. A hora é a da última leitura útil (não a do relógio).
+const liveTone = computed(() => (error.value ? "off" : realtime.value === "live" ? "live" : realtime.value === "connecting" ? "late" : "calm"));
+const readClock = computed(() => {
+  const at = readMetadata.value?.generated_at;
+  return at ? new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+});
 
 // Estação travada pelo servidor: não é falha de leitura, é falta de
 // identificação. O board deixa de desenhar o aviso de erro nesse estado.
@@ -166,6 +173,20 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(async () =
 
 // sort menu (house pattern: button + backdrop + absolute panel).
 const sortOpen = ref(false);
+// ⋯ da fila: exportar e imprimir.
+const moreOpen = ref(false);
+// Celular (abaixo de md): as colunas viram abas.
+const isPhone = useMediaQuery("(max-width: 767.98px)");
+// Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
+// coluna por vez, com a contagem na aba. Abre na que tem pedido novo; sem pedido novo,
+// na primeira que tem pedido. O toque do operador manda dali em diante.
+const pickedZone = ref<string | null>(null);
+const phoneZone = computed(() => {
+  if (pickedZone.value && zones.value.some((z) => z.key === pickedZone.value)) return pickedZone.value;
+  const intake = zones.value.find((z) => z.key === "intake");
+  if (intake && triaged(intake).length) return intake.key;
+  return zones.value.find((z) => triaged(z).length)?.key ?? zones.value[0]?.key ?? "intake";
+});
 function pickSort(key: SortKey) {
   sort.value = key;
   sortOpen.value = false;
@@ -187,6 +208,10 @@ onMounted(() => {
 });
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
 const touchCards = computed(() => viewMode.value === "board" && boardLayout.exitPost.value);
+// A coluna sozinha na tela (posto Saída) usa a largura: grade de cartões, não fila única.
+function wideColumn(key: string): boolean {
+  return !isPhone.value && key === "expedition" && boardLayout.exitPost.value;
+}
 function onStationReady(card: OrderCardProjection, stationRef: string) {
   if (card.kitchen) void markStationReady(card.ref, card.kitchen.order_pk, stationRef);
 }
@@ -436,69 +461,44 @@ function printQueue() {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- work toolbar: search · channel chips · sort/view/actions -->
-    <UiToolbar>
-      <UiSearchInput
-        ref="searchInput"
-        :model-value="query"
-        placeholder="Buscar pedido…"
-        aria-label="Buscar por código, cliente ou item (atalho: /)"
-        @update:model-value="(v) => (query = v)"
-      />
-      <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
-           recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
-      <ChannelQueueSignal />
-      <div v-if="allCards.length" class="flex flex-wrap items-center gap-1.5">
-        <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
-          Todos
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="opt in channels"
-          :key="opt.ref"
-          :active="channel === opt.ref"
-          :count="opt.count"
-          @click="channel = opt.ref"
-        >
-          <template #icon>
-            <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-3.5" />
-          </template>
-          {{ opt.label }}
-        </UiFilterChip>
-      </div>
-
-      <!-- fulfillment axis: o que muda o FLUXO (rota vs balcão) -->
-      <div v-if="allCards.length" class="flex items-center gap-1.5">
-        <div class="h-5 w-px bg-border"></div>
-        <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
-          <template #icon><Icon name="lucide:bike" class="size-3.5" /></template>
-          Entrega
-        </UiFilterChip>
-        <UiFilterChip :active="fulfillment === 'pickup'" :count="fulfillment_.pickup" @click="fulfillment = fulfillment === 'pickup' ? 'all' : 'pickup'">
-          <template #icon><Icon name="lucide:shopping-bag" class="size-3.5" /></template>
-          Retirada
-        </UiFilterChip>
-      </div>
-
-      <template #end>
-        <!-- Sinal de tempo-real: bolinha verde SÓ quando o SSE está vivo (honesto);
-             senão, sinal neutro de que o board ainda atualiza sozinho a cada 30s. -->
-        <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground" role="status" :title="realtimeView.title">
-          <span class="size-1.5 rounded-full" :class="realtimeView.dotClass" />
-          <span class="hidden md:inline">{{ realtimeView.label }}</span>
-        </span>
+    <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-board3.html`): título +
+         ao vivo + busca única + controles; os recortes na segunda linha. -->
+    <OperatorPageHeader title="Pedidos">
+      <template #status>
+        <OperatorLiveStatus
+          :tone="liveTone"
+          :time="readClock"
+          :label="error ? 'Atualização falhou' : realtimeView.label"
+          :detail="realtimeView.title"
+        />
+      </template>
+      <template #search>
+        <UiSearchInput
+          ref="searchInput"
+          :model-value="query"
+          placeholder="Buscar pedido, cliente ou item"
+          aria-label="Buscar por código, cliente ou item (atalho: /)"
+          shortcut="/"
+          @update:model-value="(v) => (query = v)"
+        />
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
         <!-- a visão deste posto, discreta, e o caminho de volta às três colunas -->
         <template v-if="viewMode === 'board' && !boardLayout.allOpen.value">
           <span
-            class="hidden h-control items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 text-xs font-medium text-muted-foreground sm:inline-flex"
+            class="hidden h-control items-center gap-1.5 rounded-md border border-border bg-secondary px-3 op-label text-muted-foreground lg:inline-flex"
             :title="boardLayout.memoryText.value"
             data-board-view-label
           >
-            <Icon name="lucide:panel-left-close" class="size-3.5" aria-hidden="true" />
+            <Icon name="lucide:panel-left-close" class="size-4" aria-hidden="true" />
             {{ boardLayout.viewLabel.value }}
           </span>
           <button
             type="button"
-            class="inline-flex h-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
+            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent"
             title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
             data-board-show-all
             @click="boardLayout.showAll()"
@@ -512,90 +512,176 @@ function printQueue() {
              mesmo toque pede a permissão de notificação do browser. -->
         <button
           type="button"
-          class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
-          :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+          class="relative grid size-control place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
+          :class="soundOn && soundBlocked ? 'border-warning/50 text-warning' : 'text-foreground'"
           :aria-label="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
           :title="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : 'Som de pedido novo'"
           data-sound-toggle
           @click="handleSoundAction"
         >
-          <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-4" />
+          <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-5" />
           <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
         </button>
         <button
           v-if="attentionPending"
           type="button"
-          class="inline-flex h-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
+          class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent"
           aria-label="Reconhecer aviso de pedido novo"
           @click="acknowledgeAttention"
         >
           <Icon name="lucide:check" class="size-4" />
           Ciente
         </button>
-        <AlertsBell />
-        <NotificationBell />
 
-        <!-- sort -->
+        <!-- ordenar -->
         <div class="relative">
           <button
             type="button"
-            class="inline-flex h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
             aria-haspopup="menu"
             :aria-expanded="sortOpen"
             title="Ordenar (atalho: s)"
             @click="sortOpen = !sortOpen"
           >
-            <Icon name="lucide:arrow-up-down" class="size-3.5" />
-            <span class="hidden sm:inline">{{ sortLabel }}</span>
+            <Icon name="lucide:arrow-up-down" class="size-4" />
+            <span>{{ sortLabel }}</span>
+            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
           </button>
           <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
-          <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
+          <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
             <button
               v-for="opt in SORT_OPTIONS"
               :key="opt.key"
               type="button"
               role="menuitemradio"
               :aria-checked="sort === opt.key"
-              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
+              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
               @click="pickSort(opt.key)"
             >
               {{ opt.label }}
-              <Icon v-if="sort === opt.key" name="lucide:check" class="size-3.5 text-primary" />
+              <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
             </button>
           </div>
         </div>
 
-        <UiIconButton icon="lucide:download" label="Exportar CSV" @click="exportCsv" />
-        <UiIconButton icon="lucide:printer" label="Imprimir fila" @click="printQueue" />
-
-        <!-- view-mode -->
-        <div class="inline-flex items-center rounded-md border p-0.5">
+        <!-- visão: quadro ou tabela (alternador segmentado da prévia) -->
+        <!-- os dois botões têm 44px cada (alvo da casa): o trilho não tem respiro
+             interno, e o ativo se destaca pelo cartão com contorno. -->
+        <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary">
           <button
             type="button"
-            class="grid size-control place-items-center rounded transition"
-            :class="viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+            :class="viewMode === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em colunas"
             title="Colunas (atalho: v)"
+            :aria-pressed="viewMode === 'board'"
             @click="viewMode = 'board'"
           >
             <Icon name="lucide:columns-3" class="size-4" />
+            <span class="hidden xl:inline" aria-hidden="true">Quadro</span>
           </button>
           <button
             type="button"
-            class="grid size-control place-items-center rounded transition"
-            :class="viewMode === 'table' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+            :class="viewMode === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em tabela"
             title="Tabela (atalho: v)"
+            :aria-pressed="viewMode === 'table'"
             @click="viewMode = 'table'"
           >
             <Icon name="lucide:table-2" class="size-4" />
+            <span class="hidden xl:inline" aria-hidden="true">Tabela</span>
           </button>
         </div>
 
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
+
+        <!-- ⋯ : exportar e imprimir (o que se usa na troca de turno, não a cada pedido) -->
+        <div class="relative">
+          <UiIconButton
+            icon="lucide:ellipsis"
+            label="Mais ações da fila"
+            aria-haspopup="menu"
+            :aria-expanded="moreOpen"
+            data-board-more
+            @click="moreOpen = !moreOpen"
+          />
+          <div v-if="moreOpen" class="fixed inset-0 z-40" @click="moreOpen = false" />
+          <div v-if="moreOpen" class="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent" @click="moreOpen = false; exportCsv()">
+              <Icon name="lucide:download" class="size-4 text-muted-foreground" /> Exportar CSV
+            </button>
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent" @click="moreOpen = false; printQueue()">
+              <Icon name="lucide:printer" class="size-4 text-muted-foreground" /> Imprimir fila
+            </button>
+          </div>
+        </div>
       </template>
-    </UiToolbar>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
+
+      <template v-if="allCards.length" #filters>
+        <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
+          <template v-if="channel === 'all'" #icon>
+            <Icon name="lucide:check" class="size-4 text-primary" />
+          </template>
+          Todos
+        </UiFilterChip>
+        <UiFilterChip
+          v-for="opt in channels"
+          :key="opt.ref"
+          :active="channel === opt.ref"
+          :count="opt.count"
+          @click="channel = opt.ref"
+        >
+          <template #icon>
+            <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-4" />
+          </template>
+          {{ opt.label }}
+        </UiFilterChip>
+        <!-- eixo do fluxo (rota vs balcão) -->
+        <span class="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />
+        <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
+          <template #icon><Icon name="lucide:bike" class="size-4" /></template>
+          Entrega
+        </UiFilterChip>
+        <UiFilterChip :active="fulfillment === 'pickup'" :count="fulfillment_.pickup" @click="fulfillment = fulfillment === 'pickup' ? 'all' : 'pickup'">
+          <template #icon><Icon name="lucide:shopping-bag" class="size-4" /></template>
+          Retirada
+        </UiFilterChip>
+        <ReadFreshness inline class="ml-auto shrink-0 pl-3" :metadata="readMetadata" :failed="Boolean(error)" />
+      </template>
+      <template #below>
+        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
+             recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
+        <ChannelQueueSignal />
+        <ReadFreshness v-if="!allCards.length" :metadata="readMetadata" :failed="Boolean(error)" />
+      </template>
+    </OperatorPageHeader>
+
+    <!-- celular: as colunas viram abas -->
+    <div
+      v-if="isPhone && viewMode === 'board' && zones.length"
+      class="flex shrink-0 border-b border-border bg-card px-2 print:hidden"
+      role="tablist"
+      aria-label="Colunas do quadro"
+      data-board-zone-tabs
+    >
+      <button
+        v-for="zone in zones"
+        :key="zone.key"
+        type="button"
+        role="tab"
+        :aria-selected="phoneZone === zone.key"
+        class="flex h-12 flex-1 items-center justify-center gap-1.5 op-body"
+        :class="phoneZone === zone.key ? 'font-semibold text-foreground shadow-[inset_0_-3px_0_var(--primary)]' : 'text-muted-foreground'"
+        @click="pickedZone = zone.key"
+      >
+        {{ zone.title }}
+        <span
+          class="tnum"
+          :class="phoneZone === zone.key && triaged(zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
+        >{{ triaged(zone).length }}</span>
+      </button>
+    </div>
 
     <!-- bulk action bar -->
     <div v-if="selected.size" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden">
@@ -666,12 +752,13 @@ function printQueue() {
             v-for="zone in zones"
             :key="zone.key"
             :ref="(el) => setColumnEl(zone.key, el)"
-            class="relative flex min-w-0 flex-col gap-3"
+            class="relative min-w-0 flex-col gap-3"
+            :class="isPhone && zone.key !== phoneZone ? 'hidden' : 'flex'"
             :data-zone="zone.key"
-            :data-collapsed="!boardLayout.isOpen(zone.key) || undefined"
+            :data-collapsed="(!isPhone && !boardLayout.isOpen(zone.key)) || undefined"
           >
             <QueueColumnStrip
-              v-if="!boardLayout.isOpen(zone.key)"
+              v-if="!isPhone && !boardLayout.isOpen(zone.key)"
               :title="zone.title"
               :icon="zone.icon"
               :count="triaged(zone).length"
@@ -680,14 +767,16 @@ function printQueue() {
               @open="boardLayout.open(zone.key)"
             />
             <template v-else>
-            <div class="flex items-center gap-2 border-b pb-2">
+            <!-- cabeça da coluna (prévia v3): ícone, nome em versalete, contagem e a
+                 frase do que mora aqui; o recolher fica discreto, sem moldura. -->
+            <div v-if="!isPhone" class="flex items-center gap-2 border-b border-border pb-1">
               <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
-              <h2 class="text-sm font-bold uppercase tracking-wide">{{ zone.title }}</h2>
-              <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ triaged(zone).length }}</span>
-              <span class="ml-auto hidden truncate text-xs text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
+              <h2 class="op-eyebrow">{{ zone.title }}</h2>
+              <span class="op-label tnum text-muted-foreground">{{ triaged(zone).length }}</span>
+              <span class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
               <UiIconButton
                 v-if="boardLayout.canCollapse(zone.key)"
-                class="ml-auto shrink-0 sm:ml-0"
+                class="-mr-2 ml-auto shrink-0 border-transparent !bg-transparent text-muted-foreground sm:ml-0"
                 icon="lucide:chevrons-left"
                 :label="`Recolher a coluna ${zone.title} (atalho: ${shortcutHint(zone.key)})`"
                 data-board-collapse
@@ -695,14 +784,22 @@ function printQueue() {
               />
             </div>
 
-            <div v-if="!triaged(zone).length" class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-10 text-center text-muted-foreground">
-              <Icon name="lucide:check-circle-2" class="size-6" />
-              <p class="text-sm">{{ zoneEmptyText(zone.key) }}</p>
+            <div v-if="!triaged(zone).length" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card/60 px-6 py-8 text-center">
+              <span class="grid size-11 place-items-center rounded-full bg-success/10 text-success">
+                <Icon name="lucide:circle-check" class="size-6" />
+              </span>
+              <p class="op-label font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
             </div>
 
+            <!-- posto Saída (só a Saída aberta, tablet ou desktop): a coluna larga vira
+                 uma grade de cartões, como na prévia v4 `gestor-colunas4.html`. -->
+            <div
+              v-else
+              :class="wideColumn(zone.key) ? 'grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]' : 'flex flex-col gap-3'"
+              data-zone-cards
+            >
             <OrderCard
               v-for="card in triaged(zone)"
-              v-else
               :key="card.ref"
               :card="card"
               :busy="isBusy(card.ref)"
@@ -719,8 +816,9 @@ function printQueue() {
               @station-ready="(stationRef) => onStationReady(card, stationRef)"
               @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
             />
+            </div>
             <QueueColumnResizeHandle
-              v-if="boardLayout.nextOpen(zone.key)"
+              v-if="!isPhone && boardLayout.nextOpen(zone.key)"
               :label="`Ajustar a largura de ${zone.title} e ${zoneTitles[boardLayout.nextOpen(zone.key) || ''] || ''}`"
               @start="onResizeStart(zone.key)"
               @drag="boardLayout.dragResize"

@@ -37,14 +37,17 @@ const loading = computed(() => pending.value && !list.value);
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:users" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">Clientes</h1>
-        <span class="hidden text-xs text-muted-foreground sm:inline">Buscar, comparar e unificar cadastros</span>
-      </div>
-      <template #end>
+    <OperatorPageHeader title="Clientes">
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline">Buscar, comparar e unificar cadastros</span>
+      </template>
+      <template #search>
         <UiSearchInput v-model="search" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
         <NuxtLink
           to="/customers/merges"
           class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
@@ -66,7 +69,7 @@ const loading = computed(() => pending.value && !list.value);
         </a>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
+    </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
