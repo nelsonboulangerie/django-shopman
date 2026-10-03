@@ -25,6 +25,8 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   icon: "shopping-basket",
   url: "http://127.0.0.1:3002/",
   kind: "launch",
+  status_attention: "",
+  status_summary: "",
   ...over,
 });
 

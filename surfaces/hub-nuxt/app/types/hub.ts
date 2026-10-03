@@ -11,11 +11,57 @@ export interface HubTileProjection {
   url: string;
   /** "launch" = superfície de operador (mesma aba); "external" = fora da zona, nova aba (ex.: loja do cliente). */
   kind: "launch" | "external";
+  /** A parte da linha de estado que pede alguém ("1 para aceitar"); vazia quando nada pede. */
+  status_attention: string;
+  /** O resto da linha de estado, calmo ("11 ativos"); vazio quando o app não tem fonte. */
+  status_summary: string;
+}
+
+/**
+ * Um item de "Precisa de você" (`projections/hub_queue.py`): o item exato de uma fila, com
+ * o gesto que abre o lugar exato no app certo. Já vem filtrado por permissão e ordenado
+ * por urgência entre apps.
+ */
+export interface HubQueueItemProjection {
+  key: string;
+  /** Ref do tile de destino (gestor, kds, pos, production, marketing). */
+  app: string;
+  app_label: string;
+  kind: "order_to_accept" | "ticket_late" | "preorder_pickup" | "work_order_late" | "announcement_review" | "alert";
+  title: string;
+  detail: string;
+  /** Começo da espera (ISO), ou vazio. */
+  waiting_since: string;
+  /** O prazo que importa (ISO), ou vazio. */
+  due_at: string;
+  /** Como o prazo entra na frase: "aceita sozinho em", "retira às", "decide até". */
+  due_label: string;
+  due_style: "countdown" | "clock" | "";
+  /** O prazo na hora da loja ("10:15"), para `due_style === "clock"`. */
+  due_clock: string;
+  /** "since": há quanto espera; "until": quanto falta para o prazo. */
+  time_mode: "since" | "until";
+  /** Passou da meta, ou o prazo está perto: o tempo vai em âmbar. */
+  attention: boolean;
+  action_label: string;
+  url: string;
+  slack_seconds: number;
+}
+
+export interface HubQueueProjection {
+  /** Os itens em foco (no máximo 6). */
+  items: HubQueueItemProjection[];
+  total_count: number;
+  /** O excedente, que vira número ("+N"); a fila nunca pagina. */
+  more_count: number;
+  /** A hora do servidor quando a fila foi montada (ISO), para contar o tempo sem depender do relógio do dispositivo. */
+  server_now: string;
 }
 
 export interface OperatorHubProjection {
   operator_name: string;
   tiles: HubTileProjection[];
+  queue: HubQueueProjection;
 }
 
 export interface HubResponse {

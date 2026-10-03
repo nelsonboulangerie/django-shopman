@@ -1,242 +1,87 @@
-import { mount } from "@vue/test-utils";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { enableAutoUnmount, mount, RouterLinkStub } from "@vue/test-utils";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import MarketingNotificationsBell from "~/components/MarketingNotificationsBell.vue";
-import type { MarketingActionProjectionV2 } from "~/types/campaign";
-import type { MarketingNotification } from "~/types/notifications";
 
+// Decisão do dono (03/10/2026): o sino abre a fila de decisões e não tem lista
+// própria. O que este teste segura: o número é o das decisões, o gesto leva à
+// casa, e ver a fila registra os avisos como vistos (sem isso o aviso continua
+// "novo" para sempre depois de lido).
 const markVisible = vi.fn();
-const acknowledge = vi.fn();
-const openHref = vi.fn();
-const refresh = vi.fn();
-const navigate = vi.fn();
-const mutationError = ref("");
-const acknowledging = ref<ReadonlySet<number>>(new Set());
-
-function action(
-  kind: MarketingActionProjectionV2["kind"],
-  href: string,
-  resourceRef: string,
-  enabled = true,
-): MarketingActionProjectionV2 {
-  return {
-    ref: `${resourceRef}:${kind}`,
-    resource_ref: resourceRef,
-    kind,
-    label: kind,
-    priority: "primary",
-    enabled,
-    reason: enabled ? "" : "missing_capability",
-    href,
-    method: kind === "open_announcement" ? "GET" : "POST",
-    payload_schema: "none",
-    idempotency: "none",
-    confirmation: {
-      mode: "none",
-      token_required: false,
-      consequence_code: "",
-      step_up: "none",
-      dual_control: false,
-    },
-    eligible_count: 1,
-    required_capabilities: [],
-    creates_external_effect: false,
-  };
-}
-
-function notification(
-  over: Partial<MarketingNotification> = {},
-): MarketingNotification {
-  return {
-    pk: 7,
-    category: "marketing_approval",
-    title: "Revisão necessária",
-    message: "Confira o anúncio antes de publicar.",
-    lifecycle: "seen",
-    severity: "action_required",
-    source: {
-      condition: "announcement_review",
-      ref: "announcement:42",
-      version: 3,
-    },
-    owner: { user_id: 9, role: "product" },
-    escalation: { role: "ops", at: null },
-    expires_at: "2026-09-09T13:00:00-03:00",
-    seen_at: "2026-09-09T09:01:00-03:00",
-    acknowledged_at: null,
-    resolved_at: null,
-    version: 2,
-    created_at: "2026-09-09T09:00:00-03:00",
-    created_at_display: "09/09 às 09:00",
-    actions: [
-      action(
-        "open_announcement",
-        "/announcements/42#review",
-        "announcement:42",
-      ),
-      action(
-        "acknowledge_notification",
-        "/api/v1/backstage/notifications/7/acknowledge/",
-        "notification:7",
-      ),
-    ],
-    ...over,
-  };
-}
-
-const notifications = ref<MarketingNotification[]>([notification()]);
+const notifications = ref([{ pk: 1 }]);
+const decisionCount = ref(3);
+const route = reactive({ path: "/history" });
+const decisionOptions: unknown[] = [];
 
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
-    nextTick,
-    onBeforeUnmount,
     onMounted,
     ref,
-    navigateTo: navigate,
-    useMarketingNotificationInbox: () => ({
-      notifications,
-      unseenCount: ref(0),
-      unresolvedCount: ref(1),
-      shopTimezone: ref("America/Sao_Paulo"),
-      hasMore: ref(false),
-      realtime: ref("live"),
-      loading: ref(false),
-      error: ref(null),
-      mutationError,
-      acknowledging,
-      markingSeen: ref(false),
-      refresh,
-      markVisible,
-      acknowledge,
-      openHref,
-    }),
+    watch,
+    useRoute: () => route,
+    useMarketingNotificationInbox: () => ({ notifications, markVisible }),
+    useMarketingDecisions: (options: unknown) => {
+      decisionOptions.push(options);
+      return { decisionCount };
+    },
   });
 });
 
+enableAutoUnmount(afterEach);
+
 beforeEach(() => {
   markVisible.mockReset().mockResolvedValue(true);
-  acknowledge.mockReset().mockResolvedValue(true);
-  openHref.mockReset().mockReturnValue("/announcements/42#review");
-  refresh.mockReset().mockResolvedValue(undefined);
-  navigate.mockReset().mockResolvedValue(undefined);
-  mutationError.value = "";
-  acknowledging.value = new Set();
-  notifications.value = [notification()];
+  notifications.value = [{ pk: 1 }];
+  decisionCount.value = 3;
+  route.path = "/history";
+  decisionOptions.length = 0;
 });
 
 function bell() {
   return mount(MarketingNotificationsBell, {
-    attachTo: document.body,
-    global: { stubs: { Icon: true, Teleport: true } },
+    global: { stubs: { Icon: true, NuxtLink: RouterLinkStub } },
   });
 }
 
-afterEach(() => {
-  document.body.replaceChildren();
-});
-
 describe("MarketingNotificationsBell", () => {
-  it("behaves as a modal, isolates the page and restores trigger focus", async () => {
-    const appRoot = document.createElement("div");
-    appRoot.dataset.marketingAppRoot = "";
-    document.body.append(appRoot);
+  it("leva à fila de decisões e mostra o número de decisões", () => {
     const wrapper = bell();
-    const trigger = wrapper.get<HTMLButtonElement>(
-      'button[aria-controls="marketing-notifications-panel"]',
-    );
-    trigger.element.focus();
+    const link = wrapper.getComponent(RouterLinkStub);
 
-    await trigger.trigger("click");
-    await nextTick();
-    const panel = wrapper.get("#marketing-notifications-panel");
-    expect(panel.attributes("role")).toBe("dialog");
-    expect(panel.attributes("aria-modal")).toBe("true");
-    expect(appRoot.hasAttribute("inert")).toBe(true);
-    expect(document.activeElement?.id).toBe("marketing-notifications-title");
-
-    await panel.trigger("keydown", { key: "Escape" });
-    await nextTick();
-    expect(appRoot.hasAttribute("inert")).toBe(false);
-    expect(document.activeElement).toBe(trigger.element);
-    appRoot.remove();
+    expect(link.props("to")).toBe("/");
+    expect(link.attributes("aria-label")).toBe("Decisões: 3 esperando você");
+    expect(wrapper.text()).toContain("3");
+    // O sino é a instância que escuta o SSE pela fila (uma só, para não duplicar fetch).
+    expect(decisionOptions).toEqual([{ live: true }]);
   });
 
-  it("opens in one gesture, marks visible alerts and keeps seen unresolved", async () => {
+  it("não mostra número quando nada espera, e diz isso a quem não vê", () => {
+    decisionCount.value = 0;
     const wrapper = bell();
-    const trigger = wrapper.get(
-      'button[aria-controls="marketing-notifications-panel"]',
+
+    expect(wrapper.find("span[aria-hidden='true']").exists()).toBe(false);
+    expect(wrapper.getComponent(RouterLinkStub).attributes("aria-label")).toBe(
+      "Decisões: nada esperando você",
     );
+  });
 
-    expect(trigger.attributes("aria-label")).toContain("1 pendentes, 0 novos");
-    await trigger.trigger("click");
-
+  it("registra os avisos como vistos ao abrir já na fila", () => {
+    route.path = "/";
+    bell();
     expect(markVisible).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain("1 pendente");
-    expect(wrapper.text()).toContain("Visto");
-    expect(wrapper.text()).not.toContain("Aprovar");
-    expect(wrapper.text()).not.toContain("Recusar");
   });
 
-  it("uses the validated exact deep-link as its single review action", async () => {
-    const wrapper = bell();
-    await wrapper
-      .get('button[aria-controls="marketing-notifications-panel"]')
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Revisar anúncio")!
-      .trigger("click");
+  it("registra os avisos como vistos só quando a fila está na tela", async () => {
+    bell();
+    expect(markVisible).not.toHaveBeenCalled();
 
-    expect(openHref).toHaveBeenCalledWith(notifications.value[0]);
-    expect(navigate).toHaveBeenCalledWith("/announcements/42#review");
-    expect(wrapper.find("#marketing-notifications-panel").exists()).toBe(false);
-  });
+    route.path = "/";
+    await nextTick();
+    expect(markVisible).toHaveBeenCalledTimes(1);
 
-  it("shows missing capability inline and never calls an unavailable action", async () => {
-    notifications.value = [
-      notification({
-        actions: [
-          action(
-            "open_announcement",
-            "/announcements/42#review",
-            "announcement:42",
-            false,
-          ),
-        ],
-      }),
-    ];
-    const wrapper = bell();
-    await wrapper
-      .get('button[aria-controls="marketing-notifications-panel"]')
-      .trigger("click");
-    const review = wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Revisar anúncio")!;
-
-    expect((review.element as HTMLButtonElement).disabled).toBe(true);
-    expect(wrapper.text()).toContain("Seu acesso não permite");
-    expect(openHref).not.toHaveBeenCalled();
-  });
-
-  it("keeps a failed mutation visible beside the still-pending alert", async () => {
-    mutationError.value =
-      "Não foi possível assumir. O alerta continua pendente.";
-    const wrapper = bell();
-    await wrapper
-      .get('button[aria-controls="marketing-notifications-panel"]')
-      .trigger("click");
-
-    expect(wrapper.text()).toContain("continua pendente");
-    expect(wrapper.text()).toContain("Revisão necessária");
-    expect(wrapper.get('[role="alert"]').text()).toContain("continua pendente");
+    notifications.value = [{ pk: 1 }, { pk: 2 }];
+    await nextTick();
+    expect(markVisible).toHaveBeenCalledTimes(2);
   });
 });

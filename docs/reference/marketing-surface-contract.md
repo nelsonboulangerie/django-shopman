@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-28
+- **Última verificação:** 2026-10-03
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -114,14 +114,53 @@ confirmação, nunca automático.
 
 ## Rotas Nuxt
 
-`/v2` é a entrada autenticada e canônica do workspace Marketing V2. `/` redireciona
-para `/v2?area=today`. Ela organiza Hoje,
-Campanhas, Ofertas e Plataformas em uma experiência própria, mas não cria um segundo
+### A casa é a fila de decisões
+
+Decisão do dono (2026-10-03, SUITE-UX §9): `/` é a **fila de decisões**, ordenada
+por prazo, sem corte. Antes eram cinco portas (Hoje cortado em quatro, sino, push, a
+volta do disparo e a linha do histórico) e nenhuma tela. A fila lê
+`GET /marketing/decisions/` (`shopman/backstage/projections/marketing_decisions.py`,
+capability `shop.view_marketing`, `Cache-Control: private, no-store`) e só traz
+decisões que existem no sistema, cada uma com o lugar exato onde ela já é tomada:
+
+| Tipo (`kind`) | Quando entra | Prazo (`deadline_at`) | "Revisar" abre |
+|---|---|---|---|
+| `review` | anúncio `pending_review` dentro do prazo | `expires_at` do anúncio | `/announcements/:id#review` |
+| `retry_failed` | destino `failed_retryable` (só volta por gesto do operador) | `expires_at` do anúncio: depois dele o worker encerra o destino como vencido | `/announcements/:id#result` |
+| `reconcile_unknown` | destino `unknown` cuja última tentativa já teve consulta e nenhuma está em andamento | nenhum | `/announcements/:id#result` |
+
+Cada item leva o alcance nas duas grandezas, separadas (`reach.posts` e
+`reach.people`, nunca somadas) e, quando é falha, o motivo por plataforma
+(`failures[].reason_code`, o código mais frequente do ledger); a frase em pt-BR mora
+em `app/presentation/decisions.ts`. A projeção não leva texto do anúncio, rótulo nem
+PII. A fila também traz `automatic_checks` (o resultado incerto que o sistema
+consulta sozinho, ver abaixo), `scheduled` (aprovados com `publish_at` futuro, que
+alimentam `/scheduled`), `scheduled_today_count` e `active_campaign_count`, que viram
+a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a revisão
+do anúncio revalida as Actions do operador.
+
+O sino deixou de ter lista própria: é um link para `/` com o número de decisões.
+Ele continua dono da caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que só
+invalidam; a fila refaz o fetch) e registra os avisos como vistos quando a fila está
+na tela. O push continua abrindo `/announcements/:id#review`, que é o "Revisar" do
+cartão daquele anúncio.
+
+Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`), **Enviados**
+(`/history`) e **Ajustes** (`/v2?area=campaigns`). Ajustes entra por um item só e tem
+as próprias seções numa segunda linha: Campanhas, Modelos (`/templates`), Ofertas e
+cupons e Plataformas. No celular as quatro seções ficam numa barra no pé da tela; no
+desktop, na barra superior do kit. Nenhuma rota saiu do ar: `/v2?area=today` (o
+panorama anterior) continua acessível pela URL, sem item de navegação.
+
+### Workspace V2 (Ajustes)
+
+`/v2` hospeda o workspace Marketing V2, que hoje é o andar de Ajustes. Ele organiza
+Campanhas, Ofertas e Plataformas (e o panorama antigo em `area=today`) em uma
+experiência própria, mas não cria um segundo
 backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
 confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
 podem abrir uma campanha com oferta pré-selecionada e podem abrir a conexão de uma
-plataforma específica. Hoje, Campanhas, Ofertas e cupons e Plataformas ocupam a barra
-superior canônica do app na V2; não existe uma segunda barra de abas dentro do
+plataforma específica. Não existe uma terceira barra de abas dentro do
 workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
 somente referência de design, sem capacidade operacional.
 
@@ -132,7 +171,7 @@ composições e prévias; no mobile ocupa a tela. Fechar um deep link devolve o 
 específica redireciona para `/v2?area=platforms`, evitando alternância entre o catálogo
 novo e a lista anterior. As rotas secundárias `/campaigns`, `/templates`, `/history`,
 `/platforms?platform=...` e `/announcements/:id` continuam hospedando as capacidades
-operacionais existentes sob a mesma barra superior da V2.
+operacionais existentes sob a mesma barra de seções.
 
 O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
 opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma
@@ -160,6 +199,7 @@ e nenhuma plataforma recebe conteúdo no `fire`.
 - `/campaigns`
 - `/history`
 - `/platforms`
+- `/scheduled`
 - `/templates`
 - `/v2`
 <!-- marketing-ui-routes:end -->
@@ -188,6 +228,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/announcements/:id/rewrite/`
 - `/api/v1/backstage/marketing/announcements/:id/suggestions/:ref/disposition/`
 - `/api/v1/backstage/marketing/audience/count/`
+- `/api/v1/backstage/marketing/decisions/`
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
 - `/api/v1/backstage/marketing/offers/`
@@ -287,6 +328,20 @@ quando a frase veio da mensagem e `""` quando não houve frase; `direct_message_
 Outbox, público selado, artefato imutável, destinos e tentativas formam o grafo durável.
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.
+
+**O incerto é conferido sozinho** (decisão do dono, 2026-10-03, SUITE-UX §5.1). A
+cada passada com `--with-reconciliation`, `request_automatic_reconciliations`
+(`marketing_delivery_recovery.py`) cria a consulta de cada tentativa `unknown` que
+ainda não teve nenhuma, com recibo de sistema (`actor` nulo, `actor_ref`
+`system:marketing-reconciliation`, auditoria `automatic_reconcile_unknown`), só para
+plataformas com provedor registrado no ciclo. A guarda é a mesma do comando do
+operador: a consulta usa `lookup`, que não tem `send`, e o resultado nunca volta
+para a fila de envio. Cada tentativa recebe **uma** consulta automática: se a
+plataforma responder "não sei" de novo, o destino entra na fila de decisões como
+`reconcile_unknown`, e consultar de novo é gesto do operador (o comando
+`reconcile-deliveries/`, com `shop.reconcile_unknown_marketing`). A fila mostra o que
+o sistema fez em `automatic_checks`: "O sistema está consultando sem reenviar ·
+automático" ou "O sistema consultou sem reenviar: publicado às 09:58 · automático".
 
 Dialeto de erro: comandos respondem `{code, detail, field_errors}`, o CRUD de
 campanhas/modelos `{detail, field, fields}` e o 401 leva `code`; `detail` está sempre
@@ -450,7 +505,7 @@ destinos no commit, e a passada de entrega os encontra no mesmo ciclo. Decisão 
 | `worker_id` | `maintenance_worker:marketing-delivery` | estável: o `lease_owner` diz qual componente segura o destino |
 | `limit` | `20` destinos (e 20 consultas) por passada | uma mensagem de WhatsApp com flow custa ~20 chamadas ao ManyChat; o lote cabe no ciclo |
 | `lease_seconds` | `300` | cobre a passada inteira; se o processo cair, o destino volta a ser elegível em até 5 min |
-| `--with-reconciliation` | ligado | só executa consultas somente-leitura já pedidas pelo operador; `unknown` nunca é reenviado |
+| `--with-reconciliation` | ligado | pede sozinho **uma** consulta somente-leitura por tentativa `unknown` (decisão do dono, 2026-10-03) e executa as consultas pendentes, do sistema ou do operador; `unknown` nunca é reenviado |
 | `--watch` / `--with-outbox` | desligados | passada única; a outbox já roda como tarefa própria do ciclo |
 
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` continua sendo o portão: desligada, a passada

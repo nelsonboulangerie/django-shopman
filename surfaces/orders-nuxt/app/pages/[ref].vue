@@ -21,6 +21,10 @@ import type { CancellationReason } from "~/types/orders";
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const { location: queueLocation } = useOrdersContext();
+// Quem abriu o pedido pelo Histórico volta para o Histórico, com o mesmo recorte.
+const historyLocation = useState<{ path: string; query: Record<string, string> } | null>("orders-history-location", () => null);
+const fromHistory = computed(() => route.query?.from === "history" && Boolean(historyLocation.value));
+const backLocation = computed(() => (fromHistory.value && historyLocation.value) || queueLocation.value);
 const orderRef = computed(() => String(route.params.ref || ""));
 
 const { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, undoHandoff, undoReady, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
@@ -253,7 +257,7 @@ const { denied: stationLocked } = useStationLock();
   <main class="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-4 p-4 md:p-6">
     <!-- header -->
     <header class="flex items-center gap-3">
-      <NuxtLink :to="queueLocation" class="grid min-h-control min-w-control shrink-0 place-items-center rounded-md border bg-card text-foreground transition hover:bg-accent" aria-label="Voltar para a fila">
+      <NuxtLink :to="backLocation" class="grid min-h-control min-w-control shrink-0 place-items-center rounded-md border bg-card text-foreground transition hover:bg-accent" :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'">
         <Icon name="lucide:arrow-left" class="size-4" />
       </NuxtLink>
       <div class="min-w-0">

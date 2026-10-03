@@ -15,13 +15,18 @@ async function enterAsSyntheticOperator(page: Page) {
   await username.fill("operadora-e2e");
   await page.getByLabel("Senha").fill("senha-sintética");
   await page.getByRole("button", { name: "Entrar" }).click();
-  await expect(page).toHaveURL(/\/v2\?area=today/);
+  // A casa do Marketing é a fila de decisões (decisão do dono, 03/10/2026).
+  await expect(page).toHaveURL(/127\.0\.0\.1:\d+\/$/);
   await expect(
-    page.getByRole("heading", {
-      level: 1,
-      name: "Uma campanha, consequências honestas em cada destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Decisões" }),
   ).toBeVisible();
+}
+
+// No celular as quatro seções moram na barra do pé da tela.
+function mobileSections(page: Page) {
+  return page.getByRole("navigation", {
+    name: "Seções do Marketing no celular",
+  });
 }
 
 test("operador entra e alcança os três postos de trabalho sem redigitação", async ({
@@ -29,9 +34,8 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await page
-    .getByRole("link", { name: "Campanhas", exact: true })
-    .first()
+  await mobileSections(page)
+    .getByRole("link", { name: "Ajustes", exact: true })
     .click();
   await expect(page).toHaveURL(/\/v2\?area=campaigns/);
   await expect(
@@ -77,13 +81,53 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
     page.getByText("Instagram", { exact: true }).first(),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Hoje", exact: true }).click();
+  await mobileSections(page)
+    .getByRole("link", { name: /^Decisões/ })
+    .click();
   await expect(
-    page.getByRole("heading", { level: 2, name: "O que pede sua atenção" }),
+    page.getByRole("heading", { level: 1, name: "Decisões" }),
   ).toBeVisible();
 });
 
-test("entrada V2 preserva o painel operacional autenticado", async ({
+test("a fila de decisões leva cada cartão ao lugar exato da decisão", async ({
+  page,
+}) => {
+  await enterAsSyntheticOperator(page);
+  await page.context().addCookies([
+    {
+      name: "visual_scenario",
+      value: "board-pending",
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
+  await page.goto("/");
+
+  const cards = page.locator("[data-decision]");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText("Lote pronto: Pão artesanal");
+  await expect(cards.nth(1)).toContainText("Falhou no Instagram · 1 postagem");
+  await expect(
+    page.getByText(/O sistema consultou sem reenviar: publicado/),
+  ).toBeVisible();
+  await expect(
+    cards.first().getByRole("link", { name: /^Revisar:/ }),
+  ).toHaveAttribute("href", "/announcements/41#review");
+
+  // O sino não tem lista própria: ele é a mesma fila.
+  await expect(
+    page.getByRole("link", { name: "Decisões: 2 esperando você" }),
+  ).toHaveAttribute("href", "/");
+
+  await page.getByRole("link", { name: /agendado hoje/ }).click();
+  await expect(page).toHaveURL(/\/scheduled$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Agendados" }),
+  ).toBeVisible();
+  await expect(page.getByText(/^Envia .*17:30$/)).toBeVisible();
+});
+
+test("o panorama V2 continua acessível e Ajustes tem as próprias seções", async ({
   page,
 }) => {
   await enterAsSyntheticOperator(page);
@@ -98,24 +142,20 @@ test("entrada V2 preserva o painel operacional autenticado", async ({
       name: "Uma campanha, consequências honestas em cada destino",
     }),
   ).toBeVisible();
+  for (const name of ["Agendados", "Enviados", "Ajustes"]) {
+    await expect(
+      mobileSections(page).getByRole("link", { name, exact: true }),
+    ).toBeVisible();
+  }
+
+  await page.goto("/v2?area=offers");
+  const settings = page.getByRole("navigation", { name: "Seções de Ajustes" });
+  for (const name of ["Campanhas", "Modelos", "Ofertas e cupons", "Plataformas"]) {
+    await expect(settings.getByRole("link", { name, exact: true })).toBeVisible();
+  }
   await expect(
-    page.getByRole("link", { name: "Campanhas", exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Plataformas", exact: true }).first(),
-  ).toBeVisible();
-  const v2Navigation = page.getByRole("navigation", {
-    name: "Seções do Marketing",
-  });
-  await expect(
-    v2Navigation.getByRole("link", { name: "Hoje", exact: true }),
-  ).toBeVisible();
-  await expect(
-    v2Navigation.getByRole("link", {
-      name: "Ofertas e cupons",
-      exact: true,
-    }),
-  ).toBeVisible();
+    settings.getByRole("link", { name: "Ofertas e cupons", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(
     page.getByRole("navigation", { name: "Áreas do Marketing V2" }),
   ).toHaveCount(0);
@@ -200,11 +240,7 @@ test("entrada V2 liga ou desliga campanha com CAS e recuperação de conflito", 
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await page.goto("/v2");
-  await page
-    .getByRole("link", { name: "Campanhas", exact: true })
-    .first()
-    .click();
+  await page.goto("/v2?area=campaigns");
   await page.getByRole("link", { name: "Gerenciar todas" }).click();
 
   const activation = page.getByRole("switch", {
@@ -231,11 +267,7 @@ test("entrada V2 prepara disparo idempotente e leva o receipt à revisão", asyn
       path: "/",
     },
   ]);
-  await page.goto("/v2");
-  await page
-    .getByRole("link", { name: "Campanhas", exact: true })
-    .first()
-    .click();
+  await page.goto("/v2?area=campaigns");
   await page.getByRole("link", { name: "Gerenciar todas" }).click();
   const prepare = page.getByRole("button", {
     name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -257,9 +289,7 @@ test("entrada V2 prepara disparo idempotente e leva o receipt à revisão", asyn
     /\/announcements\/77\?dispatch=new&experience=v2#review/,
   );
   await expect(
-    page
-      .getByRole("navigation", { name: "Seções do Marketing" })
-      .getByRole("link", { name: "Ofertas e cupons", exact: true }),
+    mobileSections(page).getByRole("link", { name: "Ajustes", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),

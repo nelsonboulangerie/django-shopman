@@ -25,8 +25,10 @@ from shopman.shop.services.marketing_contracts import (
     ProviderOutcomeKind,
 )
 from shopman.shop.services.marketing_delivery_recovery import (
+    SYSTEM_RECONCILIATION_ACTOR,
     claim_reconciliations,
     execute_reconciliation,
+    request_automatic_reconciliations,
     request_reconciliation_command,
     retry_failed_command,
 )
@@ -347,6 +349,72 @@ def test_lookup_monotonically_resolves_unknown_without_send(
     assert provider.sends == []
     assert replay.replayed is True
     assert replay.provider_called is False
+
+
+def test_automatic_reconciliation_asks_once_per_unknown_attempt_without_send():
+    """Decisão do dono (03/10): o incerto é conferido sozinho, só lendo."""
+
+    announcement, targets = _targets(
+        suffix="auto-reconcile",
+        states=(DeliveryTarget.State.UNKNOWN, DeliveryTarget.State.FAILED_RETRYABLE),
+    )
+    version_before = announcement.version
+
+    queued = request_automatic_reconciliations(platforms=("whatsapp",))
+    replay = request_automatic_reconciliations(platforms=("whatsapp",))
+
+    job = DeliveryReconciliation.objects.get()
+    receipt = job.command
+    announcement.refresh_from_db()
+    assert (queued, replay) == (1, 0)
+    assert job.target_id == targets[0].pk
+    assert receipt.actor_id is None
+    assert receipt.actor_ref == SYSTEM_RECONCILIATION_ACTOR
+    assert receipt.kind == MarketingCommandReceipt.Kind.RECONCILE_DELIVERY
+    assert receipt.state == MarketingCommandReceipt.State.COMPLETED
+    assert announcement.version == version_before + 1
+    audit = MarketingAuditEvent.objects.get(command=receipt)
+    assert audit.reason_code == "automatic_reconcile_unknown"
+    # A falha repetível não é tocada: repetir continua sendo gesto do operador.
+    targets[1].refresh_from_db()
+    assert targets[1].state == DeliveryTarget.State.FAILED_RETRYABLE
+
+    claimed = claim_reconciliations(worker_id=WORKER_ID).reconciliations[0]
+    provider = LookupOnlyProvider(_outcome(ProviderOutcomeKind.UNKNOWN))
+    execute_reconciliation(claimed.ref, provider=provider, worker_id=WORKER_ID)
+
+    # O provedor respondeu "não sei" de novo: o sistema não pede outra consulta
+    # da mesma tentativa (senão consultaria a cada ciclo, para sempre).
+    assert request_automatic_reconciliations(platforms=("whatsapp",)) == 0
+    assert DeliveryReconciliation.objects.count() == 1
+    assert provider.sends == []
+
+
+def test_automatic_reconciliation_skips_attempt_the_operator_already_asked():
+    announcement, _targets_list = _targets(
+        suffix="auto-after-operator",
+        states=(DeliveryTarget.State.UNKNOWN,),
+    )
+    request_reconciliation_command(
+        announcement.pk,
+        actor=_actor("auto-after-operator"),
+        idempotency_key="auto-after-operator-key",
+        base_version=announcement.version,
+    )
+
+    assert request_automatic_reconciliations(platforms=("whatsapp",)) == 0
+    assert DeliveryReconciliation.objects.count() == 1
+
+
+def test_automatic_reconciliation_ignores_platform_without_provider():
+    _targets(
+        suffix="auto-switched-off",
+        states=(DeliveryTarget.State.UNKNOWN,),
+    )
+
+    assert request_automatic_reconciliations(platforms=()) == 0
+    assert request_automatic_reconciliations(platforms=("instagram",)) == 0
+    assert DeliveryReconciliation.objects.count() == 0
 
 
 def test_lookup_outage_is_sanitized_and_safely_requeued():

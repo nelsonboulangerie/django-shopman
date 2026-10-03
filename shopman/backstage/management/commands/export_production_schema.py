@@ -82,6 +82,7 @@ from shopman.backstage.projections.production import (
     QualityReportRow,
     RecipeOptionProjection,
     RecipeWasteRow,
+    SuggestionMaterialShortageProjection,
     WorkOrderCardProjection,
     WorkOrderReportRow,
 )
@@ -105,6 +106,7 @@ CONTRACT_DATACLASSES = (
     RecipeOptionProjection,
     BaseRecipeOptionProjection,
     PositionOptionProjection,
+    SuggestionMaterialShortageProjection,
     ProductionSuggestionProjection,
     ProductionMatrixRowProjection,
     ProductionMatrixGroupRowProjection,

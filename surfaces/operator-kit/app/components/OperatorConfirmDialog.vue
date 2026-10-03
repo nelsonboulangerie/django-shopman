@@ -12,6 +12,10 @@
 //
 // "Continuar editando" vem primeiro e recebe o foco: Enter por reflexo nunca perde
 // o que foi digitado.
+//
+// O botão do ato tem o tom do pedido (`tone`): vermelho quando descarta (o padrão),
+// a cor da casa quando é um ato normal que só pede confirmação. Pintar de vermelho
+// "mudar a encomenda de dia" seria rótulo que mente (docs/reference/omotenashi-copy.md).
 import {
   AlertDialogCancel,
   AlertDialogContent,
@@ -27,6 +31,11 @@ import { useConfirmState } from "../composables/useConfirm";
 
 const { pending, answer } = useConfirmState();
 const open = computed(() => pending.value !== null);
+
+const TONE_CLASS = {
+  danger: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  primary: "bg-primary text-primary-foreground hover:bg-primary/90",
+} as const;
 
 function onOpenChange(value: boolean) {
   // Esc e o "Continuar editando" chegam aqui como `false`: ficar.
@@ -58,8 +67,10 @@ function onOpenChange(value: boolean) {
                `@click` (o fechar responde "ficar"), e a resposta sairia trocada. -->
           <button
             type="button"
-            class="inline-flex min-h-control items-center justify-center rounded-md bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90 outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-            data-operator-confirm-discard
+            class="inline-flex min-h-control items-center justify-center rounded-md px-4 text-sm font-semibold transition outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+            :class="TONE_CLASS[pending.tone]"
+            data-operator-confirm-act
+            :data-tone="pending.tone"
             @click="answer(true)"
           >
             {{ pending.confirmLabel }}

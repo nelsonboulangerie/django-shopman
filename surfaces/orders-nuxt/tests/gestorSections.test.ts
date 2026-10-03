@@ -5,12 +5,12 @@ import { gestorSections } from "../app/presentation/gestorSections";
 describe("gestorSections", () => {
   it("Clientes aparece para quem pode gerir clientes, entre Catálogo e Canais", () => {
     const keys = gestorSections({ channelsAttention: "", canManageCustomers: true }).map((s) => s.key);
-    expect(keys).toEqual(["orders", "catalog", "customers", "feeds"]);
+    expect(keys).toEqual(["orders", "history", "catalog", "customers", "feeds"]);
   });
 
   it("sem a permissão (ou sem resposta ainda) a aba não existe", () => {
     const keys = gestorSections({ channelsAttention: "", canManageCustomers: false }).map((s) => s.key);
-    expect(keys).toEqual(["orders", "catalog", "feeds"]);
+    expect(keys).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 
   it("a atenção de Canais só aparece quando há o que dizer", () => {

@@ -74,6 +74,12 @@ from shopman.backstage.projections.notification_receipts import (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
 )
+from shopman.backstage.projections.order_history import (
+    HistoryFacet,
+    HistoryFacetOption,
+    OrderHistoryProjection,
+    OrderHistoryRowProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancellationPresetGroupProjection,
@@ -159,6 +165,10 @@ CONTRACT_DATACLASSES = (
     MergePreviewProjection,
     MergeAuditRowProjection,
     MergeAuditListProjection,
+    HistoryFacetOption,
+    HistoryFacet,
+    OrderHistoryRowProjection,
+    OrderHistoryProjection,
 )
 
 
@@ -174,6 +184,7 @@ def render_orders_contract_ts() -> str:
             " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
             " + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py"
             " + shopman/backstage/projections/notification_receipts.py"
+            " + shopman/backstage/projections/order_history.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

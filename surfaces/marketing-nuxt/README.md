@@ -1,7 +1,7 @@
 # Marketing — `marketing-nuxt`
 
 - **Proprietário operacional:** Produto/Marketing
-- **Última verificação:** 2026-09-10
+- **Última verificação:** 2026-10-03
 - **Verificado contra:** rotas e contratos do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -39,17 +39,23 @@ Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 
 ## Rotas da superfície
 
+A casa (`/`) é a fila de decisões, ordenada por prazo; o sino abre a mesma fila.
+As seções de operação são Decisões (`/`), Agendados (`/scheduled`), Enviados
+(`/history`) e Ajustes (`/v2?area=campaigns`, com Campanhas, Modelos, Ofertas e
+cupons e Plataformas). No celular elas ficam numa barra no pé da tela.
+
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
 - `/campaigns`
 - `/history`
 - `/platforms`
+- `/scheduled`
 - `/templates`
 - `/v2`
 <!-- marketing-ui-routes:end -->
 
-O histórico é um aprofundamento acessível por contexto, não uma aba primária. Links
+O histórico (`/history`) é a seção Enviados. Links
 antigos em `/campaign/announcements/:id` recebem redirecionamento para o detalhe atual.
 Os probes são `/health/live` (processo/BFF; é o health check da plataforma) e
 `/health/ready` (BFF + prontidão do Django; smoke e diagnóstico), ambos servidos pela
