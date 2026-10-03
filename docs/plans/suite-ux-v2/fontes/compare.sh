@@ -1,0 +1,15 @@
+#!/bin/bash
+# usage: compare.sh <before.png> <after.png> <out.png> "<title>"
+B="$1"; A="$2"; O="$3"; T="$4"
+TMP=$(mktemp -d)
+convert "$B" -resize 960x -background '#fcf6f1' -gravity north -extent 960x640 "$TMP/b.png"
+convert "$A" -resize 960x -background '#fcf6f1' -gravity north -extent 960x640 "$TMP/a.png"
+convert -size 960x44 xc:'#e9dfd6' -font DejaVu-Sans-Bold -pointsize 20 -fill '#3b2a1e' -gravity west -annotate +16+0 "HOJE" "$TMP/hb.png"
+convert -size 960x44 xc:'#8b6b2e' -font DejaVu-Sans-Bold -pointsize 20 -fill '#ffffff' -gravity west -annotate +16+0 "PROPOSTA" "$TMP/ha.png"
+convert "$TMP/hb.png" "$TMP/b.png" -append "$TMP/cb.png"
+convert "$TMP/ha.png" "$TMP/a.png" -append "$TMP/ca.png"
+convert "$TMP/cb.png" -bordercolor '#fcf6f1' -border 0 \( -size 16x684 xc:'#fcf6f1' \) "$TMP/ca.png" +append "$TMP/row.png"
+convert -size 1936x56 xc:'#0f1b2d' -font DejaVu-Sans-Bold -pointsize 24 -fill '#ffffff' -gravity west -annotate +18+0 "$T" "$TMP/title.png"
+convert "$TMP/title.png" "$TMP/row.png" -append "$O"
+rm -rf "$TMP"
+echo "$O"

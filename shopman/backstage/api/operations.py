@@ -76,6 +76,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
     ProductionQualityCorrectionMutationSerializer,
+    ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
     ProductionStartMutationSerializer,
@@ -1651,13 +1652,41 @@ class OperationEpisodeAnswerView(APIView):
         return Response({"ok": True, "status": episode.status})
 
 
+# O que responde a contagem cega: com qualquer um destes números no payload,
+# a contagem vira conferência — basta abrir a aba de rede. `qty_expiring` e
+# `qty_nonconforming` contam porque, no item que vence inteiro, SÃO o estoque.
+_BLIND_ITEM_FIELDS = ("qty_available", "qty_expiring", "qty_nonconforming")
+_BLIND_CLOSING_FIELDS = ("total_available", "production_summary")
+
+
+def _blind_closing_data(closing) -> dict:
+    """O fechamento como o gerente pode recebê-lo: cego até a contagem.
+
+    Antes do registro, o servidor não manda o que a contagem deveria
+    descobrir (disponível por SKU, total, produzido no dia); a `classification`
+    fica, porque é o que diz ao operador o destino da sobra. Depois do registro
+    a contagem já foi feita e o quadro volta inteiro. Dinheiro (esperado,
+    diferença, mix de meios) nunca passa por aqui: é do relatório de caixa,
+    atrás de ``cashman.audit_shift``.
+    """
+    data = projection_data(closing)
+    if closing.already_closed:
+        return data
+    for field in _BLIND_CLOSING_FIELDS:
+        data.pop(field, None)
+    for item in data["items"]:
+        for field in _BLIND_ITEM_FIELDS:
+            item.pop(field, None)
+    return data
+
+
 class DayClosingView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.perform_closing"
 
     def get(self, request):
         closing = build_day_closing()
-        return Response({"closing": projection_data(closing)})
+        return Response({"closing": _blind_closing_data(closing)})
 
     def post(self, request):
         """Finalize the day closing.
@@ -1749,6 +1778,56 @@ class OrderQueueView(OperationalObservationMixin, APIView):
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
         return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
+
+
+class OrderBoardLayoutView(APIView):
+    """A arrumação das colunas do Gestor neste POSTO (SUITE-UX §16, lei L7).
+
+    GET devolve o que o posto guardou (ou ``columns: null``, e a tela abre com as
+    três colunas). PUT grava. O posto é a estação confiável da requisição; sem ela
+    não há de quem ser a arrumação e o PUT responde 409 (a tela segue com o que o
+    operador arrumou, só que sem lembrar). Mesma permissão de ler o quadro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.backstage import station_trust
+        from shopman.backstage.services.order_board_layout import read_columns
+
+        station = station_trust.station_ref(request)
+        columns = read_columns(station) if station else None
+        return Response({"station": station, "columns": columns})
+
+    def put(self, request):
+        from shopman.backstage import station_trust
+        from shopman.backstage.services.order_board_layout import LayoutError, save_columns
+
+        station = station_trust.station_ref(request)
+        if not station:
+            return Response(
+                {"detail": "Este dispositivo não é um posto: a arrumação vale só até recarregar a tela."},
+                status=409,
+            )
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            columns = save_columns(station, payload.get("columns"))
+        except LayoutError:
+            # A tela só manda o que o kit higienizou; recusa aqui é defeito, não
+            # conversa com o operador. O motivo fica no log, a resposta é fixa.
+            logger.warning("order_board_layout.rejected", exc_info=True)
+            return Response(
+                {
+                    "detail": "Arrumação das colunas inválida. Nada foi guardado.",
+                    "field": "columns",
+                    "errors": {"columns": ["Arrumação das colunas inválida."]},
+                },
+                status=400,
+            )
+        if columns is None:
+            return Response({"detail": "O posto deste dispositivo não está mais ativo."}, status=409)
+        return Response({"station": station, "columns": columns})
 
 
 def _station_device_agent(request) -> dict:
@@ -3875,6 +3954,59 @@ class WorkOrderQualityReviewView(_ProductionActionBase):
                 "wo_ref": work_order.ref,
                 "quantity": _production_quantity(work_order.finished or 0),
                 "current": _current_work_order_projection(work_order.pk),
+            }
+        )
+
+
+def _quality_review_batch_action_ref(body: dict) -> str:
+    from shopman.backstage.projections.production import quality_review_batch_ref
+
+    return quality_review_batch_ref(body["items"])
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Confirm the quality of every clean finished batch of a day at once (all or nothing)",
+        responses={200: OpenApiResponse(description="Quality review recorded for every batch in the set.")},
+    ),
+)
+class WorkOrderQualityReviewBatchView(_ProductionActionBase):
+    required_production_capability = "can_correct_qc"
+
+    def post(self, request):
+        body = validated_body(
+            request,
+            ProductionQualityReviewBatchMutationSerializer,
+            projection_kind="qc",
+            action_kind="review_qc_batch",
+            action_href="/api/v1/backstage/production/quality-review/batch/",
+            action_ref=_quality_review_batch_action_ref,
+        )
+        for item in body["items"]:
+            _require_projected_work_order(
+                request,
+                item["work_order_id"],
+                committed_replay=body.get("_committed_replay", False),
+            )
+        try:
+            work_orders = production_service.apply_quality_review_batch(
+                items=body["items"],
+                target_date=body["target_date"],
+                actor=_production_actor(request),
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        return Response(
+            {
+                "ok": True,
+                "reviewed_count": len(work_orders),
+                "current": [_current_work_order_projection(work_order.pk) for work_order in work_orders],
             }
         )
 

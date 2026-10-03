@@ -7,7 +7,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { mount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 
 import QcCloseScreen from "../../app/components/QcCloseScreen.vue";
 import type {
@@ -98,7 +98,13 @@ const stubs = {
   UiTextarea: UiTextareaStub,
 };
 
+// O diálogo da casa (`useConfirm` do kit) no lugar do `window.confirm`.
+const confirmDiscard = vi.fn(async () => true);
+
 function installGlobals() {
+  confirmDiscard.mockReset();
+  confirmDiscard.mockResolvedValue(true);
+  vi.stubGlobal("useConfirm", () => confirmDiscard);
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("onMounted", onMounted);
@@ -413,19 +419,29 @@ describe("QcCloseScreen — classificação por grau", () => {
     wrapper.unmount();
   });
 
-  it("confirma antes de descartar um QC preenchido", async () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
+  it("pergunta no diálogo da casa antes de descartar um QC preenchido", async () => {
+    const nativeConfirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", nativeConfirm);
+    confirmDiscard.mockResolvedValue(false);
     const wrapper = mountQc();
     await buttonByText(wrapper, "Razoável")!.trigger("click");
     await enter(wrapper, "5");
 
     await buttonByText(wrapper, "Voltar")!.trigger("click");
+    await flushPromises();
     expect(wrapper.emitted("back")).toBeUndefined();
+    expect(confirmDiscard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Descartar as quantidades e os motivos informados?",
+        confirmLabel: "Descartar e sair",
+      }),
+    );
 
-    confirm.mockReturnValue(true);
+    confirmDiscard.mockResolvedValue(true);
     await buttonByText(wrapper, "Voltar")!.trigger("click");
+    await flushPromises();
     expect(wrapper.emitted("back")).toHaveLength(1);
+    expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
   it("desabilita o numpad enquanto Normal é apenas o saldo automático", () => {
@@ -514,6 +530,20 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(submit.attributes("disabled")).toBeUndefined();
     await submit.trigger("click");
 
+    // O motivo é perguntado ao operador; a tela nunca o escreve sozinha.
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.text()).toContain(
+      "Por que a qualidade deste lote está sendo corrigida?",
+    );
+    await buttonByText(wrapper, "Contagem errada no fechamento")!.trigger(
+      "click",
+    );
+    await wrapper
+      .find("[data-correction-reason]")
+      .findAll("button")
+      .find((button) => button.text() === "Salvar correção")!
+      .trigger("click");
+
     const payload = wrapper.emitted("confirm")?.[0]?.[0] as {
       quantity: string;
       reason: string;
@@ -541,7 +571,7 @@ describe("QcCloseScreen — correção auditável", () => {
       ],
       yield_deviation_confirmed: false,
       yield_deviation_reason: "",
-      reason: "Revisão do QC registrada no quiosque.",
+      reason: "Contagem errada no fechamento",
     });
     expect(payload.partition.filter((group) => group.loss)).toEqual([
       { quantity: "8", quality_defect_ref: "shape", loss: true },
@@ -572,16 +602,42 @@ describe("QcCloseScreen — correção auditável", () => {
     ).toBe(false);
   });
 
+  it("exige motivo escrito pelo operador e envia o texto dele", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition,
+    });
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "2");
+    await buttonByText(wrapper, "Salvar correção")!.trigger("click");
+
+    const sheet = wrapper.find("[data-correction-reason]");
+    const sheetSubmit = sheet
+      .findAll("button")
+      .find((button) => button.text() === "Salvar correção")!;
+    expect(sheetSubmit.attributes("disabled")).toBeDefined();
+    await sheetSubmit.trigger("click");
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+
+    await sheet
+      .find('textarea[aria-label="Motivo da correção de qualidade"]')
+      .setValue("  Duas peças estavam em outra bandeja  ");
+    await sheetSubmit.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      reason: "Duas peças estavam em outra bandeja",
+    });
+  });
+
   it("não trata o preenchimento inicial como alteração e mostra o estado de envio", async () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     const wrapper = mountQc({
       mode: "correct",
       initialPartition,
     });
 
     await buttonByText(wrapper, "Voltar")!.trigger("click");
-    expect(confirm).not.toHaveBeenCalled();
+    await flushPromises();
+    expect(confirmDiscard).not.toHaveBeenCalled();
     expect(wrapper.emitted("back")).toHaveLength(1);
 
     await wrapper.setProps({ submitting: true });

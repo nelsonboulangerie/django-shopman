@@ -139,6 +139,13 @@ def production_mutation_post(client, path: str, data=None, **kwargs):
         projection_kind = "qc"
         action_kind = "correct_qc"
         action_ref = f"correct_qc:{work_order_id}"
+    elif path.endswith("/quality-review/batch/"):
+        from shopman.backstage.projections.production import quality_review_batch_ref
+
+        projection_kind = "qc"
+        action_kind = "review_qc_batch"
+        action_ref = quality_review_batch_ref(body.get("items") or [])
+        selected_date = body.get("target_date")
     elif path.endswith("/quality-review/"):
         projection_kind = "qc"
         action_kind = "review_qc"

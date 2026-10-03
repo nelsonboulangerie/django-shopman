@@ -8,7 +8,7 @@ from django.db import models
 
 
 class PushSurface(models.TextChoices):
-    HUB = "hub", "Shopman Apps"
+    HUB = "hub", "Central"
     ORDERS = "orders", "Pedidos"
     POS = "pos", "PDV"
     PRODUCTION = "production", "Produção"

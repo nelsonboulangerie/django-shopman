@@ -10,9 +10,15 @@ import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
 // `pages/[ref].vue` (a mesma tela do detalhe da encomenda no PDV), e stubá-lo
 // apagaria justamente o que os testes da página cobram.
 import OperatorOrderDetail from "../../../operator-kit/app/components/OperatorOrderDetail.vue";
+// O grupo de rádio da vocação (painel do produto) entra de verdade pelo mesmo
+// motivo: o contrato cobrado é `role="radio"`/`aria-checked` do kit.
+import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
+import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 
 config.global.components = {
   ...config.global.components,
   UiSwitch,
   OperatorOrderDetail,
+  UiRadio,
+  UiRadioGroup,
 };

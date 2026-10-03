@@ -17,7 +17,7 @@ Nitro e autenticação compartilhada na zona de operador.
 | Superfície | Código | Papel |
 |---|---|---|
 | Loja | `surfaces/storefront-nuxt` | catálogo, carrinho, checkout e conta |
-| Shopman Apps | `surfaces/hub-nuxt` | entrada da suíte do operador |
+| Central | `surfaces/hub-nuxt` | entrada da suíte do operador |
 | PDV | `surfaces/pos-nuxt` | venda presencial e caixa |
 | Cozinha | `surfaces/kds-nuxt` | preparo, picking e expedição |
 | Encomendas | `surfaces/orders-nuxt` | fila, detalhe e operação de pedidos |

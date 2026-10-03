@@ -1,0 +1,192 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1260x900">
+<style>
+  .pill { height:24px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill .d { width:6px; height:6px; border-radius:99px; background:currentColor; }
+  .stripes { background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--destructive) 9%, transparent) 7px 14px); }
+  .ring-undo { background: conic-gradient(var(--success) 0 62%, color-mix(in oklab, var(--success) 18%, transparent) 62% 100%); }
+  .vt { writing-mode: vertical-rl; transform: rotate(180deg); white-space:nowrap; }
+  .strip { width:56px; flex:none; border-radius:12px; border:1px solid var(--border); background:var(--card); display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0 12px; }
+  .strip.pulse { box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 22%, transparent), 0 0 0 8px color-mix(in oklab, var(--primary) 9%, transparent); border-color: var(--primary); }
+  .cnt { min-width:30px; height:30px; padding:0 6px; border-radius:999px; display:grid; place-items:center; font-size:15px; font-weight:700; }
+  .seg { display:flex; gap:3px; }
+  .seg span { flex:1; height:6px; border-radius:99px; background:var(--muted); }
+  .seg span.ok { background:var(--success); }
+  .seg span.wip { background: repeating-linear-gradient(90deg, var(--info) 0 6px, color-mix(in oklab, var(--info) 35%, transparent) 6px 10px); }
+  .chip2 { height:36px; padding:0 10px; border-radius:8px; background:var(--secondary); display:inline-flex; align-items:center; gap:6px; font-size:15px; font-weight:600; }
+  .handle { width:16px; flex:none; display:flex; align-items:center; justify-content:center; position:relative; cursor:col-resize; }
+  .handle::before { content:""; position:absolute; top:8px; bottom:8px; left:7px; width:2px; border-radius:2px; background:color-mix(in oklab, var(--primary) 45%, transparent); }
+  .handle .grip { position:relative; width:16px; height:56px; border-radius:8px; background:var(--card); border:1px solid var(--primary); display:grid; place-items:center; color:var(--primary); box-shadow:0 2px 6px rgb(0 0 0/.12); }
+</style></head>
+<body class="font-sans antialiased" data-app="orders" style="background:#e9dfd6">
+<div class="h-[900px] relative grid place-items-center">
+<div class="device tablet"><div class="screen" style="width:1180px;height:820px"><div class="flex h-full bg-background text-foreground">
+
+  <!-- rail do Gestor -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Gestor" icon="square-kanban"}}
+    <a class="rail-item on"><i data-i="clipboard-list"></i>Pedidos<span class="badge">5</span></a>
+    <div class="flex-1"></div>
+    <a class="rail-item"><i data-i="settings-2"></i>Ajustes</a>
+    <div class="w-9 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-item"><i data-i="bell"></i>Avisos<span class="badge">1</span></a>
+    <a class="rail-item"><i data-i="lock"></i>Bloquear</a>
+    <div class="size-10 my-1 rounded-full bg-rail-foreground/15 grid place-items-center text-[13px] font-semibold text-rail-foreground">RL</div>
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="h-16 shrink-0 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div class="flex flex-col leading-none gap-1">
+        <span class="op-eyebrow text-muted-foreground">Posto Saída · este dispositivo</span>
+        <span class="flex items-center gap-2.5"><h1 class="op-display !text-[22px] leading-none">Pedidos</h1><span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span></span>
+      </div>
+      <div class="w-2"></div>
+      <label class="h-12 w-[15rem] px-3.5 rounded-md border border-input bg-background inline-flex items-center gap-2.5">
+        <i data-i="search" class="size-5 text-muted-foreground"></i>
+        <span class="flex-1 op-body text-muted-foreground truncate">Código ou cliente</span>
+      </label>
+      <div class="flex-1"></div>
+      <button class="h-12 px-3.5 rounded-md bg-primary/10 border border-primary/40 inline-flex items-center gap-2 op-label"><i data-i="panel-left-close" class="size-5 text-primary"></i><span class="text-muted-foreground">Visão:</span><b class="font-semibold">Saída</b></button>
+      <button class="h-12 px-4 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="columns-3" class="size-5"></i>Mostrar as 3 colunas</button>
+      <button class="size-12 rounded-md border border-border bg-card grid place-items-center" title="Som dos pedidos novos: ligado"><i data-i="volume-2" class="size-5"></i></button>
+    </header>
+
+    <div class="flex-1 min-h-0 p-3 flex gap-2">
+      <!-- Entrada recolhida -->
+      <button class="strip pulse">
+        <span class="size-12 rounded-lg grid place-items-center text-primary"><i data-i="chevrons-right" class="size-6"></i></span>
+        <span class="cnt bg-primary text-primary-foreground tnum">2</span>
+        <span class="size-2.5 rounded-full bg-warning"></span>
+        <span class="vt text-[16px] font-semibold">Entrada</span>
+        <span class="vt op-label text-warning font-semibold tnum">aceita sozinho em 1:10</span>
+        <span class="flex-1"></span>
+        <i data-i="bell-ring" class="size-5 text-primary"></i>
+      </button>
+      <!-- Preparo recolhido -->
+      <button class="strip">
+        <span class="size-12 rounded-lg grid place-items-center text-muted-foreground"><i data-i="chevrons-right" class="size-6"></i></span>
+        <span class="cnt bg-secondary tnum">7</span>
+        <span class="size-2.5 rounded-full bg-destructive"></span>
+        <span class="vt text-[16px] font-semibold">Preparo</span>
+        <span class="vt op-label text-destructive font-semibold">1 atrasado</span>
+      </button>
+
+      <!-- alça de redimensionar -->
+      <div class="handle"><span class="grip"><i data-i="grip-vertical" class="size-4"></i></span></div>
+
+      <!-- Saída expandida -->
+      <section class="flex-1 min-w-0 flex flex-col gap-2.5">
+        <div class="h-11 flex items-center gap-2">
+          <h2 class="op-eyebrow">Saída</h2><span class="op-label text-muted-foreground"><span class="tnum font-semibold text-foreground">6</span> prontos ou quase</span>
+          <span class="ml-3 op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="cloud-check" class="size-4"></i>lembrada neste posto · salva no servidor</span>
+          <div class="flex-1"></div>
+          <button class="h-11 px-3.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label"><i data-i="store" class="size-4"></i>Retirada</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label"><i data-i="bike" class="size-4"></i>Entrega</button>
+        </div>
+
+        <div class="flex-1 min-h-0 grid grid-cols-3 grid-rows-2 gap-3">
+          <!-- U13 próximo -->
+          <article class="rounded-xl border-2 border-primary bg-card p-3.5 flex flex-col gap-2 shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_14%,transparent)]">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum">U13</p><p class="text-[16px] font-semibold">Ana Ferreira</p></div>
+              <div class="flex flex-col items-end gap-1"><span class="pill pill-primary"><span class="d"></span>Próximo</span><span class="op-micro text-muted-foreground tnum">pronto há 4 min</span></div>
+            </div>
+            <div class="flex gap-2"><span class="chip2"><i data-i="store" class="size-4"></i>Retirada</span><span class="chip2 tnum"><i data-i="package" class="size-4"></i>2 volumes</span></div>
+            <div class="flex flex-col gap-1"><div class="seg"><span class="ok"></span><span class="ok"></span></div><p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="sparkles" class="size-3.5"></i>automático: Forno e Café concluíram</p></div>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg act-0 inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="hand-helping" class="size-5"></i>Entregar a Ana</button>
+          </article>
+
+          <!-- M09 entrega -->
+          <article class="rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum">M09</p><p class="text-[16px] font-semibold">iFood · Carla M.</p></div>
+              <div class="flex flex-col items-end gap-1"><span class="pill pill-warning"><span class="d"></span>Entregador chegou</span><span class="op-micro text-muted-foreground tnum">pronto há 1 min</span></div>
+            </div>
+            <div class="flex gap-2"><span class="chip2"><i data-i="bike" class="size-4"></i>Entrega</span><span class="chip2 tnum"><i data-i="package" class="size-4"></i>3 volumes</span></div>
+            <div class="flex flex-col gap-1"><div class="seg"><span class="ok"></span><span class="ok"></span><span class="ok"></span></div><p class="op-micro text-muted-foreground">Forno, Lanches e Café prontos</p></div>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg act-0 inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="truck" class="size-5"></i>Despachar M09</button>
+          </article>
+
+          <!-- F15 bloqueado -->
+          <article class="rounded-xl border border-destructive/50 bg-card p-3.5 flex flex-col gap-2">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum">F15</p><p class="text-[16px] font-semibold">João Oliveira</p></div>
+              <div class="flex flex-col items-end gap-1"><span class="pill pill-destructive"><span class="d"></span>Bloqueado</span><span class="op-micro text-muted-foreground tnum">pronto há 3 min</span></div>
+            </div>
+            <div class="flex gap-2"><span class="chip2"><i data-i="bike" class="size-4"></i>Entrega</span><span class="chip2 tnum"><i data-i="package" class="size-4"></i>1 volume</span></div>
+            <div class="rounded-md bg-destructive/12 border border-destructive/30 px-2.5 py-1.5 flex items-start gap-2">
+              <i data-i="lock" class="size-4 text-destructive mt-0.5 shrink-0"></i>
+              <p class="op-label leading-snug"><b class="text-destructive">Pix não confirmado.</b> Sai sozinho daqui quando o pagamento entrar.</p>
+            </div>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg border-2 border-dashed border-border text-muted-foreground inline-flex items-center justify-center gap-2 text-[17px] font-semibold stripes"><i data-i="lock" class="size-5"></i>Despachar</button>
+          </article>
+
+          <!-- D10 quase: falta Café -->
+          <article class="rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum">D10</p><p class="text-[16px] font-semibold">Pedro Lima</p></div>
+              <div class="flex flex-col items-end gap-1"><span class="pill pill-info"><span class="d"></span>Em preparo</span><span class="op-micro text-muted-foreground tnum">há 9 min · meta 10</span></div>
+            </div>
+            <div class="flex gap-2"><span class="chip2"><i data-i="store" class="size-4"></i>Retirada</span><span class="chip2 tnum"><i data-i="package" class="size-4"></i>2 volumes</span></div>
+            <div class="flex flex-col gap-1"><div class="seg"><span class="ok"></span><span class="ok"></span><span class="wip"></span></div><p class="op-label"><span class="text-muted-foreground">2 de 3 prontos ·</span> <b class="font-semibold text-info">falta Café</b></p></div>
+            <div class="flex-1"></div>
+            <div class="h-14 rounded-lg bg-muted text-muted-foreground inline-flex items-center justify-center gap-2 text-[16px] font-medium"><i data-i="coffee" class="size-5"></i>Aguardando o Café</div>
+          </article>
+
+          <!-- B52 retirada pronta -->
+          <article class="rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum">B52</p><p class="text-[16px] font-semibold">Café Parisiense</p></div>
+              <div class="flex flex-col items-end gap-1"><span class="pill pill-muted"><span class="d"></span>Às 22:30</span><span class="op-micro text-muted-foreground tnum">pronto há 2 min</span></div>
+            </div>
+            <div class="flex gap-2"><span class="chip2"><i data-i="store" class="size-4"></i>Retirada</span><span class="chip2 tnum"><i data-i="package" class="size-4"></i>4 volumes</span></div>
+            <div class="flex flex-col gap-1"><div class="seg"><span class="ok"></span><span class="ok"></span></div><p class="op-micro text-muted-foreground">Forno e Café prontos · encomenda</p></div>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg border-2 border-foreground/70 inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="hand-helping" class="size-5"></i>Entregar ao Café Parisiense</button>
+          </article>
+
+          <!-- X36 entregue, desfazer -->
+          <article class="rounded-xl border border-success/50 bg-success/8 p-3.5 flex flex-col gap-2">
+            <div class="flex items-start gap-2 opacity-55">
+              <div class="flex-1 min-w-0"><p class="text-[2.2rem] leading-[2.3rem] font-bold tnum line-through decoration-success/60">X36</p><p class="text-[16px] font-semibold">Maria Santos</p></div>
+              <span class="op-micro text-muted-foreground">Retirada · 2 volumes</span>
+            </div>
+            <div class="flex items-center gap-3 mt-1">
+              <span class="size-12 rounded-full ring-undo grid place-items-center shrink-0"><span class="size-9 rounded-full bg-card grid place-items-center text-success"><i data-i="check" class="size-5"></i></span></span>
+              <p class="text-[17px] font-semibold leading-5">Entregue às 22:03</p>
+            </div>
+            <p class="op-micro text-muted-foreground leading-snug">O aviso à cliente sai quando o desfazer acabar.</p>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg bg-card border border-success/50 inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="undo-2" class="size-5"></i>Desfazer <span class="tnum text-muted-foreground">3 s</span></button>
+          </article>
+        </div>
+
+        <div class="h-11 shrink-0 rounded-lg border border-dashed border-border flex items-center justify-center gap-2 op-label"><b class="tnum">+2</b><span class="text-muted-foreground">prontos esperando (K44, T18) · aparecem aqui quando um destes sair</span></div>
+      </section>
+    </div>
+  </main>
+</div></div></div>
+  <span class="pin" style="left:110px;top:140px">1</span>
+  <span class="pin" style="left:6px;top:150px">2</span>
+  <span class="pin" style="left:252px;top:426px">3</span>
+  <span class="pin" style="left:780px;top:60px">4</span>
+  <span class="pin" style="left:110px;top:214px">5</span>
+  <span class="pin" style="left:862px;top:126px">6</span>
+  <span class="pin" style="left:540px;top:630px">7</span>
+  <span class="pin" style="left:170px;top:866px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Colunas ajustáveis · tablet fixo no passe <span>proposta: uma Saída só, e ela mora no Gestor; o posto Saída é o Gestor com Entrada e Preparo recolhidas</span></p>
+  <div><b>1</b>Colunas recolhíveis: Entrada e Preparo viram faixas de 56px com o nome em pé. A faixa inteira é o gancho: um toque devolve a coluna (alvo de 48px no chevron).</div>
+  <div><b>2</b>Posto Saída = Gestor com 2 colunas recolhidas. Não existe tela de Saída à parte na Cozinha: o tablet do passe abre o Gestor já focado em Saída, com o mesmo pedido, as mesmas regras e o mesmo desfazer.</div>
+  <div><b>3</b>Redimensionar: a alça na borda da coluna arrasta a largura. Arrastada até o fim, a coluna recolhe; arrastada da faixa, volta.</div>
+  <div><b>4</b>"Visão: Saída" diz o que se está vendo; "Mostrar as 3 colunas" restaura num toque. A arrumação é lembrada por posto e dispositivo, salva no servidor (L7): trocar o tablet não perde o jeito do posto.</div>
+  <div><b>5</b>A urgência sobrevive ao recolher: contagem, ponto no tom do estado e a frase curta ("aceita sozinho em 1:10", "1 atrasado"). Pedido novo toca o som e a faixa de Entrada pulsa até alguém olhar.</div>
+  <div><b>6</b>Saída larga: 4 a 6 cartões grandes, uma ação primária cada (Entregar a Ana, Despachar M09). Bloqueio escrito no cartão com botão tracejado e cadeado; entregue fica no lugar com Desfazer de 3 s.</div>
+  <div><b>7</b>Mini progresso por cartão: um traço por estação. O que ainda está no preparo mostra "falta Café" e entra como pronto sozinho quando a estação concluir; o excedente vira "+2".</div>
+  <div><b>8</b>Teclas só no desktop: lá, 1, 2 e 3 recolhem ou abrem cada coluna e Esc volta à visão salva. No tablet do passe não há teclas impressas; tudo é toque de 48px.</div>
+</div>
+</body></html>

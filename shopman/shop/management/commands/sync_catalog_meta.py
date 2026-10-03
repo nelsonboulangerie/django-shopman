@@ -41,7 +41,7 @@ class Command(BaseCommand):
         from shopman.offerman.exceptions import CatalogError
         from shopman.offerman.service import CatalogService
 
-        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests
+        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests, stock_for
 
         try:
             items = CatalogService.get_projection_items("meta")
@@ -56,7 +56,7 @@ class Command(BaseCommand):
             from django.conf import settings
 
             cfg = getattr(settings, "SHOPMAN_META", {}) or {}
-            requests_payload = build_batch_requests(items, cfg)
+            requests_payload = build_batch_requests(items, cfg, stock=stock_for(items, channel="meta"))
             self.stdout.write(f"Dry run — {len(items)} item(s) in listing 'meta':\n")
             self.stdout.write(
                 json.dumps(

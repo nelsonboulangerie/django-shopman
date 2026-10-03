@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Avisos deste dispositivo. Montado hoje só na home (Shopman Apps), que é onde o
+// Avisos deste dispositivo. Montado hoje só na home (Central), que é onde o
 // operador administra o que chega a ele.
 //
 // ⚠️ Este bloco já disse três coisas que ninguém conseguia usar, e as três eram de
@@ -10,14 +10,16 @@
 //   3. UMA frase cobria duas causas opostas — instalação sem chave de envio e navegador
 //      que não entrega aviso com o app fechado. Agora cada causa tem a sua, porque
 //      `useWebPush` sabe distingui-las (`unavailableReason`).
-import { OPERATOR_APPS } from "../../appIdentity";
+import { OPERATOR_APPS, operatorAppNamed } from "../../appIdentity";
 
 const {
   supported, unavailableReason, active, permission, loading, error, devices, categories,
   currentDevice, activate, updateCategories, removeDevice,
 } = useWebPush();
 
-const hubName = OPERATOR_APPS.hub.label;
+/** "a Central", com o artigo da identidade: a frase não congela o gênero do rótulo. */
+const hubNamed = operatorAppNamed("hub");
+const hubNamedOf = operatorAppNamed("hub", "de");
 
 /** `surface_ref` é chave de API ("hub", "pos"). Na tela vai o nome do app. */
 function surfaceLabel(ref: string): string {
@@ -42,7 +44,7 @@ async function toggleCategory(category: string): Promise<void> {
   <section data-hub-push-settings class="mt-6 rounded-xl border border-border bg-card p-4">
     <h2 class="text-base font-semibold">Avisos neste dispositivo</h2>
     <p class="mt-1 text-sm text-muted-foreground">
-      Avisos da operação chegam a este dispositivo mesmo com o {{ hubName }} fechado.
+      Avisos da operação chegam a este dispositivo mesmo com a janela {{ hubNamedOf }} fechada.
     </p>
 
     <p v-if="permission === 'denied'" role="status" class="mt-4 text-sm text-muted-foreground">
@@ -64,8 +66,8 @@ async function toggleCategory(category: string): Promise<void> {
       sistema para ligá-lo — enquanto isso, nenhum dispositivo recebe aviso.
     </p>
     <p v-else-if="unavailableReason === 'browser'" role="status" data-push-unavailable="browser" class="mt-4 text-sm text-muted-foreground">
-      Este navegador não entrega avisos com o app fechado. No iPhone e no iPad, adicione o
-      {{ hubName }} à Tela de Início (botão Compartilhar › Adicionar à Tela de Início) e
+      Este navegador não entrega avisos com o app fechado. No iPhone e no iPad, adicione
+      {{ hubNamed }} à Tela de Início (botão Compartilhar › Adicionar à Tela de Início) e
       ative os avisos por lá.
     </p>
     <p v-if="error" role="status" class="mt-2 text-sm text-destructive">{{ error }}</p>

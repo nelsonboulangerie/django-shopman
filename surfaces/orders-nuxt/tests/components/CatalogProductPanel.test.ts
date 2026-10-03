@@ -149,3 +149,46 @@ describe("GTIN recusado pela SEFAZ", () => {
     expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
   });
 });
+
+describe("Vocação", () => {
+  const choices = [
+    { ref: "consome-aqui", label: "Consome aqui", hint: "Prato quente" },
+    { ref: "leva", label: "Leva", hint: "Pão, geleia" },
+    { ref: "hibrido", label: "Híbrido", hint: "Croissant" },
+  ];
+  const radios = (w: ReturnType<typeof panel>) => w.findAll('[data-testid="vocation"] [role="radio"]');
+
+  it("mostra as escolhas do servidor com a gravada marcada e a nota de que é só para o B.I.", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
+    expect(radios(w).map((r) => r.text())).toEqual(["Consome aqui", "Leva", "Híbrido"]);
+    expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(w.find('[data-testid="vocation"]').text()).toContain("só para o B.I.");
+  });
+
+  it("escolher entra no rascunho e só grava no Salvar", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
+    expect(w.text()).toContain("Sem vocação: o B.I. não classifica as vendas deste produto.");
+    await radios(w)[2]!.trigger("click");
+    expect(w.emitted("save")).toBeUndefined();
+    expect(w.text()).toContain("1 campo(s) alterado(s)");
+    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    expect(w.emitted("save")).toEqual([[{ vocation: "hibrido" }]]);
+  });
+
+  it("Deixar sem vocação manda vazio", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
+    await w.findAll("button").find(b => b.text() === "Deixar sem vocação")!.trigger("click");
+    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    expect(w.emitted("save")).toEqual([[{ vocation: "" }]]);
+  });
+
+  it("no conflito, o valor atual sai pelo rótulo, não pelo ref", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
+    await w.setProps({ conflict: { product: { ...detail, vocation: "hibrido", vocation_choices: choices }, conflicting_fields: ["vocation"] } });
+    expect(w.text()).toContain("Vocação. Valor atual: Híbrido");
+  });
+});

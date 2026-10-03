@@ -588,7 +588,64 @@ def _detail_payload(product) -> dict:
         # Selos derivados do SKU (Comprável · Vendável · Produzido · Usado em
         # receita) — somente leitura; o gesto de compra é ``set_purchasable``.
         "roles": _roles_payload(product.sku),
+        # Vocação do SKU (``ProductConsumptionTag``): o ref do papel, "" = sem
+        # vocação. Serve só ao B.I.; não muda a venda. As escolhas vêm do
+        # catálogo de papéis, editável no Admin — não de uma lista no Nuxt.
+        **_vocation_payload(product.sku),
     }
+
+
+def _vocation_payload(sku: str) -> dict:
+    """A vocação gravada e as escolhas ativas.
+
+    Um papel desativado no Admin continua aparecendo para o SKU que ainda o
+    usa: esconder a escolha atual faria a tela mentir "sem vocação".
+    """
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+    tag = ProductConsumptionTag.objects.filter(sku=sku).select_related("role").first()
+    roles = list(ConsumptionRole.objects.filter(is_active=True))
+    if tag is not None and all(role.pk != tag.role_id for role in roles):
+        roles.append(tag.role)
+    return {
+        "vocation": tag.role.ref if tag is not None else "",
+        "vocation_choices": [{"ref": role.ref, "label": role.label, "hint": role.hint} for role in roles],
+    }
+
+
+def _apply_vocation(sku: str, raw) -> None:
+    """Grava, troca ou remove a vocação do SKU. "" remove.
+
+    Escolher pelo Gestor é curadoria de gente: a etiqueta sai ``reviewed``. Ao
+    TROCAR o papel, o peso próprio do SKU volta a herdar o do papel novo — o
+    peso medido para um "híbrido" não vale para um "leva".
+    """
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+    if not isinstance(raw, str):
+        error = CatalogError("Vocação: escolha uma das opções.")
+        error.field = "vocation"
+        raise error
+    ref = raw.strip()
+    tag = ProductConsumptionTag.objects.select_for_update().filter(sku=sku).first()
+    if not ref:
+        if tag is not None:
+            tag.delete()
+        return
+    if tag is not None and tag.role.ref == ref:
+        return
+    role = ConsumptionRole.objects.filter(ref=ref, is_active=True).first()
+    if role is None:
+        error = CatalogError("Vocação: esta opção não existe mais. Atualize o produto e escolha de novo.")
+        error.field = "vocation"
+        raise error
+    if tag is None:
+        ProductConsumptionTag.objects.create(sku=sku, role=role, reviewed=True)
+        return
+    tag.role = role
+    tag.eat_in_weight = None
+    tag.reviewed = True
+    tag.save(update_fields=["role", "eat_in_weight", "reviewed", "updated_at"])
 
 
 def _roles_payload(sku: str) -> dict[str, bool]:
@@ -634,7 +691,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -915,6 +972,13 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
         raise CatalogError(f"Produto '{sku}' não encontrado.")
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
+    # A vocação mora fora do produto (``ProductConsumptionTag``): grava à parte,
+    # na mesma transação, e sozinha não regrava nem revalida o produto.
+    if "vocation" in data:
+        _apply_vocation(product.sku, data["vocation"])
+        data = {key: value for key, value in data.items() if key != "vocation"}
+        if not data:
+            return _detail_payload(product)
     keywords = None
     if "keywords" in data:
         raw = data["keywords"]

@@ -40,6 +40,7 @@ const {
   finish,
   quickFinish,
   reviewQuality,
+  reviewQualityBatch,
   correctQuality,
 } = useQcKiosk(routeDate);
 
@@ -97,16 +98,16 @@ const matches = (order: QCOrderCardProjection) => {
 const openOrders = computed(() =>
   (kiosk.value?.orders ?? []).filter((o) => !o.closed && matches(o)),
 );
-const closedOrders = computed(() =>
-  (kiosk.value?.orders ?? [])
-    .filter((o) => o.closed && matches(o))
-    .sort((left, right) =>
-      left.quality_reviewed === right.quality_reviewed
-        ? 0
-        : left.quality_reviewed
-          ? 1
-          : -1,
-    ),
+// O portão de Qualidade vê TODOS os lotes do dia, sem o filtro da busca: o
+// cartão "N lotes sem exceção" precisa contar exatamente o conjunto que o ato
+// confirma (o servidor assina esse conjunto). Ele mesmo separa os fechados
+// (sem exceção / exceções / confirmados) dos abertos.
+const qualityOrders = computed(() => kiosk.value?.orders ?? []);
+const batchAvailable = computed(
+  () =>
+    kiosk.value?.actions.some(
+      (action) => action.kind === "review_qc_batch" && action.enabled,
+    ) === true,
 );
 const qualityPendingCount = computed(
   () =>
@@ -183,16 +184,24 @@ function openCorrection(order: QCOrderCardProjection) {
   selectedRecipe.value = null;
 }
 
+// A consequência já está escrita no cartão, antes do gesto: o toque É a
+// confirmação (sem caixa do navegador por cima).
 async function confirmQuality(order: QCOrderCardProjection) {
   if (!reviewAvailable(order)) return;
-  if (
-    !window.confirm(
-      `Confirmar a qualidade do lote de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
-    )
-  )
-    return;
   const result = await reviewQuality(order.pk, order.rev);
-  if (result.ok) useSonner.success("Qualidade confirmada.");
+  if (result.ok) useSonner.success(`Qualidade de ${order.recipe_name} confirmada.`);
+}
+
+async function confirmQualityBatch() {
+  if (!batchAvailable.value) return;
+  const count = (kiosk.value?.orders ?? []).filter(
+    (order) => order.closed && !order.quality_reviewed && !order.quality_exception,
+  ).length;
+  const result = await reviewQualityBatch();
+  if (result.ok)
+    useSonner.success(
+      count === 1 ? "1 lote confirmado." : `${count} lotes confirmados.`,
+    );
 }
 
 function openOffPlan(recipe: RecipeOptionProjection) {
@@ -503,7 +512,11 @@ function onTimerKeydown(event: KeyboardEvent) {
     />
 
     <!-- Painel de lotes do dia. -->
-    <div v-else class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
+    <div
+      v-else
+      class="mx-auto flex w-full flex-col gap-4 px-4 py-4"
+      :class="activeQueue === 'quality' ? 'max-w-6xl' : 'max-w-3xl'"
+    >
       <div class="flex items-center justify-between gap-3">
         <OperatorPeriodPicker
           v-model="period"
@@ -640,12 +653,6 @@ function onTimerKeydown(event: KeyboardEvent) {
       >
         Nenhum lote aguardando expedição.
       </p>
-      <p
-        v-else-if="kiosk && activeQueue === 'quality' && !closedOrders.length"
-        class="py-10 text-center text-muted-foreground"
-      >
-        Nenhum lote na Qualidade (QC).
-      </p>
 
       <div
         v-if="activeQueue === 'expedition'"
@@ -752,76 +759,25 @@ function onTimerKeydown(event: KeyboardEvent) {
         </div>
       </div>
 
-      <div v-else id="quality-panel" role="tabpanel" class="grid gap-2">
-        <!-- Lotes concluídos vivem em QC; pendências aparecem antes do histórico revisado. -->
-        <div
-          v-for="order in closedOrders"
-          :key="order.pk"
-          class="flex items-center justify-between gap-3 rounded-md border bg-card p-4"
-        >
-          <div class="min-w-0 opacity-60">
-            <p class="truncate text-base font-semibold">
-              {{ order.recipe_name }}
-            </p>
-            <p class="truncate text-sm text-muted-foreground">
-              {{ order.output_sku }}
-            </p>
-            <p
-              class="truncate text-xs font-medium"
-              :class="order.quality_reviewed ? 'text-success' : 'text-warning'"
-            >
-              {{
-                order.quality_reviewed
-                  ? "Qualidade revisada"
-                  : "Aguardando revisão"
-              }}
-            </p>
-            <p
-              v-if="order.correction_count"
-              class="truncate text-xs text-muted-foreground"
-            >
-              {{ order.correction_count }}
-              {{ order.correction_count === 1 ? "correção" : "correções" }}
-              <template v-if="order.last_correction_at_display">
-                · {{ order.last_correction_at_display }}
-              </template>
-            </p>
-          </div>
-          <div class="flex shrink-0 flex-col items-end gap-2">
-            <p class="text-sm tabular-nums text-muted-foreground opacity-60">
-              {{ order.full_price_qty || "0" }} OK
-              <template v-if="order.discounted_qty">
-                · {{ order.discounted_qty }} com desconto</template
-              >
-              <template v-if="order.loss_qty">
-                · {{ order.loss_qty }} de perda</template
-              >
-            </p>
-            <UiButton
-              v-if="reviewAvailable(order)"
-              type="button"
-              size="sm"
-              :disabled="submitting"
-              :aria-busy="submitting"
-              :aria-label="`Confirmar qualidade do lote de ${order.recipe_name}`"
-              @click="confirmQuality(order)"
-            >
-              <Icon name="lucide:badge-check" class="size-3.5" />
-              {{ submitting ? "Confirmando…" : "Confirmar qualidade" }}
-            </UiButton>
-            <UiButton
-              v-if="correctionAvailable(order)"
-              type="button"
-              variant="outline"
-              size="sm"
-              :aria-label="`Corrigir qualidade do lote de ${order.recipe_name}`"
-              @click="openCorrection(order)"
-            >
-              <Icon name="lucide:shield-check" class="size-3.5" />
-              Corrigir qualidade
-            </UiButton>
-          </div>
-        </div>
+      <div
+        v-else-if="kiosk && kiosk.orders.length"
+        id="quality-panel"
+        role="tabpanel"
+      >
+        <QualityGatePanel
+          :orders="qualityOrders"
+          :grades="kiosk.grades"
+          :defects="kiosk.defects"
+          :is-today="selectedDate === ''"
+          :batch-available="batchAvailable"
+          :submitting="submitting"
+          :review-available="reviewAvailable"
+          :correction-available="correctionAvailable"
+          @confirm-batch="confirmQualityBatch"
+          @confirm-one="confirmQuality"
+          @correct="openCorrection"
+          @go-expedition="activeQueue = 'expedition'"
+        />
       </div>
     </div>
 
