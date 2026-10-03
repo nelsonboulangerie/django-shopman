@@ -692,8 +692,11 @@ describe("purchase presentation", () => {
     expect(PURCHASE_API_ENDPOINTS.projection).toBe("/api/v1/backstage/purchase/");
     expect(PURCHASE_API_ENDPOINTS.confirmReceipt).toBe("/api/v1/backstage/purchase/receipts/confirm/");
     expect(PURCHASE_API_ENDPOINTS.declareConversion).toBe("/api/v1/backstage/purchase/conversions/");
-    expect(PURCHASE_API_ENDPOINTS.requestApprove("FARINHA T65")).toBe(
-      "/api/v1/backstage/purchase/requests/FARINHA%20T65/approve/",
+    expect(PURCHASE_API_ENDPOINTS.requestSend("FARINHA T65")).toBe(
+      "/api/v1/backstage/purchase/requests/FARINHA%20T65/send/",
+    );
+    expect(PURCHASE_API_ENDPOINTS.requestCancel("FARINHA T65")).toBe(
+      "/api/v1/backstage/purchase/requests/FARINHA%20T65/cancel/",
     );
     expect(PURCHASE_API_ENDPOINTS.count).toBe("/api/v1/backstage/purchase/count/");
     expect(PURCHASE_API_ENDPOINTS.countConfirm).toBe("/api/v1/backstage/purchase/count/confirm/");
