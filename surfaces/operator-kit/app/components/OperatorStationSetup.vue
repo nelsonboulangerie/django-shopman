@@ -1,37 +1,46 @@
 <script setup lang="ts">
-// INICIAR ESTE DISPOSITIVO — a montagem do balcão, uma vez por máquina.
+// FIXAR ESTE DISPOSITIVO NUM POSTO: a montagem, uma vez por máquina, em qualquer app.
 //
-// Aparece para quem gere operadores, logado com senha, num dispositivo que ainda não
-// é uma estação. Depois disso o balcão abre sozinho de manhã e pede PIN, e
-// ninguém precisa trazer senha de gestor para a loja abrir.
+// Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
+// Depois disso o dispositivo abre sozinho e pede PIN, e ninguém precisa trazer senha
+// de gestor para a loja abrir.
 //
-// É oferta, não parede: no PC pessoal do gestor a resposta certa é "agora não", e
-// obrigar a escolher um terminal ali criaria uma estação onde não há balcão —
-// uma chave da antessala solta num notebook que sai de casa.
-import { stationTerminalHint } from "../presentation/stationOccupancy";
+// É oferta, não parede: no notebook pessoal do gestor a resposta certa é "agora não",
+// e obrigar a escolher ali criaria um posto onde não há posto. Quem não pode fixar
+// (403) nem vê: a oferta se dispensa sozinha.
+//
+// Cada app lista os postos que fazem sentido nele (a Produção oferece salas; a
+// Cozinha, estações e Expedição), mas o posto é um só para todos os apps. Toda
+// palavra desta tela vem do servidor (`workstation_vocabulary.py`).
+import { workstationRadioOptions } from "../presentation/workstation";
 
-const emit = defineEmits<{ (e: "done"): void; (e: "dismiss"): void }>();
+const props = defineProps<{
+  /** Id do app (`surfaces/registry.json`). Omitido → a identidade do app. */
+  surface?: string;
+}>();
 
-const { terminals, allowed, loaded, busy, error, confirmFor, load, provision } = useStationProvision();
+// `dismiss` é o "Agora não" de quem podia fixar; `unavailable`, o 403 de quem não
+// pode. O shell lembra só o primeiro: quem não pode hoje pode passar a poder.
+const emit = defineEmits<{ (e: "done"): void; (e: "dismiss"): void; (e: "unavailable"): void }>();
+
+const { workstations, copy, allowed, loaded, busy, error, confirmFor, load, provision } = useStationProvision(
+  props.surface,
+);
 const escolhido = ref("");
 
 onMounted(async () => {
   await load();
-  if (terminals.value.length === 1) escolhido.value = terminals.value[0]!.ref;
+  // Sem permissão, não há oferta: o app segue como se ela não existisse.
+  if (!allowed.value) {
+    emit("unavailable");
+    return;
+  }
+  if (workstations.value.length === 1) escolhido.value = workstations.value[0]!.ref;
 });
 
-// O `ref` do terminal vira a segunda linha da opção: dois balcões podem ter
-// rótulo parecido, e é o ref que desempata na hora de dizer qual máquina é esta.
-// Ao lado dele, o que já está no balcão: outros dispositivos e caixa aberto.
-const terminalOptions = computed(() =>
-  terminals.value.map((terminal) => ({
-    value: terminal.ref,
-    label: terminal.label,
-    hint: stationTerminalHint(terminal),
-  })),
-);
+const options = computed(() => workstationRadioOptions(workstations.value));
 
-// A segunda palavra só vale para o balcão que o servidor avisou.
+// A segunda palavra só vale para o caixa que o servidor avisou.
 const pedeConfirmacao = computed(() => Boolean(confirmFor.value) && confirmFor.value === escolhido.value);
 
 async function confirmar() {
@@ -41,27 +50,28 @@ async function confirmar() {
 
 <template>
   <div
-    v-if="loaded && allowed && terminals.length"
-    class="grid min-h-dvh place-items-center p-4"
+    v-if="loaded && allowed"
+    class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-background p-4 text-foreground"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="station-setup-title"
+    data-station-setup
   >
     <div class="grid w-full max-w-sm gap-4 text-center">
       <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-        <Icon name="lucide:monitor-check" class="size-7 text-muted-foreground" />
+        <Icon name="lucide:map-pin" class="size-7 text-muted-foreground" />
       </div>
       <div class="grid gap-1.5">
-        <h2 class="text-lg font-semibold">Iniciar este dispositivo</h2>
-        <p class="text-sm text-muted-foreground">
-          Diga qual balcão é este. Depois disso ele abre sozinho e pede só o PIN de
-          quem for operar.
-        </p>
+        <h2 id="station-setup-title" class="text-lg font-semibold">{{ copy.setup_title }}</h2>
+        <p class="text-sm text-muted-foreground">{{ copy.setup_lead }}</p>
       </div>
 
-      <div class="grid gap-2 text-left">
+      <div v-if="options.length" class="grid gap-2 text-left">
         <UiRadioGroup
           v-model="escolhido"
-          label="Qual balcão é este"
+          :label="copy.setup_choice_label || ''"
           :disabled="busy"
-          :options="terminalOptions"
+          :options="options"
         />
         <p
           v-if="error"
@@ -70,15 +80,32 @@ async function confirmar() {
           role="alert"
         >{{ error }}</p>
       </div>
+      <p v-else class="text-sm text-muted-foreground" data-station-setup-empty>{{ copy.setup_empty }}</p>
 
+      <!-- `<button>` cru e não `UiButton`: o kit não alcança a biblioteca Ui de cada
+           app, e esta tela sobe nos oito (ver OperatorSessionUnavailable). -->
       <div class="grid gap-2">
-        <UiButton size="lg" :disabled="busy || !escolhido" @click="confirmar">
+        <button
+          v-if="options.length"
+          type="button"
+          class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          :disabled="busy || !escolhido"
+          :aria-busy="busy"
+          data-station-setup-confirm
+          @click="confirmar"
+        >
           <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-5" />
-          {{ busy ? "Iniciando…" : pedeConfirmacao ? "Usar este balcão também" : "É este balcão" }}
-        </UiButton>
-        <UiButton variant="ghost" size="lg" :disabled="busy" @click="emit('dismiss')">
-          Agora não
-        </UiButton>
+          {{ busy ? copy.setup_busy : pedeConfirmacao ? copy.setup_confirm_shared : copy.setup_confirm }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition hover:bg-foreground/8 disabled:opacity-50"
+          :disabled="busy"
+          data-station-setup-dismiss
+          @click="emit('dismiss')"
+        >
+          {{ copy.setup_dismiss }}
+        </button>
       </div>
     </div>
   </div>

@@ -1836,6 +1836,35 @@ As demais chaves citadas no `help_text` do campo (`text_size`, `dark_mode`,
 
 ---
 
+## Workstation.metadata (backstage)
+
+Preferências do POSTO de trabalho (`shopman/backstage/models/workstation.py`). O posto é o
+que a estação confiável nomeia (`doorman.TrustedDevice.subject_id = Workstation.ref`); o
+posto Caixa tem o mesmo ref do seu `Terminal`, e é só por ele que se chega à gaveta. A
+configuração do caixa (hardware, `station`, coleções do PDV) continua em `Terminal.metadata`;
+aqui fica só o que é do posto, valha ele com caixa ou sem.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `gestor_board` | `dict` | Gestor (`PUT /api/v1/backstage/orders/board-layout/`) | Gestor (`GET` do mesmo endpoint) | A arrumação das colunas do quadro do Gestor NESTE posto: quais estão recolhidas e a largura das abertas. Ver abaixo. |
+
+### gestor_board: as colunas do Gestor neste posto
+
+Escrito e lido só por `shopman/backstage/services/order_board_layout.py`, pelo endpoint
+`orders/board-layout/` (permissão `shop.manage_orders`, a mesma de ler o quadro). O posto é o
+`Workstation` da estação confiável da requisição (`station_trust.station_ref`): sem estação, a leitura volta
+`columns: null` e a gravação é recusada com 409, e a tela abre com as três colunas. SUITE-UX
+§16 e lei L7: o tablet do passe fica só com a Saída, e trocar de navegador não desfaz isso.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `columns` | `dict` | Uma entrada por zona do quadro, sempre as três: `intake` (Entrada), `prep` (Preparo), `expedition` (Saída). Cada uma é `{open: bool, weight: float}`: `open=false` é a faixa recolhida; `weight` é a fração da largura entre as abertas (1 = parte igual, faixa 0,25 a 4). Pelo menos uma aberta: o servidor recusa a arrumação com todas recolhidas. Guardado inválido lê como ausente. |
+
+Nada disto é dado de seed. Nenhum cadastro edita esta chave (é do posto, arrumada na própria
+tela), e a gravação trava a linha para não apagar as outras chaves por corrida.
+
+---
+
 ## cashman.Terminal.metadata
 
 Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`). Escrita pelo
@@ -1853,7 +1882,6 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
 | `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
-| `gestor_board` | `dict` | Gestor (`PUT /api/v1/backstage/orders/board-layout/`) | Gestor (`GET` do mesmo endpoint) | A arrumação das colunas do quadro do Gestor NESTE posto: quais estão recolhidas e a largura das abertas. Ver abaixo. |
 
 ⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
 `Terminal` (o turno pendura ali por FK), então ele fotografa a config por `ref` e
@@ -1863,21 +1891,6 @@ declarou; o `seed` só preenche lacuna, e no `hardware` isso é por periférico 
 cadastrada não é sobrescrita, mas a gaveta do seed entra se não havia nenhuma). Terminal que
 o seed não recria — qualquer `ref` fora do `pdv-main` do `Terminal.default()` — volta pela
 mesma via.
-
-### gestor_board — as colunas do Gestor neste posto
-
-Escrito e lido só por `shopman/backstage/services/order_board_layout.py`, pelo endpoint
-`orders/board-layout/` (permissão `shop.manage_orders`, a mesma de ler o quadro). O posto é a
-estação confiável da requisição (`station_trust.station_ref`): sem estação, a leitura volta
-`columns: null` e a gravação é recusada com 409, e a tela abre com as três colunas. SUITE-UX
-§16 e lei L7: o tablet do passe fica só com a Saída, e trocar de navegador não desfaz isso.
-
-| Chave | Tipo | Descrição |
-|-------|------|-----------|
-| `columns` | `dict` | Uma entrada por zona do quadro, sempre as três: `intake` (Entrada), `prep` (Preparo), `expedition` (Saída). Cada uma é `{open: bool, weight: float}`: `open=false` é a faixa recolhida; `weight` é a fração da largura entre as abertas (1 = parte igual, faixa 0,25 a 4). Pelo menos uma aberta: o servidor recusa a arrumação com todas recolhidas. Guardado inválido lê como ausente. |
-
-Nada disto é dado de seed. O Admin do terminal não edita esta chave (é do posto, arrumada na
-própria tela), e a gravação trava a linha para não apagar as outras chaves por corrida.
 
 ### station — atendida ou autônoma
 

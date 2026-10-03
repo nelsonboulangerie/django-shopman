@@ -1,6 +1,10 @@
 <script setup lang="ts">
 const OPERATOR_PERM = "backstage.operate_purchase";
-const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
+  useOperatorLock(OPERATOR_PERM);
+// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps): oferta, não
+// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 const { view, metrics } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const route = useRoute();
@@ -74,6 +78,12 @@ useOperatorWindowTitle();
       description="Use uma conta autorizada a comprar e receber insumos."
     />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+    <OperatorStationSetup
+      v-if="stationSetup.offer.value"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
+    />
     <OperatorSonner />
     <OperatorPwaRuntime />
   </div>

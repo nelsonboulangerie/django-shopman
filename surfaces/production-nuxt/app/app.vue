@@ -8,13 +8,16 @@
 // O menuboard paralelo foi aposentado: a TV canônica pertence ao Django, por ref e
 // credencial. D4 definirá refs/cutover; este app não adivinha um destino.
 const OPERATOR_PERM = "backstage.operate_production";
-const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } =
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
 const { canView: recipesAllowed } = useRecipeBookAccess();
 
 const route = useRoute();
 const isKiosk = computed(() => route.path.startsWith("/board"));
+// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps): oferta, não
+// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -99,6 +102,12 @@ async function goToRecipes() {
     <OperatorSessionUnavailable v-if="sessionUnavailable" scope="a produção" @retry="refresh()" />
     <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+    <OperatorStationSetup
+      v-if="stationSetup.offer.value && !isKiosk"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
+    />
     <OperatorSonner />
     <OperatorPwaRuntime />
   </div>

@@ -33,7 +33,12 @@ beforeEach(() => {
       operator: ref(null),
       lock,
       refresh: refreshSession,
+      locked: ref(false),
+      stationRef: ref(""),
     }),
+    // A oferta de fixar o dispositivo num posto é do kit e tem teste próprio; aqui
+    // ela fica fechada para o gate de sessão ser o único assunto.
+    useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
   });
 });
@@ -57,6 +62,7 @@ function mountApp() {
         OperatorLock: true,
         OperatorLogin: true,
         OperatorRail: true,
+        OperatorStationSetup: true,
         UiSonner: true,
       },
     },

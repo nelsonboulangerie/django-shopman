@@ -9,6 +9,7 @@
 import { useNow } from "@vueuse/core";
 import type { HubFailure } from "~/presentation/hub";
 import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
+import type { OperatorSession } from "../../operator-kit/app/types/operator";
 import {
   HUB_NAMED_OF,
   QUEUE_EMPTY_COPY,
@@ -50,6 +51,19 @@ const brandLine = hubBrandLine(house);
 const appVersion = String(useRuntimeConfig().public.appVersion || "local");
 
 const { tiles, queue, operatorName, error, refresh } = await useOperatorHub();
+
+// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps). A Central é a porta
+// de entrada de todo dispositivo novo, e por isso oferece todos os tipos de posto. A
+// antessala é a mesma chave que o rail lê para mostrar "Posto Expedição".
+const { data: stationSession } = useFetch<OperatorSession>("/api/v1/backstage/operator/session/", {
+  key: "operator-session",
+  server: true,
+});
+const stationSetup = useStationSetupOffer({
+  canIdentify: computed(() => Boolean(stationSession.value?.operator)),
+  locked: computed(() => Boolean(stationSession.value?.locked)),
+  stationRef: computed(() => stationSession.value?.station ?? ""),
+});
 
 // Precisa de você. O relógio anda a cada segundo (a contagem "aceita sozinho em 2:40" não
 // congela entre uma leitura e outra) e conta pela hora do servidor, não pela do dispositivo.
@@ -344,6 +358,12 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
       </div>
     </template>
     <!-- Avisos do rail (ex.: "este dispositivo não deixa travar o giro"). -->
+    <OperatorStationSetup
+      v-if="stationSetup.offer.value && !hasBlockingFailure"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
+    />
     <OperatorSonner />
     <OperatorPwaRuntime />
   </main>
