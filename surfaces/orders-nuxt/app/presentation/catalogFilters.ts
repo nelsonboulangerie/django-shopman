@@ -13,6 +13,7 @@ export const FILTER_PUBLISHED = "is_published";
 export const FILTER_SELLABLE = "is_sellable";
 export const FILTER_STOCK = "stock";
 export const FILTER_PIM = "pim_complete";
+export const FILTER_VOCATION = "has_vocation";
 
 // ── sync (produto × plataforma) ────────────────────────────────────────────────
 // "never" = alvo de projeção que nunca recebeu push (sync_status vazio na célula).
@@ -117,6 +118,9 @@ export function catalogDimensions(
     dimensions.push({ id: FILTER_PIM, label: "Dados sociais completos", type: "boolean", options: [] });
   }
 
+  // Vocação (só para o B.I.): o "Classificar" do aviso da lista liga este recorte.
+  dimensions.push({ id: FILTER_VOCATION, label: "Com vocação", type: "boolean", options: [] });
+
   return dimensions;
 }
 
@@ -150,6 +154,9 @@ export function matchesFilters(
   const pimComplete = asBool(filters[FILTER_PIM]);
   if (pimComplete !== undefined && row.pim_complete !== pimComplete) return false;
 
+  const hasVocation = asBool(filters[FILTER_VOCATION]);
+  if (hasVocation !== undefined && row.has_vocation !== hasVocation) return false;
+
   return true;
 }
 
@@ -160,6 +167,15 @@ export function filterByDimensions(
 ): CatalogRowProjection[] {
   const targets = projectionRefs(surfaces);
   return rows.filter((row) => matchesFilters(row, targets, filters));
+}
+
+/**
+ * O recorte do "Classificar": à venda e sem vocação — o mesmo critério do aviso
+ * (``vocation_pending`` no servidor). Substitui os filtros: herdar um recorte
+ * anterior esconderia parte dos produtos que o aviso acabou de contar.
+ */
+export function vocationPendingFilters(): ActiveFilters {
+  return { [FILTER_SELLABLE]: ["true"], [FILTER_VOCATION]: ["false"] };
 }
 
 // ── recorte vindo da URL ───────────────────────────────────────────────────────

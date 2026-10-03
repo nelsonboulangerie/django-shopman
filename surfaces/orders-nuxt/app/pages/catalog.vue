@@ -5,7 +5,8 @@
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
-import { catalogDimensions, filterByDimensions, filtersFromQuery } from "~/presentation/catalogFilters";
+import { catalogDimensions, filterByDimensions, filtersFromQuery, vocationPendingFilters } from "~/presentation/catalogFilters";
+import { vocationNotice } from "~/presentation/vocation";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -428,6 +429,28 @@ watch([skuFromLink, () => matrix.value?.rows], ([sku, rows]) => {
   skuFromLink.value = "";
   void openDetail(row, queryText(route.query.tab) || "geral");
 }, { immediate: true });
+// Vocação (só para o B.I.): o aviso discreto da lista conta os produtos à venda
+// sem vocação, da loja inteira. "Classificar" recorta a lista neles (todas as
+// coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
+const vocation = computed(() => vocationNotice(matrix.value?.vocation_pending));
+const skuToClassify = ref("");
+async function classifyVocation() {
+  const notice = vocation.value;
+  if (!notice) return;
+  filters.value = vocationPendingFilters();
+  query.value = "";
+  await selectCollection("");
+  // Painel aberto com rascunho: recorta a lista, mas não troca o produto aberto.
+  if (collectionRef.value !== "" || detailDirty.value) return;
+  skuToClassify.value = notice.firstSku;
+}
+watch([skuToClassify, () => matrix.value?.rows], ([sku, rows]) => {
+  if (!sku || !rows) return;
+  const row = rows.find((candidate) => candidate.sku === sku);
+  if (!row) return;
+  skuToClassify.value = "";
+  void openDetail(row, "config");
+});
 function closeDetail() {
   detailRequest++;
   detailRoles.value = null;
@@ -525,6 +548,12 @@ useHead({ title: "Catálogo" });
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>
+      <!-- Vocação: aviso de uma linha, tom neutro. Serve só ao B.I.; não pede pressa. -->
+      <p v-if="vocation" class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-testid="vocation-notice">
+        <span>{{ vocation.headline }} ({{ vocation.names }})</span>
+        <span class="text-muted-foreground/50" aria-hidden="true">·</span>
+        <button type="button" class="min-h-control underline underline-offset-2 hover:text-foreground" @click="classifyVocation">Classificar</button>
+      </p>
       <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
         Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="min-h-control min-w-control underline" @click="refresh()">Tentar de novo</button>
       </p>

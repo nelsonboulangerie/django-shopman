@@ -82,6 +82,9 @@ export interface CatalogRowProjection {
   // vínculo de coleção é com uma coleção desativada, e o balde "sem categoria"
   // só recolhe quem não tem vínculo nenhum. Efeito colateral, não escolha.
   hidden_by_inactive_collection: boolean;
+  // Tem vocação (etiqueta de consumo do SKU)? Só o B.I. lê; aqui serve ao
+  // filtro "Vocação" e ao aviso discreto da lista.
+  has_vocation: boolean;
 }
 
 export interface CollectionProjection {
@@ -95,6 +98,20 @@ export interface CatalogMatrixProjection {
   surfaces: SurfaceProjection[];
   rows: CatalogRowProjection[];
   collections: CollectionProjection[];
+  // Produtos à venda sem vocação, da loja inteira (não do recorte de coleção).
+  vocation_pending: VocationPending[];
+}
+
+export interface VocationPending {
+  sku: string;
+  name: string;
+}
+
+/** Uma escolha de vocação: um papel de consumo ativo, editável no Admin. */
+export interface VocationChoice {
+  ref: string;
+  label: string;
+  hint: string;
 }
 
 export interface CatalogMatrixResponse extends ReadMetadata {
@@ -189,6 +206,9 @@ export interface ProductDetailProjection {
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
+  /** Vocação do SKU (ref do papel de consumo); "" = sem vocação. Só para o B.I. */
+  vocation: string;
+  readonly vocation_choices: VocationChoice[];
 }
 
 /**
@@ -231,6 +251,7 @@ export type ProductDetailPatch = Partial<
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "vocation_choices"
     | "gtin_rejected"
     | "social"
     | "fiscal"
