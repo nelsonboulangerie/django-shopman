@@ -6,7 +6,7 @@
 - **base:** as regras da casa (OBS0310-M, PR #1442: R4 e R7); as duas frentes partiram da cabeça da #1442
   e são trazidas para o `main` quando ela entra.
 - **decisões do dono:** 03/10/2026, citadas no topo de `concierge/discount.py` e `concierge/cancellation.py`.
-- **PRs:** A #A_PR · B #B_PR
+- **PRs:** A #1444 · B #1445
 - **início (UTC):** 2026-10-03
 
 ## A) Desconto da Concierge com teto configurável
