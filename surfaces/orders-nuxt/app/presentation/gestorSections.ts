@@ -14,6 +14,8 @@ export interface GestorSectionsInput {
 export function gestorSections({ channelsAttention, canManageCustomers }: GestorSectionsInput): OperatorSection[] {
   return [
     { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" },
+    // Os pedidos que já saíram do quadro: concluídos, cancelados e devolvidos.
+    { key: "history", label: "Histórico", icon: "lucide:history", to: "/history" },
     { key: "catalog", label: "Catálogo", icon: "lucide:book-open", to: "/catalog" },
     ...(canManageCustomers
       ? [{ key: "customers", label: "Clientes", icon: "lucide:users", to: "/customers" }]

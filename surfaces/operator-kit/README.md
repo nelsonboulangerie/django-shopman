@@ -62,6 +62,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
 | `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
+| `app/components/FilterBar.vue` | `<FilterBar>` | filtro universal: "+ Filtro" → campo → valores, chip removível que reabre a edição, painel de baixo no celular (ver "Filtro universal") |
+| `app/composables/useRouteFilters.ts` | `useRouteFilters` | o recorte da `FilterBar` na URL (`filtersToQuery`/`filtersFromQuery` em `presentation/filterBar.ts`) |
 | `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (44 px, `size-control`), com `active` e `spinning` |
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
@@ -579,6 +581,55 @@ Contrato:
 - A trava `tests/guardrails.nativeConfirm.test.ts` varre `app/` de todas as superfícies
   Nuxt e da layer e reprova `window.confirm(` (e o `confirm(` solto). O que ainda existe
   está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
+
+## Filtro universal (`FilterBar` + `useRouteFilters`)
+
+Uma barra só para recortar qualquer lista, a do plano SUITE-UX ("Filtrar"). Os 3 a 6
+recortes mais usados podem continuar como `UiFilterChip` com contagem na linha; o resto
+entra pelo "+ Filtro". Consumidores: Histórico e Catálogo do Gestor, Encomendas do PDV.
+
+```html
+<FilterBar v-model="filters" :dimensions="dimensions" touch />
+```
+
+```ts
+const dimensions = computed<FilterDimension[]>(() => [
+  { id: "payment", label: "Pagamento", type: "multi-select", options: [{ value: "pix", label: "Pix", count: 12 }] },
+  { id: "customer", label: "Cliente", type: "text", options: [], placeholder: "Nome ou telefone" },
+  { id: "total", label: "Total", type: "number-range", options: [], formatValue: (q) => brl(q) },
+  { id: "closed", label: "Fechado em", type: "date-range", options: [] },
+]);
+const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
+```
+
+- **Dois passos no mesmo popover**: "+ Filtro" lista os campos; escolher um abre os
+  valores dele, com "‹ voltar". Nada de modal: o operador não perde a lista de vista.
+- **Campo de lista** (`multi-select`, `single-select`, `boolean`): marca valores; multi
+  fica aberto para marcar vários de uma vez. `count` aparece à direita de cada valor.
+  A partir de 8 opções (`SEARCH_THRESHOLD`) aparece a busca, sem acento e sem caixa;
+  `searchable` força ligar ou desligar.
+- **Campo digitado** (`text`, `number-range`, `date-range`): o valor (ou De/Até, qualquer
+  lado aberto) e "Aplicar". Valor vazio remove o recorte.
+- **Chip** por campo aplicado: "Pagamento: Pix, Cartão", "Total: até R$ 50,00",
+  "Fechado em: 01/10 a 03/10". Tocar no chip reabre a edição daquele campo; o × remove;
+  "Limpar filtros" tira todos.
+- **Celular** (abaixo de `sm`): a linha de chips rola na horizontal e o popover vira
+  painel de baixo com fundo escurecido e botão "Pronto".
+- **Valor**: `ActiveFilters = Record<id, string[]>`. Lista guarda os valores; texto,
+  `[texto]`; intervalo, `[de, até]`. A barra não interpreta nada: quem filtra é o app
+  (ou o servidor).
+- **URL**: uma chave por campo, com o `id`. Lista → `?payment=pix,card` (valor de opção
+  não leva vírgula); texto → `?customer=maria`; intervalo → `?total=1000..5000`,
+  `?closed=2026-10-01..` (lado aberto vazio). `filtersFromQuery` descarta valor
+  malformado em vez de virar filtro que não casa nada, e NÃO confere opção contra
+  `options` (elas podem chegar depois, do servidor). `useRouteFilters` troca só as
+  chaves dos campos (período, busca e aba ficam), por `router.replace`, e apaga as
+  `resetKeys` a cada troca.
+- **Contagem por valor** é do servidor quando a lista é paginada: conte cada recorte com
+  os OUTROS aplicados e o próprio solto (marcar Pix não zera Cartão). Referência:
+  `shopman/backstage/projections/order_history.py`.
+- Testes: `tests/filterBar.test.ts`, `tests/filterBarUrl.test.ts` (ida e volta da URL,
+  vários campos e valores) e `tests/components/FilterBar.test.ts` (DOM).
 
 ## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
 
