@@ -157,7 +157,7 @@ class ChannelAdmin(ModelAdmin):
             "fields": ("ref", "name", "shop", "display_order", "is_active"),
             "description": (
                 "Os aspectos nas abas abaixo são overrides avançados deste canal. "
-                "Deixe um aspecto vazio para herdar a Configuração da Loja — a aba "
+                "Deixe um aspecto vazio para herdar a Configuração da Loja. A aba "
                 "“Config resolvida” mostra o resultado final da cascata."
             ),
         }),

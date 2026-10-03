@@ -116,7 +116,7 @@ def _money(amount_q: int) -> str:
 def _shift_label(shift) -> str:
     terminal = getattr(shift, "terminal", None)
     nome = getattr(terminal, "label", "") or getattr(terminal, "ref", "")
-    return f"#{shift.pk} — {nome}" if nome else f"#{shift.pk}"
+    return f"#{shift.pk} · {nome}" if nome else f"#{shift.pk}"
 
 
 def _local(quando) -> str:

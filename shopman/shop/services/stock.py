@@ -812,8 +812,8 @@ def _lead_time_error(order, item: dict, comp_sku: str, earliest):
     return ValidationError(
         code="lead_time",
         message=(
-            f"{display} precisa de {hours}h de antecedência — "
-            f"primeira data possível: {earliest.strftime('%d/%m')}."
+            f"{display} precisa de {hours}h de antecedência. "
+            f"Primeira data possível: {earliest.strftime('%d/%m')}."
         ),
         context={
             "sku": item.get("sku") or comp_sku,

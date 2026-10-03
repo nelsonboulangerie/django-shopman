@@ -155,7 +155,7 @@ export function ticketAction(
   if (state.blocked)
     return {
       kind: "blocked",
-      label: "Item cancelado — veja o cartão vermelho",
+      label: "Item cancelado: veja o cartão vermelho",
       icon: "lucide:ban",
       enabled: true,
     };
@@ -367,7 +367,7 @@ export function exitChipView(chip: KDSExitStationChipProjection): KDSExitChipVie
   if (chip.prints && chip.paper_failed) {
     return {
       station: chip.station_name,
-      detail: `${chip.paper_label} — avise a estação`,
+      detail: `${chip.paper_label}: avise a estação`,
       tone: "alert",
       icon: "lucide:printer",
       canMarkReady: chip.can_mark_ready,

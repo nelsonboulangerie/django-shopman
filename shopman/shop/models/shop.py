@@ -598,7 +598,7 @@ class Shop(models.Model):
     @property
     def location(self) -> str:
         if self.city and self.state_code:
-            return f"{self.city} — {self.state_code}"
+            return f"{self.city}/{self.state_code}"
         return self.city or self.state_code or ""
 
     @property
@@ -650,7 +650,7 @@ class Shop(models.Model):
         if street and self.street_number:
             street = f"{street}, {self.street_number}"
         if street and self.complement:
-            street = f"{street} — {self.complement}"
+            street = f"{street}, {self.complement}"
         if street:
             parts.append(street)
         if self.neighborhood:
@@ -658,7 +658,7 @@ class Shop(models.Model):
         city_state = self.location
         if city_state:
             if self.postal_code:
-                parts.append(f"{city_state} — CEP {self.postal_code}")
+                parts.append(f"{city_state}, CEP {self.postal_code}")
             else:
                 parts.append(city_state)
         elif self.postal_code:

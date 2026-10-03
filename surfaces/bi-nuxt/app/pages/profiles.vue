@@ -362,7 +362,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         <h2 class="text-lg font-semibold text-foreground">Receita por assento por hora</h2>
         <p class="mb-3 text-xs text-muted-foreground">
           Receita dos pedidos com item local ÷ (assentos × horas da faixa × dias com venda). Assentos:
-          {{ formatInt(report.seats) }} — {{ report.seats_source }}. Todas as faixas do recorte de dia da semana.
+          {{ formatInt(report.seats) }} ({{ report.seats_source }}). Todas as faixas do recorte de dia da semana.
         </p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">

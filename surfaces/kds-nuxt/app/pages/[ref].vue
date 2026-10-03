@@ -69,7 +69,7 @@ const soundAnnounces = computed(() => soundOn.value && !soundBlocked.value);
 const emptyTodayLine = computed(() =>
   soundAnnounces.value
     ? "Nenhum pedido na fila agora. O próximo avisa com som."
-    : "Nenhum pedido na fila agora. O som está desligado — o próximo pedido aparece aqui sem avisar.",
+    : "Nenhum pedido na fila agora. O som está desligado: o próximo pedido aparece aqui sem avisar.",
 );
 
 function serviceDateLabel(value: string): string {
@@ -335,14 +335,14 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           "
           :aria-label="
             soundOn && soundBlocked
-              ? 'Som bloqueado — toque para ativar'
+              ? 'Som bloqueado. Toque para ativar'
               : soundOn
                 ? 'Som ativo'
                 : 'Som desativado'
           "
           :title="
             soundOn && soundBlocked
-              ? 'Som bloqueado — toque para ativar'
+              ? 'Som bloqueado. Toque para ativar'
               : 'Som'
           "
           @click="handleSoundAction"
@@ -371,7 +371,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           v-if="view && !view.isExpedition && !readOnly && view.recentDone.length"
           type="button"
           class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          aria-label="Concluídos recentes — reabrir"
+          aria-label="Reabrir concluídos recentes"
           title="Concluídos recentes"
           @click="recallOpen = true"
         >
@@ -445,7 +445,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         v-else-if="error && view"
         class="mb-3 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs text-amber-700 dark:text-amber-400"
       >
-        Sem conexão — mostrando o último estado. Reconectando…
+        Sem conexão: mostrando o último estado. Reconectando…
       </p>
       <template v-if="view && !stationMissing">
         <!-- cancelled (loud — único lugar onde o vermelho é alerta de verdade) -->
@@ -625,8 +625,8 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
             />
             {{
               view.serviceDate === view.today
-                ? "Mais urgente primeiro — o destacado é o próximo"
-                : `${view.serviceDateDisplay}, ${shortDateLabel(view.serviceDate)} — só para consultar. Nada aqui pode ser iniciado ou finalizado hoje.`
+                ? "Mais urgente primeiro: o destacado é o próximo"
+                : `${view.serviceDateDisplay}, ${shortDateLabel(view.serviceDate)}: só para consultar. Nada aqui pode ser iniciado ou finalizado hoje.`
             }}
           </p>
           <!-- Sem items-start: a grade estica os cards de uma mesma linha até o mais

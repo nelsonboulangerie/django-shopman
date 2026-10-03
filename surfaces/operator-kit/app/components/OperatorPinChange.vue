@@ -106,7 +106,7 @@ const shownError = computed(() => localError.value || props.error || "");
         antes de operar.
       </template>
       <template v-else>
-        {{ operatorName }} — informe o PIN atual e escolha um novo.
+        {{ operatorName }}, informe o PIN atual e escolha um novo.
       </template>
     </p>
 

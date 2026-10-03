@@ -420,15 +420,15 @@ class ProductAdmin(_ProductImportExportBase):
             },
         ),
         (
-            "Informações Nutricionais — Porção",
+            "Informações Nutricionais: Porção",
             {"fields": SERVING_FIELDS, "classes": ("tab",)},
         ),
         (
-            "Informações Nutricionais — Macronutrientes",
+            "Informações Nutricionais: Macronutrientes",
             {"fields": MACRONUTRIENTS, "classes": ("tab",)},
         ),
         (
-            "Informações Nutricionais — Micronutrientes",
+            "Informações Nutricionais: Micronutrientes",
             {"fields": MICRONUTRIENTS, "classes": ("tab",)},
         ),
         (

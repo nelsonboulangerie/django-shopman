@@ -467,7 +467,7 @@ function refreshAll() {
         class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar — mostrando a última página aplicada.</span>
+        <span>Sem atualizar: mostrando a última página aplicada.</span>
       </div>
 
       <div
@@ -728,14 +728,14 @@ function refreshAll() {
         </div>
         <p class="mb-3 max-w-2xl text-sm text-muted-foreground">
           As etiquetas de pesagem circulam pela cozinha apenas com o código do
-          dia. Esta tabela é a única correlação código ↔ preparo — ela não
+          dia. Esta tabela é a única correlação código ↔ preparo, e ela não
           aparece nas telas de chão.
         </p>
         <div
           v-if="!blindMap.rows.value.length"
           class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
         >
-          Nenhum preparo aberto nesta data — sem códigos para correlacionar.
+          Nenhum preparo aberto nesta data, então não há códigos para correlacionar.
         </div>
         <div v-else class="max-w-2xl overflow-hidden rounded-md border">
           <table class="w-full text-sm">

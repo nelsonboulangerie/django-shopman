@@ -83,7 +83,7 @@ DEFAULT_DEFINITIONS = [
     },
     {
         "ref": "dieta", "label": "Dieta",
-        "hint": "Marque quando o produto não leva NADA de origem animal — nem leite, ovo, mel ou banha.",
+        "hint": "Marque quando o produto não leva NADA de origem animal: nem leite, ovo, mel ou banha.",
         "type": "multi_choice", "options": _options(DIETA_CANONICA), "unit": "",
         "purposes": ["label", "facet"], "storage": "attributes",
         "required": False, "ordering": 20,

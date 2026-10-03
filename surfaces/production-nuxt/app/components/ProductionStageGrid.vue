@@ -748,7 +748,7 @@ const headerCount = computed(() => {
           class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
         >
           <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-          <span>Sem atualizar — mostrando o último quadro carregado.</span>
+          <span>Sem atualizar: mostrando o último quadro carregado.</span>
         </div>
 
         <div
@@ -1069,7 +1069,7 @@ const headerCount = computed(() => {
         >
           Substitui #{{ selectedPlannedOrder.ref }} ({{
             selectedPlannedOrder.planned_qty
-          }}) — 0 remove.
+          }}). Zero remove.
         </p>
         <p
           v-else-if="planMode === 'new-batch'"

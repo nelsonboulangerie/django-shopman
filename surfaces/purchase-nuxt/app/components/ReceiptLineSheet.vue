@@ -334,7 +334,7 @@ function onCheck(checked: boolean) {
           @click="onCheck(false)"
         >
           <Icon name="lucide:circle-check-big" class="size-5 shrink-0" />
-          Conferido — desmarcar
+          Conferido (toque para desmarcar)
         </button>
         <UiSheetClose class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent">
           {{ preview.line.checked ? "Fechar" : "Fechar sem conferir" }}

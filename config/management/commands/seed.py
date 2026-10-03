@@ -7616,7 +7616,7 @@ class Command(BaseCommand):
             order_ref=returned.ref,
             defaults={
                 "severity": "warning",
-                "message": f"Pedido {returned.ref} devolvido e estornado — conferir motivo e estoque.",
+                "message": f"Pedido {returned.ref} devolvido e estornado. Conferir motivo e estoque.",
             },
         )
         created += 1
@@ -9520,16 +9520,16 @@ class Command(BaseCommand):
         # BI-CONSUMPTION-PROFILES §8; o passo 2 mede pela comanda).
         catalog = [
             ("bebida-preparada", "Bebida preparada",
-             "Café, chá, frappé, soda da casa — feita aqui, bebida aqui",
+             "Café, chá, frappé, soda da casa: feita aqui, bebida aqui",
              Reading.ANCHOR, Beverage.PREPARED, 95, 5),
             ("bebida-pronta", "Bebida pronta",
-             "Água, refrigerante, suco de garrafa — abre e bebe aqui",
+             "Água, refrigerante, suco de garrafa: abre e bebe aqui",
              Reading.ANCHOR, Beverage.READY, 95, 6),
             ("consome-aqui", "Consome aqui",
              "Prato quente, lanche montado, sobremesa servida", Reading.ANCHOR,
              Beverage.NONE, 95, 10),
             ("leva", "Leva",
-             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY,
+             "Pão, geleia, café em grão: o que sai pela porta", Reading.TAKEAWAY,
              Beverage.NONE, 5, 20),
             ("hibrido", "Híbrido",
              "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,

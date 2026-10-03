@@ -387,7 +387,7 @@ def test_no_marketplace_a_encomenda_sai_sem_identificacao_do_cliente(canal_ifood
     encomenda = _encomenda(_pedido_do_ifood("ifood-id-1"), gestor)
 
     assert encomenda.hides_customer_identity is True
-    assert encomenda.headline == "Via Pedido — sem identificação do cliente"
+    assert encomenda.headline == "Via Pedido (sem identificação do cliente)"
     assert encomenda.print_stamp_key == "courier_ticket_printed_at"
     assert encomenda.route_name == "api-backstage-order-courier-ticket-escpos"
 
@@ -510,7 +510,7 @@ def test_o_presente_esconde_valores_na_via_que_acompanha_a_mercadoria(canal_prop
     encomenda = _encomenda(order, caixa)
 
     assert encomenda.hides_values is True
-    assert encomenda.headline == "Via Pedido — sem valores"
+    assert encomenda.headline == "Via Pedido (sem valores)"
 
 
 def test_o_recibo_de_quem_pagou_nunca_esconde_valor(canal_proprio, caixa):
@@ -587,5 +587,5 @@ def test_os_dois_filtros_se_acumulam_sem_se_atrapalhar(canal_ifood, gestor):
 
     assert encomenda.applied_filters == {vias.FILTER_CUSTOMER_IDENTITY, vias.FILTER_VALUES}
     assert encomenda.headline == (
-        "Via Pedido — sem identificação do cliente, sem valores"
+        "Via Pedido (sem identificação do cliente, sem valores)"
     )

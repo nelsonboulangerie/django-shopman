@@ -212,7 +212,7 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Gaveta por operador</h2>
           <p class="mb-3 text-xs text-muted-foreground">
-            Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio —
+            Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio,
             que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN
             são exceção: qualquer número acima de zero se lê.
           </p>

@@ -160,7 +160,7 @@ class ProductAdminForm(forms.ModelForm):
         widget=UnfoldBooleanSwitchWidget,
         help_text=(
             "Finalizado no momento de servir (gratinado, montado, extraído). "
-            "É o que a loja PROMETE sobre o produto — vale mesmo quando ele sai "
+            "É o que a loja PROMETE sobre o produto, e vale mesmo quando ele sai "
             "da vitrine. Não confundir com a política de disponibilidade, que é "
             "sobre conferir estoque."
         ),
@@ -185,7 +185,7 @@ class ProductAdminForm(forms.ModelForm):
             "Hora em que este produto fica pronto num dia normal (HH:MM). "
             "É o que impede o balcão e a loja de prometerem a baguete de "
             "tradição para as 9h. Em branco, a hora é deduzida do histórico "
-            "de fornadas — declare quando a casa souber a resposta."
+            "de fornadas. Declare quando a casa souber a resposta."
         ),
     )
 

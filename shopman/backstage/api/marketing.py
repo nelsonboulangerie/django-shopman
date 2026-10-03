@@ -859,7 +859,7 @@ class WhatsAppTestSendView(_CampaignBase):
         if getattr(request, "limited", False):
             return Response(
                 {
-                    "detail": "Muitos testes seguidos. Espere um minuto — o teste manda "
+                    "detail": "Muitos testes seguidos. Espere um minuto: o teste manda "
                     "mensagem de verdade, e o número do outro lado sente.",
                 },
                 status=429,

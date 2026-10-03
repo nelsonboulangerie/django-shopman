@@ -203,7 +203,7 @@ const PAD_ADD =
         <UiInput
           v-model="name"
           type="text"
-          placeholder="Nome (opcional) — ex.: Croissant"
+          placeholder="Nome (opcional), ex.: Croissant"
           aria-label="Nome do timer"
           class="min-h-11"
           @keydown.enter.prevent="start()"

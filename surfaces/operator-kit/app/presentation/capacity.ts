@@ -112,5 +112,5 @@ export function capacityThresholdsText(thresholds: CapacityThresholds | null): s
 export function capacityAriaLabel(reading: CapacityResponse | null, level: CapacityLevel): string {
   const meta = CAPACITY_LEVEL_META[level];
   if (level === "unknown") return `Capacidade do serviço: ${meta.label}`;
-  return `Capacidade do serviço: ${meta.label} — ${capacitySummary(reading)}`;
+  return `Capacidade do serviço: ${meta.label}. ${capacitySummary(reading)}`;
 }

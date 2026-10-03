@@ -375,6 +375,6 @@ class MergeAuditAdmin(ModelAdmin):
             f"separado de {audit.target_ref}."
         )
         if audit.loyalty_merged:
-            aviso += " A fidelidade NÃO foi separada — os pontos ficaram no cadastro que sobreviveu."
+            aviso += " A fidelidade NÃO foi separada: os pontos ficaram no cadastro que sobreviveu."
         self.message_user(request, aviso, messages.SUCCESS)
         return destino

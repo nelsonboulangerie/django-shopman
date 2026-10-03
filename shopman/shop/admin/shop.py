@@ -140,7 +140,7 @@ MONTH_CHOICES = (
 )
 
 PRODUCTION_NOTIFICATION_STATE_CHOICES = (
-    ("", "Herdar — desligadas"),
+    ("", "Herdar (desligadas)"),
     ("enabled", "Ativar"),
     ("disabled", "Desativar explicitamente"),
 )
@@ -153,7 +153,7 @@ PRODUCTION_NOTIFICATION_SEVERITY_CHOICES = (
 )
 
 PRODUCTION_ORDER_MATCH_CHOICES = (
-    ("", "Herdar — primeiro planejado"),
+    ("", "Herdar (primeiro planejado)"),
     ("first_planned", "Primeiro planejado"),
     ("earliest_target", "Menor data-alvo"),
     ("manual", "Associação manual"),
@@ -893,7 +893,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "O outro lado da mesma pergunta: quanto o disparo pode custar antes de pedir "
             "senha. Vale o que chegar primeiro, este teto ou a fatia acima. Em branco = "
-            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite — confirme com o "
+            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite: confirme com o "
             "que a casa aceita gastar num disparo."
         ),
     )
@@ -907,7 +907,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "Quanto o provedor cobra por mensagem de campanha entregue. Só mensagem "
             "custa; postagem em Instagram, Facebook ou Google não tem custo por pessoa. "
-            "⚠️ Palpite — o preço real está no contrato com a Meta/ManyChat e muda por "
+            "⚠️ Palpite: o preço real está no contrato com a Meta/ManyChat e muda por "
             "categoria de modelo. Deixe arredondado para cima: custo superestimado faz o "
             "teto de gasto morder antes, nunca depois."
         ),
@@ -921,7 +921,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         ),
         help_text=(
             "O limiar nunca fica abaixo deste número, e é ele que responde enquanto a "
-            "base for pequena ou desconhecida — o cálculo falha fechado, pedindo mais "
+            "base for pequena ou desconhecida: o cálculo falha fechado, pedindo mais "
             f"cerimônia, nunca menos. Em branco = {DEFAULT_CEREMONY_RECIPIENT_FLOOR} "
             "pessoas. ⚠️ Palpite."
         ),
@@ -1250,7 +1250,7 @@ class ShopForm(forms.ModelForm):
             "accent_color": UnfoldAdminColorInputWidget,
             "neutral_color": UnfoldAdminColorInputWidget,
             "neutral_dark_color": UnfoldAdminColorInputWidget,
-            "heading_font": FontPreviewWidget(sample_text="Aa Bb Cc \u2014 O sabor que encanta"),
+            "heading_font": FontPreviewWidget(sample_text="Aa Bb Cc. O sabor que encanta"),
             "body_font": FontPreviewWidget(
                 sample_text="O p\u00e3o fresco de cada dia, feito com amor e tradi\u00e7\u00e3o."
             ),
@@ -1285,7 +1285,7 @@ class ShopForm(forms.ModelForm):
             self.fields["kitchen_note_tags"].required = False
             self.fields["kitchen_note_tags"].help_text = (
                 "Adicione uma tag por vez. O operador anexa com um toque à nota da cozinha "
-                "no gestor, e a nota aparece no ticket do KDS para a produção — instruções "
+                "no gestor, e a nota aparece no ticket do KDS para a produção: instruções "
                 "curtas de preparo (ex.: “Bem assado”, “Sem cebola”)."
             )
 
@@ -1563,7 +1563,7 @@ class ShopForm(forms.ModelForm):
             if len(refs) != len(set(refs)):
                 self.add_error(
                     "defaults_dynamic_collections",
-                    "Há coleções repetidas — cada coleção só pode aparecer uma vez.",
+                    "Há coleções repetidas. Cada coleção só pode aparecer uma vez.",
                 )
 
         if self._has(_defaults_pickup_field(1, "ref")):
@@ -2235,7 +2235,7 @@ _APPEARANCE_FIELDSETS = (
         {
             "fields": ("brand_voice",),
             "description": (
-                "Como a IA escreve quando o gestor pede uma sugestão — no catálogo e nos "
+                "Como a IA escreve quando o gestor pede uma sugestão, no catálogo e nos "
                 "anúncios, com a mesma voz. Antes isto era um texto fixo no código, "
                 "invisível para quem opera. Vazio = a IA usa a voz padrão do sistema."
             ),
@@ -2477,7 +2477,7 @@ _LOYALTY_FIELDSETS = (
             ),
             "description": (
                 "Programa de fidelidade da loja. A taxa de acúmulo vale para todos os pedidos. "
-                "Os limiares definem quando o cliente sobe de nível — Bronze é o nível inicial "
+                "Os limiares definem quando o cliente sobe de nível. Bronze é o nível inicial "
                 "(a partir de 0 pontos) e cada nível seguinte exige mais pontos acumulados. "
                 "A meta de carimbos vale para novas contas."
             ),
@@ -2518,7 +2518,7 @@ _POS_FIELDSETS = (
             ),
             "description": (
                 "Políticas do balcão. O limite de aprovação vale para descontos "
-                "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
+                "manuais aplicados no PDV: acima dele, é preciso o PIN do gerente. "
                 "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado. "
                 "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente."
             ),
@@ -2583,7 +2583,7 @@ _INTEGRATIONS_FIELDSETS = (
                 "A partir de quantas PESSOAS um disparo de mensagem deixa de ser “leia o "
                 "resumo e toque” e passa a pedir frase digitada e senha. Vale o que chegar "
                 "primeiro: a fatia da base ou o teto de gasto. Postagem pública fica de "
-                "fora — ela se apaga, não custa por pessoa, e o número de plataformas não "
+                "fora: ela se apaga, não custa por pessoa, e o número de plataformas não "
                 "mede risco. Quem mudou e quando fica no histórico desta página."
             ),
         },
@@ -2610,7 +2610,7 @@ _INTEGRATIONS_FIELDSETS = (
             "fields": ("channel_refs_display",),
             "description": (
                 "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
-                "deployment (settings/env) — exibidos aqui só para conferência."
+                "deployment (settings/env) e exibidos aqui só para conferência."
             ),
         },
     ),
@@ -3114,7 +3114,7 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         for label, ref in pairs:
             channel = Channel.objects.filter(ref=ref).first()
             name = channel.name if channel else "(canal não encontrado)"
-            rows.append((label, f"{ref} — {name}"))
+            rows.append((label, f"{ref} · {name}"))
         body = format_html_join(
             "",
             '<div class="flex gap-3 py-1 border-b border-base-100 dark:border-base-800">'

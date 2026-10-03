@@ -192,14 +192,14 @@ class SupplierMaterialCost(models.Model):
         if self.material_id and not self.material.is_active:
             raise ValidationError({
                 "is_preferred": _(
-                    "O insumo '%(sku)s' está inativo — um insumo aposentado não pode "
+                    "O insumo '%(sku)s' está inativo, e um insumo aposentado não pode "
                     "ter custo canônico. Reative o insumo ou marque outro custo."
                 ) % {"sku": self.material.sku}
             })
         if self.supplier_id and not self.supplier.is_active:
             raise ValidationError({
                 "is_preferred": _(
-                    "O fornecedor '%(ref)s' está inativo — o custo canônico não pode "
+                    "O fornecedor '%(ref)s' está inativo, e o custo canônico não pode "
                     "apontar para um fornecedor aposentado. Reative o fornecedor ou "
                     "promova outro custo."
                 ) % {"ref": self.supplier.ref}
@@ -236,7 +236,7 @@ class SupplierMaterialCost(models.Model):
                 "conversion": _(
                     "A conversão '%(label)s' vale só para o fornecedor "
                     "'%(other)s'. Cadastre a mesma unidade de compra para "
-                    "'%(supplier)s' — o saco de cada fornecedor pode ter um peso."
+                    "'%(supplier)s': o saco de cada fornecedor pode ter um peso."
                 ) % {
                     "label": conversion.label,
                     "other": conversion.supplier.name or conversion.supplier.ref,

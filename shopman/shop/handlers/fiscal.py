@@ -446,7 +446,7 @@ class NFCeEmitHandler:
             message=(
                 f"A NFC-e do pedido {order.ref} foi autorizada, mas o envio para "
                 f"{email} FALHOU ({reason}). O cliente pediu a nota por e-mail e não "
-                "recebeu — reenviar pelas Últimas vendas do PDV."
+                "recebeu. Reenviar pelas Últimas vendas do PDV."
             ),
             order_ref=order.ref,
             dedupe_key=f"fiscal_email_failed:{order.ref}",

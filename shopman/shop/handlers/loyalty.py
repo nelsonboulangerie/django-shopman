@@ -333,7 +333,7 @@ def _redeem_directive_error(exc: Exception, *, order_ref: str, points: int):
             message=(
                 f"Pedido {order_ref} recebeu desconto de {points} pontos, mas o "
                 "saldo do cliente ficou insuficiente na hora de debitar (corrida "
-                "de resgate). O desconto foi dado sem baixa de pontos — conciliar."
+                "de resgate). O desconto foi dado sem baixa de pontos. Conciliar."
             ),
             order_ref=order_ref,
             dedupe_key=f"loyalty_redeem_uncovered:{order_ref}",

@@ -51,7 +51,7 @@ class FiscalProductAdminForm(ProductAdminForm):
         widget=UnfoldAdminTextInputWidget,
         max_length=7,
         help_text=(
-            "7 dígitos. Identificação da mercadoria no Conv. ICMS 142/2018 — vai na nota "
+            "7 dígitos. Identificação da mercadoria no Conv. ICMS 142/2018. Vai na nota "
             "sempre que o item estiver listado; a tributação vem do perfil fiscal."
         ),
     )

@@ -169,7 +169,7 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
         v-if="operatorName"
         icon="user-round"
         :label="operatorName"
-        :aria-label="`${operatorName} — travar / trocar`"
+        :aria-label="`${operatorName}: travar ou trocar`"
         @activate="emit('lock')"
       />
 

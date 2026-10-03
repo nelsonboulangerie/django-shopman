@@ -117,7 +117,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
           role="status"
           aria-live="polite"
           class="inline-flex items-center gap-1.5 tone-amber"
-          title="Sem sinal — mostrando o último quadro"
+          title="Sem sinal: mostrando o último quadro"
         >
           <Icon name="lucide:wifi-off" class="size-4" />
           <span>sem sinal</span>
@@ -180,7 +180,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
         Carregando…
       </p>
       <p v-else-if="error && !rows.length" class="board-labels py-8">
-        Sinal perdido — reconectando…
+        Sinal perdido. Reconectando…
       </p>
 
       <div

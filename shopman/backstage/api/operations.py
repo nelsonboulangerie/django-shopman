@@ -3277,9 +3277,9 @@ class CourierTicketEscposView(APIView):
                 "title": f"via-do-entregador:{ref}",
                 "variant": variant,
                 "variant_label": (
-                    "Via do entregador — Identificada"
+                    "Via do entregador (identificada)"
                     if variant == "identified"
-                    else "Via do entregador — Anônima"
+                    else "Via do entregador (anônima)"
                 ),
                 "reprint": reprint,
             }

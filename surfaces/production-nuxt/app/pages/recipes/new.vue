@@ -248,7 +248,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                 <UiTextarea
                   v-model="noteText"
                   :rows="10"
-                  placeholder="Ex.: Pain de campagne — 1 kg farine T65, 700 g eau, 20 g sel, 200 g levain…"
+                  placeholder="Ex.: Pain de campagne: 1 kg farine T65, 700 g eau, 20 g sel, 200 g levain…"
                 />
               </label>
               <div class="flex flex-wrap items-end gap-3">

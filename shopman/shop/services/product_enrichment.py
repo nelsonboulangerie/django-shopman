@@ -362,7 +362,7 @@ def build_suggestion(gtin: str) -> EnrichmentSuggestion:
                 "source": SOURCE_OFF,
                 "license": OFF_PHOTO_LICENSE,
                 "attribution": (
-                    "Open Food Facts contributors — " + OFF_PRODUCT_PAGE.format(gtin=s.gtin)
+                    "Open Food Facts contributors: " + OFF_PRODUCT_PAGE.format(gtin=s.gtin)
                 ),
                 "fetched_at": _now(),
             }
@@ -371,7 +371,7 @@ def build_suggestion(gtin: str) -> EnrichmentSuggestion:
         s.notes.append(
             "Alérgeno fora da lista da casa: "
             + ", ".join(s.allergens_unmapped)
-            + ". Aipo, molusco e tremoço são obrigatórios na UE e não na RDC 26/2015 — decida antes de aceitar."
+            + ". Aipo, molusco e tremoço são obrigatórios na UE e não na RDC 26/2015. Decida antes de aceitar."
         )
     if s.reference_photo:
         s.notes.append(
