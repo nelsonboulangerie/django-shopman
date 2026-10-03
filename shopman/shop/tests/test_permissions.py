@@ -209,9 +209,13 @@ class TestKitchenGroup(TestCase):
         self.client.force_login(self.user)
         self.assertEqual(self.client.get(POS_URL).status_code, 403)
 
-    def test_kitchen_cannot_access_orders(self):
+    def test_kitchen_reads_the_board_to_expedite_but_not_the_rest_of_the_gestor(self):
+        # UX-G3: a Saída da Cozinha virou a coluna Saída do Gestor, e quem a operava
+        # (``operate_kds``) lê o quadro para expedir. O detalhe do pedido continua
+        # de quem gerencia (``shop.manage_orders``).
         self.client.force_login(self.user)
-        self.assertEqual(self.client.get(ORDERS_URL).status_code, 403)
+        self.assertEqual(self.client.get(ORDERS_URL).status_code, 200)
+        self.assertEqual(self.client.get(f"{ORDERS_URL}QUALQUER-1/").status_code, 403)
 
     def test_kitchen_can_access_production(self):
         # Cozinha holds operate_production → the dedicated floor app gate.
