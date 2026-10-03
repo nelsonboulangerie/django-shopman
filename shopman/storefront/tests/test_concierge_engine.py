@@ -1432,7 +1432,7 @@ HOUSE_NOTICE = (
     "castanha de caju, gergelim e pimenta-do-reino."
 )
 TEAM_OFFER = (
-    'Se a alergia for grave, responda "sim" que eu chamo alguém da equipe para conversar com você. 💛'
+    'Se for caso de alergia grave, responda "sim" que eu chamo alguém da equipe para conversar com você. 💛'
 )
 
 

@@ -1195,7 +1195,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ``{product}`` é o nome do produto; ``{allergens}``, os declarados.
     "CONCIERGE_ALLERGY_TEAM_OFFER": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Se a alergia for grave, responda \"sim\" que eu chamo alguém da equipe para conversar com você. 💛",
+            message="Se for caso de alergia grave, responda \"sim\" que eu chamo alguém da equipe para conversar com você. 💛",
         )},
     },
     "CONCIERGE_ALLERGY_ASK_WHICH": {
