@@ -31,6 +31,8 @@ import {
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
+import { BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
+import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
 const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
 
@@ -167,13 +169,43 @@ function pickSort(key: SortKey) {
   sortOpen.value = false;
 }
 
-// keyboard shortcuts (Arc 3): / search · r refresh · v view · s sort · Esc clear.
+// ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
+// O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
+// recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
+const zoneTitles = computed<Record<string, string>>(() => Object.fromEntries(zones.value.map((z) => [z.key, z.title])));
+const boardLayout = useBoardLayout(() => zoneTitles.value);
+const columnEls = new Map<string, HTMLElement>();
+function setColumnEl(key: string, el: unknown) {
+  if (el instanceof HTMLElement) columnEls.set(key, el);
+  else columnEls.delete(key);
+}
+function columnWidth(key: string | null): number {
+  return key ? columnEls.get(key)?.getBoundingClientRect().width ?? 0 : 0;
+}
+function onResizeStart(key: string) {
+  boardLayout.startResize(key, columnWidth(key), columnWidth(boardLayout.nextOpen(key)));
+}
+function lateCount(zone: ZoneView): number {
+  return triaged(zone).filter((card) => timerTone(card.timer_class) === "late").length;
+}
+const shortcutHint = (key: string) => String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
+
+// keyboard shortcuts (Arc 3): / search · r refresh · v view · s sort · Esc clear ·
+// 1/2/3 recolhem ou abrem Entrada, Preparo e Saída.
 // Pure mapping in resolveShortcut; here we run the effects and skip while typing.
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const el = e.target as HTMLElement | null;
   const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  const column = viewMode.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
+  if (column) {
+    // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
+    if (typing || rejectRef.value || settleRef.value || dispatchRef.value || courierBackRef.value) return;
+    e.preventDefault();
+    boardLayout.toggle(column);
+    return;
+  }
   const shortcut = resolveShortcut(e.key);
   if (!shortcut) return;
   // While typing, only Escape (clear-filters / blur) is honoured.
@@ -436,6 +468,27 @@ function printQueue() {
           <span class="size-1.5 rounded-full" :class="realtimeView.dotClass" />
           <span class="hidden md:inline">{{ realtimeView.label }}</span>
         </span>
+        <!-- a visão deste posto, discreta, e o caminho de volta às três colunas -->
+        <template v-if="viewMode === 'board' && !boardLayout.allOpen.value">
+          <span
+            class="hidden h-control items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 text-xs font-medium text-muted-foreground sm:inline-flex"
+            :title="boardLayout.memoryText.value"
+            data-board-view-label
+          >
+            <Icon name="lucide:panel-left-close" class="size-3.5" aria-hidden="true" />
+            {{ boardLayout.viewLabel.value }}
+          </span>
+          <button
+            type="button"
+            class="inline-flex h-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
+            title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
+            data-board-show-all
+            @click="boardLayout.showAll()"
+          >
+            <Icon name="lucide:columns-3" class="size-4" aria-hidden="true" />
+            Mostrar as 3 colunas
+          </button>
+        </template>
         <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
              ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). O
              mesmo toque pede a permissão de notificação do browser. -->
@@ -583,13 +636,45 @@ function printQueue() {
         </p>
 
         <!-- board view (clean, default) -->
-        <div v-else-if="viewMode === 'board'" class="grid gap-4 lg:grid-cols-3">
-          <section v-for="zone in zones" :key="zone.key" class="flex min-w-0 flex-col gap-3">
+        <!-- colunas: a recolhida vira faixa (tocar devolve); a aberta tem alça para
+             ajustar a largura com a vizinha. A arrumação é do posto (useBoardLayout). -->
+        <div
+          v-else-if="viewMode === 'board'"
+          class="grid gap-4 lg:[grid-template-columns:var(--board-columns)]"
+          :style="{ '--board-columns': boardLayout.gridTemplate.value }"
+          data-board-columns
+        >
+          <section
+            v-for="zone in zones"
+            :key="zone.key"
+            :ref="(el) => setColumnEl(zone.key, el)"
+            class="relative flex min-w-0 flex-col gap-3"
+            :data-zone="zone.key"
+            :data-collapsed="!boardLayout.isOpen(zone.key) || undefined"
+          >
+            <QueueColumnStrip
+              v-if="!boardLayout.isOpen(zone.key)"
+              :title="zone.title"
+              :icon="zone.icon"
+              :count="triaged(zone).length"
+              :late="lateCount(zone)"
+              :pulse="zone.key === 'intake' && attentionPending"
+              @open="boardLayout.open(zone.key)"
+            />
+            <template v-else>
             <div class="flex items-center gap-2 border-b pb-2">
               <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
               <h2 class="text-sm font-bold uppercase tracking-wide">{{ zone.title }}</h2>
               <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ triaged(zone).length }}</span>
-              <span class="ml-auto hidden truncate text-xs text-muted-foreground sm:block">{{ zone.subtitle }}</span>
+              <span class="ml-auto hidden truncate text-xs text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
+              <UiIconButton
+                v-if="boardLayout.canCollapse(zone.key)"
+                class="ml-auto shrink-0 sm:ml-0"
+                icon="lucide:chevrons-left"
+                :label="`Recolher a coluna ${zone.title} (atalho: ${shortcutHint(zone.key)})`"
+                data-board-collapse
+                @click="boardLayout.toggle(zone.key)"
+              />
             </div>
 
             <div v-if="!triaged(zone).length" class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-10 text-center text-muted-foreground">
@@ -612,6 +697,14 @@ function printQueue() {
               @toggle-assign="onToggleAssign(card)"
               @print-danfe="danfePrint.printDanfe(card.ref)"
             />
+            <QueueColumnResizeHandle
+              v-if="boardLayout.nextOpen(zone.key)"
+              :label="`Ajustar a largura de ${zone.title} e ${zoneTitles[boardLayout.nextOpen(zone.key) || ''] || ''}`"
+              @start="onResizeStart(zone.key)"
+              @drag="boardLayout.dragResize"
+              @end="boardLayout.endResize"
+            />
+            </template>
           </section>
         </div>
 
