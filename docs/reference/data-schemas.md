@@ -168,6 +168,27 @@ model, at}`: `rules`/`rules_source` como `triage.classify_rules`; `jev` é a int
 acima de 0,5 (vazio se nenhuma); `jev_scores` é `{ref: probabilidade}` das 12; `latency_ms`
 inteiro; `at` ISO 8601. Escrita só pelo ciclo do piloto, lida por `shadow_report`. Não muda a
 decisão; vence com a mensagem (retenção da observação).
+Régua da Concierge (OBS0310-K, fatia 1 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`;
+`shopman/storefront/concierge/metrics.py`): o PRIMEIRO bloco de resposta de cada turno (`kind=reply`,
+inclusive o aviso de handoff `purpose=handoff_ack`) grava em `ConversationMessage.usage` =
+`{version: 1, layer, triage: {classifier, source}, calls: [...], input_tokens, output_tokens,
+cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...}, unpriced_models?}`.
+Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
+`layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
+laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
+`agent_handoff` (o agente chamou a equipe). `triage.classifier` é `anthropic` ou `jev`; `source` como
+`envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
+provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
+cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
+tabela de `shop/services/ai_pricing.py` (leitura de cache a 0,1 e escrita a 1,25 do preço de entrada;
+Jev a US$ 0,042/M de entrada), `null` quando algum modelo está fora da tabela (listado em
+`unpriced_models`). `latency_ms` em milissegundos inteiros: `total` (da ÚLTIMA entrada do turno até a
+resposta gravada, inclui a espera `dispatch_delay_seconds` e a fila), `turn` (o processamento no worker),
+e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `agent` (o laço inteiro),
+`model` (soma das idas ao modelo da resposta), `tools` (soma das ferramentas). Os contadores da
+`Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
+como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
+Registros anteriores a 03/10/2026 têm `usage = {}`.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
