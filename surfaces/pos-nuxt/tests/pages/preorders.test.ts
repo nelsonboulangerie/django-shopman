@@ -1023,6 +1023,8 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
     expect(asked?.title).toBe("Mudar a encomenda de Ana Souza para seg, 28/09?");
     expect(asked?.description).toBe("O cliente será avisado da nova data. O horário combinado continua: 9h às 10h.");
     expect(asked?.confirmLabel).toBe("Mudar para seg, 28/09");
+    // Mudar de dia é ato normal: o botão na cor da casa, não o vermelho de descartar.
+    expect(asked?.tone).toBe("primary");
     expect(call).not.toHaveBeenCalled();
     answerConfirm(true);
     await flushPromises();
