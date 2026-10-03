@@ -73,5 +73,22 @@ Do backend, 58 linhas são do Admin/Unfold (texto que o gestor lê: `help_text` 
 4. **Storefront** (`shopman/storefront/`, `storefront-nuxt` fora do espelho do guia): voz própria,
    frente própria. **Saída de comando** (`management/commands/`) e **log**: não chegam à tela.
 
+Efeitos colaterais conferidos: o endereço da `Shop` passou a "Londrina/PR, CEP ..." (contrato
+`contracts/projections/storefront_site.json` regenerado à mão, uma linha); o motivo do canal
+desligado e o filtro da Via Pedido foram para parênteses ("Via Pedido (sem valores)"); tocar
+`shop/rules/engine.py` acordou o gate da meia-correção sobre quatro excepts que já eram falha
+fechada documentada, e o silêncio foi declarado (`# silêncio-deliberado:`).
+
 ## Evidência
-(preenchida abaixo com a saída dos comandos)
+- vitest + `nuxi typecheck` + eslint: bi-nuxt 58, kds-nuxt 110, pos-nuxt 1523, production-nuxt
+  419 (depois do merge do main), purchase-nuxt 121, storefront-nuxt 1053, operator-kit 1115
+  testes, todos verdes; `guardrails.noEmDash.test.ts` 4/4.
+- pytest: buyman 87, guestman 507, offerman 281, fiscalman 34, payman 189, doorman 347 verdes;
+  travas (`test_copy_sem_travessao`, `test_vocabulario_de_tela`, `test_separador_de_nome`,
+  `test_omotenashi_copy_keys`) e os arquivos tocados verdes. Na suíte inteira local, as falhas
+  que restam (rate limit do login, fluxos ManyChat) não tocam copy e passam na CI (Shop heavy/rest
+  verdes); são do ambiente local (cache emprestado).
+- `manage.py makemigrations --check --dry-run`: No changes detected.
+- `scripts/check_silent_swallow.py --paths <arquivos do PR>`: OK.
+- CI: "Marketing — cadeia completa" vermelho com 40 retratos de altura diferente (+61 px), o mesmo
+  vermelho do #1425 e o que o #1424 regrava; não vem desta frente.
