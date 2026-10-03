@@ -17,6 +17,7 @@ from shopman.orderman.models import Order
 
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.services import kds, operator_orders
+from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
@@ -81,6 +82,9 @@ def test_a_saida_do_kds_conclui_e_o_alerta_nasce_sem_barrar():
     Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
 
     assert kds.expedition_action(order, action="complete", actor="operator:test") == Order.Status.COMPLETED
+    # UX-G2: a Saída pede a saída; o alerta nasce quando ela é gravada (fim da janela).
+    assert _alertas(order.ref).count() == 0
+    assert settle(order) == Order.Status.COMPLETED
 
     assert _alertas(order.ref).count() == 1
 

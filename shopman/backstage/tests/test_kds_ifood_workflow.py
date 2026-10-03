@@ -10,6 +10,7 @@ from shopman.backstage.models import KDSInstance
 from shopman.backstage.projections.kds import build_kds_board
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds, operator_orders
+from shopman.shop.tests._handoff import settle
 
 
 @pytest.fixture
@@ -64,5 +65,5 @@ def test_permitted_ifood_paths_remain_available(expedition, facts, external_ref)
     order = order_with(facts, external_ref=external_ref)
     assert kds.expedition_block_reason(order, action="dispatch") == ""
     assert kds.expedition_action_by_order_id(order.pk, action="dispatch", actor="kds:operator") == "dispatched"
-    order.refresh_from_db()
-    assert order.status == "dispatched"
+    # UX-G2: gravado quando a janela de desfazer vence.
+    assert settle(order) == "dispatched"

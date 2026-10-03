@@ -105,6 +105,31 @@ def expedition_action(*, order_id: int, action: str, actor: str):
         raise KDSError(str(exc) or "Ação inválida.") from exc
 
 
+def expedition_undo(*, order_id: int, token: str, actor: str) -> None:
+    """Desfaz o Entregar/Despachar da Saída dentro da janela (``order_undo``)."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import order_undo
+
+    order = Order.objects.filter(pk=order_id).first()
+    if order is None:
+        raise KDSOrderNotFound("Pedido não encontrado.")
+    try:
+        order_undo.undo_handoff(order, token=token, actor=actor)
+    except order_undo.UndoRefused as exc:
+        raise KDSError(str(exc)) from exc
+
+
+def expedition_handoff(order_id: int) -> dict:
+    """A saída pedida deste pedido, na forma que a Saída mostra (ou ``{}``)."""
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.projections.kds import _handoff_fields
+
+    order = Order.objects.filter(pk=order_id).first()
+    return _handoff_fields(order) if order is not None else {}
+
+
 # ── Estação sem tela: quem dá a baixa é outra porta ─────────────────────
 #
 # Decisão do dono (26/09/2026): a estação que não tem tela recebe o pedido em

@@ -34,7 +34,7 @@ import type { CancellationReason } from "~/composables/useOrdersBoard";
 import { BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
-const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
@@ -389,6 +389,8 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
   else if (action === "equipment_back") equipmentBack(ref_);
+  else if (action === "undo_handoff") undoHandoff(ref_);
+  else if (action === "undo_ready") undoReady(ref_);
 }
 
 // claim/release an order ("estou atendendo").

@@ -96,6 +96,60 @@ export function confirmationRemainingLabel(deadlineIso: string, nowMs: number): 
   return `${m}:${String(left % 60).padStart(2, "0")}`;
 }
 
+// ── O sistema fez · desfazer (SUITE-UX §5.1) ───────────────────────────────
+
+export interface UndoLine {
+  kind: "auto_ready" | "handoff";
+  /** O fato: "Pronto · automático", "Entregue às 14:02". */
+  label: string;
+  /** O que a janela segura, ou o carimbo depois dela. */
+  detail: string;
+  /** Segundos que faltam; 0 = janela fechada (o fato fica, o gesto some). */
+  secondsLeft: number;
+  /** "0:24" (pronto automático) ou "5 s" (saída). Vazio sem janela. */
+  countdown: string;
+  canUndo: boolean;
+  action: AffordanceRef;
+  /** O que não esperou a janela e já saiu ("iFood já avisado"); vazio se nada. */
+  alreadyOut: string;
+}
+
+type UndoSource = Pick<OrderCardProjection, "undo" | "actions">;
+
+/** A linha "o sistema fez · desfazer" do card e do detalhe, ou ``null``.
+ *
+ *  O servidor decide o fato e a janela (``undo``); a tela só conta o tempo. O
+ *  gesto existe enquanto há segundos e a ação projetada está habilitada. */
+export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
+  const undo = source.undo;
+  if (!undo) return null;
+  const kind = undo.kind === "handoff" ? "handoff" : "auto_ready";
+  const deadline = undo.undo_until_iso ? Date.parse(undo.undo_until_iso) : NaN;
+  const secondsLeft = Number.isNaN(deadline) ? 0 : Math.max(0, Math.ceil((deadline - nowMs) / 1000));
+  const action = (source.actions ?? []).find((a) => a.ref === undo.action_ref);
+  const canUndo = secondsLeft > 0 && Boolean(action?.enabled);
+  let detail = undo.detail;
+  let countdown = "";
+  if (secondsLeft > 0) {
+    if (kind === "auto_ready") {
+      countdown = confirmationRemainingLabel(undo.undo_until_iso, nowMs);
+      detail = `aviso ao cliente sai em ${countdown}`;
+    } else {
+      countdown = `${secondsLeft} s`;
+    }
+  }
+  return {
+    kind,
+    label: undo.label,
+    detail,
+    secondsLeft,
+    countdown,
+    canUndo,
+    action: kind === "handoff" ? "undo_handoff" : "undo_ready",
+    alreadyOut: undo.already_out ?? "",
+  };
+}
+
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
 export interface ZoneView {
@@ -187,7 +241,7 @@ export function preorderGroups(queue: Pick<TwoZoneQueueProjection, "preorders">)
 
 // ── Action affordances ─────────────────────────────────────────────────────
 
-export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash" | "equipment_back" | "courier_back";
+export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash" | "equipment_back" | "courier_back" | "undo_handoff" | "undo_ready";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -206,8 +260,14 @@ export interface Affordance {
  *  Order = visual priority (primary first). Mirrors the Admin action cell. */
 export function cardAffordances(card: OrderCardProjection): Affordance[] {
   const projected = card.actions ?? [];
+  // Saída tocada e ainda na janela: o gesto do card é o "Desfazer" da linha do
+  // fato (``undoLine``), nenhum outro. Avançar de novo repetiria a saída.
+  if (projected.some((a) => a.ref === "undo-handoff")) return [];
   const icons: Record<string, string> = { confirm: "lucide:check", advance: "lucide:arrow-right", reject: "lucide:x" };
-  const out: Affordance[] = projected.filter((a) => a.ref !== "reject" && a.ref in icons).map((a) => ({
+  // ``priority: "menu"``: o "Marcar pronto" enquanto a Cozinha trabalha. O
+  // pronto vem sozinho quando ela conclui (L1); o gesto à mão fica no menu do
+  // pedido (detalhe), para a estação sem tela e o caso que o sistema não viu.
+  const out: Affordance[] = projected.filter((a) => a.ref !== "reject" && a.ref in icons && a.priority !== "menu").map((a) => ({
     ref: a.ref as AffordanceRef,
     label: a.label,
     icon: a.enabled ? icons[a.ref]! : "lucide:clock",

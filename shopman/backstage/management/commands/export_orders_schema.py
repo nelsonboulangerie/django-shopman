@@ -90,6 +90,7 @@ from shopman.backstage.projections.order_queue import (
     OrderCardProjection,
     OrderQueueProjection,
     TwoZoneQueueProjection,
+    UndoProjection,
 )
 from shopman.backstage.projections.preorders import (
     CounterOrderProjection,
@@ -140,6 +141,7 @@ CONTRACT_DATACLASSES = (
     EquipmentOptionProjection,
     EquipmentOutProjection,
     CustomerProfileProjection,
+    UndoProjection,
     OrderCardProjection,
     PreorderCardProjection,
     PreorderHandOverProjection,

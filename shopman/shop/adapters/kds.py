@@ -167,6 +167,30 @@ def complete_open_tickets_for_session(session_key: str, *, actor: str, via: str)
         return len(tickets)
 
 
+def reopen_done_tickets(session_key: str, ticket_ids) -> list[int]:
+    """Volta ao preparo os tickets concluídos indicados (desfazer do pronto automático).
+
+    O chamador já travou a origem. Salva um a um, pelo mesmo motivo de
+    ``complete_open_tickets_for_session``: o ``post_save`` avisa as telas.
+    """
+    from django.db import transaction
+
+    from shopman.backstage.models import KDSTicket
+
+    reopened = []
+    with transaction.atomic():
+        for ticket in KDSTicket.objects.select_for_update().filter(
+            pk__in=list(ticket_ids or []), session_key=session_key, status="done",
+        ):
+            ticket.status = "in_progress"
+            ticket.completed_at = None
+            ticket.completed_by = ""
+            ticket.completed_via = ""
+            ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
+            reopened.append(ticket.pk)
+    return reopened
+
+
 def get_tickets(order):
     from shopman.backstage.models import KDSTicket
 

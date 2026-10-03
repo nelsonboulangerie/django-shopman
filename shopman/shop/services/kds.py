@@ -629,7 +629,7 @@ def close_open_tickets(order, *, actor: str) -> int:
     return count
 
 
-def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
+def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None) -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
 
@@ -642,6 +642,13 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
     Returns True if transitioned, False otherwise.
 
     SYNC — checks and transitions immediately.
+
+    Fora do balcão, o pronto é AUTOMÁTICO (``fulfillment.auto_ready``, ligado
+    por padrão) e ganha a janela de desfazer: o registro
+    ``order.data["auto_ready"]`` é gravado antes da transição, com o ticket que
+    fechou o pedido, e o que sai da casa (aviso de pronto, iFood) espera a
+    janela (``order_undo``). Com ``auto_ready`` desligado, o pedido fica em
+    preparo e o Gestor marca pronto à mão.
     """
     from shopman.shop.adapters import kds as kds_adapter
 
@@ -659,19 +666,25 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
 
     if order.status == Order.Status.READY:
         return False
+    from shopman.shop.services import order_undo
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    counter = is_pos_counter_order(order)
+    if not counter and not order_undo.auto_ready_enabled(order):
+        return False
     if order.status == Order.Status.ACCEPTED:
         if not _ensure_order_preparing_for_work(order, actor=actor):
             return False
     if not order.can_transition_to(Order.Status.READY):
         return False
 
+    if not counter:
+        order_undo.record_auto_ready(order, ticket_ids=[trigger_ticket_id], actor=actor)
     order.transition_status(Order.Status.READY, actor=actor)
     logger.info("kds.on_all_tickets_done: order %s → READY", order.ref)
 
-    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
-
     if (
-        is_pos_counter_order(order)
+        counter
         and order.can_transition_to(Order.Status.COMPLETED)
         and not payment_gate.payment_blocks_transition(
             order,
@@ -861,7 +874,7 @@ def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station")
 
     logger.info("kds_done ticket=%d session=%s via=%s", ticket.pk, ticket.session_key, via)
     if order is not None:
-        on_all_tickets_done(order, actor=actor)
+        on_all_tickets_done(order, actor=actor, trigger_ticket_id=ticket.pk)
     return True
 
 
@@ -902,6 +915,11 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
         and order.status == Order.Status.READY
         and order.can_transition_to(Order.Status.PREPARING)
     ):
+        from shopman.shop.services import order_undo
+
+        # O pronto automático deixa de valer: as directives seguradas pelo
+        # token dele viram no-op, e o próximo pronto nasce com outro token.
+        order_undo.clear_auto_ready(order)
         order.transition_status(Order.Status.PREPARING, actor=actor)
     logger.info("kds_recall ticket=%d session=%s", ticket.pk, ticket.session_key)
     return True
@@ -1001,7 +1019,7 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     from shopman.shop.services import operator_orders
 
     try:
-        new_status = operator_orders.advance_order(order, actor=actor, target_status=next_status)
+        new_status = operator_orders.advance_order(order, actor=actor, target_status=next_status, undo_window=True)
     except operator_orders.ChangeOutRequired as exc:
         # Rede de segurança: o bloqueio acima já diz isto antes do toque.
         raise ValueError(
@@ -1030,6 +1048,11 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
         target = EXPEDITION_TRANSITIONS.get(action)
         if target and order.status == target:
             return order.status
+        from shopman.shop.services import order_undo
+
+        pending = order_undo.pending_handoff(order)
+        if target and pending.get("to_status") == target:
+            return target
         return expedition_action(order, action=action, actor=actor)
 
 

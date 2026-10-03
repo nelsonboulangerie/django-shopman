@@ -63,7 +63,7 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link", "courier-dispatch", "courier-cancel", "courier-quote"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link", "courier-dispatch", "courier-cancel", "courier-quote", "undo-handoff", "undo-ready"].includes(action)) {
         await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
@@ -120,6 +120,9 @@ export function useOrderDetail(orderRef: string) {
     return act("advance", Object.keys(body).length ? body : undefined);
   };
   const equipmentBack = () => act("equipment-back");
+  // Desfazer o que ainda está na janela (a saída tocada; o pronto da Cozinha).
+  const undoHandoff = () => act("undo-handoff");
+  const undoReady = () => act("undo-ready");
   // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
@@ -189,5 +192,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
+  return { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, undoHandoff, undoReady, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
 }

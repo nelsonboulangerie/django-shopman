@@ -54,6 +54,9 @@ export interface KDSExpeditionCardProjection {
   advance_block_label: string;
   advance_block_reason: string;
   test_order_label: string;
+  handoff_label: string;
+  handoff_undo_until_iso: string;
+  handoff_token: string;
 }
 
 /** Uma estação do pedido, vista da Saída: em que pé ela está com ele. */

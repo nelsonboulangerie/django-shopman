@@ -277,11 +277,23 @@ def enqueue_phase(order, phase: str):
         raise ValueError(f"Unsupported queued lifecycle phase: {phase}")
     if phase_complete(order, phase):
         return None
+    from shopman.shop.services import order_undo
+
+    payload = {"order_ref": order.ref, "channel_ref": order.channel_ref, "phase": phase}
+    dedupe_key = f"lifecycle.phase:{order.ref}:{phase}"
+    # Pronto automático: o que sai da casa espera a janela do desfazer. O token
+    # entra na identidade (o pronto desfeito e refeito é outra fase devida) e no
+    # payload (a directive do pronto desfeito vira no-op no handler).
+    held_until, hold_token = order_undo.held_until(order, phase)
+    if hold_token:
+        payload["hold_token"] = hold_token
+        dedupe_key = f"{dedupe_key}:{hold_token}"
     return create_persistently_deduped(
         ORDER_LIFECYCLE_PHASE,
-        payload={"order_ref": order.ref, "channel_ref": order.channel_ref, "phase": phase},
-        dedupe_key=f"lifecycle.phase:{order.ref}:{phase}",
+        payload=payload,
+        dedupe_key=dedupe_key,
         receipt_scope=LIFECYCLE_PHASE_RECEIPT_SCOPE,
+        available_at=held_until,
     )
 
 

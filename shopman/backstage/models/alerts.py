@@ -207,6 +207,10 @@ class OperatorAlert(models.Model):
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
+        # UX-G2: Entregar/Despachar foi tocado e, quando a janela de desfazer
+        # venceu, a gravação foi recusada (turno de caixa fechou, maquininha
+        # tomada por outra saída). O pedido ficou onde estava; alguém toca de novo.
+        ("handoff_refused", "Saída tocada não foi gravada"),
         # Os apps de operação leem a memória e a CPU do próprio contêiner e
         # reportam ao Django; acima do limite crítico do Admin por mais que a
         # duração mínima, o serviço está no limite e as telas vão engasgar no
@@ -327,6 +331,7 @@ class OperatorAlert(models.Model):
         "stale_new_order",
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
+        "handoff_refused",
         "order_production_quality_risk",
         "ifood_store_closed_while_open",
         "ifood_store_open_while_closed",

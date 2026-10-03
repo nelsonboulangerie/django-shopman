@@ -176,6 +176,66 @@ class EquipmentOutProjection:
 
 
 @dataclass(frozen=True)
+class UndoProjection:
+    """O que o sistema fez (ou o operador tocou) e ainda pode ser desfeito.
+
+    ``kind``: ``"auto_ready"`` (a Cozinha concluiu e o pedido foi a pronto
+    sozinho) ou ``"handoff"`` (Entregar/Despachar tocado, gravação na janela).
+    ``undo_until_iso`` vazio quando a janela fechou: o fato fica à vista, sem o
+    gesto. ``action_ref`` é a ação de ``actions`` que desfaz. ``held_effect``
+    diz o que espera a janela, na voz do card; ``already_out`` diz o que NÃO
+    espera e já saiu (o ``readyToPickup`` do iFood: ver ``order_undo``), para o
+    operador saber que desfazer não alcança aquilo.
+    """
+
+    kind: str
+    label: str
+    detail: str
+    undo_until_iso: str
+    action_ref: str
+    held_effect: str = ""
+    already_out: str = ""
+
+
+def _undo_projection(order: Order) -> UndoProjection | None:
+    """O bloco "o sistema fez · desfazer" do card e do detalhe, ou ``None``."""
+    from shopman.shop.services import order_undo
+
+    pending = order_undo.pending_handoff(order)
+    if pending:
+        window_open = order_undo.handoff_window_open(order)
+        return UndoProjection(
+            kind="handoff",
+            label=order_undo.handoff_label(pending),
+            detail="O aviso ao cliente sai quando o prazo acabar." if window_open else "Gravando a saída.",
+            undo_until_iso=str(pending.get("commit_at") or "") if window_open else "",
+            action_ref="undo-handoff",
+            held_effect="Aviso ao cliente e fim do pedido" if pending.get("to_status") != Order.Status.DISPATCHED else "Aviso ao cliente e saída do pedido",
+        )
+    record = order_undo.auto_ready_record(order)
+    if record and order.status == Order.Status.READY:
+        hold = order_undo.ready_hold(order)
+        clock = order_undo._clock(record.get("at"))
+        return UndoProjection(
+            kind="auto_ready",
+            label="Pronto · automático",
+            detail=f"Cozinha concluiu às {clock}" if clock else "Cozinha concluiu",
+            undo_until_iso=str(hold.get("undo_until") or "") if hold else "",
+            action_ref="undo-ready",
+            held_effect="Aviso de pronto ao cliente" if hold else "",
+            already_out="iFood já avisado" if order.channel_ref == "ifood" else "",
+        )
+    return None
+
+
+def undo_block_allows_advance(order: Order) -> bool:
+    """Com a saída pedida (janela aberta ou gravando), avançar não está à mão."""
+    from shopman.shop.services import order_undo
+
+    return not order_undo.pending_handoff(order)
+
+
+@dataclass(frozen=True)
 class OrderCardProjection:
     """A single order card in the operator queue."""
 
@@ -327,6 +387,9 @@ class OrderCardProjection:
     danfe_printed: bool = False
     danfe_state: str = ""
     danfe_problem: str = ""
+    # "O sistema fez · desfazer" (SUITE-UX §5.1): pronto automático ou saída
+    # tocada ainda na janela. Ver ``UndoProjection``.
+    undo: UndoProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -508,6 +571,8 @@ class OperatorOrderProjection:
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
+    # "O sistema fez · desfazer": o mesmo bloco do card (``UndoProjection``).
+    undo: UndoProjection | None = None
     # Comprovante de entrega de cada aviso ao cliente (D3): canal, hora,
     # identificador do provedor e o estado final. "Entregue" só com
     # comprovante. Ver ``docs/reference/comprovante-de-entrega.md``.
@@ -868,9 +933,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
-        can_advance=bool(next_status),
+        can_advance=bool(next_status) and undo_block_allows_advance(order),
         **cancel_capability,
         next_action_label=_next_label(order),
+        undo=_undo_projection(order),
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
@@ -1590,9 +1656,10 @@ def _build_card(
         delivery_address=delivery_address,
         delivery_instructions=delivery_instructions,
         can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
-        can_advance=bool(next_status),
-        next_status=next_status,
+        can_advance=bool(next_status) and undo_block_allows_advance(order),
+        next_status=next_status if undo_block_allows_advance(order) else "",
         next_action_label=next_label,
+        undo=_undo_projection(order),
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
@@ -2374,6 +2441,11 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
+    # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
+    "handoff_requested": "Saída tocada (janela de desfazer)",
+    "handoff_undone": "Saída desfeita",
+    "handoff_refused": "Saída não gravada",
+    "auto_ready_undone": "Pronto automático desfeito",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
