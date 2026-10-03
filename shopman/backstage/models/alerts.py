@@ -177,7 +177,7 @@ class OperatorAlert(models.Model):
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
-        ("production_low_yield", "Produção com yield baixo"),
+        ("production_low_yield", "Lote fechado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
         # sub-baixa já commitada — o fechamento consumiu menos insumo que a ficha
@@ -188,9 +188,9 @@ class OperatorAlert(models.Model):
         # começou, a começada que nunca fechou (estoque preso em produção) e a
         # fechada sem gravar os lotes — sem lote, some o desconto de validade e
         # a rastreabilidade da partida (ADR-017).
-        ("production_forgotten", "Produção planejada nunca iniciada"),
-        ("production_unfinished", "Produção iniciada nunca concluída"),
-        ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
+        ("production_forgotten", "Lote planejado nunca aberto"),
+        ("production_unfinished", "Lote aberto nunca fechado"),
+        ("production_batch_traceability", "Lote fechado sem gravar a rastreabilidade"),
         (
             "production_quality_communication",
             "Qualidade corrigida após comunicação do lote",

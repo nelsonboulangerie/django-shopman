@@ -77,7 +77,7 @@ export function useProductionKds() {
     }
   }
 
-  // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
+  // O finish não vive mais aqui: fechar o lote é o Fechamento (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
     post(pk, "void", (idempotencyKey, metadata) =>

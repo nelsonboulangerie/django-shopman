@@ -36,12 +36,17 @@ describe("atalhos globais da Produção", () => {
       resolveProductionGlobalShortcut(
         key("#", { altKey: true, code: "Digit3" }),
       ),
-    ).toBe("produce");
+    ).toBe("open");
     expect(
       resolveProductionGlobalShortcut(
         key("¢", { altKey: true, code: "Digit4" }),
       ),
-    ).toBe("expedite");
+    ).toBe("close");
+    expect(
+      resolveProductionGlobalShortcut(
+        key("∞", { altKey: true, code: "Digit5" }),
+      ),
+    ).toBe("quality");
     expect(resolveProductionGlobalShortcut(key("F1"))).toBeNull();
     expect(resolveProductionGlobalShortcut(key("F5"))).toBeNull();
   });

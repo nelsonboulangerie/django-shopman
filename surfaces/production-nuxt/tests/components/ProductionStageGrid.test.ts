@@ -19,9 +19,9 @@ import {
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
 // que controlamos. Os helpers de presentation (~/presentation) rodam de VERDADE
-// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é a Expedição
-// (quiosque de QC), que mira UMA WorkOrder por cartão — o bug do rendimento de 200%
-// (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
+// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é o Fechamento
+// (quiosque de QC), que mira UMA WorkOrder por cartão: o bug do aproveitamento de
+// 200% (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Abertura a
 // ação é uma só — Confirmar, o mesmo verbo do Planejamento (16/09/2026); a
 // diferença para o planejado é
 // rendimento e não pede motivo; o modal de etapas ("Avançar para Fermentação")
@@ -176,9 +176,9 @@ const stubs = {
   UiTextarea: UiTextareaStub,
 };
 
-function mountGrid(stage: "plan" | "produce" = "produce") {
+function mountGrid(stage: "plan" | "open" = "open") {
   return mount(ProductionStageGrid, {
-    props: { stage, title: "Produção" },
+    props: { stage, title: "Abertura" },
     global: { stubs, components: { PlanReasonCard } },
   });
 }
@@ -257,7 +257,7 @@ describe("ProductionStageGrid — planning authority", () => {
       query: { date: "2026-07-05", q: "WO-001" },
     }));
 
-    mountGrid("produce");
+    mountGrid("open");
 
     expect(boardInitialDateSpy).toHaveBeenCalledWith("2026-07-05");
   });
@@ -360,15 +360,17 @@ describe("ProductionStageGrid — planning authority", () => {
   });
 });
 
-describe("ProductionStageGrid — produce render", () => {
-  it("mostra Planejado → Produzido com uma ação só: Confirmar", () => {
+describe("ProductionStageGrid — Abertura", () => {
+  it("mostra Planejado → Previsto com uma ação só: Confirmar", () => {
     boardRows.value = [
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
     ];
     const w = mountGrid();
     expect(w.text()).toContain("PAO-001");
     expect(w.text()).toContain("Planejado");
-    expect(w.text()).toContain("Produzido");
+    expect(w.text()).toContain("Previsto");
+    // "Produzido" não rotula started nem finished (parecer do dono, 03/10/2026).
+    expect(w.text()).not.toContain("Produzido");
     // O número mora na coluna Planejado, como no Planejamento — o botão é só o verbo.
     const cell = w.find('button[aria-label="Confirmar Pão"]');
     expect(cell.text().trim()).toBe("Confirmar");
@@ -446,7 +448,7 @@ describe("ProductionStageGrid — produce render", () => {
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 8, 4, "30");
   });
 
-  it("confirms produced quantity on the first click and blocks repeats while pending", async () => {
+  it("confirms the expected quantity on the first click and blocks repeats while pending", async () => {
     const request = pendingResult<{ ok: true }>();
     startSpy.mockImplementationOnce(() => request.promise);
     boardRows.value = [
@@ -484,7 +486,7 @@ describe("ProductionStageGrid — produce render", () => {
     const w = mountGrid();
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
-    const input = w.find('input[aria-label="Quantidade produzida"]');
+    const input = w.find('input[aria-label="Quantidade prevista"]');
     expect((input.element as HTMLInputElement).value).toBe("30");
     await input.trigger("keydown", { key: "Enter" });
 
@@ -502,7 +504,7 @@ describe("ProductionStageGrid — produce render", () => {
     const w = mountGrid();
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
-    const input = w.find('input[aria-label="Quantidade produzida"]');
+    const input = w.find('input[aria-label="Quantidade prevista"]');
     await input.setValue("27");
     expect(w.text()).toContain("Diferente do planejado (30)");
     expect(w.find("textarea").exists()).toBe(false);
@@ -526,7 +528,7 @@ describe("ProductionStageGrid — produce render", () => {
     const w = mountGrid();
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
-    const input = w.find('input[aria-label="Quantidade produzida"]');
+    const input = w.find('input[aria-label="Quantidade prevista"]');
     await input.setValue("0");
     await input.trigger("keydown", { key: "Enter" });
 
@@ -545,7 +547,7 @@ describe("ProductionStageGrid — produce render", () => {
     expect(w.text()).not.toContain("em processo");
   });
 
-  it("com um lote produzido e outro planejado, mostra o número e Confirmar", () => {
+  it("com um lote aberto e outro planejado, mostra o número e Confirmar", () => {
     boardRows.value = [
       row({
         planned_qty: "20",
@@ -562,8 +564,8 @@ describe("ProductionStageGrid — produce render", () => {
   });
 });
 
-describe("ProductionStageGrid — lote produzido (conferência e estorno)", () => {
-  it("abre o lote produzido pelo número e estorna com motivo", async () => {
+describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", () => {
+  it("abre o lote aberto pelo número e cancela com motivo", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
@@ -572,16 +574,17 @@ describe("ProductionStageGrid — lote produzido (conferência e estorno)", () =
     ];
     const w = mountGrid();
 
-    // Sem planejado restante a célula mostra só o produzido (30), que abre a conferência.
+    // Sem planejado restante a célula mostra só o previsto (30), que abre a conferência.
     await byText(w, "button", "30")!.trigger("click");
-    expect(w.text()).toContain("seguem para a Expedição");
+    expect(w.text()).toContain("previstas seguem para o");
+    expect(w.text()).toContain("Fechamento");
     expect(w.text()).not.toContain("Avançar");
 
-    await byText(w, "button", "Estornar…")!.trigger("click");
+    await byText(w, "button", "Cancelar lote…")!.trigger("click");
     await w
-      .find('textarea[aria-label="Motivo do estorno"]')
+      .find('textarea[aria-label="Motivo do cancelamento"]')
       .setValue("queimou");
-    await byText(w, "button", "Confirmar estorno")!.trigger("click");
+    await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
   });
 });
@@ -714,7 +717,7 @@ describe("ProductionStageGrid — Planejamento: o número na linha, o porquê po
   });
 });
 
-describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
+describe("ProductionStageGrid — previsto abaixo das encomendas", () => {
   // A recusa `order_shortage` do start não pode deixar o diálogo parado em
   // silêncio: o operador vê quanto está encomendado, o que informou, e volta ao
   // número para corrigir. O servidor não oferece "force" aqui.
@@ -737,7 +740,7 @@ describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
 
   function mountWithShortageDialog() {
     return mount(ProductionStageGrid, {
-      props: { stage: "produce", title: "Produção" },
+      props: { stage: "open", title: "Abertura" },
       global: {
         stubs: { ...stubs, ShortageDialog: false },
         components: { ShortageDialog },
@@ -756,14 +759,14 @@ describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
     const w = mountWithShortageDialog();
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
-    const input = w.find('input[aria-label="Quantidade produzida"]');
+    const input = w.find('input[aria-label="Quantidade prevista"]');
     await input.setValue("8");
     await input.trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "8");
     // O diálogo de quantidade fecha; a recusa toma o lugar dele, com números e pedidos.
-    expect(w.find('input[aria-label="Quantidade produzida"]').exists()).toBe(
+    expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(
       false,
     );
     expect(w.text()).toContain("Quantidade não cobre pedidos");
@@ -778,7 +781,7 @@ describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
     await byText(w, "button", "Revisar quantidade")!.trigger("click");
 
     expect(w.text()).not.toContain("Quantidade não cobre pedidos");
-    const back = w.find('input[aria-label="Quantidade produzida"]');
+    const back = w.find('input[aria-label="Quantidade prevista"]');
     expect((back.element as HTMLInputElement).value).toBe("8");
     await back.setValue("12");
     await back.trigger("keydown", { key: "Enter" });
@@ -797,14 +800,14 @@ describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
 
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
     await w
-      .find('input[aria-label="Quantidade produzida"]')
+      .find('input[aria-label="Quantidade prevista"]')
       .trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     await byText(w, "button", "Cancelar")!.trigger("click");
 
     expect(w.text()).not.toContain("Quantidade não cobre pedidos");
-    expect(w.find('input[aria-label="Quantidade produzida"]').exists()).toBe(
+    expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(
       false,
     );
   });

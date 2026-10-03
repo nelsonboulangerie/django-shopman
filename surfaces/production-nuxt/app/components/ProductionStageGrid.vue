@@ -2,16 +2,16 @@
 // A GRADE por etapa — um motor, três lentes (refinos Pablo 2026-07-03):
 //   PRODUTO | leitura | AÇÃO — cada lente tem UMA coluna de leitura e UMA de
 //   ação com verbo no cabeçalho:
-//   · plan     (Planejamento): SUGERIDO   | PLANEJADO  — todos os SKUs;
-//   · produce  (Produção):     PLANEJADO  | PRODUZIDO  — só linhas com número;
-//   · expedite (Expedição):    PRODUZIDO  | CONCLUÍDO  — fechamento no QC.
+//   · plan (Planejamento): SUGERIDO  | PLANEJADO  (todos os SKUs);
+//   · open (Abertura):     PLANEJADO | PREVISTO   (só linhas com número).
+// O fechamento (PREVISTO → REALIZADO) mora na página /close, no quiosque de QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
-// Na Produção a ação é UMA só — "Confirmar" (o mesmo verbo do Planejamento)
-// diz quanto segue para a Expedição, já preenchido com o planejado (decisão
-// Pablo 2026-09-16); o número fica na coluna Planejado, não no botão. A
-// diferença para o planejado é rendimento da massa, não perda: fica nos dois
-// números da ordem, sem pedir motivo — motivo se pede na Expedição, onde há
+// Na Abertura a ação é UMA só: "Confirmar" (o mesmo verbo do Planejamento)
+// diz o previsto, que segue para o Fechamento, já preenchido com o planejado
+// (decisão Pablo 2026-09-16); o número fica na coluna Planejado, não no botão.
+// A diferença para o planejado é rendimento da massa, não perda: fica nos dois
+// números da ordem, sem pedir motivo; motivo se pede no Fechamento, onde há
 // produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
 // estados: fermentação e afins são ferramenta (timer), nunca fluxo.
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
@@ -43,7 +43,7 @@ import type {
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
 
 const props = defineProps<{
-  stage: "plan" | "produce";
+  stage: "plan" | "open";
   title: string;
 }>();
 
@@ -126,14 +126,14 @@ const lens = computed(() => {
     },
     action: {
       key: "started",
-      label: "Produzido",
+      label: "Previsto",
       visible: !!access.value?.can_view_started,
       editable: !!access.value?.can_edit_started,
     },
   } as const;
 });
 
-// Linhas por lente: Planejamento vê TODOS os SKUs; Produção só quem tem
+// Linhas por lente: Planejamento vê TODOS os SKUs; Abertura só quem tem
 // número relevante (higiene de foco na bancada).
 const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
   let base = rows.value.filter((r) => matchesRowQuery(r, query.value));
@@ -142,7 +142,7 @@ const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
       r.base_usages.some((usage) => usage.output_sku === baseFilter.value),
     );
   }
-  if (props.stage === "produce") {
+  if (props.stage === "open") {
     return base.filter((r) => r.planned_qty !== "0" || r.started_qty !== "0");
   }
   return base;
@@ -189,7 +189,7 @@ const selectedPlannedPk = ref<number | null>(null);
 // depois do start ela sai do "planejado" e um novo plano cria OUTRO lote):
 //   · plan      — nada na data ainda: planeja a primeira quantidade;
 //   · adjust    — existe WO planejada: SUBSTITUI a quantidade (0 remove);
-//   · new-batch — a produção já assumiu (iniciado/concluído): cria lote que
+//   · new-batch — a produção já assumiu (aberto/fechado): cria lote que
 //                 SOMA ao dia — explícito, nunca silencioso.
 type PlanMode = "plan" | "adjust" | "new-batch";
 const planMode = computed<PlanMode>(() => {
@@ -498,7 +498,7 @@ async function confirmStart() {
       selectedStartPk.value = null;
       kds.refresh();
       useSonner.success(
-        `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
+        `Lote aberto: ${rowLabel(row)} × ${startQty.value.trim()}`,
       );
     } else if (res.shortage) {
       // Confirmar abaixo das encomendas nunca é forçável (o servidor não
@@ -563,9 +563,9 @@ function closeShortage() {
   lastStartAttempt.value = null;
 }
 
-// O lote já produzido abre só para conferência e estorno — nada de gerir
+// O lote já aberto abre só para conferência e cancelamento, nada de gerir
 // etapa por aqui (a decisão de 16/09 tirou a máquina de estados da bancada).
-function openProduced(row: ProductionMatrixRowProjection) {
+function openStarted(row: ProductionMatrixRowProjection) {
   startedRow.value = row;
   selectedStartedPk.value =
     row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
@@ -580,21 +580,21 @@ async function confirmVoid() {
   const res = await kds.voidOrder(
     wo.pk,
     wo.rev,
-    voidReason.value.trim() || "Estornado pelo operador",
+    voidReason.value.trim() || "Cancelado pelo operador",
   );
   if (res.ok) {
     startedRow.value = null;
     voidConfirming.value = false;
     voidReason.value = "";
     refresh();
-    useSonner.success(`Estornado: ${rowLabel(row)}`);
+    useSonner.success(`Lote cancelado: ${rowLabel(row)}`);
   }
 }
 
 function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
   if (row.planned_orders.length) return openStart(row);
-  if (row.started_orders.length) return openProduced(row);
+  if (row.started_orders.length) return openStarted(row);
 }
 
 function rowValue(row: ProductionMatrixRowProjection, key: string): string {
@@ -618,7 +618,7 @@ function actionEnabled(row: ProductionMatrixRowProjection): boolean {
 
 const ACTION_VERB: Record<string, string> = {
   plan: "Confirmar",
-  produce: "Confirmar",
+  open: "Confirmar",
 };
 
 // Verbo da célula de plano: quando a produção já assumiu a quantidade do dia,
@@ -650,7 +650,7 @@ const CELL =
 const CELL_ACTION = `${CELL} border hover:bg-accent disabled:opacity-50`;
 const CELL_READ = `${CELL} border border-transparent`;
 
-// Progresso do dia: noção visual do quanto falta (expedido ÷ total do dia).
+// Progresso do dia: noção visual do quanto falta (realizado ÷ planejado do dia).
 const dayProgress = computed(() => {
   const parse = (v?: string) => parseFloat((v ?? "0").replace(",", ".")) || 0;
   const planned =
@@ -669,7 +669,7 @@ const dayProgress = computed(() => {
 const headerCount = computed(() => {
   if (props.stage === "plan")
     return { count: counts.value?.planned ?? 0, label: "planejados" };
-  return { count: counts.value?.started ?? 0, label: "produzidos" };
+  return { count: counts.value?.started ?? 0, label: "abertos" };
 });
 </script>
 
@@ -917,10 +917,10 @@ const headerCount = computed(() => {
 
                 <!-- Coluna de AÇÃO (verbo no cabeçalho; valor atual + gesto) -->
                 <td v-if="lens.action.visible" class="px-3 py-1.5 text-right">
-                  <!-- Produção: o produzido fica à vista (abre conferência/estorno) e a
+                  <!-- Abertura: o previsto fica à vista (abre conferência/cancelamento) e a
                        única ação é Confirmar sobre o que ainda está planejado. -->
                   <span
-                    v-if="stage === 'produce' && actionEnabled(row)"
+                    v-if="stage === 'open' && actionEnabled(row)"
                     class="inline-flex flex-wrap items-center justify-end gap-1.5"
                   >
                     <button
@@ -928,8 +928,8 @@ const headerCount = computed(() => {
                       type="button"
                       :class="[CELL_ACTION, 'text-foreground']"
                       :disabled="isBusy(row.output_sku)"
-                      :aria-label="`Produzido ${row.started_qty} de ${rowLabel(row)}`"
-                      @click="openProduced(row)"
+                      :aria-label="`Previsto ${row.started_qty} de ${rowLabel(row)}`"
+                      @click="openStarted(row)"
                     >
                       {{ row.started_qty }}
                       <Icon name="lucide:check" class="size-3.5 opacity-60" />
@@ -969,7 +969,7 @@ const headerCount = computed(() => {
                       {{ rowValue(row, lens.action.key) }}
                       <Icon
                         :name="
-                          stage === 'produce' && row.started_orders.length
+                          stage === 'open' && row.started_orders.length
                             ? 'lucide:settings-2'
                             : 'lucide:pencil'
                         "
@@ -1076,9 +1076,9 @@ const headerCount = computed(() => {
           class="text-sm text-muted-foreground"
         >
           Soma ao dia<template v-if="planRow?.started_qty !== '0'">
-            · {{ planRow?.started_qty }} produzidas</template
+            · {{ planRow?.started_qty }} previstas</template
           ><template v-if="planRow?.finished_qty !== '0'">
-            · {{ planRow?.finished_qty }} concluídas</template
+            · {{ planRow?.finished_qty }} realizadas</template
           >.
         </p>
         <div
@@ -1147,7 +1147,7 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- Confirmar: quanto foi produzido segue para a Expedição (evento interno: start) -->
+    <!-- Confirmar: o previsto abre o lote e segue para o Fechamento (evento interno: start) -->
     <UiDialog
       :open="startRow != null"
       @update:open="
@@ -1162,12 +1162,12 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
           <UiDialogTitle>
-            Quanto foi produzido? ·
+            Quanto está previsto? ·
             {{ startRow ? rowLabel(startRow) : "" }}
           </UiDialogTitle>
           <UiDialogDescription
-            >{{ startRow?.output_sku }} · esta quantidade segue para a
-            Expedição.</UiDialogDescription
+            >{{ startRow?.output_sku }} · esta quantidade abre o lote e segue
+            para o Fechamento.</UiDialogDescription
           >
         </UiDialogHeader>
         <div
@@ -1215,7 +1215,7 @@ const headerCount = computed(() => {
             type="text"
             inputmode="decimal"
             class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            aria-label="Quantidade produzida"
+            aria-label="Quantidade prevista"
             @keydown.enter.prevent="confirmStart()"
           />
           <button
@@ -1254,7 +1254,7 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- lote produzido: conferência e estorno — sem etapas, sem gestão -->
+    <!-- lote aberto: conferência e cancelamento, sem etapas, sem gestão -->
     <UiDialog
       :open="startedRow != null"
       @update:open="
@@ -1270,14 +1270,14 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle
-            >Produzido ·
+            >Lote aberto ·
             {{ startedRow ? rowLabel(startedRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription>
             <template v-if="selectedStartedOrder">
               #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
-              {{ selectedStartedOrder.started_qty }} un. seguem para a
-              Expedição
+              {{ selectedStartedOrder.started_qty }} un. previstas seguem para o
+              Fechamento
             </template>
             <template v-else>Selecione o lote.</template>
           </UiDialogDescription>
@@ -1318,8 +1318,8 @@ const headerCount = computed(() => {
           <UiTextarea
             v-model="voidReason"
             :rows="2"
-            placeholder="Motivo do estorno…"
-            aria-label="Motivo do estorno"
+            placeholder="Motivo do cancelamento…"
+            aria-label="Motivo do cancelamento"
           />
         </div>
 
@@ -1331,7 +1331,7 @@ const headerCount = computed(() => {
             variant="outline"
             @click="voidConfirming = true"
           >
-            Estornar…
+            Cancelar lote…
           </UiButton>
           <UiButton
             v-else-if="selectedStartedOrder"
@@ -1340,7 +1340,7 @@ const headerCount = computed(() => {
             variant="destructive"
             @click="confirmVoid()"
           >
-            Confirmar estorno
+            Confirmar cancelamento
           </UiButton>
           <UiButton
             type="button"
@@ -1351,7 +1351,7 @@ const headerCount = computed(() => {
               voidConfirming = false;
             "
           >
-            Fechar
+            Voltar
           </UiButton>
         </UiDialogFooter>
       </UiDialogContent>

@@ -82,6 +82,28 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/mise-en-place");
   });
 
+  it("Alt+4 leva ao Fechamento e Alt+5 à Qualidade", () => {
+    press("¢", { altKey: true, code: "Digit4" });
+    press("∞", { altKey: true, code: "Digit5" });
+
+    expect(navigateSpy).toHaveBeenNthCalledWith(1, "/close");
+    expect(navigateSpy).toHaveBeenNthCalledWith(2, "/quality");
+  });
+
+  it("as abas falam o fluxo do lote: Planejamento a Qualidade", () => {
+    const tabs = wrapper!
+      .findAll('nav[aria-label="Telas de produção"] a')
+      .map((tab) => [tab.attributes("href"), tab.attributes("title")]);
+
+    expect(tabs).toEqual([
+      ["/plan", "Planejamento · Alt+1"],
+      ["/mise-en-place", "Preparação · Alt+2"],
+      ["/", "Abertura · Alt+3"],
+      ["/close", "Fechamento · Alt+4"],
+      ["/quality", "Qualidade · Alt+5"],
+    ]);
+  });
+
   it("foca a busca com / e não sequestra R enquanto o campo é editado", async () => {
     const input = wrapper!.find('input[type="search"]');
     press("/");
@@ -129,7 +151,7 @@ describe("ProductionHeader — timers da bancada", () => {
     timersActive.value = 2;
     wrapper?.unmount();
     wrapper = mount(ProductionHeader, {
-      props: { title: "Produção" },
+      props: { title: "Abertura" },
       global: { stubs },
       attachTo: document.body,
     });

@@ -32,7 +32,7 @@ export interface QcEntryState {
   lossDefectRef: string;
   /** O operador confirmou que saiu MAIS que o previsto (guarda anti-typo). */
   overshootConfirmed: boolean;
-  /** Explicação auditável para o rendimento excepcional. */
+  /** Explicação auditável para o realizado acima do previsto. */
   overshootReason: string;
 }
 
@@ -40,7 +40,7 @@ export interface QcEntryState {
  * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
  * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
  *
- * E, na Expedição, essa É a quantidade prevista: o que entrou no forno é o
+ * E, no Fechamento, essa É a quantidade prevista: o que entrou no forno é o
  * que se espera que saia dele, salvo ocorrência. O plano da produção
  * (planejou 10, enfornou 11) já cumpriu seu papel na tela anterior — aqui
  * ele não é mais informação, é ruído; e ancorar nele pré-preencheria 10,
@@ -205,7 +205,7 @@ export function pendingQuestions(state: QcEntryState): QcQuestion[] {
   return out;
 }
 
-/** Produção ou perda contabilizada conclui a fornada; perda total não é estorno. */
+/** Realizado ou perda contabilizada fecha o lote; perda total não é cancelamento. */
 export function canSubmit(state: QcEntryState): boolean {
   return reportedTotal(state) > 0;
 }

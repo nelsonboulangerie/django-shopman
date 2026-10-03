@@ -279,7 +279,7 @@ def test_csv_export_operator_productivity_header(report_data):
         {"date_from": report_data["today"], "date_to": report_data["today"]},
     ).decode("utf-8-sig")
 
-    assert "Operador,Nome,Ordens concluídas,Qtd total,Rendimento médio" in text
+    assert "Operador,Nome,Lotes fechados,Qtd realizada,Aproveitamento médio" in text
 
 
 @pytest.mark.django_db

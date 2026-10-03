@@ -176,7 +176,7 @@ def void_work_order(
     actor: str,
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
-    reason: str = "Estornado via produção rápida",
+    reason: str = "Cancelado via produção rápida",
 ) -> str:
     """Void a work order and return its reference.
 

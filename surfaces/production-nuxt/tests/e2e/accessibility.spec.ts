@@ -125,7 +125,8 @@ test("superfície autenticada passa AA, reflow e alvos aplicáveis", async ({
 const criticalRoutes = [
   { path: "/plan", audience: "floor" },
   { path: "/mise-en-place", audience: "floor" },
-  { path: "/expedite", audience: "floor" },
+  { path: "/close", audience: "floor" },
+  { path: "/quality", audience: "manager" },
   { path: "/reports", audience: "manager" },
   { path: "/recipes", audience: "manager" },
 ] as const;
@@ -188,18 +189,18 @@ test("relatório populado mantém os controles compostos com alvo de 44 px", asy
   await expect(page.getByText("Exportação cancelada.", { exact: true })).toBeVisible();
 });
 
-test("Expedição abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
+test("Fechamento abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
   test.skip(
     Boolean(testInfo.project.metadata.board) ||
       testInfo.project.name === "chromium-mobile-manager",
   );
   await context.addCookies([authed]);
-  await page.goto("/expedite");
+  await page.goto("/close");
   await page
     .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("40 produzidos", { exact: false })).toBeVisible();
+  await expect(page.getByText("40 previstos", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
   await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
   await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
@@ -259,8 +260,8 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
 for (const { route, endpoint, offset } of [
   { route: "/", endpoint: "/production/?", offset: 2 },
   { route: "/board", endpoint: "/production/forecast/?", offset: 2 },
-  // A Expedição não anda para o futuro (não há lote para fechar): o dia é atrás.
-  { route: "/expedite", endpoint: "/production/qc/?", offset: -2 },
+  // O Fechamento não anda para o futuro (não há lote para fechar): o dia é atrás.
+  { route: "/close", endpoint: "/production/qc/?", offset: -2 },
 ]) {
   test(`${route} usa o controle nativo de data sem depender de showPicker`, async ({
     context,
@@ -350,7 +351,7 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   );
 
   await context.addCookies([authed]);
-  for (const route of ["/", "/board", "/expedite"]) {
+  for (const route of ["/", "/board", "/close"]) {
     await page.goto(route);
     await page.locator("[data-period-button]").first().click();
     const dateInput = page.getByLabel("Ir para o dia");

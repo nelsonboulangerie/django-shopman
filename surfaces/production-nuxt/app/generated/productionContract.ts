@@ -609,6 +609,7 @@ export interface WorkOrderReportRow {
   position_ref: string;
   qty_planned: string;
   qty_started: string;
+  started_assumed: boolean;
   qty_finished: string;
   qty_loss: string;
   yield_rate: string;

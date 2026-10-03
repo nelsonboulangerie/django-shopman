@@ -88,7 +88,7 @@ test.describe("Produção — gate de operador", () => {
     test.skip(testInfo.project.name !== "chromium-desktop");
     await context.addCookies([authed]);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Produção" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Abertura" })).toBeVisible();
     await context.clearCookies();
     await page.reload();
     await expect(
@@ -97,7 +97,7 @@ test.describe("Produção — gate de operador", () => {
     await expect(page.getByLabel("Usuário")).toBeFocused();
   });
 
-  test("atalhos percorrem as quatro etapas sem mouse", async ({
+  test("atalhos percorrem as cinco etapas sem mouse", async ({
     page,
     context,
   }, testInfo) => {
@@ -107,7 +107,8 @@ test.describe("Produção — gate de operador", () => {
     for (const [shortcut, path] of [
       ["Alt+1", "/plan"],
       ["Alt+2", "/mise-en-place"],
-      ["Alt+4", "/expedite"],
+      ["Alt+4", "/close"],
+      ["Alt+5", "/quality"],
       ["Alt+3", "/"],
     ] as const) {
       await page.keyboard.press(shortcut);
@@ -170,4 +171,15 @@ test.describe("Produção — roteamento", () => {
     const resp = await page.goto("/rota-que-nao-existe");
     expect(resp?.status()).toBe(404);
   });
+
+  // Pré go-live, zero legado (decisão do dono, 03/10/2026): os nomes antigos do
+  // fechamento e as rotas pt-br não redirecionam; respondem como qualquer rota
+  // inexistente.
+  for (const path of ["/expedite", "/expedicao", "/planejamento", "/preparacao", "/painel"]) {
+    test(`${path} não existe mais`, async ({ page, context }) => {
+      await context.addCookies([authed]);
+      const resp = await page.goto(path);
+      expect(resp?.status()).toBe(404);
+    });
+  }
 });

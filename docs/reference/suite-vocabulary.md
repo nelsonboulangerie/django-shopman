@@ -48,7 +48,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **maquininha** | a do cartão tem nome próprio; não é dispositivo | 17/09, reafirmado 24/09 | mesma trava (recusa `aparelh`, não força a troca) |
 | **equipamento** | a lista genérica que o canal permite levar (`fulfillment.equipment`) — não é objeto que alguém segura | 18/09 | — |
 | **aparelho** | ⛔ não se usa em superfície de operador. **Fica na loja**, por concessão do dono | 18/09 | exenção escrita da trava para `storefront-nuxt/` |
-| **lote** | o objeto que a Produção planeja, inicia e fecha. *Fornada* nomeia o evento do forno | 22/09 | trava (só texto de tela; comentário sobre o forno continua livre) |
+| **lote** | o objeto que a Produção planeja, abre e fecha. *Fornada* nomeia o evento do forno | 22/09 | trava (só texto de tela; comentário sobre o forno continua livre) |
 | **fornada** | fica na **loja** e no texto que o **cliente** lê no Marketing | 22/09 | exenção por audiência, escrita na trava |
 | **etapa** | a unidade do modo de fazer de uma receita (`Recipe.steps`, `RecipeVersion.steps`) e o avanço dela no lote (evento `step_advanced` = "Etapa avançada"). Decisão do dono: era "Etapas" no modelo e no Admin e "Passos" nas telas de receita. ⛔ **"passo" como nome da etapa de receita ou de produção** ("Passos", "Passos lidos", "Adicionar passo", "Passo 3" da receita). "Passo" continua certo para o que não é etapa: o passo do login, o passo a passo de instalação, "próximo passo" de uma instrução | 01/10 | trava: 3ª regra de `guardrails.vocabulary.test.ts` (texto do `production-nuxt`) + `test_vocabulario_etapa_da_receita.py` (literais do `craftsman` e dos arquivos `recipe`/`production` do backstage) |
 | **Faixa de preço** | fica (conceito de negócio). A *lane* de processamento passa a ser nomeada **plataforma** | ≤22/09 | [`omotenashi-copy.md`](omotenashi-copy.md) §D7b(b) |
@@ -56,10 +56,11 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **Painel de retirada** | o painel público da **Cozinha** (rota `/pickup` não muda: URL é em inglês) | 22/09 | — |
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
 | **Validar** | fica no PDV, com precedente explícito (o Odoo usa assim) | 18/09 | — |
-| **Finalizar** | o último passo da Expedição — e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
-| **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). **Expedição** fica só na **Produção**, onde é o fechamento de lote: a mesma palavra nos dois apps mandava gente para a tela errada. O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
+| **Finalizar** | o último passo do Fechamento, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
+| **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; desde 03/10 a tela de fechamento de lote da Produção se chama **Fechamento**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
 | **dividir · transferir · juntar** | os três atos da comanda. *Mesclar* fora, por técnico demais | 18/09 | `presentation/moveLines.ts` |
 | **item = unidade** | nunca linha, em nenhuma superfície | deliberado antes, reafirmado 18/09 | — |
+| **Abertura · Fechamento · Qualidade** | as abas do ciclo do lote na Produção (`/`, `/close`, `/quality`), depois de Planejamento e Preparação. Status Planejada · Aberta · Fechada · Cancelada (fonte única: `WorkOrder.Status`); quantidades planejado · previsto · realizado; indicadores perda e aproveitamento. ⛔ *Produzido* como rótulo de `started` ou `finished`; ⛔ *Estornar* para o `void` (é *Cancelar*); ⛔ *Rendimento* como KPI (fica com a ficha e a massa). Fora da Produção, qualificar: *abertura de lote*, *fechamento de lote*. Não mexe na abertura e no fechamento do caixa nem na Saída do KDS | 03/10 | trava: `production-nuxt/tests/lifecycleVocabulary.test.ts` + `test_vocabulario_abertura_fechamento.py` |
 | **Screen** (código) · **tela** (categoria) | a coisa. `display` é **papel** (`Channel.CommercePolicy.DISPLAY`, `SubjectType.DISPLAY`); `painel` é dashboard; `board` sai do vocabulário de tela | 24/09 | [`WP-TELAS-DE-PAREDE.md`](../plans/WP-TELAS-DE-PAREDE.md) |
 
 ---
@@ -162,7 +163,9 @@ que deve ser. O que precisa de nome único é só o que os dois **fazem igual** 
 | Camada | Palavras |
 |---|---|
 | objeto | **lote** · **receita** (a ficha) · **etapa** (do modo de fazer; ⛔ nunca "passo", 01/10) · **insumo** · **bancada** · **estação** |
-| atos | **planejar** · **iniciar** · **continuar** · **finalizar** (só o último passo) · **visto** |
+| atos | **planejar** · **abrir** (o lote, na Abertura) · **continuar** · **finalizar** (só o último passo do Fechamento) · **cancelar** (o lote) · **visto** |
+| ciclo | **Planejamento** · **Preparação** · **Abertura** · **Fechamento** · **Qualidade**; status **Planejada · Aberta · Fechada · Cancelada** |
+| quantidades e indicadores | **planejado** · **previsto** · **realizado** · **perda** · **aproveitamento** (⛔ "rendimento" como KPI) |
 | grandezas | **peça** (unidade) · **quilo** · **lote** — ⛔ nunca somadas num número só |
 
 ⚠️ A grandeza é o defeito mais caro deste par: um número que junta peça e quilo faz o padeiro

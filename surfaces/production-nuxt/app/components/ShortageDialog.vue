@@ -4,7 +4,7 @@
 // committed orders uncovered. For a material shortage the operator can override
 // (force=1) only when the server advertises that possibility. An order shortage
 // offers "retry" (o operador volta ao número que digitou e corrige); confirmar o
-// produzido abaixo das encomendas nunca é forçável, então ali o caminho é só esse.
+// previsto abaixo das encomendas nunca é forçável, então ali o caminho é só esse.
 import type { ProductionShortageError } from "~/types/production";
 
 const props = defineProps<{ shortage: ProductionShortageError | null }>();
