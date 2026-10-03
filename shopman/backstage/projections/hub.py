@@ -2,7 +2,9 @@
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
-operador não pode acessar nem aparece. É só um índice de navegação; não hospeda CRUD. O tile
+operador não pode acessar nem aparece. Não hospeda CRUD: no topo, a fila "Precisa de você"
+(``projections/hub_queue.py``) leva cada item ao lugar exato no app certo; embaixo, os blocos dos
+apps, cada um com uma linha de estado que concorda com a fila (UX-H1). O tile
 Loja abre a **loja do cliente** (storefront) em nova aba — fora da zona de operador.
 
 Registry declarativo (tipado aqui; caminho claro p/ configurável no Admin depois). Cada
@@ -32,6 +34,7 @@ from shopman.backstage.permissions import (
     can_view_bi,
     is_superuser,
 )
+from shopman.backstage.projections.hub_queue import HubQueueProjection, collect_hub_queue
 
 # URLs de DEV das superfícies — usadas apenas com DEBUG ligado, quando
 # `settings.SHOPMAN_SURFACE_URLS` não cobre a superfície. Fora de DEBUG não há
@@ -58,12 +61,19 @@ class HubTileProjection:
     icon: str  # nome Lucide (ícone forte da superfície, DS §6)
     url: str
     kind: str  # "launch" (superfície de operador, mesma aba) | "external" (fora da zona, nova aba)
+    #: A linha de estado do bloco, que concorda com a fila "Precisa de você" (UX-H1).
+    #: ``status_attention`` é o que pede alguém ("1 para aceitar"); ``status_summary`` é o
+    #: resto, calmo ("11 ativos"). Vazios quando o app não tem fonte de estado.
+    status_attention: str = ""
+    status_summary: str = ""
 
 
 @dataclass(frozen=True)
 class OperatorHubProjection:
     operator_name: str
     tiles: tuple[HubTileProjection, ...]
+    #: "Precisa de você": a soma das filas dos papéis do operador (`projections/hub_queue.py`).
+    queue: HubQueueProjection
 
 
 @dataclass(frozen=True)
@@ -129,8 +139,16 @@ def _operator_name(user) -> str:
 
 
 def build_operator_hub(user) -> OperatorHubProjection:
-    """Monta o launcher para `user`, contendo APENAS os tiles que ele pode acessar."""
+    """Monta a Central para `user`: APENAS os tiles que ele pode acessar, e a fila
+    "Precisa de você" com os itens em que ele pode agir."""
     urls = _surface_urls()
+    visible = [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
+    # Só app que o operador abre entra na fila: o item leva para dentro dele.
+    queue, statuses = collect_hub_queue(
+        user,
+        urls={spec.ref: urls[spec.ref] for spec in visible},
+        labels={spec.ref: spec.label for spec in visible},
+    )
     tiles = tuple(
         HubTileProjection(
             ref=spec.ref,
@@ -139,8 +157,9 @@ def build_operator_hub(user) -> OperatorHubProjection:
             icon=spec.icon,
             url=urls[spec.ref],
             kind=spec.kind,
+            status_attention=statuses[spec.ref].attention if spec.ref in statuses else "",
+            status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
         )
-        for spec in _REGISTRY
-        if spec.can_access(user) and urls.get(spec.ref)
+        for spec in visible
     )
-    return OperatorHubProjection(operator_name=_operator_name(user), tiles=tiles)
+    return OperatorHubProjection(operator_name=_operator_name(user), tiles=tiles, queue=queue)
