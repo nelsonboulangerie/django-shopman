@@ -352,6 +352,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         kind="explicit-exception",
         projections=(
             ROOT / "shopman/backstage/projections/order_queue.py",
+            # Histórico do Gestor (pedidos fechados, filtros no servidor).
+            ROOT / "shopman/backstage/projections/order_history.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
             ROOT / "shopman/backstage/projections/ifood.py",
