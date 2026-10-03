@@ -219,7 +219,32 @@ class KDSExpeditionActionView(APIView):
                 exc_info=True,
             )
             return Response({"detail": str(exc) or "Falha na ação."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"ok": True, "action": action, "order_pk": order_pk})
+        return Response({"ok": True, "action": action, "order_pk": order_pk, **kds_service.expedition_handoff(order_pk)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Saída: desfazer Entregar/Despachar dentro da janela",
+        responses={
+            200: OpenApiResponse(description="Saída desfeita; o pedido volta para a Saída."),
+            400: OpenApiResponse(description="Prazo acabou ou o pedido mudou."),
+        },
+    ),
+)
+class KDSExpeditionUndoView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def post(self, request, order_pk: int):
+        token = str(request.data.get("token") or "").strip()
+        try:
+            kds_service.expedition_undo(order_id=order_pk, token=token, actor=_actor(request))
+        except KDSOrderNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            return Response({"detail": str(exc) or "Não deu para desfazer."}, status=status.HTTP_409_CONFLICT)
+        return Response({"ok": True, "order_pk": order_pk})
 
 
 #: Quem pode dar o "Pronto" da estação sem tela: a Saída (KDS) e o PDV. O

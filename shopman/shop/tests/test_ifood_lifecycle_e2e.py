@@ -105,7 +105,11 @@ def rehearsal(settings, django_capture_on_commit_callbacks, request):
             with django_capture_on_commit_callbacks(execute=True):
                 for directive in pending:
                     _process_directive(directive)
-        assert not Directive.objects.filter(topic__in=handler_map, status__in=["queued", "running", "failed"]).exists()
+        # UX-G2: o que o pronto automático segura (aviso de pronto, readyToPickup)
+        # fica agendado para o fim da janela de desfazer; não é pendência.
+        assert not Directive.objects.filter(topic__in=handler_map, status__in=["queued", "running", "failed"]).exclude(
+            status="queued", available_at__gt=timezone.now(),
+        ).exists()
 
     def act(action):
         with django_capture_on_commit_callbacks(execute=True):

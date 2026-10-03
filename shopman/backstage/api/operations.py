@@ -2290,6 +2290,50 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Undo a handoff (deliver/dispatch) still inside its undo window",
+        responses={200: OpenApiResponse(description="Handoff undone."), 409: OpenApiResponse(description="Window closed or order changed.")},
+    ),
+)
+class OrderUndoHandoffView(_OrderActionBase):
+    intention_operation = "undo-handoff"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        token = str(request.data.get("token") or "")
+
+        def execute(base):
+            orders_service.undo_handoff(order, token=token, actor=_actor(request))
+
+        return self._context_response(request, order, "undo-handoff", {"token": token}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Undo an automatic ready (kitchen concluded) inside its undo window",
+        responses={200: OpenApiResponse(description="Back to preparing."), 409: OpenApiResponse(description="Window closed or order changed.")},
+    ),
+)
+class OrderUndoReadyView(_OrderActionBase):
+    intention_operation = "undo-ready"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        token = str(request.data.get("token") or "")
+
+        def execute(base):
+            orders_service.undo_auto_ready(order, token=token, actor=_actor(request), expected_revision=base)
+
+        return self._context_response(request, order, "undo-ready", {"token": token}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Courier returned the equipment (card machine) taken at dispatch",
         responses={200: OpenApiResponse(description="Equipment marked as returned.")},
     ),

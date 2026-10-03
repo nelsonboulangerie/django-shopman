@@ -59,6 +59,7 @@ from .kds import (
     KDSCustomerStatusView,
     KDSExitPrintedStationDoneView,
     KDSExpeditionActionView,
+    KDSExpeditionUndoView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
     KDSPrintedTicketScanView,
@@ -150,6 +151,8 @@ from .operations import (
     OrderTicketBatchView,
     OrderTicketEscposView,
     OrderUnassignView,
+    OrderUndoHandoffView,
+    OrderUndoReadyView,
     POSAccountBalancesView,
     POSAccountSettleView,
     POSCancelRecentSaleView,
@@ -303,6 +306,9 @@ urlpatterns = [
     ),
     path(
         "kds/expedition/<int:order_pk>/action/", KDSExpeditionActionView.as_view(), name="api-backstage-kds-expedition"
+    ),
+    path(
+        "kds/expedition/<int:order_pk>/undo/", KDSExpeditionUndoView.as_view(), name="api-backstage-kds-expedition-undo"
     ),
     path(
         "kds/expedition/<int:order_pk>/printed-stations/<slug:station_ref>/done/",
@@ -620,6 +626,8 @@ urlpatterns = [
         name="api-backstage-order-courier-ticket-escpos",
     ),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),
+    path("orders/<str:ref>/undo-handoff/", OrderUndoHandoffView.as_view(), name="api-backstage-order-undo-handoff"),
+    path("orders/<str:ref>/undo-ready/", OrderUndoReadyView.as_view(), name="api-backstage-order-undo-ready"),
     path("orders/<str:ref>/confirm/", OrderConfirmView.as_view(), name="api-backstage-order-confirm"),
     path(
         "orders/<str:ref>/ifood-handshake-evidence/",

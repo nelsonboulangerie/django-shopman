@@ -374,6 +374,17 @@ export interface CustomerProfileProjection {
   is_birthday_today: boolean;
 }
 
+/** O que o sistema fez (ou o operador tocou) e ainda pode ser desfeito. */
+export interface UndoProjection {
+  kind: string;
+  label: string;
+  detail: string;
+  undo_until_iso: string;
+  action_ref: string;
+  held_effect: string;
+  already_out: string;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -456,6 +467,7 @@ export interface OrderCardProjection {
   danfe_printed: boolean;
   danfe_state: string;
   danfe_problem: string;
+  undo: UndoProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -603,6 +615,7 @@ export interface OperatorOrderProjection {
   courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  undo: UndoProjection | null;
   notification_receipts: NotificationReceiptProjection[];
   managers: Record<string, string>[];
   ifood_cancellation_notice: string;

@@ -13,6 +13,7 @@ import {
   changeBackSuggestionQ,
   moneyInput,
   splitRef,
+  undoLine,
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
 import type { CancellationReason } from "~/types/orders";
@@ -22,7 +23,7 @@ const route = useRoute();
 const { location: queueLocation } = useOrdersContext();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
+const { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, undoHandoff, undoReady, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -46,6 +47,29 @@ const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
 const projectedAction = (ref_: string) => order.value?.actions?.find((action) => action.ref === ref_);
+// O avanço que a tela mostra como botão. "Marcar pronto" com a Cozinha
+// trabalhando vem como ``priority: "menu"``: o pronto chega sozinho quando ela
+// conclui, e o gesto à mão mora no menu do pedido (⋯), não na barra.
+const advanceAction = computed(() => {
+  const action = projectedAction("advance");
+  return action && action.priority !== "menu" ? action : undefined;
+});
+const menuAdvance = computed(() => {
+  const action = projectedAction("advance");
+  return action && action.priority === "menu" ? action : undefined;
+});
+const menuOpen = ref(false);
+function onMenuAdvance() {
+  menuOpen.value = false;
+  advance();
+}
+// "O sistema fez · desfazer": a mesma linha do card.
+const nowMs = useNowTick();
+const undo = computed(() => order.value ? undoLine(order.value, nowMs.value) : null);
+function onUndo() {
+  if (undo.value?.action === "undo_handoff") undoHandoff();
+  else undoReady();
+}
 
 const notes = ref("");
 const notesBase = ref("");
@@ -272,14 +296,25 @@ const { denied: stationLocked } = useStationLock();
              que decide é o servidor, e quando ele bloqueia o lugar do botão
              continua ocupado dizendo o motivo, em vez de sumir. -->
         <section class="flex flex-wrap gap-2">
+          <div v-if="undo" class="flex w-full flex-wrap items-center gap-2 text-sm" :data-undo="undo.kind">
+            <span class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium">
+              <Icon :name="undo.kind === 'handoff' ? 'lucide:check' : 'lucide:sparkles'" class="size-3.5" />
+              {{ undo.label }}
+            </span>
+            <span class="text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
+            <span v-if="undo.alreadyOut" class="text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
+            <button v-if="undo.canUndo" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="undo" @click="onUndo">
+              <Icon name="lucide:undo-2" class="size-4" /> <span class="tabular-nums">{{ undo.kind === "handoff" ? `Desfazer ${undo.countdown}` : "Desfazer" }}</span>
+            </button>
+          </div>
           <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
             <Icon name="lucide:check" class="size-4" /> Aceitar
           </button>
-          <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+          <button v-else-if="advanceAction?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
             <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
           </button>
-          <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
-            <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
+          <button v-else-if="advanceAction" type="button" disabled :title="advanceAction?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+            <Icon name="lucide:clock" class="size-4" /> {{ advanceAction?.reason }}
           </button>
           <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
             <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
@@ -313,6 +348,21 @@ const { denied: stationLocked } = useStationLock();
           <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
             {{ order.cancel_block_label }}
           </p>
+          <!-- Menu do pedido (⋯): o gesto à mão do que o sistema faz sozinho. Hoje,
+               "Marcar pronto" enquanto a Cozinha trabalha (estação sem tela, caso
+               que o sistema não viu). -->
+          <div v-if="menuAdvance" class="relative ml-auto">
+            <button type="button" class="grid min-h-control min-w-control place-items-center rounded-md border transition hover:bg-accent" aria-label="Mais ações do pedido" :aria-expanded="menuOpen" data-action="menu" @click="menuOpen = !menuOpen">
+              <Icon name="lucide:ellipsis" class="size-4" />
+            </button>
+            <div v-if="menuOpen" class="fixed inset-0 z-10" aria-hidden="true" @click="menuOpen = false" />
+            <div v-if="menuOpen" class="absolute right-0 z-20 mt-1 w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md" role="menu">
+              <button type="button" role="menuitem" :disabled="busy || !menuAdvance.enabled" :title="menuAdvance.reason || undefined" class="flex min-h-control w-full flex-col items-start rounded px-2.5 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50" data-action="menu-advance" @click="onMenuAdvance">
+                <span class="font-semibold">{{ menuAdvance.label }}</span>
+                <span class="text-xs text-muted-foreground">O pronto vem sozinho quando a Cozinha conclui. Use para a estação sem tela.</span>
+              </button>
+            </div>
+          </div>
         </section>
       </template>
 

@@ -44,6 +44,7 @@ vi.stubGlobal("useOrderEvents", () => {});
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+vi.stubGlobal("useNowTick", () => ref(Date.now()));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   pending: ref(false),

@@ -46,6 +46,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.fulfillment.FulfillmentCreateHandler",
     "shopman.shop.handlers.fulfillment.FulfillmentUpdateHandler",
     "shopman.shop.handlers.delivery_auto_complete.DeliveryAutoCompleteHandler",
+    "shopman.shop.handlers.handoff_commit.HandoffCommitHandler",
     # Courier (logística externa — no-op sem adapter "courier" resolvido)
     "shopman.shop.handlers.courier_dispatch.CourierDispatchHandler",
     "shopman.shop.handlers.courier_cancel.CourierCancelHandler",
@@ -276,6 +277,9 @@ def _register_fulfillment_handler() -> None:
 def _register_delivery_auto_complete_handler() -> None:
     from shopman.shop.handlers.delivery_auto_complete import DeliveryAutoCompleteHandler
     registry.register_directive_handler(DeliveryAutoCompleteHandler())
+    from shopman.shop.handlers.handoff_commit import HandoffCommitHandler
+
+    registry.register_directive_handler(HandoffCommitHandler())
 
 
 def _register_courier_handlers() -> None:

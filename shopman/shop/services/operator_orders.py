@@ -336,8 +336,18 @@ def advance_order(
     target_status: str | None = None,
     expected_courier_id: str | None = None,
     trip_ref: str | None = None,
+    undo_window: bool = False,
+    handoff_token: str | None = None,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``undo_window``: o toque veio do Gestor ou da Saída da Cozinha. Entregar e
+    Despachar (``order_undo.HANDOFF_TARGETS``) então NÃO gravam a transição:
+    tudo é validado como se fosse gravar, o pedido de saída fica registrado
+    em ``order.data["pending_handoff"]`` e a gravação acontece quando a janela
+    de desfazer vence (``order_undo.commit_handoff``, que volta aqui com
+    ``handoff_token``). Os outros chamadores (iFood, entregador, PDV, piloto
+    de staging) gravam na hora, como sempre.
 
     ``trip_ref``: o pedido sai na MESMA saída de outro pedido já despachado
     (o entregador leva os dois). A saída é identificada pelo pedido que a abriu,
@@ -357,6 +367,19 @@ def advance_order(
     order.refresh_from_db()
     if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
         raise OrderStateConflict("A corrida mudou. Confira a entrega atual.")
+    from shopman.shop.services import order_undo
+
+    pending = order_undo.pending_handoff(order)
+    if pending and pending.get("token") != handoff_token:
+        if order_undo.handoff_window_open(order):
+            # A saída já foi pedida e ainda pode ser desfeita: o mesmo toque
+            # repetido (duas telas, replay) é a mesma saída; outro destino é
+            # conflito, e quem quer outra coisa desfaz primeiro.
+            if (target_status or pending.get("to_status")) == pending.get("to_status") and undo_window:
+                return str(pending.get("to_status"))
+            raise OrderStateConflict("Este pedido está saindo. Desfaça a saída antes de outra ação.")
+        order_undo.settle_expired_handoff(order)
+        order.refresh_from_db()
     if expected_revision is not None and expected_revision != operational_revision(order):
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
@@ -381,6 +404,22 @@ def advance_order(
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
         from shopman.shop.adapters import delivery_devices
 
+        if hold_seconds := _handoff_hold_seconds(order, next_status, undo_window=undo_window, handoff_token=handoff_token):
+            # Valida o que a gravação vai exigir (saída aberta, maquininha
+            # prevista), sem reservar nada: a reserva é da gravação.
+            open_trip = _open_trip(trip_ref, order) if trip_ref else ""
+            joins_machine = bool(open_trip and trip_machine(open_trip)) and (
+                delivery_devices.needs_card_machine(order)
+                or any(str(ref).startswith(delivery_devices.reference_prefix()) for ref in (equipment or []))
+            )
+            if not joins_machine:
+                _clean_equipment(order, equipment)
+            order_undo.request_handoff(
+                order, to_status=next_status, actor=actor, seconds=hold_seconds,
+                change_out_q=change_out_q, cash_shift=cash_shift, equipment=equipment, trip_ref=trip_ref,
+            )
+            return next_status
+
         trip = _open_trip(trip_ref, order) if trip_ref else ""
         shared = trip_machine(trip) if trip else None
         wants_machine = delivery_devices.needs_card_machine(order) or any(
@@ -396,8 +435,17 @@ def advance_order(
                 taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
     else:
         taken, trip, device_fields = [], "", {}
+        if hold_seconds := _handoff_hold_seconds(order, next_status, undo_window=undo_window, handoff_token=handoff_token):
+            order_undo.request_handoff(order, to_status=next_status, actor=actor, seconds=hold_seconds)
+            return next_status
 
     with transaction.atomic():
+        if handoff_token:
+            order_undo._drop_pending(order)
+        if order.status == Order.Status.READY:
+            # Saindo do pronto com a janela do pronto automático aberta: o
+            # aviso de pronto sai agora, antes do aviso da saída.
+            order_undo.release_ready_hold(order)
         if taken or trip:
             # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
@@ -447,6 +495,15 @@ def advance_order(
     if dispatching:
         schedule_delivery_auto_complete(order)
     return next_status
+
+
+def _handoff_hold_seconds(order: Order, next_status: str, *, undo_window: bool, handoff_token: str | None) -> int:
+    """Segundos da janela de desfazer deste toque, ou 0 quando grava na hora."""
+    from shopman.shop.services import order_undo
+
+    if not undo_window or handoff_token or next_status not in order_undo.HANDOFF_TARGETS:
+        return 0
+    return order_undo.handoff_undo_seconds(order)
 
 
 # ── Troco da entrega: o que a loja coletou e o que o livro diz ─────────────
@@ -1627,12 +1684,40 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
             "data": {key: data.get(key) for key in (
                 "payment", "availability_decision", "waitlist", "fulfillment_type",
                 "delivery_method", "delivery_date", "commitment_date", "dispatch",
-                "ifood_cancellation_request", "ifood",
+                "ifood_cancellation_request", "ifood", "pending_handoff", "auto_ready",
             )},
         }
     else:
         raise ValueError("Unknown revision field")
     return mutation_fingerprint({"version": 1, "order": order.ref, "field": field, "state": state})
+
+
+def _undo_handoff_action(order: Order, *, authorized: bool, actor_id, permission_reason: str):
+    """O "Desfazer" da saída pedida, enquanto a janela está aberta (ou ``None``)."""
+    from shopman.shop.projections.types import Action
+    from shopman.shop.services import order_undo
+
+    record = order_undo.pending_handoff(order)
+    if not record:
+        return None
+    window_open = order_undo.handoff_window_open(order)
+    return Action(
+        ref="undo-handoff", kind="mutation", label="Desfazer", priority="primary",
+        enabled=authorized and window_open,
+        reason=(permission_reason if not authorized else "" if window_open else "O prazo para desfazer acabou."),
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "token": record["token"], "base_revision": operational_revision(order)},
+    )
+
+
+def _kitchen_will_conclude(order: Order) -> bool:
+    """A Cozinha tem ticket aberto deste pedido e o pronto automático está ligado."""
+    from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.services import order_undo
+
+    if not order_undo.auto_ready_enabled(order):
+        return False
+    return kds_adapter.get_tickets(order).filter(status__in=["pending", "in_progress"]).exists()
 
 
 def operational_actions(order: Order, *, user=None, waitlist_state: str | None = None, payment_reads=None, channel_config=None):
@@ -1656,6 +1741,10 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))
+    elif pending_handoff_action := _undo_handoff_action(order, authorized=authorized, actor_id=actor_id, permission_reason=permission_reason):
+        # A saída foi pedida e ainda pode ser desfeita: o único gesto do card é
+        # desfazer. Avançar de novo seria repetir a mesma saída.
+        actions.append(pending_handoff_action)
     elif next_status_for(order):
         labels = {
             "preparing": "Iniciar preparo", "ready": "Marcar pronto",
@@ -1669,10 +1758,25 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             if needs_card_machine(order):
                 labels["dispatched"] = "Saiu com a maquininha"
         reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)) if authorized else permission_reason
+        # "Pronto" é fato que o sistema sabe quando a Cozinha conclui (L1): com o
+        # pronto automático ligado e ticket aberto na cozinha, o "Marcar pronto"
+        # sai do card e fica no menu do pedido (``priority="menu"``), para a
+        # estação sem tela e para o caso que o sistema não viu.
+        priority = "menu" if target == Order.Status.READY and _kitchen_will_conclude(order) else "primary"
         actions.append(Action(
-            ref="advance", kind="mutation", label=labels[target], priority="primary",
+            ref="advance", kind="mutation", label=labels[target], priority=priority,
             enabled=not reason, reason=reason, method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "target_status": target, "base_revision": operational_revision(order)},
+        ))
+    from shopman.shop.services import order_undo
+
+    auto_ready = order_undo.ready_hold(order)
+    if auto_ready and not order_undo.pending_handoff(order):
+        actions.append(Action(
+            ref="undo-ready", kind="mutation", label="Desfazer", priority="secondary",
+            enabled=authorized, reason="" if authorized else permission_reason,
+            method="POST", idempotency="required",
+            payload_schema={"expected_actor_id": actor_id, "token": auto_ready["token"], "base_revision": operational_revision(order)},
         ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
