@@ -1326,13 +1326,13 @@ def _listed(sku: str, name: str, *, description: str = "", stock: str = "5") -> 
 def alpha_menu(surface):
     """O que a busca do alpha devolveu para "Bom dia, tudo bem?" (mensagem 675).
 
-    O pão com "bom para cachorro quente" na descrição, o croissant, o leviano e as
+    O pão com "bom para cachorro quente" na descrição, o croissant, o levain e as
     duas perguntas frequentes reais: levain (que cita croissant e "todos os dias")
     e glúten.
     """
     _listed("HOL4", "Pão para Hot Dog", description="Pão amanteigado, bom para cachorro quente", stock="0")
     _listed("CROISSANT", "Croissant", description="Folhado amanteigado", stock="50")
-    _listed("LEVIANO", "Pão Leviano", description="Pão de fermentação natural")
+    _listed("LEVAIN", "Levain", description="Pão de fermentação natural")
     FAQEntry.objects.create(
         question="O que é fermentação natural (levain)?",
         answer=(
@@ -1425,19 +1425,115 @@ def test_greeting_with_a_question_says_good_morning_and_answers_it(conversation,
     assert "Levain" not in outcome.reply_text
 
 
-def test_allergen_question_reads_the_allergen_answer_and_goes_to_the_team(ctx, alpha_menu):
-    """Glúten é alergia na triagem (D32): vai para a equipe. A busca, se chamada, traz só o que importa."""
+HOUSE_NOTICE = (
+    "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. Todos os nossos produtos "
+    "contêm ou podem conter glúten, e não temos como assegurar a ausência dele em nenhum item."
+)
+
+
+@pytest.fixture
+def house_notice(alpha_menu):
+    """O aviso de produção compartilhada, como o seed o grava (decisão do dono, 08/09)."""
+    from shopman.shop.services import attributes
+
+    Shop.objects.update(food_safety_notice=HOUSE_NOTICE)
+    croissant = Product.objects.get(sku="CROISSANT")
+    attributes.set(croissant, "alergenos", ["glúten", "leite", "ovos"], save=False)
+    croissant.save(update_fields=["metadata"])
+    return HOUSE_NOTICE
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["tem algo sem glúten?", "o pão de fermentação natural tem glúten?", "o levain tem glúten?"],
+)
+def test_gluten_question_is_answered_with_the_house_notice(conversation, house_notice, text):
+    """Glúten (dono, 03/10/2026): o aviso da casa, a mesma fonte da página do produto. Sem modelo nem busca."""
     from shopman.storefront.concierge import triage
 
-    text = "o pão leviano tem glúten?"
+    decision = triage.decide(text)
+    assert (decision.intent, decision.destination, decision.answered_by) == (
+        "allergy", triage.ANSWER, "gluten_notice"
+    )
+
+    outcome, client = _turn(conversation, text, f"gluten-{text}")
+
+    assert client.requests == []  # nem o modelo
+    assert outcome.tool_events == []  # nem a busca
+    assert outcome.reply_text == house_notice
+    assert "sem glúten" not in outcome.reply_text.casefold()
+
+
+def test_celiac_asking_about_a_product_gets_the_notice_and_its_declared_allergens(conversation, house_notice):
+    outcome, client = _turn(conversation, "Bom dia, sou celíaco, posso comer o croissant?", "gluten-croissant")
+
+    assert client.requests == []
+    assert outcome.reply_text == (
+        f"Bom dia!\n{house_notice}\n\nCroissant (alérgenos declarados): glúten, leite e ovos."
+    )
+
+
+def test_a_product_without_declared_allergens_is_never_presented_as_safe(conversation, house_notice):
+    """Lista vazia não vira "não tem": só o aviso, sem o nome do produto."""
+    outcome, _client = _turn(conversation, "o levain tem glúten?", "gluten-levain")
+
+    assert outcome.reply_text == house_notice
+    assert "Levain" not in outcome.reply_text
+
+
+def test_the_house_notice_edited_in_the_admin_is_what_the_concierge_says(conversation, house_notice):
+    Shop.objects.update(food_safety_notice="Aviso novo da casa. Tudo aqui leva trigo.")
+
+    outcome, _client = _turn(conversation, "tem algo sem glúten?", "gluten-edited")
+
+    assert outcome.reply_text == "Aviso novo da casa. Tudo aqui leva trigo."
+
+
+def test_without_a_house_notice_gluten_still_goes_to_the_team(alpha_menu):
+    from shopman.storefront.concierge import triage
+
+    Shop.objects.update(food_safety_notice="")
+
+    assert triage.decide("sou celíaco, posso comer o croissant?").destination == triage.TEAM
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "tem castanha no panetone?",
+        "tem glúten ou castanha no panetone?",
+        "sou celíaca e tenho alergia a ovo, o que posso comer?",
+        "tenho alergia, posso comer o croissant?",
+        "o croissant tem lactose?",
+    ],
+)
+def test_other_allergies_still_go_to_the_team(house_notice, text):
+    """O dono decidiu só sobre glúten. Misturado com outra alergia, a mensagem inteira vai para a equipe."""
+    from shopman.storefront.concierge import triage
+
     assert triage.decide(text).destination == triage.TEAM
 
-    result = tools.search_storefront(ctx, text)
 
-    assert [item["sku"] for item in result["items"]] == ["LEVIANO"]
-    assert [answer["question"] for answer in result["answers"]] == [
-        "Vocês têm opções sem glúten? E quanto a alérgenos?"
-    ]
+def test_gluten_complaint_still_goes_to_the_team(house_notice):
+    from shopman.storefront.concierge import triage
+
+    decision = triage.decide("quero fazer uma reclamação, sou celíaca e o pão veio errado")
+    assert (decision.intent, decision.destination) == ("complaint", triage.TEAM)
+
+
+def test_the_public_faq_finds_the_gluten_answer_and_it_agrees_with_the_notice(ctx, alpha_menu):
+    """A FAQ inicial de glúten (``apply_search_presence``) nunca contradiz o aviso e a busca a encontra."""
+    from config.management.commands.apply_search_presence import PUBLIC_FAQ
+    from shopman.storefront.presentation.public_information import search_public_faq
+
+    entry = next(item for item in PUBLIC_FAQ if item["ref"] == "voces-tem-opcoes-sem-gluten")
+    assert entry["answer"].startswith("Não temos.")
+    assert "contêm ou podem conter glúten" in entry["answer"]
+    FAQEntry.objects.filter(question=entry["question"]).update(search_terms=entry["search_terms"])
+    shop = Shop.load()
+    for query in ("sem glúten", "celíaco", "celíaca", "trigo"):
+        found = search_public_faq(query, channel_ref=CHANNEL, shop=shop)
+        assert found and found[0].question == entry["question"], query
 
 
 def test_search_over_courtesy_alone_finds_nothing_instead_of_the_menu(ctx, alpha_menu):

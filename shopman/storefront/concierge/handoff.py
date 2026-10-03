@@ -13,6 +13,12 @@ def _fold(text: str) -> str:
     )
 
 
+#: Alérgenos que, citados como ingrediente, pedem a equipe (D32).
+_ALLERGENS = (
+    r"castanh\w*|nozes|noz|amendoim|amendoas?|avelas?|pistaches?|macadamias?|"
+    r"leite|lactose|ovos?|soja|gergelim|sesamo|peixes?|camarao|frutos\s+do\s+mar|mostarda"
+)
+
 _PATTERNS = (
     ("customer_request", (
         r"\b(?:atendente|atendimento humano)\b",
@@ -32,9 +38,14 @@ _PATTERNS = (
         r"\b(?:evento|casamento|festa|aniversario)\b",
         r"\b(?:[2-9]\d|[1-9]\d{2,})\s+(?:pessoas|unidades)\b",
     )),
+    # A pergunta só de glúten sai daqui na triagem (dono, 03/10/2026, ``gluten.py``):
+    # ela continua reconhecida como alergia, e a triagem decide quem responde.
     ("allergy_review", (
         r"\b(?:alergia|alergic|intolerancia|intolerante|celiac)\w*\b",
         r"\b(?:tem|leva|contem)\s+(?:gluten|lactose)\b",
+        # "Tem castanha no panetone?", "leva amendoim?": ingrediente que é alérgeno.
+        rf"\b(?:leva|levam|contem)\s+(?:{_ALLERGENS})\b",
+        rf"\btem\s+(?:{_ALLERGENS})\s+(?:no|na|nos|nas|em|nesse|nessa|neste|nesta|dentro)\b",
     )),
 )
 
