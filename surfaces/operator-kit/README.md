@@ -568,7 +568,8 @@ Contrato:
   descartar ou perder. `"primary"` é o ato normal que só merece confirmação (mudar a
   encomenda de dia, enviar): botão da cor da casa, e aí `confirmLabel` e `cancelLabel`
   são obrigatórios no tipo, porque os padrões falam de perda. Vermelho num ato normal é
-  rótulo que mente.
+  rótulo que mente. Consumidor: o arrastar de dia das Encomendas do PDV
+  (`usePosPreorderMove`: "Mudar para qui, 01/10" / "Manter a data").
 - **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
   toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
