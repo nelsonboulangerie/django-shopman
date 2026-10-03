@@ -252,7 +252,9 @@ function goBack() {
                 @click="printTicket"
               >
                 <Icon name="lucide:printer" class="size-4" />
-                {{ counter.ticket_printed ? "Imprimir a Via Pedido de novo" : "Imprimir Via Pedido" }}
+                <!-- Já saiu uma vez: o papel sai carimbado "2ª via" pelo servidor
+                     (`_stamp_first_print`), e o botão diz o mesmo (dono, 03/10). -->
+                {{ counter.ticket_printed ? "Imprimir 2ª via" : "Imprimir Via Pedido" }}
               </UiButton>
               <UiButton
                 v-if="counter.edit.allowed"

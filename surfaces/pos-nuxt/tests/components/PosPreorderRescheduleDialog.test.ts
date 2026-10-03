@@ -88,3 +88,19 @@ it("o reagendar usa o mesmo seletor de dia e horário da venda", async () => {
   expect(w.findComponent(PosSchedulePicker).exists()).toBe(true);
   w.unmount();
 });
+
+it("aberto pela lista depois de soltar num dia recusado: já está nesse dia, com o horário a escolher", async () => {
+  const w = await mountSuspended(PosPreorderRescheduleDialog, {
+    props: {
+      open: false, customerName: "Ana", currentDate: "2026-09-12", currentSlot: "slot-09",
+      skus: ["CROISSANT"], initialDate: "2026-09-14",
+    },
+  });
+  await w.setProps({ open: true });
+  await vi.waitFor(() => expect(day("next")).not.toBeNull());
+  expect(day("next")?.getAttribute("aria-checked")).toBe("true");
+  // Mudou o dia: o confirmar já vale, sem o operador repetir a escolha.
+  const confirm = document.querySelector<HTMLButtonElement>("[data-preorder-reschedule-confirm]");
+  expect(confirm?.disabled).toBe(false);
+  w.unmount();
+});

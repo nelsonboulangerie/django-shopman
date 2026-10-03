@@ -18,6 +18,12 @@ const props = defineProps<{
   /** Os itens da encomenda: a janela oferecível depende deles. */
   skus: string[];
   busy?: boolean;
+  /**
+   * O dia em que o diálogo abre, quando não é o combinado: a lista abre aqui
+   * depois de soltar o card num dia que o servidor recusou (a janela não cabia),
+   * para escolher outro horário naquele dia sem refazer o caminho.
+   */
+  initialDate?: string;
 }>();
 
 const emit = defineEmits<{
@@ -62,8 +68,10 @@ async function load() {
 
 watch(() => props.open, (open) => {
   if (!open) return;
-  date.value = props.currentDate;
-  slot.value = props.currentSlot;
+  const moved = Boolean(props.initialDate) && props.initialDate !== props.currentDate;
+  date.value = moved ? props.initialDate! : props.currentDate;
+  // Noutro dia a janela combinada pode não existir: escolhe-se de novo.
+  slot.value = moved ? "" : props.currentSlot;
   reason.value = "";
   void load();
 });

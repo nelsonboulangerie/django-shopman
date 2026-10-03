@@ -10,6 +10,9 @@
 // - Dia | Semana mora num lugar só, o Período do kit (`OperatorPeriodPicker`), que
 //   a tela da seção põe na barra (slot `period`): o mesmo lugar em que a Produção,
 //   o KDS e o B.I. o põem. A barra não leva abas que gravariam o mesmo estado.
+// - à direita da barra (slot `actions`), o que age sobre o que a tela mostra: a
+//   grade ou a lista e o lote das Vias Pedido (OBS0310-D, como o cabeçalho do
+//   balcão leva os botões da tela à direita).
 import { toast } from "vue-sonner";
 
 import type { POSProjection } from "~/types/pos";
@@ -62,6 +65,12 @@ function openCustomerDisplay() {
             Encomendas
           </p>
           <slot name="period" />
+          <!-- As ações também entram no `start`, e não no `end` do kit, pela mesma
+               razão do Período: o invólucro do `end` não encolhe, e no celular o
+               lote passava da borda. Aqui elas quebram de linha. -->
+          <div v-if="$slots.actions" class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2" data-preorders-actions>
+            <slot name="actions" />
+          </div>
         </template>
       </OperatorAppBar>
 
