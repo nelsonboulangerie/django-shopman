@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   alertsReleased,
   batchConfirmLabel,
-  cleanPieces,
+  cleanSummary,
   closersSummary,
   exceptionBadge,
   exceptionReference,
   exceptionSegments,
+  lotQuantityLabel,
+  quantityMeasure,
   qualityGate,
+  reviewedSummary,
 } from "../../app/presentation/qualityGate";
 import type {
   QCDefectProjection,
@@ -57,6 +60,7 @@ function card(
     closed_at_display: "07:25",
     typical_loss_qty: "",
     alert_waiting_count: 0,
+    output_unit: "un",
     ...overrides,
   };
 }
@@ -78,7 +82,12 @@ describe("qualityGate", () => {
   });
 
   it("soma as peças e escreve o ato com o fato", () => {
-    expect(cleanPieces([card(1), card(2, { full_price_qty: "24" })])).toBe(84);
+    expect(cleanSummary([card(1), card(2, { full_price_qty: "24" })])).toBe(
+      "84 peças, todas no padrão · perda 0 · desconto 0",
+    );
+    expect(cleanSummary([card(1, { full_price_qty: "1" })])).toBe(
+      "1 peça, todas no padrão · perda 0 · desconto 0",
+    );
     expect(batchConfirmLabel(6)).toBe("6 lotes, nenhuma exceção · Confirmar");
     expect(batchConfirmLabel(1)).toBe("1 lote, nenhuma exceção · Confirmar");
   });
@@ -154,5 +163,70 @@ describe("qualityGate", () => {
     expect(
       exceptionBadge(card(3, { full_price_qty: "62", quality_exception: true })),
     ).toBe("Contagem 62 de 60");
+  });
+
+  it("nunca soma gramas com peças: agrupa por grandeza (seed Nelson)", () => {
+    const clean = [
+      card(1, { recipe_name: "Yudane", output_unit: "g", full_price_qty: "3453.659" }),
+      card(2, { recipe_name: "Pasta Autolizada", output_unit: "g", full_price_qty: "17073.914" }),
+      card(3, { recipe_name: "Massa Tradição", output_unit: "g", full_price_qty: "18480" }),
+      card(4, { recipe_name: "Baguette", full_price_qty: "120" }),
+      card(5, { recipe_name: "Croissant", full_price_qty: "192" }),
+    ];
+
+    expect(cleanSummary(clean)).toBe(
+      "312 peças e 39 kg, tudo no padrão · perda 0 · desconto 0",
+    );
+    expect(cleanSummary(clean.slice(0, 3))).toBe(
+      "39 kg, tudo no padrão · perda 0 · desconto 0",
+    );
+    expect(
+      cleanSummary([
+        card(1, { output_unit: "kg", full_price_qty: "2.5" }),
+        card(2, { output_unit: "g", full_price_qty: "400" }),
+        card(3, { output_unit: "L", full_price_qty: "1.5" }),
+        card(4, { full_price_qty: "10" }),
+      ]),
+    ).toBe("10 peças, 2,9 kg e 1,5 L, tudo no padrão · perda 0 · desconto 0");
+  });
+
+  it("escreve cada lote na sua unidade, com vírgula decimal", () => {
+    expect(lotQuantityLabel("3453.659", "g")).toBe("3,454 kg");
+    expect(lotQuantityLabel("1800", "g")).toBe("1,8 kg");
+    expect(lotQuantityLabel("850", "g")).toBe("850 g");
+    expect(lotQuantityLabel("21", "un")).toBe("21 peças");
+    expect(lotQuantityLabel("1", "")).toBe("1 peça");
+    expect(quantityMeasure("1.5", "un")).toBe("1,5");
+    expect(quantityMeasure("0.75", "kg")).toBe("750 g");
+    expect(quantityMeasure("2", "dz")).toBe("2 dz");
+  });
+
+  it("referência, selo e partição de lote em gramas usam a unidade e a vírgula", () => {
+    const dough = card(9, {
+      recipe_name: "Massa Tradição",
+      output_unit: "g",
+      started_qty: "18480",
+      partition: [
+        { quantity: "17980", quality_grade_ref: "standard", quality_defect_ref: "", loss: false },
+        { quantity: "500", quality_grade_ref: "", quality_defect_ref: "overbaked", loss: true },
+      ],
+      full_price_qty: "17980",
+      loss_qty: "500",
+      quality_exception: true,
+      typical_loss_qty: "250.5",
+    });
+
+    expect(exceptionBadge(dough)).toBe("Perda 500 g");
+    expect(exceptionSegments(dough, GRADES, DEFECTS).map((s) => s.label)).toEqual([
+      "17,98 kg padrão",
+      "500 g perda · “Assou demais”",
+    ]);
+    expect(exceptionReference(dough)).toBe(
+      "Entraram 18,48 kg. Perda típica de Massa Tradição: 250,5 g por lote.",
+    );
+    expect(reviewedSummary(dough)).toBe("17,98 kg no padrão · 500 g de perda");
+    expect(exceptionReference(card(1, { typical_loss_qty: "1.5" }))).toBe(
+      "Entraram 60. Perda típica de Receita 1: 1,5 por lote.",
+    );
   });
 });
