@@ -1481,6 +1481,15 @@ def receipt_expected_volumes(lines: list[ResolvedReceiptLine], *, declared: int)
     return int(expected)
 
 
+def _invoice_unit_reaches_base(line: ResolvedReceiptLine) -> bool:
+    """A unidade comercial da nota é peso/volume da mesma dimensão da base do insumo?"""
+    from shopman.utils import units
+
+    return units.dimension(line.invoice_commercial_unit) in (units.MASS, units.VOLUME) and units.same_dimension(
+        line.invoice_commercial_unit, str(line.material.unit or "")
+    )
+
+
 def _line_matches_invoice(line: ResolvedReceiptLine) -> bool:
     """A linha bate com a nota: quantidade, valor e embalagem são os da nota."""
     if line.invoice_purchase_qty is None or line.purchase_qty != line.invoice_purchase_qty:
@@ -1488,6 +1497,12 @@ def _line_matches_invoice(line: ResolvedReceiptLine) -> bool:
     if line.invoice_total_q <= 0 or line.total_cost_q != line.invoice_total_q:
         return False
     if line.note:
+        return False
+    if line.conversion is not None and _invoice_unit_reaches_base(line):
+        # A nota veio em peso ou volume que a física leva à base: o leitor de
+        # NF-e já converteu a quantidade ("5 KG" chega como 5000 g). Uma
+        # embalagem escolhida por cima multiplica de novo (5000 × litro), e isso
+        # não é o que a nota diz: a linha pede o ok dela.
         return False
     suggested = line.invoice_conversion_factor
     if suggested is not None and line.conversion is not None:

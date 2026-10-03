@@ -243,3 +243,44 @@ def test_validade_da_ultima_entrega_vira_atalho_so_enquanto_vale(cenario, operad
     Batch.objects.filter(sku="MANT-SS").update(expiry_date=timezone.localdate() - timedelta(days=1))
     manteiga = next(m for m in build_purchase().materials if m.sku == "MANT-SS")
     assert manteiga.lastDeliveryExpiry == ""
+
+
+@pytest.mark.django_db
+def test_embalagem_por_cima_da_nota_em_peso_nao_bate(cenario, operador):
+    """UX-C1b: nota em KG já convertida para a base; embalagem escolhida por cima pede o ok.
+
+    Caso real: "Creme de leite fresco" 5 KG, insumo em g, conversão "litros"
+    cadastrada. O leitor de NF-e devolve 5000 g sem conversão; a tela aplicava
+    os litros por cima e a entrada virava 5.050.000 g sem ninguém assinar.
+    """
+    creme = Material.objects.create(sku="CREME-FR", name="Creme de leite fresco", unit="g", shelf_life_days=10)
+    litro = MaterialConversion.objects.create(
+        material=creme, supplier=cenario["fornecedor"], label="litros", to_base_factor=Decimal("1010")
+    )
+    linha = {
+        "id": "l3",
+        "materialSku": creme.sku,
+        "conversionId": str(litro.pk),
+        "purchaseQty": 5000,
+        "invoicePurchaseQty": "5000",
+        "invoiceUnit": "KG",
+        "costInput": "160,00",
+        "invoiceTotal": "160,00",
+        "expiryDate": _validade(),
+        "lineNote": "",
+        "checked": False,
+    }
+
+    erro = _erro(_payload(cenario, lines=[*_linhas(cenario), linha], invoice_volumes=7, counted=7), operador)
+    assert erro.code == "receipt_line_unchecked"
+    assert erro.field == "lines.2.checked"
+    assert not Move.objects.filter(kind="buy").exists()
+
+    # Sem a embalagem (como a nota veio), bate e entra com os 5000 g da nota.
+    linha["conversionId"] = None
+    purchase_service.confirm_receipt(
+        _payload(cenario, lines=[*_linhas(cenario), linha], invoice_volumes=7, counted=7), user=operador
+    )
+    creme_move = Move.objects.get(kind="buy", metadata__purchase_material_sku="CREME-FR")
+    assert creme_move.delta == Decimal("5000")
+    assert creme_move.metadata["purchase_line_attested_by"] == "volume_count"

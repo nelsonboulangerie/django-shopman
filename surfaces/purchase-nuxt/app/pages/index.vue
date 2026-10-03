@@ -100,7 +100,7 @@ const {
   receiptPendingLines,
   receiptDocumentBlockers,
   receiptSupplierBlockers,
-  receiptCheckedCount,
+  receiptConference,
   receiptTotalCostQ,
   receiptHasRejectionReason,
   receiptReady,
@@ -777,7 +777,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <Icon name="lucide:package-check" class="size-4 text-success" />
               Receber
             </p>
-            <p class="mt-2 text-3xl font-bold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</p>
+            <p class="mt-2 text-3xl font-bold tabular-nums">{{ receiptConference.ready }}/{{ receiptConference.total }}</p>
             <p class="mt-1 text-xs text-muted-foreground">{{ receiptTotalPending }} pendências</p>
           </button>
           <button type="button" class="rounded-md border border-border bg-card p-4 text-left transition hover:bg-accent" @click="openBase('costs')">
@@ -850,7 +850,7 @@ onBeforeUnmount(stopInvoiceScanner);
             <button type="button" class="flex w-full items-center justify-between gap-3 p-4 text-left transition hover:bg-accent" @click="view = 'receive'">
               <span class="min-w-0">
                 <span class="block font-semibold">Recebimento em conferência</span>
-                <span class="mt-0.5 block text-sm text-muted-foreground">{{ receiptCheckedCount }} de {{ receiptLinePreviews.length }} itens conferidos</span>
+                <span class="mt-0.5 block text-sm text-muted-foreground">{{ receiptConference.label }}</span>
               </span>
               <span class="shrink-0 rounded-md border px-2 py-1 text-xs font-medium" :class="receiptReady ? 'border-success/25 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'">
                 {{ receiptReady ? "Pronto" : "Revisar" }}
@@ -1127,7 +1127,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
             <div>
               <h2 class="text-lg font-semibold">Itens da entrada</h2>
-              <p class="text-sm text-muted-foreground">{{ receiptCheckedCount }} de {{ receiptLinePreviews.length }} conferidos</p>
+              <p class="text-sm text-muted-foreground">{{ receiptConference.label }}</p>
             </div>
             <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="addAndOpenReceiptLine">
               <Icon name="lucide:plus" class="size-4" />
@@ -1219,7 +1219,7 @@ onBeforeUnmount(stopInvoiceScanner);
         <h2 class="text-lg font-semibold">Conferência</h2>
         <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div><dt class="text-xs text-muted-foreground">Origem</dt><dd class="font-semibold">{{ receiptMode === "invoice" ? "NF" : "Sem NF" }}</dd></div>
-          <div><dt class="text-xs text-muted-foreground">Itens</dt><dd class="font-semibold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">Prontos</dt><dd class="font-semibold tabular-nums">{{ receiptConference.ready }}/{{ receiptConference.total }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Valor</dt><dd class="font-semibold tabular-nums">{{ formatMoney(receiptTotalCostQ) }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Pendências</dt><dd class="font-semibold tabular-nums" :class="receiptTotalPending ? 'text-destructive' : 'text-success'">{{ receiptTotalPending }}</dd></div>
         </dl>

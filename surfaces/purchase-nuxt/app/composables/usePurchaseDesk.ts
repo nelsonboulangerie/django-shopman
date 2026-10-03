@@ -30,6 +30,8 @@ import {
   isApproximateCost,
   parseMoneyInput,
   quotePreview as buildQuotePreview,
+  receiptConferenceTally,
+  receiptDefaultConversionId,
   receiptExceptionView as buildReceiptExceptionView,
   receiptFirstBlocker as receiptFirstReceiptBlocker,
   receiptIsBlank as receiptIsBlankDraft,
@@ -286,12 +288,10 @@ export function usePurchaseDesk() {
       receiptVolumesStep.value,
     ),
   );
-  // Conferido = com o ok da linha, ou coberto pela contagem de volumes que fechou.
-  const receiptCheckedCount = computed(
-    () =>
-      receiptLinePreviews.value.filter(
-        (preview) => preview.line.checked || (receiptException.value.countOk && receiptMatchedIds.value.has(preview.line.id)),
-      ).length,
+  // Pronto = entra se confirmar agora: assinado (ok da linha, ou batendo com a
+  // nota com os volumes contados) e sem bloqueio, validade inclusa.
+  const receiptConference = computed(() =>
+    receiptConferenceTally(receiptLinePreviews.value, receiptMatchedIds.value, receiptException.value.countOk),
   );
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
@@ -306,7 +306,7 @@ export function usePurchaseDesk() {
       receiptSupplierBlockers.value.length === 0 &&
       receiptBlockers.value.length === 0 &&
       receiptVolumesStep.value === "" &&
-      receiptCheckedCount.value === receiptLinePreviews.value.length,
+      receiptConference.value.ready === receiptLinePreviews.value.length,
   );
 
   watch([noteMaterialSku, noteSupplierRef], () => {
@@ -644,7 +644,8 @@ export function usePurchaseDesk() {
       return {
         ...line,
         materialSku,
-        conversionId: conversionAllowed ? line.conversionId : defaultReceiptConversionId(materialSku),
+        conversionId:
+          conversionAllowed ? line.conversionId : receiptDefaultConversionId(line, receiptConversionsFor(materialSku)),
       };
     });
   }
@@ -792,7 +793,10 @@ export function usePurchaseDesk() {
         currentConversion.isActive &&
         currentConversion.materialSku === line.materialSku &&
         (!currentConversion.supplierRef || currentConversion.supplierRef === ref);
-      return currentIsAllowed ? line : { ...line, conversionId: defaultReceiptConversionId(line.materialSku) };
+      return currentIsAllowed ? line : {
+        ...line,
+        conversionId: receiptDefaultConversionId(line, receiptConversionsFor(line.materialSku)),
+      };
     });
   }
 
@@ -1201,7 +1205,7 @@ export function usePurchaseDesk() {
     receiptPendingLines,
     receiptDocumentBlockers,
     receiptSupplierBlockers,
-    receiptCheckedCount,
+    receiptConference,
     receiptTotalCostQ,
     receiptHasRejectionReason,
     receiptReady,
