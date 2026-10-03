@@ -40,6 +40,7 @@ from django.utils import timezone
 from .handoff import classify_handoff_request
 from .intent_benchmark import REGEX_TO_INTENT
 from .intent_pilot import DEFAULT_INTENTS
+from .small_talk import small_talk_kind
 
 logger = logging.getLogger(__name__)
 
@@ -386,7 +387,11 @@ def decide(
         previous = None
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
-    if with_jev:
+    if small_talk_kind(text):
+        # "Bom dia", "obrigado", "tchau": não há intenção a propor, e a concierge
+        # responde a cortesia sem ferramenta. Nem Jev nem modelo são consultados.
+        proposal = None
+    elif with_jev:
         proposal = classify_with_jev(text, contender=client) if _model_toggle() else None
     else:
         proposal = classify_with_model(text, list(context), client=client)

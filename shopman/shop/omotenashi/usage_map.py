@@ -117,6 +117,26 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
     ),
+    "CONCIERGE_SMALL_TALK_FAREWELL": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_INTRO": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_OFFER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
     "CONCIERGE_TURN_LIMIT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
