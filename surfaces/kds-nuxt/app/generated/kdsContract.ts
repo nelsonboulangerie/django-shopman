@@ -70,6 +70,7 @@ export interface KDSExitStationChipProjection {
   paper_failed: boolean;
   cancelled_items: number;
   can_mark_ready: boolean;
+  recall_ticket_pk: number | null;
 }
 
 /** Um pedido que ainda espera alguma estação — a coluna "Em preparo" da Saída. */

@@ -978,14 +978,14 @@ def expedition_block_reason(order, *, action: str) -> str:
             operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
         )
     if action == "dispatch":
-        from shopman.shop.adapters.delivery_devices import needs_card_machine
-
-        if needs_card_machine(order):
+        # O troco sai da gaveta no despacho (``courier_out``) e só o Gestor
+        # pergunta quanto: despachar daqui deixaria a gaveta desfalcada sem
+        # linha no livro, e o acerto recusaria o troco devolvido. A maquininha
+        # idem (custódia no pedido). A pergunta é uma só, dos dois lados.
+        question = operator_orders.dispatch_custody_question(order)
+        if question == "machine":
             return "Abra este pedido no Gestor e confirme a maquininha no despacho."
-        if operator_orders.change_out_suggested_q(order) > 0:
-            # O troco sai da gaveta no despacho (``courier_out``) e só o Gestor
-            # pergunta quanto: despachar daqui deixaria a gaveta desfalcada sem
-            # linha no livro, e o acerto recusaria o troco devolvido.
+        if question == "change":
             return "Abra este pedido no Gestor e informe o troco que o entregador leva."
     return ""
 

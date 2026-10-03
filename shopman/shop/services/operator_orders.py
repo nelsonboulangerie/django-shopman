@@ -324,6 +324,73 @@ _KITCHEN_FINISHED_STATUSES = frozenset({
 })
 
 
+#: A permissão de quem EXPEDE (SUITE-UX §15: uma Saída só, no Gestor). Era a
+#: permissão da Saída da Cozinha; quem a tem opera a coluna Saída do Gestor e
+#: nada além (``expedite_refusal``). Espelho de ``backstage.permissions``.
+EXPEDITE_PERMISSION = "backstage.operate_kds"
+
+#: Para onde quem só expede leva o pedido pronto: Despachar (entrega) e
+#: Entregar/Retirado (retirada). O mesmo par da Saída da Cozinha
+#: (``kds.EXPEDITION_TRANSITIONS``).
+EXPEDITE_TARGETS = frozenset({Order.Status.DISPATCHED, Order.Status.COMPLETED})
+
+EXPEDITE_SCOPE_REASON = "Quem expede entrega e despacha o pedido pronto. Esta etapa é de quem gerencia pedidos."
+EXPEDITE_CUSTODY_REASON = "Despachar com troco ou maquininha é de quem gerencia pedidos: chame quem gerencia."
+
+
+def expedites_only(user) -> bool:
+    """Expede, mas não gerencia pedidos (``shop.manage_orders``)."""
+    return bool(
+        user
+        and user.is_active
+        and user.is_staff
+        and not user.has_perm("shop.manage_orders")
+        and user.has_perm(EXPEDITE_PERMISSION)
+    )
+
+
+def dispatch_custody_question(order: Order) -> str:
+    """O que o despacho deste pedido pergunta além do toque: ``machine``, ``change`` ou "".
+
+    Maquininha (qual sai, custódia no pedido) e troco (quanto sai da gaveta,
+    ``courier_out``) são perguntas que só quem gerencia pedidos responde. A
+    Saída da Cozinha recusava as duas com "abra no Gestor"; no Gestor, quem só
+    expede chama quem gerencia.
+    """
+    if get_fulfillment_type(order) != "delivery":
+        return ""
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+    if needs_card_machine(order):
+        return "machine"
+    if change_out_suggested_q(order) > 0:
+        return "change"
+    return ""
+
+
+def expedite_refusal(
+    order: Order,
+    *,
+    target_status: str | None,
+    change_out_q: int | None = None,
+    equipment=None,
+    trip_ref: str | None = None,
+) -> str:
+    """Por que quem só expede NÃO pode dar este passo; "" quando pode.
+
+    Só o pedido pronto saindo (Despachar, Entregar/Retirado), sem troco, sem
+    maquininha e sem juntar a outra saída. As outras réguas (pagamento, iFood,
+    janela de desfazer) são as do Gestor e valem para todos.
+    """
+    if order.status != Order.Status.READY or target_status not in EXPEDITE_TARGETS:
+        return EXPEDITE_SCOPE_REASON
+    if change_out_q or equipment or trip_ref or (
+        target_status == Order.Status.DISPATCHED and dispatch_custody_question(order)
+    ):
+        return EXPEDITE_CUSTODY_REASON
+    return ""
+
+
 @transaction.atomic
 def advance_order(
     order: Order,
@@ -338,8 +405,12 @@ def advance_order(
     trip_ref: str | None = None,
     undo_window: bool = False,
     handoff_token: str | None = None,
+    expedite_only: bool = False,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``expedite_only``: quem toca só expede (``expedites_only``). A régua de
+    ``expedite_refusal`` é aplicada aqui, sob o lock, na linha travada.
 
     ``undo_window``: o toque veio do Gestor ou da Saída da Cozinha. Entregar e
     Despachar (``order_undo.HANDOFF_TARGETS``) então NÃO gravam a transição:
@@ -392,6 +463,16 @@ def advance_order(
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
         raise OrderStateConflict("A etapa solicitada não é mais a próxima ação deste pedido.")
+    if expedite_only:
+        refusal = expedite_refusal(
+            order,
+            target_status=target_status or next_status_for(order),
+            change_out_q=change_out_q,
+            equipment=equipment,
+            trip_ref=trip_ref,
+        )
+        if refusal:
+            raise ValueError(refusal)
     payment_service.lock_order_payment(order)
     # A maquininha é decidida abaixo, sob lock (reserva ou saída compartilhada).
     blocked = advance_block_message(gestor_advance_block(order))
@@ -1733,6 +1814,9 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     from shopman.shop.projections.types import Action
 
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    # Quem só expede (SUITE-UX §15): avança a saída do pedido pronto e desfaz
+    # (a saída, o pronto automático). O resto continua de quem gerencia.
+    expedite = not authorized and expedites_only(user)
     permission_reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     actions = []
     actor_id = getattr(user, "pk", None)
@@ -1749,7 +1833,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))
-    elif pending_handoff_action := _undo_handoff_action(order, authorized=authorized, actor_id=actor_id, permission_reason=permission_reason):
+    elif pending_handoff_action := _undo_handoff_action(order, authorized=authorized or expedite, actor_id=actor_id, permission_reason=permission_reason):
         # A saída foi pedida e ainda pode ser desfeita: o único gesto do card é
         # desfazer. Avançar de novo seria repetir a mesma saída.
         actions.append(pending_handoff_action)
@@ -1765,7 +1849,14 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
 
             if needs_card_machine(order):
                 labels["dispatched"] = "Saiu com a maquininha"
-        reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)) if authorized else permission_reason
+        if authorized:
+            reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+        elif expedite:
+            reason = expedite_refusal(order, target_status=target) or advance_block_message(
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)
+            )
+        else:
+            reason = permission_reason
         # "Pronto" é fato que o sistema sabe quando a Cozinha conclui (L1): com o
         # pronto automático ligado e ticket aberto na cozinha, o "Marcar pronto"
         # sai do card e fica no menu do pedido (``priority="menu"``), para a
@@ -1782,7 +1873,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     if auto_ready and not order_undo.pending_handoff(order):
         actions.append(Action(
             ref="undo-ready", kind="mutation", label="Desfazer", priority="secondary",
-            enabled=authorized, reason="" if authorized else permission_reason,
+            enabled=authorized or expedite, reason="" if authorized or expedite else permission_reason,
             method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "token": auto_ready["token"], "base_revision": operational_revision(order)},
         ))
