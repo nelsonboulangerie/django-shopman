@@ -4,7 +4,7 @@
 - **sessão:** executor UX-M1 (Claude, subagente da coordenação SUITE-UX, onda 1)
 - **branch:** claude/ux-m1-fila-de-decisoes
 - **PR:** #1420
-- **estado final:** na fila #1420 (auto-merge ligado ao marcar pronto)
+- **estado final:** PR aberto #1420, auto-merge DESLIGADO pela coordenação até o e2e de a11y do "Marketing — cadeia completa" passar (o `npm audit` vermelho por node-forge/braces é esperado e não é desta frente)
 - **início / fim (UTC):** 2026-10-03 14:00 / 2026-10-03 15:00
 
 ## O que mudou
@@ -146,6 +146,25 @@ Como faria, em três PRs:
 3. (c) A digital substitui a frase `ENVIAR N` até o limiar e a frase volta acima dele (sim), ou a
    digital entra junto com a frase sempre (não)? E o limiar da segunda pessoa é um número fixo de
    pessoas no Admin (sim) ou continua sendo `× múltiplo` do limiar proporcional (não)?
+
+### Correção da barra do pé (regressão pega pela CI)
+
+O e2e `a11y.spec.ts` ("fluxo autenticado…", 320×568) não conseguia tocar em "Tema escuro" no
+pé do rail: a barra do polegar era `fixed inset-x-0` (largura da janela), cobria o rail, e a
+pílula interceptava o ponteiro. Correção: a barra saiu da `CampaignTopBar` para
+`MarketingSectionBar.vue`, montada pelo `app.vue` no fim da COLUNA de conteúdo, depois da
+página, com `sticky bottom-0 mt-auto` e `data-focus-obstruction` (a régua do kit para o que
+flutua na base). Ela agora só ocupa a largura do conteúdo, nunca a do rail, e o conteúdo
+termina acima dela pelo fluxo (o `padding` reservado na coluna saiu). As seções viraram
+`useMarketingSections` (fonte única das duas barras). Trava nova `tests/sectionBar.test.ts`
+(barra não é `fixed`, mora depois da página e fora do rail, declara o obstáculo). O e2e não
+rodou aqui (proxy bloqueia o Chromium); a prova é o job da CI.
+
+### Retratos visuais
+
+Os retratos novos (`decisions__pending` 390 e 1280, `decisions__empty` 390, `scheduled__list`
+390) e todos os que mudaram com a barra de seções precisam ser gerados pela **sessão que tem o
+browser da CI** (macOS-15 + Chromium pinado pelo Playwright). Não foram regenerados aqui.
 
 ## Armadilhas novas
 

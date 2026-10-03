@@ -53,12 +53,12 @@ watch(sessionState, async (next, previous) => {
             @lock="lock"
           />
         </div>
-        <!-- No celular, o pé da página reserva a altura da barra de seções fixa. -->
-        <div
-          class="flex min-w-0 flex-1 flex-col max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))]"
-        >
+        <div class="flex min-w-0 flex-1 flex-col">
           <CampaignTopBar />
           <component :is="Component" />
+          <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
+               nunca cobrir o rail à esquerda. Ver MarketingSectionBar.vue. -->
+          <MarketingSectionBar />
         </div>
       </template>
 

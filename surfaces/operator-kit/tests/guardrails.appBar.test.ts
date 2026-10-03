@@ -86,10 +86,11 @@ describe("guardrail do cabeçalho de seções", () => {
       // seções do Marketing (Decisões, Agendados, Enviados, Ajustes) vão para a
       // barra do polegar, no pé da tela, e Ajustes entra por um item só, com as
       // próprias seções numa segunda linha. A barra do topo continua sendo a do
-      // kit. Quando outro app pedir a barra do pé, ela vira peça da layer e esta
-      // linha sai.
+      // kit. A barra do pé mora em `MarketingSectionBar.vue`, no fim da coluna de
+      // conteúdo (fixa na janela ela cobria o rail). Quando outro app pedir a barra
+      // do pé, ela vira peça da layer e esta linha sai.
       "marketing-nuxt/app/components/CampaignTopBar.vue":
-        "barra do polegar no celular e segunda linha de Ajustes",
+        "segunda linha de Ajustes (a barra do pé é MarketingSectionBar.vue)",
     };
     for (const file of convertidos) {
       const source = readFileSync(join(SURFACES, file), "utf8");
