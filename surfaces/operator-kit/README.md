@@ -753,36 +753,58 @@ Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebim
 
 Quadros e análise (B.I., Encomendas, Produção, KDS, Gestor). O desenho é o do B.I.
 (promovido de `BiTopBar.vue`): UM botão que DIZ a janela ativa, os chips e o personalizado
-no popover dele. Acrescido de ‹ › e de "Voltar para hoje".
+no popover dele. Acrescido de ‹ › e de "Voltar para hoje". É o controle universal de
+período: o popover tem até quatro grupos, sempre nesta ordem, e cada consumidor liga os
+que fazem sentido para ele.
+
+| Grupo | Chips (chave) | O que é |
+|---|---|---|
+| Período | Dia, Semana, Mês, Ano (`day`, `week`, `month`, `year`) | o período do calendário que contém a âncora; Ontem, Mês passado etc. são ‹ a partir dele |
+| Próximos | 7D, 14D, 28D (`next7d`, `next14d`, `next28d`) | os N dias começando hoje (quem trabalha com o que está por vir) |
+| Últimos | 7D, 28D, 3M, 6M, 1A, 5A, Máx (`7d` … `max`) | os N dias terminando hoje |
+| Personalizado | De/Até (`custom`) | o intervalo escolhido; `max-span-days` recusa o que passa do teto do servidor |
 
 ```html
-<!-- B.I.: tudo, personalizado, calendário até hoje -->
-<OperatorPeriodPicker v-model="selection" :presets="['day','week','month','year','7d','28d','3m','6m','1y','5y','max']"
+<!-- B.I.: todo o passado, personalizado, calendário até hoje -->
+<OperatorPeriodPicker v-model="selection" :presets="PAST_PERIOD_PRESETS"
                       custom :max="today" :epoch="DATA_EPOCH" label="Período de análise" />
-<!-- Encomendas: dia e semana; KDS: só ['day'] -->
-<OperatorPeriodPicker v-model="period" :presets="['day','week']" label="Período das encomendas" />
+<!-- Encomendas: o calendário, os próximos e os últimos dias, personalizado até 62 dias -->
+<OperatorPeriodPicker v-model="period" :presets="PREORDERS_PERIOD_PRESETS" custom
+                      :max-span-days="62" label="Período das encomendas" />
+<!-- Produção e KDS: só ['day'] -->
 ```
 
 - **O consumidor declara as granularidades** (`presets`, chaves de `PERIOD_PRESETS`) e se
   aceita `custom`. Sem personalizado, o popover oferece "Ir para o dia".
+- **O período mora na URL** (plano SUITE-UX): `periodFromQuery(route.query, { presets,
+  custom, fallback })` e `periodToQuery(seleção, fallback)` usam as chaves `period`, `from`
+  e `to`; o padrão do consumidor não ocupa a URL, e valor ilegível cai no padrão. O B.I.
+  usa assim (`useBiWindow`, e as abas levam a query); as Encomendas mantêm o vocabulário
+  próprio (`mode`, `date`, `to`) por causa dos favoritos de kiosk já gravados.
+- **O hoje da loja**: `todayIso(agora, STORE_TIME_ZONE)` dá o dia de Londrina
+  (`America/Sao_Paulo`) qualquer que seja o fuso do dispositivo.
 - **O valor** é `{ preset, from, to }`. No calendário (`day`/`week`/`month`/`year`), `from`
   é a âncora e `""` é "o período que contém hoje" (acompanha a virada do dia); na janela
-  móvel (`7d`…`5y`), `to` é o último dia e `""` é "termina hoje"; em `custom`, o intervalo.
+  móvel do passado (`7d`…`5y`), `to` é o último dia e `""` é "termina hoje"; na do futuro
+  (`next7d`…), `from` é o primeiro dia e `""` é "começa hoje"; em `custom`, o intervalo.
   O estado é do consumidor: quem guarda na URL guarda na URL. Quadro que guarda UM dia
   (Produção, Expedição, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
   `periodAnchor(seleção, hoje)` num `computed` com setter.
-- **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia e Semana), Produção
+- **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia a Mês, Próximos, 7D e 28D, personalizado), Produção
   (grade, Expedição, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
   de dia.
 - **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
   anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias
-  antes. "Máx" não anda. A seta que sairia de `min`/`max` fica desabilitada.
+  antes; próximos N dias → os N dias depois, e ‹ para em hoje. "Máx" não anda. A seta
+  que sairia de `min`/`max` fica desabilitada.
 - **`max` muda o que é "o período"**: com `max` = hoje (B.I.), a semana corre de segunda até
   hoje; sem `max` (quadros), é segunda a domingo inteira.
 - **Trocar de granularidade guarda a âncora** (quem olhava a quinta passada e toca
   "Semana" vê a semana daquela quinta). Janela móvel recomeça terminando hoje.
 - **Rótulo**: dia diz sempre o dia da semana (`Hoje, qui 01/10`, `Ontem, qua 30/09`,
-  `Ter 29/09`); o resto diz nome e intervalo (`Semana · 28/09 a 04/10`). Sem travessão.
+  `Ter 29/09`); o resto diz o nome por extenso e o intervalo (`Semana · 28/09 a 04/10`,
+  `Últimos 28 dias · 04/09 a 01/10`, `Próximos 7 dias · 01/10 a 07/10`). O chip diz `7D`
+  porque o grupo diz para que lado; o botão não tem grupo. Sem travessão.
 
 ## Colunas de fila ajustáveis e recolhíveis (`QueueColumnStrip`, `QueueColumnResizeHandle`)
 

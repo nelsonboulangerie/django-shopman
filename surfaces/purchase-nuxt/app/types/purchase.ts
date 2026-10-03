@@ -56,6 +56,11 @@ export interface Material {
   opensInto?: OpensInto | null;
   /** Conteúdo de uma embalagem em kg, pelo peso líquido declarado ("0.2"); vazio sem declaração. */
   netContentKg?: string;
+  /**
+   * Validade do lote da última entrega deste insumo ("2026-10-12"), só enquanto
+   * não venceu. É o atalho "Mesma da última entrega" do recebimento.
+   */
+  lastDeliveryExpiry?: string;
 }
 
 export interface OpensInto {
@@ -166,6 +171,8 @@ export interface PurchaseProjection {
     invoiceInput: string;
     note: string;
     lines: ReceiptLine[];
+    /** Volumes que a nota declara no transporte; 0 quando não declara. */
+    invoiceVolumes?: number;
   };
 }
 
@@ -264,6 +271,9 @@ export interface ReceiptLine {
   requiresConversion?: boolean;
   conversionSuggestion?: ReceiptConversionSuggestion | null;
   purchaseQty: number;
+  // A quantidade da NOTA na unidade da linha. `purchaseQty` e o que chegou; a
+  // diferenca entre os dois e o que o recebimento por excecao cobra com motivo.
+  invoicePurchaseQty?: number | null;
   costInput: string;
   expiryDate: string;
   // A validade veio do grupo `rastro` da NF-e, nao da mao do operador.
@@ -366,7 +376,8 @@ export interface ReceiptWarning {
     | "missing-expiry"
     | "approximate-conversion"
     | "manual-source"
-    | "invalid-qty";
+    | "invalid-qty"
+    | "difference-reason";
   label: string;
   tone: ReceiptWarningTone;
 }
@@ -384,9 +395,11 @@ export interface ReceiptWarning {
  * - `checked` — o operador conferiu e assinou. Fecha o item.
  * - `attention` — nada trava, mas há o que olhar: a NF diverge da conversão, a
  *   conversão é estimada, o valor ainda não foi conferido.
+ * - `matched` — bate com a nota (quantidade, valor e embalagem): entra pela
+ *   contagem de volumes, sem o ok da linha.
  * - `ready` — está completo e ninguém marcou como conferido ainda.
  */
-export type ReceiptLineStatus = "blocked" | "checked" | "attention" | "ready";
+export type ReceiptLineStatus = "blocked" | "checked" | "matched" | "attention" | "ready";
 
 /** Como o estado se apresenta: a palavra e o ícone. A cor mora na tela. */
 export interface ReceiptLineStatusBadge {
@@ -427,10 +440,10 @@ export interface ReceiptLineRow {
  * o QUE falta e nao sabe ONDE, que era o buraco: "informe a validade" no rodape
  * de uma nota de dez itens nao diz em qual item.
  */
-export type ReceiptFieldAnchor = "material" | "conversion" | "qty" | "expiry" | "check";
+export type ReceiptFieldAnchor = "material" | "conversion" | "qty" | "reason" | "expiry" | "check";
 
 /** Onde mora um gesto que nao esta dentro de nenhuma linha. */
-export type ReceiptDocumentAnchor = "invoice" | "supplier";
+export type ReceiptDocumentAnchor = "invoice" | "supplier" | "volumes";
 
 /** Uma pendencia da entrada, com nome do item e endereco do campo. */
 export interface ReceiptPendingItem {
@@ -448,7 +461,7 @@ export interface ReceiptPendingItem {
  * pendencia, e a tela leva o operador ate ela.
  */
 export interface ReceiptBlocker {
-  scope: "document" | "supplier" | "line";
+  scope: "document" | "supplier" | "volumes" | "line";
   /** O gesto, em uma frase: "Informe a validade". */
   step: string;
   /** De que item se trata. Vazio quando a pendencia nao e de uma linha. */
@@ -490,6 +503,10 @@ export interface PurchaseReceiptConfirmPayload {
   invoiceAccessKey: string | null;
   note: string;
   lines: ReceiptLine[];
+  /** Volumes que a nota declara (eco do rascunho). */
+  invoiceVolumes?: number;
+  /** O ato físico: quantos volumes o recebedor contou na doca. */
+  volumes?: { counted: number };
 }
 
 export type PurchaseReceiptRejectPayload = PurchaseReceiptConfirmPayload;
@@ -616,4 +633,52 @@ export interface CountSummary {
   divergent: number;
   missingReason: number;
   ready: boolean;
+}
+
+/**
+ * A nota × o que chegou, numa linha que veio de nota. `difference` é chegou
+ * menos nota, na unidade da linha: negativo é falta.
+ */
+export interface ReceiptLineDifference {
+  invoiceQty: number;
+  arrivedQty: number;
+  difference: number;
+}
+
+/** Um atalho de validade: um toque grava a data e passa para o próximo. */
+export interface ReceiptExpiryShortcut {
+  key: "last" | "typical";
+  label: string;
+  date: string;
+  /** "12/10 · seg": a data por extenso curto, com o dia da semana. */
+  caption: string;
+}
+
+/**
+ * A conferência por exceção da entrada, pronta para desenhar.
+ *
+ * O que bate com a nota entra com UM ato físico (contar os volumes); o que não
+ * bate pede atenção item a item; a validade de perecível é pedida sempre, uma
+ * linha por vez.
+ */
+export interface ReceiptExceptionView {
+  /** Existe o atalho? Só com nota e com um número de volumes para conferir. */
+  available: boolean;
+  /** Quantos volumes devem estar na doca, dado o que chegou. */
+  expectedVolumes: number | null;
+  /** O que o recebedor declarou ter contado; `null` antes de contar. */
+  countedVolumes: number | null;
+  countOk: boolean;
+  /** As linhas que batem com a nota (entram pela contagem). */
+  matched: ReceiptLinePreview[];
+  /** As linhas que não batem: cada uma pede o seu ok. */
+  exceptions: ReceiptLinePreview[];
+  /** Os perecíveis da entrada, na ordem da nota. */
+  perishables: ReceiptLinePreview[];
+  /** Quantos perecíveis já têm validade. */
+  expiryDone: number;
+  /** O próximo perecível sem validade; `null` quando não falta nenhum. */
+  nextExpiry: ReceiptLinePreview | null;
+  /** O passo da vez: contar, validade, resolver exceção, ou pronto. */
+  step: "count" | "expiry" | "exceptions" | "done";
 }

@@ -76,6 +76,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
     ProductionQualityCorrectionMutationSerializer,
+    ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
     ProductionStartMutationSerializer,
@@ -1653,13 +1654,41 @@ class OperationEpisodeAnswerView(APIView):
         return Response({"ok": True, "status": episode.status})
 
 
+# O que responde a contagem cega: com qualquer um destes números no payload,
+# a contagem vira conferência — basta abrir a aba de rede. `qty_expiring` e
+# `qty_nonconforming` contam porque, no item que vence inteiro, SÃO o estoque.
+_BLIND_ITEM_FIELDS = ("qty_available", "qty_expiring", "qty_nonconforming")
+_BLIND_CLOSING_FIELDS = ("total_available", "production_summary")
+
+
+def _blind_closing_data(closing) -> dict:
+    """O fechamento como o gerente pode recebê-lo: cego até a contagem.
+
+    Antes do registro, o servidor não manda o que a contagem deveria
+    descobrir (disponível por SKU, total, produzido no dia); a `classification`
+    fica, porque é o que diz ao operador o destino da sobra. Depois do registro
+    a contagem já foi feita e o quadro volta inteiro. Dinheiro (esperado,
+    diferença, mix de meios) nunca passa por aqui: é do relatório de caixa,
+    atrás de ``cashman.audit_shift``.
+    """
+    data = projection_data(closing)
+    if closing.already_closed:
+        return data
+    for field in _BLIND_CLOSING_FIELDS:
+        data.pop(field, None)
+    for item in data["items"]:
+        for field in _BLIND_ITEM_FIELDS:
+            item.pop(field, None)
+    return data
+
+
 class DayClosingView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.perform_closing"
 
     def get(self, request):
         closing = build_day_closing()
-        return Response({"closing": projection_data(closing)})
+        return Response({"closing": _blind_closing_data(closing)})
 
     def post(self, request):
         """Finalize the day closing.
@@ -3927,6 +3956,59 @@ class WorkOrderQualityReviewView(_ProductionActionBase):
                 "wo_ref": work_order.ref,
                 "quantity": _production_quantity(work_order.finished or 0),
                 "current": _current_work_order_projection(work_order.pk),
+            }
+        )
+
+
+def _quality_review_batch_action_ref(body: dict) -> str:
+    from shopman.backstage.projections.production import quality_review_batch_ref
+
+    return quality_review_batch_ref(body["items"])
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Confirm the quality of every clean finished batch of a day at once (all or nothing)",
+        responses={200: OpenApiResponse(description="Quality review recorded for every batch in the set.")},
+    ),
+)
+class WorkOrderQualityReviewBatchView(_ProductionActionBase):
+    required_production_capability = "can_correct_qc"
+
+    def post(self, request):
+        body = validated_body(
+            request,
+            ProductionQualityReviewBatchMutationSerializer,
+            projection_kind="qc",
+            action_kind="review_qc_batch",
+            action_href="/api/v1/backstage/production/quality-review/batch/",
+            action_ref=_quality_review_batch_action_ref,
+        )
+        for item in body["items"]:
+            _require_projected_work_order(
+                request,
+                item["work_order_id"],
+                committed_replay=body.get("_committed_replay", False),
+            )
+        try:
+            work_orders = production_service.apply_quality_review_batch(
+                items=body["items"],
+                target_date=body["target_date"],
+                actor=_production_actor(request),
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        return Response(
+            {
+                "ok": True,
+                "reviewed_count": len(work_orders),
+                "current": [_current_work_order_projection(work_order.pk) for work_order in work_orders],
             }
         )
 

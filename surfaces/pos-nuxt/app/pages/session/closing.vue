@@ -328,15 +328,13 @@ async function confirmSubmit() {
               <thead>
                 <tr class="border-b text-left text-xs text-muted-foreground">
                   <th class="py-1.5 pr-3 font-medium">Data</th>
-                  <th class="py-1.5 pr-3 font-medium">Pedidos</th>
-                  <th class="py-1.5 font-medium">Total</th>
+                  <th class="py-1.5 font-medium">Pedidos</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in closing.upcoming_preorders" :key="row.date" class="border-b border-border/60 last:border-0">
                   <td class="py-1.5 pr-3">{{ row.date_display }}</td>
-                  <td class="py-1.5 pr-3 tabular-nums">{{ row.orders_count }}</td>
-                  <td class="py-1.5 tabular-nums">{{ row.total_display }}</td>
+                  <td class="py-1.5 tabular-nums">{{ row.orders_count }}</td>
                 </tr>
               </tbody>
             </table>

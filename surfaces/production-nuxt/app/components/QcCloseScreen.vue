@@ -56,7 +56,17 @@ type QuantityTarget = { kind: "grade"; gradeRef: string } | { kind: "loss" };
 type SheetQuestion =
   | { kind: "overshoot" }
   | { kind: "grade_reason"; gradeRef: string }
-  | { kind: "loss_reason" };
+  | { kind: "loss_reason" }
+  | { kind: "correction_reason" };
+
+// Correção (P20): o servidor exige o motivo e ele vai para a auditoria com o
+// seu nome. A tela pergunta; nunca escreve o motivo pelo operador. A lista
+// curta cobre os casos de sempre e o texto continua editável.
+const CORRECTION_REASONS = [
+  "Defeito visto depois do fechamento",
+  "Contagem errada no fechamento",
+  "Grau ou motivo trocado no fechamento",
+] as const;
 
 function quantityOf(group: QcPartitionGroup): number {
   const quantity = Number(group.quantity);
@@ -103,9 +113,7 @@ const lossDefectRef = ref(
 );
 const overshootConfirmed = ref(false);
 const overshootReason = ref("");
-// O diff estruturado + ator + horário já é a auditoria. Não cobramos do
-// operador um segundo motivo livre que apenas repetiria o defeito escolhido.
-const auditReason = "Revisão do QC registrada no quiosque.";
+const correctionReason = ref("");
 const submitLatched = ref(false);
 
 watch(
@@ -322,6 +330,9 @@ function pendingQuestions(): SheetQuestion[] {
   if (lossQuantity.value > 0 && !lossDefectRef.value) {
     questions.push({ kind: "loss_reason" });
   }
+  if (props.mode === "correct" && !correctionReason.value.trim()) {
+    questions.push({ kind: "correction_reason" });
+  }
   return questions;
 }
 
@@ -369,6 +380,9 @@ const sheetTitle = computed(() => {
   if (sheetQuestion.value?.kind === "loss_reason") {
     return `Qual o motivo principal da perda de ${lossQuantity.value}?`;
   }
+  if (sheetQuestion.value?.kind === "correction_reason") {
+    return "Por que a qualidade deste lote está sendo corrigida?";
+  }
   return questionGrade.value
     ? `Qual o motivo principal de ${gradeQuantity(questionGrade.value.ref)} em ${questionGrade.value.label}?`
     : "Motivo principal";
@@ -413,6 +427,13 @@ function confirmOvershoot() {
   advanceQuestions();
 }
 
+function confirmCorrectionReason() {
+  const reason = correctionReason.value.trim();
+  if (!reason) return;
+  correctionReason.value = reason;
+  advanceQuestions();
+}
+
 function fixOvershoot() {
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
@@ -441,7 +462,7 @@ function submit() {
     partition: buildPartition(),
     yield_deviation_confirmed: overshootConfirmed.value,
     yield_deviation_reason: overshootReason.value.trim(),
-    reason: auditReason,
+    reason: props.mode === "correct" ? correctionReason.value.trim() : "",
   });
 }
 
@@ -472,14 +493,26 @@ function partitionKey(partition: QcPartitionGroup[]): string {
   );
 }
 
-function requestBack() {
+const confirmDiscard = useConfirm();
+
+async function requestBack() {
   if (
     isDirty.value &&
-    !window.confirm(
+    !(await confirmDiscard(
       props.mode === "correct"
-        ? "Descartar a correção de qualidade?"
-        : "Descartar as quantidades e os motivos informados?",
-    )
+        ? {
+            title: "Descartar a correção de qualidade?",
+            description:
+              "Os números e os motivos que você mudou neste lote se perdem. A qualidade fica como estava.",
+            confirmLabel: "Descartar e sair",
+          }
+        : {
+            title: "Descartar as quantidades e os motivos informados?",
+            description:
+              "O lote continua aberto na Expedição, sem nada do que você digitou.",
+            confirmLabel: "Descartar e sair",
+          },
+    ))
   ) {
     return;
   }
@@ -812,6 +845,58 @@ const fieldCard =
                 Confirmar {{ total }} unidades
               </UiButton>
             </div>
+          </div>
+          <div
+            v-else-if="sheetQuestion?.kind === 'correction_reason'"
+            class="grid gap-3 px-4 pb-6"
+            data-correction-reason
+          >
+            <div
+              class="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Motivos comuns"
+            >
+              <!-- Motivo pronto preenche o texto (editável); é escolha, não CTA. -->
+              <button
+                v-for="preset in CORRECTION_REASONS"
+                :key="preset"
+                type="button"
+                :aria-pressed="correctionReason === preset"
+                class="inline-flex min-h-12 items-center rounded-full border px-4 text-sm transition-colors"
+                :class="
+                  correctionReason === preset
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'text-muted-foreground hover:bg-accent'
+                "
+                data-correction-preset
+                @click="correctionReason = preset"
+              >
+                {{ preset }}
+              </button>
+            </div>
+            <label class="grid gap-1.5 text-sm">
+              <span class="font-medium">
+                Motivo (fica registrado com seu nome)
+              </span>
+              <UiTextarea
+                v-model="correctionReason"
+                :rows="3"
+                :maxlength="500"
+                required
+                class="bg-background"
+                aria-label="Motivo da correção de qualidade"
+                placeholder="Ex.: duas peças estavam em outra bandeja"
+              />
+            </label>
+            <UiButton
+              type="button"
+              class="h-auto min-h-14 whitespace-normal text-base"
+              size="lg"
+              :disabled="!correctionReason.trim()"
+              @click="confirmCorrectionReason"
+            >
+              Salvar correção
+            </UiButton>
           </div>
           <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <!-- Motivos são tiles de escolha com título e explicação, não botões textuais genéricos. -->
