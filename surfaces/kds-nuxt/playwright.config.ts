@@ -34,6 +34,8 @@ export default defineConfig({
         NUXT_DJANGO_BASE_URL: "http://127.0.0.1:8798",
         HOST: "127.0.0.1",
         PORT: "3103",
+        // A estação de Saída manda para o Gestor (UX-G3); o e2e confere o destino.
+        NUXT_PUBLIC_ORDERS_URL: "http://127.0.0.1:3199/",
       },
     },
   ],

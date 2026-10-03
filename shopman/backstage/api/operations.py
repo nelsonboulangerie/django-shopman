@@ -743,9 +743,8 @@ class OperatorSessionView(APIView):
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
             return Response({"detail": "Permissão desconhecida."}, status=400)
-        from shopman.backstage.services import operator_session
-
         from shopman.backstage.permissions import has_surface_perm
+        from shopman.backstage.services import operator_session
 
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
         lock_key = _surface_lock_key(required_perm)

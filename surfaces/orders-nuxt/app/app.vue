@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { GESTOR_SURFACE_PERM } from "~/composables/useGestorAccess";
 // Gestor de Pedidos surface shell. Thin shell — the order hub is a board + detail,
 // each at its own URL, so it uses pages/ routing (like the KDS, unlike the POS
 // kiosk single-shell). The shell holds the page outlet + chrome + the operator
 // lock overlay (Opção C): when the gate is ON and nobody unlocked, a PIN/badge is
 // required. Gated OFF → never shows.
-const OPERATOR_PERM = "shop.manage_orders";
+// Quem gerencia pedidos OU quem expede (SUITE-UX §15: a Saída da Cozinha mora na
+// coluna Saída daqui). A trava do Gestor é a primeira (`shop.manage_orders`).
+const OPERATOR_PERM = GESTOR_SURFACE_PERM;
 const { hasDirty: cashDraftDirty } = useOrderCashDrafts();
 const { hasPending: intentionPending } = useOrderIntention();
 function protectSessionExit(event: BeforeUnloadEvent) {

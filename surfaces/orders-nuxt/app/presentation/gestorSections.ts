@@ -9,9 +9,13 @@ export interface GestorSectionsInput {
   // operando. Desconhecido (carregando, erro) esconde: a aba não aparece para depois
   // levar a uma recusa.
   canManageCustomers: boolean;
+  // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
+  // resto: a barra fica só com Pedidos. Ausente conta como quem gerencia.
+  expeditesOnly?: boolean;
 }
 
-export function gestorSections({ channelsAttention, canManageCustomers }: GestorSectionsInput): OperatorSection[] {
+export function gestorSections({ channelsAttention, canManageCustomers, expeditesOnly = false }: GestorSectionsInput): OperatorSection[] {
+  if (expeditesOnly) return [{ key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" }];
   return [
     { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/" },
     // Os pedidos que já saíram do quadro: concluídos, cancelados e devolvidos.

@@ -254,6 +254,8 @@ class KitchenStationProjection:
     state_label: str
     paper_label: str = ""
     paper_failed: bool = False
+    #: Itens desta estação retirados do pedido depois do disparo.
+    cancelled_items: int = 0
     #: "Pronto de Lanches": a estação sem tela terminou a parte dela.
     can_mark_ready: bool = False
     #: "Voltar para Lanches": o ticket concluído que volta à cozinha.
@@ -1778,6 +1780,7 @@ def _kitchen_progress(order: Order, chips) -> KitchenProgressProjection | None:
             state_label=chip.state_label,
             paper_label=chip.paper_label,
             paper_failed=chip.paper_failed,
+            cancelled_items=chip.cancelled_items,
             can_mark_ready=chip.can_mark_ready,
             recall_ticket_pk=None if leaving else chip.recall_ticket_pk,
         )

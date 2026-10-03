@@ -394,6 +394,7 @@ export interface KitchenStationProjection {
   state_label: string;
   paper_label: string;
   paper_failed: boolean;
+  cancelled_items: number;
   can_mark_ready: boolean;
   recall_ticket_pk: number | null;
 }

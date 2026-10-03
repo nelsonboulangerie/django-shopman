@@ -22,10 +22,13 @@ const { data: customersAccess } = useFetch<{ authorized?: boolean }>("/api/v1/ba
   watch: [operatorId],
 });
 
+const { expeditesOnly } = useGestorAccess();
+
 const sections = computed(() =>
   gestorSections({
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
+    expeditesOnly: expeditesOnly.value,
   }),
 );
 </script>

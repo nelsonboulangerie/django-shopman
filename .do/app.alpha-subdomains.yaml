@@ -1079,6 +1079,11 @@ services:
     scope: RUN_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
+  # A estação de Saída manda para a coluna Saída do Gestor (UX-G3).
+  - key: KDS__NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_TIME
+    value: 'https://gestor.boulangerie.com.br/'
+    type: GENERAL
   # ── Pedidos (gestor.) ──
   - key: ORDERS__NUXT_PUBLIC_ADMIN_BASE_URL
     scope: RUN_TIME

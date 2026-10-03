@@ -31,10 +31,12 @@ import {
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
-import { BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
+import { BOARD_COLUMNS_QUERY, BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
-const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, markStationReady, recallStation, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+// Quem só expede (SUITE-UX §15) opera a Saída daqui; o detalhe do pedido é de quem gerencia.
+const { canManageOrders } = useGestorAccess();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
@@ -174,6 +176,20 @@ function pickSort(key: SortKey) {
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const zoneTitles = computed<Record<string, string>>(() => Object.fromEntries(zones.value.map((z) => [z.key, z.title])));
 const boardLayout = useBoardLayout(() => zoneTitles.value);
+// A Saída da Cozinha aposentada (e qualquer bookmark de posto de saída) chega com
+// `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
+// O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
+onMounted(() => {
+  if (route.query[BOARD_COLUMNS_QUERY] !== "expedition") return;
+  boardLayout.showOnly("expedition");
+  const { [BOARD_COLUMNS_QUERY]: _applied, ...rest } = route.query;
+  void router.replace({ path: route.path, query: rest });
+});
+// O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
+const touchCards = computed(() => viewMode.value === "board" && boardLayout.exitPost.value);
+function onStationReady(card: OrderCardProjection, stationRef: string) {
+  if (card.kitchen) void markStationReady(card.ref, card.kitchen.order_pk, stationRef);
+}
 const columnEls = new Map<string, HTMLElement>();
 function setColumnEl(key: string, el: unknown) {
   if (el instanceof HTMLElement) columnEls.set(key, el);
@@ -693,11 +709,15 @@ function printQueue() {
               :error="actionError(card.ref)"
               :selected="isSelected(card.ref)"
               :danfe-printing="danfePrint.isPrinting(card.ref)"
+              :touch="touchCards"
+              :can-open="canManageOrders"
               @action="(action) => onAction(card.ref, action)"
               @dismiss-error="clearActionError(card.ref)"
               @toggle-select="toggleSelect(card.ref)"
               @toggle-assign="onToggleAssign(card)"
               @print-danfe="danfePrint.printDanfe(card.ref)"
+              @station-ready="(stationRef) => onStationReady(card, stationRef)"
+              @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
             />
             <QueueColumnResizeHandle
               v-if="boardLayout.nextOpen(zone.key)"
@@ -755,9 +775,10 @@ function printQueue() {
                   </button>
                 </td>
                 <td class="px-3 py-2">
-                  <NuxtLink :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
+                  <NuxtLink v-if="canManageOrders" :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
                     {{ splitRef(row.card.ref).code }}
                   </NuxtLink>
+                  <span v-else class="inline-flex min-h-control items-center font-bold tabular-nums">{{ splitRef(row.card.ref).code }}</span>
                 </td>
                 <td class="px-3 py-2">
                   <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium" :class="toneBadge(statusTone(row.card.status))">
@@ -850,6 +871,7 @@ function printQueue() {
                 :error="actionError(card.ref)"
                 :selected="isSelected(card.ref)"
                 :danfe-printing="danfePrint.isPrinting(card.ref)"
+                :can-open="canManageOrders"
                 @action="(action) => onAction(card.ref, action)"
                 @dismiss-error="clearActionError(card.ref)"
                 @toggle-select="toggleSelect(card.ref)"

@@ -6,7 +6,6 @@
 import type {
   KDSBoardProjection,
   KDSExitPreparingCardProjection,
-  KDSExitStationChipProjection,
   KDSExpeditionCardProjection,
   KDSTicketProjection,
   KDSTimerClass,
@@ -329,79 +328,6 @@ export function boardView(
   };
 }
 
-// ── A Saída: um chip por estação no card "Em preparo" ───────────────────────
-// A estação de tela dá baixa sozinha: o chip só mostra em que pé ela está. A
-// estação SEM tela recebeu o pedido em papel, e quem dá a baixa dela é a Saída —
-// o chip diz quando o papel saiu e oferece "Pronto" (decisão do dono, 26/09).
-
-export type KDSExitChipTone = "done" | "working" | "waiting" | "alert";
-
-export interface KDSExitChipView {
-  /** O nome da estação ("Lanches"). */
-  station: string;
-  /** O que está acontecendo nela: "pronto", "em preparo", "impresso às 10:42"… */
-  detail: string;
-  tone: KDSExitChipTone;
-  icon: string;
-  /** Mostra o botão "Pronto" desta estação. */
-  canMarkReady: boolean;
-  /** Itens retirados depois do disparo, ditos por extenso ("1 item cancelado"). */
-  cancelledNote: string;
-}
-
-/** O que o chip da estação diz, e com que peso.
- *
- *  - pronto: verde e um ✓ — é a notícia que a Saída espera;
- *  - estação sem tela, com papel que não saiu: vermelho, porque ninguém na
- *    bancada sabe do pedido — alguém precisa ir até lá;
- *  - estação sem tela, papel na bancada: o horário do papel (é o que a Saída
- *    confere antes de dar o pronto por ela);
- *  - estação de tela: o estado, neutro. */
-export function exitChipView(chip: KDSExitStationChipProjection): KDSExitChipView {
-  const cancelledNote = chip.cancelled_items
-    ? `${chip.cancelled_items} ${chip.cancelled_items === 1 ? "item cancelado" : "itens cancelados"}`
-    : "";
-  if (chip.state === "done") {
-    return { station: chip.station_name, detail: "pronto", tone: "done", icon: "lucide:check", canMarkReady: false, cancelledNote };
-  }
-  if (chip.prints && chip.paper_failed) {
-    return {
-      station: chip.station_name,
-      detail: `${chip.paper_label} — avise a estação`,
-      tone: "alert",
-      icon: "lucide:printer",
-      canMarkReady: chip.can_mark_ready,
-      cancelledNote,
-    };
-  }
-  if (chip.prints) {
-    return {
-      station: chip.station_name,
-      detail: chip.paper_label || chip.state_label,
-      tone: "waiting",
-      icon: "lucide:printer",
-      canMarkReady: chip.can_mark_ready,
-      cancelledNote,
-    };
-  }
-  return {
-    station: chip.station_name,
-    detail: chip.state_label,
-    tone: chip.state === "in_progress" ? "working" : "waiting",
-    icon: chip.state === "in_progress" ? "lucide:flame" : "lucide:clock",
-    canMarkReady: false,
-    cancelledNote,
-  };
-}
-
-/** Classes do chip por tom — verde só no pronto, vermelho só no papel perdido. */
-export function exitChipTone(tone: KDSExitChipTone): string {
-  if (tone === "done") return "border-success/40 bg-success/10 text-success";
-  if (tone === "alert") return "border-destructive/50 bg-destructive/10 text-destructive dark:text-red-300";
-  if (tone === "working") return "border-foreground/20 bg-foreground/5 text-foreground";
-  return "border-border bg-card text-muted-foreground";
-}
-
 /** Map the projection's Material-Symbol icon names (channel + fulfillment) onto
  *  this surface's lucide vocabulary. The KDS Nuxt app renders lucide; the shared
  *  backend projection speaks Material (it also feeds the HTMX queue). Owning the
@@ -497,30 +423,4 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
     dotClass: "bg-muted-foreground/40",
     title: "O painel atualiza sozinho a cada poucos segundos",
   };
-}
-
-// ── Saída: desfazer de Entregar/Despachar (SUITE-UX §5.1) ──────────────────
-
-export interface HandoffFields {
-  handoff_label: string;
-  handoff_undo_until_iso: string;
-  handoff_token: string;
-}
-
-/** Os campos da saída pedida que o POST da ação devolve, ou ``null`` quando a
- *  casa gravou na hora (sem janela de desfazer). */
-export function handoffFromResponse(res: unknown): HandoffFields | null {
-  const body = (res ?? {}) as Partial<Record<keyof HandoffFields, unknown>>;
-  if (typeof body.handoff_token !== "string" || !body.handoff_token) return null;
-  return {
-    handoff_label: typeof body.handoff_label === "string" ? body.handoff_label : "",
-    handoff_undo_until_iso: typeof body.handoff_undo_until_iso === "string" ? body.handoff_undo_until_iso : "",
-    handoff_token: body.handoff_token,
-  };
-}
-
-/** Segundos que faltam para o desfazer da saída (0 = janela fechada). */
-export function handoffSecondsLeft(card: Pick<KDSExpeditionCardProjection, "handoff_undo_until_iso">, nowMs: number): number {
-  const until = card.handoff_undo_until_iso ? Date.parse(card.handoff_undo_until_iso) : NaN;
-  return Number.isNaN(until) ? 0 : Math.max(0, Math.ceil((until - nowMs) / 1000));
 }

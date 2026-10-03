@@ -5,12 +5,12 @@
 // the django proxy (CSRF handled there) and refresh. Status color is functional;
 // chrome neutral.
 import type {
-  KDSExitPreparingCardProjection,
   KDSExpeditionCardProjection,
   KDSTicketProjection,
 } from "~/types/kds";
 import { isExpeditionCard, shortDateLabel, splitRef } from "~/presentation/board";
 import type { KDSDensity } from "~/presentation/board";
+import { gestorExitUrl } from "~/presentation/exitMoved";
 
 const route = useRoute();
 const router = useRouter();
@@ -36,22 +36,22 @@ const {
   start,
   finalize,
   undoFinish,
-  expedite,
-  undoHandoff,
-  busyHandoffs,
-  markStationReady,
-  busyStations,
   recall,
   acknowledge,
 } = useKdsBoard(stationRef.value, serviceDate);
 
-/** As estações deste pedido com o "Pronto" em voo (chave `pedido:estação`). */
-function busyFor(orderPk: number): Set<string> {
-  const prefix = `${orderPk}:`;
-  return new Set(
-    [...busyStations.value].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length)),
-  );
-}
+// A Saída mudou para o Gestor (UX-G3, SUITE-UX §15): a estação de Saída não tem
+// mais tela aqui. O quiosque que guardou este endereço vai para a coluna Saída do
+// Gestor, já como posto de saída; enquanto o navegador troca de página, a tela diz
+// para onde foi e oferece o link (nunca uma página vazia).
+const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
+watch(
+  () => Boolean(view.value?.isExpedition),
+  (isExit) => {
+    if (isExit && exitUrl && import.meta.client) void navigateTo(exitUrl, { external: true, replace: true });
+  },
+  { immediate: true },
+);
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {
@@ -176,22 +176,6 @@ const filteredCards = computed(() => {
   if (!q || !view.value) return view.value?.cards ?? [];
   return view.value.cards.filter((c) => matchesQuery(c, q));
 });
-// Saída: a coluna "Em preparo" filtra pelo mesmo critério (código, cliente,
-// estação).
-function matchesPreparing(card: KDSExitPreparingCardProjection, q: string): boolean {
-  return [card.order_ref, card.customer_name, ...card.stations.map((s) => s.station_name)]
-    .join(" ")
-    .toLowerCase()
-    .includes(q);
-}
-const filteredPreparing = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  const all = view.value?.preparing ?? [];
-  return q ? all.filter((c) => matchesPreparing(c, q)) : all;
-});
-const exitEmpty = computed(() =>
-  Boolean(view.value?.isExpedition && !view.value.cards.length && !view.value.preparing.length),
-);
 function cycleDensity() {
   const i = DENSITIES.findIndex((d) => d.key === density.value);
   density.value = DENSITIES[(i + 1) % DENSITIES.length]!.key;
@@ -230,8 +214,6 @@ function warnBlocked() {
 // Narrow the union for the template.
 const asTicket = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
   c as KDSTicketProjection;
-const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
-  c as KDSExpeditionCardProjection;
 </script>
 
 <template>
@@ -289,17 +271,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
 
       <!-- contadores: neutros e padronizados (cor reservada à urgência dos cards) -->
       <div
-        v-if="view && view.isExpedition"
-        class="flex items-baseline gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-sm"
-      >
-        <span class="font-bold tabular-nums">{{ view.cards.length }}</span>
-        <span class="text-xs text-muted-foreground">prontos para sair</span>
-        <span class="text-muted-foreground/40">·</span>
-        <span class="font-bold tabular-nums">{{ view.preparing.length }}</span>
-        <span class="text-xs text-muted-foreground">em preparo</span>
-      </div>
-      <div
-        v-else-if="view"
+        v-if="view && !view.isExpedition"
         class="flex items-baseline gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-sm"
       >
         <span class="font-bold tabular-nums">{{ view.total }}</span>
@@ -497,74 +469,33 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           </article>
         </TransitionGroup>
 
-        <!-- Saída: duas colunas. À esquerda o que ainda espera alguma estação
-             (um chip por estação; a estação sem tela ganha "Pronto" aqui); à
-             direita o que está pronto para sair. Quando a última estação
-             conclui, o card muda de coluna sozinho (SSE) e toca o som. -->
+        <!-- A Saída mudou para o Gestor (UX-G3): a estação de Saída não tem tela
+             aqui. O navegador já está indo para lá; se não for (sem a URL do
+             Gestor), o link fica à mão. -->
         <div
-          v-if="view.isExpedition && !exitEmpty"
-          class="grid gap-4 lg:grid-cols-2"
-          data-testid="exit-columns"
+          v-if="view.isExpedition"
+          class="grid place-items-center gap-3 rounded-md border border-dashed py-20 text-center"
+          data-testid="exit-moved"
         >
-          <section aria-labelledby="exit-preparing-title" class="min-w-0">
-            <h2
-              id="exit-preparing-title"
-              class="mb-2.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground"
-            >
-              <Icon name="lucide:flame" class="size-4" />
-              Em preparo
-              <span class="tabular-nums">· {{ filteredPreparing.length }}</span>
-            </h2>
-            <p
-              v-if="!filteredPreparing.length"
-              class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
-            >
-              {{ query.trim() ? `Nenhum pedido em preparo para “${query.trim()}”.` : "Nenhum pedido esperando estação." }}
-            </p>
-            <TransitionGroup v-else tag="div" name="kds-card" class="grid gap-3" :style="gridStyle">
-              <div v-for="card in filteredPreparing" :key="`p-${card.pk}`" class="flex">
-                <KdsExitPreparingCard
-                  :card="card"
-                  :density="density"
-                  :busy-stations="busyFor(card.pk)"
-                  @ready="(stationRef) => !readOnly && markStationReady(card.pk, stationRef)"
-                />
-              </div>
-            </TransitionGroup>
-          </section>
-          <section aria-labelledby="exit-ready-title" class="min-w-0">
-            <h2
-              id="exit-ready-title"
-              class="mb-2.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground"
-            >
-              <Icon name="lucide:package-check" class="size-4" />
-              Prontos para sair
-              <span class="tabular-nums">· {{ filteredCards.length }}</span>
-            </h2>
-            <p
-              v-if="!filteredCards.length"
-              class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
-            >
-              {{ query.trim() ? `Nenhum pedido pronto para “${query.trim()}”.` : "Nenhum pedido pronto agora." }}
-            </p>
-            <TransitionGroup v-else tag="div" name="kds-card" class="grid gap-3" :style="gridStyle">
-              <div v-for="card in filteredCards" :key="`r-${card.pk}`" class="flex">
-                <KdsExpeditionCard
-                  :card="asExpedition(card)"
-                  :density="density"
-                  :service-date="view.serviceDate"
-                  :busy="busyHandoffs.has(card.pk)"
-                  @action="(action) => !readOnly && expedite(card.pk, action)"
-                  @undo="!readOnly && undoHandoff(card.pk)"
-                />
-              </div>
-            </TransitionGroup>
-          </section>
+          <Icon name="lucide:package-check" class="size-10 text-muted-foreground" />
+          <p class="text-3xl font-bold">A Saída agora fica no Gestor</p>
+          <p class="max-w-md text-base text-muted-foreground">
+            Entregar, despachar e dar o pronto das estações sem tela: tudo na coluna Saída do Gestor.
+          </p>
+          <a
+            v-if="exitUrl"
+            :href="exitUrl"
+            class="inline-flex h-12 items-center gap-2 rounded-md bg-foreground px-5 text-base font-semibold text-background transition hover:bg-foreground/90"
+            data-testid="exit-moved-link"
+          >
+            <Icon name="lucide:arrow-right" class="size-5" />
+            Abrir a Saída no Gestor
+          </a>
         </div>
 
         <!-- empty — estação zerada: estado calmo/acolhedor (omotenashi) -->
         <div
-          v-else-if="view.isExpedition ? exitEmpty : !view.cards.length"
+          v-else-if="!view.cards.length"
           class="grid place-items-center gap-3 rounded-md border border-dashed py-20 text-center"
         >
           <div
@@ -595,7 +526,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
 
         <!-- busca sem resultado -->
         <div
-          v-else-if="!view.isExpedition && !filteredCards.length"
+          v-else-if="!filteredCards.length"
           class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center"
         >
           <Icon name="lucide:search-x" class="size-10 text-muted-foreground" />
@@ -614,7 +545,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <!-- grade uniforme, auto-ordenada por urgência. O 1º card de preparo é o
              "próximo" — pintado ton sur ton (sem posição/tamanho especial). A ordem
              é indicada aqui na seção, não dentro do card. -->
-        <template v-else-if="!view.isExpedition">
+        <template v-else>
           <p
             v-if="!query"
             class="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"

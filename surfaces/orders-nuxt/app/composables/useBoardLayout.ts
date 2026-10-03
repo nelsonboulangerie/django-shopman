@@ -11,6 +11,8 @@
 import {
   allQueueColumnsOpen,
   defaultQueueLayout,
+  isOnlyQueueColumn,
+  onlyQueueColumn,
   nextOpenQueueKey,
   normalizeQueueLayout,
   openQueueColumn,
@@ -24,6 +26,9 @@ import {
 } from "../../../operator-kit/app/presentation/queueColumns";
 
 export const BOARD_ZONE_KEYS = ["intake", "prep", "expedition"] as const;
+/** `?columns=expedition`: abre o quadro já como posto de saída (a Saída da Cozinha
+ *  aposentada manda para cá com isto; ver `kds-nuxt/app/presentation/exitMoved.ts`). */
+export const BOARD_COLUMNS_QUERY = "columns";
 export const BOARD_LAYOUT_PATH = "/api/v1/backstage/orders/board-layout/";
 /** Espera depois do último gesto antes de gravar (arrastar e apertar 1/2/3 em sequência). */
 export const BOARD_LAYOUT_SAVE_DELAY_MS = 600;
@@ -90,6 +95,10 @@ export function useBoardLayout(titles: () => Record<string, string>) {
   const toggle = (key: string) => commit(toggleQueueColumn(layout.value, keys, key));
   const open = (key: string) => commit(openQueueColumn(layout.value, key));
   const showAll = () => commit(showAllQueueColumns(keys));
+  /** Só a coluna pedida aberta (o posto de saída), guardada no posto como qualquer gesto. */
+  const showOnly = (key: string) => commit(onlyQueueColumn(layout.value, keys, key));
+  /** O posto de saída: só a Saída aberta. Os alvos do cartão sobem para 48 px. */
+  const exitPost = computed(() => isOnlyQueueColumn(layout.value, keys, "expedition"));
   const canCollapse = (key: string) => isOpen(key) && openQueueKeys(layout.value, keys).length > 1;
   const nextOpen = (key: string) => nextOpenQueueKey(layout.value, keys, key);
 
@@ -138,6 +147,8 @@ export function useBoardLayout(titles: () => Record<string, string>) {
     toggle,
     open,
     showAll,
+    showOnly,
+    exitPost,
     canCollapse,
     nextOpen,
     startResize,
