@@ -239,12 +239,12 @@ GROCERY: tuple[GroceryItem, ...] = (
     # 7898708850477 aparece no kit "Lata + Pouch"; a embalagem é quem decide.
     # O peso é o da planilha (50 g) — o dono não o leu na lata. NCM da NF-e da
     # Kãnfa (0902.10.00); as irmãs no catálogo ainda estão em 0902.20.00.
-    GroceryItem("CHA-CHALOSOFIA-KANFA-L50", "Chalosofia Kãnfa — Lata 50g", 7300, "Kãnfa",
+    GroceryItem("CHA-CHALOSOFIA-KANFA-L50", "Chalosofia Kãnfa · Lata 50g", 7300, "Kãnfa",
                 "7898708850477", "09021000", "1709700", 50, ("cha", "chalosofia", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
     # A lata de Vital Chai (dono confirmou 7898708850743 e os 70 g, 24/09 — a
     # loja da Kãnfa já a chamava de "Lata 70g"; a planilha dizia 60 g).
-    GroceryItem("CHA-VITAL-KANFA-L70", "Vital Chai Kãnfa — Lata 70g", 7300, "Kãnfa",
+    GroceryItem("CHA-VITAL-KANFA-L70", "Vital Chai Kãnfa · Lata 70g", 7300, "Kãnfa",
                 "7898708850743", "09021000", "1709700", 70, ("cha", "vital", "chai", "lata", "kanfa"),
                 gtin_source=OWNER_PACKAGE),
     # ── Água com gás ──
