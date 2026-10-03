@@ -1,0 +1,232 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>
+.rail-item.sm{font-size:10px;letter-spacing:-.3px}
+.grid-dots{background-color:var(--background);background-image:radial-gradient(color-mix(in oklab,var(--foreground) 14%,transparent) 1px,transparent 1.2px);background-size:20px 20px}
+.sw{display:inline-block;width:44px;height:26px;border-radius:999px;position:relative;background:var(--muted);border:1px solid var(--border)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25)}
+.sw-on{background:var(--success);border-color:var(--success)} .sw-on::after{left:20px}
+</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="pos">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="PDV" icon="shopping-basket"}}
+    <a class="rail-item"><i data-i="receipt"></i>Comandas</a>
+    <a class="rail-item"><i data-i="calendar-clock"></i>Encomendas</a>
+    <a class="rail-item"><i data-i="wallet"></i>Caixa</a>
+    <div class="w-9 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-item on"><i data-i="settings-2"></i>Ajustes</a>
+    {{> rail3bottom bell="2" initials="GE" operator="Gerente"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="px-4 pt-3 pb-0 flex flex-col gap-2 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <span class="op-label text-muted-foreground inline-flex items-center gap-1">Ajustes<i data-i="chevron-right" class="size-4"></i></span>
+        <h1 class="op-display !text-[22px] leading-none">Salão</h1>
+        <span class="op-micro text-muted-foreground">mesas e lugares da casa</span>
+        <div class="flex-1"></div>
+        <div class="flex items-center rounded-md border border-border h-control">
+          <button class="size-control grid place-items-center border-r border-border" title="Desfazer (Ctrl Z)"><i data-i="undo-2" class="size-4"></i></button>
+          <button class="size-control grid place-items-center text-muted-foreground/50" title="Refazer (Ctrl Shift Z)"><i data-i="redo-2" class="size-4"></i></button>
+        </div>
+        <div class="flex items-center rounded-md border border-border h-control">
+          <button class="size-control grid place-items-center border-r border-border"><i data-i="minus" class="size-4"></i></button>
+          <span class="px-3 op-label tnum">100%</span>
+          <button class="size-control grid place-items-center border-l border-border"><i data-i="plus" class="size-4"></i></button>
+        </div>
+        <button class="h-control px-3 rounded-md border border-primary bg-primary/10 op-label font-semibold inline-flex items-center gap-2"><i data-i="grid-3x3" class="size-4"></i>Encaixar na grade</button>
+        <button class="size-control rounded-md border border-border grid place-items-center" title="Mais: Histórico do salão, Imprimir planta, Exportar"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <nav class="flex items-center gap-1">
+        <a class="h-11 px-3 inline-flex items-center op-label text-muted-foreground">Terminal</a>
+        <a class="h-11 px-3 inline-flex items-center op-label text-muted-foreground">Impressoras</a>
+        <a class="h-11 px-3 inline-flex items-center op-label text-muted-foreground">Maquininhas</a>
+        <a class="h-11 px-3 inline-flex items-center op-label font-semibold bg-secondary rounded-t-md shadow-[inset_0_-2px_0_var(--primary)]">Salão</a>
+        <a class="h-11 px-3 inline-flex items-center op-label text-muted-foreground">Envio à cozinha</a>
+        <a class="h-11 px-3 inline-flex items-center op-label text-muted-foreground">Atalhos de venda</a>
+      </nav>
+    </header>
+
+    <div class="flex-1 flex min-h-0">
+      <!-- paleta -->
+      <div class="w-[200px] shrink-0 border-r border-border bg-card p-3 flex flex-col gap-3">
+        <p class="op-eyebrow text-muted-foreground">Adicionar</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="h-[72px] rounded-lg border border-border bg-background flex flex-col items-center justify-center gap-1.5 op-micro font-semibold"><span class="size-7 rounded-full border-2 border-foreground/40"></span>Redonda</button>
+          <button class="h-[72px] rounded-lg border border-border bg-background flex flex-col items-center justify-center gap-1.5 op-micro font-semibold"><span class="size-7 rounded-md border-2 border-foreground/40"></span>Quadrada</button>
+          <button class="h-[72px] rounded-lg border border-border bg-background flex flex-col items-center justify-center gap-1.5 op-micro font-semibold"><span class="w-10 h-5 rounded-md border-2 border-foreground/40"></span>Comprida</button>
+          <button class="h-[72px] rounded-lg border border-border bg-background flex flex-col items-center justify-center gap-1.5 op-micro font-semibold"><span class="size-5 rounded-full border-2 border-foreground/40"></span>Banqueta</button>
+        </div>
+        <p class="op-micro text-muted-foreground leading-4">Arraste para a planta. No tablet: arrastar com o dedo, pinça para zoom.</p>
+        <div class="h-px bg-border"></div>
+        <div class="flex items-center"><p class="op-eyebrow text-muted-foreground flex-1">Áreas</p><button class="op-micro text-primary font-semibold inline-flex items-center gap-1"><i data-i="plus" class="size-3.5"></i>Área</button></div>
+        <div class="flex flex-col gap-1">
+          <div class="h-11 px-2.5 rounded-md bg-secondary flex items-center gap-2"><span class="op-label font-semibold flex-1">Salão interno</span><span class="op-micro tnum text-muted-foreground">24</span></div>
+          <div class="h-11 px-2.5 rounded-md flex items-center gap-2"><span class="op-label flex-1">Balcão</span><span class="op-micro tnum text-muted-foreground">6</span></div>
+          <div class="h-11 px-2.5 rounded-md flex items-center gap-2"><span class="op-label flex-1">Calçada</span><span class="op-micro tnum text-muted-foreground">4 <span class="opacity-70">+6</span></span></div>
+        </div>
+        <div class="flex-1"></div>
+        <div class="rounded-lg bg-muted/60 p-2.5">
+          <p class="op-micro text-muted-foreground leading-4"><b class="text-foreground">Legenda</b></p>
+          <p class="op-micro text-muted-foreground leading-5 flex items-center gap-2 mt-1"><span class="size-3 rounded-sm border border-foreground/40 bg-card"></span>conta na capacidade</p>
+          <p class="op-micro text-muted-foreground leading-5 flex items-center gap-2"><span class="size-3 rounded-sm border-2 border-dashed border-muted-foreground/70"></span>extra de dia cheio</p>
+        </div>
+      </div>
+
+      <!-- planta -->
+      <div class="flex-1 relative grid-dots overflow-hidden">
+        <div class="absolute" style="left:16px;top:16px;width:776px;height:690px">
+          <!-- áreas -->
+          <div class="absolute rounded-xl border-2 border-foreground/20 bg-card/40" style="left:0;top:20px;width:540px;height:450px"></div>
+          <span class="absolute op-eyebrow text-muted-foreground bg-background px-1.5" style="left:14px;top:12px">Salão interno · 24 lugares</span>
+          <div class="absolute rounded-xl border-2 border-foreground/20 bg-card/40" style="left:556px;top:20px;width:220px;height:450px"></div>
+          <span class="absolute op-eyebrow text-muted-foreground bg-background px-1.5" style="left:570px;top:12px">Balcão · 6</span>
+          <div class="absolute rounded-md bg-foreground/15 border border-foreground/25" style="left:664px;top:56px;width:40px;height:380px"></div>
+          <span class="absolute op-micro text-muted-foreground" style="left:712px;top:236px;writing-mode:vertical-rl">vitrine e caixa</span>
+          <div class="absolute rounded-xl border-2 border-dashed border-foreground/25" style="left:0;top:500px;width:776px;height:180px"></div>
+          <span class="absolute op-eyebrow text-muted-foreground bg-background px-1.5" style="left:14px;top:492px">Calçada · 4 lugares + 6 extras</span>
+          <!-- porta -->
+          <div class="absolute h-1.5 bg-background border-x-2 border-foreground/30" style="left:200px;top:467px;width:80px"></div>
+          <span class="absolute op-micro text-muted-foreground" style="left:214px;top:476px">entrada</span>
+          <span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:56px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:134px"></span>
+<div class="absolute rounded-full border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:56px;top:74px;width:56px;height:56px"><div class="leading-none"><p class="op-label font-semibold">M1</p><p class="op-micro text-muted-foreground tnum mt-0.5">2 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:178px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:256px"></span>
+<div class="absolute rounded-full border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:56px;top:196px;width:56px;height:56px"><div class="leading-none"><p class="op-label font-semibold">M2</p><p class="op-micro text-muted-foreground tnum mt-0.5">2 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:300px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:77px;top:378px"></span>
+<div class="absolute rounded-full border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:56px;top:318px;width:56px;height:56px"><div class="leading-none"><p class="op-label font-semibold">M3</p><p class="op-micro text-muted-foreground tnum mt-0.5">2 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:218px;top:56px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:218px;top:148px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:172px;top:102px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:264px;top:102px"></span>
+<div class="absolute rounded-md border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:190px;top:74px;width:70px;height:70px"><div class="leading-none"><p class="op-label font-semibold">M4</p><p class="op-micro text-muted-foreground tnum mt-0.5">4 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:218px;top:232px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:218px;top:324px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:172px;top:278px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:264px;top:278px"></span>
+<div class="absolute rounded-md border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:190px;top:250px;width:70px;height:70px"><div class="leading-none"><p class="op-label font-semibold">M5</p><p class="op-micro text-muted-foreground tnum mt-0.5">4 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:322px;top:354px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:322px;top:436px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:381px;top:354px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:381px;top:436px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:440px;top:354px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:440px;top:436px"></span>
+<div class="absolute rounded-md border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:300px;top:372px;width:176px;height:60px"><div class="leading-none"><p class="op-label font-semibold">M6</p><p class="op-micro text-muted-foreground tnum mt-0.5">6 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:388px;top:154px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:388px;top:246px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:342px;top:200px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:434px;top:200px"></span>
+<div class="absolute rounded-md border-2 border-primary bg-primary/15 shadow-lg grid place-items-center text-center" style="left:360px;top:172px;width:70px;height:70px"><div class="leading-none"><p class="op-label font-semibold">M7</p><p class="op-micro text-muted-foreground tnum mt-0.5">4 lug.</p></div></div>
+<span class="absolute size-2.5 bg-card border-2 border-primary rounded-sm" style="left:355px;top:167px"></span>
+<span class="absolute size-2.5 bg-card border-2 border-primary rounded-sm" style="left:426px;top:167px"></span>
+<span class="absolute size-2.5 bg-card border-2 border-primary rounded-sm" style="left:355px;top:238px"></span>
+<span class="absolute size-2.5 bg-card border-2 border-primary rounded-sm" style="left:426px;top:238px"></span>
+<span class="absolute h-3 w-px bg-primary" style="left:395px;top:141px"></span><span class="absolute size-6 rounded-full bg-card border-2 border-primary grid place-items-center text-primary" style="left:383px;top:117px"><i data-i="rotate-cw" class="size-3.5"></i></span>
+<div class="absolute rounded-md border-2 border-dashed border-primary/40" style="left:458px;top:262px;width:70px;height:70px"></div><i data-i="move" class="size-5 text-primary absolute" style="left:432px;top:246px"></i>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:72px">B1</div>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:132px">B2</div>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:192px">B3</div>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:252px">B4</div>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:312px">B5</div>
+<div class="absolute size-10 rounded-full border border-foreground/30 bg-card grid place-items-center op-micro font-semibold" style="left:606px;top:372px">B6</div>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:98px;top:548px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:98px;top:640px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:52px;top:594px"></span>
+<span class="absolute size-[14px] rounded-full border border-foreground/25 bg-secondary" style="left:144px;top:594px"></span>
+<div class="absolute rounded-md border border-foreground/30 bg-card shadow-sm grid place-items-center text-center" style="left:70px;top:566px;width:70px;height:70px"><div class="leading-none"><p class="op-label font-semibold">C1</p><p class="op-micro text-muted-foreground tnum mt-0.5">4 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:271px;top:555px"></span>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:271px;top:633px"></span>
+<div class="absolute rounded-full border-2 border-dashed border-muted-foreground/70 bg-card/80 grid place-items-center text-center" style="left:250px;top:573px;width:56px;height:56px"><div class="leading-none"><p class="op-label font-semibold">C2</p><p class="op-micro text-muted-foreground tnum mt-0.5">2 lug.</p></div></div>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:428px;top:548px"></span>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:428px;top:640px"></span>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:382px;top:594px"></span>
+<span class="absolute size-[14px] rounded-full border border-dashed border-muted-foreground/70 bg-card" style="left:474px;top:594px"></span>
+<div class="absolute rounded-md border-2 border-dashed border-muted-foreground/70 bg-card/80 grid place-items-center text-center" style="left:400px;top:566px;width:70px;height:70px"><div class="leading-none"><p class="op-label font-semibold">C3</p><p class="op-micro text-muted-foreground tnum mt-0.5">4 lug.</p></div></div>
+          <!-- dica de arraste -->
+          <span class="absolute h-7 px-2.5 rounded-full bg-foreground text-background op-micro font-semibold inline-flex items-center gap-1.5 shadow" style="left:446px;top:150px"><i data-i="move" class="size-3.5"></i>arrastando M7</span>
+        </div>
+      </div>
+
+      <!-- painel da mesa selecionada -->
+      <section class="w-[340px] shrink-0 border-l border-border bg-card flex flex-col">
+        <div class="px-4 pt-4 pb-3 border-b border-border flex items-center gap-3">
+          <span class="size-10 rounded-md border-2 border-primary bg-primary/12 grid place-items-center op-label font-semibold">M7</span>
+          <div class="flex-1"><h2 class="op-title">Mesa 7</h2><p class="op-micro text-muted-foreground">Salão interno · movida</p></div>
+          <button class="size-control rounded-md border border-border grid place-items-center" title="Mais: Duplicar, Girar 90°, Remover"><i data-i="ellipsis" class="size-5"></i></button>
+        </div>
+        <div class="flex-1 px-4 py-3 flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <span class="op-label text-muted-foreground">Lugares</span>
+            <div class="flex items-center gap-2">
+              <div class="inline-flex items-center rounded-md border border-input h-12">
+                <button class="w-12 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
+                <span class="w-14 text-center op-figure">4</span>
+                <button class="w-12 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
+              </div>
+              <span class="op-micro text-muted-foreground leading-4">cadeiras aparecem<br>em volta da mesa</span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="op-label text-muted-foreground">Forma</span>
+            <div class="grid grid-cols-3 bg-secondary p-1 rounded-lg h-12">
+              <button class="rounded-md op-label text-muted-foreground">Redonda</button>
+              <button class="rounded-md op-label font-semibold bg-card shadow-sm">Quadrada</button>
+              <button class="rounded-md op-label text-muted-foreground">Comprida</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="op-label text-muted-foreground">Área</span>
+            <button class="h-11 px-3 rounded-md border border-input flex items-center op-body justify-between">Salão interno<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+          </div>
+          <div class="rounded-lg border border-border p-3 flex flex-col gap-1.5">
+            <div class="flex items-center gap-3"><span class="op-label font-semibold flex-1">Conta na capacidade oficial</span><span class="sw sw-on"></span></div>
+            <p class="op-micro text-muted-foreground leading-4">O B.I. mede a lotação com estes lugares. Desligue para a mesa que só sai em dia cheio (vira extra).</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <i data-i="calendar" class="size-4 text-muted-foreground mt-0.5"></i>
+            <div><p class="op-label">Existe desde 12/03/2026</p><p class="op-micro text-muted-foreground leading-4">Mudar lugares ou forma vale a partir de hoje; as vendas de antes continuam contadas com 4.</p></div>
+          </div>
+          <div class="rounded-lg bg-info/10 p-2.5 flex items-start gap-2">
+            <i data-i="info" class="size-4 text-info mt-0.5"></i>
+            <p class="op-micro leading-4">Mesa 4 tem comanda aberta agora. Mover mesas não mexe em comanda.</p>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-border">
+          <button class="h-10 px-2 op-label text-destructive inline-flex items-center gap-2"><i data-i="trash-2" class="size-4"></i>Tirar do salão a partir de hoje</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- rodapé: total + salvar -->
+    <footer class="h-[68px] px-4 border-t border-border bg-card flex items-center gap-4">
+      <div class="flex items-baseline gap-2">
+        <span class="op-figure tnum">34</span><span class="op-label">lugares na capacidade oficial</span>
+        <span class="op-label text-muted-foreground">· <b class="text-foreground tnum">6</b> extras de dia cheio</span>
+      </div>
+      <span class="h-6 px-2 rounded-full bg-primary/12 text-primary op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-primary"></span>3 mudanças: M7 movida, C3 nova, C2 extra</span>
+      <div class="flex-1"></div>
+      <button class="h-action px-4 rounded-md op-label text-muted-foreground">Descartar</button>
+      <button class="h-action px-5 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="check" class="size-4"></i>Salvar salão <span class="font-normal opacity-85">(vale a partir de hoje; o passado não muda)</span><kbd class="ml-1 op-micro px-1.5 rounded bg-primary-foreground/20">Ctrl S</kbd></button>
+    </footer>
+  </main>
+  <span class="pin" style="left:432px;top:66px">1</span>
+  <span class="pin" style="left:290px;top:150px">2</span>
+  <span class="pin" style="left:760px;top:330px">3</span>
+  <span class="pin" style="left:596px;top:680px">4</span>
+  <span class="pin" style="left:1410px;top:390px">5</span>
+  <span class="pin" style="left:1104px;top:556px">6</span>
+  <span class="pin" style="left:300px;top:840px">7</span>
+  <span class="pin" style="left:1410px;top:826px">8</span>
+</div>
+<div class="legend">
+  <p class="t">PDV · Ajustes › Salão · v4 <span>CADASTRO visual: o salão desenhado uma vez, mudado quando muda o mobiliário</span></p>
+  <div><b>1</b>Fica em Ajustes do PDV (andar separado da operação, item próprio no rail), ao lado de Terminal, Impressoras e Maquininhas.</div>
+  <div><b>2</b>Paleta: arrastar mesa redonda, quadrada, comprida ou banqueta para a planta; áreas com contagem de lugares.</div>
+  <div><b>3</b>Planta com áreas (Salão interno, Balcão, Calçada), cadeiras desenhadas pelo número de lugares, encaixe na grade, girar e mover.</div>
+  <div><b>4</b>Mesa tracejada = extra de dia cheio: existe, recebe comanda, mas não conta na capacidade oficial do B.I.</div>
+  <div><b>5</b>Painel da mesa: lugares, forma, área e "conta na capacidade oficial", tudo num lugar só.</div>
+  <div><b>6</b>"Existe desde" e a regra de tempo escrita no lugar: mudar vale de hoje em diante (active_from/active_until), as vendas de antes não mudam.</div>
+  <div><b>7</b>O total que o B.I. usa fica sempre à vista: "34 lugares na capacidade oficial · 6 extras de dia cheio", com o que mudou.</div>
+  <div><b>8</b>Um Salvar só, com a consequência no rótulo. Sem gesto por venda: a lotação continua calculada sozinha pela comanda.</div>
+</div>
+</body></html>

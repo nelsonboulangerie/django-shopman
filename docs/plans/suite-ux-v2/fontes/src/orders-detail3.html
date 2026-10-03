@@ -1,0 +1,67 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Gestor" icon="square-kanban"}}
+    <a class="rail-item on"><i data-i="clipboard-list"></i>Pedidos<span class="badge">10</span></a>
+    <a class="rail-item"><i data-i="book-open"></i>Catálogo</a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="monitor-smartphone"></i>Canais<span class="attn"></span></a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="px-4 py-3 flex items-center gap-3 border-b border-border bg-card">
+      <a class="h-control pl-2 pr-3 rounded-md hover:bg-accent inline-flex items-center gap-1 op-label font-semibold text-muted-foreground"><i data-i="chevron-left" class="size-5"></i>Pedidos</a>
+      <span class="w-px h-7 bg-border"></span>
+      <h1 class="op-display !text-[22px] leading-none">Pedido S84</h1>
+      <span class="pill-primary h-6 px-2 rounded-full op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-current"></span>Em preparo</span>
+      <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span>
+      <div class="flex-1"></div>
+      <a class="h-control pl-2 pr-3 rounded-full inline-flex items-center gap-2 op-label font-semibold text-white" style="background:#A95032"><i data-i="corner-up-left" class="size-4"></i>Voltar ao PDV · comanda #1007</a>
+      {{> search3 w="w-64" placeholder="Buscar"}}
+      <button class="size-control rounded-md border border-border bg-card grid place-items-center"><i data-i="ellipsis" class="size-5"></i></button>
+      <button class="h-action px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="arrow-right" class="size-4"></i>Marcar pronto</button>
+    </header>
+    <div class="flex-1 overflow-hidden p-4 grid grid-cols-[minmax(0,1fr)_380px] gap-4">
+      <section class="flex flex-col gap-4 min-w-0">
+        <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
+          <div class="flex items-center gap-2 op-micro text-muted-foreground"><i data-i="store" class="size-3.5"></i>PDV · PDV-261003-S84 · aberto às 21:47 por Admin · Retirada</div>
+          <div class="divide-y divide-border">
+            <div class="h-14 flex items-center gap-3"><span class="op-title tnum w-8">3×</span><span class="op-body flex-1">Pão de Hambúrguer</span><span class="op-body tnum">R$ 24,00</span></div>
+            <div class="h-14 flex items-center gap-3"><span class="op-title tnum w-8">3×</span><span class="op-body flex-1">Mini Focaccia Cebola, Bacon e Tomilho <span class="pill-warning ml-2 h-6 px-2 rounded-full op-micro font-semibold inline-flex items-center">Sem estoque</span></span><span class="op-body tnum">R$ 48,00</span></div>
+          </div>
+          <div class="flex items-center justify-between pt-1"><span class="op-label text-muted-foreground">Total</span><span class="op-figure tnum">R$ 72,00</span></div>
+        </div>
+        <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+          <p class="op-title">Nota para a cozinha</p>
+          <div class="flex gap-2 flex-wrap"><span class="h-9 px-3 rounded-full border border-border op-label inline-flex items-center">Sem cebola</span><span class="h-9 px-3 rounded-full border border-border op-label inline-flex items-center">Bem passado</span><span class="h-9 px-3 rounded-full border border-border op-label inline-flex items-center">Para viagem</span></div>
+          <div class="h-20 rounded-md border border-input bg-background px-3 py-2 op-body text-muted-foreground">Escreva uma nota…</div>
+        </div>
+      </section>
+      <aside class="flex flex-col gap-4">
+        <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-1.5">
+          <p class="op-eyebrow text-muted-foreground">Cliente</p><p class="op-title">(43) 99111-1111</p><p class="op-micro text-muted-foreground">Sem cadastro · 14 pedidos neste número</p>
+          <a class="op-label text-primary font-semibold mt-1 inline-flex items-center gap-1">Abrir em Clientes<i data-i="chevron-right" class="size-4"></i></a>
+        </div>
+        <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
+          <p class="op-eyebrow text-muted-foreground">Linha do tempo</p>
+          <div class="flex gap-3"><span class="size-2 mt-1.5 rounded-full bg-primary"></span><div><p class="op-label">Em preparo na Cozinha · Encomendas</p><p class="op-micro text-muted-foreground">21:52 · <a class="text-primary font-semibold">abrir na Cozinha</a></p></div></div>
+          <div class="flex gap-3"><span class="size-2 mt-1.5 rounded-full bg-info"></span><div><p class="op-label">Aceito automaticamente</p><p class="op-micro text-muted-foreground">21:48</p></div></div>
+          <div class="flex gap-3"><span class="size-2 mt-1.5 rounded-full bg-muted-foreground"></span><div><p class="op-label">Aberto no PDV, comanda #1007</p><p class="op-micro text-muted-foreground">21:47 · <a class="text-primary font-semibold">abrir no PDV</a></p></div></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <span class="pin" style="left:96px;top:6px">1</span>
+  <span class="pin" style="left:640px;top:6px">2</span>
+  <span class="pin" style="left:1290px;top:58px">3</span>
+  <span class="pin" style="left:1360px;top:500px">4</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Detalhe do pedido · navegação <span>aberto a partir do resultado da venda no PDV</span></p>
+  <div><b>1</b>"‹ Pedidos" sobe para a fila com o mesmo filtro, rolagem e o card S84 em foco. Chegou por aviso ou link direto: sobe para a fila padrão. Esc faz o mesmo.</div>
+  <div><b>2</b>Bilhete de volta: veio do PDV, então o cabeçalho oferece "Voltar ao PDV · comanda #1007", na cor do app de origem. Some quando o operador navega para outro lugar.</div>
+  <div><b>3</b>Título da janela "Pedido S84 · Gestor"; o item tem endereço próprio (/S84) e abre igual por aviso, busca ou link.</div>
+  <div><b>4</b>Cada evento leva ao lugar exato no outro app (Cozinha, PDV, Clientes), com contexto e bilhete de volta.</div>
+</div>
+</body></html>

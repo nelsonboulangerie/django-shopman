@@ -1,0 +1,100 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="bi">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="B.I." icon="chart-no-axes-combined"}}
+    <a class="rail-item on"><i data-i="chef-hat"></i>Produção</a>
+    <a class="rail-item"><i data-i="banknote"></i>Vendas</a>
+    <a class="rail-item"><i data-i="wallet"></i>Caixa</a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="id-card"></i>Perfis</a>
+    <a class="rail-item"><i data-i="telescope"></i>Explorar</a>
+    <a class="rail-item"><i data-i="trending-up"></i>Projeção</a>
+    <a class="rail-item"><i data-i="flask-conical"></i>Cenários</a>
+    {{> rail3bottom bell="3" initials="PB" operator="Pablo"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[24px] leading-none">Sobrou ou faltou ontem?</h1>
+        <div class="w-2"></div>
+        {{> search3 w="w-[18rem]" placeholder="Buscar produto ou SKU"}}
+        <div class="flex-1"></div>
+        <div class="flex items-center rounded-md border border-border bg-card h-control shrink-0">
+          <button class="size-control grid place-items-center border-r border-border" title="Dia anterior ([)"><i data-i="chevron-left" class="size-4"></i></button>
+          <button class="h-full px-3 inline-flex items-center gap-2 op-label"><i data-i="calendar" class="size-4 text-muted-foreground"></i><span class="font-semibold">Ontem</span><span class="tnum text-muted-foreground">sáb 03/10</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+          <button class="size-control grid place-items-center border-l border-border text-muted-foreground/40" title="Hoje a casa não abre"><i data-i="chevron-right" class="size-4"></i></button>
+        </div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais: Exportar, Copiar link, Como é calculado"><i data-i="ellipsis" class="size-5"></i></button>
+        <button class="h-control px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="arrow-right-left" class="size-4"></i>Levar ao plano do próximo sábado</button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="git-compare-arrows" class="size-4 text-muted-foreground"></i><span class="text-muted-foreground font-normal">Comparar com:</span><span class="font-semibold">sábado típico</span><span class="tnum text-muted-foreground font-normal">(4 sábados: 05/09 a 26/09)</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">12</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-destructive"></span>Faltou <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-warning"></span>Sobrou <span class="tnum text-muted-foreground">4</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-success"></span>Na medida <span class="tnum text-muted-foreground">5</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="layers" class="size-4"></i>Coleção: todas<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <div class="flex-1"></div>
+        <span class="op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="link" class="size-3.5"></i>?dia=2026-10-03&amp;comparar=sabado</span>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden px-4 pt-3 flex flex-col gap-3">
+      <!-- resposta: número + comparação + por quê -->
+      <div class="grid grid-cols-[1.4fr_1fr_1fr_1fr] gap-3">
+        <div class="rounded-lg border border-border bg-card px-4 py-3">
+          <p class="op-eyebrow text-muted-foreground">A resposta</p>
+          <p class="op-title !text-[17px] leading-6 mt-0.5">Faltou nos folhados de manhã; sobrou baguete à tarde.</p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3">
+          <p class="op-label text-muted-foreground">Faltou</p>
+          <p class="op-figure"><span class="text-destructive">3</span> <span class="op-label font-normal text-muted-foreground">produtos · ~24 vendas perdidas (est.)</span></p>
+          <p class="op-micro text-muted-foreground mt-0.5">sábado típico: 2 produtos</p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3">
+          <p class="op-label text-muted-foreground">Sobrou</p>
+          <p class="op-figure"><span class="text-warning">4</span> <span class="op-label font-normal text-muted-foreground">produtos · 30 un. · R$ 158 de custo</span></p>
+          <p class="op-micro text-muted-foreground mt-0.5">sábado típico: 26 un. · R$ 140</p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3">
+          <p class="op-label text-muted-foreground">Na medida</p>
+          <p class="op-figure"><span class="text-success">5</span> <span class="op-label font-normal text-muted-foreground">produtos</span></p>
+          <p class="op-micro text-muted-foreground mt-0.5">acabou depois das 17h ou sobrou até 2</p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <div class="grid grid-cols-[minmax(0,1.3fr)_110px_250px_100px_130px_minmax(0,1.2fr)_150px] items-center h-10 px-4 gap-3 bg-muted/60 border-b border-border op-eyebrow text-muted-foreground">
+          <div>Produto</div><div>Veredito</div>
+          <div class="flex items-center gap-3">Fez × vendeu <span class="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span class="w-0.5 h-3 bg-foreground"></span>típico</span></div>
+          <div>Acabou às</div><div>Nos 4 sábados</div><div>Contra o típico</div><div></div>
+        </div>
+        %%ROWS%%
+        <div class="h-11 px-4 flex items-center gap-2 op-label text-muted-foreground"><i data-i="chevron-down" class="size-4"></i>+4 produtos: Focaccia do dia (sobrou 6) · Madeleine, Kuro Pan e Baguete Gergelim (na medida)</div>
+      </div>
+    </div>
+  </main>
+  <span class="pin" style="left:368px;top:20px">1</span>
+  <span class="pin" style="left:1040px;top:-2px">2</span>
+  <span class="pin" style="left:1410px;top:18px">3</span>
+  <span class="pin" style="left:96px;top:80px">4</span>
+  <span class="pin" style="left:486px;top:136px">5</span>
+  <span class="pin" style="left:660px;top:228px">6</span>
+  <span class="pin" style="left:1400px;top:262px">7</span>
+  <span class="pin" style="left:950px;top:287px">8</span>
+</div>
+<div class="legend">
+  <p class="t">B.I. · Sobrou ou faltou · v4 <span>LEITURA: pergunta, número, comparação, por quê e aprofundar até o registro</span></p>
+  <div><b>1</b>O título é a pergunta nº 1 do dono (BI-19), não o nome de um gráfico. Sobra e falta no mesmo quadro.</div>
+  <div><b>2</b>Período no cabeçalho e na URL (?dia=); hoje não há seta para frente porque a casa não abre.</div>
+  <div><b>3</b>Levar ao plano do próximo sábado (EXPLICAR NO LUGAR): a falta e a sobra viram o porquê ao lado da sugestão do Planejamento.</div>
+  <div><b>4</b>Comparação com o sábado típico (os últimos 4) e no máximo dois recortes: veredito e coleção.</div>
+  <div><b>5</b>A resposta em uma frase e três números (faltou, sobrou, na medida), cada um com o típico ao lado.</div>
+  <div><b>6</b>Barra compacta por produto: fez (trilho), vendeu (cheio), vendas perdidas estimadas (tracejado), o típico (traço).</div>
+  <div><b>7</b>Aprofundar sem trocar de tela: "Ver lotes e vendas" abre lotes (WO), vendas por hora e o que aconteceu depois; cada um leva ao registro.</div>
+  <div><b>8</b>Croissant: acabou às 10:40, faltou em 3 dos 4 sábados. É o mesmo texto que o padeiro lê no plano.</div>
+</div>
+</body></html>

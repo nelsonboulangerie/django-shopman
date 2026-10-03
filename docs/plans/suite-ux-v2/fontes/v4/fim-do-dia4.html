@@ -1,0 +1,232 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1820x1300"><style>
+  .sbar { height:28px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; font:600 13px/1 "Instrument Sans",sans-serif; }
+  .seal { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; position:relative; background:var(--app-color); flex:none; }
+  .seal .g { position:absolute; right:-4px; bottom:-4px; width:18px; height:18px; border-radius:999px; background:var(--card); display:grid; place-items:center; box-shadow:0 1px 2px rgb(0 0 0/.25); }
+  .safe { height:16px; display:grid; place-items:center; }
+  .safe::after { content:""; width:180px; height:5px; border-radius:999px; background:currentColor; opacity:.3; }
+  .stp { display:flex; align-items:center; gap:10px; }
+  .stp .n { width:36px; height:36px; border-radius:999px; display:grid; place-items:center; font-weight:700; font-size:15px; flex:none; }
+  .stp.cur .n { background:var(--primary); color:var(--primary-foreground); box-shadow:0 0 0 4px color-mix(in oklab, var(--primary) 20%, transparent); }
+  .stp.done .n { background:var(--success); color:#fff; }
+  .stp.next .n { background:var(--muted); color:var(--muted-foreground); }
+  .stp .t { font-size:15px; font-weight:600; line-height:18px; }
+  .stp .s { font-size:12.5px; color:var(--muted-foreground); line-height:15px; }
+  .stp.next .t { color:var(--muted-foreground); }
+  .conn { flex:1; height:2px; background:var(--border); margin:0 10px; }
+  .conn.done { background:var(--success); }
+  .den { height:56px; display:grid; grid-template-columns:86px 1fr 96px; align-items:center; gap:10px; padding:0 12px; border-radius:12px; }
+  .den .lbl { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .den .q { height:44px; border-radius:10px; border:1px solid var(--input); background:var(--card); display:flex; align-items:center; justify-content:center; font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .den .q.empty { color:var(--muted-foreground); font-weight:500; }
+  .den .sub { text-align:right; font-size:14px; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+  .den.on { background: color-mix(in oklab, var(--primary) 10%, transparent); }
+  .den.on .q { border:2px solid var(--primary); background:var(--card); }
+  .caret { display:inline-block; width:2px; height:22px; background:var(--foreground); margin-left:2px; }
+  .key { height:68px; border-radius:14px; border:1px solid var(--border); background:var(--card); display:grid; place-items:center; font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .key.alt { background:var(--secondary); font-size:16px; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .why { height:52px; border-radius:999px; border:1px solid var(--border); background:var(--card); padding:0 18px; font-size:16px; font-weight:600; display:inline-flex; align-items:center; gap:8px; }
+  .why.on { border-color:var(--primary); background:color-mix(in oklab, var(--primary) 10%, transparent); }
+</style></head>
+<body class="font-sans antialiased text-foreground" data-app="pos" style="background:#e9dfd6">
+<div class="relative h-[1300px] w-[1820px] overflow-hidden">
+  <p class="op-title absolute left-[44px] top-[16px]">a · Passo 1: fechar o caixa, contagem cega por cédula e moeda</p>
+  <p class="op-title absolute left-[936px] top-[16px]">b · Passo 3: fechar o dia, com a pergunta do dia estranho</p>
+
+  <!-- ===================== (a) PASSO 1 ===================== -->
+  <div class="absolute left-[44px] top-[48px]">
+  <div class="device tablet"><div class="screen bg-background flex flex-col" style="width:820px;height:1180px">
+    <div class="sbar bg-card"><span class="tnum">22:03 · sáb 3 out</span><span class="flex items-center gap-1.5"><i data-i="wifi" class="size-4"></i><span class="op-micro">64%</span><i data-i="battery-full" class="size-5"></i></span></div>
+    <header class="h-16 px-4 flex items-center gap-3 bg-card border-b border-border">
+      <button class="seal" title="PDV: trocar de app"><i data-i="shopping-basket" class="size-6 text-white"></i><span class="g"><i data-i="layout-grid" class="size-2.5 text-foreground"></i></span></button>
+      <div class="min-w-0 flex-1">
+        <p class="text-[20px] font-semibold leading-tight">Fim do dia</p>
+        <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>22:03 · Balcão</p>
+      </div>
+      <span class="h-9 px-3 rounded-full bg-secondary text-[14px] font-semibold inline-flex items-center gap-2"><i data-i="user-round-check" class="size-4 text-muted-foreground"></i>Admin · gerência</span>
+      <button class="h-12 px-4 rounded-full border border-border text-[15px] font-semibold inline-flex items-center gap-2" title="Sair do corredor: o que já foi contado fica salvo"><i data-i="x" class="size-5"></i>Sair</button>
+    </header>
+    <!-- corredor -->
+    <div class="px-5 py-3.5 bg-card border-b border-border flex items-center">
+      <div class="stp cur"><span class="n">1</span><span><span class="block t">Fechar caixa</span><span class="block s">contagem cega</span></span></div>
+      <span class="conn"></span>
+      <div class="stp next"><span class="n">2</span><span><span class="block t">Contar a vitrine</span><span class="block s">31 produtos</span></span></div>
+      <span class="conn"></span>
+      <div class="stp next"><span class="n">3</span><span><span class="block t">Fechar o dia</span><span class="block s">resumo e selo</span></span></div>
+    </div>
+
+    <div class="flex-1 min-h-0 flex flex-col px-5 pt-4 gap-3">
+      <div class="flex items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-[22px] font-semibold leading-tight">Quanto tem na gaveta?</p>
+          <p class="text-[14px] text-muted-foreground">Gaveta do Balcão · turno aberto às 06:42 por Marina</p>
+        </div>
+        <div class="h-12 p-1 rounded-xl bg-secondary inline-flex items-center gap-1 shrink-0">
+          <button class="h-full px-3.5 rounded-lg bg-card shadow-sm text-[14px] font-semibold">Por cédula</button>
+          <button class="h-full px-3.5 rounded-lg text-[14px] text-muted-foreground">Só o total</button>
+        </div>
+      </div>
+      <div class="rounded-xl bg-info/8 border border-info/25 px-3.5 py-2.5 flex items-center gap-2.5 text-[14px]">
+        <i data-i="eye-off" class="size-5 text-info shrink-0"></i>
+        <span>Contagem cega: o esperado não aparece, nem depois. Ao confirmar, você vê só se ficou dentro da tolerância.</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-x-5">
+        <div>
+          <p class="op-eyebrow text-muted-foreground px-3 pb-1.5">Cédulas</p>
+          <div class="den"><span class="lbl">R$ 200</span><span class="q">1</span><span class="sub">200,00</span></div>
+          <div class="den"><span class="lbl">R$ 100</span><span class="q">4</span><span class="sub">400,00</span></div>
+          <div class="den"><span class="lbl">R$ 50</span><span class="q">6</span><span class="sub">300,00</span></div>
+          <div class="den"><span class="lbl">R$ 20</span><span class="q">12</span><span class="sub">240,00</span></div>
+          <div class="den on"><span class="lbl">R$ 10</span><span class="q">7<span class="caret"></span></span><span class="sub text-foreground font-semibold">70,00</span></div>
+          <div class="den"><span class="lbl">R$ 5</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="den"><span class="lbl">R$ 2</span><span class="q empty"></span><span class="sub"></span></div>
+        </div>
+        <div>
+          <p class="op-eyebrow text-muted-foreground px-3 pb-1.5">Moedas</p>
+          <div class="den"><span class="lbl">R$ 1</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="den"><span class="lbl">R$ 0,50</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="den"><span class="lbl">R$ 0,25</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="den"><span class="lbl">R$ 0,10</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="den"><span class="lbl">R$ 0,05</span><span class="q empty"></span><span class="sub"></span></div>
+          <div class="mt-2 mx-3 rounded-xl border border-border bg-card p-3">
+            <p class="op-micro text-muted-foreground">Contado até agora</p>
+            <p class="text-[30px] font-semibold tnum leading-tight">R$ 1.210,00</p>
+            <p class="text-[13px] text-muted-foreground">5 de 12 valores contados</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1"></div>
+      <!-- teclado numérico no polegar -->
+      <div class="grid grid-cols-4 gap-2.5">
+        <button class="key">1</button><button class="key">2</button><button class="key">3</button><button class="key alt inline-flex items-center gap-1.5"><i data-i="arrow-up" class="size-5"></i>Anterior</button>
+        <button class="key">4</button><button class="key">5</button><button class="key">6</button><button class="key alt inline-flex items-center gap-1.5"><i data-i="arrow-down" class="size-5"></i>Próxima</button>
+        <button class="key">7</button><button class="key">8</button><button class="key">9</button><button class="key alt">Limpar</button>
+        <button class="key alt">+1</button><button class="key">0</button><button class="key"><i data-i="delete" class="size-7"></i></button><button class="key alt inline-flex items-center gap-1.5"><i data-i="message-square-text" class="size-5"></i>Observação</button>
+      </div>
+    </div>
+    <div class="px-5 pt-3 pb-1 mt-3 bg-card border-t border-border">
+      <button class="h-14 w-full rounded-xl border-2 border-dashed border-primary/50 bg-background text-[17px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="arrow-down" class="size-5"></i>Contei R$ 1.210,00 · Confirmar</button>
+      <p class="mt-1.5 text-center text-[13px] text-muted-foreground">Faltam 7 valores. Valor em branco conta como zero ao confirmar; o total se repete para você conferir.</p>
+    </div>
+    <div class="safe bg-card text-foreground"></div>
+  </div></div>
+  </div>
+
+  <!-- ===================== (b) PASSO 3 ===================== -->
+  <div class="absolute left-[936px] top-[48px]">
+  <div class="device tablet"><div class="screen bg-background flex flex-col" style="width:820px;height:1180px">
+    <div class="sbar bg-card"><span class="tnum">22:19 · sáb 3 out</span><span class="flex items-center gap-1.5"><i data-i="wifi" class="size-4"></i><span class="op-micro">61%</span><i data-i="battery-full" class="size-5"></i></span></div>
+    <header class="h-16 px-4 flex items-center gap-3 bg-card border-b border-border">
+      <button class="seal" title="PDV: trocar de app"><i data-i="shopping-basket" class="size-6 text-white"></i><span class="g"><i data-i="layout-grid" class="size-2.5 text-foreground"></i></span></button>
+      <div class="min-w-0 flex-1">
+        <p class="text-[20px] font-semibold leading-tight">Fim do dia</p>
+        <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>22:19 · Balcão</p>
+      </div>
+      <span class="h-9 px-3 rounded-full bg-secondary text-[14px] font-semibold inline-flex items-center gap-2"><i data-i="user-round-check" class="size-4 text-muted-foreground"></i>Admin · gerência</span>
+      <button class="h-12 px-4 rounded-full border border-border text-[15px] font-semibold inline-flex items-center gap-2"><i data-i="x" class="size-5"></i>Sair</button>
+    </header>
+    <div class="px-5 py-3.5 bg-card border-b border-border flex items-center">
+      <div class="stp done"><span class="n"><i data-i="check" class="size-5"></i></span><span><span class="block t">Fechar caixa</span><span class="block s tnum">22:08 · conferido</span></span></div>
+      <span class="conn done"></span>
+      <div class="stp done"><span class="n"><i data-i="check" class="size-5"></i></span><span><span class="block t">Contar a vitrine</span><span class="block s tnum">22:17 · 31 de 31</span></span></div>
+      <span class="conn done"></span>
+      <div class="stp cur"><span class="n">3</span><span><span class="block t">Fechar o dia</span><span class="block s">resumo e selo</span></span></div>
+    </div>
+
+    <div class="flex-1 min-h-0 flex flex-col px-5 pt-4 gap-3">
+      <p class="text-[22px] font-semibold leading-tight">O dia, depois de contado</p>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl border border-border bg-card p-4">
+          <p class="op-eyebrow text-muted-foreground flex items-center gap-1.5"><i data-i="wallet" class="size-4"></i>Caixa</p>
+          <div class="mt-2 flex items-center gap-2.5">
+            <span class="size-10 rounded-full bg-success/12 text-success grid place-items-center shrink-0"><i data-i="circle-check" class="size-6"></i></span>
+            <div class="min-w-0">
+              <p class="text-[17px] font-semibold text-success leading-tight">Caixa conferido</p>
+              <p class="text-[14px] text-muted-foreground">dentro da tolerância</p>
+            </div>
+          </div>
+          <div class="mt-2.5 rounded-lg bg-muted/60 px-3 py-2 flex items-center gap-1.5">
+            <i data-i="eye-off" class="size-4 text-muted-foreground shrink-0"></i>
+            <span class="text-[13px] text-muted-foreground">Fechamento às cegas: valores só na auditoria</span>
+          </div>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4">
+          <p class="op-eyebrow text-muted-foreground flex items-center gap-1.5"><i data-i="croissant" class="size-4"></i>Vitrine</p>
+          <div class="mt-2 space-y-1 text-[15px] tnum">
+            <p class="flex justify-between"><span class="text-muted-foreground">Ficam para amanhã</span><b class="font-semibold">22 peças</b></p>
+            <p class="flex justify-between"><span class="text-muted-foreground">Viram perda</span><span>9 peças</span></p>
+          </div>
+          <div class="mt-2.5 rounded-lg bg-muted/60 px-3 py-2 flex items-center justify-between">
+            <span class="text-[14px] font-semibold">Maior sobra: Baguette (8)</span>
+            <button class="text-[13px] font-semibold text-primary">Ver tudo</button>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-border bg-card px-4 h-14 flex items-center gap-3">
+        <i data-i="circle-check" class="size-5 text-success"></i>
+        <p class="flex-1 text-[15px]">Produção: todos os lotes de hoje fechados</p>
+        <span class="h-6 px-2 rounded-full pill-muted text-[12px] font-semibold inline-flex items-center gap-1"><i data-i="sparkles" class="size-3.5"></i>automático</span>
+      </div>
+
+      <!-- a pergunta do dia estranho -->
+      <div class="rounded-2xl border-2 border-primary bg-card p-5 mt-1">
+        <div class="flex items-start gap-3">
+          <span class="size-11 rounded-full bg-primary/12 text-primary grid place-items-center shrink-0"><i data-i="trending-down" class="size-6"></i></span>
+          <div class="min-w-0 flex-1">
+            <p class="op-eyebrow text-primary">Explicar o dia estranho</p>
+            <p class="text-[21px] font-semibold leading-snug mt-1">Vendas 30% abaixo de um sábado típico. Aconteceu algo?</p>
+            <p class="text-[14px] text-muted-foreground mt-1">O movimento caiu depois das 14h.</p>
+          </div>
+        </div>
+        <div class="mt-4 rounded-xl bg-muted/40 p-3">
+          <div class="flex items-center gap-4 text-[12px] text-muted-foreground mb-2"><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-primary"></span>Hoje, por hora</span><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-muted-foreground/60"></span>Sábado típico</span><span class="ml-auto">só a forma, sem valores</span></div>
+          <div class="flex gap-1.5"><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:41px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:43px"></span></div><span class="text-[11px] text-muted-foreground tnum">7h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:71px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:69px"></span></div><span class="text-[11px] text-muted-foreground tnum">8h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:88px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:89px"></span></div><span class="text-[11px] text-muted-foreground tnum">9h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:82px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:80px"></span></div><span class="text-[11px] text-muted-foreground tnum">10h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:77px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:74px"></span></div><span class="text-[11px] text-muted-foreground tnum">11h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:85px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:56px"></span></div><span class="text-[11px] text-muted-foreground tnum">12h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:96px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:33px"></span></div><span class="text-[11px] text-muted-foreground tnum">13h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:66px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:25px"></span></div><span class="text-[11px] text-muted-foreground tnum">14h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:52px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:22px"></span></div><span class="text-[11px] text-muted-foreground tnum">15h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:49px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:21px"></span></div><span class="text-[11px] text-muted-foreground tnum">16h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:47px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:19px"></span></div><span class="text-[11px] text-muted-foreground tnum">17h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:41px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:16px"></span></div><span class="text-[11px] text-muted-foreground tnum">18h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:30px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:16px"></span></div><span class="text-[11px] text-muted-foreground tnum">19h</span></div></div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2.5">
+          <button class="why on"><i data-i="check" class="size-4 text-primary"></i><i data-i="cloud-rain" class="size-5"></i>Chuva</button>
+          <button class="why"><i data-i="package-x" class="size-5 text-muted-foreground"></i>Falta de produto</button>
+          <button class="why"><i data-i="calendar-days" class="size-5 text-muted-foreground"></i>Evento</button>
+          <button class="why"><i data-i="pencil" class="size-5 text-muted-foreground"></i>Outro</button>
+        </div>
+        <label class="mt-3 h-12 px-3.5 rounded-xl border border-input bg-background flex items-center text-[15px] text-muted-foreground">Detalhe, se quiser (ex.: temporal às 14h, rua alagada)</label>
+        <p class="mt-3 text-[13px] text-muted-foreground flex items-start gap-1.5"><i data-i="chart-no-axes-combined" class="size-4 shrink-0 mt-0.5"></i>A resposta marca o dia no B.I.: a projeção dos próximos sábados e a sugestão do plano não aprendem com um dia de chuva como se fosse normal.</p>
+      </div>
+      <div class="flex-1"></div>
+    </div>
+
+    <div class="px-5 pt-3 pb-1 mt-3 bg-card border-t border-border">
+      <div class="flex gap-3">
+        <button class="h-14 px-5 rounded-xl border border-border bg-card text-[16px] font-semibold inline-flex items-center gap-2"><i data-i="arrow-left" class="size-5"></i>Vitrine</button>
+        <button class="h-14 flex-1 rounded-xl bg-primary text-primary-foreground text-[17px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="lock" class="size-5"></i>Fechar o dia 03/10</button>
+      </div>
+      <p class="mt-1.5 text-center text-[13px] text-muted-foreground">Não reabre: um fechamento por dia. Sobras entram como estoque de ontem, perdas saem pelo lote.</p>
+    </div>
+    <div class="safe bg-card text-foreground"></div>
+  </div></div>
+  </div>
+
+  <span class="pin" style="left:420px;top:142px">1</span>
+  <span class="pin" style="left:46px;top:240px">2</span>
+  <span class="pin" style="left:46px;top:310px">3</span>
+  <span class="pin" style="left:46px;top:560px">4</span>
+  <span class="pin" style="left:46px;top:920px">5</span>
+  <span class="pin" style="left:46px;top:1150px">6</span>
+  <span class="pin" style="left:938px;top:310px">7</span>
+  <span class="pin" style="left:938px;top:640px">8</span>
+  <span class="pin" style="left:938px;top:1150px">9</span>
+</div>
+<div class="legend">
+  <p class="t">PDV · Fim do dia · tablet em pé · v4 <span>um corredor só (§9): fechar caixa, contar a vitrine e fechar o dia, mesma forma CONFERÊNCIA cega (§4.2), mesmo dono, mesmo momento</span></p>
+  <div><b>1</b>O corredor no topo: 1 Fechar caixa · 2 Contar a vitrine · 3 Fechar o dia. Cada passo concluído mostra hora e estado (caixa "conferido", vitrine "31 de 31"), nunca valor; "Sair" guarda o que já foi contado (estado da casa, L7). Só gerência entra (P22).</div>
+  <div><b>2</b>Contagem cega por desenho: nenhum valor esperado na tela; a diferença é calculada depois do número e nunca aparece em R$, só o veredito. É a única CONFERÊNCIA sem pré-preenchimento, e é consciente.</div>
+  <div><b>3</b>Por cédula ou só o total (os dois modos de hoje, PosDenominationCounter e campo único).</div>
+  <div><b>4</b>Uma linha ativa por vez; o subtotal e o "contado até agora" crescem com cada valor.</div>
+  <div><b>5</b>Teclado numérico da tela, grande, na zona do polegar, com Anterior/Próxima e +1. Observação continua (P22).</div>
+  <div><b>6</b>Selo que aponta e ecoa: "Contei R$ 1.210,00 · Confirmar" repete o número (era a segunda confirmação de hoje). O passo 2 usa o mesmo contador, por produto (P23), com bloqueio de produção aberta no item.</div>
+  <div><b>7</b>Às cegas até o fim, para todos: o passo 3 dá só o veredito, "Caixa conferido · dentro da tolerância"; fora dela, "fora da tolerância: o gestor confere no Escritório", sem valor. Esperado, vendido e diferença em R$ só no B.I. e na auditoria do dono. Ao lado, as sobras em peças (amanhã × perda) e a produção.</div>
+  <div><b>8</b>"Explicar o dia estranho": só aparece quando há sinal ("vendas 30% abaixo de um sábado típico"), só relativo (%), nunca R$, e o gráfico por hora sem eixo de valor; se o dono preferir, a pergunta aparece sem o número. Chips Chuva, Falta de produto, Evento, Outro, mais detalhe livre; a resposta marca o dia para o B.I. e para a sugestão do plano.</div>
+  <div><b>9</b>"Fechar o dia" é o selo irreversível (um por dia), com a consequência escrita abaixo; voltar para a vitrine fica ao lado.</div>
+</div>
+</body></html>

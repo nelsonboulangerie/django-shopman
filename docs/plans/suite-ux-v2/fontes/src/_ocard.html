@@ -1,0 +1,21 @@
+<article class="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2.5">
+  <div class="flex items-start gap-2">
+    <input type="checkbox" class="mt-1 size-5 rounded border-input">
+    <div class="flex-1 min-w-0">
+      <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="{{ch}}" class="size-3.5"></i>{{chn}}</p>
+      <p class="op-figure leading-none">{{code}}</p>
+    </div>
+    <span class="op-label tnum inline-flex items-center gap-1 text-muted-foreground"><i data-i="clock" class="size-3.5"></i>{{t}}</span>
+    <button class="size-9 -mt-1 rounded-md border border-border grid place-items-center text-muted-foreground" title="Atender"><i data-i="user-plus" class="size-4"></i></button>
+    <button class="size-9 -mr-1 -mt-1 rounded-md grid place-items-center text-muted-foreground" title="Mais ações do pedido"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+  </div>
+  <div class="op-body"><span class="font-medium">{{who}}</span> <span class="text-muted-foreground">· {{mode}}</span></div>
+  <p class="op-body text-foreground/85">{{items}}</p>
+  <div class="flex items-center gap-1.5 flex-wrap">
+    <span class="pill-{{s1}} h-6 px-2 rounded-full op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-current"></span>{{l1}}</span>
+    <span class="pill-{{s2}} h-6 px-2 rounded-full op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-current"></span>{{l2}}</span>
+    <span class="ml-auto op-title tnum">{{total}}</span>
+  </div>
+  <button class="act-{{dis}} h-action rounded-md op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="{{aicon}}" class="size-4"></i>{{act}}</button>
+  <p class="op-micro text-muted-foreground -mt-1 empty:hidden">{{why}}</p>
+</article>

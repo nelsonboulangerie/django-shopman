@@ -1,0 +1,188 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="bi">
+<div class="flex h-[900px] overflow-hidden relative">
+  {{> rail initials="AD" operator="Admin"}}
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Faixa 1: barra de seções -->
+    <header class="h-16 px-4 flex items-center gap-2 border-b border-border bg-card">
+      <div class="flex items-center gap-2.5 pr-3 mr-1 border-r border-border h-9 shrink-0">
+        <span class="size-8 rounded-md grid place-items-center text-white" style="background:var(--app-color)"><i data-i="chart-no-axes-combined" class="size-4.5"></i></span>
+        <span class="op-title">B.I.</span>
+      </div>
+      <nav class="flex items-center gap-0.5 min-w-0">
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Produção</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center gap-1.5 op-label font-semibold bg-secondary text-foreground shadow-[inset_0_-2px_0_var(--primary)]"><i data-i="banknote" class="size-4"></i>Vendas</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Caixa</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Clientes</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Perfis</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Explorar</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Projeção</a>
+        <a class="h-control px-2.5 rounded-md inline-flex items-center op-label text-muted-foreground">Cenários</a>
+      </nav>
+      <div class="flex-1"></div>
+      <!-- controle DO APP: período global -->
+      <div class="flex items-center rounded-md border border-border bg-card h-control shrink-0">
+        <button class="size-control grid place-items-center text-foreground border-r border-border" title="Período anterior"><i data-i="chevron-left" class="size-4"></i></button>
+        <button class="h-full px-3 inline-flex items-center gap-2 op-label"><i data-i="calendar" class="size-4 text-muted-foreground"></i><span class="font-semibold">28D</span><span class="tnum text-muted-foreground">05/09 a 02/10</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <button disabled class="size-control grid place-items-center text-muted-foreground/40 border-l border-border" title="Já é o período mais recente"><i data-i="chevron-right" class="size-4"></i></button>
+      </div>
+      <span class="w-px h-7 bg-border mx-1"></span>
+      <!-- faixa global (busca encolhida: barra com 8 seções) -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button class="h-control px-2.5 rounded-md border border-border bg-card text-muted-foreground inline-flex items-center gap-2 op-label font-normal" title="Buscar na suíte">
+          <i data-i="search" class="size-4"></i><kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted font-mono">Ctrl K</kbd>
+        </button>
+        <span class="h-control px-2 inline-flex items-center gap-2 rounded-md op-label text-muted-foreground"><span class="size-2 rounded-full bg-success shadow-[0_0_0_3px_color-mix(in_oklab,var(--success)_22%,transparent)]"></span><span class="tnum text-foreground/70">22:03</span></span>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center relative" title="Avisos"><i data-i="bell" class="size-5"></i><span class="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">7</span></button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Atalhos (?)"><i data-i="keyboard" class="size-5"></i></button>
+      </div>
+    </header>
+
+    <!-- Faixa 2: barra de trabalho -->
+    <div class="px-4 py-2.5 flex items-center gap-2 border-b border-border bg-background">
+      <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="git-compare-arrows" class="size-4 text-muted-foreground"></i><span class="text-muted-foreground font-normal">Comparar com:</span><span class="font-semibold">período anterior</span><span class="tnum text-muted-foreground font-normal">(08/08 a 04/09)</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+      <span class="w-px h-6 bg-border mx-1"></span>
+      <div class="flex items-center gap-1.5">
+        <button class="h-control px-3 rounded-full border border-primary bg-primary/10 text-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos os canais</button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4"></i>PDV</button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="message-circle" class="size-4"></i>WhatsApp</button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="globe" class="size-4"></i>Loja online</button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>iFood</button>
+      </div>
+      <div class="flex-1"></div>
+      <span class="op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="link" class="size-3.5"></i>?periodo=28d&amp;comparar=anterior</span>
+      <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+    </div>
+
+    <!-- Conteúdo -->
+    <div class="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+      <!-- KPIs -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="receipt" class="size-4"></i>Pedidos</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">2.606</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>23%</span><span class="op-micro text-muted-foreground">vs período anterior (3.384)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="banknote" class="size-4"></i>Faturamento</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">R$ 208,6 mil</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>11%</span><span class="op-micro text-muted-foreground">vs período anterior (R$ 234,4 mil)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="ticket" class="size-4"></i>Ticket médio</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">R$ 80,06</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-up" class="size-3.5"></i>16%</span><span class="op-micro text-muted-foreground">vs período anterior (R$ 69,27)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="circle-x" class="size-4"></i>Cancelados</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">0</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>À parte</span><span class="op-micro text-muted-foreground">Fora do faturamento acima</span></p>
+        </div>
+      </div>
+
+      <!-- linha 2 -->
+      <div class="grid grid-cols-3 gap-4">
+        <section class="col-span-2 rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Faturamento por dia</h2>
+              <p class="op-micro text-muted-foreground">Janela longa agrega por semana ou mês. Domingo: fechado.</p>
+            </div>
+            <div class="flex items-center gap-3 op-micro text-muted-foreground pt-1">
+              <span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-[var(--chart-1)]"></span>Shopman</span>
+              <span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-[var(--chart-1)]/35"></span>Histórico Yooga</span>
+              <span class="inline-flex items-center gap-1.5"><span class="w-3 h-[2px] bg-foreground/55"></span>Período anterior</span>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground" title="Mais ações do gráfico"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-7 h-[128px] flex items-end gap-1 border-b border-border">%%BARS%%</div>
+          <div class="flex gap-1 pt-1.5">%%TICKS%%</div>
+        </section>
+
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Por canal</h2>
+              <p class="op-micro text-muted-foreground">Faturamento do período e parte de cada canal</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground" title="Mais ações do gráfico"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-4 flex flex-col gap-3.5">%%CHANNELS%%</div>
+        </section>
+      </div>
+
+      <!-- linha 3 -->
+      <div class="grid grid-cols-3 gap-4 flex-1 min-h-0">
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Pedidos por hora</h2>
+              <p class="op-micro text-muted-foreground">Soma do período, hora local</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-auto pt-6 h-[148px] flex items-end gap-[3px] border-b border-border">%%HBARS%%</div>
+          <div class="flex gap-[3px] pt-1.5">%%HTICKS%%</div>
+        </section>
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Pedidos por dia da semana</h2>
+              <p class="op-micro text-muted-foreground">Soma do período</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-auto pt-6 h-[148px] flex items-end border-b border-border">%%WBARS%%</div>
+          <div class="flex pt-1.5">%%WTICKS%%</div>
+        </section>
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Top produtos</h2>
+              <p class="op-micro text-muted-foreground">Por faturamento no período</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <table class="mt-2 w-full table-fixed">
+            <thead><tr class="h-8 border-b border-border op-eyebrow text-muted-foreground text-left">
+              <th class="font-semibold">Produto</th><th class="w-14 text-right font-semibold">Qtd</th><th class="w-28 text-right font-semibold">Faturamento</th><th class="w-[72px] pl-3 font-semibold">Parte</th>
+            </tr></thead>
+            <tbody>%%PRODUCTS%%</tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- menu ⋯ aberto -->
+  <div class="note absolute right-4 top-[122px] w-72 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Este recorte</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label bg-accent"><i data-i="download" class="size-4"></i>Exportar CSV</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="link" class="size-4"></i>Copiar link do recorte</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="database" class="size-4"></i>Fontes dos números</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="keyboard" class="size-4"></i>Atalhos desta tela<kbd class="ml-auto op-micro font-mono text-muted-foreground">?</kbd></button>
+  </div>
+
+  <span class="pin" style="left:744px;top:20px">1</span>
+  <span class="pin" style="left:812px;top:20px">2</span>
+  <span class="pin" style="left:70px;top:70px">3</span>
+  <span class="pin" style="left:560px;top:62px">4</span>
+  <span class="pin" style="left:1380px;top:70px">5</span>
+  <span class="pin" style="left:84px;top:146px">6</span>
+  <span class="pin" style="left:330px;top:266px">7</span>
+  <span class="pin" style="left:916px;top:270px">8</span>
+</div>
+<div class="legend">
+  <p class="t">B.I. · Vendas <span>proposta · mesma anatomia; período vira controle do app e entra na URL</span></p>
+  <div><b>1</b>Barra de seções do kit com as 8 seções; com tantas abas a busca da suíte encolhe para o ícone com Ctrl K.</div>
+  <div><b>2</b>Período global (presets dia a máx. e personalizado) fica à direita, como controle do app; ‹ › andam um período.</div>
+  <div><b>3</b>"Comparar com" deixa explícito contra o que os deltas são medidos (hoje é fixo e implícito).</div>
+  <div><b>4</b>Canais como chips, iguais aos do Gestor; recortam todos os cartões da página.</div>
+  <div><b>5</b>Recorte inteiro na URL; ⋯ traz Exportar CSV, Copiar link do recorte, Atualizar e as fontes dos números.</div>
+  <div><b>6</b>StatTile do kit: rótulo, número grande, delta em pílula de tom com o valor anterior por extenso.</div>
+  <div><b>7</b>Cartão de gráfico com cabeçalho único (título, subtítulo, ⋯) e legenda de verdade; barras nas cores --chart-*.</div>
+  <div><b>8</b>Canal pelo nome (não pela ref "pdv"), com a parte de cada um; Top produtos ganha a coluna Parte.</div>
+</div>
+</body></html>

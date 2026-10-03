@@ -1,0 +1,187 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x1720"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="relative h-[1720px] overflow-hidden px-10 py-8 flex flex-col gap-7">
+  <header class="flex items-end gap-4">
+    <div>
+      <p class="op-eyebrow text-primary">operator-kit · proposta</p>
+      <h1 class="op-display mt-1">Uma peça para cada intenção</h1>
+      <p class="op-body text-muted-foreground mt-1 max-w-3xl">Os oito apps de operador passam a montar a tela com as mesmas peças. Mesmo token, mesma altura (44 px, ação principal 48 px), mesmo comportamento de teclado e foco.</p>
+    </div>
+  </header>
+
+  <div class="grid grid-cols-12 gap-6">
+    <!-- Cores -->
+    <section class="col-span-5 rounded-lg border border-border bg-card p-5 flex flex-col gap-4">
+      <h2 class="op-title">Cor: ação, superfície e tom</h2>
+      <div class="grid grid-cols-6 gap-2">
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-primary"></span><span class="op-micro">primary</span></div>
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-background border border-border"></span><span class="op-micro">background</span></div>
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-card border border-border"></span><span class="op-micro">card</span></div>
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-secondary"></span><span class="op-micro">secondary</span></div>
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-rail"></span><span class="op-micro">rail</span></div>
+        <div class="flex flex-col gap-1"><span class="h-12 rounded-md bg-foreground"></span><span class="op-micro">foreground</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-info"></span><span class="op-micro">info</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-success"></span><span class="op-micro">success</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-warning"></span><span class="op-micro">warning</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-destructive"></span><span class="op-micro">destructive</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-muted border border-border"></span><span class="op-micro">neutro</span></div>
+        <div class="flex flex-col gap-1"><span class="h-9 rounded-md bg-accent"></span><span class="op-micro">accent</span></div>
+      </div>
+      <div>
+        <p class="op-label text-muted-foreground mb-2">Identidade de cada app (só no selo e no rail; a ação é sempre latão)</p>
+        <div class="flex gap-2">
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#A95032" title="PDV"><i data-i="shopping-basket" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#2E7168"><i data-i="chef-hat" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#8B2F4D"><i data-i="square-kanban" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#B9781B"><i data-i="croissant" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#386F9A"><i data-i="package" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#7D4B88"><i data-i="megaphone" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#414F91"><i data-i="chart-no-axes-combined" class="size-5"></i></span>
+          <span class="size-10 rounded-md grid place-items-center text-white" style="background:#34373B"><i data-i="layout-grid" class="size-5"></i></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tipografia -->
+    <section class="col-span-4 rounded-lg border border-border bg-card p-5 flex flex-col gap-2.5">
+      <h2 class="op-title mb-1">Tipografia com nome (op-*)</h2>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-display">Encomendas</span><span class="op-micro text-muted-foreground">op-display · 28</span></div>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-figure">R$ 208,6 mil</span><span class="op-micro text-muted-foreground">op-figure · 24</span></div>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-title">Nenhum pedido novo</span><span class="op-micro text-muted-foreground">op-title · 16</span></div>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-body">3× Baguette de Tradition</span><span class="op-micro text-muted-foreground">op-body · 15</span></div>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-label">Marcar pronto</span><span class="op-micro text-muted-foreground">op-label · 13</span></div>
+      <div class="flex items-baseline justify-between border-b border-border pb-2"><span class="op-micro">PDV · PDV-261003-</span><span class="op-micro text-muted-foreground">op-micro · 12</span></div>
+      <div class="flex items-baseline justify-between"><span class="op-eyebrow">Preparo</span><span class="op-micro text-muted-foreground">op-eyebrow · 11</span></div>
+    </section>
+
+    <!-- Status -->
+    <section class="col-span-3 rounded-lg border border-border bg-card p-5 flex flex-col gap-3">
+      <h2 class="op-title">Status: um vocabulário</h2>
+      <div class="flex flex-col gap-2 items-start">
+        <span class="h-6 px-2 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-info"></span>Aceito · Saiu para entrega</span>
+        <span class="h-6 px-2 rounded-full bg-primary/12 text-primary op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-primary"></span>Em preparo · Em andamento</span>
+        <span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Pronto · Pago · Produzido</span>
+        <span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Aguardando · Revisar</span>
+        <span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-destructive"></span>Atrasado · Esgotado · Falhou</span>
+        <span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não informado · Pausado</span>
+      </div>
+      <p class="op-micro text-muted-foreground">Um módulo <span class="font-mono">presentation/status.ts</span> no kit: estado → tom, rótulo, ícone. Hoje são 6 mapas em 3 vocabulários.</p>
+    </section>
+  </div>
+
+  <div class="grid grid-cols-12 gap-6">
+    <!-- Botões -->
+    <section class="col-span-5 rounded-lg border border-border bg-card p-5 flex flex-col gap-4">
+      <h2 class="op-title">Botão (UiButton do kit, uma cópia só)</h2>
+      <div class="flex flex-wrap gap-2 items-center">
+        <button class="h-action px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="arrow-right" class="size-4"></i>Primária 48</button>
+        <button class="h-control px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="plus" class="size-4"></i>Primária 44</button>
+        <button class="h-control px-4 rounded-md border border-border bg-card op-label inline-flex items-center gap-2"><i data-i="printer" class="size-4"></i>Secundária</button>
+        <button class="h-control px-4 rounded-md op-label inline-flex items-center gap-2 hover:bg-accent"><i data-i="x" class="size-4"></i>Discreta</button>
+        <button class="h-control px-4 rounded-md bg-destructive text-destructive-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="ban" class="size-4"></i>Recusar pedido</button>
+        <button class="h-control px-4 rounded-md bg-primary/70 text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".3" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>Salvando</button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center"><i data-i="refresh-cw" class="size-5"></i></button>
+        <button class="h-control px-4 rounded-md border border-dashed border-border text-muted-foreground op-label inline-flex items-center gap-2"><i data-i="lock" class="size-4"></i>Bloqueada, com motivo</button>
+      </div>
+      <p class="op-micro text-muted-foreground">Hoje: 7 cópias de Ui/Button, ~86 classes de botão escritas à mão, alturas de 32 a 56 px.</p>
+    </section>
+
+    <!-- Barra de trabalho -->
+    <section class="col-span-7 rounded-lg border border-border bg-card p-5 flex flex-col gap-4">
+      <h2 class="op-title">Barra de trabalho: busca, filtro, visão, ordem, mais</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <label class="h-control w-56 px-3 rounded-md border border-input bg-background inline-flex items-center gap-2"><i data-i="search" class="size-4 text-muted-foreground"></i><span class="flex-1 op-body text-muted-foreground">Buscar nesta lista</span><kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-muted-foreground">/</kbd></label>
+        <button class="h-control px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">10</span></button>
+        <button class="h-control px-3 rounded-full border border-border bg-background inline-flex items-center gap-2 op-label">iFood <span class="tnum text-muted-foreground">1</span></button>
+        <button class="h-control pl-3 pr-2 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label"><span class="text-muted-foreground">Venda:</span><span class="font-semibold">Pausados</span><i data-i="x" class="size-3.5"></i></button>
+        <button class="h-control px-3 rounded-full border border-dashed border-border inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="plus" class="size-4"></i>Filtro</button>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1"><button class="h-full px-3 rounded bg-card shadow-sm op-label font-semibold inline-flex items-center gap-1.5"><i data-i="columns-3" class="size-4"></i>Quadro</button><button class="h-full px-3 rounded op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="table-2" class="size-4"></i>Tabela</button></div>
+        <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1"><button class="h-full px-3 rounded bg-card shadow-sm op-label font-semibold">Com NF</button><button class="h-full px-3 rounded op-label text-muted-foreground">Sem NF</button></div>
+        <button class="h-control px-3 rounded-md border border-border bg-background inline-flex items-center gap-2 op-label"><i data-i="arrow-down-up" class="size-4"></i>Chegada<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <div class="h-control rounded-md border border-border bg-background inline-flex items-center"><button class="size-control grid place-items-center"><i data-i="chevron-left" class="size-4"></i></button><button class="h-full px-2 inline-flex items-center gap-2 op-label border-x border-border"><i data-i="calendar" class="size-4"></i>Hoje, sex 02/10<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button><button class="size-control grid place-items-center"><i data-i="chevron-right" class="size-4"></i></button></div>
+        <button class="size-control rounded-md border border-border bg-background grid place-items-center"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <p class="op-micro text-muted-foreground">UiSearchInput · UiFilterChip · FilterBar · UiSegmentedControl (novo; substitui ~46 botões aria-pressed) · UiMenu (novo) · OperatorPeriodPicker. Estado vai para a URL.</p>
+    </section>
+  </div>
+
+  <div class="grid grid-cols-12 gap-6">
+    <!-- Estados -->
+    <section class="col-span-7 rounded-lg border border-border bg-card p-5 flex flex-col gap-4">
+      <h2 class="op-title">Estados: vazio, carregando, erro, desatualizado</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-lg border border-dashed border-border px-5 py-6 flex flex-col items-center text-center gap-1.5">
+          <span class="size-10 rounded-full bg-muted text-muted-foreground grid place-items-center"><i data-i="search-x" class="size-5"></i></span>
+          <p class="op-title">Nenhum produto neste filtro</p>
+          <p class="op-label font-normal text-muted-foreground">23 produtos ficaram de fora por "Venda: Pausados".</p>
+          <button class="mt-1 h-control px-3 rounded-md border border-border op-label">Limpar filtros</button>
+        </div>
+        <div class="rounded-lg border border-border p-4 flex flex-col gap-3">
+          <div class="flex items-center gap-3"><span class="size-10 rounded-md bg-muted animate-pulse"></span><div class="flex-1 flex flex-col gap-2"><span class="h-3 w-2/3 rounded bg-muted"></span><span class="h-2.5 w-1/3 rounded bg-muted"></span></div></div>
+          <div class="flex items-center gap-3"><span class="size-10 rounded-md bg-muted"></span><div class="flex-1 flex flex-col gap-2"><span class="h-3 w-1/2 rounded bg-muted"></span><span class="h-2.5 w-1/4 rounded bg-muted"></span></div></div>
+          <div class="flex items-center gap-3"><span class="size-10 rounded-md bg-muted"></span><div class="flex-1 flex flex-col gap-2"><span class="h-3 w-3/5 rounded bg-muted"></span><span class="h-2.5 w-2/5 rounded bg-muted"></span></div></div>
+          <p class="op-micro text-muted-foreground text-center">UiSkeleton no formato do conteúdo (não "Carregando…")</p>
+        </div>
+        <div class="rounded-lg border border-destructive/30 bg-destructive/8 p-4 flex gap-3">
+          <i data-i="circle-alert" class="size-5 text-destructive shrink-0 mt-0.5"></i>
+          <div class="flex-1"><p class="op-label font-semibold">Não deu para ler os pedidos.</p><p class="op-label font-normal text-muted-foreground">O que está na tela continua valendo. Verifique a internet do dispositivo.</p></div>
+          <button class="h-control px-3 rounded-md border border-border bg-card op-label self-center">Tentar de novo</button>
+        </div>
+        <div class="rounded-lg border border-warning/30 bg-warning/10 p-4 flex gap-3 items-center">
+          <i data-i="wifi-off" class="size-5 text-warning shrink-0"></i>
+          <p class="flex-1 op-label">Sem conexão. O que está na tela é de 21:58.</p>
+          <button class="h-control px-3 rounded-md border border-border bg-card op-label">Atualizar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Diálogo -->
+    <section class="col-span-5 rounded-lg border border-border bg-secondary/60 p-5 flex flex-col gap-3">
+      <h2 class="op-title">Diálogo: título, consequência, decisão</h2>
+      <div class="rounded-xl border border-border bg-card shadow-xl p-5 flex flex-col gap-3">
+        <div class="flex items-start gap-3"><div class="flex-1"><p class="op-title">Recusar o pedido X36?</p><p class="op-label font-normal text-muted-foreground mt-0.5">A cliente recebe o aviso e o Pix de R$ 13,00 volta para ela.</p></div><button class="size-9 rounded-md grid place-items-center text-muted-foreground" title="Fechar"><i data-i="x" class="size-5"></i></button></div>
+        <div class="flex flex-wrap gap-2">
+          <span class="h-control px-3 rounded-full border border-primary bg-primary/10 op-label font-semibold inline-flex items-center">Sem estoque</span>
+          <span class="h-control px-3 rounded-full border border-border op-label inline-flex items-center">Fora do horário</span>
+          <span class="h-control px-3 rounded-full border border-border op-label inline-flex items-center">Outros</span>
+        </div>
+        <div class="flex justify-between gap-2 pt-1">
+          <button class="h-control px-4 rounded-md border border-border op-label">Voltar</button>
+          <button class="h-action px-4 rounded-md bg-destructive text-destructive-foreground op-label font-semibold">Recusar pedido</button>
+        </div>
+      </div>
+      <p class="op-micro text-muted-foreground">UiDialog e UiSheet do kit (trap de foco, scroll-lock, "Fechar" em português). Os 13 overlays à mão migram.</p>
+    </section>
+  </div>
+
+  <div class="grid grid-cols-12 gap-6">
+    <section class="col-span-8 rounded-lg border border-border bg-card p-5 flex flex-col gap-3">
+      <h2 class="op-title">Número de painel (StatTile) e tabela</h2>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="rounded-lg border border-border p-4"><p class="op-label text-muted-foreground">Faturamento</p><p class="op-figure mt-1">R$ 208,6 mil</p><span class="mt-2 h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>11% vs período anterior</span></div>
+        <div class="rounded-lg border border-border p-4"><p class="op-label text-muted-foreground">Ticket médio</p><p class="op-figure mt-1">R$ 80,06</p><span class="mt-2 h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-up" class="size-3.5"></i>16% vs período anterior</span></div>
+        <div class="rounded-lg border border-border p-4"><p class="op-label text-muted-foreground">Lotes produzidos</p><p class="op-figure mt-1">5 de 15</p><div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full w-1/3 bg-primary"></div></div></div>
+      </div>
+      <div class="rounded-lg border border-border overflow-hidden">
+        <div class="grid grid-cols-[1fr_120px_120px_160px] h-10 items-center px-4 bg-muted/60 op-eyebrow text-muted-foreground border-b border-border"><span>Produto</span><span class="text-right">Planejado</span><span class="text-right">Produzido</span><span class="text-right">Ação</span></div>
+        <div class="grid grid-cols-[1fr_120px_120px_160px] h-14 items-center px-4 border-b border-border"><span><span class="op-body font-medium">Croissant Manteiga</span> <span class="op-micro text-muted-foreground font-mono">CRO</span></span><span class="text-right tnum op-body">42</span><span class="text-right"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center">A confirmar</span></span><span class="text-right"><button class="h-control px-3 rounded-md bg-primary text-primary-foreground op-label font-semibold">Confirmar</button></span></div>
+        <div class="grid grid-cols-[1fr_120px_120px_160px] h-14 items-center px-4"><span><span class="op-body font-medium">Madeleine</span> <span class="op-micro text-muted-foreground font-mono">MDLN</span></span><span class="text-right tnum op-body text-muted-foreground">—</span><span class="text-right tnum op-body font-semibold">70</span><span class="text-right"><button class="size-control rounded-md grid place-items-center text-muted-foreground ml-auto"><i data-i="ellipsis-vertical" class="size-5"></i></button></span></div>
+      </div>
+    </section>
+    <section class="col-span-4 rounded-lg border border-border bg-card p-5 flex flex-col gap-3">
+      <h2 class="op-title">Menu ⋯ e aviso</h2>
+      <div class="w-full rounded-lg border border-border bg-popover shadow-lg p-1.5">
+        <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+        <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label bg-accent"><i data-i="download" class="size-4"></i>Exportar CSV</button>
+        <div class="h-px bg-border my-1"></div>
+        <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label text-destructive"><i data-i="trash-2" class="size-4"></i>Apagar cenário…</button>
+      </div>
+      <div class="rounded-lg bg-foreground text-background px-4 py-3 flex items-center gap-3 shadow-lg">
+        <i data-i="circle-check" class="size-5 text-[#7eb26e]"></i><p class="flex-1 op-label">Item removido da comanda.</p><button class="op-label font-semibold underline underline-offset-4">Desfazer</button>
+      </div>
+    </section>
+  </div>
+</div>
+</body></html>

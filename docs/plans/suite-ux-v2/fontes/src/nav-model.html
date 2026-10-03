@@ -1,0 +1,100 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x1320">
+<style>
+.lvl{display:grid;grid-template-columns:150px repeat(3,minmax(0,1fr));}
+.lvl > div{padding:12px 14px;border-bottom:1px solid var(--border)}
+.lvl .h{background:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-foreground)}
+.lvl .n{background:var(--card)}
+.tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--secondary);margin:2px 4px 2px 0}
+.flow{display:flex;align-items:stretch;gap:10px}
+.step{flex:1;min-width:0;border:1px solid var(--border);background:var(--card);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:17px}
+.step b{display:block;font-size:13px;margin-bottom:3px}
+.arrow{align-self:center;color:var(--muted-foreground)}
+.bad{border-color:color-mix(in oklab,var(--destructive) 40%,transparent);background:color-mix(in oklab,var(--destructive) 6%,var(--card))}
+.good{border-color:color-mix(in oklab,var(--success) 40%,transparent);background:color-mix(in oklab,var(--success) 6%,var(--card))}
+</style></head>
+<body class="bg-background text-foreground font-sans antialiased">
+<div class="relative h-[1320px] overflow-hidden px-10 py-8 flex flex-col gap-6">
+  <header>
+    <p class="op-eyebrow text-primary">Navegação · proposta</p>
+    <h1 class="op-display mt-1">Cinco níveis, um jeito de ir e voltar</h1>
+    <p class="op-body text-muted-foreground mt-1 max-w-4xl">Todo lugar da suíte mora num destes níveis. Cada nível tem um controle só por dispositivo, uma regra de voltar e um endereço. Hoje cada app inventou o seu: rail como seção em quatro apps, barra de seções em três, abas próprias na Produção, três controles para as mesmas seções no Compras.</p>
+  </header>
+
+  <section class="rounded-lg border border-border overflow-hidden">
+    <div class="lvl">
+      <div class="h">Nível</div><div class="h">Desktop (teclado)</div><div class="h">Tablet (toque, giro)</div><div class="h">Celular (polegar)</div>
+      <div class="n"><p class="op-title">0 · Suíte</p><p class="op-micro text-muted-foreground">trocar de app, achar qualquer coisa</p></div>
+      <div><span class="tag"><i data-i="layout-grid" class="size-3.5"></i>selo do app no topo do rail</span><span class="tag"><i data-i="search" class="size-3.5"></i>busca única · / ou Ctrl K</span><span class="tag"><i data-i="bell" class="size-3.5"></i>aviso abre o lugar exato</span></div>
+      <div><span class="tag">selo no rail compacto</span><span class="tag">busca única</span></div>
+      <div><span class="tag">selo na barra de cima</span><span class="tag">busca em tela cheia, com câmera</span><span class="tag">push → lugar exato</span></div>
+
+      <div class="n"><p class="op-title">1 · Seção</p><p class="op-micro text-muted-foreground">Pedidos, Base, Expedição…</p></div>
+      <div><span class="tag"><i data-i="panel-left" class="size-3.5"></i>item do rail com nome e contagem</span><span class="tag"><kbd class="font-mono">Alt 1…9</kbd> em todo app</span></div>
+      <div><span class="tag">rail compacto (deitado)</span><span class="tag">barra de seções embaixo (em pé)</span></div>
+      <div><span class="tag">barra de seções embaixo, até 4 + Mais</span></div>
+
+      <div class="n"><p class="op-title">2 · Recorte</p><p class="op-micro text-muted-foreground">Insumos/Fornecedores, Expedição/Qualidade</p></div>
+      <div><span class="tag">controle segmentado no cabeçalho</span><span class="tag"><kbd class="font-mono">[</kbd> <kbd class="font-mono">]</kbd> anterior e próximo</span></div>
+      <div><span class="tag">controle segmentado</span><span class="tag">deslizar entre recortes</span></div>
+      <div><span class="tag">abas roláveis no topo da lista</span><span class="tag">deslizar</span></div>
+
+      <div class="n"><p class="op-title">3 · Item</p><p class="op-micro text-muted-foreground">pedido, produto, lote, insumo</p></div>
+      <div><span class="tag">painel lateral se a lista precisa ficar à vista</span><span class="tag">página se é área de trabalho</span><span class="tag">"‹ Pedidos" sobe com filtro, rolagem e foco restaurados</span><span class="tag"><kbd class="font-mono">Esc</kbd> sobe</span></div>
+      <div><span class="tag">deitado: lista + detalhe lado a lado</span><span class="tag">em pé: painel de baixo</span></div>
+      <div><span class="tag">tela cheia com ‹ no topo</span><span class="tag">gesto de voltar do sistema</span><span class="tag">ação no polegar</span></div>
+
+      <div class="n"><p class="op-title">4 · Fluxo</p><p class="op-micro text-muted-foreground">pagar, finalizar lote, conferir NF</p></div>
+      <div><span class="tag">tela de foco: esconde rail e seções</span><span class="tag">sair com dado não salvo → diálogo do kit</span><span class="tag">etapa na URL</span></div>
+      <div><span class="tag">tela de foco com teclado numérico</span></div>
+      <div><span class="tag">tela cheia, "Concluir" fixo embaixo</span><span class="tag">vibra ao concluir</span></div>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-3 gap-4">
+    <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+      <p class="op-title flex items-center gap-2"><i data-i="link" class="size-4 text-primary"></i>Todo lugar tem endereço</p>
+      <p class="op-label font-normal text-muted-foreground">Seção, recorte, filtro, período, item aberto e etapa vão para a URL. Recarregar, compartilhar ou abrir pelo aviso cai no mesmo lugar. Some o <span class="font-mono">useState</span> como seção (Compras), o período só na memória (B.I.) e a data que só é lida (Produção).</p>
+    </div>
+    <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+      <p class="op-title flex items-center gap-2"><i data-i="corner-up-left" class="size-4 text-primary"></i>Voltar é subir, com contexto</p>
+      <p class="op-label font-normal text-muted-foreground">Um botão "‹ Pai" no kit: leva ao nível de cima com o filtro, a rolagem e o foco de onde o operador saiu (o que hoje só o quadro do Gestor faz). Chegou por link direto? Sobe para a lista padrão. Nunca <span class="font-mono">router.back()</span> às cegas.</p>
+    </div>
+    <div class="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+      <p class="op-title flex items-center gap-2"><i data-i="arrow-left-right" class="size-4 text-primary"></i>Entre apps, com bilhete de volta</p>
+      <p class="op-label font-normal text-muted-foreground">Os oito apps passam a ter endereço (hoje só 4 têm). Link entre apps leva o contexto e a origem; o destino mostra "‹ Voltar ao PDV". Frase que manda ir a outro app vira link.</p>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3">
+    <h2 class="op-title">Três trajetos, hoje e na proposta</h2>
+    <div class="flow">
+      <div class="step bad"><b>Hoje · Cozinha</b>Toque no ícone de monitor abre o Painel de retirada em tela cheia. Sem rail, sem link, sem saída.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Proposta</b>Painel de retirada abre em janela própria. Na estação, um toque longo no canto (ou Esc) pede o PIN e volta à estação de origem.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Vale para</b>Letreiro da Produção e Tela do cliente do PDV: toda tela cheia tem saída declarada.</div>
+    </div>
+    <div class="flow">
+      <div class="step bad"><b>Hoje · Gestor</b>"‹ Clientes" faz router.back(): vindo de um aviso, volta para fora do app. Unificações e Canais usam link fixo; o pedido reconstrói o filtro.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Proposta</b>Um só "‹ Pai" do kit em todo detalhe: volta à lista com filtro, rolagem e o card em foco, ou à lista padrão se chegou por link.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Vale para</b>PDV (encomendas, relatório), Produção (receitas, lote), Marketing (anúncio), Compras (linha da nota).</div>
+    </div>
+    <div class="flow">
+      <div class="step bad"><b>Hoje · PDV → Gestor</b>"Verifique no Gestor" é só texto; o link do resultado da venda abre o pedido, mas não há caminho de volta ao balcão.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Proposta</b>Link com origem: o Gestor abre o pedido e mostra "‹ Voltar ao PDV · comanda #1007" no cabeçalho.</div>
+      <i data-i="arrow-right" class="arrow size-5"></i>
+      <div class="step good"><b>Vale para</b>Fechamento → lote na Produção, Compras → custo no Catálogo, B.I. → pedido, produto ou insumo (hoje o B.I. não aprofunda em nada).</div>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-4 gap-3">
+    <div class="rounded-lg bg-secondary/70 p-3"><p class="op-label font-semibold">Um nome por lugar</p><p class="op-micro text-muted-foreground mt-1">Produção: "Painel", "Produção" e "Lotes" para lugares trocados. Marketing: "painel" que não existe mais, "V2" no título.</p></div>
+    <div class="rounded-lg bg-secondary/70 p-3"><p class="op-label font-semibold">Título em toda tela</p><p class="op-micro text-muted-foreground mt-1">"Pedidos · Gestor". Hoje faltam na venda do PDV, na fila e no pedido do Gestor, em toda a Cozinha, no B.I. e no Compras.</p></div>
+    <div class="rounded-lg bg-secondary/70 p-3"><p class="op-label font-semibold">Guarda única</p><p class="op-micro text-muted-foreground mt-1"><span class="font-mono">useUnsavedGuard</span> com diálogo do kit no lugar do window.confirm; cobre Finalizar lote, editor de receita e nota do Compras, que hoje perdem dado.</p></div>
+    <div class="rounded-lg bg-secondary/70 p-3"><p class="op-label font-semibold">Travas</p><p class="op-micro text-muted-foreground mt-1">Teste recusa seção fora da URL, página sem título, link entre apps sem origem e atalho de PWA que não resolve (o "Hoje" do Gestor é ignorado hoje).</p></div>
+  </section>
+</div>
+</body></html>
