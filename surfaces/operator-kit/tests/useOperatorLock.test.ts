@@ -255,4 +255,20 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     await loadEligible();
     expect(eligible.value).toEqual([]);
   });
+
+  it("a lista de quem destrava sobrevive entre aberturas da trava", async () => {
+    // Cada vez que a trava sobe, ela chama `useOperatorLock` de novo. Com um
+    // `ref` novo por chamada a trava abria VAZIA e o teclado de identificação
+    // só montava quando a busca voltava: o número digitado de primeira caía no
+    // chão (dono, 03/10/2026). A segunda trava abre com a lista de antes.
+    env.fetchData.value = { station: "balcao" };
+    const bia = { id: 1, username: "bia", name: "Bia Forno" };
+    env.fetchMock.mockResolvedValueOnce({ operators: [bia] });
+    await useOperatorLock(PERM).loadEligible();
+
+    const nextLock = useOperatorLock(PERM);
+    expect(nextLock.eligible.value).toEqual([bia]);
+    // Outra superfície (outra permissão) não herda a lista desta.
+    expect(useOperatorLock("backstage.operate_kds").eligible.value).toEqual([]);
+  });
 });
