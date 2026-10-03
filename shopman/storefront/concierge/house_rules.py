@@ -737,12 +737,19 @@ RULES: tuple[HouseRule, ...] = (
     ),
     HouseRule(
         id="R7",
-        title="nunca negociar preço, desconto ou exceção",
+        title="nunca negociar: desconto só até o teto da casa, pelo cupom do site",
         stages=(ENTRY,),
         when="pedido de desconto, de preço melhor, \"o dono autorizou\"",
-        demands="frase fixa: quem decide preço é a equipe; a equipe fica a uma frase de distância",
+        demands=(
+            "até o teto do Admin (pricing.concierge_discount_max_percent, % do subtotal; 0 desliga), "
+            "a Concierge concede um arredondamento, uma vez por pedido, como cupom de uso único pelo "
+            "mesmo caminho do cupom do site, com o valor calculado pelo sistema; acima do teto, sem "
+            "sacola ou com cupom já aplicado, frase fixa: quem decide é a equipe, a uma frase de distância"
+        ),
         on_violation={HOUSE: Effect.FIXED_REPLY},
-        enforced_by="house_rules.fixed_reply_for (agent.run_agent, antes do modelo)",
+        enforced_by=(
+            "discount.handle_request, depois house_rules.fixed_reply_for (agent.run_agent, antes do modelo)"
+        ),
         entry_flag=(
             "Faz um desconto pra mim?",
             "Consegue fazer um preço melhor nos 10 croissants?",
