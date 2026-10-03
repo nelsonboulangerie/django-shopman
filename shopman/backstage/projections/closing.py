@@ -96,15 +96,15 @@ class PendingProductionProjection:
 class UpcomingPreorderRowProjection:
     """Encomendas confirmadas para uma data futura (WP-D).
 
-    Informativo no fechamento: vendido hoje (dinheiro no caixa de hoje), sai
-    do estoque na data combinada — por isso NÃO entra na reconciliação do dia.
+    Informativo no fechamento: sai do estoque na data combinada — por isso NÃO
+    entra na reconciliação do dia. Só a CONTAGEM de pedidos: o fechamento é
+    cego para dinheiro (vendas, esperado, diferença), e o total em R$ das
+    encomendas é venda. Quem audita valores é o relatório de caixa do Dono.
     """
 
     date: str  # ISO
     date_display: str  # "amanhã", "sáb, 19/07"
     orders_count: int
-    total_q: int
-    total_display: str
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,6 @@ class DayClosingProjection:
     existing_closing_display: str  # "" if not closed, "Fechado por X às HH:MM"
     total_available: int
     production_summary: dict
-    cash_shift_summary: dict
     reconciliation_errors: tuple[ReconciliationError, ...]
     pending_production: tuple[PendingProductionProjection, ...]
     has_pending_production: bool
@@ -165,14 +164,12 @@ def build_day_closing() -> DayClosingProjection:
 
     closing_display = ""
     production_summary = _today_production_summary(today)
-    cash_shift_summary = _today_cash_shift_summary(today)
     reconciliation_errors: tuple[ReconciliationError, ...] = ()
     if existing:
         by = existing.closed_by.get_username() if existing.closed_by else "?"
         at = existing.closed_at.strftime("%H:%M") if existing.closed_at else ""
         closing_display = f"Fechado por {by} às {at}"
         production_summary = _closing_data(existing).get("production_summary") or production_summary
-        cash_shift_summary = _closing_data(existing).get("cash_shift_summary") or cash_shift_summary
         raw_errors = _closing_data(existing).get("reconciliation_errors") or ()
         reconciliation_errors = tuple(
             ReconciliationError.from_dict(raw) if isinstance(raw, dict) else raw
@@ -193,7 +190,6 @@ def build_day_closing() -> DayClosingProjection:
         existing_closing_display=closing_display,
         total_available=total_available,
         production_summary=production_summary,
-        cash_shift_summary=cash_shift_summary,
         reconciliation_errors=reconciliation_errors,
         pending_production=pending_production,
         has_pending_production=bool(pending_production),
@@ -378,18 +374,13 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
     data combinada depois de hoje, qualquer que seja o dia em que foi feita — e
     não "as vendidas hoje", como a tela chegou a dizer. O fechamento informa
     para o operador saber o que já está comprometido nos próximos dias.
-
-    O total é o EFETIVO (``order_composition.effective_total_q``): o pedido do
-    iFood ajustado depois de aceito vale o que a plataforma paga, não o selado.
     """
     try:
         from shopman.orderman.models import Order
-        from shopman.utils.monetary import format_money
 
-        from shopman.shop.services import order_composition
         from shopman.shop.services.order_helpers import get_commitment_date
 
-        by_date: dict[date, dict] = {}
+        by_date: dict[date, int] = {}
         orders = (
             Order.objects.filter(
                 status__in=("new", "accepted"),
@@ -400,23 +391,16 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
             commitment = get_commitment_date(order)
             if commitment is None or commitment <= today:
                 continue
-            row = by_date.setdefault(commitment, {"orders_count": 0, "total_q": 0})
-            row["orders_count"] += 1
-            row["total_q"] += order_composition.effective_total_q(order)
+            by_date[commitment] = by_date.get(commitment, 0) + 1
 
-        rows = []
-        for commitment in sorted(by_date):
-            row = by_date[commitment]
-            rows.append(
-                UpcomingPreorderRowProjection(
-                    date=commitment.isoformat(),
-                    date_display=_upcoming_date_display(commitment, today),
-                    orders_count=row["orders_count"],
-                    total_q=row["total_q"],
-                    total_display=f"R$ {format_money(row['total_q'])}",
-                )
+        return tuple(
+            UpcomingPreorderRowProjection(
+                date=commitment.isoformat(),
+                date_display=_upcoming_date_display(commitment, today),
+                orders_count=by_date[commitment],
             )
-        return tuple(rows)
+            for commitment in sorted(by_date)
+        )
     except Exception:
         logger.debug("closing.upcoming_preorders_failed", exc_info=True)
         return ()
@@ -443,13 +427,3 @@ def _today_production_summary(selected_date: date) -> dict:
     except Exception:
         logger.debug("closing.production_summary_failed", exc_info=True)
         return {}
-
-
-def _today_cash_shift_summary(selected_date: date) -> dict:
-    try:
-        from shopman.backstage.services.closing import _cash_shift_summary
-
-        return _cash_shift_summary(selected_date)
-    except Exception:
-        logger.debug("closing.cash_shift_summary_failed", exc_info=True)
-        return {"closed_shifts": [], "open_shifts": [], "totals": {}}
