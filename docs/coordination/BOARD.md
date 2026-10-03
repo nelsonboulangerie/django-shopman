@@ -37,7 +37,6 @@ desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5
 | id | frente | por onde começar | nota |
 |---|---|---|---|
 | F4 | Pix real: preparar o ensaio, sem ligar | `docs/runbooks/go-live-preflight.md` §4 | **ligar é do dono** (D-016). Hoje `SHOPMAN_PIX_ADAPTER=payment_mock` no arquivo e no vivo (drift sem divergência nessa chave, 02/10) |
-| F5 | Trazer `JEV_API_KEY` (`type: SECRET`, sem `value`) e `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` para o arquivo do spec | `python3 scripts/check_do_spec_drift.py --context shopman-do-app-admin` | as duas existem só no vivo desde 02/10; o drift deve voltar a acusar só `SHOPMAN_COURIER_ADAPTER`. Ler o valor de `PROVIDERS_APPROVED` no painel, nunca adivinhar |
 | F2 | Triar o trabalho dormente do remoto: 29 branches com PR **fechado sem merge** e commits fora do `main` (de 1 a 26 commits; o maior é `codex/shopman-legal-google-oauth-20260911`, #614), 7 com conteúdo já no `main`, e os 15 `rescue/*` (10 a 17/09) | `make coordination`, seção "SEM PR" (lista cada um com o número do PR) | apagar o que já está no `main` ou foi recusado de propósito (ler o comentário de fechamento do PR); PR draft do que se perdeu sem querer. Ficam: `codex/print-layouts-20260912`/`rescue/print-layouts-*` (triados no #1120) e `dsh/handoff-onda1-e-p7-20260930` (worktree do DSH). Apagar branch remoto **não** é mecânica: lista na mão do dono antes |
 
 ## Aguardando o dono
@@ -67,10 +66,10 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 
 ## Armadilhas ativas (leia antes de mexer)
 
-1. ⛔ **O drift do spec está `[FAIL]`, e não é mais só uma chave.** Em 02/10 14:40 UTC, três existem
-   só no vivo: `SHOPMAN_COURIER_ADAPTER` (de propósito, D-020/D-026), `JEV_API_KEY` e
-   `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (F5). **Aplicar o arquivo desliga a entrega por
-   parceiro e o Jev.**
+1. ⛔ **O drift do spec está `[FAIL]` de propósito, só por `SHOPMAN_COURIER_ADAPTER`** (D-020/D-026):
+   ligado no painel, fora do arquivo. **Aplicar o arquivo desliga a entrega por parceiro.** As
+   chaves do Jev e da Concierge ligada para o dono (`assist`, `SHOPMAN_CONCIERGE_ENABLED=true`,
+   `CONCIERGE_TRIAGE_CLASSIFIER=jev`, 03/10) estão no arquivo desde `claude/spec-concierge-ligada`.
 2. ⛔ **O checkout principal está 3201 commits atrás** de `origin/main` (02/10 15:55 UTC), num branch do Codex
    de 28/08. Leia de `origin/main`, escreva em worktree.
 3. ⛔ **NUNCA `doctl apps update` no spec vivo.**
