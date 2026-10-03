@@ -87,7 +87,9 @@ def observe(sku: str, *, channels: list[str] | None = None) -> None:
         for channel_ref in channels if channels is not None else offering_channel_refs():
             _apply(sku, channel_ref, offer_block_reason(sku, channel_ref=channel_ref))
     except Exception:
-        logger.debug("shelf_outage.observe falhou para %s", sku, exc_info=True)
+        # Agora também carrega o reenvio aos canais de fora: a operação precisa
+        # ver a falha, e a reconciliação refaz a transição no ciclo seguinte.
+        logger.warning("shelf_outage.observe falhou para %s", sku, exc_info=True)
 
 
 def _apply(sku: str, channel_ref: str, reason: str | None) -> None:

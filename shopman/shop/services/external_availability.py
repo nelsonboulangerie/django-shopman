@@ -59,7 +59,10 @@ def stock_channel_ref(channel_ref: str) -> str:
         if channel is not None and channel.commerce_policy == Channel.CommercePolicy.DISPLAY:
             return price_source_ref(channel) or channel_ref
     except Exception:
-        logger.debug("external_availability.stock_channel_ref degraded", exc_info=True)
+        logger.warning(
+            "external_availability.stock_channel_ref falhou channel=%s; lendo o estoque do próprio canal",
+            channel_ref, exc_info=True,
+        )
     return channel_ref
 
 
