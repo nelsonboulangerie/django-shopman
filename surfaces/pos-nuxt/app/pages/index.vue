@@ -3,7 +3,7 @@ import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
-import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { openShiftGate, requiresOpenShiftForSale } from "~/presentation/cash";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
 import { wantsNewOrder } from "~/presentation/orderSetup";
 import { redoTabLabel } from "~/presentation/preorderActions";
@@ -63,7 +63,9 @@ if (
 ) {
   // `open=1`: quem veio vender cai direto no diálogo de abertura, com o
   // campo do fundo de troco focado — um toque a menos no começo do dia.
-  await navigateTo({ path: "/session", query: { open: "1" } }, { replace: true });
+  // `next`: o que ele veio fazer (Nova encomenda, Refazer) espera do outro
+  // lado; aberto o caixa, a antesala volta para cá com a mesma query.
+  await navigateTo(openShiftGate(useRoute().fullPath), { replace: true });
 }
 
 // Identidade do operador — mesmo estado compartilhado do shell (useFetch deduplicado).
