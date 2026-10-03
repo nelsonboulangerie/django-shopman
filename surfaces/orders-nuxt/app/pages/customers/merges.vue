@@ -22,21 +22,24 @@ async function confirmUndo() {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
+    <OperatorPageHeader title="Unificações">
+      <template #lead>
         <NuxtLink
           to="/customers"
-          class="inline-flex min-h-control items-center gap-1 rounded-md px-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
         >
-          <Icon name="lucide:chevron-left" class="size-4" />
-          Clientes
+          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
+          <span class="max-md:sr-only">Clientes</span>
         </NuxtLink>
-        <h1 class="text-sm font-semibold">Unificações</h1>
-      </div>
-      <template #end>
+        <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
+    </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">

@@ -63,14 +63,14 @@ onBeforeUnmount(() => {
   <div ref="root" class="relative flex items-center">
     <button
       type="button"
-      class="inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-border px-2.5 text-xs font-medium text-muted-foreground transition hover:border-solid hover:bg-accent hover:text-foreground"
+      class="inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-border px-2.5 text-xs font-medium text-muted-foreground transition hover:border-solid hover:bg-accent hover:text-foreground suite:h-control suite:gap-2 suite:rounded-md suite:border-solid suite:bg-card suite:px-3 suite:text-[13px] suite:text-foreground"
       :class="open || hasHidden ? 'border-solid bg-accent text-foreground' : ''"
       aria-haspopup="menu"
       :aria-expanded="open"
       :title="hasHidden ? `${shown} de ${total} colunas visíveis` : 'Escolher colunas'"
       @click="open = !open"
     >
-      <Icon name="lucide:columns-3" class="size-3.5" />
+      <Icon name="lucide:columns-3" class="size-3.5 suite:size-4" />
       {{ label }}
       <span v-if="hasHidden" class="tabular-nums">{{ shown }}/{{ total }}</span>
     </button>
@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
     <div
       v-if="open"
       role="menu"
-      class="absolute left-0 top-8 z-40 w-56 rounded-lg border border-border bg-card p-1 shadow-lg"
+      class="absolute left-0 top-8 z-40 w-56 rounded-lg border border-border bg-card p-1 shadow-lg suite:top-12 suite:right-0 suite:left-auto"
     >
       <div class="flex items-center gap-1 px-1 pb-1">
         <button

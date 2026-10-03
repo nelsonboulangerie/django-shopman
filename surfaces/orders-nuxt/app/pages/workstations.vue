@@ -67,15 +67,14 @@ async function toggleActive(row: WorkstationManageRow) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:map-pin" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">{{ c.manage_title }}</h1>
-      </div>
-      <template #end>
+    <OperatorPageHeader :title="c.manage_title ?? ''">
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
+    </OperatorPageHeader>
 
     <section class="min-h-0 flex-1 overflow-auto p-4" data-workstations>
       <div class="mx-auto grid max-w-3xl gap-4">

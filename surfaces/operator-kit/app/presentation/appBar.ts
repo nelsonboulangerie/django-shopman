@@ -40,6 +40,14 @@ export interface OperatorSection {
   attention?: string;
   /** Tecla que leva a esta seção. Ensinada na própria aba, onde a mão está. */
   shortcut?: string;
+  /**
+   * Contagem curta no selo do item (rail da suíte e barra do polegar), ex.: pedidos
+   * na fila. Ausente ou vazia = sem selo; zero não é selo. O número é visual: quem
+   * monta a seção diz o que ele conta em `badgeLabel`.
+   */
+  badge?: string;
+  /** O que o selo conta, por extenso, para leitor de tela ("10 pedidos na fila"). */
+  badgeLabel?: string;
 }
 
 /** `/pedidos/` e `/pedidos` são a mesma tela. Uma normalização só, com teste. */

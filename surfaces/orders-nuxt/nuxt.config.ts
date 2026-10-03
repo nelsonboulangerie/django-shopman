@@ -2,6 +2,20 @@ import tailwindcss from "@tailwindcss/vite";
 import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
+// Ícones que chegam da projeção sem o prefixo (o `channel_icon` traduzido em
+// `lucideIcon`, no kit): a varredura não os acha no código, então entram no pacote
+// do cliente por nome, pelo gancho `icon:clientBundleIcons` (lá embaixo).
+const PROJECTION_ICONS = [
+  "lucide:globe",
+  "lucide:message-circle",
+  "lucide:utensils-crossed",
+  "lucide:store",
+  "lucide:shopping-bag",
+  "lucide:bike",
+  "lucide:utensils",
+  "lucide:circle",
+];
+
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
@@ -105,7 +119,12 @@ export default defineNuxtConfig({
 
   icon: {
     clientBundle: {
-      scan: true,
+      // A varredura padrão lê só .vue: os ícones que moram nas presentations (.ts:
+      // as cabeças de coluna, os gestos do cartão) e os que chegam da projeção (o
+      // ícone do canal, traduzido em `lucideIcon`) ficavam fora do pacote, e o
+      // navegador ia buscá-los no api.iconify.design, que a CSP do kit recusa: a tela
+      // ficava com o buraco do ícone (medido em 03/10/2026, UX-KIT-V1).
+      scan: { globInclude: ["**/*.{vue,ts}"] },
       sizeLimitKb: 0
     },
 
@@ -115,6 +134,12 @@ export default defineNuxtConfig({
     class: 'shrink-0',
     fetchTimeout: 2000,
     serverBundle: 'local'
+  },
+
+  hooks: {
+    "icon:clientBundleIcons"(bundle: Set<string>) {
+      for (const name of PROJECTION_ICONS) bundle.add(name);
+    },
   },
 
   css: ["~/assets/css/tailwind.css"],

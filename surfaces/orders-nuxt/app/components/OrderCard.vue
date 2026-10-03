@@ -5,6 +5,7 @@
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  channelLabel,
   confirmationRemainingLabel,
   deadlineTone,
   lucideIcon,
@@ -91,6 +92,13 @@ const deadlineTone_ = computed(() => deadlineTone(props.card.confirmation_deadli
 // ainda na janela. O fato fica à vista; o gesto só enquanto o prazo corre.
 const undo = computed(() => props.negotiationOnly ? null : undoLine(props.card, nowMs.value));
 
+// Visual da suíte (UX-KIT-V1, `_ocard.html` das prévias): pílula de estado com ponto,
+// sem borda; relógio sem caixa quando não há urgência (só o atraso ganha cor).
+const PILL = "inline-flex h-6 items-center gap-1.5 rounded-full border border-transparent px-2 text-xs font-semibold";
+function timerClass(tone: string): string {
+  return tone === "late" || tone === "warning" ? `rounded-full ${timerChip(tone as never)}` : "border-transparent text-muted-foreground";
+}
+
 function buttonClass(priority: string): string {
   if (priority === "primary")
     return "bg-primary text-primary-foreground hover:bg-primary/90 border-transparent";
@@ -128,96 +136,94 @@ function buttonClass(priority: string): string {
       {{ card.test_order_notice }}
     </p>
 
-    <!-- ref + timer -->
+    <!-- ref + timer. Prévia v3 (`_ocard.html`): a linha fina do canal com o relógio
+         à direita, o código grande embaixo. O código nunca encolhe: o relógio mora na
+         linha fina para sobrar largura até no cartão estreito (posto Saída, celular). -->
     <div class="flex items-start gap-2">
       <button
         v-if="!negotiationOnly"
         type="button"
-        class="mt-0.5 grid shrink-0 place-items-center rounded transition hover:bg-accent"
+        class="-mt-1 -ml-2 grid shrink-0 place-items-center rounded transition hover:bg-accent"
         :class="touch ? 'size-action' : 'size-control'"
         :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
         :aria-pressed="selected"
         @click="emit('toggle-select')"
       >
-        <span class="grid size-4 place-items-center rounded border" :class="selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
-          <Icon v-if="selected" name="lucide:check" class="size-3" />
+        <span class="grid size-5 place-items-center rounded border" :class="selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-card hover:border-primary'">
+          <Icon v-if="selected" name="lucide:check" class="size-3.5" />
         </span>
       </button>
-      <NuxtLink v-if="canOpen" :to="`/${card.ref}`" class="group flex flex-col justify-center" :class="target" :aria-label="`Abrir pedido ${card.ref}`">
-        <span class="flex items-center gap-1.5">
-          <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
-        </span>
-        <span class="block truncate text-lg font-bold leading-tight tabular-nums group-hover:underline">{{ code.code }}</span>
-        <!-- Só quando o ref NÃO carrega o número do canal (colisão no dia, ou pedido
-             anterior a essa mudança). No caso normal o código acima já é ele, e
-             repetir aqui daria dois números para o operador conferir. -->
-        <span
-          v-if="card.channel_display_id"
-          class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
-          data-channel-display-id
-        >iFood #{{ card.channel_display_id }}</span>
-      </NuxtLink>
-      <!-- quem só expede não abre o detalhe (é de quem gerencia): o código é só texto -->
-      <div v-else class="flex flex-col justify-center" :class="target" data-card-code>
-        <span class="flex items-center gap-1.5">
-          <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
-        </span>
-        <span class="block truncate text-lg font-bold leading-tight tabular-nums">{{ code.code }}</span>
-        <span
-          v-if="card.channel_display_id"
-          class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
-          data-channel-display-id
-        >iFood #{{ card.channel_display_id }}</span>
+      <div class="min-w-0 flex-1">
+        <p class="flex min-h-6 items-center gap-1.5 text-xs text-muted-foreground">
+          <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0" />
+          <span class="min-w-0 truncate tracking-[0.02em]">{{ channelLabel(card.channel_ref) }} · {{ code.prefix }}</span>
+          <!-- Um relógio só. Havendo prazo, ele é o relógio: quanto FALTA decide se o
+               operador pega este pedido agora, e quanto PASSOU não decide nada. Sem
+               prazo (a maioria dos estados), volta a contar o decorrido. -->
+          <span
+            v-if="confirmationLeft"
+            class="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 op-label font-semibold tabular-nums"
+            :class="timerChip(deadlineTone_)"
+            :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
+            role="timer"
+            aria-live="off"
+          >
+            <Icon name="lucide:hourglass" class="size-3" />
+            <span class="sr-only">Restam </span>{{ confirmationLeft }}
+          </span>
+          <span
+            v-else
+            class="ml-auto inline-flex shrink-0 items-center gap-1 border px-2 py-0.5 op-label tabular-nums"
+            :class="timerClass(tTone)"
+          >
+            <Icon name="lucide:clock" class="size-3.5" />
+            {{ elapsedLabel(card.elapsed_seconds) }}
+          </span>
+        </p>
+        <NuxtLink v-if="canOpen" :to="`/${card.ref}`" class="group inline-flex min-w-control flex-col justify-start pt-1" :class="touch ? 'min-h-action' : 'min-h-control'" :aria-label="`Abrir pedido ${card.ref}`">
+          <span class="block op-figure leading-none tracking-[-0.01em] break-all group-hover:underline">{{ code.code }}</span>
+          <!-- Só quando o ref NÃO carrega o número do canal (colisão no dia, ou pedido
+               anterior a essa mudança). No caso normal o código acima já é ele, e
+               repetir aqui daria dois números para o operador conferir. -->
+          <span
+            v-if="card.channel_display_id"
+            class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
+            data-channel-display-id
+          >iFood #{{ card.channel_display_id }}</span>
+        </NuxtLink>
+        <!-- quem só expede não abre o detalhe (é de quem gerencia): o código é só texto -->
+        <div v-else class="flex flex-col justify-start pt-1" :class="touch ? 'min-h-action' : 'min-h-control'" data-card-code>
+          <span class="block op-figure leading-none tracking-[-0.01em] break-all">{{ code.code }}</span>
+          <span
+            v-if="card.channel_display_id"
+            class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
+            data-channel-display-id
+          >iFood #{{ card.channel_display_id }}</span>
+        </div>
       </div>
       <button
         v-if="!negotiationOnly && canOpen"
         type="button"
-        class="ml-auto inline-flex shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
+        class="inline-flex shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
         :class="[target, card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent']"
         :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator}. Toque para liberar` : 'Atender este pedido'"
         :title="card.assigned_operator ? `${card.assigned_operator}: toque para liberar` : 'Atender'"
         @click="emit('toggle-assign')"
       >
-        <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
+        <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-4" />
         <span v-if="card.assigned_operator" class="max-w-20 truncate">{{ card.assigned_operator }}</span>
       </button>
-      <span v-if="!negotiationOnly && !canOpen" class="ml-auto" aria-hidden="true" />
-      <!-- Um relógio só. Havendo prazo, ele é o relógio: quanto FALTA decide se o
-           operador pega este pedido agora, e quanto PASSOU não decide nada. Sem
-           prazo (a maioria dos estados), volta a contar o decorrido. -->
-      <span
-        v-if="confirmationLeft"
-        class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
-        :class="timerChip(deadlineTone_)"
-        :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
-        role="timer"
-        aria-live="off"
-      >
-        <Icon name="lucide:hourglass" class="size-3" />
-        <span class="sr-only">Restam </span>{{ confirmationLeft }}
-      </span>
-      <span
-        v-else
-        class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
-        :class="timerChip(tTone)"
-      >
-        <Icon name="lucide:clock" class="size-3" />
-        {{ elapsedLabel(card.elapsed_seconds) }}
-      </span>
     </div>
 
     <!-- customer + fulfillment -->
     <div class="min-w-0">
-      <p class="truncate text-sm font-medium">{{ card.customer_name || "Sem cliente" }}</p>
-      <p class="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-        <Icon :name="`lucide:${lucideIcon(card.fulfillment_icon)}`" class="size-3.5 shrink-0" />
-        {{ card.fulfillment_label }}
+      <p class="truncate op-body">
+        <span class="font-medium">{{ card.customer_name || "Sem cliente" }}</span>
+        <span class="text-muted-foreground"> · {{ card.fulfillment_label }}</span>
+      </p>
+      <p v-if="card.courier_status_label" class="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
         <!-- corrida externa (Machine): estado do entregador direto no card -->
-        <span v-if="card.courier_status_label" class="inline-flex items-center gap-1 truncate">
-          · <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
-        </span>
+        <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
       </p>
       <!-- para onde vai: sem isto o cartão de uma entrega não dizia o destino,
            e quem despacha precisava abrir o pedido (onde também não estava). -->
@@ -232,7 +238,7 @@ function buttonClass(priority: string): string {
     </div>
 
     <!-- items -->
-    <p class="line-clamp-2 text-sm text-muted-foreground">{{ card.items_summary }}</p>
+    <p class="line-clamp-2 op-body text-foreground/85">{{ card.items_summary }}</p>
 
     <!-- troco da entrega: o que o cliente disse, o que saiu da gaveta, o que voltou -->
     <p
@@ -257,13 +263,14 @@ function buttonClass(priority: string): string {
 
     <!-- status + payment + total -->
     <div class="flex flex-wrap items-center gap-1.5 text-xs">
-      <span class="inline-flex items-center rounded-md border px-2 py-0.5 font-medium" :class="toneBadge(statusTone(card.status))">
+      <span :class="[PILL, toneBadge(statusTone(card.status)), 'border-transparent']">
+        <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
         {{ card.status_label }}
       </span>
       <!-- agendado: pedido combinado para data futura -->
       <span
         v-if="card.is_preorder"
-        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-muted-foreground"
+        class="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-medium text-muted-foreground"
         data-preorder-badge
       >
         <Icon name="lucide:calendar-clock" class="size-3" />
@@ -274,7 +281,7 @@ function buttonClass(priority: string): string {
            não deve. Em "confirming" o relógio corre do lado do CLIENTE. -->
       <span
         v-if="card.waitlist_label"
-        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium"
+        class="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-medium"
         :class="card.waitlist_state === 'confirming' ? 'border-primary/40 text-primary' : 'text-muted-foreground'"
         data-waitlist-badge
       >
@@ -286,7 +293,7 @@ function buttonClass(priority: string): string {
            escaneável sem carregar texto que não cabe aqui. -->
       <span
         v-if="card.is_gift"
-        class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-muted-foreground"
+        class="inline-flex h-6 items-center rounded-full border px-2 text-muted-foreground"
         role="img"
         :aria-label="card.gift_has_recipient ? 'Presente com destinatário' : 'Embalar para presente'"
         data-gift-badge
@@ -295,7 +302,7 @@ function buttonClass(priority: string): string {
       </span>
       <span
         v-if="card.has_customer_note"
-        class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-muted-foreground"
+        class="inline-flex h-6 items-center rounded-full border px-2 text-muted-foreground"
         role="img"
         aria-label="Tem observação do cliente"
         data-customer-note-badge
@@ -304,13 +311,12 @@ function buttonClass(priority: string): string {
       </span>
       <span
         v-if="card.payment_method_label"
-        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5"
-        :class="paymentPillClass"
+        :class="[PILL, paymentPillClass, 'border-transparent']"
       >
         <Icon :name="paymentPillIcon" class="size-3" />
         {{ card.payment_method_label }}
       </span>
-      <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
+      <span class="ml-auto text-base font-semibold tabular-nums">{{ card.total_display }}</span>
     </div>
 
     <div
@@ -319,7 +325,7 @@ function buttonClass(priority: string): string {
       :data-undo="undo.kind"
     >
       <span
-        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium"
+        class="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-medium"
         :class="undo.kind === 'handoff' ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground'"
       >
         <Icon :name="undo.kind === 'handoff' ? 'lucide:check' : 'lucide:sparkles'" class="size-3" />
@@ -474,18 +480,22 @@ function buttonClass(priority: string): string {
     </div>
 
     <!-- actions -->
-    <div v-if="affordances.length || recallOptions.length" class="flex flex-wrap gap-1.5 pt-0.5">
+    <div v-if="affordances.length || recallOptions.length" class="flex flex-wrap gap-2 pt-0.5">
       <button
         v-for="aff in affordances"
         :key="aff.ref"
         type="button"
         :disabled="busy || aff.disabled"
         :title="aff.reason || undefined"
-        class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition disabled:opacity-60"
-        :class="[aff.priority === 'primary' || touch ? 'min-h-action min-w-action' : 'min-h-control min-w-control', aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
+        class="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition disabled:opacity-60"
+        :class="[
+          aff.priority === 'primary' || touch ? 'min-h-action min-w-action' : 'min-h-control min-w-control',
+          aff.priority === 'primary' || aff.disabled ? 'flex-1' : '',
+          aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority),
+        ]"
         @click="!aff.disabled && emit('action', aff.ref)"
       >
-        <Icon :name="aff.icon" class="size-3.5" />
+        <Icon :name="aff.icon" class="size-4" />
         {{ aff.label }}
       </button>
       <!-- menu do pedido: devolver à cozinha o que uma estação já tinha dado por
