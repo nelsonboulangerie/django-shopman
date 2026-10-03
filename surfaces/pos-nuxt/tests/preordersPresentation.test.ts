@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_MODE,
+  LAYOUT_OPTIONS,
+  canDropOn,
+  canMoveCard,
+  moveConfirmLabel,
+  moveDescription,
+  moveQuestion,
+  moveTargets,
+  parseLayout,
+  shortcutBlocks,
   NO_FILTERS,
   NO_WINDOW_LABEL,
   balanceStandsOut,
@@ -630,5 +639,67 @@ describe("a linha da encomenda: uma forma só", () => {
     expect(rowShowsSituation("ready")).toBe(true);
     expect(rowShowsSituation("out_for_delivery")).toBe(true);
     expect(rowShowsSituation("delivered")).toBe(true);
+  });
+});
+
+describe("OBS0310-D: grade ou lista, e mudar de dia", () => {
+  it("a arrumação guardada no dispositivo: só 'list' vira lista; o resto é a grade", () => {
+    expect(parseLayout("list")).toBe("list");
+    expect(parseLayout("grid")).toBe("grid");
+    expect(parseLayout(null)).toBe("grid");
+    expect(parseLayout("tabela")).toBe("grid");
+    expect(LAYOUT_OPTIONS.map((option) => option.label)).toEqual(["Ver em grade", "Ver em lista"]);
+  });
+
+  it("os recortes de um toque em blocos, um por pergunta, na ordem dos botões", () => {
+    const cards = [
+      { fulfillment_type: "pickup", payment_state: "to_receive" as const, ticket_printed: false },
+      { fulfillment_type: "delivery", payment_state: "paid" as const, ticket_printed: true },
+    ];
+    const blocks = shortcutBlocks(shortcutChips(cards, NO_FILTERS));
+    expect(blocks.map((block) => [block.label, block.chips.map((chip) => chip.label)])).toEqual([
+      ["Pagamento", ["A receber"]],
+      ["Via Pedido", ["Sem Via Pedido"]],
+      ["Recebimento", ["Retiradas", "Entregas"]],
+    ]);
+  });
+
+  it("pega-se o que ainda pode mudar de data; o pronto, o que saiu e o entregue não", () => {
+    expect(canMoveCard({ situation: "to_pay" })).toBe(true);
+    expect(canMoveCard({ situation: "paid" })).toBe(true);
+    expect(canMoveCard({ situation: "check_payment" })).toBe(true);
+    expect(canMoveCard({ situation: "ready" })).toBe(false);
+    expect(canMoveCard({ situation: "out_for_delivery" })).toBe(false);
+    expect(canMoveCard({ situation: "delivered" })).toBe(false);
+  });
+
+  it("solta-se em outro dia, de hoje em diante; o próprio dia e o passado não aceitam", () => {
+    const card = { commitment_date: "2026-10-05", situation: "to_pay" as const };
+    expect(canDropOn("2026-10-06", card, "2026-10-03")).toBe(true);
+    expect(canDropOn("2026-10-03", card, "2026-10-03")).toBe(true);
+    expect(canDropOn("2026-10-05", card, "2026-10-03")).toBe(false);
+    expect(canDropOn("2026-10-02", card, "2026-10-03")).toBe(false);
+    expect(canDropOn("2026-10-06", { ...card, situation: "ready" }, "2026-10-03")).toBe(false);
+  });
+
+  it("o menu do card oferece os mesmos dias que o arrasto aceita", () => {
+    const days = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01"].map((date, index) => ({
+      date, is_today: index === 1, weekday_display: ["seg", "ter", "qua", "qui"][index]!, day_display: `${date.slice(8)}/${date.slice(5, 7)}`,
+    }));
+    const targets = moveTargets(days, { commitment_date: "2026-09-30", situation: "to_pay" }, "2026-09-29");
+    expect(targets).toEqual([
+      { date: "2026-09-29", label: "Hoje, ter 29/09" },
+      { date: "2026-10-01", label: "Qui 01/10" },
+    ]);
+  });
+
+  it("a pergunta diz quem, para quando, e que o cliente será avisado", () => {
+    expect(moveQuestion("Maria", "qui, 09/10")).toBe("Mudar a encomenda de Maria para qui, 09/10?");
+    expect(moveQuestion("Maria", "Amanhã")).toBe("Mudar a encomenda de Maria para amanhã?");
+    expect(moveQuestion("  ", "Hoje")).toBe("Mudar a encomenda para hoje?");
+    expect(moveDescription("A partir das 9h")).toBe("O cliente será avisado da nova data. O horário combinado continua: a partir das 9h.");
+    expect(moveDescription("")).toBe("O cliente será avisado da nova data.");
+    expect(moveConfirmLabel("qui, 09/10")).toBe("Mudar para qui, 09/10");
+    expect(moveConfirmLabel("Amanhã")).toBe("Mudar para amanhã");
   });
 });

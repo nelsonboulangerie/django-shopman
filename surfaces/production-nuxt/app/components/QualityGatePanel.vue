@@ -12,13 +12,15 @@ import type {
 import {
   alertsReleased,
   batchConfirmLabel,
-  cleanPieces,
+  cleanSummary,
   closersSummary,
   exceptionBadge,
   exceptionReference,
   exceptionSegments,
+  lotQuantityLabel,
   plural,
   qualityGate,
+  reviewedSummary,
 } from "~/presentation/qualityGate";
 
 const props = defineProps<{
@@ -48,7 +50,7 @@ const gate = computed(() => qualityGate(props.orders));
 const pendingCount = computed(
   () => gate.value.clean.length + gate.value.exceptions.length,
 );
-const pieces = computed(() => cleanPieces(gate.value.clean));
+const summary = computed(() => cleanSummary(gate.value.clean));
 const closers = computed(() => closersSummary(gate.value.clean));
 const released = computed(() => alertsReleased(gate.value.clean));
 const CHIP_LIMIT = 4;
@@ -90,14 +92,6 @@ function closedLine(order: QCOrderCardProjection): string {
   return `Lote ${order.ref}${who}${when}`;
 }
 
-function reviewedSummary(order: QCOrderCardProjection): string {
-  const bits = [`${order.full_price_qty || "0"} no padrão`];
-  if (order.discounted_qty && order.discounted_qty !== "0")
-    bits.push(`${order.discounted_qty} com desconto`);
-  if (order.loss_qty && order.loss_qty !== "0")
-    bits.push(`${order.loss_qty} de perda`);
-  return bits.join(" · ");
-}
 </script>
 
 <template>
@@ -170,8 +164,7 @@ function reviewedSummary(order: QCOrderCardProjection): string {
                 {{ isToday ? "de hoje " : "" }}sem exceção
               </p>
               <p class="mt-1 text-sm text-muted-foreground">
-                {{ plural(pieces, "peça", "peças") }}, todas no padrão · perda 0 ·
-                desconto 0
+                {{ summary }}
               </p>
             </div>
           </div>
@@ -185,7 +178,7 @@ function reviewedSummary(order: QCOrderCardProjection): string {
               >
                 {{ order.recipe_name }}
                 <span class="tabular-nums text-muted-foreground">{{
-                  order.full_price_qty
+                  lotQuantityLabel(order.full_price_qty, order.output_unit)
                 }}</span>
               </li>
               <li

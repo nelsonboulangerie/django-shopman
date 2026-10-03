@@ -20,26 +20,58 @@
 // abrir: dois gatilhos do mesmo gesto (o Esc do campo e o Esc do popover, por exemplo)
 // não empilham duas caixas, e "ficar" é sempre a resposta que não perde nada.
 //
+// O tom diz o que o ato É, não o que a pergunta parece: `"danger"` (o padrão, botão
+// vermelho) é descartar ou perder; `"primary"` (botão da cor da casa) é o ato normal
+// que só merece confirmação (mudar a encomenda de dia, enviar). No tom `"primary"` os
+// dois rótulos são obrigatórios: os padrões "Descartar"/"Continuar editando" falam de
+// perda, e num ato normal mentiriam.
+//
+//   await confirm({ tone: "primary", title: "Mudar a encomenda de Ana para qui, 01/10?",
+//     description: "...", confirmLabel: "Mudar para qui, 01/10", cancelLabel: "Manter a data" });
+//
 // ⚠️ O `beforeunload` (fechar a aba, recarregar) continua NATIVO: o navegador não deixa
 // página nenhuma desenhar a própria caixa nesse momento. Este composable não o substitui.
 import { shallowRef } from "vue";
 
-export interface ConfirmRequest {
+/** O que o ato é: `"danger"` descarta/perde (vermelho); `"primary"` é ato normal (cor da casa). */
+export type ConfirmTone = "danger" | "primary";
+
+interface ConfirmBase {
   /** A pergunta, com o ato: "Descartar o preço digitado?". */
   title: string;
   /** O que se perde (e o que fica). Obrigatório: é o que decide a resposta. */
   description: string;
+}
+
+export interface DangerConfirmRequest extends ConfirmBase {
+  /** Padrão. Botão do ato em vermelho: descartar, perder. */
+  tone?: "danger";
   /** Rótulo do botão que descarta. Padrão: "Descartar". */
   confirmLabel?: string;
   /** Rótulo do botão que fica. Padrão: "Continuar editando". */
   cancelLabel?: string;
 }
 
-export interface PendingConfirm extends Required<ConfirmRequest> {
+export interface PrimaryConfirmRequest extends ConfirmBase {
+  /** Ato normal que só merece confirmação (reagendar, enviar): botão da cor da casa. */
+  tone: "primary";
+  /** Rótulo do ato, obrigatório: "Mudar para qui, 01/10". */
+  confirmLabel: string;
+  /** Rótulo de desistir, obrigatório: "Manter a data". */
+  cancelLabel: string;
+}
+
+export type ConfirmRequest = DangerConfirmRequest | PrimaryConfirmRequest;
+
+export interface PendingConfirm extends Required<ConfirmBase> {
+  tone: ConfirmTone;
+  confirmLabel: string;
+  cancelLabel: string;
   resolve: (answer: boolean) => void;
 }
 
-export const CONFIRM_DEFAULT_LABELS = {
+export const CONFIRM_DEFAULTS = {
+  tone: "danger",
   confirmLabel: "Descartar",
   cancelLabel: "Continuar editando",
 } as const;
@@ -51,7 +83,7 @@ const pending = shallowRef<PendingConfirm | null>(null);
 export function requestConfirm(request: ConfirmRequest): Promise<boolean> {
   if (import.meta.server || pending.value) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
-    pending.value = { ...CONFIRM_DEFAULT_LABELS, ...request, resolve };
+    pending.value = { ...CONFIRM_DEFAULTS, ...request, resolve };
   });
 }
 

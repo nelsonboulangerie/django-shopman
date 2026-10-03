@@ -1089,6 +1089,11 @@ class QCOrderCardProjection:
     # libera. Teto: o canal ainda pode barrar. None quando a fila não pôde
     # ser lida (a tela cala em vez de dizer zero).
     alert_waiting_count: int | None = None
+    # Unidade canônica do que o lote produz (``un``, ``g``, ``kg``, ``l``...),
+    # pela mesma precedência da ficha (Product, depois Material, depois
+    # ``Recipe.meta.output_unit``). Lote de preparo medido em gramas não pode
+    # ser somado com pão contado em peças: a tela agrupa por esta unidade.
+    output_unit: str = ""
 
 
 @dataclass(frozen=True)
@@ -1997,6 +2002,7 @@ def build_qc_kiosk(
 
     finished_orders = [wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED]
     gate = _qc_gate_facts(finished_orders, selected_date=selected_date)
+    output_units = _recipe_output_units({wo.recipe for wo in work_orders})
 
     now = timezone.now()
     open_cards: list[QCOrderCardProjection] = []
@@ -2053,6 +2059,7 @@ def build_qc_kiosk(
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
             loss_qty=_qty(loss_qty) if loss_qty is not None else "",
             **(gate.get(wo.pk, {}) if closed else {}),
+            output_unit=output_units.get(wo.recipe_id, ""),
         )
         (closed_cards if closed else open_cards).append(card)
 

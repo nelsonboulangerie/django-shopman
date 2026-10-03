@@ -4,7 +4,10 @@
 // - Os RECORTES DE TODO DIA são botões de um toque (decisão do dono, P1 de
 //   02/10): A receber, Sem Via Pedido, Retiradas, Entregas, cada um com a
 //   contagem do que mostraria com os outros recortes como estão. Apertado,
-//   desliga. Escrevem o mesmo estado da URL de sempre.
+//   desliga. Escrevem o mesmo estado da URL de sempre. São a pílula de filtro do
+//   kit (`UiFilterChip`, a mesma do Gestor, do Catálogo e do Marketing), em
+//   blocos por pergunta (pagamento, Via Pedido, recebimento), separados por um
+//   filete (OBS0310-D).
 // - O "Filtrar" (a `FilterBar` do kit) fica para o RESTO: Pagas e "Na conta da
 //   casa". O que já tem botão não aparece de novo nem como opção nem como chip
 //   (`presentation/preorders`, `barDimensions` e `toBarFilters`).
@@ -21,6 +24,7 @@ import {
   checkCount,
   checkPaymentNotice,
   fromBarFilters,
+  shortcutBlocks,
   shortcutChips,
   toBarFilters,
   toggleShortcut,
@@ -34,6 +38,7 @@ const props = defineProps<{ cards: readonly PreorderCard[] }>();
 const filters = defineModel<PreorderFilters>({ required: true });
 
 const shortcuts = computed(() => shortcutChips(props.cards, filters.value));
+const blocks = computed(() => shortcutBlocks(shortcuts.value));
 const dimensions = computed(() => barDimensions(props.cards, filters.value));
 const active = computed<ActiveFilters>({
   get: () => toBarFilters(filters.value),
@@ -53,22 +58,23 @@ function showOnlyCheck() {
 <template>
   <div class="grid gap-2" data-preorders-filters>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div v-if="shortcuts.length" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Recortes de todo dia" data-preorders-shortcuts>
-        <button
-          v-for="chip in shortcuts"
-          :key="`${chip.dimension}:${chip.value}`"
-          type="button"
-          class="inline-flex min-h-control items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          :class="chip.pressed
-            ? 'border-primary bg-primary text-primary-foreground'
-            : 'border-border bg-background text-foreground hover:bg-accent'"
-          :aria-pressed="chip.pressed"
-          :data-preorders-shortcut="`${chip.dimension}:${chip.value}`"
-          @click="press(chip)"
-        >
-          {{ chip.label }}
-          <span class="tabular-nums" :class="chip.pressed ? '' : 'text-muted-foreground'">{{ chip.count }}</span>
-        </button>
+      <div v-if="shortcuts.length" class="flex flex-wrap items-center gap-x-2 gap-y-1.5" role="group" aria-label="Recortes de todo dia" data-preorders-shortcuts>
+        <template v-for="(block, index) in blocks" :key="block.dimension">
+          <span v-if="index > 0" class="h-6 w-px shrink-0 bg-border" aria-hidden="true" />
+          <div class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="block.label" :data-preorders-shortcut-block="block.dimension">
+            <UiFilterChip
+              v-for="chip in block.chips"
+              :key="`${chip.dimension}:${chip.value}`"
+              :active="chip.pressed"
+              :count="chip.count"
+              :aria-pressed="chip.pressed"
+              :data-preorders-shortcut="`${chip.dimension}:${chip.value}`"
+              @click="press(chip)"
+            >
+              {{ chip.label }}
+            </UiFilterChip>
+          </div>
+        </template>
       </div>
       <FilterBar
         v-if="dimensions.length"
