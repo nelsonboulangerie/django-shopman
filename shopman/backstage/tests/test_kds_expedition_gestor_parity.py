@@ -29,6 +29,7 @@ from shopman.backstage.services.exceptions import KDSError
 from shopman.shop.directives import DELIVERY_AUTO_COMPLETE
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds as kds_core
+from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
@@ -87,8 +88,8 @@ def test_dispatch_without_change_goes_through_the_gestor_service(expedition):
     status = kds_backstage.expedition_action(order_id=order.pk, action="dispatch", actor="kds:op")
 
     assert status == Order.Status.DISPATCHED
-    order.refresh_from_db()
-    assert order.status == Order.Status.DISPATCHED
+    # UX-G2: a saída fica na janela de desfazer e é gravada quando ela vence.
+    assert settle(order) == Order.Status.DISPATCHED
     # O que o Gestor faz no despacho e a Saída pulava:
     assert order.fulfillments.get().status == "dispatched"
     assert Directive.objects.filter(

@@ -395,9 +395,14 @@ def commit_handoff(order_ref: str, token: str, *, now=None) -> str:
     return ""
 
 
-def settle_expired_handoff(order) -> str:
-    """Grava agora a saída cuja janela já venceu (o worker ainda não passou)."""
+def settle_pending_handoff(order, *, force: bool = False) -> str:
+    """Grava agora a saída pendente: a vencida (o worker ainda não passou) ou,
+    com ``force``, a que ainda está na janela, porque um fato de fora (iFood,
+    entregador) chegou e não espera o desfazer de uma tela."""
     record = pending_handoff(order)
-    if not record or handoff_window_open(order):
+    if not record or (handoff_window_open(order) and not force):
         return ""
-    return commit_handoff(order.ref, record["token"])
+    now = None
+    if force:
+        now = (_parse(record.get("commit_at")) or timezone.now()) + timedelta(seconds=1)
+    return commit_handoff(order.ref, record["token"], now=now)

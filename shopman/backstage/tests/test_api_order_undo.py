@@ -150,3 +150,54 @@ def test_saida_handoff_and_undo(client, operator):
     order.refresh_from_db()
     assert order.status == Order.Status.READY
     assert "pending_handoff" not in order.data
+
+
+def _cash_delivery(ref: str) -> Order:
+    order = Order.objects.create(
+        ref=ref, channel_ref="web", session_key=f"sk-{ref}", status=Order.Status.READY, total_q=3000,
+        data={"customer": {"name": "Ana"}, "fulfillment_type": "delivery",
+              "payment": {"method": "cash", "collection": "on_delivery", "amount_q": 3000, "change_for_q": 5000}},
+    )
+    OrderItem.objects.create(order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=3000, line_total_q=3000)
+    return order
+
+
+def test_dispatch_with_change_leaves_the_drawer_only_when_the_window_ends(client, operator):
+    """Troco da gaveta: a linha do livro nasce na gravação, no turno de quem tocou."""
+    from shopman.cashman import Entry
+    from shopman.cashman import services as cash
+
+    client.force_login(operator)
+    shift = cash.open_shift(operator=operator, float_q=10000)
+    order = _cash_delivery("UNDO-API-6")
+
+    response = client.post(
+        reverse("api-backstage-order-advance", args=[order.ref]),
+        advance_payload(client, order.ref, change_out="20,00"), content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["order"]["undo"]["label"].startswith("Saiu às ")
+    order.refresh_from_db()
+    assert order.status == Order.Status.READY
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).exists()
+
+    assert settle(order) == Order.Status.DISPATCHED
+    line = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref)
+    assert (line.amount_q, line.shift_id) == (-2000, shift.pk)
+
+
+def test_dispatch_undone_never_touches_the_drawer(client, operator):
+    from shopman.cashman import Entry
+    from shopman.cashman import services as cash
+
+    client.force_login(operator)
+    cash.open_shift(operator=operator, float_q=10000)
+    order = _cash_delivery("UNDO-API-7")
+    client.post(reverse("api-backstage-order-advance", args=[order.ref]), advance_payload(client, order.ref, change_out="20,00"), content_type="application/json")
+
+    undo = client.post(reverse("api-backstage-order-undo-handoff", args=[order.ref]), context_payload(client, order.ref, "undo-handoff"), content_type="application/json")
+    assert undo.status_code == 200
+    assert settle(order) == ""
+    order.refresh_from_db()
+    assert order.status == Order.Status.READY
+    assert not Entry.objects.filter(order_ref=order.ref).exists()

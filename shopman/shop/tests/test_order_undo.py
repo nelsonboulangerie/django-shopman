@@ -554,3 +554,15 @@ def test_saida_and_gestor_share_the_same_window(channel):
     # Replay pela Saída: a mesma saída.
     assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="saida:bia") == Order.Status.COMPLETED
     assert Directive.objects.filter(topic=ORDER_HANDOFF_COMMIT, payload__order_ref=order.ref).count() == 1
+
+
+def test_external_fact_inside_the_window_records_the_tapped_handoff_once(channel):
+    """O iFood/entregador avança enquanto a tela ainda pode desfazer: grava a saída tocada, sem pular degrau."""
+    order = _ready("UNDO-H15", fulfillment="delivery")
+    operator_orders.advance_order(order, actor="gestor:ana", target_status=Order.Status.DISPATCHED, undo_window=True)
+    order.refresh_from_db()
+
+    assert operator_orders.advance_order(order, actor="system:ifood:DSP") == Order.Status.DISPATCHED
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+    assert "pending_handoff" not in order.data

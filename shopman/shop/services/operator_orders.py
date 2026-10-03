@@ -371,15 +371,23 @@ def advance_order(
 
     pending = order_undo.pending_handoff(order)
     if pending and pending.get("token") != handoff_token:
-        if order_undo.handoff_window_open(order):
+        if undo_window and order_undo.handoff_window_open(order):
             # A saída já foi pedida e ainda pode ser desfeita: o mesmo toque
             # repetido (duas telas, replay) é a mesma saída; outro destino é
             # conflito, e quem quer outra coisa desfaz primeiro.
-            if (target_status or pending.get("to_status")) == pending.get("to_status") and undo_window:
+            if (target_status or pending.get("to_status")) == pending.get("to_status"):
                 return str(pending.get("to_status"))
             raise OrderStateConflict("Este pedido está saindo. Desfaça a saída antes de outra ação.")
-        order_undo.settle_expired_handoff(order)
+        # Janela vencida (o worker ainda não passou) ou fato de fora (iFood,
+        # entregador): a saída tocada é gravada agora, e só então este avanço
+        # segue. O fato externo não espera o desfazer de uma tela.
+        forced = not undo_window and order_undo.handoff_window_open(order)
+        settled = order_undo.settle_pending_handoff(order, force=not undo_window)
         order.refresh_from_db()
+        if forced and settled and (target_status is None or target_status == settled):
+            # O fato de fora pedia exatamente o passo que a tela já tinha
+            # tocado: ele está gravado, e avançar de novo pularia um degrau.
+            return settled
     if expected_revision is not None and expected_revision != operational_revision(order):
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
