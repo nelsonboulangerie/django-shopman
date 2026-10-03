@@ -29,6 +29,7 @@ import {
   rowCommittedUnits,
   rowLabel,
 } from "~/presentation/production";
+import { SIGNAL_CHIP, suggestionSignal } from "~/presentation/planningReason";
 import {
   periodAnchor,
   periodOfDay,
@@ -37,7 +38,6 @@ import {
 import type {
   ProductionMatrixRowProjection,
   ProductionShortageError,
-  ProductionSuggestionProjection,
   WorkOrderCardProjection,
 } from "~/types/production";
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
@@ -173,7 +173,10 @@ const emptyCopy = computed(() =>
 );
 
 // ── Overlays ────────────────────────────────────────────────────────────────
-const explaining = ref<ProductionSuggestionProjection | null>(null);
+// O "Por quê" abre ancorado na linha (um por vez); a linha fica marcada
+// enquanto ele está aberto.
+const reasonSku = ref<string | null>(null);
+const reasonTriggers = new Map<string, HTMLElement>();
 const planRow = ref<ProductionMatrixRowProjection | null>(null);
 const planQty = ref("");
 const planQtyInput = ref<HTMLInputElement | null>(null);
@@ -316,12 +319,50 @@ function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
   void nextTick(() => planQtyInput.value?.focus());
 }
 
-// Do diálogo "por que essa sugestão?" direto para o planejamento da linha dona da
-// sugestão (fecha a explicação e abre o plano).
-function planFromExplanation() {
-  const row = rows.value.find((r) => r.suggestion === explaining.value);
-  explaining.value = null;
-  if (row) openPlan(row, "suggested");
+function toggleReason(row: ProductionMatrixRowProjection) {
+  reasonSku.value = reasonSku.value === row.output_sku ? null : row.output_sku;
+}
+
+function closeReason(outputSku: string) {
+  if (reasonSku.value === outputSku) reasonSku.value = null;
+}
+
+function rememberReasonTrigger(outputSku: string, el: unknown) {
+  if (el instanceof HTMLElement) reasonTriggers.set(outputSku, el);
+  else reasonTriggers.delete(outputSku);
+}
+
+// O toque no próprio "Por quê" é o gesto de alternar: sem isto o popover
+// fecharia no pointerdown (fora do conteúdo) e o clique o reabriria.
+function onReasonOutside(event: Event) {
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest("[data-plan-reason-trigger]")
+  ) {
+    event.preventDefault();
+  }
+}
+
+// Ao fechar (Esc, Fechar, fora), o foco volta ao "Por quê" da linha. Se o
+// fechamento foi para planejar, o foco é do diálogo de planejamento.
+function returnReasonFocus(event: Event, outputSku: string) {
+  const trigger = reasonTriggers.get(outputSku);
+  if (!trigger) return;
+  event.preventDefault();
+  if (planRow.value == null) trigger.focus();
+}
+
+// Do "Por quê" direto para o planejamento da linha: a sugestão como está, ou a
+// alternativa que cabe no estoque (número próprio, então manual).
+function planFromReason(
+  row: ProductionMatrixRowProjection,
+  quantity: string,
+  source: "manual" | "suggested",
+) {
+  reasonSku.value = null;
+  openPlan(row, source);
+  if (planRow.value === row) planQty.value = quantity;
 }
 
 async function confirmPlan() {
@@ -750,7 +791,11 @@ const headerCount = computed(() => {
               <tr
                 v-for="row in stageRows"
                 :key="row.output_sku"
-                class="hover:bg-muted/30"
+                :class="
+                  reasonSku === row.output_sku
+                    ? 'bg-primary/5 outline outline-1 -outline-offset-1 outline-primary/40'
+                    : 'hover:bg-muted/30'
+                "
               >
                 <td class="px-3 py-1.5">
                   <p class="font-bold">{{ rowLabel(row) }}</p>
@@ -774,23 +819,89 @@ const headerCount = computed(() => {
 
                 <!-- Coluna de LEITURA -->
                 <td v-if="lens.read.visible" class="px-3 py-1.5 text-right">
-                  <!-- Células numéricas são alvos de grade, com geometria própria de tabela. -->
-                  <button
+                  <!-- Planejamento: só o número e, no máximo, um sinal. A conta mora
+                       no "Por quê", que abre ancorado na linha (UX-P2, L3). -->
+                  <UiPopover
                     v-if="stage === 'plan' && row.suggestion"
-                    type="button"
-                    :class="[
-                      CELL_READ,
-                      row.suggestion.quantity !== '0'
-                        ? 'text-foreground'
-                        : 'text-muted-foreground',
-                      'hover:bg-accent',
-                    ]"
-                    :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
-                    @click="explaining = row.suggestion"
+                    :open="reasonSku === row.output_sku"
+                    @update:open="
+                      (open: boolean) => {
+                        if (!open) closeReason(row.output_sku);
+                      }
+                    "
                   >
-                    {{ cellQty(row.suggestion.quantity) }}
-                    <Icon name="lucide:info" class="size-3.5 opacity-60" />
-                  </button>
+                    <UiPopoverAnchor as-child>
+                      <span
+                        class="inline-flex items-center justify-end gap-1.5"
+                      >
+                        <span
+                          :class="[
+                            CELL_READ,
+                            'min-w-12',
+                            row.suggestion.quantity !== '0'
+                              ? 'text-foreground'
+                              : 'text-muted-foreground',
+                          ]"
+                          >{{ cellQty(row.suggestion.quantity) }}</span
+                        >
+                        <span
+                          v-if="suggestionSignal(row.suggestion)"
+                          :class="[
+                            'inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium',
+                            SIGNAL_CHIP[suggestionSignal(row.suggestion)!.tone],
+                          ]"
+                          data-testid="suggestion-signal"
+                        >
+                          <Icon
+                            :name="suggestionSignal(row.suggestion)!.icon"
+                            class="size-3.5"
+                          />
+                          {{ suggestionSignal(row.suggestion)!.label }}
+                        </span>
+                        <button
+                          :ref="(el) => rememberReasonTrigger(row.output_sku, el)"
+                          type="button"
+                          data-plan-reason-trigger
+                          class="inline-flex min-h-12 shrink-0 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                          aria-haspopup="dialog"
+                          :aria-expanded="reasonSku === row.output_sku"
+                          :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
+                          @click="toggleReason(row)"
+                        >
+                          <Icon name="lucide:info" class="size-4" />
+                          Por quê
+                        </button>
+                      </span>
+                    </UiPopoverAnchor>
+                    <UiPopoverContent
+                      side="bottom"
+                      align="end"
+                      :side-offset="6"
+                      :collision-padding="16"
+                      class="w-[26rem] max-w-[calc(100vw-2rem)] p-0"
+                      :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}`"
+                      @interact-outside="onReasonOutside"
+                      @close-auto-focus="
+                        (event: Event) =>
+                          returnReasonFocus(event, row.output_sku)
+                      "
+                    >
+                      <PlanReasonCard
+                        v-if="reasonSku === row.output_sku"
+                        :suggestion="row.suggestion"
+                        :product-name="rowLabel(row)"
+                        :iso-date="selectedDate"
+                        :purchase-url="board?.purchase_url ?? ''"
+                        :can-plan-suggested="!!access?.can_edit_suggested"
+                        :can-plan-manual="!!access?.can_edit_planned"
+                        @close="closeReason(row.output_sku)"
+                        @plan="
+                          (quantity, source) =>
+                            planFromReason(row, quantity, source)
+                        "
+                      />
+                    </UiPopoverContent>
+                  </UiPopover>
                   <span
                     v-else
                     :class="[
@@ -1293,63 +1404,6 @@ const headerCount = computed(() => {
             type="button"
             variant="outline"
             @click="commitmentsRow = null"
-          >
-            Fechar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
-
-    <!-- explicação da sugestão -->
-    <UiDialog
-      :open="explaining != null"
-      @update:open="
-        (v) => {
-          if (!v) explaining = null;
-        }
-      "
-    >
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Por que {{ explaining?.quantity }}?</UiDialogTitle>
-          <UiDialogDescription>
-            {{ explaining?.recipe_name }} · confiança
-            {{ explaining?.confidence?.toLowerCase() }}
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <ul
-          v-if="explaining?.explanation_parts?.length"
-          class="flex flex-col gap-2 text-sm"
-        >
-          <li
-            v-for="part in explaining.explanation_parts"
-            :key="part"
-            class="flex items-start gap-2"
-          >
-            <Icon
-              name="lucide:corner-down-right"
-              class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-            />
-            <span>{{ part }}</span>
-          </li>
-        </ul>
-        <p v-else class="text-sm text-muted-foreground">
-          Ainda sem histórico suficiente para explicar. A sugestão usa apenas a
-          margem padrão.
-        </p>
-        <UiDialogFooter>
-          <UiButton
-            v-if="stage === 'plan' && access?.can_edit_suggested"
-            type="button"
-            class="mr-auto"
-            @click="planFromExplanation()"
-          >
-            Planejar esta sugestão
-          </UiButton>
-          <UiButton
-            type="button"
-            variant="outline"
-            @click="explaining = null"
           >
             Fechar
           </UiButton>
