@@ -5,7 +5,13 @@
 //
 // Chaves em inglês (id/value), rótulos em pt-BR (label) — convenção do projeto.
 
-export type FilterType = "single-select" | "multi-select" | "boolean";
+// Tipos de lista (o operador marca opções): single-select, multi-select, boolean.
+// Tipos de campo (o operador digita): text (contém), number-range e date-range
+// (De/Até, qualquer um dos lados pode ficar aberto).
+export type FilterType = "single-select" | "multi-select" | "boolean" | "text" | "number-range" | "date-range";
+
+export const RANGE_TYPES: readonly FilterType[] = ["number-range", "date-range"];
+export const LIST_TYPES: readonly FilterType[] = ["single-select", "multi-select", "boolean"];
 
 export interface FilterOption {
   value: string;
@@ -14,14 +20,23 @@ export interface FilterOption {
 }
 
 export interface FilterDimension {
+  /** Chave do recorte; é também a chave na querystring (`?payment=pix,card`). */
   id: string;
   label: string;
   type: FilterType;
+  /** Opções dos tipos de lista. Os tipos de campo não usam: passe `[]`. */
   options: FilterOption[];
+  /** Busca dentro das opções. Padrão: liga sozinha a partir de 8 opções. */
+  searchable?: boolean;
+  /** Dica do campo de texto / número ("Nome ou telefone"). */
+  placeholder?: string;
+  /** Como o chip escreve um valor de intervalo numérico (ex.: centavos → "R$ 12,00"). */
+  formatValue?: (value: string) => string;
 }
 
 // Valor por dimensão: SEMPRE lista de strings, qualquer que seja o tipo. Single-select
 // e boolean guardam um único elemento (boolean usa "true"/"false"), multi-select
-// guarda vários. A forma única sobrevive à querystring sem serializar/desserializar.
+// guarda vários, text guarda [texto] e os intervalos guardam [de, até] (lado aberto
+// = ""). A forma única sobrevive à querystring sem serializar/desserializar.
 // Dimensão AUSENTE (ou com lista vazia) = sem recorte — não existe "todos" como valor.
 export type ActiveFilters = Record<string, string[]>;
