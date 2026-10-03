@@ -1,291 +1,452 @@
 # SUITE-UX-V2-PLAN: oito apps, um produto
 
-**Proposta de 03/10/2026, para validação do dono antes de qualquer código.**
-Escopo decidido por ele na mesma conversa: **só os apps de operador** (PDV, Cozinha, Gestor,
-Produção, Compras, Marketing, B.I. e Shopman Apps). **A Loja e o Admin/Unfold ficam de fora.**
-Direção visual: **evolução** do que existe (mesmos tokens, latão sobre papel Faubourg), com
-espaço para ideias novas, que estão separadas no §6 para ele aceitar ou recusar uma a uma.
+**Proposta de 03/10/2026. Terceira rodada (v3), depois do retorno do dono na mesma data.**
+Escopo decidido por ele: **só os apps de operador** (PDV, Cozinha, Gestor, Produção, Compras,
+Marketing, B.I. e Shopman Apps). **A Loja e o Admin/Unfold ficam de fora.** Direção visual:
+**evolução** do que existe (mesmos tokens, latão sobre papel Faubourg).
 
 Regra que vale para o plano inteiro: **nenhuma funcionalidade regride.** Toda ação, filtro,
-atalho, informação e estado que existe hoje continua existindo; a reforma só muda o lugar e
-a forma. O §5 diz como isso é garantido por mecanismo, não por cuidado.
+atalho, informação e estado que existe hoje continua existindo; a reforma muda o lugar e a
+forma. O §7 diz como isso é garantido por mecanismo, não por cuidado.
 
-Este plano **continua** o [SUITE-UX-PLAN](SUITE-UX-PLAN.md) (22/09/2026), não o substitui. O
-diagnóstico de lá segue válido; o WP-UX-1 está entregue e os WP-UX-3, 4 e 7 estão em
-execução. O que este documento acrescenta: a medição de hoje, a proposta visual com prévias,
-os padrões por intenção (busca, filtro, ação, opção…) e a trava de não-regressão.
+Este plano **continua** o [SUITE-UX-PLAN](SUITE-UX-PLAN.md) (22/09/2026). O WP-UX-1 de lá está
+entregue; os WP-UX-3, 4 e 7 estão em execução.
 
-As prévias estão em [`suite-ux-v2/`](suite-ux-v2/): `comparar-*.jpg` põem lado a lado a captura
-real do app rodando com o seed ("Hoje") e a proposta; `depois-*.annotated.jpg` são as propostas
-com pinos numerados e legenda. As propostas foram montadas com os tokens reais do `operator-kit`
-(`operator-theme.css`), a fonte Instrument Sans e os ícones Lucide. ⚠️ Nas capturas reais as fotos de produto e os ícones PWA aparecem
-quebrados porque o ambiente de captura não tem as imagens do catálogo nem os ícones gerados;
-não é defeito da tela.
+**Prévias** em [`suite-ux-v2/`](suite-ux-v2/): `comparar-*.jpg` (captura real "Hoje" × proposta,
+desktop), `depois-*.annotated.jpg` (proposta com pinos e legenda), `depois-*-tablet.jpg` e
+`depois-*-celular.jpg` (propostas por dispositivo) e `antes-*-celular.jpg`/`antes-*-tablet.jpg`
+(como os apps ficam hoje nesses dispositivos). As propostas usam os tokens reais do
+`operator-kit` (`operator-theme.css`), Instrument Sans e Lucide. ⚠️ Fotos de produto e ícones PWA
+aparecem quebrados nas capturas reais porque o ambiente não tinha as imagens do catálogo.
+
+### O que o dono já decidiu (03/10)
+
+| ponto | decisão |
+|---|---|
+| Anatomia e padrões (v2) | gostou no geral; preocupação: o PDV perdia altura na lista de itens → **v3 resolve (§2.4)** |
+| Rail como trocador de apps | o trocador é bom, mas não pode tomar o lugar das seções; as seções no rail economizam altura → **v3: seções no rail, trocador vira um botão (§2.1)** |
+| Busca da suíte (Ctrl K) | dois campos confundem; um campo só e o operador escolhe o alcance → **v3: busca única (§2.2)** |
+| Um sino só | **aprovado** |
+| "Ao vivo" igual em todo app | **aprovado**, mas ocupava espaço demais → **v3: ponto + hora (§2.3)** |
+| Shopman Apps com estado | função aprovada; aparência anterior, mais limpa, era melhor → **v3: tiles limpos (§2.5)** |
+| Ordem dos WPs | **aprovada**: kit primeiro, Gestor piloto, PDV por último |
+| Dispositivos | "ajuste de breakpoint é o mínimo do mínimo"; cada dispositivo usado a fundo; apps de campo plenamente úteis no celular → **§3** |
+| Navegação | "não há um padrão bem estabelecido em nenhum app" → **auditoria e modelo único no §4** |
 
 ---
 
-## 1. O que a medição de 03/10 encontrou
+## 1. O que a medição encontrou
 
-Quatro varreduras independentes (kit, PDV/Cozinha/Produção, Gestor/Hub/Compras,
-B.I./Marketing) mais as capturas das telas. O resumo:
+Cinco varreduras (kit; PDV/Cozinha/Produção; Gestor/Hub/Compras; B.I./Marketing; navegação dos
+oito apps) e capturas reais em desktop, tablet e celular.
 
 | tema | hoje |
 |---|---|
-| Cópias de primitivas | 7 árvores `components/Ui/` (~270 arquivos), Dialog e Sheet com 3 variantes cada; o kit depende em silêncio da cópia do app hospedeiro (`OperatorReasonDialog` usa o `UiDialog` de quem o monta) |
+| Cópias de primitivas | 7 árvores `components/Ui/` (~270 arquivos); Dialog e Sheet com 3 variantes; o kit depende em silêncio da cópia do app hospedeiro |
 | Botão | Gestor: 146 `<button>` à mão e 0 `UiButton`; Compras: 67; B.I.: botões de 36 px |
-| Cabeçalho | 7 cabeçalhos diferentes; `OperatorAppBar` cobre 5 apps; PDV, Cozinha, Produção e Hub montam o seu |
-| Barra de trabalho | `UiToolbar` e `UiFilterChip` só no Gestor; busca em 4 implementações; `type="search"` cru em 5 apps; B.I. e Hub sem busca |
-| Controle segmentado | não existe peça: ~46 `aria-pressed` fazendo o papel, com 3 estilos de "ativo" (contorno, cheio, sombra) |
-| Menu ⋯ / popover | à mão no Gestor (ordenar, sino de alertas) e no B.I. (Explorar), sem Esc nem foco |
-| Overlays à mão | ~11 `fixed inset-0` sem trap de foco nem scroll-lock; "Close" em inglês no Dialog de 3 apps |
-| Estados | nenhuma peça de vazio, esqueleto ou campo no operador; ~114 "Nenhum…" literais; "Carregando…" em texto em 4 apps |
-| Status | 6 mapas de cor em 3 vocabulários; paleta crua do Tailwind (Gestor 28, Marketing 29, Produção 13 hex) |
-| Sino | 4 implementações (duas com o mesmo nome `AlertsBell.vue`, arquivos diferentes) |
-| Tipografia | a escala `display/figure/title/body/label/micro` continua só como comentário em `operator-base.css` |
-| Tempo real | SSE no PDV, Cozinha, Gestor e Marketing; Produção só em poll; B.I. e Compras sem nada; 3 jeitos de mostrar "ao vivo" |
-| Navegação | Compras guarda seção e aba em `useState` (sem URL, sem voltar); o período do B.I. não vai para a URL |
+| Cabeçalho e navegação | 7 cabeçalhos; seção no rail em 4 apps, barra de seções em 3, abas próprias na Produção, 3 controles para as mesmas seções no Compras |
+| Busca | 4 implementações; `type="search"` cru em 5 apps; B.I. e Hub sem busca |
+| Controle segmentado | não existe peça: ~46 `aria-pressed` fazendo o papel, com 3 estilos de "ativo" |
+| Overlays à mão | ~11 `fixed inset-0` sem trap de foco nem scroll-lock; "Close" em inglês em 3 apps |
+| Estados | nenhuma peça de vazio, esqueleto ou campo no operador; ~114 "Nenhum…" literais |
+| Status | 6 mapas de cor em 3 vocabulários; paleta crua do Tailwind |
+| Sino | 4 implementações |
+| Tablet e celular | o desktop espremido: abas cortadas, tabela estourando, barra do Gestor em 3 linhas antes do primeiro pedido |
+| Recursos do dispositivo | só a câmera da NF (Compras), `capture` em upload, wake lock e giro no kit; nada de vibração, compartilhar, NFC, nem noção de teclado × toque, loja × fora |
+| Navegação | ver §4.1: telas cheias sem saída, 4 jeitos de voltar só no Gestor, estado que se perde ao recarregar, metade dos apps sem endereço |
 
-O inventário funcional completo de cada tela (cada ação, filtro, atalho e estado) está no
-apêndice A. Ele é a lista que a trava de não-regressão confere.
+O inventário funcional de cada tela está no apêndice A.
 
 ---
 
-## 2. A proposta em uma frase
+## 2. A anatomia v3
 
-**O operador aprende a suíte uma vez.** Toda tela é montada com as mesmas quatro faixas e as
-mesmas peças; o que muda de um app para outro é o trabalho, não o jeito de fazê-lo.
+**O operador aprende a suíte uma vez.** Toda tela é montada com as mesmas peças, na mesma
+ordem; o que muda de um app para outro é o trabalho, não o jeito de fazê-lo.
 
-![Anatomia](suite-ux-v2/depois-gestor-pedidos.annotated.jpg)
-
-### 2.1 A anatomia (cinco faixas, sempre na mesma ordem)
+![Gestor v3](suite-ux-v2/depois-gestor-pedidos.annotated.jpg)
 
 ```
-┌──────┬─────────────────────────────────────────────────────────────────────┐
-│ RAIL │ BARRA DE SEÇÕES   selo do app · seções · controles do app · GLOBAL   │ quem sou, onde estou
-│ da   ├─────────────────────────────────────────────────────────────────────┤
-│ suíte│ BARRA DE TRABALHO busca local · filtros · ordem · visão · ⋯ · AÇÃO   │ o que estou olhando
-│      ├─────────────────────────────────────────────────────────────────────┤
-│ apps │ CONTEÚDO          cards · tabela · quadro · painel lateral           │ o trabalho
-│ op.  ├─────────────────────────────────────────────────────────────────────┤
-│ lock │ RODAPÉ            barra de lote · ação fixa · MoreBelow              │ o próximo passo
-└──────┴─────────────────────────────────────────────────────────────────────┘
+┌───────┬──────────────────────────────────────────────────────────────────┐
+│ selo  │ Título · ● 22:03 │ busca única (/ · Ctrl K) │ controles · ⋯ · AÇÃO │  cabeçalho único
+│ (troca├──────────────────────────────────────────────────────────────────┤
+│ de app)│ filtros em chips (só se a tela filtra)                          │
+│───────├──────────────────────────────────────────────────────────────────┤
+│ seções│                                                                  │
+│ do app│ CONTEÚDO  cards · tabela · quadro · painel lateral               │
+│ c/ nº │                                                                  │
+│───────├──────────────────────────────────────────────────────────────────┤
+│ Avisos│ RODAPÉ    barra de lote · ação fixa · MoreBelow                  │
+│ Atalh.│                                                                  │
+│ Bloq. │                                                                  │
+└───────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Rail da suíte** (`OperatorRail`, evoluído): troca de app com os oito ícones, o atual aceso
-   na cor de identidade dele (`app-identity.json`), ponto de atenção no ícone de quem precisa de
-   você; embaixo, tema, bloquear e o operador. A navegação **dentro** do app sai do rail e vai
-   para a barra de seções (hoje PDV, Cozinha, Produção e Compras usam o rail para isso).
-2. **Barra de seções** (`OperatorAppBar`, já entregue): selo do app + seções com contagem e tecla
-   na própria aba. À direita, os controles **do app** (som da Cozinha e do Gestor, período do
-   B.I., saúde do terminal do PDV) e a **faixa global**, igual em todo app: busca na suíte
-   (Ctrl K), "Ao vivo hh:mm" (substitui as faixas "Última leitura útil"), um sino só, atalhos.
-3. **Barra de trabalho** (`UiToolbar`): busca **desta lista** à esquerda com a tecla ensinada,
-   filtros como chips com contagem, "+ Filtro" para dimensões extras (`FilterBar`); à direita,
-   ordenar, controle segmentado de visão, menu ⋯ e, por último, a ação primária da tela.
-   Uma segunda linha opcional serve para recortes da lista (coleções do Catálogo, abas da Base
-   do Compras).
-4. **Conteúdo**: cards, tabela ou quadro, com as mesmas peças. Detalhe e edição em painel
-   lateral (`UiSheet`); decisão em diálogo (`UiDialog`).
-5. **Rodapé**: barra de lote flutuante quando há seleção; ação fixa quando a tela tem um
-   próximo passo que não pode sumir (Pagamento no PDV, Salvar mínimos no Compras); `MoreBelow`.
+### 2.1 Rail: seções do app, trocador num botão
 
-Um app pode não ter uma faixa; nenhum app inventa uma sexta. Telas de parede e quiosque
-(Painel de retirada, Letreiro, Tela do cliente) escondem rail e barras em tela cheia, como hoje.
+O rail (76 px) volta a ser **a navegação do app**: cada seção com ícone, nome, contagem, ponto de
+atenção e a tecla (Alt 1…9). No topo, o **selo do app** abre o trocador com os oito apps e o
+Shopman Apps: ocupa um botão, não uma faixa. No pé: **Avisos** (o sino único), Atalhos,
+Bloquear e o operador. Sai a barra de seções do topo e sobra altura: o cabeçalho do Gestor vai
+de ~205 px hoje (as barras quebram em 3 linhas a 1440 px) para **104 px**.
 
-### 2.2 Perfis de dispositivo (a mesma peça, ajustada ao uso)
+### 2.2 Uma busca só, uma tecla só
 
-| perfil | apps | o que muda |
+Um campo no cabeçalho, `/` ou Ctrl K. Ao digitar, **filtra a tela atual** (o que o operador quer
+9 em 10 vezes) e abre um painel com o alcance em controle segmentado: **Esta tela · App ·
+Toda a suíte** (Tab alterna). Resultados desta tela primeiro; logo abaixo, a suíte (cliente,
+encomenda, perfil no B.I., insumo, tela), cada um com o selo do app de destino; e **ações**
+("Abrir venda para Maria Santos"). Esc fecha e mantém o filtro. No celular, a mesma busca em tela
+cheia, com a **câmera** para ler qualquer código (QR do pedido, EAN do insumo, chave da NF).
+
+![Busca única](suite-ux-v2/depois-gestor-busca.annotated.jpg)
+
+### 2.3 "Ao vivo" discreto
+
+Um ponto verde e a hora da última leitura ao lado do título. Só cresce quando a leitura atrasa:
+"Sem conexão. O que está na tela é de 21:58." + Atualizar.
+
+### 2.4 PDV: a lista de itens ganha altura
+
+A preocupação do dono era a v2, que encolhia a lista de itens para 275 px. A v3 faz o
+contrário: **648 px no desktop**, contra 485 px hoje (cerca de 10 linhas visíveis contra 8), porque
+o teclado numérico da tela **recolhe numa faixa de 44 px quando há teclado físico** (as teclas
+continuam funcionando como hoje, e "Mostrar teclado" abre de volta). Seções e saúde do terminal
+vão para o rail; o contexto da comanda (Balcão/Encomendas, #1007, Cliente F6, Recebimento F7,
+Quando F8, PIX, Liberar) cabe numa barra única de 56 px. **No tablet**, sem teclado físico, o
+teclado numérico fica visível e a lista mantém a altura de hoje (406 px × 405 px), com o total
+dentro do botão Pagamento.
+
+| | altura da lista de itens | linhas visíveis |
 |---|---|---|
-| **Balcão, teclado primeiro** | PDV | tecla impressa em todo controle que tem atalho; foco nunca se perde; ação principal 48 px |
-| **Parede/cozinha** | Cozinha, Painel de retirada | tema escuro por padrão, tipografia maior, alvos de 56 px, nada que dependa de hover |
-| **Chão/tablet** | Produção, Compras (recebimento) | 44 px mínimo, teclado numérico na tela, painel de baixo (sheet) em vez de lateral no retrato |
-| **Escritório** | Gestor, Marketing, B.I., Compras (base) | mesma régua de 44 px (o kit não tem modo denso, de propósito); mais colunas, não controles menores |
+| desktop hoje | 485 px | ~8 |
+| desktop v2 | 275 px | ~4 |
+| **desktop v3** | **648 px** | **~10** |
+| tablet hoje | 405 px | ~7 |
+| **tablet v3** (teclado numérico visível) | **406 px** | **6, com a linha ativa aberta** |
+
+![PDV v3](suite-ux-v2/depois-pdv-venda.annotated.jpg)
+
+### 2.5 Shopman Apps limpo, com estado
+
+Tiles brancos e calmos como antes: ícone na cor do app, nome, uma linha do que faz e **uma linha
+de estado** discreta (âmbar só quando pede atenção); o tile inteiro é o link para o lugar exato.
+"Precisa de você" vira uma lista fina de até 3 linhas, só quando há algo. Avisos e versão numa
+linha de rodapé.
 
 ---
 
-## 3. Padrões por intenção (um jeito canônico para cada coisa)
+## 3. Cada dispositivo, a fundo (Omotenashi-first)
+
+Retorno do dono em 03/10: *"Não serve apenas ajustes superficiais de breakpoints, media
+queries, rearranjo de colunas/larguras. Isso é o mínimo do mínimo. Cada tipo de dispositivo
+exige atenção para favorecer fortemente seu uso. O sistema precisa entender profundamente ONDE o
+operador está e oferecê-lo o MÁXIMO em recursos."*
+
+**Como está hoje** (capturas em `suite-ux-v2/antes-*-celular.jpg` e `antes-*-tablet.jpg`): no
+celular e no tablet os apps são o desktop espremido. Abas cortadas na borda (Compras, Gestor), a
+tabela de insumos estourando para o lado, a barra do Gestor quebrando em três linhas antes do
+primeiro pedido. Dos recursos do dispositivo, o código usa só a câmera da NF no Compras (zxing),
+upload com `capture` em 4 apps, wake lock e trava de giro no kit. Nenhum app usa vibração,
+compartilhar, NFC, nem sabe se o operador está com teclado, com o dedo, na loja ou fora.
+
+### 3.1 O motor de contexto: `useOperatorContext()`
+
+Um composable do kit que toda tela consulta. Ele responde **onde o operador está** e cada tela
+declara o que muda:
+
+| sinal | como se sabe | o que muda na tela |
+|---|---|---|
+| **Classe de dispositivo** | ponteiro fino/grosso, `hover`, tamanho, giro | anatomia: rail + cabeçalho (desktop), rail compacto e painéis divididos (tablet), barra de cima + barra de seções embaixo (celular) |
+| **Modo de entrada do momento** | último evento: tecla, toque ou caneta | com teclado: teclas impressas, foco visível, teclado numérico da tela recolhido; com toque: teclas somem, alvos crescem, teclado numérico aparece. Plugar um teclado no tablet traz as teclas de volta |
+| **Estação × dispositivo pessoal** | estação provisionada (já existe no PDV e na Cozinha) | estação: tela sempre acesa, giro travado, bloqueio por PIN/crachá; pessoal: login próprio, push, modo "no bolso" |
+| **Na loja × fora** | rede da loja ou geolocalização com consentimento | fora da loja, o Gestor abre em "resumo e decisões"; o PDV no celular só consulta |
+| **Conexão** | `useConnectivity` (já existe) | ao vivo, desatualizado, sem conexão, com o mesmo texto em todo app |
+| **Turno** | hora + agenda da loja | ex.: Produção abre em Planejamento antes do turno e em Expedição durante o forno |
+
+### 3.2 Recursos do dispositivo, por app
+
+| recurso | onde entra | substitui ou acelera |
+|---|---|---|
+| **Câmera** (código de barras, QR, chave de NF, EAN, etiqueta de lote, foto) | Compras (NF e EAN do insumo no recebimento), Produção (etiqueta do lote, foto da ficha), PDV no celular (QR da encomenda na retirada), busca única (ler qualquer código) | digitação da chave de 44 dígitos, busca por nome |
+| **Vibração** | confirmação de ato no celular, alerta de pedido novo, forno tocando | o operador não precisa olhar a tela para saber que deu certo |
+| **Push** (já existe) | pedido novo, anúncio para aprovar, forno, alerta de canal; toque abre o lugar exato | entrar no app para descobrir se precisava |
+| **Tela acesa e giro** (já existem no kit) | Cozinha, Produção no suporte, Painel de retirada, Letreiro | a tela apagando no meio do serviço |
+| **NFC do crachá** (Android) | desbloquear estação e assinar como gerente | digitar PIN com a mão suja de farinha |
+| **Compartilhar** | comprovante, relatório do B.I., recorte da lista | baixar e anexar |
+| **Leitor físico e teclado** (já há leitor de ticket no PDV) | PDV, Compras na doca, Expedição | — |
+| **Localização** (só com consentimento, só onde muda algo) | Gestor "fora da loja"; nunca rastreio de pessoa | — |
+
+### 3.3 Matriz app × dispositivo
+
+O que cada app **é** em cada dispositivo. Não é a mesma tela encolhida:
+
+| app | desktop (teclado) | tablet (toque, giro) | celular (polegar, câmera) |
+|---|---|---|---|
+| **PDV** | balcão completo, teclado primeiro, teclado numérico da tela recolhido | balcão de toque, teclado numérico visível, deslizar para remover | balcão de bolso: retirada de encomenda por QR, consulta, comanda rápida na fila |
+| **Cozinha** | (raro) | estação de parede, tema escuro, alvos de 56 px | — |
+| **Gestor** | escritório: quadro, tabela, catálogo | gestão no salão: quadro em abas, detalhe em painel | dono em movimento: push, aceitar/recusar, resumo fora da loja |
+| **Produção** | gestor: plano, relatórios, receitas | chão: dia de produção em lista + painel com teclado numérico | no bolso: timers que vibram, finalizar lote, ler etiqueta |
+| **Compras** | base, custos, fornecedores | conferência: lista + linha da nota lado a lado | doca: escanear NF, conferir item com deslizar, confirmar entrada |
+| **Marketing** | compor campanhas | — | aprovar anúncio vindo do push |
+| **B.I.** | análise completa | leitura | olhada: números, um gráfico, compartilhar |
+| **Shopman Apps** | painel | painel | lista de apps + busca única com câmera |
+
+---
+
+## 4. Navegação: um modelo único
+
+Pedido do dono: *"Não há um padrão bem estabelecido, em basicamente nenhuma das Apps."* A
+auditoria confirmou, com arquivo e linha.
+
+### 4.1 O que a auditoria encontrou
+
+| tema | hoje |
+|---|---|
+| **Seções** | rail como seção no PDV, Cozinha, Produção e Compras; barra de seções no Gestor, B.I. e Marketing; abas próprias + rail na Produção (e o "Painel" do rail é a mesma página da aba "Produção"); Compras com **três** controles para as mesmas 4 seções (rail, barra e barra de baixo no celular). O próprio kit diz que seção não deveria morar no rail (`OperatorRail.vue:11-13`) |
+| **Telas cheias sem saída** | o Painel de retirada da Cozinha abre em tela cheia sem rail, sem link, sem caminho de volta, num PWA `fullscreen` (`kds-nuxt/app/pages/[ref].vue:382`); o Letreiro da Produção, igual |
+| **Voltar** | o Gestor sozinho tem 4 jeitos: reconstrói o filtro (pedido), `router.back()` (cliente; vindo de um aviso, sai do app), link fixo (Unificações, Canais); PDV mistura voltar inteligente (encomenda) e fixo (relatório) |
+| **Estado fora da URL** | período do B.I. só em memória; todo o Compras em `useState` (seção, aba, seleção, rascunho); data e busca da Produção só lidas, nunca escritas; coleção e produto do Catálogo; fila Expedição/Qualidade |
+| **Dado perdido ao navegar** | Finalizar lote (QC) com rail e abas clicáveis por cima e sem guarda; editor de receita e nota do Compras sem guarda; o Gestor guarda com `window.confirm` |
+| **Marketing** | "Abrir revisão" leva a `/`, que redireciona para a mesma tela; "Voltar ao painel" cai em "Hoje"; `/platforms` e `/v2?area=platforms` são duas telas para uma seção; truque `?experience=v2`; "Marketing V2" no título |
+| **Entre apps** | só 4 dos 8 apps têm endereço (Hub, Gestor, PDV, Produção); nenhum link leva origem nem volta; Cozinha, Gestor, Produção e B.I. não linkam para nenhum app irmão; frases "verifique no Gestor" sem link |
+| **Teclado** | navegação por seção só na Produção (Alt+1…4); a prop `shortcut` do `OperatorAppBar` não é usada por ninguém |
+| **Títulos** | faltam na venda do PDV, na fila e no pedido do Gestor, em toda a Cozinha, no B.I. e no Compras; nenhum app tem "onde estou" além da aba |
+| **Atalhos de PWA** | o "Hoje" do Gestor (`/?sort=commitment`) é ignorado em silêncio; o `?view=` do Compras é lido uma vez e envelhece |
+| **Peças** | `RailItem` sem `to`: cada app reescreve `navigateTo` e o teste de ativo; restauração de rolagem e foco ao voltar só no quadro do Gestor |
+
+### 4.2 O modelo: cinco níveis
+
+![Navegação](suite-ux-v2/depois-navegacao.jpg)
+
+| nível | o que é | desktop | tablet | celular | voltar | endereço |
+|---|---|---|---|---|---|---|
+| **0 · Suíte** | trocar de app, achar qualquer coisa | selo no rail, busca única, aviso | selo, busca | selo na barra de cima, busca em tela cheia com câmera, push | — | host do app |
+| **1 · Seção** | Pedidos, Base, Expedição | item do rail com nome, contagem e Alt 1…9 | rail compacto (deitado), barra embaixo (em pé) | barra embaixo, até 4 + Mais | — | caminho (`/base`) |
+| **2 · Recorte** | Insumos/Fornecedores, Expedição/Qualidade | controle segmentado, `[` `]` | segmentado, deslizar | abas roláveis, deslizar | — | caminho ou query (`/base/insumos`, `?fila=qualidade`) |
+| **3 · Item** | pedido, produto, lote, insumo | painel lateral se a lista precisa ficar à vista; página se é área de trabalho | deitado: lado a lado; em pé: painel de baixo | tela cheia com ‹ | **"‹ Pai"** com filtro, rolagem e foco restaurados; Esc | caminho ou `?item=` |
+| **4 · Fluxo** | pagar, finalizar lote, conferir NF | tela de foco (esconde rail e seções) | tela de foco com teclado numérico | tela cheia, "Concluir" fixo, vibra | sair com dado → diálogo do kit | etapa na query |
+
+![Detalhe com volta](suite-ux-v2/depois-gestor-detalhe.annotated.jpg)
+
+### 4.3 As regras
+
+1. **Todo lugar tem endereço.** Seção, recorte, filtro, período, item aberto e etapa vão para a
+   URL. Recarregar, compartilhar ou abrir pelo aviso cai no mesmo lugar.
+2. **Voltar é subir, com contexto.** Um `OperatorUpButton` ("‹ Pedidos") e um `useListContext`
+   no kit, generalizando o que o quadro do Gestor já faz. Chegou por link direto? Sobe para a
+   lista padrão. Nunca `router.back()` às cegas.
+3. **Toda tela cheia tem saída declarada.** Painel de retirada, Letreiro e Tela do cliente abrem em
+   janela própria; na estação, toque longo no canto (ou Esc) pede o PIN e volta à origem.
+4. **Entre apps, com bilhete de volta.** `appUrl(app, caminho, { de })` no kit para os oito apps;
+   o destino mostra "‹ Voltar ao PDV · comanda #1007". Frase que manda ir a outro app vira link.
+5. **Um nome por lugar.** O mesmo nome no rail, no título, na URL em inglês e no atalho de PWA.
+6. **Guarda única** (`useUnsavedGuard`): diálogo do kit no lugar do `window.confirm`, cobrindo
+   rota, recarga e fechar a janela.
+7. **Título em toda tela**: "Página · App".
+
+### 4.4 Mapa de endereços por app
+
+URLs em inglês (convenção da casa); endereço antigo responde 301, como já foi feito em outros apps.
+
+| app | seções (rail) | recortes e itens | muda |
+|---|---|---|---|
+| **PDV** | Comandas `/` · Encomendas `/preorders` · Caixa `/cash` · Tela do cliente (janela) | comanda `/tabs/1007`, pagamento `?step=payment`; encomenda `/preorders/:ref`; relatório e fechamento `/cash/report`, `/cash/closing` | `/session` vira `/cash`; venda ganha endereço |
+| **Cozinha** | Estações `/` · estação `/:ref` (Preparo/Saída) · Painel de retirada (janela) | `?date=` | Painel ganha saída |
+| **Gestor** | Pedidos `/` · Catálogo `/catalog` · Clientes `/customers` · Canais `/channels` | pedido `/:ref`; produto `?sku=&tab=` (escrito, não só lido); coleção `?collection=` | `/feeds` vira `/channels` |
+| **Produção** | Planejamento `/plan` · Preparação `/mise-en-place` · Produção `/` · Expedição `/expedite` · Timers · Receitas · Relatórios · Letreiro (janela) | `?date=&q=` escritos; `?queue=quality`; Finalizar lote `/expedite/:lot/close` | some o "Painel" duplicado |
+| **Compras** | Painel `/` · Comprar `/buy` · Receber `/receive` · Base `/base` | `/base/materials` · `/suppliers` · `/costs` · `/count`; nota em conferência `/receive/:draft` | sai do `useState` |
+| **Marketing** | Hoje `/today` · Campanhas `/campaigns` · Ofertas `/offers` · Plataformas `/platforms` · Histórico `/history` | anúncio `/announcements/:id`; modelos `/campaigns/templates` | some `/v2?area=` e `?experience=v2` |
+| **B.I.** | as 8 seções de hoje | `?period=28d&compare=previous&channel=` em todas; aprofundar leva ao pedido, produto ou insumo no app certo | período vai para a URL |
+
+Trava `guardrails.navigation`: seção fora da URL, página sem título, `RailItem` sem `to`, link entre
+apps sem origem e atalho de PWA que não resolve fazem o CI falhar.
+
+---
+
+## 5. Padrões por intenção (um jeito canônico para cada coisa)
 
 | intenção | padrão único | peça | hoje |
 |---|---|---|---|
-| **Buscar nesta lista** | campo na barra de trabalho, à esquerda, com a tecla impressa (`/`; `F3` no PDV); Esc limpa; o termo vai para a URL | `UiSearchInput` | 4 implementações, 5 apps com `type="search"` cru |
-| **Buscar na suíte** | Ctrl K de qualquer tela: pedidos, produtos, clientes, insumos, telas e ações; cada resultado abre no app certo | `OperatorCommandPalette` (nova, §6) | não existe |
-| **Filtrar** | chips com contagem para os 3 a 6 recortes mais usados; "+ Filtro" para o resto; filtro aplicado aparece como chip removível "Dimensão: valor ✕" e "Limpar filtros"; tudo na URL | `UiFilterChip`, `FilterBar` | chips em 1 app; selects soltos; checkbox como filtro |
-| **Recortar a lista** (abas da mesma lista) | segunda linha da barra de trabalho | `UiSegmentedControl` (nova) | 3 estilos de aba |
-| **Trocar visão** (quadro/tabela, grade/lista, densidade) | controle segmentado à direita da barra de trabalho; preferência por dispositivo | `UiSegmentedControl` | popover no PDV, botão-ciclo na Cozinha, botões no Gestor |
-| **Ordenar** | botão "↕ Critério ▾" que abre menu de rádio | `UiMenu` (nova) | menu à mão sem Esc |
-| **Período** | dia ou intervalo, sempre com o seletor do kit; na barra de seções quando vale para o app inteiro (B.I.), na de trabalho quando vale para a lista | `OperatorDayPicker`, `OperatorPeriodPicker` | select nativo na Cozinha |
-| **Ação primária** | uma por tela, botão cheio, último à direita da barra de trabalho ou fixo no rodapé; no card, o botão largo de baixo | `UiButton` | ~86 estilos de botão |
-| **Ação secundária frequente** | botão de contorno visível | `UiButton variant=outline` | — |
-| **Ação rara** (exportar, imprimir, atualizar, apagar) | menu ⋯ da tela ou da linha, com a mesma tecla de antes; destrutiva por último, em vermelho, com confirmação | `UiMenu` | espalhadas na barra (o Gestor tem 10 botões nela) |
-| **Ação em lote** | seleção por checkbox; barra flutuante "N selecionados · ações · Limpar"; revisão antes de confirmar quando muda preço ou publicação | `UiBulkBar` (nova, a partir da do Catálogo) | só o Catálogo tem barra; aceitar em lote sem confirmação |
-| **Opções do item** | menu ⋯ na linha ou no card; detalhe no painel lateral | `UiMenu`, `UiSheet` | popover em um lugar, botão solto em outro |
-| **Confirmar** | diálogo com título-pergunta, frase de consequência e o verbo do ato no botão ("Recusar pedido", nunca "OK"); desfazer (toast) quando o ato é reversível | `UiDialog`, `OperatorReasonDialog`, toast com Desfazer | 5 jeitos (modal, dois passos dentro do modal, inline fixo, `window.confirm`, nenhum) |
-| **Status** | pílula de tom: info, em andamento, sucesso, alerta, erro, neutro; mapa único estado → tom/rótulo/ícone | `presentation/status.ts` | 6 mapas, 3 vocabulários |
-| **Vazio** | ícone, título que nomeia o espaço, explicação, gesto quando houver | `UiEmpty` (nova) | ~114 literais |
-| **Carregando** | esqueleto no formato do conteúdo | `UiSkeleton` (nova) | "Carregando…" em texto |
-| **Erro** | o que aconteceu + o que continua valendo + o que fazer + "Tentar de novo" | `UiAlert` | 3 a 4 variantes por app |
-| **Desatualizado** | "Sem conexão. O que está na tela é de 21:58." + Atualizar | `UiAlert tone=warning` + `onReconnect` | só 2 apps reconciliam ao voltar |
-| **Ao vivo** | ponto + hora da última leitura na faixa global | `OperatorLiveStatus` (nova) | faixa de texto, ponto solto, nada |
-| **Avisos** | um sino, com abas Alertas e Avisos | `NotificationBell` | 4 sinos |
-| **Atalhos** | botão de teclado na faixa global e tecla `?`; ajuda lista as teclas da tela atual | `OperatorShortcutsHelp` (nova, a partir das 2 que existem) | só PDV e Produção têm ajuda |
-| **Campo de formulário** | rótulo, obrigatório, dica, erro com `aria-describedby` | `UiField` (nova) | 8 dialetos |
-| **Número de painel** | rótulo, número, delta em pílula de tom | `UiStatTile` (a partir do `StatTile` do B.I.) | 2 desenhos |
-| **Tipografia** | 6 papéis com nome | `op-display`, `op-figure`, `op-title`, `op-body`, `op-label`, `op-micro` (+ `op-eyebrow`) | 2.287 combinações à mão |
+| **Buscar** | um campo no cabeçalho, `/` ou Ctrl K; filtra a tela ao digitar; alcance Esta tela · App · Suíte; câmera no celular; termo na URL | `OperatorSearch` (evolui o `UiSearchInput`) | 4 implementações, 5 apps com `type="search"` cru, 2 apps sem busca |
+| **Filtrar** | chips com contagem para os 3 a 6 recortes mais usados; "+ Filtro" para o resto; filtro aplicado vira chip removível e "Limpar filtros"; no celular, linha rolável + painel de baixo; tudo na URL | `UiFilterChip`, `FilterBar` | chips em 1 app; selects soltos; checkbox como filtro |
+| **Recortar a lista** | controle segmentado no cabeçalho; no celular, abas roláveis com deslizar | `UiSegmentedControl` (nova) | 3 estilos de aba |
+| **Trocar visão** | controle segmentado; preferência por dispositivo | `UiSegmentedControl` | popover no PDV, botão-ciclo na Cozinha, botões no Gestor |
+| **Ordenar** | botão "↕ Critério ▾" com menu de rádio | `UiMenu` (nova) | menu à mão sem Esc |
+| **Período** | seletor do kit; no cabeçalho quando vale para o app inteiro, na URL sempre | `OperatorDayPicker`, `OperatorPeriodPicker` | select nativo na Cozinha; B.I. fora da URL |
+| **Ação primária** | uma por tela, último à direita do cabeçalho ou fixa no rodapé; no celular, no alcance do polegar | `UiButton` | ~86 estilos de botão |
+| **Ação rara** | menu ⋯ com a mesma tecla de antes; destrutiva por último, em vermelho, com confirmação | `UiMenu` | espalhadas na barra (o Gestor tinha 10 botões nela) |
+| **Ação em lote** | checkbox (desktop), seleção por toque longo (toque); barra flutuante com revisão quando muda preço ou publicação | `UiBulkBar` (nova) | só o Catálogo tem |
+| **Ação rápida no item** | menu ⋯ (desktop), toque longo (tablet), deslizar o card (celular) | `UiMenu`, `UiSwipeActions` (nova) | botões soltos |
+| **Confirmar** | título-pergunta, consequência, o verbo do ato no botão; desfazer quando é reversível; vibra no celular | `UiDialog`, `OperatorReasonDialog` | 5 jeitos, inclusive `window.confirm` |
+| **Status** | pílula de tom: info, andamento, sucesso, alerta, erro, neutro; mapa único | `presentation/status.ts` | 6 mapas, 3 vocabulários |
+| **Vazio · carregando · erro · desatualizado** | vazio que explica; esqueleto no formato do conteúdo; erro que diz o que fazer; desatualizado com a hora | `UiEmpty`, `UiSkeleton` (novas), `UiAlert` | literais, "Carregando…", 3 a 4 variantes por app |
+| **Ao vivo** | ponto + hora ao lado do título | `OperatorLiveStatus` (nova) | faixa de texto, ponto solto, nada |
+| **Avisos** | um sino no pé do rail (barra de cima no celular), abas Alertas e Avisos; push abre o lugar exato | `NotificationBell` | 4 sinos |
+| **Atalhos** | tecla impressa em todo controle com atalho quando há teclado; `?` lista as da tela | `OperatorShortcutsHelp` (nova) | só PDV e Produção |
+| **Campo · número de painel · tipografia** | `UiField`; `UiStatTile`; 6 papéis `op-*` | — | 8 dialetos de rótulo; 2 desenhos de KPI; 2.287 combinações à mão |
 
 ![Kit](suite-ux-v2/depois-kit.jpg)
 
 ---
 
-## 4. As telas-chave, antes e depois
+## 6. As telas-chave, antes e depois
 
-Uma por app, como o dono pediu. Cada uma tem a captura de hoje, a proposta anotada e o de-para
-de funções no apêndice A.
+### 6.1 Desktop (hoje × v3)
 
-### 4.1 Gestor · Pedidos
+**Gestor · Pedidos** · inventário A.1 · [anotada](suite-ux-v2/depois-gestor-pedidos.annotated.jpg)
 
 ![Gestor · Pedidos](suite-ux-v2/comparar-gestor-pedidos.jpg)
 
-Proposta anotada: [`depois-gestor-pedidos.annotated.jpg`](suite-ux-v2/depois-gestor-pedidos.annotated.jpg) · inventário: apêndice A.1.
-
-### 4.2 Gestor · Catálogo
+**Gestor · Catálogo** · inventário A.2 · [anotada](suite-ux-v2/depois-gestor-catalogo.annotated.jpg)
 
 ![Gestor · Catálogo](suite-ux-v2/comparar-gestor-catalogo.jpg)
 
-Proposta anotada: [`depois-gestor-catalogo.annotated.jpg`](suite-ux-v2/depois-gestor-catalogo.annotated.jpg) · inventário: apêndice A.2.
-
-### 4.3 PDV · Venda
+**PDV · Venda** · inventário A.3 · [anotada](suite-ux-v2/depois-pdv-venda.annotated.jpg)
 
 ![PDV · Venda](suite-ux-v2/comparar-pdv-venda.jpg)
 
-Proposta anotada: [`depois-pdv-venda.annotated.jpg`](suite-ux-v2/depois-pdv-venda.annotated.jpg) · inventário: apêndice A.3.
+**Cozinha · Estação (tema escuro)** · inventário A.4 · [anotada](suite-ux-v2/depois-cozinha-estacao.annotated.jpg)
 
-### 4.4 Cozinha · Estação de preparo (tema escuro)
+![Cozinha · Estação (tema escuro)](suite-ux-v2/comparar-cozinha-estacao.jpg)
 
-![Cozinha · Estação de preparo (tema escuro)](suite-ux-v2/comparar-cozinha-estacao.jpg)
-
-Proposta anotada: [`depois-cozinha-estacao.annotated.jpg`](suite-ux-v2/depois-cozinha-estacao.annotated.jpg) · inventário: apêndice A.4.
-
-### 4.5 Produção · Produção do dia
+**Produção · Produção do dia** · inventário A.5 · [anotada](suite-ux-v2/depois-producao-dia.annotated.jpg)
 
 ![Produção · Produção do dia](suite-ux-v2/comparar-producao-dia.jpg)
 
-Proposta anotada: [`depois-producao-dia.annotated.jpg`](suite-ux-v2/depois-producao-dia.annotated.jpg) · inventário: apêndice A.5.
-
-### 4.6 Compras · Base › Insumos
+**Compras · Base › Insumos** · inventário A.6 · [anotada](suite-ux-v2/depois-compras-base.annotated.jpg)
 
 ![Compras · Base › Insumos](suite-ux-v2/comparar-compras-base.jpg)
 
-Proposta anotada: [`depois-compras-base.annotated.jpg`](suite-ux-v2/depois-compras-base.annotated.jpg) · inventário: apêndice A.6.
-
-### 4.7 Marketing · Campanhas
+**Marketing · Campanhas** · inventário A.7 · [anotada](suite-ux-v2/depois-marketing-campanhas.annotated.jpg)
 
 ![Marketing · Campanhas](suite-ux-v2/comparar-marketing-campanhas.jpg)
 
-Proposta anotada: [`depois-marketing-campanhas.annotated.jpg`](suite-ux-v2/depois-marketing-campanhas.annotated.jpg) · inventário: apêndice A.7.
-
-### 4.8 B.I. · Vendas
+**B.I. · Vendas** · inventário A.8 · [anotada](suite-ux-v2/depois-bi-vendas.annotated.jpg)
 
 ![B.I. · Vendas](suite-ux-v2/comparar-bi-vendas.jpg)
 
-Proposta anotada: [`depois-bi-vendas.annotated.jpg`](suite-ux-v2/depois-bi-vendas.annotated.jpg) · inventário: apêndice A.8.
+**Shopman Apps** · inventário A.9 · [anotada](suite-ux-v2/depois-hub.annotated.jpg)
 
-### 4.9 Shopman Apps (início com estado)
+![Shopman Apps](suite-ux-v2/comparar-hub.jpg)
 
-![Shopman Apps (início com estado)](suite-ux-v2/comparar-hub.jpg)
+### 6.2 Tablet e celular hoje
 
-Proposta anotada: [`depois-hub.annotated.jpg`](suite-ux-v2/depois-hub.annotated.jpg) · inventário: apêndice A.9.
+O desktop espremido: abas cortadas, tabela estourando, barras quebrando em várias linhas.
 
+![Celular hoje](suite-ux-v2/antes-celular.jpg)
 
----
+![Tablet hoje](suite-ux-v2/antes-tablet.jpg)
 
-## 5. A trava de não-regressão
+### 6.3 Tablet (v3)
 
-"Nenhuma funcionalidade pode regredir" vira quatro mecanismos, todos rodando no CI.
+**PDV · balcão de toque (deitado)**
 
-1. **Inventário funcional como contrato.** Cada tela ganha um arquivo
-   `surfaces/<app>/tests/inventory/<tela>.inventory.ts` com a lista fechada do que ela oferece:
-   ações (com rótulo e tecla), filtros, visões, estados, canais de tempo real, permissões. O
-   apêndice A é o rascunho desses arquivos. Um teste de componente monta a tela com dados de
-   exemplo e confere que cada item está acessível por papel e nome (`getByRole`), inclusive os
-   que moraram para dentro de um menu ⋯ (o teste abre o menu). Item que sai do inventário só
-   sai com a decisão escrita no PR.
-2. **Regra de PR "mover, nunca remover".** Todo PR da reforma traz a tabela "função antes →
-   onde ficou" da tela que mexeu. Sem a tabela, o PR não entra na fila.
-3. **Os testes que já existem continuam passando sem afrouxar**: unitários de `presentation/`,
-   e2e com mock, sondas ao vivo do PDV (`test:live`, texto cortado), `guardrails.*` do kit,
-   vocabulário e cópia. Os seletores dos e2e passam a ser por papel e nome, que sobrevivem à
-   troca de markup.
-4. **Retrato antes/depois por tela** com o Playwright visual que já existe (`test:visual`).
-   Regra do repositório: só regera baseline quem tem o Chromium da CI, numa sessão só.
+![PDV · balcão de toque (deitado)](suite-ux-v2/depois-pdv-venda-tablet.annotated.jpg)
 
-E duas travas novas de forma, para a deriva não voltar:
+**Produção · dia de produção no suporte (deitado)**
 
-- `guardrails.primitives.test.ts`: recusa `<button>`, `<input type="search">`, `fixed inset-0`,
-  `aria-pressed` e `role="tablist"` escritos à mão fora do kit, com lista de exceções que só
-  encolhe (o mesmo modelo do `guardrails.pendingAction`).
-- `guardrails.palette.test.ts`: recusa `text|bg|border-(red|amber|green|…)-\d00` e hex em
-  template e em `presentation/`, aceitando só tokens.
+![Produção · dia de produção no suporte (deitado)](suite-ux-v2/depois-producao-dia-tablet.annotated.jpg)
 
----
+**Compras · conferência da nota (em pé)**
 
-## 6. Ideias além da evolução (o dono decide uma a uma)
+![Compras · conferência da nota (em pé)](suite-ux-v2/depois-compras-receber-tablet.annotated.jpg)
 
-As cinco abaixo não são necessárias para padronizar; são o que faria a suíte parecer um
-produto só. Todas aparecem nas prévias para ele julgar vendo.
+### 6.4 Celular (v3)
 
-1. **Rail como trocador de apps.** Hoje o rail é por app e volta ao Hub por uma porta só. A
-   proposta põe os oito apps no rail de todos, com o atual aceso e ponto de atenção.
-   Consequência: a navegação interna do PDV, Cozinha, Produção e Compras sai do rail e vai
-   para a barra de seções.
-2. **Busca da suíte (Ctrl K).** Uma busca que acha pedido, cliente, produto, insumo, lote e
-   tela, e abre no app certo com contexto. Começa lendo os endpoints de busca que já existem
-   (pedidos, clientes, catálogo); não precisa de backend novo na primeira versão.
-3. **Um sino só, com duas abas** (Alertas operacionais e Avisos pessoais), no lugar dos quatro.
-4. **"Ao vivo" na faixa global** em todo app, no lugar das faixas "Última leitura útil",
-   com o mesmo texto de desatualizado em todo lugar.
-5. **Hub com estado** (já aprovado em 22/09, ainda não feito): cada tile diz o que espera por
-   você e leva ao lugar exato; uma faixa "Precisa de você" junta o que é urgente nos oito apps.
+**Compras · recebimento na doca: câmera, deslizar, vibração**
+
+![Compras · recebimento na doca: câmera, deslizar, vibração](suite-ux-v2/depois-compras-receber-celular.annotated.jpg)
+
+**Produção · no bolso: forno, finalizar lote, timer tocando**
+
+![Produção · no bolso: forno, finalizar lote, timer tocando](suite-ux-v2/depois-producao-celular.annotated.jpg)
+
+**PDV · balcão de bolso: retirada por QR**
+
+![PDV · balcão de bolso: retirada por QR](suite-ux-v2/depois-pdv-celular.annotated.jpg)
+
+**Gestor · pedido por push, aceite no polegar, fora da loja**
+
+![Gestor · pedido por push, aceite no polegar, fora da loja](suite-ux-v2/depois-gestor-celular.annotated.jpg)
+
+**Marketing e B.I. · aprovar anúncio e olhar os números**
+
+![Marketing e B.I. · aprovar anúncio e olhar os números](suite-ux-v2/depois-marketing-bi-celular.annotated.jpg)
+
+**Shopman Apps · lista + busca única com câmera**
+
+![Shopman Apps · lista + busca única com câmera](suite-ux-v2/depois-hub-celular.annotated.jpg)
+
 
 ---
 
-## 7. Work packages
+## 7. A trava de não-regressão
 
-Mesma numeração do SUITE-UX-PLAN, para não duplicar frente. Cada WP é um PR (ou um por app
-quando o diff passar de ~800 linhas), com o inventário da tela e a tabela "antes → onde ficou".
+"Nenhuma funcionalidade pode regredir" vira mecanismo no CI:
+
+1. **Inventário funcional como contrato.** Cada tela ganha
+   `surfaces/<app>/tests/inventory/<tela>.inventory.ts`: ações (rótulo e tecla), filtros,
+   visões, estados, tempo real, permissões. Um teste monta a tela e confere que cada item está
+   acessível por papel e nome, inclusive dentro do ⋯ e do painel de filtros, **em cada perfil
+   de dispositivo** (desktop, tablet, celular). O apêndice A é o rascunho.
+2. **"Mover, nunca remover".** Todo PR da reforma traz a tabela "função de hoje → onde ficou",
+   por dispositivo. Sem ela, não entra na fila.
+3. **Testes atuais intactos**: unitários, e2e, sondas ao vivo do PDV, `guardrails.*` do kit.
+   Seletores por papel e nome.
+4. **Retrato antes/depois** por tela e por dispositivo com o `test:visual` que já existe
+   (só regera baseline quem tem o Chromium da CI, numa sessão só).
+5. **Travas de forma**: `guardrails.primitives` (sem botão, busca, overlay e segmentado à mão fora
+   do kit), `guardrails.palette` (só tokens) e `guardrails.navigation` (§4.4).
+
+---
+
+## 8. Work packages
+
+Mesma numeração do SUITE-UX-PLAN. Cada WP é um PR (ou um por app quando passar de ~800 linhas).
+**Ordem aprovada: kit primeiro, Gestor piloto, PDV por último.**
 
 | WP | o quê | depende de | risco |
 |---|---|---|---|
-| **WP-UX-5** tipografia e status | `op-*` viram CSS de verdade; `presentation/status.ts` no kit; trava de paleta | — | baixo |
-| **WP-UX-8** primitivas no kit | `UiButton`, `UiDialog`, `UiSheet`, `UiPopover`, `UiInput`, `UiTextarea`, `UiBadge` passam a ser do kit (uma cópia só); apagar as 7 árvores `Ui/`; "Fechar" em português; os ~11 overlays à mão migram | — | médio (mexe em tudo, mas é mecânico) |
-| **WP-UX-6** campo, vazio, carregando | `UiField`, `UiEmpty`, `UiSkeleton`, `UiAlert` padrão de erro/desatualizado | WP-UX-8 | baixo |
-| **WP-UX-2** barra de trabalho | `UiToolbar` + `UiSearchInput` + `UiFilterChip` + `FilterBar` + `UiSegmentedControl` (novo) + `UiMenu` (novo) + `UiBulkBar` (novo); estado na URL (Compras e B.I. incluídos) | WP-UX-8 | médio |
-| **WP-UX-9** cabeçalhos ricos | PDV, Cozinha, Produção e Hub sobre o `OperatorAppBar`, com os slots de cada um | WP-UX-2 | **alto**: é onde mora o risco de regressão; retrato antes/depois obrigatório |
-| **WP-UX-10** faixa global e rail da suíte *(novo, §6.1, 6.3, 6.4)* | `OperatorLiveStatus`, um `NotificationBell`, `OperatorShortcutsHelp`; rail com os oito apps | WP-UX-9, decisão do dono | médio |
-| **WP-UX-11** busca da suíte *(novo, §6.2)* | `OperatorCommandPalette` lendo as buscas existentes | WP-UX-10, decisão do dono | médio |
-| **WP-UX-7** (2ª metade) Hub com estado | projeção de estado por app no `hub.py`; tiles com deep link | WP-UX-10 | baixo |
+| **UX-5** tipografia e status | `op-*` em CSS; `status.ts`; trava de paleta | — | baixo |
+| **UX-8** primitivas no kit | uma cópia só de Button, Dialog, Sheet, Popover, Input, Textarea, Badge; apagar as 7 árvores; overlays à mão migram | — | médio |
+| **UX-12** contexto e navegação *(novo)* | `useOperatorContext`, `RailItem` com `to`, `OperatorUpButton`, `useListContext`, `useUnsavedGuard`, `appUrl()` para os 8 apps, títulos, trava de navegação | UX-8 | médio |
+| **UX-6** campo, vazio, carregando | `UiField`, `UiEmpty`, `UiSkeleton`, `UiAlert` | UX-8 | baixo |
+| **UX-2** cabeçalho único e busca única | rail v3 com seções, cabeçalho único, `OperatorSearch` com alcance, `UiSegmentedControl`, `UiMenu`, `UiBulkBar`; estado na URL | UX-12 | médio |
+| **UX-10** sino, ao vivo, atalhos | `NotificationBell` único, `OperatorLiveStatus`, `OperatorShortcutsHelp` | UX-2 | baixo |
+| **UX-13** dispositivos *(novo)* | anatomia de celular (barra de cima + seções embaixo) e tablet (divisão lista/detalhe) no kit; câmera, vibração, compartilhar, NFC; app a app, na ordem aprovada | UX-2, UX-12 | médio |
+| **UX-9** telas ricas | PDV, Cozinha, Produção sobre a anatomia v3, com retrato antes/depois por dispositivo | UX-13 | **alto** |
+| **UX-7** (2ª metade) Shopman Apps com estado | projeção de estado por app no `hub.py`; tiles limpos com deep link | UX-10 | baixo |
+| **UX-11** busca na suíte | alcance "App" e "Suíte" da busca única, lendo as buscas que já existem | UX-2 | médio |
 
-Ordem dentro de cada WP: **kit primeiro, depois um app piloto, depois os outros.** Piloto
-sugerido: **Gestor** (já usa `UiToolbar`, `UiFilterChip`, `FilterBar`, `ColumnPicker`; é o mais
-perto do padrão e o que mais ganha com a limpeza de 146 botões à mão). PDV por último, porque é
-o de maior risco operacional (balcão com cliente esperando) e o que mais depende de teclado.
+Piloto: **Gestor** (o mais perto do padrão e o que mais ganha). **PDV por último** (balcão com
+cliente esperando, o que mais depende de teclado).
 
 ---
 
-## 8. O que é decisão do dono
+## 9. O que ainda é decisão do dono
 
-1. **Aprovar a anatomia e os padrões** (§2 e §3), olhando as prévias.
-2. **As cinco ideias do §6**, uma a uma. Se ele recusar o rail-trocador (§6.1), o rail fica
-   como está e só a barra de seções se padroniza.
-3. **Ordem e piloto** (§7): Gestor como piloto, PDV por último.
+1. **Aprovar a v3**: seções no rail com trocador no selo, busca única com alcance, "ao vivo"
+   discreto, PDV com teclado numérico recolhido no desktop, Shopman Apps limpo.
+2. **Aprovar o papel de cada app em cada dispositivo** (matriz do §3.3) e os recursos do §3.2,
+   em especial **localização** (Gestor "fora da loja") e **NFC do crachá**, que pedem
+   consentimento e política.
+3. **Aprovar o modelo de navegação** (§4), inclusive a troca de endereços que ele implica
+   (Compras e Marketing ganham rotas próprias; os antigos respondem 301, como a casa já fez
+   em outros apps).
 
-Nada aqui muda dado, URL de cliente nem regra de negócio; a reforma é só da camada de tela.
+Nada aqui muda dado nem regra de negócio; a reforma é da camada de tela.
 
 ---
 
 ## Apêndice A: inventário funcional das telas-chave
 
-Rascunho dos arquivos `*.inventory.ts` do §5. Cada linha: função de hoje → onde fica na proposta.
-"⋯" é o menu de mais ações da tela; "faixa global" é a busca na suíte + Ao vivo + sino + atalhos.
+Rascunho dos arquivos `*.inventory.ts` do §7. Cada linha: função de hoje → onde fica na proposta.
+"⋯" é o menu de mais ações da tela. ⚠️ Escrito na v2: onde se lê **"barra de seções"**, na v3 leia
+**"rail"** (as seções voltaram para o rail); **"faixa global"** é, na v3, a busca única no cabeçalho
++ o ponto "ao vivo" ao lado do título + Avisos e Atalhos no pé do rail; **"barra de trabalho"** é o
+cabeçalho único. No PDV, o teclado numérico da tela recolhe numa faixa quando há teclado físico
+(§2.4). O de-para por dispositivo de cada tela está nas legendas das prévias de tablet e celular.
 
 ### A.1 Gestor · Pedidos (`orders-nuxt/app/pages/index.vue`)
 
