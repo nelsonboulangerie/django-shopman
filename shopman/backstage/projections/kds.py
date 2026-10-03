@@ -164,6 +164,10 @@ class KDSExitStationChipProjection:
     cancelled_items: int = 0
     #: A Saída pode dar "Pronto" por esta estação agora.
     can_mark_ready: bool = False
+    #: Estação pronta num pedido que ainda está na casa: o ticket que o Gestor
+    #: devolve à cozinha ("Voltar para Lanches", ``kds/tickets/<pk>/recall/``).
+    #: ``None`` quando não há o que devolver.
+    recall_ticket_pk: int | None = None
 
 
 @dataclass(frozen=True)
@@ -741,10 +745,36 @@ def _build_exit_preparing(*, service_date: date, today: date):
 
 
 def _build_exit_preparing_card(order: Order, tickets, *, papers, is_scheduled: bool, first_fired, now):
+    is_delivery = get_fulfillment_type(order) == "delivery"
+    return KDSExitPreparingCardProjection(
+        pk=order.pk,
+        order_ref=order.ref,
+        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
+        customer_name=(order.data or {}).get("customer", {}).get("name", "") or order.handle_ref or "",
+        fulfillment_icon="local_shipping" if is_delivery else "storefront",
+        fulfillment_label="Entrega" if is_delivery else "Retirada",
+        is_delivery=is_delivery,
+        fired_at_display=_format_time(first_fired),
+        elapsed_seconds=max(0, int((now - first_fired).total_seconds())),
+        stations=exit_station_chips(order, tickets, papers=papers, is_scheduled=is_scheduled),
+        is_scheduled=is_scheduled,
+        test_order_label=_test_order_label(order),
+    )
+
+
+def exit_station_chips(order: Order, tickets, *, papers, is_scheduled: bool = False) -> tuple[KDSExitStationChipProjection, ...]:
+    """Em que pé cada estação está com este pedido (a Saída e o cartão do Gestor).
+
+    Uma régua só para as duas telas da saída: quem falta, o papel da estação sem
+    tela, o "Pronto" que a Saída dá por ela e o ticket que volta à cozinha.
+    """
+    from shopman.shop.services import kds as kds_core
+
     by_station: dict[int, list] = {}
     for ticket in tickets:
         by_station.setdefault(ticket.kds_instance_id, []).append(ticket)
 
+    recallable = not kds_core.recall_block_reason(order) and not is_scheduled
     chips: list[KDSExitStationChipProjection] = []
     for station_tickets in by_station.values():
         station = station_tickets[0].kds_instance
@@ -774,6 +804,10 @@ def _build_exit_preparing_card(order: Order, tickets, *, papers, is_scheduled: b
             )
             if paper is not None:
                 paper_label, paper_failed = paper.label, paper.failed
+        recall_ticket_pk = None
+        if state == "done" and recallable:
+            done = [ticket for ticket in live if ticket.status == "done"]
+            recall_ticket_pk = max(done, key=lambda ticket: (ticket.completed_at or ticket.created_at, ticket.pk)).pk
         chips.append(
             KDSExitStationChipProjection(
                 station_ref=station.ref,
@@ -785,26 +819,49 @@ def _build_exit_preparing_card(order: Order, tickets, *, papers, is_scheduled: b
                 paper_failed=paper_failed,
                 cancelled_items=cancelled_items,
                 can_mark_ready=prints and bool(open_tickets) and not is_scheduled,
+                recall_ticket_pk=recall_ticket_pk,
             )
         )
     # Quem ainda falta vem primeiro; a ordem entre estações é a do nome.
     chips.sort(key=lambda chip: (chip.state == "done", chip.station_name))
+    return tuple(chips)
 
-    is_delivery = get_fulfillment_type(order) == "delivery"
-    return KDSExitPreparingCardProjection(
-        pk=order.pk,
-        order_ref=order.ref,
-        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
-        customer_name=(order.data or {}).get("customer", {}).get("name", "") or order.handle_ref or "",
-        fulfillment_icon="local_shipping" if is_delivery else "storefront",
-        fulfillment_label="Entrega" if is_delivery else "Retirada",
-        is_delivery=is_delivery,
-        fired_at_display=_format_time(first_fired),
-        elapsed_seconds=max(0, int((now - first_fired).total_seconds())),
-        stations=tuple(chips),
-        is_scheduled=is_scheduled,
-        test_order_label=_test_order_label(order),
-    )
+
+def kitchen_station_chips(orders) -> dict[str, tuple[KDSExitStationChipProjection, ...]]:
+    """As estações de cada pedido, numa leitura só (o quadro do Gestor).
+
+    ``{order.ref: chips}``; pedido sem ticket de cozinha não entra. Duas
+    consultas (tickets e papéis) para o quadro inteiro, não uma por cartão.
+    """
+    from shopman.backstage.models import KDSTicket
+    from shopman.backstage.services import kitchen_ticket_print
+
+    keyed = {order.session_key: order for order in orders if order.session_key}
+    if not keyed:
+        return {}
+    tickets_by_key: dict[str, list] = {}
+    for ticket in (
+        KDSTicket.objects.filter(session_key__in=list(keyed))
+        .exclude(kds_instance__type="expedition")
+        .select_related("kds_instance")
+        .order_by("created_at", "pk")
+    ):
+        tickets_by_key.setdefault(ticket.session_key, []).append(ticket)
+    if not tickets_by_key:
+        return {}
+    papers = kitchen_ticket_print.paper_states([
+        ticket.pk
+        for tickets in tickets_by_key.values()
+        for ticket in tickets
+        if ticket.status in ACTIVE_TICKET_STATUSES and ticket.kds_instance.print_terminal_id
+    ])
+    chips: dict[str, tuple[KDSExitStationChipProjection, ...]] = {}
+    for key, tickets in tickets_by_key.items():
+        order = keyed[key]
+        order_chips = exit_station_chips(order, tickets, papers=papers)
+        if order_chips:
+            chips[order.ref] = order_chips
+    return chips
 
 
 def _source_matches_service_date(source, *, selected_date: date, today: date) -> bool:

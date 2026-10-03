@@ -210,17 +210,6 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
   beforeEach(() => env.reset());
 
-  it("expedite POSTs the action to the expedition endpoint", async () => {
-    env.fetchData.value = board();
-    const { expedite } = useKdsBoard("bancada");
-    expedite(1, "dispatch");
-    await flushPromises();
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/kds/expedition/1/action/",
-      expect.objectContaining({ body: { action: "dispatch" } }),
-    );
-  });
-
   it("recall acts on the recent_done list", async () => {
     env.fetchData.value = board({
       tickets: [],
@@ -271,12 +260,11 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
       recent_done: [ticket({ pk: 9, status: "done" })],
       cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
     });
-    const { readOnly, start, finalize, expedite, recall, acknowledge, view } = useKdsBoard("bancada");
+    const { readOnly, start, finalize, recall, acknowledge, view } = useKdsBoard("bancada");
 
     expect(readOnly.value).toBe(true);
     start(1);
     finalize(1);
-    expedite(1, "dispatch");
     recall(9);
     acknowledge(7);
     await flushPromises();
@@ -423,96 +411,20 @@ describe("useKdsBoard — SSE da estação", () => {
   });
 });
 
-// ── A Saída: "Pronto" da estação sem tela e o canal de todas as estações ────
+// ── A Saída mudou para o Gestor (UX-G3) ──────────────────────────────────────
+// A estação de Saída não opera mais aqui: a página manda para a coluna Saída do
+// Gestor. O composable não assina mais os canais gerais por ela.
 
-function exitBoard(over: Record<string, unknown> = {}) {
-  return board({
-    instance_ref: "saida",
-    instance_name: "Saída",
-    instance_type: "expedition",
-    is_expedition: true,
-    tickets: [],
-    preparing: [
-      {
-        pk: 42,
-        order_ref: "WEB-20260926-1234",
-        channel_icon: "language",
-        customer_name: "Ana",
-        fulfillment_icon: "storefront",
-        fulfillment_label: "Retirada",
-        is_delivery: false,
-        fired_at_display: "10:40",
-        elapsed_seconds: 120,
-        is_scheduled: false,
-        test_order_label: "",
-        stations: [
-          {
-            station_ref: "lanches",
-            station_name: "Lanches",
-            prints: true,
-            state: "pending",
-            state_label: "na fila",
-            paper_label: "impresso às 10:42",
-            paper_failed: false,
-            cancelled_items: 0,
-            can_mark_ready: true,
-          },
-        ],
-      },
-    ],
-    ...over,
-  });
-}
-
-describe("useKdsBoard — Saída: Pronto pela estação sem tela", () => {
+describe("useKdsBoard: estação de Saída aposentada", () => {
   beforeEach(() => env.reset());
 
-  it("o chip vira pronto na hora e o POST vai para o pedido e a estação do card", async () => {
-    env.fetchData.value = exitBoard();
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
-    expect(chip.state).toBe("done");
-    expect(chip.can_mark_ready).toBe(false);
-    await flushPromises();
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/kds/expedition/42/printed-stations/lanches/done/",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("recusa do servidor devolve o chip e diz o porquê", async () => {
-    env.fetchData.value = exitBoard();
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Lanches tem tela: o pronto é dado lá." } });
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    await flushPromises();
-    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
-    expect(chip.state).toBe("pending");
-    expect(chip.can_mark_ready).toBe(true);
-    expect(env.sonner.error).toHaveBeenCalled();
-  });
-
-  it("chip sem Pronto não manda nada", async () => {
-    env.fetchData.value = exitBoard();
-    (env.fetchData.value as any).board.preparing[0].stations[0].can_mark_ready = false;
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    await flushPromises();
-    expect(env.fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("a Saída assina o canal de todas as estações e o dos pedidos", async () => {
+  it("a estação de Saída assina só o próprio canal (não opera mais aqui)", async () => {
     vi.useFakeTimers();
-    env.fetchData.value = exitBoard();
+    env.fetchData.value = board({ instance_ref: "saida", instance_type: "expedition", is_expedition: true, tickets: [] });
     const { unmount } = await withMountedBrowser(() => useKdsBoard("saida"));
     try {
       await flushPromises();
-      const urls = FakeEventSource.instances.map((source) => source.url);
-      expect(urls).toEqual(expect.arrayContaining(["/sse/kds/saida", "/sse/kds/main", "/sse/orders"]));
-      env.refresh.mockClear();
-      FakeEventSource.instances.find((s) => s.url === "/sse/kds/main")!.emit("backstage-kds-status-changed");
-      expect(env.refresh).toHaveBeenCalled();
+      expect(FakeEventSource.instances.map((s) => s.url)).toEqual(["/sse/kds/saida"]);
     } finally {
       unmount();
       vi.useRealTimers();

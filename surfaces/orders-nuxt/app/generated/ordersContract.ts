@@ -385,6 +385,27 @@ export interface UndoProjection {
   already_out: string;
 }
 
+/** Uma estação da Cozinha neste pedido, vista do Gestor (SUITE-UX §15). */
+export interface KitchenStationProjection {
+  station_ref: string;
+  station_name: string;
+  prints: boolean;
+  state: string;
+  state_label: string;
+  paper_label: string;
+  paper_failed: boolean;
+  cancelled_items: number;
+  can_mark_ready: boolean;
+  recall_ticket_pk: number | null;
+}
+
+/** Em que pé a Cozinha está com o pedido: o progresso por estação no cartão. */
+export interface KitchenProgressProjection {
+  order_pk: number;
+  stations: KitchenStationProjection[];
+  missing_label: string;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -468,6 +489,7 @@ export interface OrderCardProjection {
   danfe_state: string;
   danfe_problem: string;
   undo: UndoProjection | null;
+  kitchen: KitchenProgressProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */

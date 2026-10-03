@@ -54,15 +54,20 @@ def eligible_operators(*, perm: str = OPERATE_POS):
 
     Superusuário entra na lista quando tem PIN cadastrado: ver ``_eligible``.
     """
+    from shopman.backstage.permissions import surface_perm_codes
+
     qs = User.objects.filter(is_staff=True, is_active=True, pin_credential__isnull=False)
-    if perm:
-        qs = qs.filter(
-            pk__in=User.objects.with_perm(
-                perm,
+    codes = surface_perm_codes(perm)
+    if codes:
+        # ``a|b``: quem tem qualquer uma das permissões da superfície.
+        allowed = User.objects.none()
+        for code in codes:
+            allowed = allowed | User.objects.with_perm(
+                code,
                 is_active=True,
                 backend="django.contrib.auth.backends.ModelBackend",
-            ).values("pk")
-        )
+            )
+        qs = qs.filter(pk__in=allowed.values("pk"))
     return qs.order_by("first_name", "username").distinct()
 
 
@@ -79,9 +84,9 @@ def _eligible(user, perm: str | None) -> bool:
     # superusuário o ``reset_operator_pin`` (gerente não reseta o PIN do dono) e o
     # ``station_trust.autonomous_operator_for`` (terminal autônomo nunca age como
     # superusuário).
-    if perm and not user.has_perm(perm):
-        return False
-    return True
+    from shopman.backstage.permissions import has_surface_perm
+
+    return has_surface_perm(user, perm)
 
 
 def _verify_with_perm(user, raw_pin: str, perm: str | None) -> bool:

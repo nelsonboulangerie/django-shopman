@@ -215,9 +215,14 @@ def test_channel_permissions_mirror_the_views_that_serve_the_same_data():
         POSView,
         ProductionBoardView,
     )
+    from shopman.backstage.api.permissions import HasOrderBoardAccess
+    from shopman.backstage.permissions import ORDER_BOARD_PERMISSIONS
     from shopman.shop.eventstream import _BACKSTAGE_CHANNEL_RULES as rules
 
-    assert OrderQueueView.required_permission in rules["orders"]
+    # O quadro do Gestor entra por quem gerencia OU por quem expede (UX-G3): o
+    # canal ``orders`` tem de aceitar as mesmas duas, e nenhuma além.
+    assert HasOrderBoardAccess in OrderQueueView.permission_classes
+    assert set(rules["orders"]) == set(ORDER_BOARD_PERMISSIONS)
     assert KDSBoardView.required_permission in rules["kds"]
     assert ProductionBoardView.required_production_capability == "can_access_board"
     assert set(rules["production"]) == {
