@@ -18,7 +18,7 @@ superfície já nascer inteira, e termina rodando a própria trava.
 3. Escreve o app em cada lugar que enumera superfícies: Dependabot, as duas
    matrizes do `surfaces-gate.yml`, `SURFACES` do Makefile, `groups.json`,
    `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`,
-   env da URL), `CSRF_TRUSTED_ORIGINS` de dev, a env e o tile do Shopman Apps no
+   env da URL), `CSRF_TRUSTED_ORIGINS` de dev, a env e o tile da Central no
    Django, `app-identity.json`, o perfil do gate de PWA e a árvore do
    `CLAUDE.md`/`README.md`.
 4. Gera os ícones PWA se o `operator-kit` tiver `node_modules`; senão, diz o comando.
@@ -30,7 +30,7 @@ superfície já nascer inteira, e termina rodando a própria trava.
 - **Quem recebe a permissão.** O gerador declara a permissão pedida em `perm=`
   (quando ela ainda não existe), cria o predicado `can_<codename>` em
   `shopman/backstage/permissions.py` e liga NELE tanto a porta do app quanto o
-  tile do Shopman Apps: os dois perguntam a mesma coisa. Enquanto ninguém a
+  tile da Central: os dois perguntam a mesma coisa. Enquanto ninguém a
   concede, só o superusuário entra (todo predicado da casa é
   `is_superuser or has_perm`). Conceder é gesto de Admin: a permissão no grupo.
 - **A copy.** O rótulo vem do argumento; descrição e convite de instalação saem
@@ -541,7 +541,7 @@ def wire_permission(repo: Repo, perm: str, label: str, article: str) -> tuple[st
     repo.replace_once(
         PERMISSIONS,
         "def can_view_operator_alerts(user) -> bool:",
-        f'def {predicate}(user) -> bool:\n    """Gate do app {label}: a porta do app e o tile do Shopman Apps."""\n'
+        f'def {predicate}(user) -> bool:\n    """Gate do app {label}: a porta do app e o tile da Central."""\n'
         f'    return is_superuser(user) or user.has_perm("{perm}")\n\n\n'
         "def can_view_operator_alerts(user) -> bool:",
     )

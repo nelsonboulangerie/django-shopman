@@ -215,7 +215,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 
 surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
-├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
+├── hub-nuxt/          Central — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
@@ -355,7 +355,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
   mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
   decidido. ⚠️ Superfície nova entra PRIMEIRO em `surfaces/registry.json` (id, diretório,
-  tipo, porta, grupo, subdomínio, env da URL, tile do Shopman Apps) e depois em cada lugar
+  tipo, porta, grupo, subdomínio, env da URL, tile da Central) e depois em cada lugar
   que enumera superfícies — medidos em 24/09/2026: `.github/dependabot.yml` (cadência),
   `surfaces-gate.yml` (teste e PWA), `SURFACES` no Makefile, `operator-router/groups.json`,
   `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`, env da

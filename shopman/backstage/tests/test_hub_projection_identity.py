@@ -1,4 +1,4 @@
-"""O Shopman Apps e as superfícies chamam cada app pelo MESMO nome.
+"""A Central e as superfícies chamam cada app pelo MESMO nome.
 
 O dono viu um app com dois nomes: o tile do launcher dizia "Gestor de Pedidos", a barra
 de título da janela dizia "Gestor"; a Cozinha era "Cozinha" no rail e "KDS" no título.
@@ -66,9 +66,9 @@ def test_tile_fallback_icon_matches_surface(tile_ref: str, app: str) -> None:
 
 
 def test_every_operator_app_has_a_tile() -> None:
-    """Superfície nova sem tile é app que ninguém acha; o Shopman Apps é o único launcher."""
+    """Superfície nova sem tile é app que ninguém acha; a Central é o único launcher."""
     identity = _identity()
-    # O Shopman Apps é o próprio launcher: não tem tile dentro de si.
+    # A Central é o próprio launcher: não tem tile dentro de si.
     expected = {app for app in identity if app != "hub"}
     assert set(TILE_TO_APP.values()) == expected
 

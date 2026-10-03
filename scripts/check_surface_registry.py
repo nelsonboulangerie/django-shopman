@@ -10,7 +10,7 @@ ficaram fora das origens de dev do CSRF até 24/09/2026. Nenhum dos dois quebrou
 teste: faltar é silencioso por natureza.
 
 O `surfaces/registry.json` é a tabela única (id, diretório, tipo, porta, serviço,
-subdomínio, env da URL, tile do Shopman Apps). Este script confere cada lugar
+subdomínio, env da URL, tile da Central). Este script confere cada lugar
 inventariado contra ela e, quando algo diverge, diz QUAL ARQUIVO e O QUE falta.
 O inventário que originou a lista está no PR #1111.
 

@@ -86,7 +86,7 @@ Cópias mortas: `orders-nuxt` carrega `Ui/Button.vue`, `Ui/Input.vue`, `Ui/Texta
 ### 1.3 A fronteira entre os apps
 
 **Não existe app switcher.** Existe uma porta, e ela é de volta: o ícone do app no topo
-do `OperatorRail` vira seta e leva ao Shopman Apps. Os sete apps não-hub a passam.
+do `OperatorRail` vira seta e leva à Central. Os sete apps não-hub a passam.
 
 **Quatro links de app para app em todo o repositório, e só UM carrega contexto:**
 
