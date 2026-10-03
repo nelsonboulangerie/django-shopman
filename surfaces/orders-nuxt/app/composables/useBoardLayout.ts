@@ -26,8 +26,8 @@ import {
 } from "../../../operator-kit/app/presentation/queueColumns";
 
 export const BOARD_ZONE_KEYS = ["intake", "prep", "expedition"] as const;
-/** `?columns=expedition`: abre o quadro já como posto de saída (a Saída da Cozinha
- *  aposentada manda para cá com isto; ver `kds-nuxt/app/presentation/exitMoved.ts`). */
+/** `?columns=expedition`: abre o quadro já como posto de saída (o índice de estações
+ *  da Cozinha manda a estação de Saída para cá; ver `kds-nuxt/app/presentation/exitStation.ts`). */
 export const BOARD_COLUMNS_QUERY = "columns";
 export const BOARD_LAYOUT_PATH = "/api/v1/backstage/orders/board-layout/";
 /** Espera depois do último gesto antes de gravar (arrastar e apertar 1/2/3 em sequência). */

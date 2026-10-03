@@ -176,7 +176,7 @@ function pickSort(key: SortKey) {
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const zoneTitles = computed<Record<string, string>>(() => Object.fromEntries(zones.value.map((z) => [z.key, z.title])));
 const boardLayout = useBoardLayout(() => zoneTitles.value);
-// A Saída da Cozinha aposentada (e qualquer bookmark de posto de saída) chega com
+// O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
 // `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
 onMounted(() => {

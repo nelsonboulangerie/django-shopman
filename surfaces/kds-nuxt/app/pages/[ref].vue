@@ -10,7 +10,6 @@ import type {
 } from "~/types/kds";
 import { isExpeditionCard, shortDateLabel, splitRef } from "~/presentation/board";
 import type { KDSDensity } from "~/presentation/board";
-import { gestorExitUrl } from "~/presentation/exitMoved";
 
 const route = useRoute();
 const router = useRouter();
@@ -40,18 +39,9 @@ const {
   acknowledge,
 } = useKdsBoard(stationRef.value, serviceDate);
 
-// A Saída mudou para o Gestor (UX-G3, SUITE-UX §15): a estação de Saída não tem
-// mais tela aqui. O quiosque que guardou este endereço vai para a coluna Saída do
-// Gestor, já como posto de saída; enquanto o navegador troca de página, a tela diz
-// para onde foi e oferece o link (nunca uma página vazia).
-const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
-watch(
-  () => Boolean(view.value?.isExpedition),
-  (isExit) => {
-    if (isExit && exitUrl && import.meta.client) void navigateTo(exitUrl, { external: true, replace: true });
-  },
-  { immediate: true },
-);
+// A estação de Saída não tem tela na Cozinha (UX-G3, SUITE-UX §15: a Saída é a
+// coluna Saída do Gestor). Aberta pelo endereço, é estação que não existe aqui.
+const notHere = computed(() => stationMissing.value || Boolean(view.value?.isExpedition));
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {
@@ -228,7 +218,7 @@ const asTicket = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
         <p
           class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
         >
-          {{ view?.isExpedition ? "Saída" : "Preparo" }}
+          Preparo
         </p>
         <h1 class="truncate text-lg font-bold leading-tight">
           {{ view?.instanceName || stationRef }}
@@ -395,7 +385,7 @@ const asTicket = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       <!-- Estação que não existe mais (404): não é falha de conexão, e o board em
            cache seria de uma estação que sumiu. Diz o que houve e leva à lista. -->
       <div
-        v-if="stationMissing"
+        v-if="notHere"
         class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-300"
       >
         <p>Esta estação não existe mais. Escolha a estação deste dispositivo na lista.</p>
@@ -419,7 +409,7 @@ const asTicket = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       >
         Sem conexão: mostrando o último estado. Reconectando…
       </p>
-      <template v-if="view && !stationMissing">
+      <template v-if="view && !notHere">
         <!-- cancelled (loud — único lugar onde o vermelho é alerta de verdade) -->
         <TransitionGroup
           v-if="view.cancelled.length"
@@ -469,33 +459,9 @@ const asTicket = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           </article>
         </TransitionGroup>
 
-        <!-- A Saída mudou para o Gestor (UX-G3): a estação de Saída não tem tela
-             aqui. O navegador já está indo para lá; se não for (sem a URL do
-             Gestor), o link fica à mão. -->
-        <div
-          v-if="view.isExpedition"
-          class="grid place-items-center gap-3 rounded-md border border-dashed py-20 text-center"
-          data-testid="exit-moved"
-        >
-          <Icon name="lucide:package-check" class="size-10 text-muted-foreground" />
-          <p class="text-3xl font-bold">A Saída agora fica no Gestor</p>
-          <p class="max-w-md text-base text-muted-foreground">
-            Entregar, despachar e dar o pronto das estações sem tela: tudo na coluna Saída do Gestor.
-          </p>
-          <a
-            v-if="exitUrl"
-            :href="exitUrl"
-            class="inline-flex h-12 items-center gap-2 rounded-md bg-foreground px-5 text-base font-semibold text-background transition hover:bg-foreground/90"
-            data-testid="exit-moved-link"
-          >
-            <Icon name="lucide:arrow-right" class="size-5" />
-            Abrir a Saída no Gestor
-          </a>
-        </div>
-
         <!-- empty — estação zerada: estado calmo/acolhedor (omotenashi) -->
         <div
-          v-else-if="!view.cards.length"
+          v-if="!view.cards.length"
           class="grid place-items-center gap-3 rounded-md border border-dashed py-20 text-center"
         >
           <div

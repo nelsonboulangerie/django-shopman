@@ -2,7 +2,7 @@
 // Station picker — choose which station this screen shows. KDS-refined grammar
 // (dark, distance-reading), aligned with the station/expedition cards.
 import type { KDSIndexResponse } from "~/types/kds";
-import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitMoved";
+import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
 
 const { data, pending } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
   key: "kds-index",

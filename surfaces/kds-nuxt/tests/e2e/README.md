@@ -20,20 +20,20 @@ npm run test:e2e
 
 ## O que fica para o reviewer local (Django real)
 
-Login efetivo, lock (Opção C), ações reais (iniciar e finalizar pelo botão do card, desfazer dentro da janela, expedir, recall), o beep
+Login efetivo, lock (Opção C), ações reais (iniciar e finalizar pelo botão do card, desfazer dentro da janela, recall), o beep
 de novo ticket e o SSE ao vivo exigem a stack completa + gateway (SSE é same-origin).
 
 ## Prévia dos cards (sem Django)
 
 O mesmo mock tem um modo de prévia (`KDS_MOCK_FIXTURE=preview`): toda requisição entra
-autenticada e as estações `bancada` (preparo) e `saida` servem os pedidos de
+autenticada e a estação `bancada` (preparo) serve os pedidos de
 `previewFixtures.mjs` — curto, longo com observação e nota de cozinha, atrasado,
-iFood, adicional, comanda antiga e o pedido de teste do iFood. Iniciar, finalizar e
-despachar mudam o quadro; reiniciar volta ao começo.
+iFood, adicional, comanda antiga e o pedido de teste do iFood. Iniciar e finalizar
+mudam o quadro; reiniciar volta ao começo.
 
 ```bash
 npm run preview:cards          # mock :8799 + nuxt dev :3013
-# http://127.0.0.1:3013/bancada  ·  http://127.0.0.1:3013/saida
+# http://127.0.0.1:3013/bancada
 node tests/preview/capture.mjs http://127.0.0.1:3013 /tmp/kds-preview after
 ```
 

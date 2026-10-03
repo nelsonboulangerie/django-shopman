@@ -36,13 +36,18 @@ com `backstage.operate_kds`. O POSTO se chama "Expedição" (UX-POSTO1); a COLUN
 - Quem só expede não abre o detalhe (403), não aceita, não recusa, não cancela, não mexe em
   iFood; a barra do Gestor fica só com "Pedidos"; o cartão não tem link nem "Atender".
 
-## Aposentar a Saída da Cozinha
-- `kds-nuxt/app/pages/[ref].vue`: estação `expedition` → `navigateTo(<Gestor>/?columns=expedition,
-  external)`, e a tela diz "A Saída agora fica no Gestor" com o link enquanto troca de página.
-  Os endereços antigos (`/expedicao`, `/estacao/expedicao`) já caem em `/saida` pelo routeRules.
-- Índice das estações leva a Saída direto ao Gestor. Estações de preparo e `/pickup` ficam.
+## Aposentar a Saída da Cozinha (zero legado, decisão do dono 03/10)
+- A Cozinha não tem tela de Saída: `kds-nuxt/app/pages/[ref].vue` trata a estação `expedition`
+  como estação que não existe aqui (o mesmo aviso de estação inexistente, com o link para a lista).
+  Sem redirect para o Gestor e sem página de "mudou".
+- Saíram os redirects `/expedicao` e `/estacao/expedicao` → `/saida` (`nuxt.config.ts`).
+  **Bookmarks de quiosque da Saída deixam de funcionar, por decisão do dono.**
+- O caminho é o índice das estações: a estação de Saída leva direto a `<Gestor>/?columns=expedition`
+  (`app/presentation/exitStation.ts`). Por isso `KDS__NUXT_PUBLIC_ORDERS_URL` continua nos dois
+  specs de `.do/`: o índice precisa da URL do Gestor.
 - Gestor: `?columns=expedition` abre só com a Saída (guardado no posto) e o parâmetro sai da URL.
-- `KDS__NUXT_PUBLIC_ORDERS_URL` nos dois specs de `.do/`.
+- Saíram também o E2E do redirect (`exitMoved.spec.ts`) e os quadros de Saída da prévia local
+  (`previewFixtures.mjs`, `capture.mjs`).
 - Removido por estar sem uso: `KdsExpeditionCard.vue`, `KdsExitPreparingCard.vue` (e testes),
   write-side da Saída no `useKdsBoard` (expedir, desfazer, pronto da estação, SSE geral da Saída),
   `exitChipView`/`handoff*` da apresentação do KDS.
@@ -66,7 +71,6 @@ com `backstage.operate_kds`. O POSTO se chama "Expedição" (UX-POSTO1); a COLUN
   (`test_eventstream_permissions`, `test_permissions::TestKitchenGroup`).
 
 ## Fora
-- E2E Playwright (`kds-nuxt/tests/e2e/exitMoved.spec.ts`, novo) não rodou: sem Chromium aqui.
 - O "Visão: Saída" ainda é lembrado por posto (`Terminal.metadata.gestor_board`); o vínculo do
   posto "Expedição" é da UX-POSTO1.
 - Quem só expede ainda recebe 403 silencioso de `channels/attention` (sinal de Canais) no

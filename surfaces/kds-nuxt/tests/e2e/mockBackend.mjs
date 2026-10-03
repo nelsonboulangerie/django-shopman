@@ -6,8 +6,8 @@
 // como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
 //
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
-// estações `bancada` (preparo) e `saida` servem os quadros de previewFixtures.mjs,
-// com iniciar/finalizar/expedir mudando o quadro. Serve para VER os cards sem Django.
+// estação `bancada` (preparo) serve os quadros de previewFixtures.mjs, com
+// iniciar/finalizar mudando o quadro. Serve para VER os cards sem Django.
 import { createServer } from "node:http";
 import { createPreviewState } from "./previewFixtures.mjs";
 
@@ -41,11 +41,6 @@ const BOARD = {
     cancelled_tickets: [],
     recent_done: [],
   },
-};
-
-// A estação de Saída (aposentada, UX-G3): a página manda para o Gestor.
-const EXIT_BOARD = {
-  board: { ...BOARD.board, instance_ref: "saida", instance_name: "Saída", instance_type: "expedition", is_expedition: true, preparing: [] },
 };
 
 // Board público do cliente — o /pickup renderiza sem sessão de operador.
@@ -85,7 +80,6 @@ const server = createServer((req, res) => {
     if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
     if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
   }
-  if (/\/kds\/saida\/?(\?|$)/.test(url)) return json(res, 200, EXIT_BOARD);
   if (/\/kds\/[^/]+\/?(\?|$)/.test(url)) return json(res, 200, BOARD); // /kds/<ref>/
   if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, INDEX); // índice de estações
   return json(res, 200, {});
