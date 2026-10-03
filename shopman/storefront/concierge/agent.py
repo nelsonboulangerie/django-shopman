@@ -27,9 +27,9 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import allergens, house_rules, small_talk
+from . import allergens, dialogue, house_rules, small_talk
 from . import tools as tools_module
-from .metrics import LAYER_AGENT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
+from .metrics import LAYER_AGENT, LAYER_CONTEXT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,11 @@ class AgentOutcome:
     #: que a conversa guarda quando a alergia foi respondida pelo aviso da casa.
     team_triage: object | None = None
     triage_update: object | None = None
+    #: Memória da conversa (``dialogue``): o estado que valia no começo do turno e
+    #: o que a resolução quer gravar. ``None`` quando o turno não passou por ela
+    #: (mídia, teto diário): aí o estado fica como estava.
+    memory: object | None = None
+    memory_memos: list[dict] = field(default_factory=list)
 
 
 def _config() -> dict:
@@ -323,6 +328,25 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
     customer_text = _current_customer_text(conversation)
     is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
+
+    # Memória (v2, bloco 2): "sim", "o segundo", "mais 2" se resolvem contra o
+    # estado explícito da conversa, sem modelo. Sem referente que ainda valha, a
+    # casa pergunta; nunca supõe.
+    memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
+    resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
+    memos = [resolution.memo] if resolution.memo else []
+    if resolution.answers_without_model:
+        return AgentOutcome(
+            reply_text=resolution.reply,
+            handoff=resolution.outcome == "handoff",
+            handoff_reason=resolution.handoff_reason,
+            layer=LAYER_COURTESY if resolution.outcome == "courtesy" else LAYER_CONTEXT,
+            memory=memory,
+            memory_memos=memos,
+        )
+    if resolution.text:
+        customer_text = resolution.text
+
     courtesy = small_talk.small_talk_kind(customer_text)
     if courtesy:
         # "Bom dia", "obrigado", "tchau": a resposta é cortesia da casa, curta.
@@ -336,6 +360,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 customer_text, kind=courtesy, shop_name=shop_name, is_first_turn=is_first_turn
             ),
             layer=LAYER_COURTESY,
+            memory=memory,
         )
 
     from .prompt import _shop
@@ -350,6 +375,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
     allergy = _allergy_outcome(conversation, customer_text, channel_ref=channel_ref)
     if allergy is not None:
+        allergy.memory = memory
         return allergy
 
     client = client or build_client()
@@ -368,9 +394,12 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         is_first_turn=is_first_turn,
         cart_summary=_cart_summary(conversation, channel_ref),
     )
+    memory_text = "\n".join(part for part in (memory.prompt_lines(), resolution.note) if part)
+    if memory_text:
+        system.append({"type": "text", "text": f"## Memória da conversa (estado da casa)\n{memory_text}"})
 
     messages: list[dict] = list(history)
-    outcome = AgentOutcome(reply_text="")
+    outcome = AgentOutcome(reply_text="", memory=memory, memory_memos=memos)
     usage: dict = {}
     seen_calls: dict[str, int] = {}
     tool_specs = tools_module.TOOL_SPECS
@@ -461,6 +490,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                     outcome.tool_events.append(
                         {"name": "search_storefront", "input": arguments, "ok": True}
                     )
+                    outcome.memory_memos.append(dialogue.memo_of("search_storefront", arguments, result))
                     canonical_replies["search_storefront:{}"] = rendered
             outcome.reply_text = (
                 "\n\n".join(dict.fromkeys(canonical_replies.values()))
@@ -507,6 +537,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 elif use.name in {"set_item", "set_fulfillment"}:
                     outcome.quote_token = ""
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
+            memo = dialogue.memo_of(use.name, arguments, result)
+            if memo:
+                outcome.memory_memos.append(memo)
             results.append(
                 {
                     "type": "tool_result",

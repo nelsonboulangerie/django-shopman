@@ -1471,6 +1471,9 @@ SHOPMAN_CONCIERGE = {
     # Janela de memória enviada ao modelo (mensagens) e teto diário por conversa.
     "window_messages": int(os.environ.get("CONCIERGE_WINDOW_MESSAGES", "40")),
     "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
+    # Memória da conversa: por quantos dias o pedido entregue ou cancelado segue como
+    # "pedido recente" ("chegou, obrigado", "esqueci o suco"), ou até o próximo pedido.
+    "recent_order_days": int(os.environ.get("CONCIERGE_RECENT_ORDER_DAYS", "7")),
     # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
     "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
