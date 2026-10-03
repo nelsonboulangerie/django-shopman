@@ -1784,8 +1784,18 @@ class OrderBoardLayoutView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         try:
             columns = save_columns(station, payload.get("columns"))
-        except LayoutError as exc:
-            return Response({"detail": str(exc), "field": "columns"}, status=400)
+        except LayoutError:
+            # A tela só manda o que o kit higienizou; recusa aqui é defeito, não
+            # conversa com o operador. O motivo fica no log, a resposta é fixa.
+            logger.warning("order_board_layout.rejected", exc_info=True)
+            return Response(
+                {
+                    "detail": "Arrumação das colunas inválida. Nada foi guardado.",
+                    "field": "columns",
+                    "errors": {"columns": ["Arrumação das colunas inválida."]},
+                },
+                status=400,
+            )
         if columns is None:
             return Response({"detail": "O posto deste dispositivo não está mais ativo."}, status=409)
         return Response({"station": station, "columns": columns})

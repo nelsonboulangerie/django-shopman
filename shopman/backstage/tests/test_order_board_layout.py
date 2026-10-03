@@ -10,12 +10,11 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
-from django.test import Client
 from django.urls import resolve, reverse
 from shopman.cashman.models import Terminal
 
-from shopman.backstage import station_trust
 from shopman.backstage.services import order_board_layout
+from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Shop
 
 pytestmark = pytest.mark.django_db
@@ -27,25 +26,6 @@ SAIDA = {
     "prep": {"open": False, "weight": 1},
     "expedition": {"open": True, "weight": 1},
 }
-
-
-class _Resposta:
-    def __init__(self):
-        self.cookies = {}
-
-    def set_cookie(self, nome, valor, **kw):
-        self.cookies[nome] = valor
-
-    def delete_cookie(self, nome, **kw):
-        self.cookies.pop(nome, None)
-
-
-def _provisiona(cliente: Client, ref: str) -> None:
-    requisicao = type("R", (), {"COOKIES": dict(cliente.cookies), "META": {}})()
-    resposta = _Resposta()
-    station_trust.provision(requisicao, resposta, ref)
-    for nome, token in resposta.cookies.items():
-        cliente.cookies[nome] = token
 
 
 @pytest.fixture
@@ -72,7 +52,7 @@ def passe(db):
 
 @pytest.fixture
 def cliente_no_posto(client, operador, passe):
-    _provisiona(client, passe.ref)
+    trust_station(client, passe.ref)
     client.force_login(operador)
     return client
 
@@ -114,6 +94,7 @@ def test_todas_recolhidas_e_recusado(cliente_no_posto, passe):
 
     assert resposta.status_code == 400
     assert resposta.json()["field"] == "columns"
+    assert resposta.json()["detail"] == "Arrumação das colunas inválida. Nada foi guardado."
     passe.refresh_from_db()
     assert "gestor_board" not in passe.metadata
 
@@ -145,7 +126,7 @@ def test_guardado_corrompido_le_como_vazio(cliente_no_posto, passe):
 def test_sem_permissao_de_pedidos_nao_le_nem_grava(client, passe):
     Shop.objects.create(name="Loja")
     user = User.objects.create_user("sem-perm", password="pw", is_staff=True)
-    _provisiona(client, passe.ref)
+    trust_station(client, passe.ref)
     client.force_login(user)
 
     assert client.get(reverse(URL)).status_code == 403
