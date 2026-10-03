@@ -159,7 +159,16 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer` ou `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+
+Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
+a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
+request}` (`asked_at` ISO 8601; vale 30 minutos; `request` é a fala do cliente, até 300 caracteres).
+Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O cancelamento passa por
+`customer_orders.cancel(order, actor="concierge")`, a mesma régua do site (`can_cancel`), e grava
+`Order.data["cancelled_by"] = "concierge"`, o evento `concierge_cancelled` (ator `concierge`,
+`payload = {note: "Cancelado pela Concierge a pedido do cliente: \"<fala>\"", conversation_id}`) e
+uma nota na conversa (`ConversationMessage` `kind=note`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
@@ -176,7 +185,7 @@ cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
 `layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
 laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
-`agent_handoff` (o agente chamou a equipe). `triage.classifier` é `anthropic` ou `jev`; `source` como
+`agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
 `envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
 cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
@@ -189,6 +198,18 @@ e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `a
 `Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
 como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
 Registros anteriores a 03/10/2026 têm `usage = {}`.
+Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
+`purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
+repaired, recorded, violations, replaced?}`. `version` é a versão da tabela (inteiro); `held`,
+`repaired`, `recorded` são listas ordenadas de ids de regra (`R1`…`R14`) pelo efeito: `held`
+(segurada; só aparece aqui quando escapou até a última trava, e vai também para o log
+`concierge.house_rule_unenforced`), `repaired` (palavra consertada, a resposta saiu) e `recorded`
+(só medida, hoje a forma R11 da resposta da casa). `violations` é `[{rule, effect, found}]`, com
+`found` cortado em 80 caracteres (o que R13 acha vira `[dado pessoal omitido]`). As violações consertadas no turno vão no primeiro bloco.
+`replaced` só existe no aviso de handoff que substituiu uma resposta segurada em `run_turn`: é o
+mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Conversation.handoff_reason`
+começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
@@ -278,7 +299,7 @@ for key in (
 | `fiscal.tax_id` | `string` | POS checkout ("CPF na nota") · checkout da loja na entrega (`fiscal_tax_id` do payload, só dígitos) · concierge `set_fulfillment(tax_id)` | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão), `DeliveryFiscalIdentityRule` (porta do pedido de entrega) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `fiscal.issue_override` | `dict` | `backstage.services.orders.emit_fiscal_on_demand` (Últimas vendas do PDV, `POST pos/orders/<ref>/emit-fiscal/`, sempre após `validate_manager_override`) | `shop.services.fiscal.emission_resolver` (passa por cima da regra), `fiscal.issue_override` | Emissão AVULSA da NFC-e que a regra da casa não emitiu: `{approved_by, requested_by, at}` — `approved_by` é o username do gerente VERIFICADO pelo desafio (crachá ou PIN), `requested_by` o ator do PDV, `at` ISO datetime. Presente ⇒ `emission_resolver` diz sim para ESTE pedido. Escritor único; gravada na mesma transação da Directive (sem Directive, a chave não fica). Evento `fiscal_issue_override` no OrderEvent. Só vale para venda sem nota em andamento (`fiscal_state == not_expected`), do dia de operação da venda, ou até `pos.late_fiscal_emission_days` dias depois (Shop.defaults) e com pagamento capturado quando a cobrança exige. ⚠️ A nota sai com a data e a hora da emissão, não da venda |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
-| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
+| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry: `{sku, hold_id, qty}` |
 | `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by = "pos:edit"`; a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |

@@ -118,6 +118,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
     ),
+    "CONCIERGE_CANCEL_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_KEPT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
     "CONCIERGE_GREETING": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
@@ -126,12 +138,20 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
+    "CONCIERGE_IDENTITY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/house_rules.py", "WhatsApp", "Concierge: regras da casa"),
+    ),
     "CONCIERGE_MEDIA_UNSUPPORTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+    ),
+    "CONCIERGE_PRICE_NEGOTIATION": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/house_rules.py", "WhatsApp", "Concierge: regras da casa"),
     ),
     "CONCIERGE_SMALL_TALK_FAREWELL": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

@@ -1738,9 +1738,9 @@ def render_result(name: str, result: dict) -> str:
         if result.get("found") is False:
             return "Não encontrei essa informação no conteúdo público da loja. Posso chamar a equipe."
         if result.get("overview"):
-            rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
+            rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} ({i['price']})" for i in c['examples']) for c in result.get("collections", [])]
         else:
-            rows = [f"{_display_name(i['name'])} — {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
+            rows = [f"{_display_name(i['name'])}: {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
         rows.extend(_display_text(answer.get("answer")) for answer in result.get("answers", []))
         for link in result.get("links", []):
             url = str(link.get("url") or "")
@@ -1752,7 +1752,7 @@ def render_result(name: str, result: dict) -> str:
             rows.append("Qual deles você prefere?")
         return "\n".join(rows)
     if name in {"view_cart", "set_item", "set_fulfillment", "review_order"}:
-        rows = [f"{i['qty']} × {_display_name(i['name'])} — {i['line_total']}" for i in result.get("lines", [])]
+        rows = [f"{i['qty']} × {_display_name(i['name'])}: {i['line_total']}" for i in result.get("lines", [])]
         if not rows:
             return "Sua sacola está vazia. Escolha um produto para começar."
         rows.append(f"Total: {result.get('total', '')}")
@@ -1792,7 +1792,7 @@ def render_result(name: str, result: dict) -> str:
     if name == "order_status":
         rows = []
         for order in result.get("orders", []):
-            rows.append(f"Pedido {order['order_ref']} — {order['title']}. {order['message']} Total: {order['total']}.")
+            rows.append(f"Pedido {order['order_ref']}: {order['title']}. {order['message']} Total: {order['total']}.")
             for action in order.get("actions", []):
                 if action.get("enabled"):
                     href = action.get("href") or order["tracking_url"]

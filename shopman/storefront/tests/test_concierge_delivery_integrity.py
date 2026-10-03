@@ -120,6 +120,8 @@ def test_pix_second_block_failure_preserves_first(monkeypatch):
         lambda **kwargs: agent.AgentOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-CANONICAL"],
+            # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
+            order_ref="ORD-TEST-1",
         ),
     )
     adapter_class().send_outcomes["manychat-wa"] = [
