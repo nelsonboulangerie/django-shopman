@@ -1,0 +1,185 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>
+.sw{display:inline-block;width:40px;height:24px;border-radius:999px;position:relative;background:var(--muted);border:1px solid var(--border)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25)}
+.sw-on{background:var(--success);border-color:var(--success)} .sw-on::after{left:18px}
+.cat-sel-1{background:color-mix(in oklab,var(--primary) 6%,transparent)}
+.cat-box-1{background:var(--primary);border-color:var(--primary)} .cat-box-0{border-color:var(--input);background:var(--card)} .cat-box-0 svg{display:none}
+.cat-st{display:none}
+.cat-st-low,.cat-st-out,.cat-st-sync{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:600}
+.cat-st-low{background:color-mix(in oklab,var(--warning) 12%,transparent);color:var(--warning)} .cat-st-low::before{content:"● Pouco estoque"}
+.cat-st-out{background:color-mix(in oklab,var(--destructive) 12%,transparent);color:var(--destructive)} .cat-st-out::before{content:"● Esgotado"}
+.cat-st-sync{background:color-mix(in oklab,var(--destructive) 12%,transparent);color:var(--destructive)} .cat-st-sync::before{content:"● Esgotado · volta ~10:40"}
+.chrow{display:grid;grid-template-columns:96px minmax(0,1fr) auto;align-items:center;gap:8px;height:45px;padding:0 8px 0 12px;border-top:1px solid var(--border)}
+</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Gestor" icon="square-kanban"}}
+    <a class="rail-item"><i data-i="clipboard-list"></i>Pedidos<span class="badge">10</span></a>
+    <a class="rail-item on"><i data-i="book-open"></i>Catálogo<span class="attn"></span></a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="monitor-smartphone"></i>Canais</a>
+    <div class="w-9 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-item"><i data-i="settings-2"></i>Ajustes</a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0 relative">
+    <header class="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Catálogo</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>09:58</span>
+        <div class="w-2"></div>
+        {{> search3 w="w-[20rem]" placeholder="Buscar produto ou SKU"}}
+        <button class="h-10 px-3 rounded-full border border-dashed border-border inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="plus" class="size-4"></i>Filtro</button>
+        <div class="flex-1"></div>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="columns-3" class="size-4"></i>Colunas</button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-0.5 overflow-hidden">
+        <span class="op-eyebrow text-muted-foreground mr-2">Coleção</span>
+        <a class="h-9 px-3 rounded-md inline-flex items-center gap-1.5 op-label font-semibold bg-background border border-border shadow-sm">Todas <span class="tnum text-muted-foreground">131</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Rústicos <span class="tnum">23</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Macios <span class="tnum">18</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Folhados <span class="tnum">7</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Salgados <span class="tnum">18</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Doces <span class="tnum">16</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Bebidas quentes <span class="tnum">11</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground">Mercearia <span class="tnum">46</span></a>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden px-4 pt-3">
+      <!-- item de aviso na própria lista: precisa de você -->
+      <div class="mb-3 rounded-lg border border-warning/40 bg-warning/8 pl-3 pr-2 h-14 flex items-center gap-3 w-[800px]">
+        <span class="size-8 rounded-full bg-warning/15 text-warning grid place-items-center"><i data-i="tag" class="size-4"></i></span>
+        <p class="op-body"><b class="font-semibold">2 produtos novos sem vocação</b> <span class="text-muted-foreground">· Focaccia do dia, Kuro Pan</span></p>
+        <div class="flex-1"></div>
+        <button class="h-10 px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold">Classificar</button>
+      </div>
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <div class="grid grid-cols-[44px_minmax(0,1fr)_repeat(4,92px)_1px_repeat(4,80px)] items-center h-11 bg-muted/60 border-b border-border op-eyebrow text-muted-foreground">
+          <div class="pl-4"><span class="size-5 rounded border-2 border-input bg-card block"></span></div>
+          <div class="pl-2">Produto</div>
+          <div class="text-center">PDV</div><div class="text-center">Site</div><div class="text-center">iFood</div><div class="text-center">WhatsApp</div>
+          <div class="h-full bg-border"></div>
+          <div class="text-center">Meta</div><div class="text-center">Google</div><div class="text-center">TV 1</div><div class="text-center">TV 2</div>
+        </div>
+        {{> catrow sel="0" name="Baguete Gergelim" sku="BGG" price="R$ 18,00" col="Rústicos" st="" ifood="on" initial="B" tint="#8b6b2e"}}
+        {{> catrow sel="0" name="Baguette de Tradition" sku="BGT" price="R$ 17,00" col="Rústicos" st="" ifood="on" initial="B" tint="#8b6b2e"}}
+        {{> catrow sel="0" name="Brioche Nanterre" sku="BRNT" price="R$ 22,00" col="Macios" st="low" ifood="on" initial="B" tint="#c8962f"}}
+        <div class="ring-2 ring-primary ring-inset bg-primary/5">{{> catrow sel="0" name="Croissant Manteiga" sku="CRO" price="R$ 13,00" col="Folhados" st="sync" ifood="off" initial="C" tint="#965411"}}</div>
+        {{> catrow sel="0" name="Pain au Chocolat" sku="PCHOC" price="R$ 15,00" col="Folhados" st="" ifood="on" initial="P" tint="#965411"}}
+        {{> catrow sel="0" name="Bichon au Citron" sku="BICH" price="R$ 18,00" col="Doces" st="out" ifood="off" initial="B" tint="#7c3a40"}}
+        {{> catrow sel="0" name="Madeleine" sku="MDLN" price="R$ 6,00" col="Doces" st="" ifood="on" initial="M" tint="#7c3a40"}}
+        {{> catrow sel="0" name="Shokupan" sku="FORMA" price="R$ 24,00" col="Macios" st="" ifood="on" initial="S" tint="#c8962f"}}
+        {{> catrow sel="0" name="Ciabatta" sku="CI" price="R$ 14,00" col="Rústicos" st="" ifood="on" initial="C" tint="#8b6b2e"}}
+      </div>
+    </div>
+    <!-- véu sobre a lista -->
+    <div class="absolute inset-0 bg-foreground/25 z-10"></div>
+
+    <!-- PAINEL DO PRODUTO (sheet direito 520px) -->
+    <section class="absolute right-0 top-0 bottom-0 w-[520px] bg-card border-l border-border shadow-2xl z-20 flex flex-col">
+      <div class="px-5 pt-4 pb-3 flex items-start gap-3">
+        <span class="size-12 rounded-lg grid place-items-center text-white text-lg font-semibold shrink-0" style="background:#965411">C</span>
+        <div class="min-w-0 flex-1">
+          <h2 class="op-title !text-[19px] leading-6">Croissant Manteiga</h2>
+          <p class="op-micro text-muted-foreground"><span class="font-mono">CRO</span> · <span class="tnum">R$ 13,00</span> · Folhados · Vendável · Produzido</p>
+        </div>
+        <button class="size-control rounded-md border border-border grid place-items-center" title="Mais: Ocultar do catálogo, Permitir compra, Histórico"><i data-i="ellipsis" class="size-5"></i></button>
+        <button class="size-control rounded-md grid place-items-center text-muted-foreground" title="Fechar (Esc)"><i data-i="x" class="size-5"></i></button>
+      </div>
+      <nav class="px-5 flex items-center gap-1 border-b border-border">
+        <a class="h-11 px-3 inline-flex items-center op-label font-semibold shadow-[inset_0_-2px_0_var(--primary)]">Geral</a>
+        <a class="h-11 px-2.5 inline-flex items-center op-label text-muted-foreground">Preço e config</a>
+        <a class="h-11 px-2.5 inline-flex items-center op-label text-muted-foreground">Ingredientes e nutrição</a>
+        <a class="h-11 px-2.5 inline-flex items-center op-label text-muted-foreground">Redes sociais</a>
+        <a class="h-11 px-2.5 inline-flex items-center op-label text-muted-foreground">Fiscal</a>
+      </nav>
+
+      <div class="flex-1 overflow-hidden px-5 pt-3 flex flex-col gap-3">
+        <!-- Nome -->
+        <label class="flex flex-col gap-1">
+          <span class="op-label text-muted-foreground">Nome no cardápio</span>
+          <span class="h-10 px-3 rounded-md border border-input bg-background flex items-center op-body">Croissant Manteiga</span>
+        </label>
+
+        <!-- Vocação -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-baseline gap-2">
+            <span class="op-label font-semibold">Vocação</span>
+            <span class="op-micro text-muted-foreground">serve ao B.I.; não muda a venda</span>
+            <span class="ml-auto op-micro text-primary font-semibold inline-flex items-center gap-1"><span class="size-1.5 rounded-full bg-primary"></span>alterado</span>
+          </div>
+          <div class="grid grid-cols-3 bg-secondary p-1 rounded-lg h-12">
+            <button class="rounded-md op-label text-muted-foreground inline-flex items-center justify-center gap-2"><i data-i="coffee" class="size-4"></i>Consome aqui</button>
+            <button class="rounded-md op-label text-muted-foreground inline-flex items-center justify-center gap-2"><i data-i="shopping-bag" class="size-4"></i>Leva</button>
+            <button class="rounded-md op-label font-semibold bg-card shadow-sm inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4 text-primary"></i>Os dois</button>
+          </div>
+                  </div>
+
+        <!-- Disponibilidade nos canais -->
+        <div class="rounded-lg border border-border overflow-hidden">
+          <div class="px-3 pt-2.5 pb-2 bg-muted/50">
+            <div class="flex items-center gap-2">
+              <span class="op-label font-semibold">Disponibilidade nos canais</span>
+              <span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-destructive"></span>Esgotado desde 09:52</span>
+              <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
+            </div>
+            <p class="op-micro text-muted-foreground mt-1">Volta <b class="text-foreground font-semibold">~10:40</b>: lote de 42 no forno. Segue o estoque em todos os canais.</p>
+          </div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="globe" class="size-4 text-muted-foreground"></i>Site</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Esgotado</b> <span class="text-muted-foreground">· volta ~10:40 (lote no forno)</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="truncate">"Me avise" ligado, 3 esperando</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="store" class="size-4 text-muted-foreground"></i>PDV</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Esgotado</b> <span class="text-muted-foreground">· volta ~10:40 (lote no forno)</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="truncate">selo no botão, venda desativada</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="bike" class="size-4 text-muted-foreground"></i>iFood</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Indisponível</b> <span class="text-muted-foreground">· volta ~10:40</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="h-5 px-1.5 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1 shrink-0"><i data-i="sparkles" class="size-3"></i>automático</span><span class="truncate">enviado às 09:52</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="message-circle" class="size-4 text-muted-foreground"></i>WhatsApp</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Esgotado</b> <span class="text-muted-foreground">· volta ~10:40 (lote no forno)</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="truncate">&nbsp;</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="rss" class="size-4 text-muted-foreground"></i>Meta</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Fora de estoque</b> <span class="text-muted-foreground">· volta ~10:40</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="h-5 px-1.5 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1 shrink-0"><i data-i="sparkles" class="size-3"></i>automático</span><span class="truncate">enviado às 09:53</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="rss" class="size-4 text-muted-foreground"></i>Google</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Fora de estoque</b> <span class="text-muted-foreground">· volta ~10:40</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="h-5 px-1.5 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1 shrink-0"><i data-i="sparkles" class="size-3"></i>automático</span><span class="truncate">enviado às 09:53</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="chrow"><span class="op-label inline-flex items-center gap-2"><i data-i="tv" class="size-4 text-muted-foreground"></i>TV 1 e 2</span><div class="min-w-0 leading-4"><p class="op-micro whitespace-nowrap"><b class="text-destructive font-semibold">Esgotado</b> <span class="text-muted-foreground">· volta ~10:40 (lote no forno)</span></p><p class="op-micro text-muted-foreground flex items-center gap-1.5 whitespace-nowrap"><span class="truncate">letreiro mostra "esgotado"</span></p></div><button class="h-8 px-2.5 rounded-md border border-border op-label inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button></div>
+          <div class="px-3 py-2 border-t border-border bg-muted/30 flex items-start gap-2">
+            <i data-i="sparkles" class="size-4 text-muted-foreground mt-0.5"></i>
+            <p class="op-micro text-muted-foreground leading-4">O sistema avisa o iFood, a Meta e o Google sozinho quando zera e quando volta. Pausar é para o que não é falta de estoque.</p>
+          </div>
+          <!-- pausa manual aberta: motivo -->
+          <div class="px-3 py-2.5 border-t border-border bg-background">
+            <div class="flex items-center gap-2">
+              <span class="op-label font-semibold whitespace-nowrap">Pausar em todos:</span>
+              <button class="h-8 px-2.5 rounded-full border border-primary bg-primary/10 op-label font-semibold inline-flex items-center gap-1"><i data-i="check" class="size-3.5 text-primary"></i>Qualidade</button>
+              <button class="h-8 px-2.5 rounded-full border border-border op-label">Decisão da casa</button>
+              <button class="h-8 px-2.5 rounded-full border border-border op-label">Outro</button>
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <p class="op-micro text-muted-foreground flex-1 leading-4">Fica pausado mesmo com lote novo, até alguém ativar. O "Me avise" não dispara.</p>
+              <button class="h-9 px-3 rounded-md op-label text-muted-foreground">Cancelar</button>
+              <button class="h-9 px-3 rounded-md border border-foreground op-label font-semibold inline-flex items-center gap-1.5"><i data-i="pause" class="size-3.5"></i>Pausar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-border flex items-center gap-3 bg-card">
+        <p class="op-micro text-muted-foreground flex-1">Descrição, foto e unidade seguem abaixo <i data-i="chevron-down" class="size-3 inline"></i></p>
+        <button class="h-control px-3 rounded-md op-label text-muted-foreground">Descartar</button>
+        <button class="h-control px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold">1 campo alterado · Salvar</button>
+      </div>
+    </section>
+  </main>
+  <span class="pin" style="left:96px;top:142px">1</span>
+  <span class="pin" style="left:930px;top:46px">2</span>
+  <span class="pin" style="left:930px;top:186px">3</span>
+  <span class="pin" style="left:930px;top:286px">4</span>
+  <span class="pin" style="left:1030px;top:462px">5</span>
+  <span class="pin" style="left:1408px;top:620px">6</span>
+  <span class="pin" style="left:930px;top:712px">7</span>
+  <span class="pin" style="left:1410px;top:862px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Catálogo · painel do produto · v4 <span>CADASTRO com o interruptor operacional no lugar; Vocação no produto</span></p>
+  <div><b>1</b>Produto novo sem Vocação vira item na própria lista ("precisa de você"), com Classificar de um toque; não é sino solto.</div>
+  <div><b>2</b>Painel lateral de 520 px sobre a tabela esmaecida; as 5 abas de sempre. ⋯ guarda Ocultar, Permitir compra, Histórico.</div>
+  <div><b>3</b>Vocação: Consome aqui · Leva · Os dois. Escreve em ProductConsumptionTag (o modelo não muda). Entra no rascunho do painel.</div>
+  <div><b>4</b>Disponibilidade nos canais: um estado só ("Esgotado desde 09:52"), a hora provável de volta e o porquê (lote de 42 no forno).</div>
+  <div><b>5</b>iFood, Meta e Google ficam indisponíveis e voltam sozinhos pela mesma regra de estoque do site: marca "automático", sem gesto.</div>
+  <div><b>6</b>Pausar continua por canal e em todos, mas só para o que não é estoque, com motivo de lista curta (Qualidade, Decisão da casa, Outro).</div>
+  <div><b>7</b>A consequência fica escrita antes do gesto: pausa segura mesmo com lote novo e não dispara o "Me avise". Pausa vale na hora.</div>
+  <div><b>8</b>Salvar diz o que mudou ("1 campo alterado"); preço por canal, sync e lote seguem na tabela como na v3.</div>
+</div>
+</body></html>

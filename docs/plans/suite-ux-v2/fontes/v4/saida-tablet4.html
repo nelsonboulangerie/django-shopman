@@ -1,0 +1,228 @@
+<!doctype html><html lang="pt-BR" class="dark"><head><meta charset="utf-8"><meta name="viewport-size" content="1260x900">
+<style>
+  .st { height:26px; padding:0 8px; border-radius:6px; display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+  .st .d { width:6px; height:6px; border-radius:99px; background:currentColor; }
+  .ln { display:flex; flex-direction:column; gap:6px; padding:9px 12px; border-radius:10px; border:1px solid var(--border); background:var(--card); }
+  .pill { height:24px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill .d { width:6px; height:6px; border-radius:99px; background:currentColor; }
+  .stripes { background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--destructive) 9%, transparent) 7px 14px); }
+  .ring-undo { background: conic-gradient(var(--success) 0 62%, color-mix(in oklab, var(--success) 18%, transparent) 62% 100%); }
+</style></head>
+<body class="font-sans antialiased" data-app="kds" style="background:#e9dfd6">
+<div class="h-[900px] relative grid place-items-center">
+<div class="device tablet"><div class="screen" style="width:1180px;height:820px"><div class="flex h-full bg-background text-foreground">
+
+  <!-- rail compacto -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Cozinha" icon="chef-hat"}}
+    <a class="rail-item"><i data-i="layout-grid"></i>Estações</a>
+    <a class="rail-item"><i data-i="flame"></i>Preparo<span class="badge">10</span></a>
+    <a class="rail-item on"><i data-i="package-check"></i>Saída<span class="badge">5</span></a>
+    <a class="rail-item"><i data-i="monitor"></i>Painel de retirada</a>
+    <div class="flex-1"></div>
+    <a class="rail-item"><i data-i="bell"></i>Avisos<span class="badge">1</span></a>
+    <a class="rail-item"><i data-i="settings-2"></i>Ajustes</a>
+    <a class="rail-item"><i data-i="lock"></i>Bloquear</a>
+    <div class="size-10 my-1 rounded-full bg-rail-foreground/15 grid place-items-center text-[13px] font-semibold text-rail-foreground">RL</div>
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- cabeçalho único -->
+    <header class="h-16 shrink-0 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div class="flex flex-col leading-none gap-1">
+        <span class="op-eyebrow text-muted-foreground">Posto Saída · este dispositivo</span>
+        <span class="flex items-center gap-2.5"><h1 class="op-display !text-[22px] leading-none">Saída da Cozinha</h1><span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span></span>
+      </div>
+      <div class="w-3"></div>
+      <label class="h-12 w-[19rem] px-3.5 rounded-md border border-input bg-background inline-flex items-center gap-2.5">
+        <i data-i="search" class="size-5 text-muted-foreground"></i>
+        <span class="flex-1 op-body text-muted-foreground truncate">Código ou cliente</span>
+      </label>
+      <button class="size-12 rounded-md border border-border bg-card grid place-items-center" title="Ler o QR do cliente"><i data-i="scan-line" class="size-5"></i></button>
+      <div class="flex-1"></div>
+      <span class="h-12 px-3 rounded-md bg-muted inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="volume-2" class="size-4.5 text-success"></i>Som da estação</span>
+      <button class="h-12 px-3.5 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold" title="Saídas recentes: desfazer em 5 s, depois reabrir no Gestor"><i data-i="history" class="size-4.5 text-muted-foreground"></i>Saídas recentes</button>
+      <span class="text-[1.625rem] font-semibold tnum leading-none pl-1">22:03</span>
+    </header>
+
+    <div class="flex-1 min-h-0 flex gap-4 p-4">
+      <!-- ============ esquerda: Em preparo (monitor) ============ -->
+      <section class="w-[372px] shrink-0 flex flex-col gap-2 min-h-0">
+        <div class="h-10 flex items-center gap-2">
+          <h2 class="op-eyebrow text-muted-foreground">Em preparo</h2><span class="op-label tnum text-muted-foreground">10</span>
+          <span class="flex-1"></span>
+          <span class="op-micro text-muted-foreground">mais atrasado primeiro</span>
+        </div>
+
+        <div class="ln !border-destructive/60 !bg-destructive/8">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">S84</b><span class="op-body text-muted-foreground truncate">Pedro Lima</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md bg-destructive text-background inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4"></i>12 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 10</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-destructive"><span class="d"></span>Forno · em preparo 12 min</span><span class="st pill-success"><i data-i="check" class="size-3.5"></i>Café</span></div>
+        </div>
+
+        <div class="ln">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">K21</b><span class="op-body text-muted-foreground truncate">Mesa 4</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-warning/60 text-warning inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4"></i>9 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 10</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-muted">Lanches · impresso 21:58</span>
+            <button class="ml-auto h-9 px-3 rounded-md border border-foreground/50 inline-flex items-center gap-1.5 text-[13px] font-semibold"><i data-i="check" class="size-4"></i>Pronto de Lanches</button></div>
+        </div>
+
+        <div class="ln">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">B52</b><span class="op-body text-muted-foreground truncate">Café Parisiense</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-border inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4 text-muted-foreground"></i>7 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 15</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-primary"><span class="d"></span>Forno · em preparo</span><span class="st pill-muted">Encomendas · na fila</span></div>
+        </div>
+
+        <div class="ln">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">W07</b><span class="op-body text-muted-foreground truncate">João Oliveira</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-border inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4 text-muted-foreground"></i>5 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 8</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-primary"><span class="d"></span>Café · em preparo</span></div>
+        </div>
+
+        <div class="ln !border-destructive/40">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">R33</b><span class="op-body text-muted-foreground truncate">Mesa 2</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-border inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4 text-muted-foreground"></i>4 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 10</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-destructive"><i data-i="printer" class="size-3.5"></i>Lanches · não imprimiu</span><button class="ml-auto h-9 px-3 rounded-md border border-border inline-flex items-center gap-1.5 text-[13px] font-semibold"><i data-i="printer" class="size-4"></i>Imprimir de novo</button></div>
+        </div>
+
+        <div class="ln">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">T18</b><span class="op-body text-muted-foreground truncate">Maria Santos</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-border inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4 text-muted-foreground"></i>2 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 10</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-muted">Forno · na fila</span><span class="st pill-muted">Café · na fila</span></div>
+        </div>
+
+        <div class="ln">
+          <div class="flex items-center gap-2.5"><b class="text-[20px] leading-none tnum">P40</b><span class="op-body text-muted-foreground truncate">iFood · Retirada</span><span class="flex-1"></span>
+            <span class="h-8 px-2.5 rounded-md border border-border inline-flex items-center gap-1.5 text-[17px] font-bold tnum"><i data-i="timer" class="size-4 text-muted-foreground"></i>1 min</span><span class="op-micro text-muted-foreground tnum w-12">meta 12</span></div>
+          <div class="flex items-center gap-1.5"><span class="st pill-muted">Forno · na fila</span></div>
+        </div>
+
+        <div class="h-11 rounded-lg border border-dashed border-border flex items-center justify-center gap-2 op-label text-muted-foreground"><b class="text-foreground tnum">+3</b> em preparo, todos no prazo<i data-i="chevron-down" class="size-4"></i></div>
+      </section>
+
+      <!-- ============ direita: Prontos para sair (o trabalho) ============ -->
+      <section class="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+        <div class="h-10 flex items-center gap-2">
+          <h2 class="op-eyebrow text-foreground">Prontos para sair</h2><span class="op-label tnum text-muted-foreground">5</span>
+          <span class="op-micro text-muted-foreground">· o mais antigo primeiro</span>
+          <span class="flex-1"></span>
+          <button class="h-10 px-3.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos</button>
+          <button class="h-10 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label"><i data-i="store" class="size-4"></i>Retirada</button>
+          <button class="h-10 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label"><i data-i="bike" class="size-4"></i>Entrega</button>
+        </div>
+
+        <div class="flex-1 min-h-0 grid grid-cols-2 grid-rows-2 gap-3">
+          <!-- U13: o próximo, retirada -->
+          <article class="rounded-xl border-2 border-primary bg-card p-4 flex flex-col gap-2.5 shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_14%,transparent)]">
+            <div class="flex items-start gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-[2.6rem] leading-[2.6rem] font-bold tnum">U13</p>
+                <p class="text-[17px] font-semibold mt-1">Ana Ferreira</p>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <span class="pill pill-primary"><span class="d"></span>Próximo</span>
+                <span class="op-label text-muted-foreground tnum">pronto há 4 min</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold"><i data-i="store" class="size-5"></i>Retirada</span>
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold tnum"><i data-i="package" class="size-5"></i>2 volumes</span>
+            </div>
+            <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="sparkles" class="size-4"></i>automático: pronto às 21:59, Forno e Café concluíram</p>
+            <button class="op-label text-muted-foreground inline-flex items-center gap-1.5 w-fit"><i data-i="list" class="size-4"></i>Ver itens (5) e observações</button>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg act-0 inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="hand-helping" class="size-5.5"></i>Entregar a Ana</button>
+          </article>
+
+          <!-- F15: bloqueado antes do gesto -->
+          <article class="rounded-xl border border-destructive/50 bg-card p-4 flex flex-col gap-2.5">
+            <div class="flex items-start gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-[2.6rem] leading-[2.6rem] font-bold tnum">F15</p>
+                <p class="text-[17px] font-semibold mt-1">João Oliveira</p>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <span class="pill pill-destructive"><span class="d"></span>Bloqueado</span>
+                <span class="op-label text-muted-foreground tnum">pronto há 3 min</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold"><i data-i="bike" class="size-5"></i>Entrega</span>
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold tnum"><i data-i="package" class="size-5"></i>1 volume</span>
+            </div>
+            <div class="rounded-md bg-destructive/12 border border-destructive/30 px-3 py-2 flex items-start gap-2">
+              <i data-i="lock" class="size-4 text-destructive mt-0.5 shrink-0"></i>
+              <p class="op-label leading-snug"><b class="text-destructive">Pix de R$ 38,00 não confirmado.</b> Sai sozinho daqui quando o pagamento entrar.</p>
+            </div>
+            <button class="op-label text-info inline-flex items-center gap-1.5 w-fit"><i data-i="arrow-up-right" class="size-4"></i>Abrir F15 no Gestor</button>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg border-2 border-dashed border-border text-muted-foreground inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold stripes"><i data-i="lock" class="size-5"></i>Despachar</button>
+          </article>
+
+          <!-- M09: iFood entrega -->
+          <article class="rounded-xl border border-border bg-card p-4 flex flex-col gap-2.5">
+            <div class="flex items-start gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-[2.6rem] leading-[2.6rem] font-bold tnum">M09</p>
+                <p class="text-[17px] font-semibold mt-1">iFood · Carla M.</p>
+              </div>
+              <div class="flex flex-col items-end gap-1.5">
+                <span class="pill pill-warning"><span class="d"></span>Entregador chegou</span>
+                <span class="op-label text-muted-foreground tnum">pronto há 1 min</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold"><i data-i="bike" class="size-5"></i>Entrega</span>
+              <span class="h-10 px-3 rounded-md bg-secondary inline-flex items-center gap-2 text-[16px] font-semibold tnum"><i data-i="package" class="size-5"></i>3 volumes</span>
+            </div>
+            <p class="op-label leading-snug"><span class="text-muted-foreground">Obs.:</span> mandar guardanapo extra; Cappuccino sem açúcar</p>
+            <button class="op-label text-muted-foreground inline-flex items-center gap-1.5 w-fit"><i data-i="list" class="size-4"></i>Ver itens (6)</button>
+            <div class="flex-1"></div>
+            <button class="h-14 rounded-lg border-2 border-foreground/80 inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="truck" class="size-5"></i>Despachar M09</button>
+          </article>
+
+          <!-- X36: acabou de ser entregue, desfazer no lugar -->
+          <article class="rounded-xl border border-success/50 bg-success/8 p-4 flex flex-col gap-2.5 relative overflow-hidden">
+            <div class="flex items-start gap-3 opacity-55">
+              <div class="flex-1 min-w-0">
+                <p class="text-[2.6rem] leading-[2.6rem] font-bold tnum line-through decoration-success/60">X36</p>
+                <p class="text-[17px] font-semibold mt-1">Maria Santos</p>
+              </div>
+              <span class="op-label text-muted-foreground tnum">2 volumes · Retirada</span>
+            </div>
+            <div class="flex-1 flex flex-col items-center justify-center gap-2 text-center">
+              <span class="size-14 rounded-full ring-undo grid place-items-center"><span class="size-11 rounded-full bg-card grid place-items-center"><i data-i="check" class="size-6 text-success"></i></span></span>
+              <p class="text-[20px] font-semibold">Entregue às 22:03</p>
+              <p class="op-label text-muted-foreground leading-snug max-w-[260px]">O aviso à cliente e o fim do pedido saem quando o prazo do desfazer acabar.</p>
+            </div>
+            <button class="h-14 rounded-lg bg-foreground text-background inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="undo-2" class="size-5"></i>Desfazer <span class="tnum opacity-70">3 s</span></button>
+          </article>
+        </div>
+
+        <div class="h-11 shrink-0 rounded-lg border border-dashed border-border flex items-center justify-center gap-2 op-label text-muted-foreground"><b class="text-foreground tnum">+2</b> prontos esperando (K44, D10) · aparecem aqui quando um destes sair</div>
+      </section>
+    </div>
+  </main>
+</div></div></div>
+
+  <span class="pin" style="left:8px;top:250px">1</span>
+  <span class="pin" style="left:374px;top:60px">2</span>
+  <span class="pin" style="left:110px;top:170px">3</span>
+  <span class="pin" style="left:110px;top:300px">4</span>
+  <span class="pin" style="left:500px;top:190px">5</span>
+  <span class="pin" style="left:850px;top:330px">6</span>
+  <span class="pin" style="left:850px;top:620px">7</span>
+  <span class="pin" style="left:500px;top:810px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Cozinha · Saída da Cozinha no tablet fixo da saída · v4 <span>FILA do expedidor: 3 a 4 prontos grandes à direita, 5 a 8 linhas de "em preparo" à esquerda (§10.3)</span></p>
+  <div><b>1</b>Rail compacto: Estações, Preparo, Saída (acesa), Painel de retirada. Ajustes é andar próprio (som, densidade e estação vêm do provisionamento, não de botão).</div>
+  <div><b>2</b>A estação vem do dispositivo ("Posto Saída"). Sem teclas impressas: é toque. Busca por código ou cliente, e o QR do cliente pela câmera.</div>
+  <div><b>3</b>Em preparo é monitor: uma linha por pedido, tempo contra a meta (um número, a cor só intensifica), e só as estações que faltam; a pronta vira um check.</div>
+  <div><b>4</b>Estação sem tela continua aqui: "Pronto de Lanches" na linha (K15) e "não imprimiu" em vermelho com reimpressão. +3 vira número, nunca página.</div>
+  <div><b>5</b>O próximo em destaque. Quando a última estação conclui, o pedido muda de coluna sozinho e diz isso ("automático"). Um gesto só: Entregar a Ana.</div>
+  <div><b>6</b>Bloqueio antes do gesto: o motivo escrito no card, o botão tracejado com cadeado, e o atalho que hoje falta ("Abrir F15 no Gestor").</div>
+  <div><b>7</b>Entregar ganhou desfazer de 5 s no próprio card. O que sai da casa (aviso à cliente, fim do pedido) espera o prazo acabar (L1).</div>
+  <div><b>8</b>Mais prontos que 4 viram "+2 esperando" com os códigos. Volumes, observações e itens sob demanda no card: o núcleo da Saída é chamar e conferir.</div>
+</div>
+</body></html>

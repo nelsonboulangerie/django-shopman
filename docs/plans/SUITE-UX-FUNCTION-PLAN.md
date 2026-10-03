@@ -594,3 +594,36 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
    Ganham tela ou ficam como estão?
 
 Aprovado isso, a próxima rodada desenha o rosto de cada forma, por dispositivo, a partir da v3.
+
+## 14. Prévias v4: o rosto da função (03/10/2026)
+
+15 telas, cada uma com pinos numerados e legenda que diz qual lei ou forma ela materializa.
+Imagens em [`suite-ux-v2/v4/`](suite-ux-v2/v4/); fontes, gerador e spec (`SPEC4.md`) em
+`suite-ux-v2/fontes/v4/`.
+
+| Tela | Forma · lei | Arquivo |
+|---|---|---|
+| PDV · Venda (desktop) | COMPOSIÇÃO: lista + total + Pagamento; editor da linha sob demanda; 13 linhas visíveis (hoje 8, v3 10) | `pos-sale.jpg` |
+| PDV · tablet (segundo posto, sem gaveta) | grade é a tela, comanda em folha; numérico só ao tocar a linha; pagamento eletrônico, dinheiro vai ao Balcão | `pos-tablet.jpg` |
+| PDV · Fim do dia | corredor de 3 passos, CONFERÊNCIA cega, pergunta do dia estranho, selo do dia | `fim-do-dia.jpg` |
+| Saída da Cozinha · tablet | FILA do expedidor; pronto automático marcado; entregar com desfazer | `saida-tablet.jpg` |
+| Cozinha · estação · tablet | 4–6 tickets, "+N na fila", bloqueio de pagamento antes do toque | `cozinha-estacao.jpg` |
+| Cozinha · celular | Saída no bolso, barista, gerente só com o aviso | `cozinha-celular.jpg` |
+| Gestor · fila | só fato humano é botão; "o sistema fez · desfazer" | `gestor-fila.jpg` |
+| Gestor · produto | Vocação no cadastro; canais externos respeitam o estoque; pausa manual com motivo | `catalogo-produto.jpg` |
+| Compras · Doca · celular | recebimento por exceção; validade sempre pedida, em um toque | `compras-validade.jpg` |
+| Produção · Qualidade | qualidade em lote, exceções à parte | `producao-qualidade.jpg` |
+| Produção · Planejamento | o porquê na linha (L3); falta de insumo no planejar | `plano-porque.jpg` |
+| B.I. · Sobrou ou faltou | LEITURA: pergunta, resposta, comparação, aprofundar | `bi-sobra.jpg` |
+| PDV · Ajustes › Salão | editor visual de mesas; vale a partir de hoje | `salao-mesas.jpg` |
+| Marketing · celular | fila de decisões por prazo; selo com digital | `marketing-decisoes.jpg` |
+| Shopman Apps | a fila das filas | `hub.jpg` |
+
+**Propostas novas que as prévias assumem (pedem o "sim" do dono):** confirmar envio do Marketing
+com a digital do dispositivo (a frase digitada fica como alternativa) e segunda pessoa acima de um
+limiar; desfazer de 5 s em Entregar/Despachar na Saída; dinheiro no tablet do PDV vira "receber"
+na fila do Balcão.
+
+**Não desenhado (só na legenda):** passo 2 do Fim do dia (contar a vitrine, mesmo contador por
+produto), abertura de caixa, editor de mesas no tablet, diálogo de exceção assinada do Gestor.
+

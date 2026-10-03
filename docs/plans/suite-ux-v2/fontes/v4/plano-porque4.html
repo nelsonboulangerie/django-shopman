@@ -1,0 +1,190 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>
+.rail-item.sm{font-size:10px;letter-spacing:-.3px}
+.prow{display:grid;grid-template-columns:290px minmax(0,1fr) 168px 176px;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.eq b{font-weight:600;color:var(--foreground)}
+</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="production">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Produção" icon="croissant"}}
+    <a class="rail-item sm on"><i data-i="layout-grid"></i>Planejamento<kbd>Alt1</kbd></a>
+    <a class="rail-item sm"><i data-i="scale"></i>Preparação<kbd>Alt2</kbd></a>
+    <a class="rail-item sm"><i data-i="flame"></i>Produção<kbd>Alt3</kbd></a>
+    <a class="rail-item sm"><i data-i="package"></i>Expedição<kbd>Alt4</kbd></a>
+    <div class="w-9 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-item sm"><i data-i="alarm-clock"></i>Timers</a>
+    <a class="rail-item sm"><i data-i="settings-2"></i>Ajustes</a>
+    {{> rail3bottom bell="2" initials="CP" operator="Chefe de produção"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Planejamento</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>15:20</span>
+        <div class="w-2"></div>
+        {{> search3 w="w-[18rem]" placeholder="Buscar produto ou SKU"}}
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-3 pr-1">
+          <p class="op-label whitespace-nowrap"><span class="op-title tnum">4</span> <span class="text-muted-foreground">de 24 planejados</span></p>
+          <div class="w-24 h-2 rounded-full bg-muted overflow-hidden"><div class="h-full w-[17%] rounded-full bg-primary"></div></div>
+        </div>
+        <div class="h-control inline-flex items-stretch rounded-md border border-border bg-card overflow-hidden">
+          <button class="w-10 grid place-items-center border-r border-border text-muted-foreground"><i data-i="chevron-left" class="size-4"></i></button>
+          <button class="px-3 inline-flex items-center gap-2 op-label font-semibold"><i data-i="calendar" class="size-4 text-muted-foreground"></i>Amanhã, sáb 03/10<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+          <button class="w-10 grid place-items-center border-l border-border text-muted-foreground"><i data-i="chevron-right" class="size-4"></i></button>
+        </div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais: Atualizar, Imprimir plano, Lote extra hoje"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">24</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-primary"></span>A planejar <span class="tnum text-muted-foreground">20</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-warning"></span>Com ressalva <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-success"></span>Planejados <span class="tnum text-muted-foreground">4</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="layers" class="size-4"></i>Base: todas<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <div class="flex-1"></div>
+        <p class="op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="sun" class="size-4"></i>Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na conta)</p>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden px-4 pt-3">
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <div class="prow !py-0 h-10 bg-muted/60 op-eyebrow text-muted-foreground">
+          <div>Produto</div><div>Por que este número</div><div>Quantidade</div><div></div>
+        </div>
+
+        <!-- Croissant: tudo inline -->
+        <div class="prow bg-warning/5">
+          <div class="min-w-0">
+            <p class="op-title">Croissant Manteiga <span class="op-micro font-mono font-normal text-muted-foreground">CRO</span></p>
+            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>6 un. para 08:30 · 2 encomendas</span>
+          </div>
+          <div class="min-w-0 flex flex-col gap-1">
+            <p class="op-body eq text-muted-foreground"><b>Sugestão 52</b> = projeção de sábado <b>44</b> + encomendas <b>6</b> + margem <b>2</b></p>
+            <p class="op-label text-destructive inline-flex items-center gap-1.5"><i data-i="clock-alert" class="size-4"></i>acabou às 10:40 em 3 dos últimos 4 sábados <span class="text-muted-foreground font-normal">(a projeção já soma o que deixou de vender)</span></p>
+            <div class="mt-0.5 h-9 pl-2.5 pr-1 rounded-md bg-warning/12 inline-flex items-center gap-2 self-start">
+              <i data-i="triangle-alert" class="size-4 text-warning"></i>
+              <span class="op-label"><b class="font-semibold">Manteiga: dá para 40; faltam 3 kg</b> <span class="text-muted-foreground font-normal">· Laticínios Serra entrega sex até 16h</span></span>
+              <a class="h-7 px-2.5 rounded bg-card border border-border op-label font-semibold inline-flex items-center gap-1">Pedir no Compras<i data-i="arrow-up-right" class="size-3.5"></i></a>
+            </div>
+          </div>
+          <div class="flex items-center rounded-md border border-input h-12 bg-background">
+            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
+            <span class="flex-1 text-center op-figure">52</span>
+            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
+          </div>
+          <div class="flex flex-col items-stretch gap-1">
+            <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 52</button>
+            <a class="op-micro text-primary font-semibold text-center underline underline-offset-2">ou 40 (cabe na manteiga)</a>
+          </div>
+        </div>
+
+        <!-- Pain au Chocolat -->
+        <div class="prow">
+          <div class="min-w-0">
+            <p class="op-title">Pain au Chocolat <span class="op-micro font-mono font-normal text-muted-foreground">PCHOC</span></p>
+            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>2 un. para 09:00</span>
+          </div>
+          <div class="min-w-0 flex flex-col gap-1">
+            <p class="op-body eq text-muted-foreground"><b>Sugestão 38</b> = projeção de sábado <b>34</b> + encomendas <b>2</b> + margem <b>2</b></p>
+            <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="circle-check" class="size-4 text-success"></i>na medida em 3 dos últimos 4 sábados · insumos ok</p>
+          </div>
+          <div class="flex items-center rounded-md border border-input h-12 bg-background">
+            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
+            <span class="flex-1 text-center op-figure">38</span>
+            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
+          </div>
+          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 38</button>
+        </div>
+
+        <!-- Baguette -->
+        <div class="prow">
+          <div class="min-w-0">
+            <p class="op-title">Baguette de Tradition <span class="op-micro font-mono font-normal text-muted-foreground">BGT</span></p>
+            <p class="op-micro text-muted-foreground mt-1">sem encomendas</p>
+          </div>
+          <div class="min-w-0 flex flex-col gap-1">
+            <p class="op-body eq text-muted-foreground"><b>Sugestão 50</b> = projeção de sábado <b>56</b> − sobra de costume <b>8</b> + margem <b>2</b></p>
+            <p class="op-label text-warning inline-flex items-center gap-1.5"><i data-i="archive" class="size-4"></i>sobrou em 3 dos últimos 4 sábados (média 9 un.)</p>
+          </div>
+          <div class="flex items-center rounded-md border border-input h-12 bg-background">
+            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
+            <span class="flex-1 text-center op-figure">50</span>
+            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
+          </div>
+          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 50</button>
+        </div>
+
+        <!-- Bichon: número editado -->
+        <div class="prow">
+          <div class="min-w-0">
+            <p class="op-title">Bichon au Citron <span class="op-micro font-mono font-normal text-muted-foreground">BICH</span></p>
+            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>4 un. para 11:00</span>
+          </div>
+          <div class="min-w-0 flex flex-col gap-1">
+            <p class="op-body eq text-muted-foreground"><b>Sugestão 30</b> = projeção de sábado <b>24</b> + encomendas <b>4</b> + margem <b>2</b></p>
+            <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="clock" class="size-4"></i>acabou às 15:10 em 1 dos últimos 4 sábados · insumos ok</p>
+          </div>
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center rounded-md border-2 border-primary h-12 bg-background">
+              <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
+              <span class="flex-1 text-center op-figure">32</span>
+              <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
+            </div>
+            <p class="op-micro text-muted-foreground text-center">você mudou de 30 · <a class="text-primary font-semibold underline underline-offset-2">voltar</a></p>
+          </div>
+          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 32</button>
+        </div>
+
+        <!-- conjunto -->
+        <div class="px-4 h-[68px] flex items-center gap-4 bg-muted/40">
+          <span class="size-9 rounded-full bg-card border border-border grid place-items-center"><i data-i="list-checks" class="size-4 text-muted-foreground"></i></span>
+          <div class="flex-1">
+            <p class="op-body"><b class="font-semibold">+16 produtos sem ressalva</b> <span class="text-muted-foreground">· insumos ok, sem encomenda, sem falta nem sobra repetida</span></p>
+            <p class="op-micro text-muted-foreground">Pain de Campagne 34, Kuro Pan 12, Baguete Gergelim 30, Focaccia do dia 10 e mais 12</p>
+          </div>
+          <button class="h-12 px-4 rounded-md border border-border bg-card op-label font-semibold inline-flex items-center gap-2"><i data-i="list" class="size-4"></i>Ver um a um</button>
+          <button class="h-12 px-4 rounded-md border border-primary text-primary op-label font-semibold inline-flex items-center gap-2"><i data-i="check-check" class="size-4"></i>Planejar os 16 como sugerido</button>
+        </div>
+        <div class="px-4 h-9 flex items-center gap-2 border-t border-border bg-muted/60"><span class="op-eyebrow text-muted-foreground">Planejados</span><span class="op-micro tnum text-muted-foreground">4</span></div>
+        <!-- Brioche: já planejado -->
+        <div class="prow bg-success/5 border-t border-border">
+          <div class="min-w-0">
+            <p class="op-title">Brioche Nanterre <span class="op-micro font-mono font-normal text-muted-foreground">BRNT</span></p>
+            <p class="op-micro text-muted-foreground mt-1">sem encomendas</p>
+          </div>
+          <div class="min-w-0"><p class="op-body eq text-muted-foreground"><b>Sugestão 20</b> = projeção de sábado <b>18</b> + margem <b>2</b> · insumos ok</p></div>
+          <p class="op-figure text-center">20</p>
+          <div class="flex items-center justify-end gap-2">
+            <span class="h-8 px-3 rounded-full bg-success/12 text-success op-label font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><i data-i="check" class="size-4"></i>Planejado 15:12</span>
+            <button class="size-10 rounded-md grid place-items-center text-muted-foreground" title="Corrigir, Zerar, Ver encomendas"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+        </div>
+
+        <div class="px-4 h-12 flex items-center gap-3 border-t border-border bg-success/5 op-label">
+          <i data-i="check" class="size-4 text-success"></i><span>Ciabatta <b class="tnum">26</b> · Shokupan <b class="tnum">18</b> · Madeleine <b class="tnum">70</b></span><span class="text-muted-foreground op-micro">planejados às 15:12 como sugerido</span>
+        </div>
+      </div>
+    </div>
+  </main>
+  <span class="pin" style="left:384px;top:160px">1</span>
+  <span class="pin" style="left:1020px;top:196px">2</span>
+  <span class="pin" style="left:1000px;top:234px">3</span>
+  <span class="pin" style="left:360px;top:246px">4</span>
+  <span class="pin" style="left:1400px;top:198px">5</span>
+  <span class="pin" style="left:1030px;top:446px">6</span>
+  <span class="pin" style="left:1366px;top:640px">7</span>
+  <span class="pin" style="left:1404px;top:530px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Produção · Planejamento · v4 <span>PLANEJAR com o porquê no lugar da decisão (L3, EXPLICAR NO LUGAR)</span></p>
+  <div><b>1</b>O "por quê" deixou de ser diálogo: a conta inteira na linha (projeção + encomendas + margem), zero toque (P02).</div>
+  <div><b>2</b>Falta e sobra reais vêm do B.I. para a linha: "acabou às 10:40 em 3 dos últimos 4 sábados", "sobrou em 3 de 4".</div>
+  <div><b>3</b>Falta de insumo aparece na hora de planejar, não na finalização: "Manteiga: dá para 40; faltam 3 kg", com Pedir no Compras.</div>
+  <div><b>4</b>Encomendas com hora no chip ("6 un. para 08:30"): o primeiro compromisso define a prioridade do lote (P06).</div>
+  <div><b>5</b>Uma primária por linha, com o número: "Planejar 52". A alternativa que cabe no estoque fica ao lado, como link.</div>
+  <div><b>6</b>Número editável na própria linha (stepper, teclado digita); mudou, a linha mostra "você mudou de 30 · voltar" e o botão segue o número.</div>
+  <div><b>7</b>Planejado vira estado (feito, com hora); Corrigir, Zerar e Ver encomendas descem para o menu da linha (P03).</div>
+  <div><b>8</b>O que não tem ressalva vira conjunto: um "sim" do responsável para os 16, ou ver um a um. A ocasião e o clima ficam no cabeçalho.</div>
+</div>
+</body></html>

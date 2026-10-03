@@ -1,0 +1,155 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1260x900"><style>
+  .rail-ico { width:48px; height:48px; border-radius:12px; display:grid; place-items:center; position:relative; color: color-mix(in oklab, var(--rail-foreground) 82%, transparent); }
+  .rail-ico svg { width:24px !important; height:24px !important; }
+  .rail-ico.on { background: var(--rail-foreground); color: var(--rail); box-shadow: 0 1px 2px rgb(0 0 0/.18); }
+  .rail-ico .badge { position:absolute; top:1px; right:0; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font-size:11px; line-height:18px; font-weight:700; text-align:center; }
+  .rail-lbl { font-size:10.5px; font-weight:600; line-height:12px; color: color-mix(in oklab, var(--rail-foreground) 75%, transparent); text-align:center; margin-top:-2px; }
+  .lotchip { height:40px; padding:0 12px; border-radius:999px; background:var(--background); border:1px solid var(--border); display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:600; white-space:nowrap; }
+  .lotchip b { font-variant-numeric:tabular-nums; color:var(--muted-foreground); font-weight:600; }
+</style></head>
+<body class="font-sans antialiased" data-app="production" style="background:#e9dfd6">
+<div class="h-[900px] relative grid place-items-center">
+  <div class="device tablet"><div class="screen" style="width:1180px;height:820px"><div class="flex h-full bg-background text-foreground">
+  <aside class="w-[72px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 py-2">
+    <button class="size-12 rounded-xl grid place-items-center relative mb-1" style="background:var(--app-color)" title="Produção: trocar de app"><i data-i="chef-hat" class="size-6 text-white"></i><span class="absolute -bottom-1 -right-1 size-5 rounded-full bg-rail-foreground grid place-items-center shadow"><i data-i="layout-grid" class="size-3 text-rail"></i></span></button>
+    <div class="w-8 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-ico" title="Plano"><i data-i="clipboard-list"></i></a><span class="rail-lbl">Plano</span>
+    <a class="rail-ico" title="Preparo"><i data-i="cooking-pot"></i></a><span class="rail-lbl">Preparo</span>
+    <a class="rail-ico" title="Expedição"><i data-i="flame"></i><span class="badge">3</span></a><span class="rail-lbl">Expedição</span>
+    <a class="rail-ico on" title="Qualidade"><i data-i="badge-check"></i><span class="badge">8</span></a><span class="rail-lbl !text-rail-foreground">Qualidade</span>
+    <a class="rail-ico" title="Timers"><i data-i="timer"></i></a><span class="rail-lbl">Timers</span>
+    <div class="flex-1"></div>
+    <a class="rail-ico" title="Ajustes: receitas, relatórios"><i data-i="settings-2"></i></a><span class="rail-lbl">Ajustes</span>
+    <a class="rail-ico mt-1" title="Avisos"><i data-i="bell"></i><span class="badge">2</span></a>
+    <div class="size-10 mt-1 rounded-full bg-rail-foreground/15 grid place-items-center text-[13px] font-semibold text-rail-foreground">AD</div>
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="h-16 shrink-0 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div>
+        <p class="text-[22px] font-semibold leading-tight">Qualidade</p>
+        <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>22:03 · sáb 03/10 · lotes fechados hoje</p>
+      </div>
+      <div class="flex-1"></div>
+      <div class="h-12 p-1 rounded-xl bg-secondary inline-flex items-center gap-1">
+        <button class="h-full px-4 rounded-lg bg-card shadow-sm text-[15px] font-semibold">Para confirmar <span class="tnum text-muted-foreground">8</span></button>
+        <button class="h-full px-4 rounded-lg text-[15px] text-muted-foreground">Confirmados <span class="tnum">9</span></button>
+      </div>
+      <button class="size-12 rounded-full grid place-items-center" title="Buscar lote ou produto"><i data-i="search" class="size-[22px]"></i></button>
+      <button class="size-12 rounded-full border border-border grid place-items-center" title="Mais: ver dias anteriores, imprimir relatório de perdas"><i data-i="ellipsis" class="size-[22px]"></i></button>
+    </header>
+
+    <div class="flex-1 min-h-0 flex gap-4 p-4">
+      <!-- ============ SEM EXCEÇÃO: um portão ============ -->
+      <section class="w-[560px] shrink-0 flex flex-col gap-3">
+        <h2 class="op-eyebrow text-muted-foreground flex items-center gap-2">Sem exceção <span class="tnum">6</span></h2>
+        <div class="rounded-2xl border-2 border-primary bg-card p-5 flex flex-col">
+          <div class="flex items-start gap-3.5">
+            <span class="size-12 rounded-full bg-success/12 text-success grid place-items-center shrink-0"><i data-i="check-check" class="size-7"></i></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[24px] font-semibold leading-tight">6 lotes de hoje sem exceção</p>
+              <p class="text-[15px] text-muted-foreground mt-1 tnum">184 peças, todas no padrão · perda 0 · desconto 0</p>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-xl bg-muted/50 p-3">
+            <div class="flex flex-wrap gap-2">
+              <span class="lotchip">Baguette de Tradition <b>48</b></span>
+              <span class="lotchip">Pain au Chocolat <b>36</b></span>
+              <span class="lotchip">Madeleine <b>40</b></span>
+              <span class="lotchip">Brioche <b>24</b></span>
+              <span class="lotchip">+2</span>
+            </div>
+            <button class="mt-2 h-11 px-1 inline-flex items-center gap-1.5 text-[15px] font-semibold text-primary">Ver os 6 lotes<i data-i="chevron-down" class="size-4"></i></button>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="rounded-xl border border-border p-3">
+              <p class="op-micro text-muted-foreground">Fechados por</p>
+              <p class="text-[15px] font-semibold mt-0.5">Rafael · Joana</p>
+              <p class="text-[13px] text-muted-foreground tnum">entre 06:10 e 13:40</p>
+            </div>
+            <div class="rounded-xl border border-border p-3">
+              <p class="op-micro text-muted-foreground">Ao confirmar</p>
+              <p class="text-[15px] font-semibold mt-0.5 flex items-center gap-1.5"><i data-i="bell-ring" class="size-4 text-primary"></i><span class="tnum">23</span> clientes avisados</p>
+              <p class="text-[13px] text-muted-foreground">"Me avise" de 4 produtos</p>
+            </div>
+          </div>
+
+          <button class="mt-5 h-14 w-full rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold shadow-[0_4px_12px_rgb(0_0_0/.15)]"><i data-i="badge-check" class="size-6"></i>6 lotes, nenhuma exceção · Confirmar</button>
+          <p class="mt-2 text-center text-[13px] text-muted-foreground">Você confirma como responsável pela qualidade. Fica registrado com seu nome.</p>
+        </div>
+
+        <div class="rounded-xl border border-dashed border-border px-4 py-3 flex items-center gap-3">
+          <i data-i="flame" class="size-5 text-muted-foreground shrink-0"></i>
+          <p class="flex-1 text-[14px] text-muted-foreground">3 lotes ainda no forno ou sem fechar. Entram aqui quando a Expedição fechar.</p>
+          <button class="h-11 px-3 rounded-lg text-[14px] font-semibold text-primary inline-flex items-center gap-1">Expedição<i data-i="arrow-right" class="size-4"></i></button>
+        </div>
+      </section>
+
+      <!-- ============ EXCEÇÕES ============ -->
+      <section class="flex-1 min-w-0 flex flex-col gap-3">
+        <h2 class="op-eyebrow text-muted-foreground flex items-center gap-2">Exceções para olhar <span class="tnum">2</span></h2>
+
+        <article class="rounded-2xl border border-warning/50 bg-card p-4">
+          <div class="flex items-start gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[18px] font-semibold leading-tight">Croissant</p>
+              <p class="text-[13px] text-muted-foreground tnum">Lote #WO-118 · fechado por Rafael 07:25</p>
+            </div>
+            <span class="h-7 px-2.5 rounded-full pill-warning text-[12px] font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Perda 2</span>
+          </div>
+          <div class="mt-3 h-3 rounded-full bg-muted overflow-hidden flex"><span class="bg-success" style="width:96.7%"></span><span class="bg-destructive" style="width:3.3%"></span></div>
+          <div class="mt-1.5 flex justify-between text-[13px] tnum"><span><b class="font-semibold">58</b> padrão</span><span class="text-destructive"><b class="font-semibold">2</b> perda · "Assou demais"</span></div>
+          <p class="mt-2 text-[13px] text-muted-foreground flex items-center gap-1.5"><i data-i="info" class="size-4 shrink-0"></i>Entraram 60. Perda típica do Croissant: 1 por lote.</p>
+          <div class="mt-3 flex gap-2">
+            <button class="h-12 px-4 rounded-xl border border-border bg-card text-[15px] font-semibold inline-flex items-center gap-2"><i data-i="pencil" class="size-4"></i>Corrigir</button>
+            <button class="h-12 flex-1 rounded-xl bg-primary text-primary-foreground text-[15px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-5"></i>Confirmar assim</button>
+          </div>
+        </article>
+
+        <article class="rounded-2xl border border-warning/50 bg-card p-4">
+          <div class="flex items-start gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[18px] font-semibold leading-tight">Bichon au Citron</p>
+              <p class="text-[13px] text-muted-foreground tnum">Lote #WO-121 · fechado por Joana 11:50</p>
+            </div>
+            <span class="h-7 px-2.5 rounded-full pill-warning text-[12px] font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Desconto 6</span>
+          </div>
+          <div class="mt-3 h-3 rounded-full bg-muted overflow-hidden flex"><span class="bg-success" style="width:75%"></span><span class="bg-warning" style="width:25%"></span></div>
+          <div class="mt-1.5 flex justify-between text-[13px] tnum"><span><b class="font-semibold">18</b> padrão</span><span class="text-warning"><b class="font-semibold">6</b> regular (−30%) · "Formato irregular"</span></div>
+          <p class="mt-2 text-[13px] text-muted-foreground flex items-center gap-1.5"><i data-i="tag" class="size-4 shrink-0"></i>Já está na vitrine e no site com o preço remarcado.</p>
+          <div class="mt-3 flex gap-2">
+            <button class="h-12 px-4 rounded-xl border border-border bg-card text-[15px] font-semibold inline-flex items-center gap-2"><i data-i="pencil" class="size-4"></i>Corrigir</button>
+            <button class="h-12 flex-1 rounded-xl bg-primary text-primary-foreground text-[15px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-5"></i>Confirmar assim</button>
+          </div>
+        </article>
+
+        <div class="flex-1"></div>
+        <p class="text-[13px] text-muted-foreground flex items-start gap-1.5 px-1"><i data-i="info" class="size-4 shrink-0 mt-0.5"></i>Exceção é lote com perda, desconto ou contagem acima do que entrou no forno. Corrigir reclassifica o estoque e pede motivo.</p>
+      </section>
+    </div>
+  </main>
+  </div></div></div>
+
+  <span class="pin" style="left:150px;top:150px">1</span>
+  <span class="pin" style="left:150px;top:290px">2</span>
+  <span class="pin" style="left:560px;top:390px">3</span>
+  <span class="pin" style="left:150px;top:550px">4</span>
+  <span class="pin" style="left:150px;top:735px">5</span>
+  <span class="pin" style="left:700px;top:150px">6</span>
+  <span class="pin" style="left:700px;top:290px">7</span>
+  <span class="pin" style="left:28px;top:330px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Produção · Qualidade em lote · tablet deitado · v4 <span>CONFERÊNCIA por exceção (P19, P20; guarda "Qualidade por exceção" §5.1): o portão humano fica, como um ato só</span></p>
+  <div><b>1</b>O conjunto limpo vira UM cartão: "6 lotes de hoje sem exceção", com a soma (184 peças, perda 0, desconto 0). Antes eram 2 toques por lote e um window.confirm.</div>
+  <div><b>2</b>A lista fica recolhida (4 lotes + "+2", "Ver os 6 lotes"): quem quer olhar abre; quem confia não rola.</div>
+  <div><b>3</b>A consequência está antes do gesto (L3): quantos clientes do "Me avise" serão avisados e quem fechou os lotes.</div>
+  <div><b>4</b>Uma ação primária, com o fato escrito: "6 lotes, nenhuma exceção · Confirmar". Nada é liberado sozinho: lote que avisa cliente sempre passa por um olhar humano (L4).</div>
+  <div><b>5</b>Lotes ainda sem fechar não entram no portão; atalho para a Expedição (P16, P18).</div>
+  <div><b>6</b>Exceções à parte, uma a uma: partição padrão/perda/desconto em barra, motivo escrito, e a referência para decidir (perda típica do item).</div>
+  <div><b>7</b>Por exceção, duas saídas: "Confirmar assim" (primária) ou "Corrigir" (P20, abre o fechamento em modo correção com motivo de verdade, não texto fabricado).</div>
+  <div><b>8</b>Rail com "Qualidade" como seção própria (era aba da Expedição) e Ajustes num item só. "Confirmados" ao lado, para histórico do dia; dias anteriores e relatório de perdas no ⋯.</div>
+</div>
+</body></html>
