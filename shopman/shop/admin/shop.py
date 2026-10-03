@@ -478,6 +478,18 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminDecimalFieldWidget,
             help_text="Taxa de entrega zera a partir deste valor. 0 ou vazio = desligado.",
         ),
+        "defaults_storefront_hide_unavailable_by_default": forms.BooleanField(
+            label="Esconder indisponíveis no cardápio",
+            required=False,
+            widget=UnfoldBooleanSwitchWidget,
+            help_text=(
+                "Ligado, o cliente abre o cardápio e as coleções vendo só o que pode "
+                "pedir agora. Ele ainda pode mostrar tudo pela chave \"Mostrar só "
+                "disponíveis\". Desligado, os indisponíveis aparecem com o selo "
+                "Indisponível e o \"Me avise\". Não muda a disponibilidade, só o que "
+                "aparece."
+            ),
+        ),
         "defaults_storefront_address_map_confirmation_enabled": forms.BooleanField(
             label="Confirmar o ponto de entrega no mapa",
             required=False,
@@ -1381,6 +1393,12 @@ class ShopForm(forms.ModelForm):
             for field_name, key in DEFAULTS_RULE_Q_FIELDS:
                 self.fields[field_name].initial = _q_to_reais(rules.get(key))
 
+        if self._has("defaults_storefront_hide_unavailable_by_default"):
+            storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
+            self.fields["defaults_storefront_hide_unavailable_by_default"].initial = bool(
+                storefront.get("hide_unavailable_by_default", False)
+            )
+
         if self._has("defaults_storefront_address_map_confirmation_enabled"):
             storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
             self.fields["defaults_storefront_address_map_confirmation_enabled"].initial = bool(
@@ -1912,6 +1930,17 @@ class ShopForm(forms.ModelForm):
                 rules[key] = _reais_to_q(self.cleaned_data.get(field_name))
             defaults["rules"] = rules
 
+        if self._has("defaults_storefront_hide_unavailable_by_default"):
+            storefront = dict(defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {})
+            if self.cleaned_data.get("defaults_storefront_hide_unavailable_by_default"):
+                storefront["hide_unavailable_by_default"] = True
+            else:
+                storefront.pop("hide_unavailable_by_default", None)
+            if storefront:
+                defaults["storefront"] = storefront
+            else:
+                defaults.pop("storefront", None)
+
         if self._has("defaults_storefront_address_map_confirmation_enabled"):
             storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
             storefront = dict(storefront)
@@ -2308,13 +2337,14 @@ _MENU_FIELDSETS = (
         "Cardápio",
         {
             "fields": (
+                "defaults_storefront_hide_unavailable_by_default",
                 "defaults_dynamic_collections",
                 "defaults_notifications_backend",
             ),
             "description": (
-                "Coleções dinâmicas do cardápio (a ordem da lista define a ordem no "
-                "cardápio) e o canal padrão de notificações. As coleções vêm do "
-                "registry canônico do core."
+                "Se os indisponíveis aparecem no cardápio, as coleções dinâmicas (a "
+                "ordem da lista define a ordem no cardápio) e o canal padrão de "
+                "notificações. As coleções vêm do registry canônico do core."
             ),
         },
     ),

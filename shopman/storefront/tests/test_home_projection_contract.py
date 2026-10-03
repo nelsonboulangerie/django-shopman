@@ -86,6 +86,28 @@ def test_address_map_confirmation_kill_switch_is_off_by_default_and_tenant_scope
     assert payload["public_config"]["address_map_confirmation_enabled"] is True
 
 
+def test_hide_unavailable_by_default_comes_from_shop_storefront_defaults(rf):
+    from django.core.cache import cache
+
+    from shopman.shop.models import Shop
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.home import build_shell
+
+    shop = Shop.load() or Shop.objects.create(name="Test Padaria")
+    shop.defaults = {}
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+    assert payload["public_config"]["hide_unavailable_by_default"] is False
+
+    shop.defaults = {"storefront": {"hide_unavailable_by_default": True}}
+    shop.save(update_fields=["defaults"])
+    cache.delete(SHOP_CACHE_KEY)
+    payload = projection_data(build_shell(rf.get("/api/v1/storefront/shell/")))
+    assert payload["public_config"]["hide_unavailable_by_default"] is True
+
+
 def test_address_location_divergence_is_off_by_default_and_depends_on_map(rf):
     from django.core.cache import cache
 

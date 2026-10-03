@@ -92,6 +92,41 @@ export function filterProducts(
   return exact.concat(wordStart, contains);
 }
 
+// ── Ocultar indisponíveis ──────────────────────────────────────────────────
+// Preferência de EXIBIÇÃO do dispositivo, não regra de disponibilidade: o
+// produto inerte (esgotado ou sem preço, o mesmo critério do selo do tile) sai
+// da grade, e só. Padrão = mostrar, porque sumir da grade faz o operador
+// procurar um botão que "sumiu"; quem quer a grade enxuta liga no olho.
+
+export const HIDE_UNAVAILABLE_STORAGE_KEY = "pos.hideUnavailable";
+
+/** O produto não pode entrar no pedido agora (mesmo critério do selo do tile). */
+export function isUnavailableProduct(
+  product: Pick<POSProductProjection, "price_q" | "sold_out" | "sold_out_reason">,
+): boolean {
+  return Boolean(productBlockedLabel(product));
+}
+
+/** Tira os indisponíveis quando `hide` está ligado, e diz quantos saíram. */
+export function hideUnavailableProducts(
+  products: POSProductProjection[],
+  hide: boolean,
+): { products: POSProductProjection[]; hiddenCount: number } {
+  if (!hide) return { products, hiddenCount: 0 };
+  const visible = products.filter((product) => !isUnavailableProduct(product));
+  return { products: visible, hiddenCount: products.length - visible.length };
+}
+
+/** "1 indisponível oculto" / "3 indisponíveis ocultos". */
+export function hiddenUnavailableLabel(count: number): string {
+  return count === 1 ? "1 indisponível oculto" : `${count} indisponíveis ocultos`;
+}
+
+/** Só "1" liga; qualquer outra coisa (vazio, storage bloqueado) é o padrão: mostrar. */
+export function parseHideUnavailable(raw: unknown): boolean {
+  return raw === "1";
+}
+
 /**
  * O produto que o Enter adiciona a partir da busca: o PRIMEIRO resultado
  * DISPONÍVEL na ordem do filtro (esgotado não entra na comanda — pula). Com um

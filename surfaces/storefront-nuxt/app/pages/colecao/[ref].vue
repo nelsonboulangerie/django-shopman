@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { choiceGroupsByName, dynamicCollectionMenuTarget, resolveCatalogSections, sectionEntries } from '~/presentation/menu'
+import {
+  availableOnlyHint,
+  choiceGroupsByName,
+  dynamicCollectionMenuTarget,
+  hiddenUnavailableCount,
+  orderableItems,
+  resolveCatalogSections,
+  sectionEntries
+} from '~/presentation/menu'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -54,8 +62,16 @@ const section = computed(() => {
   return sections.find(s => s.ref === collectionRef.value) || sections[0] || null
 })
 const items = computed(() => section.value?.items || catalog.value?.items || [])
+// "Mostrar só disponíveis": a mesma chave do cardápio (padrão da casa, escolha
+// do cliente vence). SEO e JSON-LD seguem lendo a coleção inteira (`items`).
+const { availableOnly, setAvailableOnly } = useAvailableOnly()
+const unavailableInCollection = computed(() => hiddenUnavailableCount(items.value))
+const visibleItems = computed(() => availableOnly.value ? orderableItems(items.value) : items.value)
+const hiddenUnavailable = computed(() => availableOnly.value ? unavailableInCollection.value : 0)
+const showAvailableOnlyToggle = computed(() => availableOnly.value || unavailableInCollection.value > 0)
+const availableOnlyFilterHint = computed(() => availableOnlyHint(availableOnly.value, hiddenUnavailable.value))
 // Cartões de escolha (mesmo `choice_group`) entre os itens desta coleção.
-const entries = computed(() => sectionEntries(items.value, choiceGroupsByName(items.value)))
+const entries = computed(() => sectionEntries(visibleItems.value, choiceGroupsByName(visibleItems.value)))
 const title = computed(() => section.value?.label || 'Coleção')
 const description = computed(() => section.value?.description || '')
 
@@ -149,7 +165,38 @@ useHead({
         </UiAlert>
 
         <template v-else-if="items.length">
-          <div class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
+          <div
+            v-if="showAvailableOnlyToggle"
+            class="flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
+            data-collection-available-only
+          >
+            <div class="min-w-0">
+              <p class="shop-body font-semibold">Mostrar só disponíveis</p>
+              <p class="shop-meta">{{ availableOnlyFilterHint }}</p>
+            </div>
+            <UiSwitch
+              :model-value="availableOnly"
+              aria-label="Mostrar só disponíveis"
+              @update:model-value="setAvailableOnly(Boolean($event))"
+            />
+          </div>
+
+          <UiEmpty v-if="!visibleItems.length" class="border" data-collection-all-hidden>
+            <UiEmptyMedia variant="icon">
+              <Icon name="lucide:eye-off" />
+            </UiEmptyMedia>
+            <UiEmptyHeader>
+              <UiEmptyTitle>Nada disponível nesta coleção agora</UiEmptyTitle>
+              <UiEmptyDescription>
+                {{ hiddenUnavailable === 1 ? '1 item indisponível está escondido.' : `${hiddenUnavailable} itens indisponíveis estão escondidos.` }}
+              </UiEmptyDescription>
+            </UiEmptyHeader>
+            <div class="flex justify-center">
+              <UiButton @click="setAvailableOnly(false)">Mostrar indisponíveis</UiButton>
+            </div>
+          </UiEmpty>
+
+          <div v-else class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
             <template v-for="entry in entries" :key="entry.key">
               <ProductChoiceGroupItem
                 v-if="entry.kind === 'group'"
