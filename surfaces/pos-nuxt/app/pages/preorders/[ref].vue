@@ -30,7 +30,7 @@ import type { HandOverBody } from "~/presentation/preorderActions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
-import { customerLine, moneyLine, situationTone } from "~/presentation/preorders";
+import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
 import { canComment, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 
 const route = useRoute();
@@ -183,7 +183,12 @@ function goBack() {
             <header class="grid min-w-0 gap-1" data-preorder-detail>
               <h1 class="break-words text-lg font-semibold">{{ customerLine(card) }}</h1>
               <p class="flex flex-wrap items-center gap-2">
+                <!-- A mesma régua da linha da lista: a etiqueta só quando diz o que o
+                     saldo não diz (Pronto, Saiu para entrega, Entregue). "A pagar",
+                     "Pago", "Na conta da casa" e "Conferir pagamento" já estão na linha
+                     do saldo ao lado. -->
                 <span
+                  v-if="rowShowsSituation(card.situation)"
                   class="rounded-md border px-2 py-0.5 text-sm font-medium"
                   :class="toneBadge(situationTone(card.situation))"
                   data-preorder-situation

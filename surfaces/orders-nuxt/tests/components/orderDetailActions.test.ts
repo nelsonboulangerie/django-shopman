@@ -34,6 +34,7 @@ vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
 vi.stubGlobal("useOrderCashDrafts", useOrderCashDrafts);
 vi.stubGlobal("definePageMeta", vi.fn());
 vi.stubGlobal("onBeforeRouteLeave", vi.fn());
+vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);

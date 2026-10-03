@@ -587,11 +587,21 @@ envs:
 - key: AI_ASSIST_API_KEY
   scope: RUN_TIME
   type: SECRET
+# Jev (TypeSafe): aprovado pelo dono em 02/10/2026 (D-028). Segredo sem value: o
+# cifrado do painel permanece. A lista de provedores é quem libera texto redigido
+# de cliente para fora (comparador, sombra e triagem da Concierge).
+- key: JEV_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED
+  scope: RUN_TIME
+  value: anthropic,typesafe
+  type: GENERAL
 # Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). O switch global e a
 # connection são independentes; a chave do ingresso é exclusiva do Concierge.
 - key: SHOPMAN_CONCIERGE_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE
   scope: RUN_TIME
@@ -658,7 +668,11 @@ envs:
 # blueprint para nao desaparecerem num update integral do App Platform.
 - key: CONCIERGE_OPERATION_MODE
   scope: RUN_TIME
-  value: observe
+  value: assist
+  type: GENERAL
+- key: CONCIERGE_TRIAGE_CLASSIFIER
+  scope: RUN_AND_BUILD_TIME
+  value: jev
   type: GENERAL
 - key: CONCIERGE_OBSERVATION_ENABLED
   scope: RUN_TIME

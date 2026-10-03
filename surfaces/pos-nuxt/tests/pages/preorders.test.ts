@@ -173,7 +173,6 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     const text = wrapper.text();
     expect(text).toContain("Ana Souza");
     expect(wrapper.find("[data-order-detail]").attributes("data-order-context")).toBe("pos");
-    expect(wrapper.find("[data-preorder-situation]").text()).toBe("A pagar");
     expect(wrapper.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
     expect(wrapper.find("[data-order-items]").text()).toContain("Pão");
     expect(text).toContain("Sem açúcar");
@@ -543,6 +542,7 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
   });
 
   it("P5: uma etiqueta de estado só, a do balcão; a do pedido (a do Gestor) não aparece no PDV", async () => {
+    detail.counter.card = card({ status: "ready", situation: "ready", situation_label: "Pronto" });
     const wrapper = await mount(DetailPage);
     expect(wrapper.findAll("[data-preorder-situation]")).toHaveLength(1);
     expect(wrapper.find("[data-order-status]").exists()).toBe(false);
@@ -667,9 +667,31 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
     const list = await mount(PreordersPage);
     expect(list.find('[data-preorder="NB-7"] [data-preorder-situation]').classes())
       .toEqual(expect.arrayContaining(toneBadge("success").split(" ")));
-    const detail = await mount(DetailPage);
-    expect(detail.find("[data-preorder-situation]").classes())
-      .toEqual(expect.arrayContaining(toneBadge("warning").split(" ")));
+    detail.counter.card = card({ status: "ready", situation: "ready", situation_label: "Pronto" });
+    const page = await mount(DetailPage);
+    expect(page.find("[data-preorder-situation]").classes())
+      .toEqual(expect.arrayContaining(toneBadge("success").split(" ")));
+  });
+
+  it("R5: no detalhe, a etiqueta de dinheiro não repete a linha do saldo (a régua da linha da lista)", async () => {
+    const money = [
+      card(),
+      card({ situation: "paid", situation_label: "Pago", payment_state: "paid", balance_q: 0, balance_display: "R$ 0,00" }),
+      card({ situation: "on_account", situation_label: "Na conta da casa", payment_state: "on_account", balance_q: 0, balance_display: "R$ 0,00" }),
+      card({ situation: "check_payment", situation_label: "Conferir pagamento", payment_state: "check", balance_q: null, balance_display: "" }),
+    ];
+    const lines = ["A receber R$ 36,00", "R$ 36,00 pago", "R$ 36,00 na conta da casa", "R$ 36,00 · pagamento a conferir"];
+    for (const [i, situation] of money.entries()) {
+      detail.counter.card = situation;
+      const page = await mount(DetailPage);
+      expect(page.find("[data-preorder-situation]").exists()).toBe(false);
+      expect(page.find("[data-preorder-money]").text()).toBe(lines[i]);
+    }
+    for (const [situation, label] of [["ready", "Pronto"], ["out_for_delivery", "Saiu para entrega"], ["delivered", "Entregue"]] as const) {
+      detail.counter.card = card({ situation, situation_label: label });
+      const page = await mount(DetailPage);
+      expect(page.find("[data-preorder-situation]").text()).toBe(label);
+    }
   });
 });
 

@@ -706,7 +706,8 @@ export function rowDetailLine(
 /**
  * O selo de situação só quando diz o que o dinheiro não diz. "A pagar", "Pago",
  * "Na conta da casa" e "Conferir pagamento" já estão na linha do dinheiro;
- * "Pronto", "Saiu para entrega" e "Entregue" não estão.
+ * "Pronto", "Saiu para entrega" e "Entregue" não estão. A régua é uma só: a linha
+ * da lista e o painel do Balcão no detalhe da encomenda leem esta função.
  */
 export function rowShowsSituation(situation: PreorderSituation): boolean {
   return situation === "ready" || situation === "out_for_delivery" || situation === "delivered";

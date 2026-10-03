@@ -143,7 +143,12 @@ const hasDraft = computed(() => feeds.value.some((sc) => {
     (rotation && (rotation.seconds !== sc.rotate_seconds || rotation.items !== sc.items_per_page)) ||
     (automatic && JSON.stringify(automatic.messages) !== JSON.stringify(projectedAutomaticMessages(sc)));
 }));
-onBeforeRouteLeave(() => !hasDraft.value || window.confirm("Há alterações de feed não salvas. Sair e descartá-las?"));
+const confirmDiscard = useConfirm();
+onBeforeRouteLeave(() => !hasDraft.value || confirmDiscard({
+  title: "Sair sem salvar as alterações dos canais?",
+  description: "As coleções, a rotação ou as mensagens que você alterou e ainda não salvou se perdem.",
+  confirmLabel: "Descartar e sair",
+}));
 
 useHead({ title: "Canais" });
 </script>

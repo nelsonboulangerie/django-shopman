@@ -96,10 +96,15 @@ function reorderView<T extends { ref?: string; sku?: string }>(
 
 const orderDraft = ref<{ operation: "reorder-collections" | "reorder-items"; ref: string; ordered: string[]; action?: Action } | null>(null);
 const orderSaving = ref(false);
+const confirmDiscard = useConfirm();
 onBeforeRouteLeave(() => {
   if (orderSaving.value || bulkBusy.value || (detailSku.value && isBusy(detailKey(detailSku.value)))
     || (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface)))) return false;
-  return !hasUnsavedDraft.value || window.confirm("Há alterações sem confirmação no catálogo. Sair e descartar os rascunhos não desfaz gravações já aplicadas. Deseja sair?");
+  return !hasUnsavedDraft.value || confirmDiscard({
+    title: "Sair sem salvar as alterações do catálogo?",
+    description: "O que você alterou e ainda não salvou se perde (ordem, preço, publicação ou ficha do produto). O que já foi salvo continua salvo.",
+    confirmLabel: "Descartar e sair",
+  });
 });
 let observedCollectionAction: Action | undefined;
 let observedItemAction: Action | undefined;
@@ -301,9 +306,9 @@ function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
 }
 const editing = ref<{ sku: string; surface: string; action?: Action; original: string } | null>(null);
 const priceInput = ref("");
-function startEdit(row: CatalogRowProjection, cell: SurfaceCellProjection) {
+async function startEdit(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
-  if (editing.value && !closePrice()) return;
+  if (editing.value && !(await closePrice())) return;
   priceInput.value = ((cell.price_q ?? 0) / 100).toFixed(2).replace(".", ",");
   editing.value = { sku: row.sku, surface: cell.surface_ref, action: cell.action ?? undefined, original: priceInput.value };
 }
@@ -312,9 +317,12 @@ function priceConflict(cell: SurfaceCellProjection) {
   const current = cell.action?.payload_schema.base_revisions as Record<string, string> | undefined;
   return !!before && before.price_q !== current?.price_q;
 }
-function closePrice() {
+async function closePrice() {
   if (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface))) return false;
-  if (editing.value && priceInput.value !== editing.value.original && !window.confirm("Há um preço não salvo. Descartar a edição?")) return false;
+  if (editing.value && priceInput.value !== editing.value.original && !(await confirmDiscard({
+    title: "Descartar o preço digitado?",
+    description: "O novo preço não foi salvo. O produto continua com o preço atual.",
+  }))) return false;
   editing.value = null;
   return true;
 }
@@ -377,10 +385,14 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
-function selectCollection(next: string) {
+async function selectCollection(next: string) {
   if (next === collectionRef.value) return;
-  if (editing.value && !closePrice()) return;
-  if (priceOpen.value && priceInputBulk.value.trim() && !window.confirm("Há uma edição de preço em lote não confirmada. Descartar e trocar de coleção?")) return;
+  if (editing.value && !(await closePrice())) return;
+  if (priceOpen.value && priceInputBulk.value.trim() && !(await confirmDiscard({
+    title: "Trocar de coleção sem aplicar o preço em lote?",
+    description: "O preço em lote que você digitou se perde, e nenhum preço muda.",
+    confirmLabel: "Descartar e trocar",
+  }))) return;
   priceOpen.value = false;
   collectionRef.value = next;
 }
@@ -800,7 +812,7 @@ useHead({ title: "Catálogo" });
 
                 <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
                      seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
-                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) closePrice() }">
+                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) void closePrice() }">
                   <UiPopoverAnchor as-child>
                     <button
                       type="button"

@@ -55,7 +55,7 @@
 | # | Estado |
 |---|---|
 | D34 | ✅ Opção 1 aprovada ("cartão de escolha", chás da casa): #1365 (`ec34787d9`). E foi além: "Escolhas no produto" fase 1 (sabor obrigatório e adicionais com preço, `Product.metadata["option_groups"]`), aprovada em 02/10: #1374 |
-| D36 | ✅ Na prática, opção 1: `JEV_API_KEY` e `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` estão no vivo (drift de 02/10, só no painel) e o placar rodou no alpha (44 chamadas ao Jev, HTTP 400 pelo formato; corrigido no #1373). Não achei a resposta escrita do dono |
+| D36 | ✅ Na prática, opção 1: `JEV_API_KEY` e `SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` estão no vivo (drift de 02/10, só no painel) e o placar rodou no alpha (44 chamadas ao Jev, HTTP 400 pelo formato; corrigido no #1373). Confirmado pelo dono em 02/10: registro D-028 |
 | D37 | ✅ Decidido: dois controles do kit (`OperatorDayPicker`, `OperatorPeriodPicker`). Fase 1 #1371 (PDV, B.I.), fase 2 #1372 (Encomendas, Produção, Compras). Resta só o Marketing, fora do go-live |
 | D40 | ✅ Aval dado e perguntas respondidas: Biorgânica Especial → `FARINHA-NOVARA-T55`, Integral → `FARINHA-INTEGRAL-ORGANICA`; Tradição sem malte, toda a farinha pela Pasta Autolizada ("dono, 02/10"); 14 fichas publicadas no alpha e no seed (#1370, `67f4f7700`). O comando de importação segue no #1367, vermelho |
 

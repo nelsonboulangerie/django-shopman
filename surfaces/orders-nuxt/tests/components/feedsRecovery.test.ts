@@ -11,8 +11,11 @@ for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key,
 vi.stubGlobal("useHead", vi.fn());
 vi.stubGlobal("useRoute", () => ({ query: {} }));
 vi.stubGlobal("useNextFocus", vi.fn());
-let leave: () => boolean;
-vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean) => { leave = guard; });
+let leave: () => boolean | Promise<boolean>;
+vi.stubGlobal("onBeforeRouteLeave", (guard: () => boolean | Promise<boolean>) => { leave = guard; });
+// A pergunta antes de sair é o diálogo da casa (`useConfirm` do kit), nunca o `window.confirm`.
+const confirmDiscard = vi.fn(async () => false);
+vi.stubGlobal("useConfirm", () => confirmDiscard);
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
 vi.stubGlobal("useFeedBoard", () => ({ board, error, errorMsg: ref(""), pending: ref(false), refresh: vi.fn(), isBusy: () => false, setCollections, switchChannel: vi.fn(), setRotation: vi.fn(), setAutomatic }));
 const health = ref<Record<string, any>>({});
@@ -50,10 +53,15 @@ it("same-field refresh preserves the draft and requires an explicit resolution",
   await wrapper.get("[data-open-editor]").trigger("click");
   await wrapper.get("input[type=checkbox]").setValue(true);
   const priorConfirm = window.confirm;
-  const confirm = vi.fn(() => false);
-  window.confirm = confirm;
-  expect(leave()).toBe(false);
-  expect(confirm).toHaveBeenCalled();
+  const native = vi.fn(() => true);
+  window.confirm = native;
+  confirmDiscard.mockClear();
+  await expect(leave()).resolves.toBe(false);
+  expect(confirmDiscard).toHaveBeenCalledWith(expect.objectContaining({
+    title: "Sair sem salvar as alterações dos canais?",
+    confirmLabel: "Descartar e sair",
+  }));
+  expect(native).not.toHaveBeenCalled();
   window.confirm = priorConfirm;
   board.value.feeds[0].actions[0].payload_schema.base_revision = "changed";
   await flushPromises();

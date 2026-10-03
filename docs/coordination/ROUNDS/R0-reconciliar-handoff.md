@@ -58,8 +58,8 @@ Teste do comando: `pytest shopman/shop/tests/test_coordination_status.py` → `4
 
 ## Perguntas ao dono
 
-- D36: o Jev foi aprovado por você (a chave e a aprovação estão no painel)? Se sim, um "sim" basta
-  para registrar.
+- D36: o Jev foi aprovado por você? Respondida em 02/10: sim, ele mesmo pôs a chave e fez o
+  teste. Registro D-028.
 
 ## Armadilhas novas
 

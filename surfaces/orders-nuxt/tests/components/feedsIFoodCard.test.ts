@@ -11,6 +11,7 @@ const focusSources: unknown[] = [];
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
 vi.stubGlobal("onBeforeRouteLeave", vi.fn());
+vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("useRoute", () => ({ get query() { return query.value; } }));
 vi.stubGlobal("useNextFocus", (source: unknown) => { focusSources.push(source); return { reveal: vi.fn() }; });
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "", djangoBaseUrl: "" } }));
