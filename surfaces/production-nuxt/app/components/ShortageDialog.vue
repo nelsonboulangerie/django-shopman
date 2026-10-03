@@ -2,20 +2,27 @@
 // Material/order shortage modal. Renders the structured shortage envelope the API
 // returns (409) when a finish/plan would consume more than is available, or leave
 // committed orders uncovered. For a material shortage the operator can override
-// (force=1) only when the server advertises that possibility; an order shortage
-// is informational (re-plan with a higher quantity).
+// (force=1) only when the server advertises that possibility. An order shortage
+// offers "retry" (o operador volta ao número que digitou e corrige); confirmar o
+// produzido abaixo das encomendas nunca é forçável, então ali o caminho é só esse.
 import type { ProductionShortageError } from "~/types/production";
 
 const props = defineProps<{ shortage: ProductionShortageError | null }>();
 const emit = defineEmits<{
   "update:open": [value: boolean];
   confirm: [reason: string, proof: string];
+  review: [];
 }>();
 
 const isMaterial = computed(() => props.shortage?.code === "material_shortage");
 const forcePossibility = computed(() =>
   props.shortage?.possibilities.find(
     (possibility) => possibility.kind === "force" && possibility.enabled,
+  ),
+);
+const retryPossibility = computed(() =>
+  props.shortage?.possibilities.find(
+    (possibility) => possibility.kind === "retry" && possibility.enabled,
   ),
 );
 const overrideReason = ref("");
@@ -65,8 +72,8 @@ function confirmOverride() {
             operação não está autorizada a ignorar a falta.</template
           >
           <template v-else
-            >A nova quantidade de {{ shortage?.work_order_ref }} deixa pedidos
-            descobertos.</template
+            >O lote {{ shortage?.work_order_ref }} tem encomendas que dependem
+            dele, e a quantidade informada não cobre todas.</template
           >
         </UiDialogDescription>
       </UiDialogHeader>
@@ -92,14 +99,20 @@ function confirmOverride() {
       <template v-else-if="shortage && shortage.code === 'order_shortage'">
         <div class="rounded-md border bg-muted/40 p-3 text-sm">
           <p>
-            Comprometido:
+            Encomendado:
             <b class="tabular-nums">{{ shortage.required }}</b> un. ·
-            solicitado: <b class="tabular-nums">{{ shortage.requested }}</b> un.
+            informado: <b class="tabular-nums">{{ shortage.requested }}</b> un.
           </p>
           <p class="mt-1 text-muted-foreground">
             Pedidos: {{ shortage.order_refs.join(", ") }}
           </p>
         </div>
+        <p v-if="!forcePossibility" class="text-sm">
+          Confira a contagem e informe pelo menos
+          <b class="tabular-nums">{{ shortage.required }}</b> un. Se saiu mesmo
+          menos, nada foi registrado: avise quem cuida das encomendas antes de
+          confirmar este lote.
+        </p>
       </template>
 
       <label v-if="forcePossibility" class="grid gap-1.5 text-sm">
@@ -121,7 +134,15 @@ function confirmOverride() {
           variant="outline"
           @click="emit('update:open', false)"
         >
-          {{ isMaterial ? "Cancelar" : "Entendi" }}
+          {{ isMaterial || retryPossibility ? "Cancelar" : "Entendi" }}
+        </UiButton>
+        <UiButton
+          v-if="retryPossibility && !isMaterial"
+          type="button"
+          :variant="forcePossibility ? 'outline' : 'default'"
+          @click="emit('review')"
+        >
+          {{ retryPossibility.label }}
         </UiButton>
         <UiButton
           v-if="forcePossibility"
