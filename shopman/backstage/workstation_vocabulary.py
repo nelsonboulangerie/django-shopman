@@ -1,8 +1,8 @@
 """As palavras dos POSTOS de trabalho, numa fonte só.
 
-O dono ainda está decidindo nomes ("Expedição" ou "Saída", o nome da sala de fechar
-lote da Produção). Por isso nenhum rótulo de tipo de posto e nenhuma frase da tela de
-provisionar mora em outro lugar: o backend lê daqui, a projection entrega à tela, e o
+Os nomes podem mudar (o dono decidiu em 03/10, e a tela de fechamento de lote da
+Produção ainda vai ganhar nome próprio). Por isso nenhum rótulo de tipo de posto e nenhuma frase da tela de
+vincular mora em outro lugar: o backend lê daqui, a projection entrega à tela, e o
 kit (``surfaces/operator-kit/app/presentation/workstation.ts``) tem só o espelho
 tipado das CHAVES, nunca do texto. Renomear é mudar uma linha aqui.
 
@@ -18,11 +18,14 @@ from __future__ import annotations
 
 #: Caixa: o único posto com gaveta e turno, amarrado a um ``cashman.Terminal``.
 CASH_DESK = "cash_desk"
-#: Atendimento: comanda na mesa, sem gaveta.
+#: Atendimento: o tablet que cobra na mesa e usa a gaveta do Caixa (o pulso de
+#: gaveta pelo relay é frente própria, SUITE-UX §16); ele mesmo não tem gaveta.
 SERVICE = "service"
-#: Expedição: o tablet onde se confere e entrega ou despacha o pedido pronto.
+#: Expedição: o posto da saída dos pedidos, o Gestor com só a coluna "Saída" aberta.
+#: A COLUNA continua "Saída"; o POSTO é "Expedição". (A tela de fechamento de lote
+#: da Produção não é este posto e muda de nome em frente própria.)
 DISPATCH = "dispatch"
-#: Estação da Cozinha: Lanches, Cafés.
+#: Estação da Cozinha: Cafés, Lanches.
 KITCHEN_STATION = "kitchen_station"
 #: Sala da Produção: Massas, Molde, Laminação, Preparos, Forno.
 PRODUCTION_ROOM = "production_room"
@@ -53,40 +56,40 @@ SURFACE_KINDS: dict[str, tuple[str, ...]] = {
     "bi": (OFFICE,),
 }
 
-#: A copy da tela de provisionar, do contexto no rail e do cadastro. Proposta do dono
-#: em validação (03/10/2026).
+#: A copy da tela de vincular, do contexto no rail e do cadastro. Decisão do dono
+#: (03/10/2026): o termo é "vincular" a um "posto de trabalho".
 COPY: dict[str, str] = {
-    "setup_title": "Este dispositivo fica em qual posto?",
+    "setup_title": "Vincular este dispositivo a um posto de trabalho?",
     "setup_lead": (
         "Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o "
         "PIN de quem for operar."
     ),
-    "setup_choice_label": "Postos deste app",
-    "setup_confirm": "Fixar neste posto",
-    "setup_confirm_shared": "Fixar também neste posto",
-    "setup_busy": "Fixando…",
-    "setup_dismiss": "Agora não",
-    "setup_error": "Não foi possível fixar este dispositivo no posto.",
+    "setup_choice_label": "Posto:",
+    "setup_confirm": "Vincular a este posto",
+    "setup_confirm_shared": "Vincular também a este posto",
+    "setup_busy": "Vinculando…",
+    "setup_dismiss": "Usar sem vincular",
+    "setup_error": "Não foi possível vincular este dispositivo ao posto.",
     "setup_empty": (
         "Ainda não há posto para este app. Quem gere operadores cadastra os postos "
         "no Gestor, em Postos."
     ),
     "context_prefix": "Posto",
-    "release": "Soltar deste posto",
+    "release": "Desvincular deste posto",
     "cash_desk_hint": "Com gaveta e turno",
     "devices_one": "1 dispositivo",
     "devices_many": "{n} dispositivos",
     "open_shift_hint": "caixa aberto",
     "shared_cash_desk": (
         "Este caixa já tem {others}. Todos vão usar a mesma gaveta e o mesmo turno. "
-        "Confirme para fixar este dispositivo no mesmo posto."
+        "Confirme para vincular este dispositivo ao mesmo posto."
     ),
     "unknown": "Posto não encontrado.",
-    "not_a_workstation": "Este dispositivo não está fixado em nenhum posto.",
+    "not_a_workstation": "Este dispositivo não está vinculado a nenhum posto.",
     "manage_title": "Postos",
     "manage_lead": (
-        "Onde cada dispositivo fica. Fixado num posto, ele abre direto no trabalho "
-        "do posto e pede só o PIN de quem for operar."
+        "Onde cada dispositivo fica. Vinculado a um posto, ele abre direto no "
+        "trabalho do posto e pede só o PIN de quem for operar."
     ),
     "manage_new": "Novo posto",
     "manage_name_label": "Nome do posto",
@@ -95,12 +98,12 @@ COPY: dict[str, str] = {
     "manage_rename": "Renomear",
     "manage_save": "Salvar",
     "manage_deactivate": "Desativar posto",
-    "manage_deactivate_warning": "Desativar solta todos os dispositivos deste posto.",
+    "manage_deactivate_warning": "Desativar desvincula todos os dispositivos deste posto.",
     "manage_keep_active": "Manter ativo",
     "manage_activate": "Reativar posto",
     "manage_inactive": "Desativado",
     "manage_cash_desk_note": "O posto Caixa nasce com o caixa, no cadastro de terminais.",
-    "manage_devices_none": "Nenhum dispositivo fixado neste posto.",
+    "manage_devices_none": "Nenhum dispositivo vinculado a este posto.",
     "manage_device_last_used": "Usado por último em {when}",
     "manage_device_never_used": "Ainda não usado",
     "manage_error": "Não foi possível salvar o posto.",

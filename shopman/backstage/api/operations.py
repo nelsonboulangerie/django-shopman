@@ -698,7 +698,7 @@ _OPERATOR_UNLOCK_PERMS = {
     # 24/09/2026) — a resposta é sim/não sobre quem está operando, nunca a lista.
     "shop.manage_customers",
     # Postos do Gestor: mesma lógica de Clientes. A barra pergunta para mostrar a aba
-    # só a quem gere operadores (quem fixa dispositivos e cadastra postos).
+    # só a quem gere operadores (quem vincula dispositivos e cadastra postos).
     "cashman.manage_operators",
 }
 
@@ -1064,7 +1064,7 @@ class OperatorPinChangeView(APIView):
 
 
 class StationProvisionView(APIView):
-    """Fixa ESTE dispositivo num posto de trabalho, ou o solta dele.
+    """Vincula ESTE dispositivo a um posto de trabalho, ou o desvincula dele.
 
     É o que faltava para tudo o mais existir: sem provisionamento, nenhum
     dispositivo é reconhecido, o balcão amanhece sem antessala e a única entrada é
@@ -1114,7 +1114,7 @@ class StationProvisionView(APIView):
         # Caixa com outro dispositivo: avisa e pede confirmação, nunca recusa (D-007),
         # porque dividem a gaveta e o turno. Posto sem caixa (duas telas na Sala Forno)
         # não divide nada que precise de segunda palavra.
-        # O próprio navegador refixando não conta como "outro".
+        # O próprio navegador revinculando não conta como "outro".
         if workstation.has_cash_desk:
             proprios = station_trust.presented_station_device_ids(request)
             outros = [d for d in station_trust.active_station_devices(ref) if d.pk not in proprios]

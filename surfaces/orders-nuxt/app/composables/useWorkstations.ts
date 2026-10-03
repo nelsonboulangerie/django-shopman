@@ -1,5 +1,5 @@
 // Postos do Gestor: o cadastro de postos de trabalho (/api/v1/backstage/workstations/).
-// Permissão: `cashman.manage_operators`, a mesma de fixar um dispositivo num posto.
+// Permissão: `cashman.manage_operators`, a mesma de vincular um dispositivo a um posto.
 // Toda escrita devolve o cadastro inteiro de volta, e a tela troca o que mostra por
 // ele: não há reconciliação peça por peça.
 import type { WorkstationManageState } from "../../../operator-kit/app/types/operator";

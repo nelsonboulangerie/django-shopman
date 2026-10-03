@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Postos: onde cada dispositivo fica (UX-POSTO1).
 //
-// Criar, renomear, mudar o tipo e desativar postos, e ver os dispositivos fixados em
-// cada um, com "Soltar deste posto" para o tablet perdido. Mora no Gestor porque é
-// ajuste de escritório de quem gere a operação (a mesma permissão de fixar um
+// Criar, renomear, mudar o tipo e desativar postos, e ver os dispositivos vinculados a
+// cada um, com "Desvincular deste posto" para o tablet perdido. Mora no Gestor porque é
+// ajuste de escritório de quem gere a operação (a mesma permissão de vincular um
 // dispositivo, `cashman.manage_operators`); o Admin continua podendo, o operador não
-// precisa dele. Fixar ESTE dispositivo num posto é feito no próprio dispositivo, em
+// precisa dele. Vincular ESTE dispositivo a um posto é feito no próprio dispositivo, em
 // qualquer app (a oferta do kit), não aqui.
 //
 // Toda palavra da tela vem do servidor (`copy`): os nomes dos postos ainda estão em

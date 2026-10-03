@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// FIXAR ESTE DISPOSITIVO NUM POSTO: a montagem, uma vez por máquina, em qualquer app.
+// VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
 // Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
 // Depois disso o dispositivo abre sozinho e pede PIN, e ninguém precisa trazer senha
 // de gestor para a loja abrir.
 //
-// É oferta, não parede: no notebook pessoal do gestor a resposta certa é "agora não",
-// e obrigar a escolher ali criaria um posto onde não há posto. Quem não pode fixar
+// É oferta, não parede: no notebook pessoal do gestor a resposta certa é "usar sem vincular",
+// e obrigar a escolher ali criaria um posto onde não há posto. Quem não pode vincular
 // (403) nem vê: a oferta se dispensa sozinha.
 //
 // Cada app lista os postos que fazem sentido nele (a Produção oferece salas; a
@@ -19,7 +19,7 @@ const props = defineProps<{
   surface?: string;
 }>();
 
-// `dismiss` é o "Agora não" de quem podia fixar; `unavailable`, o 403 de quem não
+// `dismiss` é o "Usar sem vincular" de quem podia vincular; `unavailable`, o 403 de quem não
 // pode. O shell lembra só o primeiro: quem não pode hoje pode passar a poder.
 const emit = defineEmits<{ (e: "done"): void; (e: "dismiss"): void; (e: "unavailable"): void }>();
 
@@ -39,6 +39,7 @@ onMounted(async () => {
 });
 
 const options = computed(() => workstationRadioOptions(workstations.value));
+const escolhidoHint = computed(() => options.value.find((o) => o.value === escolhido.value)?.hint ?? "");
 
 // A segunda palavra só vale para o caixa que o servidor avisou.
 const pedeConfirmacao = computed(() => Boolean(confirmFor.value) && confirmFor.value === escolhido.value);
@@ -67,12 +68,21 @@ async function confirmar() {
       </div>
 
       <div v-if="options.length" class="grid gap-2 text-left">
-        <UiRadioGroup
-          v-model="escolhido"
-          :label="copy.setup_choice_label || ''"
-          :disabled="busy"
-          :options="options"
-        />
+        <!-- "Posto:" num seletor (decisão do dono, 03/10): com um posto só, já vem
+             marcado. A segunda linha do escolhido diz o tipo e quem já está nele. -->
+        <label class="grid gap-1.5 text-sm">
+          <span class="font-medium">{{ copy.setup_choice_label }}</span>
+          <UiNativeSelect
+            v-model="escolhido"
+            class="h-12 w-full"
+            :disabled="busy"
+            data-station-setup-select
+          >
+            <option v-if="options.length > 1" value="" disabled>&nbsp;</option>
+            <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </UiNativeSelect>
+        </label>
+        <p v-if="escolhidoHint" class="text-xs text-muted-foreground" data-station-setup-hint>{{ escolhidoHint }}</p>
         <p
           v-if="error"
           class="text-sm"

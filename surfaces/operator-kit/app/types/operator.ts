@@ -46,7 +46,7 @@ export interface WorkstationCard {
   context_label: string;
 }
 
-/** Uma opção da tela de fixar: o posto e o que já está nele. */
+/** Uma opção da tela de vincular: o posto e o que já está nele. */
 export interface WorkstationOption extends WorkstationCard {
   /** Dispositivos com confiança válida neste posto. No Caixa, dividem a gaveta e o
    *  turno (D-007): a tela mostra, não recusa. */
@@ -61,7 +61,7 @@ export interface WorkstationKindOption {
   label: string;
 }
 
-/** O que a tela de fixar precisa: o posto deste dispositivo hoje (`""` quando
+/** O que a tela de vincular precisa: o posto deste dispositivo hoje (`""` quando
  *  nenhum), os postos que ESTE app oferece e a copy da fonte única. */
 export interface StationProvisionState {
   station: string;
@@ -71,7 +71,7 @@ export interface StationProvisionState {
   copy: WorkstationCopy;
 }
 
-/** Um dispositivo fixado num posto (cadastro de Postos). */
+/** Um dispositivo vinculado a um posto (cadastro de Postos). */
 export interface WorkstationDevice {
   id: string;
   label: string;

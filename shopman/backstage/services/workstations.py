@@ -8,7 +8,7 @@ O modelo e o porquê estão em ``models/workstation.py``; as palavras, em
 * um ``Terminal`` novo não pode tomar o ref de um posto sem caixa
   (``guard_terminal_ref``, em ``pre_save``), senão os dispositivos daquele posto
   passariam a abrir a gaveta dele;
-* desativar um posto solta TODOS os dispositivos dele: um posto fora do ar não pode
+* desativar um posto desvincula TODOS os dispositivos dele: um posto fora do ar não pode
   continuar abrindo a antessala.
 """
 
@@ -198,7 +198,7 @@ def create(*, label, kind) -> object:
 
 @transaction.atomic
 def update(ref: str, *, label=None, kind=None, is_active=None):
-    """Renomeia, muda o tipo ou liga/desliga. Desligar solta todos os dispositivos."""
+    """Renomeia, muda o tipo ou liga/desliga. Desligar desvincula todos os dispositivos."""
     from shopman.backstage.models import Workstation
 
     workstation = Workstation.objects.select_for_update().filter(ref=ref).first()
@@ -234,7 +234,7 @@ def update(ref: str, *, label=None, kind=None, is_active=None):
 
 
 def devices(ref: str) -> list[dict]:
-    """Os dispositivos fixados no posto, do mais recente ao mais antigo."""
+    """Os dispositivos vinculados ao posto, do mais recente ao mais antigo."""
     from shopman.backstage.station_trust import active_station_devices
 
     return [
@@ -250,7 +250,7 @@ def devices(ref: str) -> list[dict]:
 
 
 def release_device(ref: str, device_id: str) -> bool:
-    """Solta UM dispositivo do posto (o tablet perdido, o que saiu da loja)."""
+    """Desvincula UM dispositivo do posto (o tablet perdido, o que saiu da loja)."""
     import uuid
 
     from shopman.doorman.models import SubjectType, TrustedDevice

@@ -33,18 +33,20 @@ postos adequados a cada app e um posto só por dispositivo. Rótulos e copy numa
   ref; terminal autônomo vira Sala da Produção, os demais Caixa) e leva
   `Terminal.metadata["gestor_board"]` para `Workstation.metadata["gestor_board"]`
   (reversível). Numeração conferida contra `origin/main`.
-- Desativar um posto solta todos os dispositivos dele.
+- Desativar um posto desvincula todos os dispositivos dele.
 
 ### Fonte única das palavras
 
 - `shopman/backstage/workstation_vocabulary.py`: `KIND_LABELS`, `SURFACE_KINDS` (que
-  postos cada app oferece) e `COPY` (tela de fixar, contexto do rail, cadastro).
+  postos cada app oferece) e `COPY` (tela de vincular, contexto do rail, cadastro).
 - Espelho tipado só das CHAVES em `surfaces/operator-kit/app/presentation/workstation.ts`,
   com teste que confere contra o Python.
-- Copy proposta (em validação pelo dono): "Este dispositivo fica em qual posto?",
-  "Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o PIN de
-  quem for operar.", "Fixar neste posto", "Agora não", "Posto Expedição", "Soltar
-  deste posto".
+- Copy decidida pelo dono (03/10): título "Vincular este dispositivo a um posto de
+  trabalho?", campo "Posto:" (seletor; com um posto só, já vem marcado), ações
+  "Vincular a este posto" e "Usar sem vincular", desfazer "Desvincular deste posto";
+  no rail, "Posto Expedição". O posto Expedição é o Gestor com só a coluna "Saída"
+  aberta (a coluna continua "Saída"). A tela de fechamento de lote da Produção não foi
+  tocada e não é chamada de Expedição em copy nova.
 
 ### Provisionar em todos os apps (kit)
 
@@ -54,8 +56,8 @@ postos adequados a cada app e um posto só por dispositivo. Rótulos e copy numa
 - A antessala (`operator/session/`) devolve `workstation` (com `context_label`).
 - `OperatorStationSetup` (kit) reescrito: overlay de tela cheia, botões crus (o kit não
   alcança a `UiButton` de cada app), copy do servidor, estado vazio que aponta para o
-  cadastro, e `unavailable` no 403.
-- `useStationSetupOffer` (kit): a mesma regra nos oito apps; "Agora não" lembrado no
+  cadastro, seletor "Posto:" e `unavailable` no 403.
+- `useStationSetupOffer` (kit): a mesma regra nos oito apps; "Usar sem vincular" lembrado no
   navegador.
 - Ligado no PDV, Central, Cozinha (fora do painel de retirada), Gestor, Produção (fora
   do Letreiro), Marketing, Compras e B.I.
@@ -69,7 +71,7 @@ postos adequados a cada app e um posto só por dispositivo. Rótulos e copy numa
 - API `GET/POST /api/v1/backstage/workstations/`, `PATCH .../<ref>/`,
   `DELETE .../<ref>/devices/<id>/`, permissão `cashman.manage_operators`.
 - Página `surfaces/orders-nuxt/app/pages/workstations.vue`: criar, renomear, mudar o
-  tipo, desativar/reativar, ver dispositivos e "Soltar deste posto". Aba "Postos" na
+  tipo, desativar/reativar, ver dispositivos e "Desvincular deste posto". Aba "Postos" na
   barra do Gestor só para quem gere operadores (pergunta à antessala, como Clientes).
 - **Por que no Gestor e não na Central:** a Central é launcher e fila ("Precisa de
   você"), sem cadastro; o Gestor já é onde o escritório ajusta a operação (Catálogo,
@@ -91,6 +93,22 @@ postos adequados a cada app e um posto só por dispositivo. Rótulos e copy numa
 - O rótulo da aba "Postos" na barra do Gestor é literal no front (a aba precisa
   existir antes de qualquer leitura); todo o resto da copy vem do servidor.
 
+- **Atendimento usa a gaveta do Caixa** (decisão do dono): aqui o posto Atendimento
+  existe e não tem gaveta própria; abrir a gaveta do Caixa a partir dele é o pulso de
+  gaveta pelo relay (SUITE-UX §16), frente própria.
+
 ## Evidência
 
-(preenchida no fechamento)
+- `pytest shopman/backstage -n 3`: 7613 passed, 9 failed; os 8 que não são desta
+  frente passam isolados (`97 passed` rodando os sete arquivos em série: ordem do
+  xdist), e o 9º (trava de vocabulário no meu teste) foi corrigido.
+- Depois da copy do dono: `pytest test_workstations test_station_trust
+  test_station_kinds test_station_provision test_order_board_layout
+  test_vocabulario_de_tela test_seed_flush_keeps_terminal_config
+  test_pos_station_drawer_boundary test_terminal_ambiguo`: 2365 passed.
+- `ruff check shopman/backstage/`: All checks passed.
+- vitest: operator-kit 1117 passed (inclui `guardrails.vocabulary`, `workstation`
+  com o cruzamento das chaves contra o Python), pos 1538, orders 530, marketing 436,
+  production 419, kds 110, purchase 121, bi 58, hub 42.
+- `nuxi typecheck` sem erro nos oito apps; `eslint` 0 erros (só avisos antigos).
+- Migração: `0081` livre em `origin/main` e nos branches `claude/*` do remoto.

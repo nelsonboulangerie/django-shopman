@@ -174,7 +174,7 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
         <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
       </ClientOnly>
 
-      <!-- Contexto, não ação: o posto onde este dispositivo está fixado. -->
+      <!-- Contexto, não ação: o posto onde este dispositivo está vinculado. -->
       <div
         v-if="workstationContext"
         class="flex h-11 items-center rounded-md text-rail-foreground/80"

@@ -46,10 +46,10 @@ usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.valu
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
 useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
 
-// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps): o gestor entra
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): o gestor entra
 // com senha uma vez e diz em que posto ele fica. Enquanto ninguém fizer isso, o
 // dispositivo não tem antessala. A oferta é dispensável de propósito: no PC pessoal
-// do gestor a resposta certa é "agora não".
+// do gestor a resposta certa é "usar sem vincular".
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps

@@ -11,7 +11,7 @@ const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, 
 
 const route = useRoute();
 const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
-// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps): oferta, não
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 

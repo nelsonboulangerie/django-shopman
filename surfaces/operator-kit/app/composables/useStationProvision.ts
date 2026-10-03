@@ -1,4 +1,4 @@
-// Fixar ESTE dispositivo num posto de trabalho: o ato de montagem, uma vez por máquina.
+// Vincular ESTE dispositivo a um posto de trabalho: o ato de montagem, uma vez por máquina.
 //
 // Sem ele, nada do resto acontece: um dispositivo que não é posto não tem antessala,
 // e a única entrada é senha de gestor todo dia. Acontece uma vez por dispositivo, com
@@ -53,7 +53,7 @@ export function useStationProvision(surface?: string) {
     }
   }
 
-  /** Fixa e devolve `true` no sucesso. Quem chama decide o que fazer com a tela;
+  /** Vincula e devolve `true` no sucesso. Quem chama decide o que fazer com a tela;
    *  recarregar é o normal, porque toda leitura muda de mundo. */
   async function provision(workstationRef: string, options: { confirm?: boolean } = {}): Promise<boolean> {
     if (busy.value || !workstationRef) return false;

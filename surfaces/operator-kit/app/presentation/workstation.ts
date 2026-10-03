@@ -92,9 +92,9 @@ export function workstationRadioOptions(
 }
 
 /**
- * Oferecer fixar este dispositivo num posto? Só com alguém identificado e destravado
- * (quem fixa precisa estar ali), num dispositivo que ainda não é posto, e enquanto a
- * oferta não foi dispensada. É oferta, não parede: "agora não" é resposta certa no
+ * Oferecer vincular este dispositivo a um posto? Só com alguém identificado e destravado
+ * (quem vincula precisa estar ali), num dispositivo que ainda não é posto, e enquanto a
+ * oferta não foi dispensada. É oferta, não parede: "usar sem vincular" é resposta certa no
  * notebook pessoal do gestor.
  */
 export function shouldOfferStationSetup(input: {

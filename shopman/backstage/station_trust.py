@@ -204,7 +204,7 @@ def station_workstation(request):
     """O POSTO de trabalho desta requisição (``backstage.Workstation``), ou ``None``.
 
     ``station_ref`` é a identidade do cookie; isto é o posto que ela nomeia, com nome
-    e tipo para a tela. Posto desativado responde ``None`` (desativar já solta os
+    e tipo para a tela. Posto desativado responde ``None`` (desativar já desvincula os
     dispositivos; isto cobre a corrida). A gaveta NÃO se resolve por aqui: ela é do
     ``Terminal`` com o mesmo ref, e só o posto Caixa tem um.
     """
@@ -340,7 +340,7 @@ def station_operator(request):
 
 @transaction.atomic
 def provision(request, response, workstation_ref: str):
-    """Fixa ESTE dispositivo no posto ``workstation_ref`` (``backstage.Workstation``).
+    """Vincula ESTE dispositivo ao posto ``workstation_ref`` (``backstage.Workstation``).
 
     Chamado a partir de uma tela que já exigiu ``PROVISION_PERM``: quem provisiona
     está logado e autorizado, e é esse ato — não o cookie — que carrega a decisão.
@@ -414,7 +414,7 @@ def provision(request, response, workstation_ref: str):
 
 @transaction.atomic
 def revoke(request, response, workstation_ref: str):
-    """Solta ESTE dispositivo daquele posto.
+    """Desvincula ESTE dispositivo daquele posto.
 
     O dispositivo perdido continua revogável pelo Admin (é lá que a lista de
     dispositivos vive); isto é o caminho local, para quem está com a máquina na

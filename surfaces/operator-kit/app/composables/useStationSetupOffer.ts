@@ -1,13 +1,13 @@
-// Quando oferecer "Este dispositivo fica em qual posto?": a mesma regra nos oito apps.
+// Quando oferecer "Vincular este dispositivo a um posto de trabalho?": a mesma regra nos oito apps.
 //
 // O shell de cada app passa o que já sabe pela trava (`useOperatorLock`): se há
 // alguém identificado, se está travado, e o posto deste dispositivo. A oferta sobe
 // quando há gente destravada num dispositivo que ainda não é posto; quem não pode
-// fixar nem a vê (o `<OperatorStationSetup>` se dispensa sozinho no 403).
+// vincular nem a vê (o `<OperatorStationSetup>` se dispensa sozinho no 403).
 //
-// "Agora não" fica lembrado NESTE navegador (conveniência do dispositivo, não estado
-// da casa): no notebook pessoal do gestor a oferta não volta a cada abertura. Fixar o
-// dispositivo num posto depois, pelo Gestor ou por outro app, vence o lembrete.
+// "Usar sem vincular" fica lembrado NESTE navegador (conveniência do dispositivo, não estado
+// da casa): no notebook pessoal do gestor a oferta não volta a cada abertura. Vincular o
+// dispositivo a um posto depois, pelo Gestor ou por outro app, vence o lembrete.
 import type { Ref } from "vue";
 
 import { shouldOfferStationSetup } from "../presentation/workstation";
@@ -52,13 +52,13 @@ export function useStationSetupOffer(state: {
     }),
   );
 
-  /** "Agora não" (ou sem permissão para fixar): some, e fica lembrado aqui. */
+  /** "Usar sem vincular" (ou sem permissão para vincular): some, e fica lembrado aqui. */
   function dismiss(options: { remember?: boolean } = { remember: true }): void {
     dismissed.value = true;
     if (options.remember) writeDismissed();
   }
 
-  /** Fixado: recarrega, porque toda leitura muda de mundo (a antessala passa a
+  /** Vinculado: recarrega, porque toda leitura muda de mundo (a antessala passa a
    *  existir, o posto passa a ser este). Reconciliar peça por peça é mais caminho
    *  para dar errado do que um reload numa tela que acontece uma vez. */
   function done(): void {

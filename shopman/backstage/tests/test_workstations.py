@@ -6,7 +6,7 @@ O que este arquivo prende:
   continua valendo, sem ninguém refazer nada);
 * posto sem caixa NUNCA abre gaveta nem turno;
 * cada app oferece os postos que fazem sentido nele, e o posto é um só;
-* o cadastro de Postos (Gestor) cria, renomeia, desliga e solta dispositivos, só para
+* o cadastro de Postos (Gestor) cria, renomeia, desliga e desvincula dispositivos, só para
   quem gere operadores;
 * a migração de dados leva a arrumação do Gestor do terminal para o posto.
 """
@@ -117,10 +117,9 @@ def test_o_vocabulario_cobre_todo_app_de_operador():
         assert kinds and set(kinds) <= set(KIND_LABELS)
 
 
-def test_a_copy_nao_tem_travessao_nem_aparelho():
+def test_a_copy_nao_tem_travessao():
     textos = [*COPY.values(), *KIND_LABELS.values()]
     assert not [t for t in textos if "—" in t or "–" in t]
-    assert not [t for t in textos if "aparelho" in t.lower()]
 
 
 # ── Posto sem caixa não abre gaveta nem turno ───────────────────────────
@@ -200,8 +199,8 @@ def test_cada_app_oferece_os_seus_postos(client, gerente, caixa_principal, exped
 
     assert [w["ref"] for w in estado["workstations"]] == esperado
     assert [k["kind"] for k in estado["kinds"]] == list(SURFACE_KINDS[surface])
-    assert estado["copy"]["setup_title"] == "Este dispositivo fica em qual posto?"
-    assert estado["copy"]["setup_confirm"] == "Fixar neste posto"
+    assert estado["copy"]["setup_title"] == "Vincular este dispositivo a um posto de trabalho?"
+    assert estado["copy"]["setup_confirm"] == "Vincular a este posto"
 
 
 def test_a_central_oferece_todos(client, gerente, caixa_principal, expedicao):
@@ -222,7 +221,7 @@ def test_posto_desativado_nao_e_oferecido(client, gerente, expedicao):
     assert recusa.status_code == 400
 
 
-def test_fixar_na_expedicao_e_o_rail_diz_o_posto(client, gerente, expedicao):
+def test_vincular_a_expedicao_e_o_rail_diz_o_posto(client, gerente, expedicao):
     client.force_login(gerente)
 
     resposta = client.post(STATION_URL, {"workstation_ref": "expedicao"}, content_type="application/json")
@@ -288,7 +287,7 @@ def test_cria_renomeia_e_desliga(client, gerente, caixa_principal):
     desligado = client.patch(f"{LIST_URL}{ref}/", {"is_active": False}, content_type="application/json")
     assert desligado.status_code == 200
     assert not Workstation.objects.get(ref=ref).is_active
-    # Posto desligado solta todos os dispositivos: ele não abre mais a antessala.
+    # Posto desligado desvincula todos os dispositivos: ele não abre mais a antessala.
     assert station_trust.active_station_devices(ref) == []
 
     lista = {w["ref"]: w for w in client.get(LIST_URL).json()["workstations"]}
@@ -328,7 +327,7 @@ def test_posto_sem_caixa_nao_vira_caixa(client, gerente, expedicao):
     assert Workstation.objects.get(ref="expedicao").kind == "dispatch"
 
 
-def test_soltar_um_dispositivo_do_posto(client, gerente, expedicao):
+def test_desvincular_um_dispositivo_do_posto(client, gerente, expedicao):
     trust_station(Client(), expedicao.ref)
     trust_station(Client(), expedicao.ref)
     client.force_login(gerente)

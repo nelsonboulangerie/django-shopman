@@ -15,7 +15,7 @@ const { canView: recipesAllowed } = useRecipeBookAccess();
 
 const route = useRoute();
 const isKiosk = computed(() => route.path.startsWith("/board"));
-// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps): oferta, não
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 

@@ -52,7 +52,7 @@ const appVersion = String(useRuntimeConfig().public.appVersion || "local");
 
 const { tiles, queue, operatorName, error, refresh } = await useOperatorHub();
 
-// Fixar o dispositivo num posto (kit, a mesma regra dos oito apps). A Central é a porta
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps). A Central é a porta
 // de entrada de todo dispositivo novo, e por isso oferece todos os tipos de posto. A
 // antessala é a mesma chave que o rail lê para mostrar "Posto Expedição".
 const { data: stationSession } = useFetch<OperatorSession>("/api/v1/backstage/operator/session/", {

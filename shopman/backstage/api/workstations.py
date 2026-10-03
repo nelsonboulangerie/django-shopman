@@ -3,9 +3,9 @@
 GET    /api/v1/backstage/workstations/                          → postos, tipos e copy
 POST   /api/v1/backstage/workstations/                          → cria posto sem caixa
 PATCH  /api/v1/backstage/workstations/<ref>/                    → renomeia, muda o tipo, liga/desliga
-DELETE /api/v1/backstage/workstations/<ref>/devices/<id>/       → solta um dispositivo
+DELETE /api/v1/backstage/workstations/<ref>/devices/<id>/       → desvincula um dispositivo
 
-A mesma permissão de fixar um dispositivo num posto (``cashman.manage_operators``):
+A mesma permissão de vincular um dispositivo a um posto (``cashman.manage_operators``):
 quem decide que um tablet passa a pedir PIN decide também quais postos existem e quem
 está neles. O Admin continua podendo; o operador não precisa dele.
 

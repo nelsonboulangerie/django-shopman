@@ -24,7 +24,7 @@ describe("useStationProvision: fixar o dispositivo num posto", () => {
       workstation: null,
       kinds: [{ kind: "production_room", label: "Sala da Produção" }],
       workstations: [{ ref: "sala-forno", label: "Sala Forno", kind: "production_room" }],
-      copy: { setup_title: "Este dispositivo fica em qual posto?" },
+      copy: { setup_title: "Vincular este dispositivo a um posto de trabalho?" },
     });
 
     const { load, station, workstations, copy, allowed, loaded } = useStationProvision("production");
@@ -34,7 +34,7 @@ describe("useStationProvision: fixar o dispositivo num posto", () => {
     expect(allowed.value).toBe(true);
     expect(station.value).toBe("");
     expect(workstations.value).toHaveLength(1);
-    expect(copy.value.setup_title).toBe("Este dispositivo fica em qual posto?");
+    expect(copy.value.setup_title).toBe("Vincular este dispositivo a um posto de trabalho?");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/station/",
       { query: { surface: "production" } },

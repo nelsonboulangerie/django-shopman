@@ -10,7 +10,7 @@ export interface GestorSectionsInput {
   // levar a uma recusa.
   canManageCustomers: boolean;
   // `true` só quando a antessala confirmou `cashman.manage_operators`: Postos é o
-  // cadastro de quem fixa dispositivos. Desconhecido esconde, como em Clientes.
+  // cadastro de quem vincula dispositivos. Desconhecido esconde, como em Clientes.
   canManageWorkstations?: boolean;
 }
 
