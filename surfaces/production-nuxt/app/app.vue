@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Production surface shell (prod.). Thin shell com duas classes de
 // tela (verificadas endpoint a endpoint):
-//   · telas de OPERADOR (planejamento/preparação/produção/expedição) → rail canônico
+//   · telas de OPERADOR (planejamento/preparação/abertura/fechamento/qualidade) → rail canônico
 //     (kit) + conteúdo, atrás do gate de operador;
 //   · painel (Lotes) → KIOSK de operador em tela cheia (a previsão exige
 //     backstage.operate_production) — FORA do rail, mas DENTRO do gate;

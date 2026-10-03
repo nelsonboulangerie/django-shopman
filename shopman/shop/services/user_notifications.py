@@ -773,7 +773,7 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
     if source_condition == PRODUCTION_QUALITY_REVIEW:
         resource_id = _resource_id(source_ref, "work_order")
         if resource_id is not None:
-            return "/expedite#quality"
+            return "/quality"
     if source_condition == STOCK_ALERT_DELIVERY_INCIDENT:
         resource_id = _resource_id(source_ref, "stock_alert_delivery")
         if resource_id is not None:

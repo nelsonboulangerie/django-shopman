@@ -86,6 +86,20 @@ export function openQueueColumn(layout: QueueColumnLayout, key: string): QueueCo
   return { ...layout, [key]: { ...current, open: true } };
 }
 
+/** Só esta coluna aberta (o posto de saída: a Saída do Gestor, com as outras em faixa). */
+export function onlyQueueColumn(layout: QueueColumnLayout, keys: readonly string[], key: string): QueueColumnLayout {
+  if (!keys.includes(key)) return layout;
+  return Object.fromEntries(
+    keys.map((candidate) => [candidate, { weight: layout[candidate]?.weight ?? 1, open: candidate === key }]),
+  );
+}
+
+/** Esta é a única coluna aberta? */
+export function isOnlyQueueColumn(layout: QueueColumnLayout, keys: readonly string[], key: string): boolean {
+  const open = openQueueKeys(layout, keys);
+  return open.length === 1 && open[0] === key;
+}
+
 /** "Mostrar as 3 colunas": todas abertas, em partes iguais. */
 export function showAllQueueColumns(keys: readonly string[]): QueueColumnLayout {
   return defaultQueueLayout(keys);

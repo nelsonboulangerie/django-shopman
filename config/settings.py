@@ -1347,12 +1347,8 @@ SPECTACULAR_SETTINGS = {
             ("individual", "Pessoa Física"),
             ("business", "Pessoa Jurídica"),
         ],
-        "CraftsmanWorkOrderStatusEnum": [
-            ("planned", "Planejada"),
-            ("started", "Iniciada"),
-            ("finished", "Concluída"),
-            ("void", "Cancelada"),
-        ],
+        # Fonte única dos rótulos de status da WorkOrder: os choices do modelo.
+        "CraftsmanWorkOrderStatusEnum": "shopman.craftsman.models.work_order.WorkOrder.Status",
         "PaymanPaymentIntentStatusEnum": [
             ("pending", "Pendente"),
             ("authorized", "Autorizado"),

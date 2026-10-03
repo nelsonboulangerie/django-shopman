@@ -176,7 +176,7 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
     lot = by_kind["work_order_late"]
     assert lot["title"] == "Lote de Croissant passou do tempo"
     assert lot["url"] == (
-        f"https://prod.example.test/expedite?q={wo.ref}&date={timezone.localdate().isoformat()}"
+        f"https://prod.example.test/close?q={wo.ref}&date={timezone.localdate().isoformat()}"
     )
 
     review = by_kind["announcement_review"]

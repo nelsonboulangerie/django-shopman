@@ -80,7 +80,7 @@ export function useQcKiosk(initialDate = "") {
       if (shortage) return { ok: false, shortage };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, fallbackError));
-      // Conflito de estado (fornada fechada/estornada em outra tela): o painel
+      // Conflito de estado (lote fechado/cancelado em outra tela): o painel
       // está mentindo — atualiza na hora em vez de esperar o poll de 30s.
       if (httpErrorCode(err) === "conflict") await refresh();
       return { ok: false };

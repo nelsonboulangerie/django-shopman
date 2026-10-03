@@ -19,13 +19,37 @@ import {
   type AffordanceRef,
   type Tone,
 } from "~/presentation/board";
+import { computed, ref } from "vue";
 import { danfeLine } from "~/presentation/danfe";
+import { kitchenChips, kitchenChipTone, kitchenRecallOptions } from "~/presentation/kitchen";
 
-const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean; negotiationOnly?: boolean; danfePrinting?: boolean }>();
+// ``touch``: o posto de saída (Gestor na "Visão: Saída", tablet do passe): todo
+// alvo do cartão sobe para 48 px. ``canOpen``: falso para quem só expede; o
+// detalhe do pedido e o "Atender" são de quem gerencia: o código deixa de ser
+// link e o "Atender" some.
+const props = withDefaults(
+  defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean; negotiationOnly?: boolean; danfePrinting?: boolean; touch?: boolean; canOpen?: boolean }>(),
+  { canOpen: true },
+);
 const emit = defineEmits<{
   (e: "action", ref: AffordanceRef): void;
   (e: "dismiss-error" | "toggle-select" | "toggle-assign" | "print-danfe"): void;
+  (e: "station-ready", stationRef: string): void;
+  (e: "station-recall", ticketPk: number): void;
 }>();
+
+// A Cozinha neste pedido: quem falta e o "Pronto" da estação sem tela (Preparo);
+// o "Voltar para…" no menu do pedido (o que já está pronto).
+const kitchenLine = computed(() => props.negotiationOnly ? "" : props.card.kitchen?.missing_label || "");
+const chips = computed(() => props.negotiationOnly ? [] : kitchenChips(props.card.kitchen));
+const recallOptions = computed(() => props.negotiationOnly ? [] : kitchenRecallOptions(props.card.kitchen));
+const menuOpen = ref(false);
+function recall(ticketPk: number) {
+  menuOpen.value = false;
+  emit("station-recall", ticketPk);
+}
+// Alvo de toque: 44 px no escritório, 48 px no posto de saída.
+const target = computed(() => props.touch ? "min-h-action min-w-action" : "min-h-control min-w-control");
 
 const code = computed(() => splitRef(props.card.ref));
 const onRoad = computed(() => onRoadLine(props.card));
@@ -109,7 +133,8 @@ function buttonClass(priority: string): string {
       <button
         v-if="!negotiationOnly"
         type="button"
-        class="mt-0.5 grid size-control shrink-0 place-items-center rounded transition hover:bg-accent"
+        class="mt-0.5 grid shrink-0 place-items-center rounded transition hover:bg-accent"
+        :class="touch ? 'size-action' : 'size-control'"
         :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
         :aria-pressed="selected"
         @click="emit('toggle-select')"
@@ -118,7 +143,7 @@ function buttonClass(priority: string): string {
           <Icon v-if="selected" name="lucide:check" class="size-3" />
         </span>
       </button>
-      <NuxtLink :to="`/${card.ref}`" class="group flex min-h-control min-w-control flex-col justify-center" :aria-label="`Abrir pedido ${card.ref}`">
+      <NuxtLink v-if="canOpen" :to="`/${card.ref}`" class="group flex flex-col justify-center" :class="target" :aria-label="`Abrir pedido ${card.ref}`">
         <span class="flex items-center gap-1.5">
           <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0 text-muted-foreground" />
           <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
@@ -133,11 +158,24 @@ function buttonClass(priority: string): string {
           data-channel-display-id
         >iFood #{{ card.channel_display_id }}</span>
       </NuxtLink>
+      <!-- quem só expede não abre o detalhe (é de quem gerencia): o código é só texto -->
+      <div v-else class="flex flex-col justify-center" :class="target" data-card-code>
+        <span class="flex items-center gap-1.5">
+          <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0 text-muted-foreground" />
+          <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
+        </span>
+        <span class="block truncate text-lg font-bold leading-tight tabular-nums">{{ code.code }}</span>
+        <span
+          v-if="card.channel_display_id"
+          class="block break-all text-xs font-medium tabular-nums text-muted-foreground"
+          data-channel-display-id
+        >iFood #{{ card.channel_display_id }}</span>
+      </div>
       <button
-        v-if="!negotiationOnly"
+        v-if="!negotiationOnly && canOpen"
         type="button"
-        class="ml-auto inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
-        :class="card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
+        class="ml-auto inline-flex shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
+        :class="[target, card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent']"
         :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator}. Toque para liberar` : 'Atender este pedido'"
         :title="card.assigned_operator ? `${card.assigned_operator}: toque para liberar` : 'Atender'"
         @click="emit('toggle-assign')"
@@ -145,6 +183,7 @@ function buttonClass(priority: string): string {
         <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
         <span v-if="card.assigned_operator" class="max-w-20 truncate">{{ card.assigned_operator }}</span>
       </button>
+      <span v-if="!negotiationOnly && !canOpen" class="ml-auto" aria-hidden="true" />
       <!-- Um relógio só. Havendo prazo, ele é o relógio: quanto FALTA decide se o
            operador pega este pedido agora, e quanto PASSOU não decide nada. Sem
            prazo (a maioria dos estados), volta a contar o decorrido. -->
@@ -291,8 +330,8 @@ function buttonClass(priority: string): string {
       <button
         v-if="undo.canUndo"
         type="button"
-        class="ml-auto inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition hover:bg-accent disabled:opacity-60"
-        :class="undo.kind === 'handoff' ? 'min-h-action border-primary text-primary' : ''"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition hover:bg-accent disabled:opacity-60"
+        :class="[target, undo.kind === 'handoff' ? 'min-h-action border-primary text-primary' : '']"
         :disabled="busy"
         data-undo-button
         @click="emit('action', undo.action)"
@@ -370,6 +409,44 @@ function buttonClass(priority: string): string {
       <span class="ml-auto text-base font-bold tabular-nums">{{ card.ifood_pickup_code }}</span>
     </p>
 
+    <!-- a Cozinha neste pedido (SUITE-UX §15): quem falta, e o "Pronto" da estação
+         que só recebe papel. Era a coluna "Em preparo" da Saída da Cozinha. -->
+    <div v-if="kitchenLine" class="flex flex-col gap-1.5" data-kitchen>
+      <p class="flex items-center gap-1.5 text-xs font-semibold" data-kitchen-missing>
+        <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />
+        {{ kitchenLine }}
+      </p>
+      <ul class="flex flex-col gap-1" aria-label="Estações deste pedido">
+        <li
+          v-for="chip in chips"
+          :key="chip.ref"
+          class="flex items-center gap-2 rounded-md border px-2 py-1"
+          :class="kitchenChipTone(chip.tone)"
+          data-kitchen-station
+        >
+          <Icon :name="chip.icon" class="size-3.5 shrink-0" />
+          <span class="min-w-0 flex-1 leading-tight">
+            <span class="block truncate text-xs font-bold text-foreground">{{ chip.station }}</span>
+            <span class="block truncate text-xs">{{ chip.detail }}</span>
+            <span v-if="chip.cancelledNote" class="block truncate text-xs font-semibold text-destructive dark:text-red-300">{{ chip.cancelledNote }}</span>
+          </span>
+          <button
+            v-if="chip.canMarkReady"
+            type="button"
+            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-foreground px-2.5 text-sm font-semibold text-background transition hover:bg-foreground/90 active:scale-[0.98] disabled:opacity-60"
+            :class="target"
+            :disabled="busy"
+            :aria-label="`Pronto de ${chip.station} no pedido ${code.code}`"
+            data-kitchen-ready
+            @click="emit('station-ready', chip.ref)"
+          >
+            <Icon name="lucide:check" class="size-3.5" />
+            Pronto de {{ chip.station }}
+          </button>
+        </li>
+      </ul>
+    </div>
+
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">
       <div
@@ -397,7 +474,7 @@ function buttonClass(priority: string): string {
     </div>
 
     <!-- actions -->
-    <div v-if="affordances.length" class="flex flex-wrap gap-1.5 pt-0.5">
+    <div v-if="affordances.length || recallOptions.length" class="flex flex-wrap gap-1.5 pt-0.5">
       <button
         v-for="aff in affordances"
         :key="aff.ref"
@@ -405,12 +482,45 @@ function buttonClass(priority: string): string {
         :disabled="busy || aff.disabled"
         :title="aff.reason || undefined"
         class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition disabled:opacity-60"
-        :class="[aff.priority === 'primary' ? 'min-h-action min-w-action' : 'min-h-control min-w-control', aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
+        :class="[aff.priority === 'primary' || touch ? 'min-h-action min-w-action' : 'min-h-control min-w-control', aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
         @click="!aff.disabled && emit('action', aff.ref)"
       >
         <Icon :name="aff.icon" class="size-3.5" />
         {{ aff.label }}
       </button>
+      <!-- menu do pedido: devolver à cozinha o que uma estação já tinha dado por
+           pronto (o recall que a Cozinha fazia na tela dela). -->
+      <div v-if="recallOptions.length" class="relative ml-auto">
+        <button
+          type="button"
+          class="grid place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          :class="touch ? 'size-action' : 'size-control'"
+          aria-haspopup="menu"
+          :aria-expanded="menuOpen"
+          :aria-label="`Mais ações do pedido ${code.code}`"
+          data-card-menu
+          @click="menuOpen = !menuOpen"
+        >
+          <Icon name="lucide:ellipsis" class="size-4" />
+        </button>
+        <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
+        <div v-if="menuOpen" class="absolute bottom-full right-0 z-50 mb-1 w-56 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
+          <button
+            v-for="option in recallOptions"
+            :key="option.ticketPk"
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-2 px-3 text-left text-sm transition hover:bg-accent disabled:opacity-60"
+            :class="target"
+            :disabled="busy"
+            data-card-recall
+            @click="recall(option.ticketPk)"
+          >
+            <Icon name="lucide:rotate-ccw" class="size-4 shrink-0" />
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
     </div>
     <!-- Por que o botão está travado, à vista: antes só no tooltip, que o
          tablet não tem. A frase inteira, e não o rótulo curto, que dizia

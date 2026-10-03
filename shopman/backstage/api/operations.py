@@ -160,6 +160,7 @@ from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
     HasBackstagePermission,
+    HasOrderBoardAccess,
     HasProductionCapability,
     IsBackstageOperator,
     IsTrustedStation,
@@ -704,10 +705,28 @@ _OPERATOR_UNLOCK_PERMS = {
 
 
 def _validated_unlock_perm(raw) -> tuple[str | None, bool]:
-    perm = (str(raw or "").strip()) or None
-    if perm is not None and perm not in _OPERATOR_UNLOCK_PERMS:
+    """A permissão da superfície, conferida contra a lista.
+
+    Aceita alternativas (``a|b``, ``permissions.surface_perm_codes``): o Gestor
+    deixa entrar quem gerencia pedidos E quem só expede (SUITE-UX §15). Cada
+    código tem de estar na lista; a primeira é a chave da trava da superfície.
+    """
+    from shopman.backstage.permissions import SURFACE_PERM_SEPARATOR, surface_perm_codes
+
+    codes = surface_perm_codes(raw)
+    if not codes:
+        return None, True
+    if any(code not in _OPERATOR_UNLOCK_PERMS for code in codes):
         return None, False
-    return perm, True
+    return SURFACE_PERM_SEPARATOR.join(codes), True
+
+
+def _surface_lock_key(perm: str | None) -> str | None:
+    """A capability que a trava da superfície tranca: a primeira das alternativas."""
+    from shopman.backstage.permissions import surface_perm_codes
+
+    codes = surface_perm_codes(perm)
+    return codes[0] if codes else None
 
 
 class OperatorSessionView(APIView):
@@ -728,14 +747,16 @@ class OperatorSessionView(APIView):
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
             return Response({"detail": "Permissão desconhecida."}, status=400)
+        from shopman.backstage.permissions import has_surface_perm
         from shopman.backstage.services import operator_session
 
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
+        lock_key = _surface_lock_key(required_perm)
         locked = bool(
             operador is None
             or (
-                required_perm
-                and operator_session.is_capability_locked(request, required_perm)
+                lock_key
+                and operator_session.is_capability_locked(request, lock_key)
             )
         )
         return Response({
@@ -754,7 +775,7 @@ class OperatorSessionView(APIView):
             "authorized": bool(
                 operador
                 and not locked
-                and (required_perm is None or operador.has_perm(required_perm))
+                and has_surface_perm(operador, required_perm)
             ),
         })
 
@@ -929,7 +950,7 @@ class OperatorUnlockView(APIView):
         sign_in_audit.mark_method(request, metodo)
         login(request, operator, backend=MODEL_BACKEND)
         operator_session.start(request)
-        operator_session.unlock_capability(request, perm)
+        operator_session.unlock_capability(request, _surface_lock_key(perm))
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 
@@ -944,7 +965,7 @@ class OperatorLockView(APIView):
         perm, valid = _validated_unlock_perm((request.data or {}).get("perm"))
         if not valid or perm is None:
             return Response({"detail": "Permissão de operador inválida."}, status=400)
-        operator_session.lock_capability(request, perm)
+        operator_session.lock_capability(request, _surface_lock_key(perm))
         return Response({"ok": True})
 
 
@@ -1776,8 +1797,10 @@ class OrderDetailView(OperationalObservationMixin, APIView):
     ),
 )
 class OrderQueueView(OperationalObservationMixin, APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "shop.manage_orders"
+    """O quadro do Gestor. Quem só expede (SUITE-UX §15) lê o mesmo quadro: as
+    ações de cada card já vêm com a régua dele (``operator_orders.operational_actions``)."""
+
+    permission_classes = [HasOrderBoardAccess]
 
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
@@ -1793,8 +1816,7 @@ class OrderBoardLayoutView(APIView):
     operador arrumou, só que sem lembrar). Mesma permissão de ler o quadro.
     """
 
-    permission_classes = [HasBackstagePermission]
-    required_permission = "shop.manage_orders"
+    permission_classes = [HasOrderBoardAccess]
 
     def get(self, request):
         from shopman.backstage import station_trust
@@ -1964,6 +1986,10 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
     ),
 )
 class OrderAdvanceView(_OrderActionBase):
+    # Quem só expede também avança: a régua do que ele pode (só a saída do
+    # pedido pronto, sem troco nem maquininha) é do serviço, sob o lock.
+    permission_classes = [HasOrderBoardAccess]
+
     def _scope(self, request, ref):
         from shopman.shop.services.remote_mutations import mutation_fingerprint
 
@@ -2028,6 +2054,9 @@ class OrderAdvanceView(_OrderActionBase):
                     order, actor=_actor(request), operator=request.user,
                     change_out_raw=None if change_out is None else str(change_out),
                     equipment=equipment, expected_revision=base, target_status=target, trip_ref=trip_ref,
+                    # Entrou pelo quadro sem gerenciar pedidos = só expede. A pergunta
+                    # é a negativa de propósito: qualquer outra porta cai na régua estreita.
+                    expedite_only=not request.user.has_perm("shop.manage_orders"),
                 )
             except orders_service.OrderChangeOutRequired as exc:
                 return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
@@ -2300,6 +2329,8 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
 )
 class OrderUndoHandoffView(_OrderActionBase):
     intention_operation = "undo-handoff"
+    # Desfazer a saída é de quem expede também (era da Saída da Cozinha).
+    permission_classes = [HasOrderBoardAccess]
 
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
@@ -2322,6 +2353,9 @@ class OrderUndoHandoffView(_OrderActionBase):
 )
 class OrderUndoReadyView(_OrderActionBase):
     intention_operation = "undo-ready"
+    # O pronto automático desfeito reabre o ticket: o mesmo que o recall da
+    # Cozinha, que quem expede já fazia.
+    permission_classes = [HasOrderBoardAccess]
 
     def post(self, request, ref: str):
         order, err = self._get_order(ref)

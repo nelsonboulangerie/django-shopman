@@ -29,6 +29,7 @@ from shopman.shop.models import Conversation, ConversationMessage
 
 from . import allergens, small_talk
 from . import tools as tools_module
+from .metrics import LAYER_AGENT, LAYER_COURTESY, stage_of
 from .tools import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,8 @@ class AgentOutcome:
     order_ref: str = ""
     quote_token: str = ""
     disclosure: dict = field(default_factory=dict)
+    #: Quem respondeu (``metrics.LAYER_*``): a régua grava em ``usage["layer"]``.
+    layer: str = LAYER_AGENT
 
 
 def _config() -> dict:
@@ -325,7 +328,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         return AgentOutcome(
             reply_text=small_talk.reply_for(
                 customer_text, kind=courtesy, shop_name=shop_name, is_first_turn=is_first_turn
-            )
+            ),
+            layer=LAYER_COURTESY,
         )
 
     allergy = _allergy_outcome(conversation, customer_text, channel_ref=channel_ref)
@@ -404,7 +408,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 # quando encontra um fato; saudações e conversa sem match mantêm
                 # o fallback neutro.
                 arguments: dict = {}
-                result = tools_module.execute("search_storefront", arguments, ctx)
+                with stage_of(conversation, "tools"):
+                    result = tools_module.execute("search_storefront", arguments, ctx)
                 rendered = (
                     tools_module.render_result("search_storefront", result)
                     if result.get("ok") and result.get("found")
@@ -473,7 +478,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                     "message": "Esta chamada já foi feita com os mesmos argumentos. Responda ao cliente com o que já tem.",
                 }
             else:
-                result = tools_module.execute(use.name, arguments, ctx)
+                with stage_of(conversation, "tools"):
+                    result = tools_module.execute(use.name, arguments, ctx)
             rendered = "" if result.get("error") == "repeated_call" else tools_module.render_result(use.name, result)
             if rendered:
                 reply_key = "cart_state" if use.name in _CART_STATE_TOOLS else signature

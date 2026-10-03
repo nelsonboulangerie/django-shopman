@@ -33,16 +33,13 @@ logger = logging.getLogger(__name__)
 
 
 # ── Status labels & semantic tones ─────────────────────────────────────
-# ``WO_STATUS_*`` are WorkOrder states — surface-local presentation, owned by
-# the production board. (Order status labels come from the copy registry via
-# ``order_status_label``.)
+# Rótulo do status da WorkOrder: fonte única nos choices do modelo
+# (``WorkOrder.Status``: Planejada · Aberta · Fechada · Cancelada). Esta camada
+# só LÊ; redefinir aqui é o que fazia a mesma palavra significar ``started``
+# no quadro e ``finished`` no Admin. O tom é apresentação local do quadro.
+# (Order status labels come from the copy registry via ``order_status_label``.)
 
-WO_STATUS_LABELS: dict[str, str] = {
-    "planned": "Planejado",
-    "started": "Produzido",
-    "finished": "Concluído",
-    "void": "Estornado",
-}
+WO_STATUS_LABELS: dict[str, str] = {status.value: str(status.label) for status in WorkOrder.Status}
 
 WO_STATUS_TONES: dict[str, str] = {
     "planned": "info",
@@ -710,10 +707,10 @@ def _board_actions(
                 _production_action(
                     ref=f"start:{order.pk}",
                     kind="start",
-                    label="Confirmar produzido",
+                    label="Confirmar abertura",
                     priority=20,
                     enabled=access.can_start,
-                    reason="Sem capacidade para confirmar a quantidade produzida.",
+                    reason="Sem capacidade para abrir lotes.",
                     href=f"/api/v1/backstage/production/{order.pk}/start/",
                     payload_schema="ProductionStartMutationRequest",
                     expected_rev=order.rev,
@@ -724,15 +721,15 @@ def _board_actions(
                 _production_action(
                     ref=f"void:{order.pk}",
                     kind="void",
-                    label="Estornar lote",
+                    label="Cancelar lote",
                     priority=90,
                     enabled=access.can_void,
-                    reason="Sem capacidade para estornar lotes.",
+                    reason="Sem capacidade para cancelar lotes.",
                     href=f"/api/v1/backstage/production/{order.pk}/void/",
                     payload_schema="ProductionVoidMutationRequest",
                     expected_rev=order.rev,
-                    confirmation_title="Estornar este lote?",
-                    confirmation_label="Confirmar estorno",
+                    confirmation_title="Cancelar este lote?",
+                    confirmation_label="Confirmar cancelamento",
                     confirmation_reason_required=True,
                 )
             )
@@ -750,15 +747,15 @@ def _kds_actions(
             _production_action(
                 ref=f"void:{card.pk}",
                 kind="void",
-                label="Estornar lote",
+                label="Cancelar lote",
                 priority=90,
                 enabled=access.can_void,
-                reason="Sem capacidade para estornar lotes.",
+                reason="Sem capacidade para cancelar lotes.",
                 href=f"/api/v1/backstage/production/{card.pk}/void/",
                 payload_schema="ProductionVoidMutationRequest",
                 expected_rev=card.rev,
-                confirmation_title="Estornar este lote?",
-                confirmation_label="Confirmar estorno",
+                confirmation_title="Cancelar este lote?",
+                confirmation_label="Confirmar cancelamento",
                 confirmation_reason_required=True,
             )
         )
@@ -788,7 +785,7 @@ def _qc_actions(
                 label=f"{count} {'lote' if count == 1 else 'lotes'}, nenhuma exceção · Confirmar",
                 priority=15,
                 enabled=all(card.can_correct for card in clean_pending),
-                reason="Somente a gestão pode revisar um lote concluído.",
+                reason="Somente a gestão pode revisar um lote fechado.",
                 href="/api/v1/backstage/production/quality-review/batch/",
                 payload_schema="ProductionQualityReviewBatchMutationRequest",
                 expected_rev=None,
@@ -804,7 +801,7 @@ def _qc_actions(
                         label="Confirmar qualidade",
                         priority=20,
                         enabled=card.can_correct,
-                        reason="Somente a gestão pode revisar um lote concluído.",
+                        reason="Somente a gestão pode revisar um lote fechado.",
                         href=f"/api/v1/backstage/production/{card.pk}/quality-review/",
                         payload_schema="ProductionQualityReviewMutationRequest",
                         expected_rev=card.rev,
@@ -819,7 +816,7 @@ def _qc_actions(
                     label="Corrigir qualidade",
                     priority=40,
                     enabled=card.can_correct,
-                    reason="Somente a gestão pode corrigir um lote concluído.",
+                    reason="Somente a gestão pode corrigir um lote fechado.",
                     href=f"/api/v1/backstage/production/{card.pk}/quality-correction/",
                     payload_schema="ProductionQualityCorrectionMutationRequest",
                     expected_rev=card.rev,
@@ -833,13 +830,13 @@ def _qc_actions(
             _production_action(
                 ref=f"finish:{card.pk}",
                 kind="finish",
-                label="Confirmar conclusão",
+                label="Confirmar fechamento",
                 priority=10,
                 enabled=card.can_close,
                 reason=(
-                    "Confirme a quantidade produzida antes do QC."
+                    "Confirme a abertura do lote antes do QC."
                     if card.status == WorkOrder.Status.PLANNED and not access.can_start
-                    else "Sem capacidade para concluir o QC."
+                    else "Sem capacidade para fechar o lote."
                 ),
                 href=f"/api/v1/backstage/production/{card.pk}/finish/",
                 payload_schema="ProductionFinishMutationRequest",
@@ -984,7 +981,7 @@ class ProductionKDSCardProjection:
     timer_tone: str
     can_finish: bool
     order_refs: tuple[str, ...]
-    # Pedidos que aguardam este lote (production_order_sync) — o estorno avisa.
+    # Pedidos que aguardam este lote (production_order_sync) — o cancelamento avisa.
 
 
 @dataclass(frozen=True)
@@ -1145,6 +1142,9 @@ class WorkOrderReportRow:
     position_ref: str
     qty_planned: str
     qty_started: str
+    #: Fechamento sem abertura explícita (``implicit`` no evento ``started``): o
+    #: previsto foi ASSUMIDO igual ao planejado, não declarado por ninguém.
+    started_assumed: bool
     qty_finished: str
     qty_loss: str
     yield_rate: str
@@ -2993,6 +2993,7 @@ def _work_order_report_row(wo: WorkOrder) -> WorkOrderReportRow:
         position_ref=wo.position_ref or "",
         qty_planned=_qty(wo.quantity),
         qty_started=_qty(started_qty) if started_qty else "",
+        started_assumed=_wo_started_assumed(wo),
         qty_finished=_qty(finished_qty) if wo.finished is not None else "",
         qty_loss=_qty(loss_qty) if loss_qty else "0",
         yield_rate=yield_rate,
@@ -3272,7 +3273,7 @@ def _suggestion_material_checks(
 
     Mesma régua do guardrail que recusa o fechamento (``INVENTORY_BACKEND``,
     ``check_finish_materials``): quem planeja vê a falta onde decide, e não na
-    recusa da Expedição. Só matéria-prima (pré-preparo é feito na hora, como
+    recusa do Fechamento. Só matéria-prima (pré-preparo é feito na hora, como
     na lista de separação) e só linhas ainda sem lote na data (``skip_skus``):
     a linha já planejada mostra o estado dela. Sem backend, ou com falha de
     leitura, devolve vazio: o aviso some, a sugestão não muda.
@@ -4134,6 +4135,29 @@ def _wo_started_qty(wo: WorkOrder) -> Decimal | None:
     return wo.quantity
 
 
+def _wo_started_assumed(wo: WorkOrder) -> bool:
+    """O previsto foi assumido igual ao planejado, sem abertura declarada?
+
+    Verdade quando o fechamento abriu o lote sozinho (``payload.implicit``) ou
+    quando o lote saiu de ``planned`` sem evento de abertura com quantidade.
+    """
+    if wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.VOID):
+        return False
+    prefetched = getattr(wo, "_prefetched_objects_cache", {}).get("events")
+    if prefetched is None:
+        latest = wo.events.filter(kind="started").order_by("-seq").first()
+    else:
+        latest = max(
+            (event for event in prefetched if event.kind == "started"),
+            key=lambda event: event.seq,
+            default=None,
+        )
+    if latest is None:
+        return True
+    payload = latest.payload or {}
+    return bool(payload.get("implicit")) or payload.get("quantity") is None
+
+
 def _qty(value: Decimal) -> str:
     value = _decimal_value(value)
     if not value:
@@ -4186,7 +4210,7 @@ class ForecastRowProjection:
     ref: str  # identidade estável da fornada (anima entrada/saída na UI)
     output_sku: str
     recipe_name: str
-    qty: str  # a quantidade RELEVANTE do momento (planejada→iniciada→real)
+    qty: str  # a quantidade RELEVANTE do momento (planejada→prevista→realizada)
     eta_display: str  # "HH:MM" ou "—" (sem história e sem SLA)
     eta_is_actual: bool  # True = horário real da confirmação
     status: str  # scheduled | in_progress | delayed | arrived

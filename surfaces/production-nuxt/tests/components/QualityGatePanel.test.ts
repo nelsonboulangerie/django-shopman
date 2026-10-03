@@ -136,13 +136,13 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(wrapper.emitted("correct")?.[0]?.[0]).toMatchObject({ pk: 7 });
   });
 
-  it("deixa fora do portão o lote não fechado, com atalho para a Expedição", async () => {
+  it("deixa fora do portão o lote não fechado, com atalho para o Fechamento", async () => {
     const wrapper = mountPanel(ORDERS());
     const open = wrapper.find("[data-quality-open]");
 
-    expect(open.text()).toContain("1 lote ainda no forno ou sem fechar. Entra aqui quando a Expedição fechar.");
+    expect(open.text()).toContain("1 lote ainda no forno ou sem fechar. Entra aqui depois do Fechamento.");
     await open.find("button").trigger("click");
-    expect(wrapper.emitted("go-expedition")).toHaveLength(1);
+    expect(wrapper.emitted("go-close")).toHaveLength(1);
   });
 
   it("separa os confirmados numa aba própria", async () => {

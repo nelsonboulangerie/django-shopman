@@ -804,6 +804,11 @@ services:
         value: "https://central.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # A estação de Saída manda para a coluna Saída do Gestor (UX-G3).
+      - key: KDS__NUXT_PUBLIC_ORDERS_URL
+        value: "https://gestor.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
       # Pedidos
       - key: ORDERS__NUXT_PUBLIC_ADMIN_BASE_URL
         value: "https://admin.STORE_DOMAIN"

@@ -220,7 +220,7 @@ export function startableWorkOrder(
 }
 
 /**
- * A fornada planejada que esta linha AJUSTARIA — a mesma confirmada como produzida.
+ * A fornada planejada que esta linha AJUSTARIA, a mesma confirmada na Abertura.
  *
  * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
  * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem

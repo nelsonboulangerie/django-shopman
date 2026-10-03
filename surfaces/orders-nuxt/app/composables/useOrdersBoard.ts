@@ -11,6 +11,7 @@ import { useOrderIntention } from "./useOrderIntention";
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
 import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { stationReadyPath, stationRecallPath } from "~/presentation/kitchen";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
 import { useOperatorAppName } from "../../../operator-kit/app/composables/useOperatorWindowTitle";
 import { windowTitle } from "../../../operator-kit/app/presentation/windowTitle";
@@ -463,7 +464,10 @@ export function useOrdersBoard() {
     actionErrors.value = next;
   }
 
-  async function act(ref_: string, action: string, body?: Record<string, unknown>): Promise<boolean> {
+  // ``send``: o gesto fala com outro endpoint que não o do pedido (o "Pronto" da
+  // estação sem tela e o "Voltar para…" da Cozinha), com a mesma trava por pedido,
+  // o mesmo erro no cartão e a mesma releitura.
+  async function act(ref_: string, action: string, body?: Record<string, unknown>, send?: () => Promise<unknown>): Promise<boolean> {
     if (busy.value.has(ref_)) return false;
     if (error.value) {
       setActionError(ref_, "A leitura está desatualizada. Atualize o quadro antes de confirmar.");
@@ -472,7 +476,8 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready"].includes(action)) {
+      if (send) await send();
+      else if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -508,6 +513,12 @@ export function useOrdersBoard() {
   }
 
   const confirm = (ref_: string) => act(ref_, "confirm");
+  // A Cozinha no cartão (SUITE-UX §15): o "Pronto" da estação que só recebe papel
+  // e o ticket que volta à cozinha. Os endpoints são os da Saída da Cozinha.
+  const markStationReady = (ref_: string, orderPk: number, stationRef: string) =>
+    act(ref_, "station-ready", undefined, () => $fetch<unknown>(stationReadyPath(orderPk, stationRef), { method: "POST" }));
+  const recallStation = (ref_: string, ticketPk: number) =>
+    act(ref_, "station-recall", undefined, () => $fetch<unknown>(stationRecallPath(ticketPk), { method: "POST" }));
   // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
   // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
   // ``tripRef``: sai na MESMA saída de outro pedido (mesmo entregador, mesma maquininha).
@@ -585,6 +596,7 @@ export function useOrdersBoard() {
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
     fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
     equipmentAvailable, assign, unassign, confirmMany, advanceMany, undoHandoff, undoReady,
+    markStationReady, recallStation,
     soundOn, soundBlocked, alerting, attentionPending, toggleSound,
     activateAttentionSound, acknowledgeAttention,
   };

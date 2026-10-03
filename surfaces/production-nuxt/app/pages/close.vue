@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// Expedição = fechamento de fornada (ADR-017 §9 / QC-FORNADA §5). A fornada
-// sai do forno já classificada: painel de ORDENS do dia (a ordem traz forno,
-// horário e previsto — é o previsto que fecha a fornada normal em poucos
-// toques) e a tela de fechamento com partição (QcCloseScreen). No formato
-// das demais telas: ProductionHeader + rail; o miolo é o quiosque.
+// Fechamento = o lote sai do forno já classificado (ADR-017 §9 / QC-FORNADA §5):
+// painel de LOTES abertos do dia (o lote traz forno, horário e previsto; é o
+// previsto que fecha o lote normal em poucos toques) e a tela de fechamento com
+// partição (QcCloseScreen). A revisão do gestor sobre o lote já fechado mora na
+// aba Qualidade (/quality). No formato das demais telas: ProductionHeader +
+// rail; o miolo é o quiosque.
 import type {
   QCOrderCardProjection,
   RecipeOptionProjection,
@@ -26,10 +27,6 @@ import {
 
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
-type QueueTab = "expedition" | "quality";
-const activeQueue = ref<QueueTab>(
-  route.hash === "#quality" ? "quality" : "expedition",
-);
 const {
   kiosk,
   selectedDate,
@@ -39,9 +36,6 @@ const {
   refresh,
   finish,
   quickFinish,
-  reviewQuality,
-  reviewQualityBatch,
-  correctQuality,
 } = useQcKiosk(routeDate);
 
 // Tolerante a dado velho: poll falhou com painel na tela = chip de degradação
@@ -51,7 +45,7 @@ const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
 
-useHead({ title: "Expedição" });
+useHead({ title: "Fechamento" });
 
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(
@@ -98,23 +92,6 @@ const matches = (order: QCOrderCardProjection) => {
 const openOrders = computed(() =>
   (kiosk.value?.orders ?? []).filter((o) => !o.closed && matches(o)),
 );
-// O portão de Qualidade vê TODOS os lotes do dia, sem o filtro da busca: o
-// cartão "N lotes sem exceção" precisa contar exatamente o conjunto que o ato
-// confirma (o servidor assina esse conjunto). Ele mesmo separa os fechados
-// (sem exceção / exceções / confirmados) dos abertos.
-const qualityOrders = computed(() => kiosk.value?.orders ?? []);
-const batchAvailable = computed(
-  () =>
-    kiosk.value?.actions.some(
-      (action) => action.kind === "review_qc_batch" && action.enabled,
-    ) === true,
-);
-const qualityPendingCount = computed(
-  () =>
-    (kiosk.value?.orders ?? []).filter(
-      (order) => order.closed && !order.quality_reviewed,
-    ).length,
-);
 // A próxima a vencer ganha moldura: a primeira aberta (started primeiro).
 const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
 
@@ -124,18 +101,6 @@ function projectedAction(ref: string) {
 
 function finishAvailable(order: QCOrderCardProjection): boolean {
   return projectedAction(`finish:${order.pk}`)?.enabled === true;
-}
-
-function correctionAvailable(order: QCOrderCardProjection): boolean {
-  return projectedAction(`correct_qc:${order.pk}`)?.enabled === true;
-}
-
-function reviewAvailable(order: QCOrderCardProjection): boolean {
-  return projectedAction(`review_qc:${order.pk}`)?.enabled === true;
-}
-
-function correctionPartition(order: QCOrderCardProjection): QcPartitionGroup[] {
-  return order.partition;
 }
 
 function quickRecipeAvailable(recipe: RecipeOptionProjection): boolean {
@@ -178,32 +143,6 @@ async function openOrder(order: QCOrderCardProjection) {
   selectedRecipe.value = null;
 }
 
-function openCorrection(order: QCOrderCardProjection) {
-  if (!correctionAvailable(order)) return;
-  selectedOrder.value = order;
-  selectedRecipe.value = null;
-}
-
-// A consequência já está escrita no cartão, antes do gesto: o toque É a
-// confirmação (sem caixa do navegador por cima).
-async function confirmQuality(order: QCOrderCardProjection) {
-  if (!reviewAvailable(order)) return;
-  const result = await reviewQuality(order.pk, order.rev);
-  if (result.ok) useSonner.success(`Qualidade de ${order.recipe_name} confirmada.`);
-}
-
-async function confirmQualityBatch() {
-  if (!batchAvailable.value) return;
-  const count = (kiosk.value?.orders ?? []).filter(
-    (order) => order.closed && !order.quality_reviewed && !order.quality_exception,
-  ).length;
-  const result = await reviewQualityBatch();
-  if (result.ok)
-    useSonner.success(
-      count === 1 ? "1 lote confirmado." : `${count} lotes confirmados.`,
-    );
-}
-
 function openOffPlan(recipe: RecipeOptionProjection) {
   if (!quickRecipeAvailable(recipe)) return;
   recipePickerOpen.value = false;
@@ -237,26 +176,18 @@ async function onConfirm(
 ) {
   lastPayload.value = payload;
   const closingOrder = selectedOrder.value;
-  const correcting = Boolean(closingOrder?.closed);
   const result = closingOrder
-    ? correcting
-      ? await correctQuality(
-          closingOrder.pk,
-          closingOrder.rev,
-          payload.partition,
-          payload.reason,
-        )
-      : await finish(
-          closingOrder.pk,
-          ovenFacts.currentRev(closingOrder.pk, closingOrder.rev),
-          payload.quantity,
-          payload.partition,
-          force,
-          reason,
-          payload.yield_deviation_confirmed,
-          payload.yield_deviation_reason,
-          overrideProof,
-        )
+    ? await finish(
+        closingOrder.pk,
+        ovenFacts.currentRev(closingOrder.pk, closingOrder.rev),
+        payload.quantity,
+        payload.partition,
+        force,
+        reason,
+        payload.yield_deviation_confirmed,
+        payload.yield_deviation_reason,
+        overrideProof,
+      )
     : selectedRecipe.value
       ? await quickFinish(
           selectedRecipe.value.pk,
@@ -270,10 +201,8 @@ async function onConfirm(
   if (result.ok) {
     // Fornada fechada leva o timer junto — senão ele fica órfão no
     // localStorage e alarma depois, num card que nem existe mais.
-    if (closingOrder && !correcting) oven.clear(ovenKey(closingOrder));
-    useSonner.success(
-      correcting ? "Qualidade corrigida." : "Lote enviado para Qualidade (QC).",
-    );
+    if (closingOrder) oven.clear(ovenKey(closingOrder));
+    useSonner.success("Lote enviado para Qualidade (QC).");
     backToBoard();
     return;
   }
@@ -288,12 +217,6 @@ function retryWithForce(reason: string, overrideProof: string) {
 
 const screenTitle = computed(
   () => selectedOrder.value?.recipe_name ?? selectedRecipe.value?.name ?? "",
-);
-const screenMode = computed<"close" | "correct">(() =>
-  selectedOrder.value?.closed ? "correct" : "close",
-);
-const screenInitialPartition = computed(() =>
-  selectedOrder.value?.closed ? correctionPartition(selectedOrder.value) : [],
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
@@ -318,7 +241,7 @@ const screenStarted = computed(() => {
   return Number.isFinite(value) ? Math.round(value) : null;
 });
 
-// O quadradão "Confirmar" mostra a âncora — e a âncora É o produzido DESTA
+// O quadradão "Finalizar" mostra a âncora, e a âncora É o previsto DESTA
 // tela: o que entrou no forno é o que se espera que saia dele, salvo
 // ocorrência. O plano da produção já cumpriu seu papel lá atrás; aqui ele
 // não é mais informação, é ruído. Um número, um rótulo.
@@ -476,17 +399,11 @@ function onTimerKeydown(event: KeyboardEvent) {
   <main class="flex min-h-screen flex-col">
     <ProductionHeader
       v-model:query="query"
-      :title="activeQueue === 'quality' ? 'Qualidade (QC)' : 'Expedição'"
-      :count="
-        activeQueue === 'quality' ? qualityPendingCount : openOrders.length
-      "
-      :count-label="
-        activeQueue === 'quality'
-          ? 'aguardando revisão'
-          : 'lotes para finalizar'
-      "
+      title="Fechamento"
+      :count="openOrders.length"
+      count-label="lotes para finalizar"
       :progress="
-        activeQueue === 'expedition' && kiosk && kiosk.total_count > 0
+        kiosk && kiosk.total_count > 0
           ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
           : null
       "
@@ -497,15 +414,13 @@ function onTimerKeydown(event: KeyboardEvent) {
     <!-- Tela de fechamento. -->
     <QcCloseScreen
       v-if="(selectedOrder || selectedRecipe) && kiosk"
-      :key="`${screenMode}-${selectedOrder?.pk ?? `recipe-${selectedRecipe?.pk}`}`"
+      :key="selectedOrder?.pk ?? `recipe-${selectedRecipe?.pk}`"
       :title="screenTitle"
       :subtitle="screenSubtitle"
       :planned="screenPlanned"
       :started="screenStarted"
       :grades="kiosk.grades"
       :defects="kiosk.defects"
-      :mode="screenMode"
-      :initial-partition="screenInitialPartition"
       :submitting="submitting"
       @back="backToBoard"
       @confirm="onConfirm($event)"
@@ -514,8 +429,7 @@ function onTimerKeydown(event: KeyboardEvent) {
     <!-- Painel de lotes do dia. -->
     <div
       v-else
-      class="mx-auto flex w-full flex-col gap-4 px-4 py-4"
-      :class="activeQueue === 'quality' ? 'max-w-6xl' : 'max-w-3xl'"
+      class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4"
     >
       <div class="flex items-center justify-between gap-3">
         <OperatorPeriodPicker
@@ -561,50 +475,6 @@ function onTimerKeydown(event: KeyboardEvent) {
       </div>
 
       <div
-        class="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1"
-        role="tablist"
-        aria-label="Etapas de expedição e qualidade"
-      >
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="activeQueue === 'expedition'"
-          aria-controls="expedition-panel"
-          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
-          :class="
-            activeQueue === 'expedition'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          "
-          @click="activeQueue = 'expedition'"
-        >
-          Expedição
-        </button>
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="activeQueue === 'quality'"
-          aria-controls="quality-panel"
-          class="flex min-h-11 items-center justify-center gap-2 rounded-sm px-3 text-sm font-semibold transition"
-          :class="
-            activeQueue === 'quality'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          "
-          @click="activeQueue = 'quality'"
-        >
-          Qualidade (QC)
-          <span
-            v-if="qualityPendingCount > 0"
-            class="inline-flex min-w-5 items-center justify-center rounded-full bg-warning px-1.5 py-0.5 text-xs font-bold leading-none text-warning-foreground"
-            aria-label="Lotes aguardando revisão de qualidade"
-          >
-            {{ qualityPendingCount }}
-          </span>
-        </button>
-      </div>
-
-      <div
         v-if="stale"
         role="status"
         aria-live="polite"
@@ -618,9 +488,7 @@ function onTimerKeydown(event: KeyboardEvent) {
            vai direto ao dia pendente mais recente. -->
       <!-- Aviso inteiro é acionável para levar ao dia pendente; não é um CTA isolado. -->
       <button
-        v-if="
-          activeQueue === 'expedition' && kiosk && kiosk.previous_open_count > 0
-        "
+        v-if="kiosk && kiosk.previous_open_count > 0"
         type="button"
         class="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition hover:bg-warning/20"
         @click="selectedDate = kiosk.previous_open_date"
@@ -648,18 +516,13 @@ function onTimerKeydown(event: KeyboardEvent) {
         Nenhum lote planejado para hoje.
       </p>
       <p
-        v-else-if="kiosk && activeQueue === 'expedition' && !openOrders.length"
+        v-else-if="kiosk && !openOrders.length"
         class="py-10 text-center text-muted-foreground"
       >
-        Nenhum lote aguardando expedição.
+        Nenhum lote aguardando fechamento.
       </p>
 
-      <div
-        v-if="activeQueue === 'expedition'"
-        id="expedition-panel"
-        role="tabpanel"
-        class="grid gap-2"
-      >
+      <div class="grid gap-2">
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
              fornada é o botão quadrado do previsto, à direita. Alarmando, o
              card inteiro oscila em danger — visível do outro lado do fournil. -->
@@ -698,9 +561,9 @@ function onTimerKeydown(event: KeyboardEvent) {
                 · {{ order.position_ref }}</template
               >
               <template v-if="order.started_at_display">
-                · produzida às {{ order.started_at_display }}</template
+                · aberto às {{ order.started_at_display }}</template
               >
-              <template v-else> · ainda não produzida</template>
+              <template v-else> · ainda não aberto</template>
               <template
                 v-if="order.committed_qty && order.committed_qty !== '0'"
               >
@@ -757,27 +620,6 @@ function onTimerKeydown(event: KeyboardEvent) {
             >
           </button>
         </div>
-      </div>
-
-      <div
-        v-else-if="kiosk && kiosk.orders.length"
-        id="quality-panel"
-        role="tabpanel"
-      >
-        <QualityGatePanel
-          :orders="qualityOrders"
-          :grades="kiosk.grades"
-          :defects="kiosk.defects"
-          :is-today="selectedDate === ''"
-          :batch-available="batchAvailable"
-          :submitting="submitting"
-          :review-available="reviewAvailable"
-          :correction-available="correctionAvailable"
-          @confirm-batch="confirmQualityBatch"
-          @confirm-one="confirmQuality"
-          @correct="openCorrection"
-          @go-expedition="activeQueue = 'expedition'"
-        />
       </div>
     </div>
 

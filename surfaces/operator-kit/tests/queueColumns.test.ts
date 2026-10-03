@@ -16,6 +16,8 @@ import {
   resizeQueueColumns,
   showAllQueueColumns,
   toggleQueueColumn,
+  isOnlyQueueColumn,
+  onlyQueueColumn,
 } from "../app/presentation/queueColumns";
 
 const KEYS = ["intake", "prep", "expedition"] as const;
@@ -130,5 +132,20 @@ describe("nome acessível da faixa", () => {
     expect(queueStripLabel("Entrada", 1, 0)).toBe("Abrir a coluna Entrada: 1 pedido");
     expect(queueStripLabel("Fila", 2, 3, ["item", "itens"])).toBe("Abrir a coluna Fila: 2 itens, 3 atrasados");
     expect(queueStripLabel("Saída", 2, 2)).not.toMatch(/[—–]/);
+  });
+});
+
+describe("posto de saída: só uma coluna aberta", () => {
+  const keys = ["intake", "prep", "expedition"];
+  it("recolhe as outras e guarda os pesos", () => {
+    const start = { intake: { open: true, weight: 1.5 }, prep: { open: true, weight: 1 }, expedition: { open: false, weight: 2 } };
+    const only = onlyQueueColumn(start, keys, "expedition");
+    expect(only).toEqual({ intake: { open: false, weight: 1.5 }, prep: { open: false, weight: 1 }, expedition: { open: true, weight: 2 } });
+    expect(isOnlyQueueColumn(only, keys, "expedition")).toBe(true);
+    expect(isOnlyQueueColumn(start, keys, "expedition")).toBe(false);
+  });
+  it("coluna que não existe não mexe em nada", () => {
+    const start = { intake: { open: true, weight: 1 }, prep: { open: true, weight: 1 }, expedition: { open: true, weight: 1 } };
+    expect(onlyQueueColumn(start, keys, "nada")).toBe(start);
   });
 });

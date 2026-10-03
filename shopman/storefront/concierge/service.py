@@ -33,6 +33,7 @@ from shopman.shop.models import (
     OutboundAttempt,
 )
 
+from . import metrics
 from .contracts import IdentityResolution, InboundEvent, TransportScope
 
 logger = logging.getLogger(__name__)
@@ -902,6 +903,12 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
     window_evidence = _best_window_evidence(binding, inbound)
     from shopman.storefront.concierge import agent as agent_module
 
+    # A régua (OBS0310-K): custo e tempo do turno, gravados no primeiro bloco
+    # da resposta. O relógio de ponta a ponta parte da última entrada do turno,
+    # a que o cliente está esperando responder.
+    meter = metrics.TurnMeter()
+    meter.received_at = max(message.created_at for message in inbound)
+    conversation._meter = meter
     try:
         assert_turn_authority(conversation, for_mutation=False)
         from . import triage as triage_module
@@ -911,19 +918,24 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
         # para a equipe (ou para a outra mesa), com o resumo gravado.
         turn_text = "\n".join(message.text for message in inbound if message.text)
         previous_triage = (conversation.flags or {}).get("triage")
-        decision = triage_module.decide(
-            turn_text,
-            context=triage_module.context_for(conversation),
-            previous=previous_triage,
-            message_ids=ids,
-            commercial_authority=bool(conversation._commercial_authority),
-            client=triage_client,
-            channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
-        )
+        with meter.stage("triage"):
+            decision = triage_module.decide(
+                turn_text,
+                context=triage_module.context_for(conversation),
+                previous=previous_triage,
+                message_ids=ids,
+                commercial_authority=bool(conversation._commercial_authority),
+                client=metrics.triage_client_for(meter, triage_client),
+                channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
+            )
+        meter.triage_source = decision.source
         triage_module.record(conversation, inbound, decision)
         result.triage = decision
         if decision.escalates:
-            mark_handoff(conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision)
+            meter.layer = metrics.LAYER_TEAM
+            mark_handoff(
+                conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision, meter=meter
+            )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=decision)
         if (
             binding.identity_assurance
@@ -940,18 +952,23 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
             for message in inbound
         ):
-            outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))
+            outcome = agent_module.AgentOutcome(
+                reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"), layer=metrics.LAYER_MEDIA
+            )
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
-            outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_TURN_LIMIT"))
+            outcome = agent_module.AgentOutcome(
+                reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
+            )
             result.fallback = "turn_limit"
         else:
             try:
-                outcome = agent_module.run_agent(
-                    conversation=conversation,
-                    history=agent_module.history_for(conversation),
-                    client=client,
-                )
+                with meter.stage("agent"):
+                    outcome = agent_module.run_agent(
+                        conversation=conversation,
+                        history=agent_module.history_for(conversation),
+                        client=meter.wrap(client, "model", factory=agent_module.build_client),
+                    )
             except TurnRevoked:
                 raise
             except Exception:
@@ -969,7 +986,15 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                         (conversation.flags or {}).get("triage"), turn_text
                     )
                     triage_module.record(conversation, inbound, escalation)
-                    mark_handoff(conversation, binding, escalation.reason_line(), consumed_ids=ids, triage=escalation)
+                    meter.layer = metrics.LAYER_TEAM
+                    mark_handoff(
+                        conversation,
+                        binding,
+                        escalation.reason_line(),
+                        consumed_ids=ids,
+                        triage=escalation,
+                        meter=meter,
+                    )
                     return TurnResult(
                         conversation.pk, handoff=True, processed_message_ids=ids, triage=escalation
                     )
@@ -978,14 +1003,19 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                     "concierge_unavailable",
                     "Resposta automática indisponível; contexto preservado.",
                 )
-                outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_UNAVAILABLE"))
+                outcome = agent_module.AgentOutcome(
+                    reply_text=copy_message("CONCIERGE_UNAVAILABLE"), layer=metrics.LAYER_ERROR
+                )
                 result.fallback = "error"
+        meter.layer = outcome.layer
         if outcome.handoff:
+            meter.layer = metrics.LAYER_AGENT_HANDOFF
             mark_handoff(
                 conversation,
                 binding,
                 outcome.handoff_reason or "pedido do cliente",
                 consumed_ids=ids,
+                meter=meter,
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         from .transport import semantic_blocks
@@ -1021,6 +1051,8 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                         ),
                         depends_on=prepared[-1].pk if prepared else None,
                         window_evidence=window_evidence,
+                        # Um registro por turno: o primeiro bloco leva a conta toda.
+                        meter=meter if index == 0 else None,
                     )
                 )
             if not prepared:
@@ -1089,6 +1121,7 @@ def _prepare_reply(
     depends_on=None,
     purpose="reply",
     window_evidence=None,
+    meter=None,
 ):
     return ConversationMessage.objects.create(
         conversation=conversation,
@@ -1110,7 +1143,19 @@ def _prepare_reply(
             "window_evidence": window_evidence,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(),
         },
+        usage=_turn_usage(meter),
     )
+
+
+def _turn_usage(meter) -> dict:
+    """A régua do turno para ``ConversationMessage.usage``; medir nunca derruba o turno."""
+    if meter is None:
+        return {}
+    try:
+        return meter.as_usage(received_at=getattr(meter, "received_at", None))
+    except Exception:
+        logger.warning("concierge.metrics_failed", exc_info=True)
+        return {}
 
 
 def _next_attempt_no(message: ConversationMessage) -> int:
@@ -1289,8 +1334,12 @@ def mark_handoff(
     *,
     consumed_ids=(),
     triage=None,
+    meter=None,
 ) -> bool:
-    """Transfere a posse local e sincroniza cada vínculo ativo."""
+    """Transfere a posse local e sincroniza cada vínculo ativo.
+
+    ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
+    """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
         current.state = Conversation.State.HANDOFF
@@ -1371,6 +1420,7 @@ def mark_handoff(
                     ack,
                     purpose="handoff_ack",
                     window_evidence=evidence,
+                    meter=meter,
                 ),
             )
     conversation.refresh_from_db()

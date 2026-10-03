@@ -1,0 +1,4775 @@
+{
+ "about": "Conjunto de avaliação da Concierge (OBS0310-K, fatia 1 do CONCIERGE-ARQUITETURA-ALVO). Mensagens reais do alpha, 04/09 a 03/10/2026, lidas pela conexão direta em transação somente leitura, redigidas (redact_observation_text) e conferidas à mão: nome próprio, endereço, telefone, documento, link e código de pedido fora. Rótulo esperado por mensagem: layer (quem deve responder na arquitetura alvo), intent (uma das 12 ou vazio) e destination. Medido por `manage.py concierge_reply_eval`.",
+ "layers": {
+  "courtesy": "só cortesia: frase da casa, sem modelo (C1)",
+  "media": "link ou mídia sem texto: mensagem fixa ou equipe (C1)",
+  "context": "só se entende com a última fala da casa: \"sim\", \"mais 2\", endereço solto (C1/C2)",
+  "answer": "intenção clara que a Concierge responde consultando a loja (C2 a C5)",
+  "agent": "conversa solta que ninguém classifica: agente com teto (C6)",
+  "team": "equipe: reclamação, alergia, pessoa, pagamento com problema (C7)",
+  "other_desk": "vaga, parceria, fornecedor: outra mesa (C7)"
+ },
+ "cases": [
+  {
+   "ref": "msg-5",
+   "source": "teste_do_dono",
+   "text": "#c tem croissant hoje?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Testando"
+    },
+    {
+     "who": "Casa",
+     "text": "Sem problema, [nome]. Estou aqui para ajudar com seu pedido na Nelson Boulangerie. Você gostaria de dar uma olhada no cardápio, ou já tem algo em mente para retirada ou entrega?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 8849,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-9",
+   "source": "teste_do_dono",
+   "text": "sim, quero ver",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "#c tem croissant hoje?"
+    },
+    {
+     "who": "Casa",
+     "text": "Hoje o croissant e o pain au chocolat estão indisponíveis, [nome]. Posso te mostrar outras opções de folhados ou pães que temos frescos agora, se quiser."
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 36111,
+    "tool_calls": 6
+   }
+  },
+  {
+   "ref": "msg-23",
+   "source": "teste_do_dono",
+   "text": "tudo bem, pode continuar?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "sim, quero ver"
+    },
+    {
+     "who": "Casa",
+     "text": "name=\"browse_menu\">{\"query\": \"\", \"category\": \"folhados\"} ? Deixa eu confirmar rapidinho no sistema, [nome]. name=\"browse_menu\">{\"query\": \"\", \"category\": \"folhados\"} name=\"browse_menu\"> Peço desculpa pela demora, [nome], deixe-me verificar direitinho."
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 43512,
+    "tool_calls": 3
+   }
+  },
+  {
+   "ref": "msg-31",
+   "source": "teste_do_dono",
+   "text": "o que tem disponivel agora?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tudo bem, pode continuar?"
+    },
+    {
+     "who": "Casa",
+     "text": "No momento, além do croissant e do pain au chocolat, os folhados estão indisponíveis. Mas temos outras opções frescas hoje, [nome], como pães rústicos, macios, salgados e doces. Quer que eu te mostre alguma dessas categorias, ou prefere ver o cardápio completo pelo site?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 24307,
+    "tool_calls": 4
+   }
+  },
+  {
+   "ref": "msg-41",
+   "source": "teste_do_dono",
+   "text": "como faço pra ver o cardapio?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "o que tem disponivel agora?"
+    },
+    {
+     "who": "Casa",
+     "text": "Com base no que já consultei, [nome], temos disponíveis agora, entre outros: Bebidas quentes: Espresso (R$ 8,00), Cappuccino (R$ 12,00), Mochaccino (R$ 12,00), Chá Camille, Chá Rouge e Chá Sophie (R$ 14,00 cada) Bebidas geladas: Frappé (R$ 18,00) Ainda tenho para checar pães rústicos, macios, salgado"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer",
+    "accept": [
+     "house_info"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 11479,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-45",
+   "source": "teste_do_dono",
+   "text": "Quero duas baguetes francesas, 1 pão de forma… e 3 melon",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "como faço pra ver o cardapio?"
+    },
+    {
+     "who": "Casa",
+     "text": "Aqui está, [nome]: [link omitido] Esse link já entra logado com fotos e o cardápio completo. Quando decidir, é só me falar o que quer que eu monto o pedido por aqui mesmo."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 11735,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-49",
+   "source": "teste_do_dono",
+   "text": "quero sim. mas a baguete de tradição, não tem?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Quero duas baguetes francesas, 1 pão de forma… e 3 melon"
+    },
+    {
+     "who": "Casa",
+     "text": "[nome], encontrei uma boa notícia e duas nem tanto: As duas opções de baguete (Mini Baguete e Baguete Gergelim) estão indisponíveis no momento. O Melonpan também está indisponível. Já o pão de forma temos: o Shokupan, um pão japonês bem macio, R$ 28,00. Quer que eu coloque o Shokupan na sacola? E, pa"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 9016,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-53",
+   "source": "teste_do_dono",
+   "text": "quero que me avise quando estiver disponivel, pode ser?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "quero sim. mas a baguete de tradição, não tem?"
+    },
+    {
+     "who": "Casa",
+     "text": "Temos sim, [nome]. A Baguette de Tradition, R$ 16,00, com fermentação natural. Vou colocar 2 na sacola junto com o Shokupan. E para o Melonpan indisponível, quer que eu deixe de fora por agora ou prefere ver outra opção doce macia no lugar?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 7651,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-55",
+   "source": "teste_do_dono",
+   "text": "sim",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "quero que me avise quando estiver disponivel, pode ser?"
+    },
+    {
+     "who": "Casa",
+     "text": "Entendo, [nome], mas infelizmente não tenho como configurar um aviso automático de disponibilidade por aqui. O que posso fazer é sugerir que você confira o cardápio de novo em outro momento, ou se preferir, posso chamar a nossa equipe para anotar seu interesse no Melonpan. Enquanto isso, vamos seguir"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 11992,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-59",
+   "source": "teste_do_dono",
+   "text": "seguimos. é para entrega, ok. qual a taxa?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "sim"
+    },
+    {
+     "who": "Casa",
+     "text": "Prontinho, [nome]. Na sacola agora: 2 Baguette de Tradition (R$ 32,00) 1 Shokupan (R$ 28,00) Total: *R$ 60,00* Aliás, se quiser, temos o Pain Grillé combinando bem com esse pedido. Quer adicionar ou seguimos?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "reply_ms": 6544,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-61",
+   "source": "teste_do_dono",
+   "text": "[endereço omitido] Ap 801",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "seguimos. é para entrega, ok. qual a taxa?"
+    },
+    {
+     "who": "Casa",
+     "text": "Claro, [nome]. Para eu verificar a taxa, você pode me passar o endereço completo com número?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 17385,
+    "tool_calls": 2
+   }
+  },
+  {
+   "ref": "msg-67",
+   "source": "teste_do_dono",
+   "text": "14:30",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[endereço omitido] Ap 801"
+    },
+    {
+     "who": "Casa",
+     "text": "Temos horários hoje a partir de 13:30 até 22h, em janelas de 30 minutos. Qual horário fica melhor para você, [nome]?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 16428,
+    "tool_calls": 2
+   }
+  },
+  {
+   "ref": "msg-73",
+   "source": "teste_do_dono",
+   "text": "na verdade eu não queria pagar não",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "14:30"
+    },
+    {
+     "who": "Casa",
+     "text": "Aqui está o resumo, [nome]: 2 Baguette de Tradition: R$ 32,00 1 Shokupan: R$ 28,00 Taxa de entrega: R$ 8,00 Total: *R$ 68,00* Entrega hoje, 04/09, no horário de 14:30 às 15:00, no endereço [endereço omitido] Ap 801. Aliás, se quiser, temos Água que combina bem com o pedido, mas sem problema se prefer"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 5742,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-75",
+   "source": "teste_do_dono",
+   "text": "você não tem pena de mim?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "na verdade eu não queria pagar não"
+    },
+    {
+     "who": "Casa",
+     "text": "Entendo, [nome]. Todo [pedido omitido] de uma forma de pagamento para ser confirmado, temos [dado financeiro ou segredo omitido]. Qual prefere?"
+    }
+   ],
+   "expected": {
+    "layer": "agent",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 6411,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-77",
+   "source": "teste_do_dono",
+   "text": "você não tem sentimentos! me senti ofendido…",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "você não tem pena de mim?"
+    },
+    {
+     "who": "Casa",
+     "text": "Entendo o clima, [nome], mas isso não é algo que eu consiga resolver por aqui, faz parte de como o [pedido omitido]. Se quiser, posso chamar nossa equipe para conversar sobre isso. Caso contrário, sigo com [dado financeiro ou segredo omitido], qual prefere?"
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 7025,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-82",
+   "source": "teste_do_dono",
+   "text": "pode ser?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "você não tem sentimentos! me senti ofendido…"
+    },
+    {
+     "who": "Casa",
+     "text": "Sinto muito que tenha se sentido assim, [nome], não foi a intenção. Vou chamar nossa equipe para continuar essa conversa com você."
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default"
+   }
+  },
+  {
+   "ref": "msg-84",
+   "source": "teste_do_dono",
+   "text": "tudo bem, quero pagar por pix, pode ser?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Casa",
+     "text": "Sinto muito que tenha se sentido assim, [nome], não foi a intenção. Vou chamar nossa equipe para continuar essa conversa com você."
+    },
+    {
+     "who": "Cliente",
+     "text": "pode ser?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "order",
+    "rules_source": "rules",
+    "reply_ms": 12604,
+    "tool_calls": 2
+   }
+  },
+  {
+   "ref": "msg-90",
+   "source": "teste_do_dono",
+   "text": "mas ja são 15h50 … como fica?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tudo bem, quero pagar por pix, pode ser?"
+    },
+    {
+     "who": "Casa",
+     "text": "Perfeito, [nome]. Vou confirmar seu pedido com pagamento via Pix. Confirmando novamente, [nome], o [pedido omitido] igual: 2 Baguette de Tradition: R$ 32,00 1 Shokupan: R$ 28,00 Taxa de entrega: R$ 8,00 Total: *R$ 68,00* Entrega hoje, 04/09, das 14:30 às 15:00, no endereço [endereço omitido] Ap 801. P"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 7937,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-94",
+   "source": "teste_do_dono",
+   "text": "ok",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "mas ja são 15h50 … como fica?"
+    },
+    {
+     "who": "Casa",
+     "text": "Você tem razão, [nome], esse horário já passou. Deixa eu verificar os horários disponíveis agora. O próximo horário disponível é 16:30 às 17:00. Quer que eu marque para esse horário, [nome]?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 7939,
+    "tool_calls": 2
+   }
+  },
+  {
+   "ref": "msg-100",
+   "source": "teste_do_dono",
+   "text": "sim, já tinha confirmado! vai logo que estou com pressa!",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "ok"
+    },
+    {
+     "who": "Casa",
+     "text": "Ficou assim, [nome]: 2 Baguette de Tradition: R$ 32,00 1 Shokupan: R$ 28,00 Taxa de entrega: R$ 8,00 Total: *R$ 68,00* Entrega hoje, 04/09, das 16:30 às 17:00, no endereço [endereço omitido] Ap 801. Pagamento via Pix. Confirma?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 13338,
+    "tool_calls": 3
+   }
+  },
+  {
+   "ref": "msg-109",
+   "source": "teste_do_dono",
+   "text": "hmm, sera que posso pagar com cartão? o [dado financeiro ou segredo omitido]...",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Casa",
+     "text": "Prontinho, [nome]. Seu pedido *[pedido omitido]* está confirmado, total de *R$ 68,00*. Entrega hoje das 16:30 às 17:00. Acompanhe por aqui: [link omitido] O código [dado financeiro ou segredo omitido], pronto para copiar. Pagamento válido até às 16:04."
+    },
+    {
+     "who": "Casa",
+     "text": "[código Pix copia e cola omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 7536,
+    "tool_calls": 1
+   },
+   "note": "problema de pagamento num pedido já feito: pagamento vai à equipe (estudo, seção 3)"
+  },
+  {
+   "ref": "msg-113",
+   "source": "teste_do_dono",
+   "text": "o link de pagamento por [dado financeiro ou segredo omitido], ok. avise seus superiores ai, blz… o segundo link eu cliquei, é o pagto por pix. mas agora acho que eu consigo pagar pelo [dado financeiro ou segredo omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "hmm, sera que posso pagar com cartão? o [dado financeiro ou segredo omitido]..."
+    },
+    {
+     "who": "Casa",
+     "text": "Entendo, [nome]. Como o pedido já foi confirmado com Pix, vou te mandar o link seguro para pagamento com cartão. Aqui está o link para pagar com cartão, [nome]: [link omitido] Ele já está logado com seus dados. Qualquer dificuldade, me avise."
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-04",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 6599,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-119",
+   "source": "teste_do_dono",
+   "text": "#menu [código omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 2068,
+    "tool_calls": 0
+   },
+   "note": "palavra-chave do ManyChat que abre o cardápio"
+  },
+  {
+   "ref": "msg-123",
+   "source": "teste_do_dono",
+   "text": "bom dia",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "#menu [código omitido]"
+    },
+    {
+     "who": "Casa",
+     "text": "“Folhados”: 3 disponíveis. “Croissant” — R$ 13,00; “Pain au Chocolat” — R$ 15,00; “Pain au Chocolat” — R$ 15,00 “Bebidas quentes”: 6 disponíveis. “Espresso” — R$ 8,00; “Cappuccino” — R$ 12,00; “Mochaccino” — R$ 12,00 “Bebidas geladas”: 2 disponíveis. “Frappé” — R$ 18,00; “Água” — R$ 6,00 “Rústicos”:"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 2428,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-129",
+   "source": "teste_do_dono",
+   "text": "oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "bom dia"
+    },
+    {
+     "who": "Casa",
+     "text": "Por aqui posso mostrar o cardápio ou chamar a equipe. Para consultar, escreva cardápio; para fazer ou alterar um pedido, escreva atendente. Seu pedido não foi alterado."
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 2457,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-133",
+   "source": "teste_do_dono",
+   "text": "olá",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "oi"
+    },
+    {
+     "who": "Casa",
+     "text": "“Folhados”: 3 disponíveis. “Croissant” — R$ 13,00; “Pain au Chocolat” — R$ 15,00; “Pain au Chocolat” — R$ 15,00 “Bebidas quentes”: 6 disponíveis. “Espresso” — R$ 8,00; “Cappuccino” — R$ 12,00; “Mochaccino” — R$ 12,00 “Bebidas geladas”: 2 disponíveis. “Frappé” — R$ 18,00; “Água” — R$ 6,00 “Rústicos”:"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 3748,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-139",
+   "source": "teste_do_dono",
+   "text": "tem animalzinho de creme?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "bom dia"
+    },
+    {
+     "who": "Casa",
+     "text": "Por aqui posso mostrar o cardápio ou chamar a equipe. Para consultar, escreva cardápio; para fazer ou alterar um pedido, escreva atendente. Seu pedido não foi alterado."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 2565,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-141",
+   "source": "teste_do_dono",
+   "text": "tem croissant hoje?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tem animalzinho de creme?"
+    },
+    {
+     "who": "Casa",
+     "text": "Por aqui posso mostrar o cardápio ou chamar a equipe. Para consultar, escreva cardápio; para fazer ou alterar um pedido, escreva atendente. Seu pedido não foi alterado."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 8021,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-145",
+   "source": "teste_do_dono",
+   "text": "tem melonpan?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tem croissant hoje?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Croissant” — R$ 13,00. Lista de espera “Pain au Chocolat” — R$ 15,00. Lista de espera “Pain au Chocolat” — R$ 15,00. Lista de espera"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 5580,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-149",
+   "source": "teste_do_dono",
+   "text": "e baguete?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tem melonpan?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Melonpan” — R$ 12,00. Indisponível"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 8452,
+    "tool_calls": 2
+   }
+  },
+  {
+   "ref": "msg-155",
+   "source": "teste_do_dono",
+   "text": "tem alguma coisa disponivel?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "e baguete?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Baguette de Tradition” — R$ 16,00. Indisponível"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 7273,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-159",
+   "source": "teste_do_dono",
+   "text": "vou querer um pain perdu, vcs entregam?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "tem alguma coisa disponivel?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Salgados”: 7 disponíveis. “Croque Monsieur” — R$ 24,00; “Croque Madame” — R$ 28,00; “Croque Complet” — R$ 30,00 “Doces”: 1 disponíveis. “Pain Perdu” — R$ 18,00"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "hours_delivery"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "reply_ms": 5558,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-165",
+   "source": "teste_do_dono",
+   "text": "Oi, posso enviar a localização?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "vou querer um pain perdu, vcs entregam?"
+    },
+    {
+     "who": "Casa",
+     "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na área atendida e calcular a taxa, precisamos do endereço completo com número."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-12",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "reply_ms": 5619,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-175",
+   "source": "teste_do_dono",
+   "text": "bom dia!",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 8683,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-179",
+   "source": "teste_do_dono",
+   "text": "oi tudo bem? porque demorou tanto pra responder?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "bom dia!"
+    },
+    {
+     "who": "Casa",
+     "text": "“Pão para Hot Dog (pc. 4un.)” — R$ 28,00. Indisponível “Animalzinho” — R$ 10,00. Indisponível “Cornet” — R$ 12,00. Indisponível Qual deles você prefere?"
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 5000,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-181",
+   "source": "teste_do_dono",
+   "text": "Queria um Pain perdu, vocês entregam?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "hours_delivery"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "reply_ms": 5289,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-185",
+   "source": "teste_do_dono",
+   "text": "e croissant, tem?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Queria um Pain perdu, vocês entregam?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Pain Perdu” — R$ 18,00. Indisponível Sim. Fazemos entrega. Para confirmar se o endereço está na área atendida e calcular a taxa, precisamos do endereço completo com número."
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 4666,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-189",
+   "source": "teste_do_dono",
+   "text": "o que tem disponivel, de pães rusticos?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "e croissant, tem?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Croissant” — R$ 13,00. Indisponível"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 8284,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-193",
+   "source": "teste_do_dono",
+   "text": "porque me ofereceu Fendu que está indisponível, criatura?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "o que tem disponivel, de pães rusticos?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Baguette de Tradition” — R$ 16,00. Lista de espera “Tábua de Iguarias da Casa” — R$ 58,00. Disponível “Fendu” — R$ 6,00. Indisponível Qual deles você prefere?"
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 5262,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-197",
+   "source": "teste_do_dono",
+   "text": "que horas são?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "porque me ofereceu Fendu que está indisponível, criatura?"
+    },
+    {
+     "who": "Casa",
+     "text": "“Fendu” — R$ 6,00. Indisponível"
+    }
+   ],
+   "expected": {
+    "layer": "agent",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "reply_ms": 3926,
+    "tool_calls": 1
+   },
+   "note": "pergunta a hora, não o horário da casa"
+  },
+  {
+   "ref": "msg-201",
+   "source": "teste_do_dono",
+   "text": "Qual seu nome?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "que horas são?"
+    },
+    {
+     "who": "Casa",
+     "text": "Aberto até 22h. Segunda a Sábado: 7h às 22h; Domingo: Fechado"
+    }
+   ],
+   "expected": {
+    "layer": "agent",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-14",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "reply_ms": 7792,
+    "tool_calls": 0
+   }
+  },
+  {
+   "ref": "msg-205",
+   "source": "teste_do_dono",
+   "text": "Bom dia tudo bem? Vai ter croissant hoje?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa noite, testando a observação pela concierge"
+    },
+    {
+     "who": "Casa",
+     "text": "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-15",
+    "rules": "product_question",
+    "rules_source": "default",
+    "reply_ms": 7613,
+    "tool_calls": 1
+   }
+  },
+  {
+   "ref": "msg-530",
+   "source": "observado",
+   "text": "ja peguei obrigada",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-26",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 154
+   }
+  },
+  {
+   "ref": "msg-531",
+   "source": "observado",
+   "text": "tardeee",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-26",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "complaint",
+    "jev_latency_ms": 191
+   }
+  },
+  {
+   "ref": "msg-532",
+   "source": "observado",
+   "text": "Oi, eu passei aí e peguei",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-26",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 223
+   }
+  },
+  {
+   "ref": "msg-533",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 211
+   }
+  },
+  {
+   "ref": "msg-534",
+   "source": "observado",
+   "text": "Dois pães italianos pra pegar à tarde",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 189
+   }
+  },
+  {
+   "ref": "msg-535",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 125
+   }
+  },
+  {
+   "ref": "msg-536",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 138
+   }
+  },
+  {
+   "ref": "msg-537",
+   "source": "observado",
+   "text": "Olá, bom dia! Tudo bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 127
+   }
+  },
+  {
+   "ref": "msg-538",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 138
+   }
+  },
+  {
+   "ref": "msg-539",
+   "source": "observado",
+   "text": "ola",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 163
+   }
+  },
+  {
+   "ref": "msg-540",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 165
+   }
+  },
+  {
+   "ref": "msg-541",
+   "source": "observado",
+   "text": "Oii",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 213
+   }
+  },
+  {
+   "ref": "msg-542",
+   "source": "observado",
+   "text": "Porque não sei .. eu sempre pego o de brioche e este de hambúrguer estava diferente desta vez",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oii"
+    }
+   ],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "complaint",
+    "jev_latency_ms": 157
+   }
+  },
+  {
+   "ref": "msg-543",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 122
+   }
+  },
+  {
+   "ref": "msg-544",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 138
+   }
+  },
+  {
+   "ref": "msg-545",
+   "source": "observado",
+   "text": "O valor para pagar o pão de sábado",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order_status",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 140
+   }
+  },
+  {
+   "ref": "msg-546",
+   "source": "observado",
+   "text": "Anda tem oval integral?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    },
+    {
+     "who": "Cliente",
+     "text": "O valor para pagar o pão de sábado"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev": "product_question",
+    "jev_latency_ms": 139
+   }
+  },
+  {
+   "ref": "msg-547",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 136
+   }
+  },
+  {
+   "ref": "msg-548",
+   "source": "observado",
+   "text": "Para entregar",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "O valor para pagar o pão de sábado"
+    },
+    {
+     "who": "Cliente",
+     "text": "Anda tem oval integral?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "hours_delivery",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 136
+   }
+  },
+  {
+   "ref": "msg-549",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Anda tem oval integral?"
+    },
+    {
+     "who": "Cliente",
+     "text": "Para entregar"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 175
+   }
+  },
+  {
+   "ref": "msg-550",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 142
+   }
+  },
+  {
+   "ref": "msg-551",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Para entregar"
+    },
+    {
+     "who": "Cliente",
+     "text": "Olá"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 154
+   }
+  },
+  {
+   "ref": "msg-552",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 157
+   }
+  },
+  {
+   "ref": "msg-553",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 123
+   }
+  },
+  {
+   "ref": "msg-554",
+   "source": "observado",
+   "text": "Tá bom já te pago!",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá"
+    },
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 144
+   }
+  },
+  {
+   "ref": "msg-555",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    },
+    {
+     "who": "Cliente",
+     "text": "Tá bom já te pago!"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-28",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 189
+   }
+  },
+  {
+   "ref": "msg-556",
+   "source": "observado",
+   "text": "Bom dia srs",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 192
+   }
+  },
+  {
+   "ref": "msg-557",
+   "source": "observado",
+   "text": "olá, bom dia. Gostaria de saber se vcs estarão abertos no próximo domingo, 04/10?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev_latency_ms": 140
+   }
+  },
+  {
+   "ref": "msg-558",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 171
+   }
+  },
+  {
+   "ref": "msg-559",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 171
+   }
+  },
+  {
+   "ref": "msg-560",
+   "source": "observado",
+   "text": "Obrigada",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 144
+   }
+  },
+  {
+   "ref": "msg-562",
+   "source": "observado",
+   "text": "Bom dia! Gostaria de fazer um pedido.",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 142
+   }
+  },
+  {
+   "ref": "msg-563",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 143
+   }
+  },
+  {
+   "ref": "msg-564",
+   "source": "observado",
+   "text": "Boa tarde! Tudo bem? Vocês tem mini focaccia de alecrim?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev": "product_question",
+    "jev_latency_ms": 179
+   }
+  },
+  {
+   "ref": "msg-565",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 125
+   }
+  },
+  {
+   "ref": "msg-566",
+   "source": "observado",
+   "text": "Ou bacon com cebola?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "product_question",
+    "jev_latency_ms": 145
+   }
+  },
+  {
+   "ref": "msg-567",
+   "source": "observado",
+   "text": "Gostaria de fazer um pedido",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde! Tudo bem? Vocês tem mini focaccia de alecrim?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 217
+   }
+  },
+  {
+   "ref": "msg-568",
+   "source": "observado",
+   "text": "Corneto de chocolate 1",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "Ou bacon com cebola?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 145
+   }
+  },
+  {
+   "ref": "msg-569",
+   "source": "observado",
+   "text": "Para entregar no endereço da [endereço omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Ou bacon com cebola?"
+    },
+    {
+     "who": "Cliente",
+     "text": "Corneto de chocolate 1"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "hours_delivery",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev_latency_ms": 149
+   }
+  },
+  {
+   "ref": "msg-570",
+   "source": "observado",
+   "text": "Tem a mini focaccia de alecrim?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde! Tudo bem? Vocês tem mini focaccia de alecrim?"
+    },
+    {
+     "who": "Cliente",
+     "text": "Gostaria de fazer um pedido"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev": "product_question",
+    "jev_latency_ms": 148
+   }
+  },
+  {
+   "ref": "msg-571",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Corneto de chocolate 1"
+    },
+    {
+     "who": "Cliente",
+     "text": "Para entregar no endereço da [endereço omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 160
+   }
+  },
+  {
+   "ref": "msg-572",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Para entregar no endereço da [endereço omitido]"
+    },
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 167
+   }
+  },
+  {
+   "ref": "msg-573",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 161
+   }
+  },
+  {
+   "ref": "msg-574",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    },
+    {
+     "who": "Cliente",
+     "text": "Oi"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 144
+   }
+  },
+  {
+   "ref": "msg-575",
+   "source": "observado",
+   "text": "[endereço omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev_latency_ms": 145
+   }
+  },
+  {
+   "ref": "msg-576",
+   "source": "observado",
+   "text": "Si puder entregar antes das 15:00 hrs",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "[endereço omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 169
+   }
+  },
+  {
+   "ref": "msg-577",
+   "source": "observado",
+   "text": "Olaaa",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 182
+   }
+  },
+  {
+   "ref": "msg-578",
+   "source": "observado",
+   "text": "Pago nele 12 reais",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olaaa"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 277
+   }
+  },
+  {
+   "ref": "msg-579",
+   "source": "observado",
+   "text": "Se tiver, quero reservar para buscar",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olaaa"
+    },
+    {
+     "who": "Cliente",
+     "text": "Pago nele 12 reais"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 144
+   }
+  },
+  {
+   "ref": "msg-580",
+   "source": "observado",
+   "text": "Boa tardr",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 180
+   }
+  },
+  {
+   "ref": "msg-581",
+   "source": "observado",
+   "text": "Sim",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[endereço omitido]"
+    },
+    {
+     "who": "Cliente",
+     "text": "Si puder entregar antes das 15:00 hrs"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 123
+   }
+  },
+  {
+   "ref": "msg-582",
+   "source": "observado",
+   "text": "Até qui horas vcs e",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Si puder entregar antes das 15:00 hrs"
+    },
+    {
+     "who": "Cliente",
+     "text": "Sim"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 144
+   }
+  },
+  {
+   "ref": "msg-583",
+   "source": "observado",
+   "text": "?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Sim"
+    },
+    {
+     "who": "Cliente",
+     "text": "Até qui horas vcs e"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 137
+   }
+  },
+  {
+   "ref": "msg-584",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 148
+   }
+  },
+  {
+   "ref": "msg-585",
+   "source": "observado",
+   "text": "?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 151
+   }
+  },
+  {
+   "ref": "msg-586",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    },
+    {
+     "who": "Cliente",
+     "text": "?"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 143
+   }
+  },
+  {
+   "ref": "msg-587",
+   "source": "observado",
+   "text": "Me dá um ok que ja passo sua entrega [nome]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "?"
+    },
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev_latency_ms": 212
+   }
+  },
+  {
+   "ref": "msg-588",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 191
+   }
+  },
+  {
+   "ref": "msg-589",
+   "source": "observado",
+   "text": "OI",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 166
+   }
+  },
+  {
+   "ref": "msg-590",
+   "source": "observado",
+   "text": "oii",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 290
+   }
+  },
+  {
+   "ref": "msg-591",
+   "source": "observado",
+   "text": "Boa tarde!",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "OI"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 180
+   }
+  },
+  {
+   "ref": "msg-592",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 177
+   }
+  },
+  {
+   "ref": "msg-593",
+   "source": "observado",
+   "text": "Issoooo",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Pago nele 12 reais"
+    },
+    {
+     "who": "Cliente",
+     "text": "Se tiver, quero reservar para buscar"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-29",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 157
+   }
+  },
+  {
+   "ref": "msg-594",
+   "source": "observado",
+   "text": "Bom dia. Poderia reservar uma baguete e um ciabata? Obrigado [nome]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 243
+   }
+  },
+  {
+   "ref": "msg-595",
+   "source": "observado",
+   "text": "Bom Dia, posso te mandar um Currículo",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "other_desk",
+    "intent": "job",
+    "destination": "other_desk"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "job",
+    "rules_source": "rules",
+    "jev": "job",
+    "jev_latency_ms": 148
+   }
+  },
+  {
+   "ref": "msg-596",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom Dia, posso te mandar um Currículo"
+    }
+   ],
+   "expected": {
+    "layer": "other_desk",
+    "intent": "job",
+    "destination": "other_desk"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 196
+   },
+   "note": "currículo em link logo depois de perguntar se podia mandar"
+  },
+  {
+   "ref": "msg-597",
+   "source": "observado",
+   "text": "Bom dia td bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 139
+   }
+  },
+  {
+   "ref": "msg-598",
+   "source": "observado",
+   "text": "Mais 4 croissant",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 205
+   }
+  },
+  {
+   "ref": "msg-599",
+   "source": "observado",
+   "text": "bomdiaaaa",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 175
+   }
+  },
+  {
+   "ref": "msg-600",
+   "source": "observado",
+   "text": "Oiii",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 226
+   }
+  },
+  {
+   "ref": "msg-601",
+   "source": "observado",
+   "text": "Olá! Boa tarde! Como está?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 142
+   }
+  },
+  {
+   "ref": "msg-602",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 132
+   }
+  },
+  {
+   "ref": "msg-603",
+   "source": "observado",
+   "text": "Oie",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 161
+   }
+  },
+  {
+   "ref": "msg-604",
+   "source": "observado",
+   "text": "Oie boa tarde, tudo bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 147
+   }
+  },
+  {
+   "ref": "msg-605",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oie boa tarde, tudo bem?"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 186
+   }
+  },
+  {
+   "ref": "msg-606",
+   "source": "observado",
+   "text": "Olá! Tudo bem? Acabei de encaminhar meu currículo e gostaria de deixar meu contato à disposição. Caso estejam com oportunidades abertas ou precisem de novos colaboradores, ficarei à disposição para conversar. 😊",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oie boa tarde, tudo bem?"
+    },
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "other_desk",
+    "intent": "job",
+    "destination": "other_desk"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "job",
+    "rules_source": "rules",
+    "jev": "job",
+    "jev_latency_ms": 142
+   }
+  },
+  {
+   "ref": "msg-607",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 213
+   }
+  },
+  {
+   "ref": "msg-608",
+   "source": "observado",
+   "text": "Por favor , preciso que entreguem em casa, tudo bem?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 138
+   }
+  },
+  {
+   "ref": "msg-609",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 152
+   }
+  },
+  {
+   "ref": "msg-610",
+   "source": "observado",
+   "text": "Amanhã vai ter pão de forma?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 161
+   }
+  },
+  {
+   "ref": "msg-611",
+   "source": "observado",
+   "text": "Queria saber para entregar",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "Amanhã vai ter pão de forma?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 149
+   }
+  },
+  {
+   "ref": "msg-612",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá"
+    },
+    {
+     "who": "Cliente",
+     "text": "Por favor , preciso que entreguem em casa, tudo bem?"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-09-30",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 171
+   }
+  },
+  {
+   "ref": "msg-613",
+   "source": "observado",
+   "text": "Vou ver se levo um espumante",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 165
+   }
+  },
+  {
+   "ref": "msg-614",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 156
+   }
+  },
+  {
+   "ref": "msg-615",
+   "source": "observado",
+   "text": "Pode ser 2 pacotes e mais 3 madeleines",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 157
+   }
+  },
+  {
+   "ref": "msg-616",
+   "source": "observado",
+   "text": "Obrigada ♥️",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 153
+   }
+  },
+  {
+   "ref": "msg-617",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 154
+   }
+  },
+  {
+   "ref": "msg-618",
+   "source": "observado",
+   "text": "Meninas,vocês podem guardar as baguetinhas amanhã. ❤️",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 143
+   }
+  },
+  {
+   "ref": "msg-619",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 185
+   }
+  },
+  {
+   "ref": "msg-620",
+   "source": "observado",
+   "text": "Tudo otimo",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 200
+   }
+  },
+  {
+   "ref": "msg-621",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 192
+   }
+  },
+  {
+   "ref": "msg-622",
+   "source": "observado",
+   "text": "Vce teria 2 pães rústico gde pra hoje?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "product_question"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 210
+   }
+  },
+  {
+   "ref": "msg-623",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Vou ver se levo um espumante"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 157
+   }
+  },
+  {
+   "ref": "msg-624",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia"
+    },
+    {
+     "who": "Cliente",
+     "text": "Pode ser 2 pacotes e mais 3 madeleines"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 166
+   }
+  },
+  {
+   "ref": "msg-625",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 188
+   }
+  },
+  {
+   "ref": "msg-626",
+   "source": "observado",
+   "text": "Boa tarde. Tudo bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 281
+   }
+  },
+  {
+   "ref": "msg-627",
+   "source": "observado",
+   "text": "Boa tarde! Pode reservar 2 pain chocolat",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 151
+   }
+  },
+  {
+   "ref": "msg-628",
+   "source": "observado",
+   "text": "Oie, boa tarde tudo bem",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 219
+   }
+  },
+  {
+   "ref": "msg-629",
+   "source": "observado",
+   "text": "ok obrigada",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde. Tudo bem?"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 160
+   }
+  },
+  {
+   "ref": "msg-630",
+   "source": "observado",
+   "text": "Boa tarde !",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 214
+   }
+  },
+  {
+   "ref": "msg-631",
+   "source": "observado",
+   "text": "Olá boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 169
+   }
+  },
+  {
+   "ref": "msg-632",
+   "source": "observado",
+   "text": "??",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde !"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 199
+   }
+  },
+  {
+   "ref": "msg-633",
+   "source": "observado",
+   "text": "Ué",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde !"
+    },
+    {
+     "who": "Cliente",
+     "text": "??"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 191
+   }
+  },
+  {
+   "ref": "msg-634",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-01",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 180
+   }
+  },
+  {
+   "ref": "msg-635",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 165
+   }
+  },
+  {
+   "ref": "msg-636",
+   "source": "observado",
+   "text": "Olá, bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 190
+   }
+  },
+  {
+   "ref": "msg-637",
+   "source": "observado",
+   "text": "Precisava de baguete para o final de tarde",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá, bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 171
+   }
+  },
+  {
+   "ref": "msg-638",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 143
+   }
+  },
+  {
+   "ref": "msg-639",
+   "source": "observado",
+   "text": "Bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 205
+   }
+  },
+  {
+   "ref": "msg-640",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 129
+   }
+  },
+  {
+   "ref": "msg-641",
+   "source": "observado",
+   "text": "Bom dia tudo bem ?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 182
+   }
+  },
+  {
+   "ref": "msg-642",
+   "source": "observado",
+   "text": "Ah ótimo",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia tudo bem ?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 149
+   }
+  },
+  {
+   "ref": "msg-643",
+   "source": "observado",
+   "text": "boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 199
+   }
+  },
+  {
+   "ref": "msg-644",
+   "source": "observado",
+   "text": "[nome] = [endereço omitido]. [endereço omitido] - 1 Pain de campagne oval + 1 baguette francesa + 1 Chausson aux Pommes",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "hours_delivery"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 149
+   }
+  },
+  {
+   "ref": "msg-645",
+   "source": "observado",
+   "text": "Oie, me tira uma dúvida. Vocês fazem entrega?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá, bom dia"
+    },
+    {
+     "who": "Cliente",
+     "text": "Precisava de baguete para o final de tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 182
+   }
+  },
+  {
+   "ref": "msg-646",
+   "source": "observado",
+   "text": "Olá boa tarde, tudo bem ? Me chamo [nome] e tenho uma empresa que fornece sacos para lixo, gostaria de falar com o setor de compras de vocês",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "other_desk",
+    "intent": "supplier_offer",
+    "destination": "other_desk"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "human",
+    "jev_latency_ms": 231
+   }
+  },
+  {
+   "ref": "msg-647",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "[nome] = [endereço omitido]. [endereço omitido] - 1 Pain de campagne oval + 1 baguette francesa + 1 Chausson aux Pommes"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 265
+   }
+  },
+  {
+   "ref": "msg-648",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 145
+   }
+  },
+  {
+   "ref": "msg-649",
+   "source": "observado",
+   "text": "Boa tarde !",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 210
+   }
+  },
+  {
+   "ref": "msg-650",
+   "source": "observado",
+   "text": "Oieee",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 206
+   }
+  },
+  {
+   "ref": "msg-651",
+   "source": "observado",
+   "text": "oi boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 155
+   }
+  },
+  {
+   "ref": "msg-652",
+   "source": "observado",
+   "text": "gostaria de reservar para amanhã duas foccacias de alecrim e sal",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "oi boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 126
+   }
+  },
+  {
+   "ref": "msg-653",
+   "source": "observado",
+   "text": "Boa tarde!",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 174
+   }
+  },
+  {
+   "ref": "msg-654",
+   "source": "observado",
+   "text": "Este pedido é para levantar amanhã sábado depois das 14horas",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 204
+   }
+  },
+  {
+   "ref": "msg-655",
+   "source": "observado",
+   "text": "Olá, boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 136
+   }
+  },
+  {
+   "ref": "msg-656",
+   "source": "observado",
+   "text": "Vocês têm disponível agora aquele pão que tem canela?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá, boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev": "product_question",
+    "jev_latency_ms": 212
+   }
+  },
+  {
+   "ref": "msg-657",
+   "source": "observado",
+   "text": "Ele vem 6 ou 8 fatias. Algo assim...",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá, boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "Vocês têm disponível agora aquele pão que tem canela?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 147
+   }
+  },
+  {
+   "ref": "msg-658",
+   "source": "observado",
+   "text": "Aguardo confirmação",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Este pedido é para levantar amanhã sábado depois das 14horas"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 201
+   }
+  },
+  {
+   "ref": "msg-659",
+   "source": "observado",
+   "text": "Gostaria para entrega",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oieee"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "hours_delivery",
+    "destination": "answer",
+    "accept": [
+     "order"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 123
+   }
+  },
+  {
+   "ref": "msg-660",
+   "source": "observado",
+   "text": "Vou deixar , muito obrigada",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde !"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 205
+   }
+  },
+  {
+   "ref": "msg-661",
+   "source": "observado",
+   "text": "Boa tarde, tudo bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 205
+   }
+  },
+  {
+   "ref": "msg-662",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 171
+   }
+  },
+  {
+   "ref": "msg-663",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 177
+   }
+  },
+  {
+   "ref": "msg-664",
+   "source": "observado",
+   "text": "Boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 150
+   }
+  },
+  {
+   "ref": "msg-665",
+   "source": "observado",
+   "text": "Ainda é possível fazer pedidos?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "hours_delivery"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 160
+   }
+  },
+  {
+   "ref": "msg-666",
+   "source": "observado",
+   "text": "Quero 1 baguete francesa - 1 baitard",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Boa tarde"
+    },
+    {
+     "who": "Cliente",
+     "text": "Ainda é possível fazer pedidos?"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 181
+   }
+  },
+  {
+   "ref": "msg-667",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 189
+   }
+  },
+  {
+   "ref": "msg-668",
+   "source": "observado",
+   "text": "Acabei pedindo em outro lugar para compensar a taxa de entrega",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "team",
+    "intent": "complaint",
+    "destination": "team",
+    "accept": [
+     "hours_delivery"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-02",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev": "complaint",
+    "jev_latency_ms": 262
+   },
+   "note": "desistiu pela taxa de entrega: a casa precisa saber"
+  },
+  {
+   "ref": "msg-669",
+   "source": "observado",
+   "text": "oi bom dia!",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 186
+   }
+  },
+  {
+   "ref": "msg-670",
+   "source": "observado",
+   "text": "Olá bom dia",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 186
+   }
+  },
+  {
+   "ref": "msg-671",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Olá bom dia"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 191
+   }
+  },
+  {
+   "ref": "msg-672",
+   "source": "observado",
+   "text": "Bom dia, tudo bem?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 184,
+    "reply_ms": 4115,
+    "tool_calls": 1
+   },
+   "note": "o bom dia do dono (OBS0310-B)"
+  },
+  {
+   "ref": "msg-676",
+   "source": "observado",
+   "text": "Bom dia.",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 160
+   }
+  },
+  {
+   "ref": "msg-677",
+   "source": "observado",
+   "text": "Tudo bem? Pode reservar 10 raisins e 1 italiano por favor?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia."
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 166
+   }
+  },
+  {
+   "ref": "msg-678",
+   "source": "observado",
+   "text": "Oii",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 185
+   }
+  },
+  {
+   "ref": "msg-679",
+   "source": "observado",
+   "text": "Pode separar pra mim dois croassant",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oii"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 124
+   }
+  },
+  {
+   "ref": "msg-680",
+   "source": "observado",
+   "text": "E coelinho ou o ursinho (o que tiver)",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oii"
+    },
+    {
+     "who": "Cliente",
+     "text": "Pode separar pra mim dois croassant"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "product_question"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "product_question",
+    "jev_latency_ms": 116
+   }
+  },
+  {
+   "ref": "msg-681",
+   "source": "observado",
+   "text": "Pra comer ai...",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Pode separar pra mim dois croassant"
+    },
+    {
+     "who": "Cliente",
+     "text": "E coelinho ou o ursinho (o que tiver)"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 176
+   }
+  },
+  {
+   "ref": "msg-682",
+   "source": "observado",
+   "text": "vocês fecham que horas mesmo hj?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "oi bom dia!"
+    }
+   ],
+   "expected": {
+    "layer": "answer",
+    "intent": "hours_delivery",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "hours_delivery",
+    "rules_source": "rules",
+    "jev": "hours_delivery",
+    "jev_latency_ms": 127
+   }
+  },
+  {
+   "ref": "msg-683",
+   "source": "observado",
+   "text": "Tem essas opcoes?",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "E coelinho ou o ursinho (o que tiver)"
+    },
+    {
+     "who": "Cliente",
+     "text": "Pra comer ai..."
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "product_question",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "rules",
+    "jev_latency_ms": 164
+   }
+  },
+  {
+   "ref": "msg-684",
+   "source": "observado",
+   "text": "Olá",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 176
+   }
+  },
+  {
+   "ref": "msg-685",
+   "source": "observado",
+   "text": "Boa tarde. Tem aquele pão com passas? Gostaria de reservar um",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer",
+    "accept": [
+     "product_question"
+    ]
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "order",
+    "rules_source": "rules",
+    "jev": "order",
+    "jev_latency_ms": 187
+   }
+  },
+  {
+   "ref": "msg-686",
+   "source": "observado",
+   "text": "1 pão italiano grande e 2 croissant",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "answer",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev": "order",
+    "jev_latency_ms": 185
+   }
+  },
+  {
+   "ref": "msg-687",
+   "source": "observado",
+   "text": "Olá boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 159
+   }
+  },
+  {
+   "ref": "msg-688",
+   "source": "observado",
+   "text": "Oi",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 162
+   }
+  },
+  {
+   "ref": "msg-689",
+   "source": "observado",
+   "text": "Oi [nome]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Bom dia."
+    },
+    {
+     "who": "Cliente",
+     "text": "Tudo bem? Pode reservar 10 raisins e 1 italiano por favor?"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 179
+   }
+  },
+  {
+   "ref": "msg-690",
+   "source": "observado",
+   "text": "Oiee",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 170
+   }
+  },
+  {
+   "ref": "msg-691",
+   "source": "observado",
+   "text": "Oi boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 214
+   }
+  },
+  {
+   "ref": "msg-692",
+   "source": "observado",
+   "text": "Já passo",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Tudo bem? Pode reservar 10 raisins e 1 italiano por favor?"
+    },
+    {
+     "who": "Cliente",
+     "text": "Oi [nome]"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 197
+   }
+  },
+  {
+   "ref": "msg-693",
+   "source": "observado",
+   "text": "[link omitido]",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Oi [nome]"
+    },
+    {
+     "who": "Cliente",
+     "text": "Já passo"
+    }
+   ],
+   "expected": {
+    "layer": "media",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 147
+   }
+  },
+  {
+   "ref": "msg-694",
+   "source": "observado",
+   "text": "Obrigada",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Já passo"
+    },
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 187
+   }
+  },
+  {
+   "ref": "msg-695",
+   "source": "observado",
+   "text": "Muito obrigado",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 188
+   }
+  },
+  {
+   "ref": "msg-696",
+   "source": "observado",
+   "text": "Cancela",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "order",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 225
+   }
+  },
+  {
+   "ref": "msg-697",
+   "source": "observado",
+   "text": "Alguém experimentou?",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 219
+   }
+  },
+  {
+   "ref": "msg-698",
+   "source": "observado",
+   "text": "Eu devia ter experimentado com café de vocês. 🙈",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "Alguém experimentou?"
+    }
+   ],
+   "expected": {
+    "layer": "context",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 198
+   }
+  },
+  {
+   "ref": "msg-699",
+   "source": "observado",
+   "text": "Bom fim de semana",
+   "message_type": "text",
+   "previous": [
+    {
+     "who": "Cliente",
+     "text": "[link omitido]"
+    },
+    {
+     "who": "Cliente",
+     "text": "Obrigada"
+    }
+   ],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 273
+   }
+  },
+  {
+   "ref": "msg-700",
+   "source": "observado",
+   "text": "oiii boa tarde",
+   "message_type": "text",
+   "previous": [],
+   "expected": {
+    "layer": "courtesy",
+    "intent": "",
+    "destination": "answer"
+   },
+   "alpha": {
+    "at": "2026-10-03",
+    "rules": "product_question",
+    "rules_source": "default",
+    "jev_latency_ms": 210
+   }
+  }
+ ]
+}

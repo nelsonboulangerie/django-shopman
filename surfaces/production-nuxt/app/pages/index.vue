@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// Produção — lente "produce" da grade: Planejado (entrada desta etapa) ·
-// Produzido (quantidade que segue para a Expedição). O gesto é Confirmar;
+// Abertura: lente "open" da grade. Planejado (entrada desta etapa) · Previsto
+// (quantidade que abre o lote e segue para o Fechamento). O gesto é Confirmar;
 // etapas internas continuam detalhes opcionais do trabalho vivo.
 </script>
 
 <template>
-  <ProductionStageGrid stage="produce" title="Produção" />
+  <ProductionStageGrid stage="open" title="Abertura" />
 </template>

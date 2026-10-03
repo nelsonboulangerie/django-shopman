@@ -13,6 +13,11 @@ describe("gestorSections", () => {
     expect(keys).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 
+  it("quem só expede (SUITE-UX §15) fica só com Pedidos", () => {
+    const keys = gestorSections({ channelsAttention: "1 desligado", canManageCustomers: true, expeditesOnly: true }).map((s) => s.key);
+    expect(keys).toEqual(["orders"]);
+  });
+
   it("a atenção de Canais só aparece quando há o que dizer", () => {
     const quiet = gestorSections({ channelsAttention: "", canManageCustomers: false }).find((s) => s.key === "feeds");
     const loud = gestorSections({ channelsAttention: "1 desligado", canManageCustomers: false }).find((s) => s.key === "feeds");

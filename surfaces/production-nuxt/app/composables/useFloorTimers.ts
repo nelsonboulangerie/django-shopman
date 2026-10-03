@@ -1,5 +1,5 @@
 // Timers da bancada — UM mecanismo para o chão de produção inteiro: o timer do
-// forno (armado por fornada na Expedição, que ainda DECLARA enfornou/retirou ao
+// forno (armado por fornada no Fechamento, que ainda DECLARA enfornou/retirou ao
 // servidor via useOvenFacts) e os timers avulsos (fermentação, descanso, o que o
 // padeiro quiser lembrar), criados do cabeçalho em qualquer tela. Decisão do
 // Pablo (2026-09-16): o timer ajuda o operador a lembrar; não tenta descrever

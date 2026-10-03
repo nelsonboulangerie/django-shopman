@@ -152,8 +152,11 @@ class KDSTicketDoneView(APIView):
     ),
 )
 class KDSTicketRecallView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_kds"
+    # A estação reabre o próprio ticket; o Gestor devolve à cozinha pelo menu do
+    # pedido pronto (SUITE-UX §15: a Saída mora no Gestor). Mesma régua de
+    # servidor (``kds.recall_block_reason``) nas duas portas.
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = ("backstage.operate_kds", "shop.manage_orders")
 
     def post(self, request, ticket_pk: int):
         try:
@@ -252,6 +255,11 @@ class KDSExpeditionUndoView(APIView):
 #: três portas da baixa (decisão do dono, 26/09/2026).
 PRINTED_STATION_PERMISSIONS = ("backstage.operate_kds", "cashman.operate_pos")
 
+#: O "Pronto" da estação sem tela POR PEDIDO, que a Saída dava e agora o cartão
+#: do Gestor dá (SUITE-UX §15: a Saída mora no Gestor). Quem gerencia pedidos
+#: entra junto de quem expede e de quem opera o balcão.
+EXIT_STATION_PERMISSIONS = (*PRINTED_STATION_PERMISSIONS, "shop.manage_orders")
+
 
 @extend_schema_view(
     post=extend_schema(
@@ -266,7 +274,7 @@ PRINTED_STATION_PERMISSIONS = ("backstage.operate_kds", "cashman.operate_pos")
 )
 class KDSExitPrintedStationDoneView(APIView):
     permission_classes = [HasAnyBackstagePermission]
-    any_permission = PRINTED_STATION_PERMISSIONS
+    any_permission = EXIT_STATION_PERMISSIONS
 
     def post(self, request, order_pk: int, station_ref: str):
         try:

@@ -29,6 +29,46 @@ def can_manage_orders(user) -> bool:
     return is_superuser(user) or user.has_perm("shop.manage_orders")
 
 
+#: Quem EXPEDE (SUITE-UX §15/§16: uma Saída só, no Gestor). A Saída morava na
+#: Cozinha e era operada com ``backstage.operate_kds``; ao mudar para a coluna
+#: Saída do Gestor, quem a operava continua operando, e só ela: avançar a saída
+#: (Entregar, Despachar), desfazer dentro da janela, "Pronto" da estação sem tela
+#: e devolver um ticket à cozinha. Aceitar, recusar, cancelar, troco, maquininha,
+#: iFood e o resto do Gestor seguem em ``shop.manage_orders``. Nenhuma permissão
+#: nova: o conjunto de quem pode expedir é exatamente o de antes.
+EXPEDITE_PERMISSION = "backstage.operate_kds"
+
+#: As duas portas do quadro do Gestor: quem gerencia pedidos e quem só expede.
+ORDER_BOARD_PERMISSIONS = ("shop.manage_orders", EXPEDITE_PERMISSION)
+
+
+def can_expedite(user) -> bool:
+    """Opera a coluna Saída do Gestor (gerencia pedidos ou expede)."""
+    return bool(user) and (can_manage_orders(user) or user.has_perm(EXPEDITE_PERMISSION))
+
+
+def expedites_only(user) -> bool:
+    """Opera só a Saída: expede, mas não gerencia pedidos."""
+    return bool(user) and not can_manage_orders(user) and user.has_perm(EXPEDITE_PERMISSION)
+
+
+#: Separador da permissão de SUPERFÍCIE com alternativas (``a|b``): a primeira é a
+#: capability da própria superfície (a chave da trava dela); as demais também
+#: deixam a pessoa entrar. O Gestor pede ``shop.manage_orders|backstage.operate_kds``.
+SURFACE_PERM_SEPARATOR = "|"
+
+
+def surface_perm_codes(perm) -> tuple[str, ...]:
+    """As permissões de uma superfície, na ordem (a primeira é a chave da trava)."""
+    return tuple(code.strip() for code in str(perm or "").split(SURFACE_PERM_SEPARATOR) if code.strip())
+
+
+def has_surface_perm(user, perm) -> bool:
+    """A pessoa tem alguma das permissões da superfície (vazio = nenhuma exigida)."""
+    codes = surface_perm_codes(perm)
+    return not codes or any(user.has_perm(code) for code in codes)
+
+
 def can_access_production(user) -> bool:
     if is_superuser(user) or user.has_perm("shop.manage_production"):
         return True

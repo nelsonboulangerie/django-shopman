@@ -2,11 +2,18 @@
 // Station picker — choose which station this screen shows. KDS-refined grammar
 // (dark, distance-reading), aligned with the station/expedition cards.
 import type { KDSIndexResponse } from "~/types/kds";
+import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
 
 const { data, pending } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
   key: "kds-index",
 });
 const instances = computed(() => data.value?.instances ?? []);
+// A Saída mudou para o Gestor (UX-G3): a estação de Saída leva direto à coluna
+// Saída de lá. As estações de preparo continuam aqui.
+const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
+function stationLink(inst: { ref: string; type: string }): string {
+  return inst.type === EXIT_STATION_TYPE && exitUrl ? exitUrl : `/${inst.ref}`;
+}
 
 function typeIcon(type: string): string {
   if (type === "expedition") return "lucide:package-check";
@@ -41,7 +48,8 @@ function typeIcon(type: string): string {
     <ul v-else class="grid gap-3">
       <li v-for="inst in instances" :key="inst.ref">
         <NuxtLink
-          :to="`/${inst.ref}`"
+          :to="stationLink(inst)"
+          :external="inst.type === 'expedition' && Boolean(exitUrl)"
           class="flex items-center gap-4 rounded-md border bg-card p-5 transition hover:border-primary/50 hover:bg-accent active:translate-y-px"
         >
           <span
