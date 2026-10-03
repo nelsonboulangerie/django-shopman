@@ -1751,6 +1751,46 @@ class OrderQueueView(OperationalObservationMixin, APIView):
         return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
 
 
+class OrderBoardLayoutView(APIView):
+    """A arrumação das colunas do Gestor neste POSTO (SUITE-UX §16, lei L7).
+
+    GET devolve o que o posto guardou (ou ``columns: null``, e a tela abre com as
+    três colunas). PUT grava. O posto é a estação confiável da requisição; sem ela
+    não há de quem ser a arrumação e o PUT responde 409 (a tela segue com o que o
+    operador arrumou, só que sem lembrar). Mesma permissão de ler o quadro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.backstage import station_trust
+        from shopman.backstage.services.order_board_layout import read_columns
+
+        station = station_trust.station_ref(request)
+        columns = read_columns(station) if station else None
+        return Response({"station": station, "columns": columns})
+
+    def put(self, request):
+        from shopman.backstage import station_trust
+        from shopman.backstage.services.order_board_layout import LayoutError, save_columns
+
+        station = station_trust.station_ref(request)
+        if not station:
+            return Response(
+                {"detail": "Este dispositivo não é um posto: a arrumação vale só até recarregar a tela."},
+                status=409,
+            )
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            columns = save_columns(station, payload.get("columns"))
+        except LayoutError as exc:
+            return Response({"detail": str(exc), "field": "columns"}, status=400)
+        if columns is None:
+            return Response({"detail": "O posto deste dispositivo não está mais ativo."}, status=409)
+        return Response({"station": station, "columns": columns})
+
+
 def _station_device_agent(request) -> dict:
     """A impressora DESTA estação, para o Gestor mandar a DANFE da sacola.
 

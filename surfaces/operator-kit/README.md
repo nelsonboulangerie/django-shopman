@@ -784,6 +784,37 @@ no popover dele. Acrescido de ‹ › e de "Voltar para hoje".
 - **Rótulo**: dia diz sempre o dia da semana (`Hoje, qui 01/10`, `Ontem, qua 30/09`,
   `Ter 29/09`); o resto diz nome e intervalo (`Semana · 28/09 a 04/10`). Sem travessão.
 
+## Colunas de fila ajustáveis e recolhíveis (`QueueColumnStrip`, `QueueColumnResizeHandle`)
+
+Forma FILA (SUITE-UX §16): uma fila em colunas deixa cada posto arrumar a tela para o
+trabalho dele. A coluna aberta tem um **peso** (fração da largura entre as abertas); a
+recolhida vira uma **faixa** de 56 px. Primeiro consumidor: o quadro do Gestor (Entrada,
+Preparo, Saída), onde o tablet do passe fica só com a Saída.
+
+- **Regras puras** em `app/presentation/queueColumns.ts`: `defaultQueueLayout`,
+  `normalizeQueueLayout` (higiene do que veio guardado; nunca devolve todas recolhidas),
+  `toggleQueueColumn` (recolher a última aberta não faz nada), `openQueueColumn`,
+  `showAllQueueColumns`, `resizeQueueColumns` (a soma dos dois pesos não muda; durante o
+  arraste nada fica abaixo de `QUEUE_COLUMN_MIN_PX`; ao soltar abaixo de
+  `QUEUE_COLLAPSE_PX`, a coluna recolhe), `nextOpenQueueKey` (com quem a alça divide),
+  `queueGridTemplate` (o `grid-template-columns`), `queueColumnForKey` (teclas 1 a 9),
+  `queueViewLabel` ("Visão: Saída") e `queueStripLabel` (nome acessível da faixa).
+- **`<QueueColumnStrip>`**: a coluna recolhida. Um `<button>` só, a faixa inteira é o
+  gancho (`@open`), com chevron de 48 px (`size-action`). Props: `title`, `count`,
+  `late` (vira o ponto vermelho e a frase "1 atrasado"), `pulse` (novidade esperando
+  alguém olhar: a faixa pulsa, com `motion-safe`), `icon`, `noun` (singular e plural do
+  que se conta; padrão pedido/pedidos). No `lg` é faixa vertical com o nome em pé; abaixo,
+  barra baixa de largura inteira (as colunas empilham).
+- **`<QueueColumnResizeHandle>`**: a alça na borda direita de uma coluna aberta que tem
+  vizinha aberta (o pai põe a coluna em `relative`). Não mede nem guarda: `start` (o pai
+  mede as duas colunas), `drag(deltaPx)` a cada movimento (prévia), `end(deltaPx)` uma vez
+  ao soltar (o pai grava). Setas do teclado andam `QUEUE_KEYBOARD_STEP_PX`. Só aparece no
+  `lg`.
+
+**Quem guarda é o app**, e a lei L7 manda guardar no servidor, por posto: o Gestor usa
+`orders/board-layout/` (`Terminal.metadata["gestor_board"]`, ver
+`docs/reference/data-schemas.md`). Sem servidor, a arrumação padrão (todas abertas).
+
 ## Base de CSS (`operator-base.css`)
 
 O núcleo de CSS dos oito apps de operador vive em
