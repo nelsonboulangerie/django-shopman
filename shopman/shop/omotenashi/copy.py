@@ -1211,6 +1211,37 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="{product}: ainda não há lista de alérgenos cadastrada, então vale o aviso abaixo (pode conter traços).",
         )},
     },
+    # Memória da conversa (``shopman/storefront/concierge/dialogue.py``): o que a casa
+    # diz quando a fala depende do que veio antes. Sem referente que ainda valha, ela
+    # PERGUNTA, nunca supõe. ``{options}``, ``{item}``, ``{order}``, ``{status}``,
+    # ``{qty}`` e ``{summary}`` saem do sistema (lista mostrada, pedido, sacola).
+    "CONCIERGE_MEMORY_ASK_WHAT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi a que você está respondendo. Pode me dizer o que você gostaria?")},
+    },
+    "CONCIERGE_MEMORY_ASK_WHICH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
+    },
+    "CONCIERGE_MEMORY_ASK_PRODUCT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você está falando?")},
+    },
+    "CONCIERGE_MEMORY_ASK_QTY_PRODUCT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você quer {qty}?")},
+    },
+    "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você quer acrescentar {item} ao seu pedido aberto ({order}) ou fazer um pedido novo? Responda 1 para acrescentar ou 2 para pedido novo.")},
+    },
+    "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu último pedido ({order}) já foi {status}. Quer fazer um pedido novo com {item}?")},
+    },
+    "CONCIERGE_MEMORY_DECLINED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado. Posso ajudar com mais alguma coisa?")},
+    },
+    "CONCIERGE_MEMORY_ARRIVED_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Que bom que chegou! Bom apetite 💛")},
+    },
+    "CONCIERGE_MEMORY_ORDER_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Fica combinado: {summary}. 💛")},
+    },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
