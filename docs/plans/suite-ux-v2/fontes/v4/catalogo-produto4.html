@@ -49,12 +49,10 @@
     </header>
 
     <div class="flex-1 overflow-hidden px-4 pt-3">
-      <!-- item de aviso na própria lista: precisa de você -->
-      <div class="mb-3 rounded-lg border border-warning/40 bg-warning/8 pl-3 pr-2 h-14 flex items-center gap-3 w-[800px]">
-        <span class="size-8 rounded-full bg-warning/15 text-warning grid place-items-center"><i data-i="tag" class="size-4"></i></span>
-        <p class="op-body"><b class="font-semibold">2 produtos novos sem vocação</b> <span class="text-muted-foreground">· Focaccia do dia, Kuro Pan</span></p>
-        <div class="flex-1"></div>
-        <button class="h-10 px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold">Classificar</button>
+      <!-- aviso discreto: produto novo sem vocação -->
+      <div class="mb-2 h-8 flex items-center gap-2 op-micro text-muted-foreground w-[800px]">
+        <i data-i="tag" class="size-3.5"></i><span>2 produtos novos sem vocação (Focaccia do dia, Kuro Pan)</span>
+        <a class="font-semibold text-foreground underline underline-offset-2">Classificar</a>
       </div>
       <div class="rounded-lg border border-border bg-card overflow-hidden">
         <div class="grid grid-cols-[44px_minmax(0,1fr)_repeat(4,92px)_1px_repeat(4,80px)] items-center h-11 bg-muted/60 border-b border-border op-eyebrow text-muted-foreground">
@@ -104,19 +102,16 @@
           <span class="h-10 px-3 rounded-md border border-input bg-background flex items-center op-body">Croissant Manteiga</span>
         </label>
 
-        <!-- Vocação -->
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-baseline gap-2">
-            <span class="op-label font-semibold">Vocação</span>
-            <span class="op-micro text-muted-foreground">serve ao B.I.; não muda a venda</span>
-            <span class="ml-auto op-micro text-primary font-semibold inline-flex items-center gap-1"><span class="size-1.5 rounded-full bg-primary"></span>alterado</span>
+        <!-- Vocação: linha discreta -->
+        <div class="flex items-center gap-2 h-9">
+          <span class="op-micro text-muted-foreground w-[64px]">Vocação</span>
+          <div class="inline-flex bg-secondary p-0.5 rounded-md h-8">
+            <button class="px-2.5 rounded op-micro text-muted-foreground">Consome aqui</button>
+            <button class="px-2.5 rounded op-micro text-muted-foreground">Leva</button>
+            <button class="px-2.5 rounded op-micro font-semibold bg-card shadow-sm">Os dois</button>
           </div>
-          <div class="grid grid-cols-3 bg-secondary p-1 rounded-lg h-12">
-            <button class="rounded-md op-label text-muted-foreground inline-flex items-center justify-center gap-2"><i data-i="coffee" class="size-4"></i>Consome aqui</button>
-            <button class="rounded-md op-label text-muted-foreground inline-flex items-center justify-center gap-2"><i data-i="shopping-bag" class="size-4"></i>Leva</button>
-            <button class="rounded-md op-label font-semibold bg-card shadow-sm inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4 text-primary"></i>Os dois</button>
-          </div>
-                  </div>
+          <span class="op-micro text-muted-foreground">só para o B.I.</span>
+        </div>
 
         <!-- Disponibilidade nos canais -->
         <div class="rounded-lg border border-border overflow-hidden">
@@ -162,20 +157,20 @@
       </div>
     </section>
   </main>
-  <span class="pin" style="left:96px;top:142px">1</span>
+  <span class="pin" style="left:520px;top:124px">1</span>
   <span class="pin" style="left:930px;top:46px">2</span>
-  <span class="pin" style="left:930px;top:186px">3</span>
-  <span class="pin" style="left:930px;top:286px">4</span>
-  <span class="pin" style="left:1030px;top:462px">5</span>
+  <span class="pin" style="left:1330px;top:212px">3</span>
+  <span class="pin" style="left:922px;top:262px">4</span>
+  <span class="pin" style="left:1300px;top:418px">5</span>
   <span class="pin" style="left:1408px;top:620px">6</span>
   <span class="pin" style="left:930px;top:712px">7</span>
   <span class="pin" style="left:1410px;top:862px">8</span>
 </div>
 <div class="legend">
   <p class="t">Gestor · Catálogo · painel do produto · v4 <span>CADASTRO com o interruptor operacional no lugar; Vocação no produto</span></p>
-  <div><b>1</b>Produto novo sem Vocação vira item na própria lista ("precisa de você"), com Classificar de um toque; não é sino solto.</div>
+  <div><b>1</b>Produto novo sem Vocação: uma linha discreta acima da lista, com Classificar. Não pesa na tela nem vira sino.</div>
   <div><b>2</b>Painel lateral de 520 px sobre a tabela esmaecida; as 5 abas de sempre. ⋯ guarda Ocultar, Permitir compra, Histórico.</div>
-  <div><b>3</b>Vocação: Consome aqui · Leva · Os dois. Escreve em ProductConsumptionTag (o modelo não muda). Entra no rascunho do painel.</div>
+  <div><b>3</b>Vocação numa linha só, pequena, do tamanho da utilidade (só serve ao B.I.). Escreve em ProductConsumptionTag; entra no rascunho do painel.</div>
   <div><b>4</b>Disponibilidade nos canais: um estado só ("Esgotado desde 09:52"), a hora provável de volta e o porquê (lote de 42 no forno).</div>
   <div><b>5</b>iFood, Meta e Google ficam indisponíveis e voltam sozinhos pela mesma regra de estoque do site: marca "automático", sem gesto.</div>
   <div><b>6</b>Pausar continua por canal e em todos, mas só para o que não é estoque, com motivo de lista curta (Qualidade, Decisão da casa, Outro).</div>

@@ -67,7 +67,7 @@
       </div>
       <div class="rounded-xl bg-info/8 border border-info/25 px-3.5 py-2.5 flex items-center gap-2.5 text-[14px]">
         <i data-i="eye-off" class="size-5 text-info shrink-0"></i>
-        <span>Contagem cega: o esperado não aparece aqui. A diferença só é calculada depois que você confirmar.</span>
+        <span>Contagem cega: o esperado não aparece, nem depois. Ao confirmar, você vê só se ficou dentro da tolerância.</span>
       </div>
 
       <div class="grid grid-cols-2 gap-x-5">
@@ -127,7 +127,7 @@
       <button class="h-12 px-4 rounded-full border border-border text-[15px] font-semibold inline-flex items-center gap-2"><i data-i="x" class="size-5"></i>Sair</button>
     </header>
     <div class="px-5 py-3.5 bg-card border-b border-border flex items-center">
-      <div class="stp done"><span class="n"><i data-i="check" class="size-5"></i></span><span><span class="block t">Fechar caixa</span><span class="block s tnum">22:08 · R$ 1.282,00</span></span></div>
+      <div class="stp done"><span class="n"><i data-i="check" class="size-5"></i></span><span><span class="block t">Fechar caixa</span><span class="block s tnum">22:08 · conferido</span></span></div>
       <span class="conn done"></span>
       <div class="stp done"><span class="n"><i data-i="check" class="size-5"></i></span><span><span class="block t">Contar a vitrine</span><span class="block s tnum">22:17 · 31 de 31</span></span></div>
       <span class="conn done"></span>
@@ -140,13 +140,16 @@
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-xl border border-border bg-card p-4">
           <p class="op-eyebrow text-muted-foreground flex items-center gap-1.5"><i data-i="wallet" class="size-4"></i>Caixa</p>
-          <div class="mt-2 space-y-1 text-[15px] tnum">
-            <p class="flex justify-between"><span class="text-muted-foreground">Contado</span><b class="font-semibold">R$ 1.282,00</b></p>
-            <p class="flex justify-between"><span class="text-muted-foreground">Esperado</span><span>R$ 1.285,50</span></p>
+          <div class="mt-2 flex items-center gap-2.5">
+            <span class="size-10 rounded-full bg-success/12 text-success grid place-items-center shrink-0"><i data-i="circle-check" class="size-6"></i></span>
+            <div class="min-w-0">
+              <p class="text-[17px] font-semibold text-success leading-tight">Caixa conferido</p>
+              <p class="text-[14px] text-muted-foreground">dentro da tolerância</p>
+            </div>
           </div>
-          <div class="mt-2.5 rounded-lg bg-success/8 px-3 py-2 flex items-center justify-between">
-            <span class="text-[14px] font-semibold text-success flex items-center gap-1.5"><i data-i="circle-check" class="size-4"></i>Diferença −R$ 3,50</span>
-            <span class="text-[12px] text-muted-foreground">tolerância R$ 10</span>
+          <div class="mt-2.5 rounded-lg bg-muted/60 px-3 py-2 flex items-center gap-1.5">
+            <i data-i="eye-off" class="size-4 text-muted-foreground shrink-0"></i>
+            <span class="text-[13px] text-muted-foreground">Fechamento às cegas: valores só na auditoria</span>
           </div>
         </div>
         <div class="rounded-xl border border-border bg-card p-4">
@@ -173,12 +176,12 @@
           <span class="size-11 rounded-full bg-primary/12 text-primary grid place-items-center shrink-0"><i data-i="trending-down" class="size-6"></i></span>
           <div class="min-w-0 flex-1">
             <p class="op-eyebrow text-primary">Explicar o dia estranho</p>
-            <p class="text-[21px] font-semibold leading-snug mt-1">Vendas 30% abaixo do normal para sábado. Aconteceu algo?</p>
-            <p class="text-[14px] text-muted-foreground mt-1 tnum">Hoje R$ 4.120 · média dos últimos 6 sábados R$ 5.890 · movimento caiu depois das 14h</p>
+            <p class="text-[21px] font-semibold leading-snug mt-1">Vendas 30% abaixo de um sábado típico. Aconteceu algo?</p>
+            <p class="text-[14px] text-muted-foreground mt-1">O movimento caiu depois das 14h.</p>
           </div>
         </div>
         <div class="mt-4 rounded-xl bg-muted/40 p-3">
-          <div class="flex items-center gap-4 text-[12px] text-muted-foreground mb-2"><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-primary"></span>Hoje, por hora</span><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-muted-foreground/60"></span>Sábado típico</span></div>
+          <div class="flex items-center gap-4 text-[12px] text-muted-foreground mb-2"><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-primary"></span>Hoje, por hora</span><span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-muted-foreground/60"></span>Sábado típico</span><span class="ml-auto">só a forma, sem valores</span></div>
           <div class="flex gap-1.5"><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:41px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:43px"></span></div><span class="text-[11px] text-muted-foreground tnum">7h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:71px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:69px"></span></div><span class="text-[11px] text-muted-foreground tnum">8h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:88px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:89px"></span></div><span class="text-[11px] text-muted-foreground tnum">9h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:82px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:80px"></span></div><span class="text-[11px] text-muted-foreground tnum">10h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:77px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:74px"></span></div><span class="text-[11px] text-muted-foreground tnum">11h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:85px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:56px"></span></div><span class="text-[11px] text-muted-foreground tnum">12h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:96px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:33px"></span></div><span class="text-[11px] text-muted-foreground tnum">13h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:66px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:25px"></span></div><span class="text-[11px] text-muted-foreground tnum">14h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:52px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:22px"></span></div><span class="text-[11px] text-muted-foreground tnum">15h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:49px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:21px"></span></div><span class="text-[11px] text-muted-foreground tnum">16h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:47px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:19px"></span></div><span class="text-[11px] text-muted-foreground tnum">17h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:41px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:16px"></span></div><span class="text-[11px] text-muted-foreground tnum">18h</span></div><div class="flex-1 flex flex-col items-center gap-1"><div class="relative w-full h-[96px] flex items-end justify-center"><span class="absolute bottom-0 w-[70%] rounded-t-[3px] border border-dashed border-muted-foreground/50" style="height:30px"></span><span class="relative w-[44%] rounded-t-[3px] bg-primary" style="height:16px"></span></div><span class="text-[11px] text-muted-foreground tnum">19h</span></div></div>
         </div>
         <div class="mt-4 flex flex-wrap gap-2.5">
@@ -216,14 +219,14 @@
 </div>
 <div class="legend">
   <p class="t">PDV · Fim do dia · tablet em pé · v4 <span>um corredor só (§9): fechar caixa, contar a vitrine e fechar o dia, mesma forma CONFERÊNCIA cega (§4.2), mesmo dono, mesmo momento</span></p>
-  <div><b>1</b>O corredor no topo: 1 Fechar caixa · 2 Contar a vitrine · 3 Fechar o dia. Cada passo concluído mostra hora e número; "Sair" guarda o que já foi contado (estado da casa, L7). Só gerência entra (P22).</div>
-  <div><b>2</b>Contagem cega por desenho: nenhum valor esperado na tela; a diferença só é calculada depois do número. É a única CONFERÊNCIA sem pré-preenchimento, e é consciente.</div>
+  <div><b>1</b>O corredor no topo: 1 Fechar caixa · 2 Contar a vitrine · 3 Fechar o dia. Cada passo concluído mostra hora e estado (caixa "conferido", vitrine "31 de 31"), nunca valor; "Sair" guarda o que já foi contado (estado da casa, L7). Só gerência entra (P22).</div>
+  <div><b>2</b>Contagem cega por desenho: nenhum valor esperado na tela; a diferença é calculada depois do número e nunca aparece em R$, só o veredito. É a única CONFERÊNCIA sem pré-preenchimento, e é consciente.</div>
   <div><b>3</b>Por cédula ou só o total (os dois modos de hoje, PosDenominationCounter e campo único).</div>
   <div><b>4</b>Uma linha ativa por vez; o subtotal e o "contado até agora" crescem com cada valor.</div>
   <div><b>5</b>Teclado numérico da tela, grande, na zona do polegar, com Anterior/Próxima e +1. Observação continua (P22).</div>
   <div><b>6</b>Selo que aponta e ecoa: "Contei R$ 1.210,00 · Confirmar" repete o número (era a segunda confirmação de hoje). O passo 2 usa o mesmo contador, por produto (P23), com bloqueio de produção aberta no item.</div>
-  <div><b>7</b>No passo 3 a diferença aparece, já com tolerância, junto do destino das sobras (amanhã × perda) e do estado da produção.</div>
-  <div><b>8</b>"Explicar o dia estranho": só aparece quando há sinal (vendas 30% abaixo da média do dia da semana). Chips Chuva, Falta de produto, Evento, Outro, mais detalhe livre; a resposta marca o dia para o B.I. e para a sugestão do plano.</div>
+  <div><b>7</b>Às cegas até o fim, para todos: o passo 3 dá só o veredito, "Caixa conferido · dentro da tolerância"; fora dela, "fora da tolerância: o gestor confere no Escritório", sem valor. Esperado, vendido e diferença em R$ só no B.I. e na auditoria do dono. Ao lado, as sobras em peças (amanhã × perda) e a produção.</div>
+  <div><b>8</b>"Explicar o dia estranho": só aparece quando há sinal ("vendas 30% abaixo de um sábado típico"), só relativo (%), nunca R$, e o gráfico por hora sem eixo de valor; se o dono preferir, a pergunta aparece sem o número. Chips Chuva, Falta de produto, Evento, Outro, mais detalhe livre; a resposta marca o dia para o B.I. e para a sugestão do plano.</div>
   <div><b>9</b>"Fechar o dia" é o selo irreversível (um por dia), com a consequência escrita abaixo; voltar para a vitrine fica ao lado.</div>
 </div>
 </body></html>

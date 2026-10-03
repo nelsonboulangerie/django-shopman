@@ -1,6 +1,23 @@
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>
 .rail-item.sm{font-size:10px;letter-spacing:-.3px}
-.prow{display:grid;grid-template-columns:290px minmax(0,1fr) 168px 176px;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) 250px 168px 176px;align-items:center;gap:16px;padding:0 16px;height:62px;border-bottom:1px solid var(--border)}
+.sug{display:flex;align-items:center;gap:10px}
+.sug .n{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;min-width:30px}
+.sig{height:26px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.pq{margin-left:auto;height:30px;padding:0 8px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:var(--muted-foreground)}
+.pq.open{background:color-mix(in oklab,var(--primary) 12%,transparent);color:var(--primary);box-shadow:inset 0 0 0 1.5px var(--primary)}
+.enc{height:24px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.stepper{display:flex;align-items:center;border-radius:6px;border:1px solid var(--input);height:42px;background:var(--background)}
+.stepper button{width:42px;height:100%;display:grid;place-items:center}
+.stepper span{flex:1;text-align:center}
+.pop{position:absolute;z-index:20;width:530px;border-radius:12px;background:var(--card);border:1px solid var(--border);box-shadow:0 18px 48px -8px rgb(40 25 10/.35),0 4px 12px rgb(40 25 10/.15)}
+.pop .arrow{position:absolute;top:-8px;width:16px;height:16px;background:var(--card);border-left:1px solid var(--border);border-top:1px solid var(--border);transform:rotate(45deg)}
+.term{flex:1;white-space:nowrap;border-radius:8px;background:var(--muted);padding:6px 8px;text-align:center}
+.term b{display:block;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.term span{font-size:11.5px;color:var(--muted-foreground)}
+.hd{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.hd i.d{width:12px;height:12px;border-radius:999px;display:block}
+
 .eq b{font-weight:600;color:var(--foreground)}
 </style></head>
 <body class="bg-background text-foreground font-sans antialiased" data-app="production">
@@ -25,8 +42,8 @@
         {{> search3 w="w-[18rem]" placeholder="Buscar produto ou SKU"}}
         <div class="flex-1"></div>
         <div class="flex items-center gap-3 pr-1">
-          <p class="op-label whitespace-nowrap"><span class="op-title tnum">4</span> <span class="text-muted-foreground">de 24 planejados</span></p>
-          <div class="w-24 h-2 rounded-full bg-muted overflow-hidden"><div class="h-full w-[17%] rounded-full bg-primary"></div></div>
+          <p class="op-label whitespace-nowrap"><span class="op-title tnum">4</span> <span class="text-muted-foreground">de 28 planejados</span></p>
+          <div class="w-24 h-2 rounded-full bg-muted overflow-hidden"><div class="h-full w-[14%] rounded-full bg-primary"></div></div>
         </div>
         <div class="h-control inline-flex items-stretch rounded-md border border-border bg-card overflow-hidden">
           <button class="w-10 grid place-items-center border-r border-border text-muted-foreground"><i data-i="chevron-left" class="size-4"></i></button>
@@ -36,8 +53,8 @@
         <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais: Atualizar, Imprimir plano, Lote extra hoje"><i data-i="ellipsis" class="size-5"></i></button>
       </div>
       <div class="flex items-center gap-1.5">
-        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">24</span></button>
-        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-primary"></span>A planejar <span class="tnum text-muted-foreground">20</span></button>
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">28</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-primary"></span>A planejar <span class="tnum text-muted-foreground">24</span></button>
         <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-warning"></span>Com ressalva <span class="tnum text-muted-foreground">3</span></button>
         <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-success"></span>Planejados <span class="tnum text-muted-foreground">4</span></button>
         <span class="w-px h-6 bg-border mx-1"></span>
@@ -47,144 +64,132 @@
       </div>
     </header>
 
-    <div class="flex-1 overflow-hidden px-4 pt-3">
+    <div class="flex-1 overflow-hidden px-4 pt-3 relative">
       <div class="rounded-lg border border-border bg-card overflow-hidden">
-        <div class="prow !py-0 h-10 bg-muted/60 op-eyebrow text-muted-foreground">
-          <div>Produto</div><div>Por que este número</div><div>Quantidade</div><div></div>
+        <div class="prow !h-10 bg-muted/60 op-eyebrow text-muted-foreground">
+          <div>Produto</div><div>Sugestão</div><div>Quantidade</div><div></div>
+        </div>
+        <div class="prow bg-primary/5 shadow-[inset_0_0_0_2px_var(--primary)]">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Croissant Manteiga <span class="op-micro font-mono font-normal text-muted-foreground">CRO</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>6 un. para 08:30</span></div>
+          <div class="sug"><span class="n">52</span><span class="sig bg-destructive/10 text-destructive"><i data-i="clock-alert" class="size-3.5"></i>acabou cedo</span><a class="pq open"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">52</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 52</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Pain au Chocolat <span class="op-micro font-mono font-normal text-muted-foreground">PCHOC</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>2 un. para 09:00</span></div>
+          <div class="sug"><span class="n">38</span><span class="sig bg-warning/15 text-warning"><i data-i="lock" class="size-3.5"></i>falta insumo</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">38</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 38</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Baguette de Tradition <span class="op-micro font-mono font-normal text-muted-foreground">BGT</span></p></div>
+          <div class="sug"><span class="n">50</span><span class="sig bg-warning/15 text-warning"><i data-i="archive" class="size-3.5"></i>sobra</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">50</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 50</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Bichon au Citron <span class="op-micro font-mono font-normal text-muted-foreground">BICH</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>4 un. para 11:00</span></div>
+          <div class="sug"><span class="n text-muted-foreground">30</span><span class="text-[12.5px] text-muted-foreground leading-tight">você mudou de 30<br><a class="text-primary font-semibold underline underline-offset-2">voltar</a></span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper !border-2 !border-primary"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">32</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 32</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Kouign-amann <span class="op-micro font-mono font-normal text-muted-foreground">KOUI</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>3 un. para 10:00</span></div>
+          <div class="sug"><span class="n">24</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">24</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 24</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Tarte aux Pommes <span class="op-micro font-mono font-normal text-muted-foreground">TPOM</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>1 un. para 12:00</span></div>
+          <div class="sug"><span class="n">8</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">8</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 8</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Chausson aux Pommes <span class="op-micro font-mono font-normal text-muted-foreground">CHAU</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>5 un. para 09:30</span></div>
+          <div class="sug"><span class="n">28</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">28</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 28</button>
+        </div>
+        <div class="prow ">
+          <div class="min-w-0 flex items-center gap-2.5"><p class="op-title truncate">Éclair au Café <span class="op-micro font-mono font-normal text-muted-foreground">ECAF</span></p><span class="enc bg-info/12 text-info"><i data-i="shopping-bag" class="size-3.5"></i>2 un. para 14:00</span></div>
+          <div class="sug"><span class="n">18</span><a class="pq"><i data-i="info" class="size-4"></i>Por quê</a></div>
+          <div class="stepper"><button class="border-r border-input"><i data-i="minus" class="size-4"></i></button><span class="op-figure !text-[22px]">18</span><button class="border-l border-input"><i data-i="plus" class="size-4"></i></button></div>
+          <button class="h-[42px] rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 18</button>
         </div>
 
-        <!-- Croissant: tudo inline -->
-        <div class="prow bg-warning/5">
-          <div class="min-w-0">
-            <p class="op-title">Croissant Manteiga <span class="op-micro font-mono font-normal text-muted-foreground">CRO</span></p>
-            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>6 un. para 08:30 · 2 encomendas</span>
-          </div>
-          <div class="min-w-0 flex flex-col gap-1">
-            <p class="op-body eq text-muted-foreground"><b>Sugestão 52</b> = projeção de sábado <b>44</b> + encomendas <b>6</b> + margem <b>2</b></p>
-            <p class="op-label text-destructive inline-flex items-center gap-1.5"><i data-i="clock-alert" class="size-4"></i>acabou às 10:40 em 3 dos últimos 4 sábados <span class="text-muted-foreground font-normal">(a projeção já soma o que deixou de vender)</span></p>
-            <div class="mt-0.5 h-9 pl-2.5 pr-1 rounded-md bg-warning/12 inline-flex items-center gap-2 self-start">
-              <i data-i="triangle-alert" class="size-4 text-warning"></i>
-              <span class="op-label"><b class="font-semibold">Manteiga: dá para 40; faltam 3 kg</b> <span class="text-muted-foreground font-normal">· Laticínios Serra entrega sex até 16h</span></span>
-              <a class="h-7 px-2.5 rounded bg-card border border-border op-label font-semibold inline-flex items-center gap-1">Pedir no Compras<i data-i="arrow-up-right" class="size-3.5"></i></a>
-            </div>
-          </div>
-          <div class="flex items-center rounded-md border border-input h-12 bg-background">
-            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
-            <span class="flex-1 text-center op-figure">52</span>
-            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
-          </div>
-          <div class="flex flex-col items-stretch gap-1">
-            <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 52</button>
-            <a class="op-micro text-primary font-semibold text-center underline underline-offset-2">ou 40 (cabe na manteiga)</a>
-          </div>
-        </div>
-
-        <!-- Pain au Chocolat -->
-        <div class="prow">
-          <div class="min-w-0">
-            <p class="op-title">Pain au Chocolat <span class="op-micro font-mono font-normal text-muted-foreground">PCHOC</span></p>
-            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>2 un. para 09:00</span>
-          </div>
-          <div class="min-w-0 flex flex-col gap-1">
-            <p class="op-body eq text-muted-foreground"><b>Sugestão 38</b> = projeção de sábado <b>34</b> + encomendas <b>2</b> + margem <b>2</b></p>
-            <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="circle-check" class="size-4 text-success"></i>na medida em 3 dos últimos 4 sábados · insumos ok</p>
-          </div>
-          <div class="flex items-center rounded-md border border-input h-12 bg-background">
-            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
-            <span class="flex-1 text-center op-figure">38</span>
-            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
-          </div>
-          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 38</button>
-        </div>
-
-        <!-- Baguette -->
-        <div class="prow">
-          <div class="min-w-0">
-            <p class="op-title">Baguette de Tradition <span class="op-micro font-mono font-normal text-muted-foreground">BGT</span></p>
-            <p class="op-micro text-muted-foreground mt-1">sem encomendas</p>
-          </div>
-          <div class="min-w-0 flex flex-col gap-1">
-            <p class="op-body eq text-muted-foreground"><b>Sugestão 50</b> = projeção de sábado <b>56</b> − sobra de costume <b>8</b> + margem <b>2</b></p>
-            <p class="op-label text-warning inline-flex items-center gap-1.5"><i data-i="archive" class="size-4"></i>sobrou em 3 dos últimos 4 sábados (média 9 un.)</p>
-          </div>
-          <div class="flex items-center rounded-md border border-input h-12 bg-background">
-            <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
-            <span class="flex-1 text-center op-figure">50</span>
-            <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
-          </div>
-          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 50</button>
-        </div>
-
-        <!-- Bichon: número editado -->
-        <div class="prow">
-          <div class="min-w-0">
-            <p class="op-title">Bichon au Citron <span class="op-micro font-mono font-normal text-muted-foreground">BICH</span></p>
-            <span class="mt-1.5 h-7 px-2.5 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="shopping-bag" class="size-3.5"></i>4 un. para 11:00</span>
-          </div>
-          <div class="min-w-0 flex flex-col gap-1">
-            <p class="op-body eq text-muted-foreground"><b>Sugestão 30</b> = projeção de sábado <b>24</b> + encomendas <b>4</b> + margem <b>2</b></p>
-            <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="clock" class="size-4"></i>acabou às 15:10 em 1 dos últimos 4 sábados · insumos ok</p>
-          </div>
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center rounded-md border-2 border-primary h-12 bg-background">
-              <button class="w-11 h-full grid place-items-center border-r border-input"><i data-i="minus" class="size-4"></i></button>
-              <span class="flex-1 text-center op-figure">32</span>
-              <button class="w-11 h-full grid place-items-center border-l border-input"><i data-i="plus" class="size-4"></i></button>
-            </div>
-            <p class="op-micro text-muted-foreground text-center">você mudou de 30 · <a class="text-primary font-semibold underline underline-offset-2">voltar</a></p>
-          </div>
-          <button class="h-12 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-4"></i>Planejar 32</button>
-        </div>
-
-        <!-- conjunto -->
-        <div class="px-4 h-[68px] flex items-center gap-4 bg-muted/40">
+        <div class="px-4 h-[64px] flex items-center gap-4 bg-muted/40">
           <span class="size-9 rounded-full bg-card border border-border grid place-items-center"><i data-i="list-checks" class="size-4 text-muted-foreground"></i></span>
           <div class="flex-1">
             <p class="op-body"><b class="font-semibold">+16 produtos sem ressalva</b> <span class="text-muted-foreground">· insumos ok, sem encomenda, sem falta nem sobra repetida</span></p>
             <p class="op-micro text-muted-foreground">Pain de Campagne 34, Kuro Pan 12, Baguete Gergelim 30, Focaccia do dia 10 e mais 12</p>
           </div>
-          <button class="h-12 px-4 rounded-md border border-border bg-card op-label font-semibold inline-flex items-center gap-2"><i data-i="list" class="size-4"></i>Ver um a um</button>
-          <button class="h-12 px-4 rounded-md border border-primary text-primary op-label font-semibold inline-flex items-center gap-2"><i data-i="check-check" class="size-4"></i>Planejar os 16 como sugerido</button>
+          <button class="h-11 px-4 rounded-md border border-border bg-card op-label font-semibold inline-flex items-center gap-2"><i data-i="list" class="size-4"></i>Ver um a um</button>
+          <button class="h-11 px-4 rounded-md border border-primary text-primary op-label font-semibold inline-flex items-center gap-2"><i data-i="check-check" class="size-4"></i>Planejar os 16 como sugerido</button>
         </div>
         <div class="px-4 h-9 flex items-center gap-2 border-t border-border bg-muted/60"><span class="op-eyebrow text-muted-foreground">Planejados</span><span class="op-micro tnum text-muted-foreground">4</span></div>
-        <!-- Brioche: já planejado -->
-        <div class="prow bg-success/5 border-t border-border">
-          <div class="min-w-0">
-            <p class="op-title">Brioche Nanterre <span class="op-micro font-mono font-normal text-muted-foreground">BRNT</span></p>
-            <p class="op-micro text-muted-foreground mt-1">sem encomendas</p>
+        <div class="px-4 h-[52px] flex items-center gap-3 border-t border-border bg-success/5 op-label">
+          <span class="h-8 px-3 rounded-full bg-success/12 text-success op-label font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><i data-i="check" class="size-4"></i>Planejado 15:12</span>
+          <span>Brioche Nanterre <b class="tnum">20</b> · Ciabatta <b class="tnum">26</b> · Shokupan <b class="tnum">18</b> · Madeleine <b class="tnum">70</b></span><span class="text-muted-foreground op-micro">como sugerido</span>
+          <div class="flex-1"></div>
+          <button class="size-10 rounded-md grid place-items-center text-muted-foreground" title="Corrigir, Zerar, Ver encomendas"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+        </div>
+      </div>
+
+      <div class="pop" style="left:150px;top:118px">
+        <span class="arrow" style="left:500px"></span>
+        <div class="px-4 pt-3.5 pb-3 flex items-center gap-2 border-b border-border">
+          <p class="op-title flex-1">Por que 52 <span class="text-muted-foreground font-normal">· Croissant Manteiga</span></p>
+          <kbd class="op-micro font-mono text-muted-foreground border border-border rounded px-1.5 py-0.5">Esc</kbd>
+          <button class="size-8 rounded-md grid place-items-center text-muted-foreground" title="Fechar"><i data-i="x" class="size-4"></i></button>
+        </div>
+        <div class="p-4 flex flex-col gap-3.5">
+          <div class="flex items-center gap-2">
+            <div class="term !flex-[1.5]"><b>44</b><span>projeção de sábado</span></div><span class="text-muted-foreground font-semibold">+</span>
+            <div class="term"><b>6</b><span>encomendas</span></div><span class="text-muted-foreground font-semibold">+</span>
+            <div class="term"><b>2</b><span>margem</span></div><span class="text-muted-foreground font-semibold">=</span>
+            <div class="term !bg-primary/12"><b class="text-primary">52</b><span>sugestão</span></div>
           </div>
-          <div class="min-w-0"><p class="op-body eq text-muted-foreground"><b>Sugestão 20</b> = projeção de sábado <b>18</b> + margem <b>2</b> · insumos ok</p></div>
-          <p class="op-figure text-center">20</p>
-          <div class="flex items-center justify-end gap-2">
-            <span class="h-8 px-3 rounded-full bg-success/12 text-success op-label font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><i data-i="check" class="size-4"></i>Planejado 15:12</span>
-            <button class="size-10 rounded-md grid place-items-center text-muted-foreground" title="Corrigir, Zerar, Ver encomendas"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          <div class="flex items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <p class="op-label text-destructive font-semibold inline-flex items-center gap-1.5"><i data-i="clock-alert" class="size-4"></i>acabou às 10:40 em 3 dos últimos 4 sábados</p>
+              <p class="op-micro text-muted-foreground mt-0.5">a projeção já soma o que deixou de vender</p>
+            </div>
+            <div class="flex gap-2.5 shrink-0">
+              <span class="hd"><i class="d bg-destructive"></i>05/09</span>
+              <span class="hd"><i class="d bg-destructive"></i>12/09</span>
+              <span class="hd"><i class="d bg-success"></i>19/09</span>
+              <span class="hd"><i class="d bg-destructive"></i>26/09</span>
+            </div>
+          </div>
+          <div class="rounded-lg bg-warning/12 p-3 flex items-center gap-3">
+            <i data-i="triangle-alert" class="size-5 text-warning shrink-0"></i>
+            <div class="flex-1 min-w-0">
+              <p class="op-label font-semibold">Manteiga: dá para 40; faltam 3 kg</p>
+              <p class="op-micro text-muted-foreground">Laticínios Serra entrega sex até 16h</p>
+            </div>
+            <a class="h-9 px-3 rounded-md bg-card border border-border op-label font-semibold inline-flex items-center gap-1.5 whitespace-nowrap">Pedir no Compras<i data-i="arrow-up-right" class="size-3.5"></i></a>
           </div>
         </div>
-
-        <div class="px-4 h-12 flex items-center gap-3 border-t border-border bg-success/5 op-label">
-          <i data-i="check" class="size-4 text-success"></i><span>Ciabatta <b class="tnum">26</b> · Shokupan <b class="tnum">18</b> · Madeleine <b class="tnum">70</b></span><span class="text-muted-foreground op-micro">planejados às 15:12 como sugerido</span>
+        <div class="px-4 pb-4 flex items-center gap-2">
+          <button class="h-10 px-3.5 rounded-md border border-primary text-primary op-label font-semibold inline-flex items-center gap-2"><i data-i="check" class="size-4"></i>Planejar 40 (cabe na manteiga)</button>
+          <div class="flex-1"></div>
+          <button class="h-10 px-3.5 rounded-md op-label font-semibold text-muted-foreground">Fechar</button>
         </div>
       </div>
     </div>
   </main>
-  <span class="pin" style="left:384px;top:160px">1</span>
-  <span class="pin" style="left:1020px;top:196px">2</span>
-  <span class="pin" style="left:1000px;top:234px">3</span>
-  <span class="pin" style="left:360px;top:246px">4</span>
-  <span class="pin" style="left:1400px;top:198px">5</span>
-  <span class="pin" style="left:1030px;top:446px">6</span>
-  <span class="pin" style="left:1366px;top:640px">7</span>
-  <span class="pin" style="left:1404px;top:530px">8</span>
+  <span class="pin" style="left:856px;top:138px">1</span><span class="pin" style="left:1008px;top:138px">2</span><span class="pin" style="left:600px;top:254px">3</span><span class="pin" style="left:530px;top:448px">4</span><span class="pin" style="left:424px;top:189px">5</span><span class="pin" style="left:862px;top:400px">6</span><span class="pin" style="left:772px;top:686px">7</span><span class="pin" style="left:742px;top:781px">8</span>
 </div>
 <div class="legend">
-  <p class="t">Produção · Planejamento · v4 <span>PLANEJAR com o porquê no lugar da decisão (L3, EXPLICAR NO LUGAR)</span></p>
-  <div><b>1</b>O "por quê" deixou de ser diálogo: a conta inteira na linha (projeção + encomendas + margem), zero toque (P02).</div>
-  <div><b>2</b>Falta e sobra reais vêm do B.I. para a linha: "acabou às 10:40 em 3 dos últimos 4 sábados", "sobrou em 3 de 4".</div>
-  <div><b>3</b>Falta de insumo aparece na hora de planejar, não na finalização: "Manteiga: dá para 40; faltam 3 kg", com Pedir no Compras.</div>
-  <div><b>4</b>Encomendas com hora no chip ("6 un. para 08:30"): o primeiro compromisso define a prioridade do lote (P06).</div>
-  <div><b>5</b>Uma primária por linha, com o número: "Planejar 52". A alternativa que cabe no estoque fica ao lado, como link.</div>
-  <div><b>6</b>Número editável na própria linha (stepper, teclado digita); mudou, a linha mostra "você mudou de 30 · voltar" e o botão segue o número.</div>
-  <div><b>7</b>Planejado vira estado (feito, com hora); Corrigir, Zerar e Ver encomendas descem para o menu da linha (P03).</div>
-  <div><b>8</b>O que não tem ressalva vira conjunto: um "sim" do responsável para os 16, ou ver um a um. A ocasião e o clima ficam no cabeçalho.</div>
+  <p class="t">Produção · Planejamento · v4 <span>PLANEJAR com o sinal na decisão e o porquê a um toque (L3, EXPLICAR NO LUGAR)</span></p>
+  <div><b>1</b>A linha mostra só a sugestão e, quando há algo a notar, um sinal: "acabou cedo" (vermelho), "sobra" ou "falta insumo" (âmbar, cadeado). Sem nada a notar, só o número. Nenhuma conta na linha.</div>
+  <div><b>2</b>"Por quê" em toda linha abre o detalhe ancorado nela, com a linha marcada (Esc fecha). O sinal fica na decisão e o raciocínio a um toque: L3 segue cumprida.</div>
+  <div><b>3</b>No detalhe: a conta (projeção de sábado 44 + encomendas 6 + margem 2 = 52) e a falta real do B.I., com os últimos 4 sábados em pontos.</div>
+  <div><b>4</b>Falta de insumo na hora de planejar: "Manteiga: dá para 40; faltam 3 kg", Pedir no Compras e a alternativa "Planejar 40 (cabe na manteiga)".</div>
+  <div><b>5</b>Encomendas com hora num chip curto ao lado do nome ("6 un. para 08:30"): o primeiro compromisso define a prioridade do lote (P06).</div>
+  <div><b>6</b>Uma primária por linha, com o número: "Planejar 52". Stepper na linha; mudou, a sugestão mostra "você mudou de 30 · voltar" e o botão segue o número.</div>
+  <div><b>7</b>Linhas mais baixas: 8 produtos em foco (com encomenda ou ressalva). O que não tem ressalva vira conjunto: um "sim" para os 16, ou ver um a um.</div>
+  <div><b>8</b>Planejado vira estado (feito, com hora); Corrigir, Zerar e Ver encomendas descem para o menu (P03). A ocasião e o clima ficam no cabeçalho.</div>
 </div>
 </body></html>
