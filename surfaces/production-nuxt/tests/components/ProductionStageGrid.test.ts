@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, reactive, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 
 import ProductionStageGrid from "../../app/components/ProductionStageGrid.vue";
+import ShortageDialog from "../../app/components/ShortageDialog.vue";
 import type {
   ProductionMatrixRowProjection,
   WorkOrderCardProjection,
@@ -562,5 +563,101 @@ describe("ProductionStageGrid — lote produzido (conferência e estorno)", () =
       .setValue("queimou");
     await byText(w, "button", "Confirmar estorno")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+  });
+});
+
+describe("ProductionStageGrid — produzido abaixo das encomendas", () => {
+  // A recusa `order_shortage` do start não pode deixar o diálogo parado em
+  // silêncio: o operador vê quanto está encomendado, o que informou, e volta ao
+  // número para corrigir. O servidor não oferece "force" aqui.
+  const orderShortage = {
+    code: "order_shortage" as const,
+    work_order_ref: "WO-001",
+    idempotency_key: "k",
+    possibilities: [
+      {
+        kind: "retry",
+        label: "Revisar quantidade",
+        enabled: true,
+        proof: "",
+      },
+    ],
+    required: "12",
+    requested: "8",
+    order_refs: ["ORD-1", "ORD-2"],
+  };
+
+  function mountWithShortageDialog() {
+    return mount(ProductionStageGrid, {
+      props: { stage: "produce", title: "Produção" },
+      global: {
+        stubs: { ...stubs, ShortageDialog: false },
+        components: { ShortageDialog },
+      },
+    });
+  }
+
+  it("mostra a falta e o caminho, e devolve o número digitado para corrigir", async () => {
+    startSpy.mockResolvedValueOnce({ ok: false, shortage: orderShortage });
+    boardRows.value = [
+      row({
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountWithShortageDialog();
+
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+    const input = w.find('input[aria-label="Quantidade produzida"]');
+    await input.setValue("8");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "8");
+    // O diálogo de quantidade fecha; a recusa toma o lugar dele, com números e pedidos.
+    expect(w.find('input[aria-label="Quantidade produzida"]').exists()).toBe(
+      false,
+    );
+    expect(w.text()).toContain("Quantidade não cobre pedidos");
+    expect(w.text()).toContain("Encomendado: 12 un.");
+    expect(w.text()).toContain("informado: 8 un.");
+    expect(w.text()).toContain("ORD-1, ORD-2");
+    expect(w.text()).toContain("informe pelo menos 12 un.");
+    // Nada de forçar: sem campo de motivo, sem botão de autorização.
+    expect(w.find("textarea").exists()).toBe(false);
+    expect(w.text()).not.toContain("Salvar com justificativa");
+
+    await byText(w, "button", "Revisar quantidade")!.trigger("click");
+
+    expect(w.text()).not.toContain("Quantidade não cobre pedidos");
+    const back = w.find('input[aria-label="Quantidade produzida"]');
+    expect((back.element as HTMLInputElement).value).toBe("8");
+    await back.setValue("12");
+    await back.trigger("keydown", { key: "Enter" });
+    expect(startSpy).toHaveBeenLastCalledWith("PAO-001", 1, 2, "12");
+  });
+
+  it("Cancelar fecha a recusa sem reabrir o diálogo", async () => {
+    startSpy.mockResolvedValueOnce({ ok: false, shortage: orderShortage });
+    boardRows.value = [
+      row({
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountWithShortageDialog();
+
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+    await w
+      .find('input[aria-label="Quantidade produzida"]')
+      .trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    await byText(w, "button", "Cancelar")!.trigger("click");
+
+    expect(w.text()).not.toContain("Quantidade não cobre pedidos");
+    expect(w.find('input[aria-label="Quantidade produzida"]').exists()).toBe(
+      false,
+    );
   });
 });
