@@ -121,6 +121,53 @@ export function requiresOpenShiftForSale(
   return cashManagement?.requires_open_shift_for_sale !== false;
 }
 
+// ── A volta depois de abrir o caixa ────────────────────────────────────────
+//
+// Sem caixa aberto, a venda manda o operador para a antesala. Ele tinha vindo
+// fazer alguma coisa ("Nova encomenda" = `/?new=order`, "Refazer" =
+// `/?redo=<ref>`): a ida leva esse destino em `?next=` e, aberto o caixa, a
+// antesala volta para ele, não para a venda vazia.
+
+/** Para onde a antesala volta quando não há destino guardado: a venda. */
+export const SALE_HOME = "/";
+
+/**
+ * A ida para a antesala sem turno: `open=1` cai direto no diálogo de abertura,
+ * e `next` guarda o destino original (caminho + query) quando ele não é a
+ * própria venda vazia.
+ */
+export function openShiftGate(fullPath: string): { path: string; query: Record<string, string> } {
+  const query: Record<string, string> = { open: "1" };
+  const next = cashOpenReturnTarget(fullPath);
+  if (next !== SALE_HOME) query.next = next;
+  return { path: "/session", query };
+}
+
+/**
+ * O destino da volta depois de abrir o caixa, lido de `?next=`. Só vale caminho
+ * INTERNO do PDV: começa com uma barra só, sem esquema nem host, sem barra
+ * invertida nem quebra de linha. Qualquer outra coisa (`https://x`, `//x`,
+ * `/\x`) cai na venda, para o parâmetro não virar um redirecionamento aberto.
+ */
+export function cashOpenReturnTarget(raw: unknown): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return SALE_HOME;
+  const target = value.trim();
+  if (!target.startsWith("/") || target.startsWith("//")) return SALE_HOME;
+  if (/[\\\s]/.test(target)) return SALE_HOME;
+  const base = "http://pdv.invalid";
+  let resolved: URL;
+  try {
+    resolved = new URL(target, base);
+  } catch {
+    return SALE_HOME;
+  }
+  if (resolved.origin !== base) return SALE_HOME;
+  // Voltar para a própria antesala seria andar em círculo.
+  if (resolved.pathname === "/session" || resolved.pathname.startsWith("/session/")) return SALE_HOME;
+  return target;
+}
+
 // ── Pedido de troco ────────────────────────────────────────────────────────
 //
 // Quando falta troco, o operador saía do balcão com dinheiro até o cofre: parte

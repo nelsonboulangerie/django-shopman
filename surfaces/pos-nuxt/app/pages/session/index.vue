@@ -23,6 +23,7 @@ import {
   canRegisterMovement,
   canRequestChange,
   canSubmitCashAmount,
+  cashOpenReturnTarget,
   changeDenominations,
   changeRequestSummary,
   endOfDayTiles,
@@ -234,12 +235,14 @@ async function submitOpen() {
     // antes de ele virar diferença no fechamento.
     toast.success(`Caixa aberto · fundo R$ ${formatAmountInput(floatQ)}`);
     openShiftDialogOpen.value = false;
-    await navigateTo("/");
+    await navigateTo(cashOpenReturnTarget(route.query.next));
   }
 }
 
+// A volta para a venda leva ao que o operador veio fazer quando a venda o
+// mandou para cá (`?next=`, ex.: Nova encomenda ou Refazer); sem destino, a venda.
 async function goToSaleBoard() {
-  await navigateTo("/");
+  await navigateTo(cashOpenReturnTarget(route.query.next));
 }
 
 async function goToCashReport() {
