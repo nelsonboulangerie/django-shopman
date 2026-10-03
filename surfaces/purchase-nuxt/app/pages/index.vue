@@ -137,6 +137,7 @@ const {
   confirmCount,
   purchaseRequestStatus,
   sendPurchaseRequest,
+  cancelPurchaseRequest,
   setPreferredCost,
   saveQuote,
 } = usePurchaseDesk();
@@ -161,14 +162,12 @@ const receiptWarningClasses: Record<ReceiptWarningTone, string> = {
 
 const requestStatusClasses: Record<PurchaseRequestStatus, string> = {
   review: "border-warning/30 bg-warning/10 text-warning",
-  approved: "border-info/30 bg-info/10 text-info",
-  sent: "border-success/25 bg-success/10 text-success",
+  sent: "border-info/30 bg-info/10 text-info",
 };
 
 const requestStatusLabels: Record<PurchaseRequestStatus, string> = {
   review: "Revisar",
-  approved: "Pronto",
-  sent: "Enviado",
+  sent: "Aguardando entrega",
 };
 
 const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
@@ -940,8 +939,11 @@ onBeforeUnmount(stopInvoiceScanner);
             </dl>
             <div class="mt-4 grid grid-cols-2 gap-2">
               <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="openQuoteFor(row.material, row.supplier?.ref)">Lançar custo</button>
-              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || purchaseRequestStatus(row.material.sku) === 'sent' || actionPending" @click="sendPurchaseRequest(row.material.sku)">
-                {{ purchaseRequestStatus(row.material.sku) === "sent" ? "Enviado" : "Enviar pedido" }}
+              <button v-if="purchaseRequestStatus(row.material.sku) === 'sent'" type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="readonlyFallback || actionPending" @click="cancelPurchaseRequest(row.material.sku, row.material.name)">
+                Cancelar pedido
+              </button>
+              <button v-else type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || actionPending" @click="sendPurchaseRequest(row.material.sku)">
+                Enviar pedido
               </button>
             </div>
           </article>
