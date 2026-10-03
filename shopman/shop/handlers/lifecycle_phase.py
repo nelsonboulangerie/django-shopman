@@ -29,6 +29,19 @@ class LifecyclePhaseHandler:
                     raise DirectiveTerminalError("Lifecycle order missing")
                 if lifecycle.phase_complete(order, phase):
                     return
+                hold_token = payload.get("hold_token")
+                if hold_token:
+                    from shopman.shop.services import order_undo
+
+                    # Fase segurada pela janela do pronto automático. Desfeito
+                    # (token trocado ou apagado) ou de volta ao preparo: nada
+                    # sai. Já entregue sem passar pelo release: roda agora.
+                    if order_undo.hold_superseded(order, hold_token):
+                        return
+                    if order.status not in ("ready", "dispatched", "delivered", "completed"):
+                        return
+                    lifecycle.dispatch(order, phase)
+                    return
                 allowed = {phase.removeprefix("on_")}
                 if phase == "on_delivered":
                     allowed.add("completed")  # crash after the canonical automatic close

@@ -273,6 +273,8 @@ for key in (
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` · `shop/services/ifood_events.py` | `backstage/projections/ifood.py` · `backstage/projections/order_queue.py` · `shop/services/ifood_callbacks.remote_status_observed` · `receipt_escpos` | Contexto do iFood (só em pedidos ingeridos via `ifood_ingest`). **Da ingestão:** `order_code`, `merchant_id`, `created_at`, `display_id` (o número que cliente, portal e suporte falam), `is_test`, `order_timing`, `schedule`, `totals`, `payments`, `benefits`, `delivered_by`, `pickup_code`, `ref_from_display_id` (bool — o `Order.ref` adotou o `display_id` como sufixo; `false` quando o número estava ocupado no dia ou não veio, e aí o card exibe o `display_id` à parte), `confirm_by` (ISO — quando o iFood cancela se ninguém confirmar: `createdAt` deles + `confirmation.external_sla_minutes` do canal; ausente com SLA 0). **Fatos de status vindos do iFood** (`{event_id, observed_at}`, gravados uma vez, pelo primeiro evento): `remote_confirmed` (CFM), `remote_dispatched` (DSP), `remote_concluded` (CON). ⚠️ O fato é gravado e o evento recebe ACK **mesmo quando o pedido local ainda não chegou ao ponto** — ACK é "armazenei", não "apliquei" (doc do polling; o Firefly Audit pune evento sem ACK). A aplicação local acontece depois, em `ifood_events.reconcile_remote`, chamada a cada transição pelo receiver do `order_changed`; ela nunca inventa preparo nem pula a custódia do entregador, e nenhum aviso sai ao iFood para etapa que um fato já cobre. **`patches`** (`list[dict]`, de `ifood_events._process_patch`) — o cliente ALTEROU o pedido depois de confirmado (`ORDER_PATCHED`). Lista acumulável, um registro por evento: `{event_id, change_type, items, old_total_q, new_total_q, observed_at, order_status, local_total_q, fiscal_authorized, reconciled}`. ⚠️ `reconciled` diz se a loja acompanhou: `True` significa que `order.data["adjustment"]` foi gravado e estoque e cozinha foram reconciliados; `False` significa que **o pedido local segue com os itens e o total originais**. Junto vem `reconciliation` — o resumo `{revision, total_q, previous_total_q, diff, stock, kds}` quando reconciliou, ou `"blocked:<motivo>"` quando não: `test_order` (homologação não faz a padaria trabalhar), `fiscal_authorized` (a NFC-e já saiu e corrigir é decisão fiscal), `terminal` (pedido encerrado) e `fetch_failed` (a releitura no iFood falhou). Com a mercadoria já despachada o ajuste vale mas o estoque não se desfaz: `stock: {"skipped": "goods_left"}`. `items` é o DELTA do iFood (só os itens afetados), não a lista final; `old_total_q`/`new_total_q` são centavos do `oldTotal`/`newTotal` deles, e `None` quando o campo não veio (ausente ≠ zero). `fiscal_authorized` marca que a NFC-e já saiu, e aí corrigir é decisão fiscal — o sistema avisa e para |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
 | `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. `trip_ref` (ref do pedido que abriu a saída) existe só nos pedidos que saíram JUNTO com outro: a saída é o pedido-âncora mais os que apontam para ele, e o pedido de cartão que entra numa saída com maquininha grava o mesmo `device_ref` sem reserva nova (o vínculo `DeliveryDevice.current_order` fica com quem a reservou). `courier_back_at/by`: "Entregador voltou" fechou a saída (`operator_orders.courier_returned`: entregue, acerto com troco integral, maquininha devolvida, concluído). Maquininha na rua além de `Shop.defaults.delivery.card_machine_alert_minutes` (default 120; 0 desliga) vira alerta `card_machine_overdue` (`check_card_machines_out`, no ciclo do `maintenance_worker`). Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
+| `auto_ready` | `dict` | `kds.on_all_tickets_done` → `order_undo.record_auto_ready` (antes da transição a READY); some em `order_undo.undo_auto_ready` e no recall do ticket (`kds.reopen_ticket`) | `order_undo.ready_hold`, `lifecycle.enqueue_phase`, `LifecyclePhaseHandler`, `order_queue._undo_projection` | O pronto automático da Cozinha (SUITE-UX §5.1). `{token, at, undo_until, ticket_ids, actor}`: `token` (hex) identifica ESTE pronto; `at`/`undo_until` ISO; `ticket_ids` = o ticket cuja baixa fechou o pedido (o desfazer o reabre). Enquanto `undo_until` não vence, a fase `on_ready` (aviso de pronto, nota da sacola, corrida) fica agendada para `undo_until` com `hold_token`; desfeito, vira no-op. O `readyToPickup` do iFood sai na hora (o card diz "iFood já avisado"). Só fora do balcão e com `fulfillment.ready_undo_seconds > 0`. Fica no pedido depois da janela (o card diz "Pronto · automático"). |
+| `pending_handoff` | `dict` | `operator_orders.advance_order(undo_window=True)` → `order_undo.request_handoff`; some no commit (`order_undo.commit_handoff`), no desfazer (`undo_handoff`) ou na recusa da gravação | `order_undo`, `HandoffCommitHandler`, `operational_actions`, projeções do Gestor e da Saída | Entregar/Despachar tocado no Gestor ou na Saída e ainda não gravado. `{token, from_status, to_status, requested_at, commit_at, actor, change_out_q, cash_shift_id, equipment, trip_ref}`: os argumentos do toque, reaplicados por `advance_order(handoff_token=token)` quando `commit_at` vence (directive `order.handoff_commit`). Até lá o status não muda e nada sai da casa. Recusa na gravação (turno fechado, maquininha tomada) apaga o registro e cria alerta `handoff_refused`. Entra na revisão `advance`. |
 
 ### courier — detalhamento
 
@@ -863,6 +865,16 @@ frete de quem não entregou) — motor em `shopman.shop.fiscal_intermediary`.
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | FulfillmentCreateHandler |
 | `channel_ref` | `string` | hooks | FulfillmentCreateHandler |
+
+#### `order.handoff_commit`
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `order_undo.request_handoff` | HandoffCommitHandler |
+| `token` | `string` | `order_undo.request_handoff` | HandoffCommitHandler (só grava se bater com `Order.data.pending_handoff.token`) |
+
+`available_at` = fim da janela de desfazer (`fulfillment.handoff_undo_seconds`).
+Dedupe `order.handoff_commit:{order_ref}:{token}`.
 
 #### `fulfillment.update`
 
@@ -2389,6 +2401,13 @@ da fase foi concluído, não que fiscal/aviso/courier filho teve aceite externo.
 enqueue reverte a transição; erro depois do commit conserva tarefa. Fase incompatível
 com estado atual fica failed/alerta canônico, sem executar trabalho antigo ou marcar done.
 `on_delivered` pode retomar em completed: só conclui aviso idempotente/fechamento já feito.
+`hold_token` (string, opcional): fase `on_ready` do pronto automático, agendada para
+`Order.data.auto_ready.undo_until`; a chave ganha o sufixo `:{hold_token}` (pronto
+desfeito e refeito é outra fase devida). O handler não roda se o token não for mais o de
+`auto_ready` (desfeito/recall) ou se o pedido voltou ao preparo; se o pedido já saiu de
+READY sem passar por `order_undo.release_ready_hold`, roda. O `readyToPickup` do iFood
+(`ifood.status_callback`) NÃO é segurado: chama o entregador do iFood e precisa sair antes
+do despacho dele (ver `order_undo`).
 Rollback deve drenar ou manter este handler disponível enquanto houver tarefas deste topic.
 
 

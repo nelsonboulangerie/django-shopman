@@ -472,7 +472,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -518,6 +518,10 @@ export function useOrdersBoard() {
     if (tripRef) body.trip_ref = tripRef;
     return act(ref_, "advance", Object.keys(body).length ? body : undefined);
   };
+  // Desfazer o que ainda está na janela: a saída tocada (Entregar/Despachar) ou
+  // o pronto que veio sozinho da Cozinha. O servidor só aceita dentro do prazo.
+  const undoHandoff = (ref_: string) => act(ref_, "undo-handoff");
+  const undoReady = (ref_: string) => act(ref_, "undo-ready");
   // A maquininha voltou com o entregador (pedido que a levou no despacho).
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
@@ -580,7 +584,7 @@ export function useOrdersBoard() {
     readMetadata, queue, zones, totalCount, deviceAgent, preorders, realtime, pending, error,
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
     fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
-    equipmentAvailable, assign, unassign, confirmMany, advanceMany,
+    equipmentAvailable, assign, unassign, confirmMany, advanceMany, undoHandoff, undoReady,
     soundOn, soundBlocked, alerting, attentionPending, toggleSound,
     activateAttentionSound, acknowledgeAttention,
   };

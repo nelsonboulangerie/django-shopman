@@ -24,6 +24,7 @@ from django.core.cache import cache
 from shopman.orderman.models import Order
 
 from shopman.shop.services import kds, operator_orders, payment_gate
+from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
@@ -114,8 +115,7 @@ def test_cash_on_delivery_dispatches_from_the_expedition_board():
     assert kds.expedition_block_reason(order, action="dispatch") == ""
 
     kds.expedition_action(order, action="dispatch", actor="operator:test")
-    order.refresh_from_db()
-    assert order.status == Order.Status.DISPATCHED
+    assert settle(order) == Order.Status.DISPATCHED
 
 
 def test_cash_on_delivery_also_starts_prep():
@@ -237,8 +237,7 @@ def test_paid_order_advances_in_the_expedition():
 
     assert kds.expedition_block_reason(order, action="dispatch") == ""
     kds.expedition_action(order, action="dispatch", actor="operator:test")
-    order.refresh_from_db()
-    assert order.status == Order.Status.DISPATCHED
+    assert settle(order) == Order.Status.DISPATCHED
 
 
 # ── (e) a régua é a MESMA nos dois caminhos ────────────────────────────────

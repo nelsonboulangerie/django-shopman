@@ -498,3 +498,29 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
     title: "O painel atualiza sozinho a cada poucos segundos",
   };
 }
+
+// ── Saída: desfazer de Entregar/Despachar (SUITE-UX §5.1) ──────────────────
+
+export interface HandoffFields {
+  handoff_label: string;
+  handoff_undo_until_iso: string;
+  handoff_token: string;
+}
+
+/** Os campos da saída pedida que o POST da ação devolve, ou ``null`` quando a
+ *  casa gravou na hora (sem janela de desfazer). */
+export function handoffFromResponse(res: unknown): HandoffFields | null {
+  const body = (res ?? {}) as Partial<Record<keyof HandoffFields, unknown>>;
+  if (typeof body.handoff_token !== "string" || !body.handoff_token) return null;
+  return {
+    handoff_label: typeof body.handoff_label === "string" ? body.handoff_label : "",
+    handoff_undo_until_iso: typeof body.handoff_undo_until_iso === "string" ? body.handoff_undo_until_iso : "",
+    handoff_token: body.handoff_token,
+  };
+}
+
+/** Segundos que faltam para o desfazer da saída (0 = janela fechada). */
+export function handoffSecondsLeft(card: Pick<KDSExpeditionCardProjection, "handoff_undo_until_iso">, nowMs: number): number {
+  const until = card.handoff_undo_until_iso ? Date.parse(card.handoff_undo_until_iso) : NaN;
+  return Number.isNaN(until) ? 0 : Math.max(0, Math.ceil((until - nowMs) / 1000));
+}

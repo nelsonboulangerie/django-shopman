@@ -136,6 +136,19 @@ class ChannelConfig:
         # "operator" — pago fica em "Aceito"; a cozinha só é acionada quando o
         #              operador dá "Iniciar preparo" no gestor. Honesto com o
         #              cliente remoto (web): "Em preparo" só quando alguém encosta.
+        auto_ready: bool = True
+        # A Cozinha concluiu TODAS as estações do pedido (inclusive a estação sem
+        # tela, que conclui pelo papel na Saída): o pedido vai a "pronto"
+        # sozinho (SUITE-UX §5.1, decisão do dono). False = o pedido fica em
+        # preparo até alguém dar "Marcar pronto" no Gestor.
+        ready_undo_seconds: int = 30
+        # Janela do desfazer do "pronto" automático. O aviso de "pronto" ao
+        # cliente (e o pronto para o iFood) só sai quando ela vence. 0 = sem
+        # janela: avisa na hora e não oferece desfazer.
+        handoff_undo_seconds: int = 5
+        # Desfazer de Entregar/Despachar (Gestor e Saída da Cozinha). A
+        # transição só é gravada quando a janela vence; até lá o operador pode
+        # desfazer e nada sai da casa. 0 = grava na hora, sem desfazer.
         courier: str = "none"
         # "none" — sem despacho automático de entregador (marketplace tem
         #          logística própria; retirada não entrega)
@@ -485,6 +498,12 @@ class ChannelConfig:
             raise ValueError(f"fulfillment.prep_start inválido: {self.fulfillment.prep_start}")
         if self.fulfillment.courier_ticket not in ("identified", "anonymous"):
             raise ValueError(f"fulfillment.courier_ticket inválido: {self.fulfillment.courier_ticket}")
+        if not isinstance(self.fulfillment.auto_ready, bool):
+            raise ValueError("fulfillment.auto_ready deve ser true/false")
+        for name in ("ready_undo_seconds", "handoff_undo_seconds"):
+            value = getattr(self.fulfillment, name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 300:
+                raise ValueError(f"fulfillment.{name} deve ser um inteiro entre 0 e 300")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:

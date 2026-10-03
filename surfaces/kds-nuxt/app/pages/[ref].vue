@@ -37,6 +37,8 @@ const {
   finalize,
   undoFinish,
   expedite,
+  undoHandoff,
+  busyHandoffs,
   markStationReady,
   busyStations,
   recall,
@@ -551,7 +553,9 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
                   :card="asExpedition(card)"
                   :density="density"
                   :service-date="view.serviceDate"
+                  :busy="busyHandoffs.has(card.pk)"
                   @action="(action) => !readOnly && expedite(card.pk, action)"
+                  @undo="!readOnly && undoHandoff(card.pk)"
                 />
               </div>
             </TransitionGroup>

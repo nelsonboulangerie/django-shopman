@@ -18,6 +18,7 @@ from shopman.orderman.models import Order
 from shopman.backstage.models import KDSInstance, KDSTicket
 from shopman.shop.models import Channel
 from shopman.shop.services import kds as kds_core
+from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
@@ -185,8 +186,8 @@ def test_expedition_by_order_id_completes_ready_pickup(db):
     order = _order_at(Order.Status.READY, session_key="sk-kds-exp-ready")
 
     assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="kds:op") == Order.Status.COMPLETED
-    order.refresh_from_db()
-    assert order.status == Order.Status.COMPLETED
+    # UX-G2: a saída fica na janela de desfazer; gravada quando ela vence.
+    assert settle(order) == Order.Status.COMPLETED
 
 
 def test_expedition_by_order_id_replay_is_noop_success(db):

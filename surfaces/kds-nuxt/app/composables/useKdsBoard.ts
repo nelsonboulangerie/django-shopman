@@ -5,9 +5,10 @@
 //     eventstream do Django) → refresh on push, and a beep when the
 //     active-ticket count rises (new order arrived).
 // SSE/poll/beep are client-only (EventSource + Web Audio are browser APIs).
-import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
+import type { KDSBoardProjection, KDSBoardResponse, KDSExpeditionCardProjection, KDSTicketProjection } from "~/types/kds";
 import {
   boardView,
+  handoffFromResponse,
   KDS_UNDO_WINDOW_MS,
   type KDSBoardView,
 } from "~/presentation/board";
@@ -408,10 +409,71 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     finishing.value = new Set(finishing.value).add(pk);
     finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
   };
+  // Entregar/Despachar: o servidor NÃO grava na hora (SUITE-UX §5.1). Ele
+  // registra a saída e devolve a janela de desfazer; o card fica no lugar com
+  // "Entregue às HH:MM · Desfazer" até o prazo, e sai quando a gravação chega
+  // (SSE/reconciliação). Aviso ao cliente e fim do pedido só depois do prazo.
+  const busyHandoffs = ref<Set<number>>(new Set());
+  function setBusyHandoff(pk: number, on: boolean) {
+    const next = new Set(busyHandoffs.value);
+    if (on) next.add(pk);
+    else next.delete(pk);
+    busyHandoffs.value = next;
+  }
+  function findExpedition(pk: number): KDSExpeditionCardProjection | undefined {
+    return data.value?.board?.tickets?.find((x) => x.pk === pk && x.is_expedition) as KDSExpeditionCardProjection | undefined;
+  }
   const expedite = (pk: number, action: "dispatch" | "complete") => {
-    if (readOnly.value) return;
-    removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/expedition/${pk}/action/`, { action });
+    if (readOnly.value || busyHandoffs.value.has(pk)) return;
+    const card = findExpedition(pk);
+    if (card?.handoff_token) return;
+    setBusyHandoff(pk, true);
+    enqueue(`/api/v1/backstage/kds/expedition/${pk}/action/`, { action })
+      .then(async (res) => {
+        const handoff = handoffFromResponse(res);
+        const current = findExpedition(pk);
+        if (current && handoff) Object.assign(current, handoff);
+        else if (!handoff) {
+          // Sem janela (a casa desligou o desfazer): gravou na hora, o card sai.
+          const list = data.value?.board?.tickets;
+          const idx = list?.findIndex((x) => x.pk === pk && x.is_expedition) ?? -1;
+          if (list && idx >= 0) list.splice(idx, 1);
+        }
+        setBusyHandoff(pk, false);
+        scheduleHandoffRefresh(handoff);
+      })
+      .catch((err) => {
+        setBusyHandoff(pk, false);
+        useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
+        refresh();
+      });
   };
+  const undoHandoff = (pk: number) => {
+    if (readOnly.value || busyHandoffs.value.has(pk)) return;
+    const card = findExpedition(pk);
+    if (!card?.handoff_token) return;
+    const token = card.handoff_token;
+    setBusyHandoff(pk, true);
+    enqueue(`/api/v1/backstage/kds/expedition/${pk}/undo/`, { token })
+      .then(async () => {
+        const current = findExpedition(pk);
+        if (current) Object.assign(current, { handoff_label: "", handoff_undo_until_iso: "", handoff_token: "" });
+        setBusyHandoff(pk, false);
+        scheduleReconcile();
+      })
+      .catch((err) => {
+        setBusyHandoff(pk, false);
+        useSonner.error(httpErrorMessage(err, "Não deu para desfazer."));
+        refresh();
+      });
+  };
+  // Quando a janela vence, a gravação acontece no servidor; uma leitura logo
+  // depois tira o card (o SSE também avisa, isto cobre o SSE caído).
+  function scheduleHandoffRefresh(handoff: ReturnType<typeof handoffFromResponse>) {
+    const until = handoff?.handoff_undo_until_iso ? Date.parse(handoff.handoff_undo_until_iso) : NaN;
+    const wait = Number.isNaN(until) ? 500 : Math.max(500, until - Date.now() + 1500);
+    setTimeout(() => refresh(), wait);
+  }
   // Saída: "Pronto" pela estação sem tela. Otimista — o chip vira "pronto" na
   // hora e o botão some; se era a última estação, a reconciliação (e o SSE)
   // move o card para "Prontos para sair". Em falha, volta e diz o porquê.
@@ -485,6 +547,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     finalize,
     undoFinish,
     expedite,
+    undoHandoff,
+    busyHandoffs,
     markStationReady,
     busyStations,
     recall,

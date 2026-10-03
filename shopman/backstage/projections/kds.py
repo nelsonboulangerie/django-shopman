@@ -126,6 +126,13 @@ class KDSExpeditionCardProjection:
     # O pedido de teste chega à Saída como qualquer outro (o card é do
     # PEDIDO, não do ticket) — e é aqui que alguém entregaria a sacola.
     test_order_label: str = ""
+    # Entregar/Despachar já tocado e ainda na janela de desfazer (SUITE-UX §5.1):
+    # "Entregue às 14:02" / "Saiu às 14:02". O card fica no lugar com
+    # "Desfazer" até ``handoff_undo_until_iso``; vazio quando não há saída
+    # pedida. ``handoff_token`` vai no POST do desfazer.
+    handoff_label: str = ""
+    handoff_undo_until_iso: str = ""
+    handoff_token: str = ""
 
 
 @dataclass(frozen=True)
@@ -1075,7 +1082,22 @@ def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSEx
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         test_order_label=_test_order_label(order),
+        **_handoff_fields(order),
     )
+
+
+def _handoff_fields(order: Order) -> dict:
+    """A saída tocada (aqui ou no Gestor) ainda na janela de desfazer."""
+    from shopman.shop.services import order_undo
+
+    pending = order_undo.pending_handoff(order)
+    if not pending:
+        return {}
+    return {
+        "handoff_label": order_undo.handoff_label(pending),
+        "handoff_undo_until_iso": str(pending.get("commit_at") or "") if order_undo.handoff_window_open(order) else "",
+        "handoff_token": str(pending["token"]),
+    }
 
 
 def _add_stock_warnings(items: list[dict]) -> list[dict]:

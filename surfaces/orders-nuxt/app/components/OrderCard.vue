@@ -15,6 +15,7 @@ import {
   timerTone,
   toneBadge,
   elapsedLabel,
+  undoLine,
   type AffordanceRef,
   type Tone,
 } from "~/presentation/board";
@@ -62,6 +63,9 @@ const confirmationLeft = computed(() =>
   confirmationRemainingLabel(props.card.confirmation_deadline_iso, nowMs.value),
 );
 const deadlineTone_ = computed(() => deadlineTone(props.card.confirmation_deadline_iso, nowMs.value));
+// "O sistema fez · desfazer": o pronto que veio da Cozinha, ou a saída tocada
+// ainda na janela. O fato fica à vista; o gesto só enquanto o prazo corre.
+const undo = computed(() => props.negotiationOnly ? null : undoLine(props.card, nowMs.value));
 
 function buttonClass(priority: string): string {
   if (priority === "primary")
@@ -268,6 +272,34 @@ function buttonClass(priority: string): string {
         {{ card.payment_method_label }}
       </span>
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
+    </div>
+
+    <div
+      v-if="undo"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+      :data-undo="undo.kind"
+    >
+      <span
+        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium"
+        :class="undo.kind === 'handoff' ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground'"
+      >
+        <Icon :name="undo.kind === 'handoff' ? 'lucide:check' : 'lucide:sparkles'" class="size-3" />
+        {{ undo.label }}
+      </span>
+      <span class="text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
+      <span v-if="undo.alreadyOut" class="text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
+      <button
+        v-if="undo.canUndo"
+        type="button"
+        class="ml-auto inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-semibold transition hover:bg-accent disabled:opacity-60"
+        :class="undo.kind === 'handoff' ? 'min-h-action border-primary text-primary' : ''"
+        :disabled="busy"
+        data-undo-button
+        @click="emit('action', undo.action)"
+      >
+        <Icon name="lucide:undo-2" class="size-3.5" />
+        <span class="tabular-nums">{{ undo.kind === "handoff" ? `Desfazer ${undo.countdown}` : "Desfazer" }}</span>
+      </button>
     </div>
 
     <div v-if="danfe" class="space-y-0.5 text-xs" data-danfe :data-danfe-attention="danfe.attention || undefined">

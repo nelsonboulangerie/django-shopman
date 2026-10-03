@@ -27,6 +27,20 @@ from shopman.shop.services import operator_orders
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def _handoff_grava_na_hora(monkeypatch):
+    """Estes testes são sobre o que a SAÍDA faz (troco, maquininha, acerto).
+
+    UX-G2: o toque do Gestor grava a saída quando a janela de desfazer vence,
+    pela MESMA ``advance_order``. Aqui a janela é zero, para os testes lerem o
+    efeito no mesmo passo; a janela em si tem os testes dela
+    (``shop/tests/test_order_undo.py``, ``test_api_order_undo.py``).
+    """
+    from shopman.shop.services import order_undo
+
+    monkeypatch.setattr(order_undo, "handoff_undo_seconds", lambda order: 0)
+
+
 @pytest.fixture
 def operator(client):
     Shop.objects.create(name="Loja")

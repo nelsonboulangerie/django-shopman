@@ -47,6 +47,10 @@ FULFILLMENT_UPDATE = "fulfillment.update"
 # Rede de segurança: auto-conclui um pedido em entrega após ETA + folga, se nem
 # o cliente ("Recebi") nem o operador ("Marcar entregue") fecharem o loop.
 DELIVERY_AUTO_COMPLETE = "delivery.auto_complete"
+# Desfazer de Entregar/Despachar: o toque do Gestor/Saída grava só o pedido de
+# saída; esta directive grava a transição quando a janela vence
+# (``services/order_undo.py``).
+ORDER_HANDOFF_COMMIT = "order.handoff_commit"
 
 # Courier (logística externa — Machine)
 # Despacho da corrida ao marcar "pronto" (retry/idempotência via Directive) e

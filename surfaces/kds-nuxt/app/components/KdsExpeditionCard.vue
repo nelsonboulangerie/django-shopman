@@ -8,6 +8,7 @@
 import type { KDSExpeditionCardProjection } from "~/types/kds";
 import {
   cardScale,
+  handoffSecondsLeft,
   lucideIcon,
   shortDateLabel,
   splitRef,
@@ -23,10 +24,12 @@ const props = withDefaults(
     density?: KDSDensity;
     /** Data de serviço do quadro (ISO) — a prévia precisa DIZER a data. */
     serviceDate?: string;
+    /** Ação de saída ou desfazer em voo neste card. */
+    busy?: boolean;
   }>(),
-  { density: "cozy", serviceDate: "" },
+  { density: "cozy", serviceDate: "", busy: false },
 );
-defineEmits<{ action: [action: "dispatch" | "complete"] }>();
+defineEmits<{ action: [action: "dispatch" | "complete"]; undo: [] }>();
 
 const ref_ = computed(() => splitRef(props.card.order_ref));
 const scheduledDate = computed(() =>
@@ -39,6 +42,22 @@ const blocked = computed(() => Boolean(props.card.advance_block_label));
 // expande pra conferir o que entregar/despachar.
 const showItems = ref(false);
 const d = computed(() => cardScale(props.density));
+
+// Entregar/Despachar já tocado: o card fica no lugar com o fato e o "Desfazer"
+// até o prazo (o servidor só grava a saída quando ele vence). Relógio local de
+// 1 s, ligado só enquanto há janela.
+const nowMs = ref(Date.now());
+let tick: ReturnType<typeof setInterval> | null = null;
+function syncTick() {
+  const open = Boolean(props.card.handoff_undo_until_iso);
+  if (open && !tick) tick = setInterval(() => { nowMs.value = Date.now(); }, 1000);
+  if (!open && tick) { clearInterval(tick); tick = null; }
+  nowMs.value = Date.now();
+}
+watch(() => props.card.handoff_undo_until_iso, syncTick);
+onMounted(syncTick);
+onBeforeUnmount(() => { if (tick) clearInterval(tick); });
+const handoffLeft = computed(() => handoffSecondsLeft(props.card, nowMs.value));
 </script>
 
 <template>
@@ -138,7 +157,25 @@ const d = computed(() => cardScale(props.density));
          Neutro de propósito: âmbar/vermelho aqui são o semáforo de SLA, e um
          segundo significado na mesma cor apaga os dois. Dinheiro na entrega NÃO
          cai aqui: é venda legítima que se paga na porta. -->
-    <div v-if="card.is_scheduled" class="mt-auto" data-testid="expedition-scheduled">
+    <div v-if="card.handoff_label" class="mt-auto" data-testid="expedition-handoff">
+      <p class="mb-1.5 flex items-center gap-1.5 text-sm font-semibold" role="status">
+        <Icon name="lucide:check" class="size-4 shrink-0" />
+        {{ card.handoff_label }}
+      </p>
+      <KdsCardButton
+        v-if="handoffLeft > 0"
+        tone="outline"
+        icon="lucide:undo-2"
+        :label="`Desfazer ${handoffLeft} s`"
+        :size-class="d.action"
+        :disabled="busy"
+        @click="$emit('undo')"
+      />
+      <p v-else class="text-xs leading-snug text-muted-foreground">
+        O aviso ao cliente sai agora.
+      </p>
+    </div>
+    <div v-else-if="card.is_scheduled" class="mt-auto" data-testid="expedition-scheduled">
       <KdsCardButton
         tone="inert"
         icon="lucide:calendar-clock"
