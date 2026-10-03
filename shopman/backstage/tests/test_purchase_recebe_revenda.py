@@ -46,7 +46,7 @@ def cenario(db):
     )
     cha = Product.objects.create(
         sku="INTU_P50",
-        name="Intuição Chai Kãnfa — Pouch 50g",
+        name="Intuição Chai Kãnfa · Pouch 50g",
         unit="un",
         base_price_q=7300,
         is_published=True,
