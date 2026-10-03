@@ -12,9 +12,9 @@ from shopman.backstage.models import DeliveryDevice
 from shopman.backstage.projections.order_queue import build_two_zone_queue
 from shopman.backstage.services.delivery_devices import PREFIX
 from shopman.backstage.tests._order_intent import advance_payload
-from shopman.shop.tests._handoff import settle
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds, operator_orders
+from shopman.shop.tests._handoff import settle
 
 
 @pytest.fixture
