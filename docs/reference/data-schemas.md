@@ -159,7 +159,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer` ou `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
@@ -176,7 +176,7 @@ cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
 `layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
 laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
-`agent_handoff` (o agente chamou a equipe). `triage.classifier` é `anthropic` ou `jev`; `source` como
+`agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
 `envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
 cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
@@ -189,6 +189,18 @@ e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `a
 `Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
 como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
 Registros anteriores a 03/10/2026 têm `usage = {}`.
+Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
+`purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
+repaired, recorded, violations, replaced?}`. `version` é a versão da tabela (inteiro); `held`,
+`repaired`, `recorded` são listas ordenadas de ids de regra (`R1`…`R14`) pelo efeito: `held`
+(segurada; só aparece aqui quando escapou até a última trava, e vai também para o log
+`concierge.house_rule_unenforced`), `repaired` (palavra consertada, a resposta saiu) e `recorded`
+(só medida, hoje a forma R11 da resposta da casa). `violations` é `[{rule, effect, found}]`, com
+`found` cortado em 80 caracteres (o que R13 acha vira `[dado pessoal omitido]`). As violações consertadas no turno vão no primeiro bloco.
+`replaced` só existe no aviso de handoff que substituiu uma resposta segurada em `run_turn`: é o
+mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Conversation.handoff_reason`
+começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.

@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
 
-from shopman.storefront.concierge.reply_eval import CLASSIFIERS, load_golden, production_summary, run
+from shopman.storefront.concierge.reply_eval import (
+    CLASSIFIERS,
+    house_rules_summary,
+    load_golden,
+    production_summary,
+    run,
+)
 
 
 class Command(BaseCommand):
@@ -47,4 +53,5 @@ class Command(BaseCommand):
             raise CommandError(str(exc)) from exc
         self.stdout.write(self.style.SUCCESS("═══ Placar da Concierge (golden set) ═══"))
         self.stdout.write(report.render(show_misses=options["show_misses"]))
+        self.stdout.write(house_rules_summary(cases))
         self.stdout.write("Nada foi gravado: o comando só mede.")
