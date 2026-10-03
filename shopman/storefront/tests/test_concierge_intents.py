@@ -312,7 +312,7 @@ def test_sensitive_part_answers_the_simple_ones_keeps_the_cart_and_calls_the_tea
     ack = outbox.sent[-1]
     assert "Pão Francês" in ack
     assert "já chamei a equipe" in ack
-    assert "o pedido a equipe fecha" in ack
+    assert "Sobre o pedido, a equipe fecha" in ack
     triage_stamp = conversation.flags["triage"]
     assert (triage_stamp["intent"], triage_stamp["destination"], triage_stamp["source"]) == ("complaint", "team", "intents")
     assert "suspenso" in triage_stamp["summary"] and "respondida" in triage_stamp["summary"]

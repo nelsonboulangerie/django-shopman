@@ -551,7 +551,8 @@ class Execution:
 def _clip(text: str, limit: int = SPAN_CHARS) -> str:
     from .triage import _redacted
 
-    text = " ".join(_redacted(text).split())
+    # Sem a pontuação final: a pergunta do cliente citada não vira pergunta da casa.
+    text = " ".join(_redacted(text).split()).rstrip(" ?!.,;:")
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 

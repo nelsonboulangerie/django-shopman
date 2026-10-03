@@ -1248,7 +1248,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_PARTS_ORDER_WITH_TEAM": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="E o pedido a equipe fecha com você por aqui.",
+            message="Sobre o pedido, a equipe fecha com você por aqui.",
         )},
     },
     "CONCIERGE_PARTS_NOT_FOUND": {
