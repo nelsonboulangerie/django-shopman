@@ -58,6 +58,9 @@ visível e releitura ao voltar a tela ou a rede (ADR-016). Lógica pura em `pres
 pytest shopman/backstage/tests/test_hub_queue.py test_api_hub_surface.py test_hub_projection_identity.py
        test_unauthenticated_error_code.py                         → 54 passed
 pytest test_surface_registry_gate.py test_new_surface_generator.py test_vocabulario_de_tela.py → 2258 passed
+pytest shopman/backstage/tests -n 8 (suíte inteira do backstage)  → 7500 passed, 59 skipped
+  (a 1ª rodada pegou o gate Unfold: `hub_queue.py` precisava entrar na superfície
+   `runtime-central-hub` de scripts/check_unfold_canonical.py; corrigido)
 ruff check shopman/backstage                                      → All checks passed!
 scripts/check_surface_registry.py                                 → todos os lugares concordam
 hub-nuxt: vitest run                                              → 4 files, 42 tests passed
