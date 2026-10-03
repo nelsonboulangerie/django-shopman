@@ -1,6 +1,6 @@
 """B.I. de produção (ADR-021, BI-PLAN F3).
 
-Cobre a perm fina ``backstage.view_bi``, a série diária (rendimento, perda e
+Cobre a perm fina ``backstage.view_bi``, a série diária (aproveitamento, perda e
 mix comercial da qualidade via partição ADR-017), o tempo real de forno com
 p50/p90 e a COBERTURA declarada (fornadas medidas ÷ fechadas).
 """
@@ -135,6 +135,48 @@ def test_daily_series_yield_loss_and_quality_mix(recipe):
     assert today_row.yield_percent == 95
     assert today_row.full_price == "32"
     assert today_row.discounted == "6"
+
+
+@pytest.mark.django_db
+def test_aproveitamento_and_loss_use_the_previsto_not_the_planejado(recipe):
+    """Decisão do dono (03/10): planejado 12, previsto 10, realizado 9.
+
+    Aproveitamento = 9 ÷ 10 = 90% (a conta antiga, ÷ planejado, dava 75%);
+    perda = previsto − realizado = 1 (a antiga dava 3).
+    """
+    wo = craft.plan(recipe, Decimal("12"), date=date.today(), position_ref="forno")
+    craft.start(wo, quantity=Decimal("10"), position_ref="forno", expected_rev=0)
+    craft.finish(wo, finished=Decimal("9"), actor="test")
+
+    report = build_bi_production()
+    today_row = report.days[-1]
+    assert (today_row.planned, today_row.started, today_row.finished) == ("12", "10", "9")
+    assert today_row.loss == "1"
+    assert today_row.yield_percent == 90
+    assert report.batches_started_assumed == 0
+
+
+@pytest.mark.django_db
+def test_batch_closed_without_opening_is_counted_as_assumed(recipe):
+    """Fechamento sem abertura: previsto assumido igual ao planejado, e CONTADO."""
+    wo = craft.plan(recipe, Decimal("10"), date=date.today(), position_ref="forno")
+    craft.finish(wo, finished=Decimal("8"), actor="test")
+
+    report = build_bi_production()
+    today_row = report.days[-1]
+    assert (today_row.started, today_row.finished, today_row.yield_percent) == ("10", "8", 80)
+    assert (report.batches_finished, report.batches_started_assumed) == (1, 1)
+
+
+@pytest.mark.django_db
+def test_previous_window_totals_use_the_previsto(recipe):
+    yesterday_window = date.today() - timedelta(days=28)
+    wo = craft.plan(recipe, Decimal("12"), date=yesterday_window, position_ref="forno")
+    craft.start(wo, quantity=Decimal("10"), position_ref="forno", expected_rev=0)
+    craft.finish(wo, finished=Decimal("9"), actor="test")
+
+    previous = build_bi_production().previous
+    assert (previous.started_total, previous.finished_total, previous.loss_total) == ("10", "9", "1")
 
 
 @pytest.mark.django_db
