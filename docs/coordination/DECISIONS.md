@@ -726,8 +726,23 @@ o aviso de produção compartilhada da casa (`Shop.food_safety_notice`, o mesmo 
 produto), mais os alérgenos declarados do produto citado; nenhum texto próprio da Concierge, então
 o gestor edita no Admin e as duas superfícies mudam juntas. Glúten junto de outra alergia, outras
 alergias, reclamação, pedido de pessoa e casa sem aviso cadastrado seguem para a equipe.
-Código em `shopman/storefront/concierge/gluten.py`; registro em
-`docs/coordination/ROUNDS/OBS0310-H-concierge-gluten.md`.
+Registro em `docs/coordination/ROUNDS/OBS0310-H-concierge-gluten.md`.
+
+**Ajuste do dono, 03/10/2026 (mesmo dia): TODAS as perguntas de alergia e alérgeno.** A Concierge
+responde sozinha qualquer pergunta de alérgeno, não só glúten, pela mesma fonte única: o aviso de
+produção compartilhada da casa (que cobre glúten e traços de leite, ovos, castanha-do-brasil,
+castanha de caju, gergelim e pimenta-do-reino) mais os alérgenos declarados do produto citado, e
+sempre termina oferecendo a equipe para alergia grave (copy `CONCIERGE_ALLERGY_TEAM_OFFER`,
+editável em Copy Omotenashi; "sim" logo depois chama a equipe). "Glúten + outra alergia" agora é
+respondido inteiro. Regras de segurança: nunca afirma ausência de alérgeno; produto sem alérgeno
+declarado não é apresentado como seguro (a linha dele diz que vale o aviso, pode conter traços);
+nada é listado como "pode comer"; alergia sem dizer a quê recebe a pergunta "a quê?" (e, se a
+resposta ainda não disser, vai para a equipe); alérgeno de que nenhuma das duas fontes fala
+(soja, amendoim, hoje) e restrição que não é alérgeno (vegano, diabetes) vão para a equipe, porque
+responder só com o aviso deixaria deduzir uma ausência que ninguém afirmou; reação alérgica ou
+pessoa passando mal é reclamação, equipe, sempre; casa sem aviso cadastrado, equipe. Código em
+`shopman/storefront/concierge/allergens.py`; registro em
+`docs/coordination/ROUNDS/OBS0310-I-concierge-alergenos.md`.
 
 ---
 

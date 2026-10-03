@@ -12,10 +12,11 @@ O destino sai de uma tabela fixa, a da proposta aprovada:
   fase 1 recebe o link da loja);
 - ``team``: vai para uma pessoa, com o bot calado naquela conversa (pediu pessoa,
   reclamação, alergia, encomenda especial e o pedido que o chat não fecha);
-  **exceção do glúten** (dono, 03/10/2026): a pergunta que é SÓ de glúten, trigo
-  ou doença celíaca sai da lista sensível e o Concierge responde com o aviso de
-  produção compartilhada da casa (``gluten.py``). Glúten junto de outra alergia,
-  ou sem aviso cadastrado, segue para a equipe;
+  **exceção das perguntas de alergia** (dono, 03/10/2026): a pergunta sobre
+  alérgeno o Concierge responde com o aviso de produção compartilhada da casa e
+  os alérgenos declarados do produto citado (``allergens.py``); alergia sem dizer
+  a quê recebe a pergunta "a quê?". Reação alérgica, alérgeno de que as fontes
+  não falam e casa sem aviso cadastrado seguem para a equipe;
 - ``other_desk``: vaga, parceria e fornecedor. Também cala o bot, mas o aviso
   fica no Admin e não chega ao sino do Gestor de pedidos: não acorda o balcão.
 
@@ -41,7 +42,7 @@ from dataclasses import asdict, dataclass
 from django.conf import settings
 from django.utils import timezone
 
-from . import gluten
+from . import allergens
 from .handoff import classify_handoff_request
 from .intent_benchmark import REGEX_TO_INTENT
 from .intent_pilot import DEFAULT_INTENTS
@@ -145,11 +146,14 @@ class Triage:
     source: str
     #: Por que o destino não é o da tabela, quando não é: ``order_not_closed``
     #: (segundo turno seguido de pedido que o chat não fecha) ou
-    #: ``no_useful_answer`` (duas falhas seguidas da resposta automática).
+    #: ``no_useful_answer`` (duas falhas seguidas da resposta automática) ou
+    #: ``allergy_offer_accepted`` ("sim" à oferta da equipe para alergia grave).
     escalated_by: str = ""
     #: Por que o Concierge responde uma intenção que a tabela manda para a
-    #: equipe: ``gluten_notice`` (pergunta só de glúten, respondida com o aviso
-    #: da casa, decisão do dono em 03/10/2026).
+    #: equipe (alergia, decisão do dono em 03/10/2026, ``allergens.py``):
+    #: ``allergy_notice`` (respondida com o aviso da casa e os alérgenos
+    #: declarados), ``allergy_ask_which`` (alergia sem dizer a quê: pergunta) ou
+    #: ``allergy_notice_after_ask`` (a resposta a essa pergunta, respondida).
     answered_by: str = ""
 
     @property
@@ -375,6 +379,41 @@ def classify_with_jev(text: str, *, contender=None) -> dict | None:
 # ── Decisão ───────────────────────────────────────────────────────────
 
 
+#: Intenções da regra que vencem a resposta de alergia: pessoa, reclamação
+#: (inclusive reação alérgica, ``handoff.py``), encomenda especial e outra mesa.
+_OVER_ALLERGY = frozenset({"human", "complaint", "special_order", "job", "partnership", "supplier_offer"})
+
+
+def _allergy_route(text, rules_intent, *, context, previous, channel_ref) -> Triage | None:
+    """Alergia (dono, 03/10/2026, ``allergens.py``): quem responde, ou None se não é alergia.
+
+    A concierge responde com o aviso da casa e os alérgenos declarados, ou
+    pergunta a que é a alergia. Fica registrado como alergia, sem consultar
+    modelo nem Jev. O que ela não pode responder vai para a equipe, agora,
+    mesmo que a regra não tenha visto alergia ("sem soja" não casa no
+    ``handoff.py``).
+    """
+    if rules_intent in _OVER_ALLERGY:
+        return None
+    answered_before = (previous or {}).get("answered_by") or ""
+    if answered_before in {allergens.NOTICE, allergens.NOTICE_AFTER_ASK} and allergens.accepts_team_offer(text):
+        # "Sim" à oferta da equipe para alergia grave.
+        return Triage("allergy", NOW, TEAM, rules_summary("allergy", text), "rules", allergens.OFFER_ACCEPTED)
+    if answered_before == allergens.ASK_WHICH:
+        earlier = next((said for who, said in reversed(list(context)) if who == "Cliente"), "")
+        found = allergens.decision_after_ask(text, earlier=earlier, channel_ref=channel_ref)
+        summary_text = f"{earlier} / {text}" if earlier else text
+    else:
+        found = allergens.decision(text, channel_ref=channel_ref)
+        summary_text = text
+    if not found:
+        return None
+    summary = rules_summary("allergy", summary_text)
+    if found == allergens.TEAM:
+        return Triage("allergy", NOW, TEAM, summary, "rules")
+    return Triage("allergy", TODAY, ANSWER, summary, "rules", answered_by=found)
+
+
 def decide(
     text: str,
     *,
@@ -383,6 +422,7 @@ def decide(
     message_ids=(),
     commercial_authority: bool = False,
     client=None,
+    channel_ref: str = "",
 ) -> Triage:
     """Intenção, urgência, destino e resumo de um turno.
 
@@ -396,18 +436,12 @@ def decide(
         previous = None
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
-    gluten_answer = (
-        gluten.is_gluten_question(text)
-        # Pessoa, reclamação, encomenda especial e outra mesa continuam vencendo.
-        and rules_intent not in {"human", "complaint", "special_order", "job", "partnership", "supplier_offer"}
-        and bool(gluten.house_notice())
-    )
-    if gluten_answer:
-        # Glúten (dono, 03/10/2026): a concierge responde com o aviso da casa.
-        # Fica registrado como alergia, respondida, sem consultar modelo nem Jev.
-        intent = "allergy"
-        summary = rules_summary(intent, text)
-        return Triage(intent, TODAY, ANSWER, summary, "rules", answered_by="gluten_notice")
+    allergy = _allergy_route(text, rules_intent, context=context, previous=previous, channel_ref=channel_ref)
+    if allergy is not None and (allergy.destination == ANSWER or allergy.escalated_by):
+        return allergy
+    # Alergia que a concierge não responde: equipe, agora, com o resumo do modelo
+    # quando ele estiver ligado (o operador lê o resumo, não a regra).
+    allergy_to_team = allergy is not None
     if small_talk_kind(text):
         # "Bom dia", "obrigado", "tchau": não há intenção a propor, e a concierge
         # responde a cortesia sem ferramenta. Nem Jev nem modelo são consultados.
@@ -417,7 +451,9 @@ def decide(
     else:
         proposal = classify_with_model(text, list(context), client=client)
 
-    if rules_intent in SENSITIVE or rules_intent == "special_order":
+    if allergy_to_team:
+        intent, source = "allergy", "rules"
+    elif rules_intent in SENSITIVE or rules_intent == "special_order":
         intent, source = rules_intent, "rules"
     elif proposal is not None:
         intent, source = proposal["intent"], ("jev" if with_jev else "model")
