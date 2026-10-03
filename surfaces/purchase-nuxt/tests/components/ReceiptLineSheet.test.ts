@@ -88,7 +88,7 @@ function mountSheet(patch: Partial<ReceiptLine> = {}, open = true) {
         UiSheetX,
         ReceiptField,
       },
-      stubs: { Icon: true, UiSelect: true, ReceiptConversion: true },
+      stubs: { Icon: true, UiSelect: true, ReceiptConversion: true, ReceiptDifference: true },
     },
     attachTo: document.body,
   });
