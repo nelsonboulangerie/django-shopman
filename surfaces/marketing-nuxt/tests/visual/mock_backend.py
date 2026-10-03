@@ -110,6 +110,90 @@ def action(
     }
 
 
+def decision_queue(scenario: str) -> dict:
+    """A fila de decisões (UX-M1): revisão, falha repetível e o incerto conferido sozinho."""
+
+    empty = scenario in {"board-empty", "board-normal"}
+    items = [] if empty else [
+        {
+            "ref": "review:announcement:41",
+            "kind": "review",
+            "announcement_id": 41,
+            "announcement_version": 3,
+            "campaign_name": "Fornada artesanal",
+            "trigger": "production_finished",
+            "product_name": "Pão artesanal",
+            "platform_refs": ["instagram", "whatsapp"],
+            "reach": {"posts": 1, "people": 12},
+            "deadline_at": _anda("2026-09-10T10:42:00-03:00"),
+            "scheduled_for": None,
+            "created_at": _anda("2026-09-10T10:00:00-03:00"),
+            "failures": [],
+            "href": "/announcements/41#review",
+        },
+        {
+            "ref": "retry_failed:announcement:40",
+            "kind": "retry_failed",
+            "announcement_id": 40,
+            "announcement_version": 5,
+            "campaign_name": "Fornada artesanal",
+            "trigger": "production_finished",
+            "product_name": "Pain au chocolat",
+            "platform_refs": ["instagram"],
+            "reach": {"posts": 1, "people": 0},
+            "deadline_at": _anda("2026-09-10T11:40:00-03:00"),
+            "scheduled_for": None,
+            "created_at": _anda("2026-09-10T09:40:00-03:00"),
+            "failures": [
+                {
+                    "platform_ref": "instagram",
+                    "delivery_kind": "publication",
+                    "count": 1,
+                    "reason_code": "instagram_prepare_transport_failure",
+                }
+            ],
+            "href": "/announcements/40#result",
+        },
+    ]
+    checks = [] if empty else [
+        {
+            "ref": "check:announcement:39:google_business",
+            "announcement_id": 39,
+            "campaign_name": "Pão de queijo",
+            "platform_ref": "google_business",
+            "delivery_kind": "publication",
+            "state": "confirmed",
+            "target_count": 1,
+            "checked_at": _anda("2026-09-10T09:58:00-03:00"),
+            "href": "/announcements/39#result",
+        }
+    ]
+    scheduled = [] if scenario == "board-empty" else [
+        {
+            "ref": "scheduled:announcement:42",
+            "announcement_id": 42,
+            "campaign_name": "Relâmpago de fim de tarde",
+            "trigger": "schedule",
+            "product_name": "",
+            "platform_refs": ["whatsapp"],
+            "reach": {"posts": 0, "people": 142},
+            "scheduled_for": _anda("2026-09-10T17:30:00-03:00"),
+            "href": "/announcements/42",
+        }
+    ]
+    return {
+        "queue": {
+            "generated_at": FIXED_NOW,
+            "shop_timezone": "America/Sao_Paulo",
+            "items": items,
+            "automatic_checks": checks,
+            "scheduled": scheduled,
+            "scheduled_today_count": len(scheduled),
+            "active_campaign_count": 3,
+        }
+    }
+
+
 def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
     suffix = " — clientes recorrentes da unidade central e encomendas especiais" if long else ""
     return {
@@ -612,6 +696,12 @@ class Handler(BaseHTTPRequestHandler):
                 "shop_timezone": "America/Sao_Paulo",
                 "quiet_hours_suspended_for_local_simulation": False,
             }})
+            return
+        if path == "/api/v1/backstage/marketing/decisions/":
+            if scenario == "login-expired":
+                self._send(401, {"detail": "Sua sessão terminou."})
+                return
+            self._send(200, decision_queue(scenario))
             return
         if path == "/api/v1/backstage/marketing/v2/":
             fresh = "degraded" if scenario == "board-degraded" else "fresh"

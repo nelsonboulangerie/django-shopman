@@ -17,10 +17,10 @@ describe("entrada funcional do Marketing V2", () => {
   const board = read("../app/components/MarketingBoard.vue");
   const shell = read("../app/app.vue");
 
-  it("torna o workspace V2 operacional a entrada canônica", () => {
-    expect(currentEntry).toContain("navigateTo(");
-    expect(currentEntry).toContain('path: "/v2"');
-    expect(currentEntry).toContain('area: "today"');
+  it("faz da fila de decisões a casa e mantém o workspace V2 nos ajustes", () => {
+    // Decisão do dono (03/10/2026): a casa é a fila de decisões, não um redirect.
+    expect(currentEntry).toContain("<MarketingDecisionQueue />");
+    expect(currentEntry).not.toContain("navigateTo(");
     expect(currentEntry).not.toContain("<MarketingBoard />");
     expect(v2Entry).toContain("<MarketingV2Workspace />");
     expect(workspace).toContain('data-marketing-experience="v2"');
@@ -32,15 +32,24 @@ describe("entrada funcional do Marketing V2", () => {
   });
 
   it("torna as áreas esperadas alcançáveis com gestão comercial real", () => {
+    // Operação: quatro seções. Ajustes entra por um item só, com as próprias seções.
     for (const area of [
-      "Hoje",
+      "Decisões",
+      "Agendados",
+      "Enviados",
+      "Ajustes",
       "Campanhas",
+      "Modelos",
       "Ofertas e cupons",
       "Plataformas",
     ]) {
       expect(topBar).toContain(area);
     }
-    expect(topBar).toContain("activeV2Section");
+    expect(topBar).toContain('to: "/v2?area=campaigns"');
+    expect(topBar).toContain('to: "/v2?area=offers"');
+    expect(topBar).toContain('to: "/v2?area=platforms"');
+    expect(topBar).toContain('to: "/scheduled"');
+    expect(topBar).toContain('to: "/history"');
     expect(topBar).not.toContain("legacySections");
     expect(workspace).not.toContain('aria-label="Áreas do Marketing V2"');
     expect(workspace).toContain("marketingV2Destinations");

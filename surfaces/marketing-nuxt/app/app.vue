@@ -53,7 +53,10 @@ watch(sessionState, async (next, previous) => {
             @lock="lock"
           />
         </div>
-        <div class="flex min-w-0 flex-1 flex-col">
+        <!-- No celular, o pé da página reserva a altura da barra de seções fixa. -->
+        <div
+          class="flex min-w-0 flex-1 flex-col max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))]"
+        >
           <CampaignTopBar />
           <component :is="Component" />
         </div>
