@@ -15,7 +15,7 @@ function tileT(t, count = 0) {
     ${count ? `<span class="absolute z-10 right-2 top-2 min-w-8 h-8 px-2 rounded-full bg-primary text-primary-foreground text-[15px] font-bold grid place-items-center tnum shadow">${count}</span>` : ""}
   </div>
   <div class="px-3 py-2.5 flex flex-col gap-0.5">
-    <span class="op-body font-semibold truncate${t.out ? " text-muted-foreground" : ""}">${t.n.replace("&", "&amp;")}</span>
+    <span class="op-body font-semibold truncate${t.out ? " text-muted-foreground" : ""}">${t.n.replaceAll("&", "&amp;")}</span>
     ${t.out
       ? `<span class="flex items-center justify-between"><span class="op-title tnum text-muted-foreground">${t.p}</span><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Esgotado</span></span>`
       : `<span class="op-title tnum">${t.p.replace(" a ", "–")}</span>`}

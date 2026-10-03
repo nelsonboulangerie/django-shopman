@@ -65,7 +65,7 @@ function tile(t, { img = 96, pad = "px-3 py-2", name = "op-label", price = "op-t
     ${t.grp ? `<span class="absolute right-2 top-2 h-6 px-2 rounded-full bg-card/90 op-micro font-semibold inline-flex items-center gap-1"><i data-i="layers" class="size-3.5"></i>${t.grp}</span>` : ""}
   </div>
   <div class="${pad} flex flex-col gap-0.5">
-    <span class="${name} font-semibold truncate${t.out ? " text-muted-foreground" : ""}">${t.n.replace("&", "&amp;")}</span>
+    <span class="${name} font-semibold truncate${t.out ? " text-muted-foreground" : ""}">${t.n.replaceAll("&", "&amp;")}</span>
     ${t.out
       ? `<span class="flex items-center justify-between"><span class="${price} tnum text-muted-foreground">${t.p}</span><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Esgotado</span></span>`
       : `<span class="${price} tnum">${t.p}</span>`}
