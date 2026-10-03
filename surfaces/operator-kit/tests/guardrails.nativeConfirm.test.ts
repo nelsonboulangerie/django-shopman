@@ -35,9 +35,23 @@ function sourceFiles(dir: string): string[] {
 }
 
 // Comentário fala da caixa nativa para explicar por que ela saiu; isso não é uso.
+// O comentário de template sai por índice, sem regex de `<!--` (o CodeQL lê regex de
+// comentário HTML como filtro de HTML; aqui só lemos fonte nossa).
+function withoutTemplateComments(source: string): string {
+  let out = "";
+  let at = 0;
+  while (true) {
+    const open = source.indexOf("<!--", at);
+    if (open === -1) return out + source.slice(at);
+    const close = source.indexOf("-->", open + 4);
+    out += source.slice(at, open);
+    if (close === -1) return out;
+    at = close + 3;
+  }
+}
+
 function withoutComments(source: string): string {
-  return source
-    .replace(/<!--[\s\S]*?-->/g, "")
+  return withoutTemplateComments(source)
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
