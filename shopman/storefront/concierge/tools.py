@@ -467,10 +467,25 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     from shopman.storefront.presentation.catalog import build_catalog
     from shopman.storefront.presentation.public_information import search_public_faq
 
+    from .small_talk import strip_small_talk
+
+    # Cumprimento não é termo de busca: "bom dia, tudo bem?" casava "bom" com
+    # "bom para cachorro quente" e "dia" com "todos os dias" (alpha, 03/10/2026).
     search_text = " ".join(
-        dict.fromkeys(text.strip() for text in (ctx.customer_text, query) if text and text.strip())
+        dict.fromkeys(
+            stripped
+            for stripped in (strip_small_talk(text) for text in (ctx.customer_text, query) if text)
+            if stripped
+        )
     )
     needle = _fold(search_text).strip()
+    if not needle and any((text or "").strip() for text in (ctx.customer_text, query)):
+        # Sobrou só cortesia: nada a buscar. Sem isto a busca vazia viraria o
+        # cardápio inteiro.
+        return {
+            "ok": True, "code": "no_match", "outcome": "read", "found": False, "count": 0,
+            "available_count": 0, "items": [], "answers": [], "links": [], "issues": [],
+        }
     issues = []
     catalog = None
     ref = _catalog_channel_ref(ctx.channel_ref)
@@ -505,9 +520,18 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
 
+    # Cada palavra responde uma vez: a que achou produto fica com o catálogo, e
+    # só o resto vai às perguntas frequentes. Sem isso "tem croissant hoje?"
+    # trazia a explicação do levain (que cita croissant no corpo) junto do preço.
+    matched_words = set()
+    if needle:
+        for item in items:
+            matched_words.update(re.findall(r"[a-z0-9]+", _fold(f"{item.name} {item.category or ''}")))
+    faq_terms = [term for term in _public_search_terms(search_text) if term not in matched_words]
+
     try:
         shop = Shop.load()
-        faq_query = " ".join(_public_search_terms(search_text))
+        faq_query = " ".join(faq_terms)
         answers = (
             search_public_faq(
                 faq_query,
