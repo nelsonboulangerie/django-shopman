@@ -77,6 +77,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/usePwaUpdate.ts` | `usePwaUpdate` | worker em espera + `update()` (skipWaiting + reload) + `checkForUpdate()` (sonda) |
 | `app/composables/usePwaAutoUpdate.ts` | `usePwaAutoUpdate` | sonda periódica/no foco e aplicação automática em momento seguro — ver "Atualização do app instalado" |
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
+| `app/composables/useConfirm.ts` | `useConfirm` | a pergunta antes de descartar o que não foi salvo, no diálogo da casa: devolve `Promise<boolean>` (ver "Pergunta antes de descartar") |
+| `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
@@ -522,6 +524,61 @@ Contrato:
   motivo digitado continua embaixo.
 - ⚠️ Usa `UiDialog`, `UiButton` e `UiTextarea` do app hospedeiro, o mesmo limite do
   `OperatorManagerAuth`.
+
+## Pergunta antes de descartar (`useConfirm`)
+
+Descartar o que o operador digitou e não salvou pergunta antes, no diálogo da casa,
+nunca no `window.confirm` do navegador (fonte do sistema, "OK"/"Cancelar" que não dizem
+o ato, e no app instalado uma caixa estranha sobre a tela).
+
+```ts
+const confirmDiscard = useConfirm();
+
+async function closePrice() {
+  if (dirty.value && !(await confirmDiscard({
+    title: "Descartar o preço digitado?",
+    description: "O novo preço não foi salvo. O produto continua com o preço atual.",
+  }))) return false;
+  editing.value = null;
+  return true;
+}
+
+// Guarda de rota: o Vue Router 4 espera a Promise (false = fica na tela).
+onBeforeRouteLeave(() => !dirty.value || confirmDiscard({
+  title: "Sair sem salvar as alterações do catálogo?",
+  description: "O que você alterou e ainda não salvou se perde. O que já foi salvo continua salvo.",
+  confirmLabel: "Descartar e sair",
+}));
+```
+
+Contrato:
+
+- **Nada a montar.** O `<OperatorConfirmDialog>` vive dentro do `OperatorPwaRuntime`, que
+  todo app de operador já monta; o app só chama `useConfirm()`.
+- **`title` é a pergunta com o ato** ("Descartar o motivo digitado?", "Sair sem salvar…?").
+  **`description` é obrigatória e diz o que se perde** (e, quando ajuda, o que fica: "O
+  que já foi salvo continua salvo"). Régua da copy: `docs/reference/omotenashi-copy.md`.
+- **Dois botões, com o nome do ato.** O destrutivo: `confirmLabel`, padrão "Descartar"
+  ("Descartar e sair", "Descartar e trocar" quando o gesto continua). O que fica:
+  `cancelLabel`, padrão "Continuar editando" ("Continuar escrevendo" para um motivo, o
+  mesmo par do `OperatorReasonDialog`; "Continuar revisando" numa revisão).
+- **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
+  toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
+- **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
+  gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
+- **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para
+  que a pergunta e o `UiDialog` do app dividam a mesma pilha de camadas: o toque dentro
+  da pergunta não fecha o diálogo de baixo.
+- **A função que só espera a pergunta não é clique inerte.** A trava do "Clique nunca
+  inerte" reconhece o `async function` cujos `await` são todos o `useConfirm` (o toque
+  abre o diálogo no mesmo instante); a que espera rede depois da pergunta continua
+  precisando declarar o pendente.
+- ⚠️ **O `beforeunload` continua nativo.** Fechar a aba ou recarregar não deixa página
+  nenhuma desenhar a própria caixa; ali o gesto possível segue sendo
+  `event.preventDefault()`.
+- A trava `tests/guardrails.nativeConfirm.test.ts` varre `app/` de todas as superfícies
+  Nuxt e da layer e reprova `window.confirm(` (e o `confirm(` solto). O que ainda existe
+  está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
 
 ## Primitivos de escolha (`UiCheckbox`, `UiRadioGroup`/`UiRadio`, `UiSelect`)
 

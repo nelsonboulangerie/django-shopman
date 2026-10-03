@@ -29,20 +29,36 @@ async function readFile(event: Event) {
   } catch { if (!disposed) fileError.value = "Não foi possível ler o arquivo como UTF-8."; }
   finally { if (!disposed) reading.value = false; }
 }
+const confirmDiscard = useConfirm();
 async function storeSnapshot() {
   if (!rawJson.value || busy.value || error.value) return;
-  if (dirty.value && !window.confirm("Guardar outra captura descarta a seleção de vínculo atual. Continuar?")) return;
+  if (dirty.value && !(await confirmDiscard({
+    title: "Guardar o novo inventário e descartar a seleção?",
+    description: "Os vínculos que você marcou e ainda não confirmou se perdem.",
+    confirmLabel: "Descartar e guardar",
+    cancelLabel: "Continuar revisando",
+  }))) return;
   if (await importSnapshot(rawJson.value)) { rawJson.value = ""; fileName.value = ""; dirty.value = false; }
 }
-function selectSnapshot(event: Event) {
+async function selectSnapshot(event: Event) {
   const element = event.target as HTMLSelectElement;
-  if (dirty.value && !window.confirm("Há uma seleção de vínculo não confirmada. Trocar de inventário e descartar a seleção?")) {
+  if (dirty.value && !(await confirmDiscard({
+    title: "Trocar de inventário e descartar a seleção?",
+    description: "Os vínculos que você marcou e ainda não confirmou se perdem.",
+    confirmLabel: "Descartar e trocar",
+    cancelLabel: "Continuar revisando",
+  }))) {
     element.value = String(board.value?.selected_snapshot?.id ?? ""); return;
   }
   dirty.value = false;
   selected.value = element.value;
 }
-onBeforeRouteLeave(() => !(dirty.value || rawJson.value) || window.confirm("Há uma revisão local não concluída. Sair e descartar a seleção?"));
+onBeforeRouteLeave(() => !(dirty.value || rawJson.value) || confirmDiscard({
+  title: "Sair sem concluir a revisão de vínculos?",
+  description: "O que ainda não foi confirmado nesta revisão se perde: os vínculos marcados e o arquivo lido que não foi guardado.",
+  confirmLabel: "Descartar e sair",
+  cancelLabel: "Continuar revisando",
+}));
 useHead({ title: "Revisão de vínculos" });
 </script>
 

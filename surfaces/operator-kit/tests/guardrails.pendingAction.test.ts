@@ -79,12 +79,52 @@ function splitScripts (source: string): { script: string, template: string } {
   return { script: scripts.join('\n'), template }
 }
 
+// Corpo de `async function <nome>(…) {…}` por contagem de chaves (fonte nossa,
+// sem chave solta em string nos casos medidos). Vazio se não achar.
+function asyncFunctionBody(script: string, name: string): string {
+  const start = script.search(new RegExp(`async\\s+function\\s+${name}\\b`));
+  if (start === -1) return "";
+  const paramsEnd = script.indexOf(")", start);
+  const open = script.indexOf("{", paramsEnd);
+  if (paramsEnd === -1 || open === -1) return "";
+  let depth = 0;
+  for (let i = open; i < script.length; i++) {
+    if (script[i] === "{") depth += 1;
+    else if (script[i] === "}" && --depth === 0) return script.slice(open + 1, i);
+  }
+  return "";
+}
+
+// Função async que só espera a PERGUNTA da casa (`useConfirm`, direto ou por outra
+// função que também só espera por ela) não é clique inerte: o toque abre o diálogo
+// no mesmo instante. Ela sai da varredura; a que espera rede continua nela.
+function confirmOnlyNames(script: string, asyncNames: Set<string>): Set<string> {
+  const askers = new Set([...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*useConfirm\(\)/g)].map((m) => m[1]!));
+  if (!askers.size) return new Set();
+  const confirmOnly = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const name of asyncNames) {
+      if (confirmOnly.has(name)) continue;
+      const awaited = [...asyncFunctionBody(script, name).matchAll(/\bawait\b\s*\(?\s*([\w$.]*)/g)].map((m) => m[1]!);
+      if (awaited.length && awaited.every((callee) => askers.has(callee) || confirmOnly.has(callee))) {
+        confirmOnly.add(name);
+        grew = true;
+      }
+    }
+  }
+  return confirmOnly;
+}
+
 function inertAsyncClicks(source: string): string[] {
   const { script, template } = splitScripts(source);
-  const asyncNames = new Set([
+  const declaredAsync = new Set([
     ...[...script.matchAll(/async\s+function\s+(\w+)/g)].map((m) => m[1]!),
     ...[...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*async\b/g)].map((m) => m[1]!),
   ]);
+  const confirmOnly = confirmOnlyNames(script, declaredAsync);
+  const asyncNames = new Set([...declaredAsync].filter((name) => !confirmOnly.has(name)));
   const inert = new Set<string>();
   for (const tag of openingTags(template)) {
     const click = tag.match(/@click(?:\.\w+)*="(?:void\s+)?(\w+)(?:\([^"]*\))?"/);
@@ -138,6 +178,15 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
     expect(inertAsyncClicks(mute)).toEqual(["save"]);
     expect(inertAsyncClicks(declared)).toEqual([]);
     expect(inertAsyncClicks(viaCapability)).toEqual([]);
+  });
+
+  it("a ação que só espera a pergunta da casa não é inerte; a que espera rede depois dela é", () => {
+    const asksOnly =
+      '<script setup>const confirmDiscard = useConfirm();\nasync function close() { if (!(await confirmDiscard({ title: "x", description: "y" }))) return; open.value = false; }\nasync function pick() { if (!(await close())) return; }</script><template><button @click="close">Cancelar</button><button @click="pick()">Todas</button></template>';
+    const asksThenSaves =
+      '<script setup>const confirmDiscard = useConfirm();\nasync function swap() { if (!(await confirmDiscard({ title: "x", description: "y" }))) return; await $fetch("/x"); }</script><template><button @click="swap">Trocar</button></template>';
+    expect(inertAsyncClicks(asksOnly)).toEqual([]);
+    expect(inertAsyncClicks(asksThenSaves)).toEqual(["swap"]);
   });
 
   it("o lote do Gestor de pedidos passa pela capability", () => {

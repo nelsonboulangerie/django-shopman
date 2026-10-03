@@ -43,6 +43,10 @@ const autoUpdate = usePwaAutoUpdate({
 </script>
 
 <template>
+  <!-- A caixa do `useConfirm()` mora aqui porque esta é a peça que TODO app de
+       operador monta: assim nenhum app monta a sua. Fora do `enabled`/`showPrompts`:
+       perguntar antes de descartar não depende de o app ser instalável. -->
+  <OperatorConfirmDialog />
   <ClientOnly v-if="enabled && showPrompts">
     <OperatorPwaInstallInvite :app="config.app!" />
     <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
