@@ -4,7 +4,7 @@
 // digitar como etiqueta nova. Guardar é uma escolha explícita e a tela diz o
 // que ela significa: a etiqueta fica para todo o fournil, não para este tablet.
 //
-// O numpad é o mesmo gesto do timer do forno (Expedição) e do PDV, e o teclado
+// O numpad é o mesmo gesto do timer do forno (Fechamento) e do PDV, e o teclado
 // físico alimenta ele — o painel de parede tem teclado numérico e não tem dedo
 // sobrando. O atributo ``data-production-timer-dialog`` mantém a exclusão mútua
 // com o numpad do forno (ver presentation/keyboard.ts).

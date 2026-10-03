@@ -258,8 +258,8 @@ def maybe_create_low_yield_alert(work_order) -> bool:
         return False
 
     message = (
-        f"Produção {work_order.ref} ({work_order.output_sku}) fechou com "
-        f"yield de {int(yield_rate * 100)}%."
+        f"Lote {work_order.ref} ({work_order.output_sku}) fechou com "
+        f"aproveitamento de {int(yield_rate * 100)}%."
     )
     if alert_adapter.exists(
         "production_low_yield",
@@ -348,8 +348,8 @@ def check_forgotten_planned_orders(*, today=None) -> int:
         if _recent_exists("production_forgotten", work_order.ref):
             continue
         message = (
-            f"Produção {work_order.ref} ({work_order.output_sku}) planejada para "
-            f"{work_order.target_date:%d/%m} nunca foi iniciada."
+            f"Lote {work_order.ref} ({work_order.output_sku}) planejado para "
+            f"{work_order.target_date:%d/%m} nunca foi aberto."
         )
         alert_adapter.create(
             "production_forgotten",
@@ -381,7 +381,7 @@ def check_unfinished_started_orders(*, today=None) -> int:
     ``batch='started'`` conta como ``in_production`` no ``total_promisable``
     até a shelf-life vencer, e nenhuma varredura automática pode zerá-lo
     enquanto a WO vive (concluir tarde precisa do quant lá). Só o operador
-    resolve: concluir com a quantidade real (a expedição aceita fornada de
+    resolve: fechar com a quantidade realizada (o Fechamento aceita lote de
     ontem) ou cancelar, o que dispara a baixa via ``production_changed``.
 
     Idempotente por WO via marcador ``unfinished_alerted_at`` em
@@ -404,9 +404,9 @@ def check_unfinished_started_orders(*, today=None) -> int:
             _stamp_meta(work_order, UNFINISHED_ALERTED_KEY)
             continue
         message = (
-            f"Produção {work_order.ref} ({work_order.output_sku}) iniciada para "
-            f"{work_order.target_date:%d/%m} nunca foi concluída. Conclua com a "
-            f"quantidade real ou cancele para liberar o estoque em produção."
+            f"Lote {work_order.ref} ({work_order.output_sku}) aberto para "
+            f"{work_order.target_date:%d/%m} nunca foi fechado. Feche com a "
+            f"quantidade realizada ou cancele para liberar o estoque em produção."
         )
         alert_adapter.create(
             "production_unfinished",
@@ -451,14 +451,14 @@ def create_batch_traceability_alert(*, work_order_ref: str, output_sku: str, err
     """Alerta quando a tentativa de fechamento não conseguiu gravar os LOTES.
 
     Com a partição (ADR-017), N lotes carregam desconto e validade. A transação
-    reverte o fechamento inteiro para STARTED e o operador tenta novamente na
-    Expedição; o ``finished`` bem-sucedido seguinte resolve este alerta.
+    reverte o fechamento inteiro para STARTED e o operador tenta novamente no
+    Fechamento; o ``finished`` bem-sucedido seguinte resolve este alerta.
     """
     if _recent_exists("production_batch_traceability", work_order_ref):
         return
     message = (
-        f"Produção {work_order_ref} ({output_sku}) concluiu mas os lotes não foram "
-        f"gravados: {error}"
+        f"Lote {work_order_ref} ({output_sku}) fechou, mas a rastreabilidade não foi "
+        f"gravada: {error}"
     )
     alert_adapter.create(
         "production_batch_traceability",

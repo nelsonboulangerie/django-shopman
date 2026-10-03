@@ -42,7 +42,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None, expedite_only: bool = False):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -76,7 +76,7 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         return operator_orders.advance_order(
             order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
             expected_revision=expected_revision, target_status=target_status, trip_ref=trip_ref or None,
-            undo_window=True,
+            undo_window=True, expedite_only=expedite_only,
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc

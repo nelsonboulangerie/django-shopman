@@ -37,8 +37,8 @@ class WorkOrder(models.Model):
 
     class Status(models.TextChoices):
         PLANNED = "planned", _("Planejada")
-        STARTED = "started", _("Iniciada")
-        FINISHED = "finished", _("Concluída")
+        STARTED = "started", _("Aberta")
+        FINISHED = "finished", _("Fechada")
         VOID = "void", _("Cancelada")
 
     ref = models.CharField(
@@ -65,7 +65,7 @@ class WorkOrder(models.Model):
     quantity = models.DecimalField(
         max_digits=12,
         decimal_places=3,
-        verbose_name=_("Quantidade Planejada"),
+        verbose_name=_("Quantidade planejada"),
         help_text=_("Planejado atual (mutável via adjust enquanto planned)"),
     )
     finished = models.DecimalField(
@@ -73,7 +73,7 @@ class WorkOrder(models.Model):
         decimal_places=3,
         null=True,
         blank=True,
-        verbose_name=_("Quantidade Concluída"),
+        verbose_name=_("Quantidade realizada"),
         help_text=_("Set no finish, imutável depois"),
     )
 
@@ -97,12 +97,12 @@ class WorkOrder(models.Model):
     started_at = models.DateTimeField(
         null=True,
         blank=True,
-        verbose_name=_("Iniciada em"),
+        verbose_name=_("Aberta em"),
     )
     finished_at = models.DateTimeField(
         null=True,
         blank=True,
-        verbose_name=_("Concluída em"),
+        verbose_name=_("Fechada em"),
     )
 
     # String refs (agnostic — no FK to external models)

@@ -5,8 +5,9 @@
 export type ProductionGlobalShortcut =
   | "plan"
   | "mise-en-place"
-  | "produce"
-  | "expedite"
+  | "open"
+  | "close"
+  | "quality"
   | "focus-search"
   | "refresh"
   | "help";
@@ -25,8 +26,9 @@ type ShortcutEvent = Pick<
 const STAGE_BY_ALT_CODE: Record<string, ProductionGlobalShortcut> = {
   Digit1: "plan",
   Digit2: "mise-en-place",
-  Digit3: "produce",
-  Digit4: "expedite",
+  Digit3: "open",
+  Digit4: "close",
+  Digit5: "quality",
 };
 
 export function resolveProductionGlobalShortcut(

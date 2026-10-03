@@ -113,229 +113,52 @@ export const PREP_TICKETS = [
   }),
 ];
 
-function expedition(overrides) {
-  return {
-    channel_icon: "language",
-    customer_name: "",
-    fulfillment_icon: "storefront",
-    fulfillment_label: "Retirada",
-    is_delivery: false,
-    units_count: "1",
-    line_count: 1,
-    total_display: "R$ 0,00",
-    items: [],
-    is_scheduled: false,
-    is_expedition: true,
-    advance_block_label: "",
-    advance_block_reason: "",
-    test_order_label: "",
-    ...overrides,
-  };
-}
-
-export const EXPEDITION_CARDS = [
-  expedition({
-    pk: 201,
-    order_ref: "WEB-260921-0131",
-    customer_name: "Rafael Souza",
-    fulfillment_icon: "local_shipping",
-    fulfillment_label: "Entrega",
-    is_delivery: true,
-    units_count: "4",
-    line_count: 2,
-    total_display: "R$ 38,40",
-    items: [item("3", "Pão de queijo"), item("1", "Café coado grande")],
-  }),
-  expedition({
-    pk: 202,
-    order_ref: "BAL-260921-0138",
-    channel_icon: "storefront",
-    customer_name: "Mariana Albuquerque",
-    units_count: "5",
-    line_count: 4,
-    total_display: "R$ 112,90",
-    items: [
-      item("1", "Sanduíche de presunto cru e brie no pão de fermentação natural"),
-      item("2", "Quiche lorraine"),
-      item("1", "Tartine de abacate"),
-      item("1", "Suco de laranja 300 ml"),
-    ],
-  }),
-  expedition({
-    pk: 203,
-    order_ref: "IFD-260921-4821",
-    channel_icon: "fastfood",
-    customer_name: "Juliana (iFood)",
-    fulfillment_icon: "local_shipping",
-    fulfillment_label: "Entrega",
-    is_delivery: true,
-    units_count: "3",
-    line_count: 2,
-    total_display: "R$ 41,70",
-    advance_block_label: "Aguardando entregador iFood…",
-    advance_block_reason: "Aguardando o iFood confirmar a retirada pelo entregador.",
-    items: [item("2", "Croissant de manteiga"), item("1", "Pain au chocolat")],
-  }),
-  expedition({
-    pk: 204,
-    order_ref: "IFD-260921-9001",
-    channel_icon: "fastfood",
-    customer_name: "PEDIDO DE TESTE",
-    fulfillment_icon: "local_shipping",
-    fulfillment_label: "Entrega",
-    is_delivery: true,
-    total_display: "R$ 14,00",
-    test_order_label: "Pedido de teste do iFood",
-    items: [item("1", "Baguete tradicional — NÃO ENTREGAR")],
-  }),
-];
-
-function chip(over) {
-  return {
-    station_ref: "lanches",
-    station_name: "Lanches",
-    prints: true,
-    state: "pending",
-    state_label: "na fila",
-    paper_label: "impresso às 10:42",
-    paper_failed: false,
-    cancelled_items: 0,
-    can_mark_ready: true,
-    ...over,
-  };
-}
-
-function preparingCard(over) {
-  return {
-    pk: 300,
-    order_ref: "WEB-260921-0140",
-    channel_icon: "language",
-    customer_name: "Ana",
-    fulfillment_icon: "storefront",
-    fulfillment_label: "Retirada",
-    is_delivery: false,
-    fired_at_display: "10:40",
-    elapsed_seconds: 240,
-    stations: [],
-    is_scheduled: false,
-    test_order_label: "",
-    ...over,
-  };
-}
-
-/** A coluna "Em preparo" da Saída: um pedido esperando a estação sem tela
- *  (Lanches, com o papel impresso) e a de tela (Cafés, em preparo); outro com o
- *  papel que não saiu; um terceiro com a estação de tela já pronta. */
-export const EXIT_PREPARING = [
-  preparingCard({
-    pk: 301,
-    stations: [
-      chip(),
-      chip({ station_ref: "cafes", station_name: "Cafés", prints: false, state: "in_progress", state_label: "em preparo", paper_label: "", can_mark_ready: false }),
-    ],
-  }),
-  preparingCard({
-    pk: 302,
-    order_ref: "IFD-260921-4830",
-    channel_icon: "fastfood",
-    customer_name: "Carlos (iFood)",
-    fulfillment_icon: "local_shipping",
-    fulfillment_label: "Entrega",
-    is_delivery: true,
-    elapsed_seconds: 420,
-    stations: [chip({ paper_label: "não imprimiu", paper_failed: true, cancelled_items: 1 })],
-  }),
-  preparingCard({
-    pk: 303,
-    order_ref: "BAL-260921-0141",
-    channel_icon: "storefront",
-    customer_name: "Mesa 4",
-    elapsed_seconds: 95,
-    stations: [
-      chip({ paper_label: "na fila da impressora" }),
-      chip({ station_ref: "cafes", station_name: "Cafés", prints: false, state: "done", state_label: "pronto", paper_label: "", can_mark_ready: false }),
-    ],
-  }),
-];
-
 export const PREVIEW_INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: PREP_TICKETS.length },
-    { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: EXPEDITION_CARDS.length },
   ],
 };
 
-function boardFor(ref, tickets, isExpedition, name, preparing = []) {
+function boardFor(ref, tickets, name) {
   return {
     board: {
       instance_ref: ref,
       instance_name: name,
-      instance_type: isExpedition ? "expedition" : "prep",
-      is_expedition: isExpedition,
+      instance_type: "prep",
+      is_expedition: false,
       tickets,
-      counts: isExpedition
-        ? { total: tickets.length }
-        : {
-            pending: tickets.filter((t) => t.status === "pending").length,
-            in_progress: tickets.filter((t) => t.status === "in_progress").length,
-            total: tickets.length,
-          },
+      counts: {
+        pending: tickets.filter((t) => t.status === "pending").length,
+        in_progress: tickets.filter((t) => t.status === "in_progress").length,
+        total: tickets.length,
+      },
       service_date: TODAY,
       service_date_display: "Hoje",
       today: TODAY,
       available_dates: [TODAY],
       cancelled_tickets: [],
       recent_done: [],
-      preparing,
     },
   };
 }
 
-/** Estado vivo da prévia: iniciar/finalizar/expedir mudam o quadro, para que dê
+/** Estado vivo da prévia: iniciar/finalizar mudam o quadro, para que dê
  *  para tocar nos botões e ver o card responder. Reiniciar o mock volta ao começo. */
 export function createPreviewState() {
   const prep = PREP_TICKETS.map((t) => ({ ...t }));
-  const exp = EXPEDITION_CARDS.map((c) => ({ ...c }));
-  const preparing = EXIT_PREPARING.map((c) => ({ ...c, stations: c.stations.map((s) => ({ ...s })) }));
   return {
     index: () => PREVIEW_INDEX,
     board(ref) {
-      if (ref === "saida") return boardFor("saida", exp, true, "Saída", preparing);
-      return boardFor(ref, prep, false, "Bancada");
+      return boardFor(ref, prep, "Bancada");
     },
     /** Aplica um POST de escrita; devolve true se reconheceu a rota. */
     write(url) {
-      let m = url.match(/\/kds\/tickets\/(\d+)\/(start|done)\/?/);
+      const m = url.match(/\/kds\/tickets\/(\d+)\/(start|done)\/?/);
       if (m) {
         const pk = Number(m[1]);
         const i = prep.findIndex((t) => t.pk === pk);
         if (i >= 0 && m[2] === "start") prep[i] = { ...prep[i], status: "in_progress", status_label: "Em preparo" };
         if (i >= 0 && m[2] === "done") prep.splice(i, 1);
-        return true;
-      }
-      m = url.match(/\/kds\/expedition\/(\d+)\/printed-stations\/([\w-]+)\/done\/?/);
-      if (m) {
-        const card = preparing.find((c) => c.pk === Number(m[1]));
-        const station = card?.stations.find((s) => s.station_ref === m[2]);
-        if (station) Object.assign(station, { state: "done", state_label: "pronto", can_mark_ready: false });
-        if (card && card.stations.every((s) => s.state === "done")) {
-          preparing.splice(preparing.indexOf(card), 1);
-          exp.push({
-            ...EXPEDITION_CARDS[0],
-            pk: card.pk,
-            order_ref: card.order_ref,
-            customer_name: card.customer_name,
-            fulfillment_icon: card.fulfillment_icon,
-            fulfillment_label: card.fulfillment_label,
-            is_delivery: card.is_delivery,
-          });
-        }
-        return true;
-      }
-      m = url.match(/\/kds\/expedition\/(\d+)\/action\/?/);
-      if (m) {
-        const i = exp.findIndex((c) => c.pk === Number(m[1]));
-        if (i >= 0) exp.splice(i, 1);
         return true;
       }
       return false;

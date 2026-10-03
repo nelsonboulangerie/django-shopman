@@ -11,8 +11,9 @@ const groups: Array<{
     items: [
       { keys: ["Alt+1"], label: "Planejamento" },
       { keys: ["Alt+2"], label: "Preparação" },
-      { keys: ["Alt+3"], label: "Produção" },
-      { keys: ["Alt+4"], label: "Expedição" },
+      { keys: ["Alt+3"], label: "Abertura" },
+      { keys: ["Alt+4"], label: "Fechamento" },
+      { keys: ["Alt+5"], label: "Qualidade" },
       { keys: ["/"], label: "Buscar por produto, SKU ou receita" },
       { keys: ["R"], label: "Atualizar os dados da tela" },
       { keys: ["?"], label: "Abrir esta ajuda" },

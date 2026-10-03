@@ -12,7 +12,7 @@ de destino já faz, recortada para o que pede alguém agora.
   confirmação otimista (`confirmation.timeout`) ou o do marketplace (`data.ifood.confirm_by`).
 - Cozinha: pedido de estação que passou da meta da estação (a régua do card do KDS).
 - PDV: encomenda de retirada para hoje cuja janela começa na próxima hora (Encomendas do PDV).
-- Produção: lote iniciado que passou do tempo da receita (o "atrasado" do painel da Produção).
+- Produção: lote aberto que passou do tempo da receita (o "atrasado" do painel da Produção).
 - Marketing: anúncio esperando decisão, antes de caducar (o "Hoje" do Marketing).
 - Avisos: alerta operacional ainda não visto, de erro ou crítico, que tem lugar num app
   (o sino do Gestor ou o contexto da Produção).
@@ -350,7 +350,7 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
 
 
 def _production(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Produção: lote iniciado que passou do tempo da receita (o "atrasado" do painel)."""
+    """Produção: lote aberto que passou do tempo da receita (o "atrasado" do painel)."""
     from shopman.craftsman.models import WorkOrder
 
     from shopman.backstage.projections import production as production_projection
@@ -377,7 +377,7 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
                 app_label=label,
                 kind="work_order_late",
                 title=f"Lote de {recipe_name} passou do tempo",
-                detail=f"{wo.ref} · iniciado às {_clock(started_at)} · meta {target} min",
+                detail=f"{wo.ref} · aberto às {_clock(started_at)} · meta {target} min",
                 waiting_since=_iso(started_at),
                 due_at="",
                 due_label="",
@@ -385,8 +385,8 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
                 due_clock="",
                 time_mode="since",
                 attention=True,
-                action_label="Abrir lote",
-                url=_join_url(base, "expedite", query),
+                action_label="Fechar o lote",
+                url=_join_url(base, "close", query),
                 slack_seconds=int(target * 60 - elapsed),
             )
         )

@@ -106,7 +106,7 @@ def test_start_fora_de_planned_e_conflito(recipe, factory):
 
 # ── VOID nos estados terminais ───────────────────────────────────────────────
 
-def test_void_de_ordem_ja_estornada_e_conflito(recipe):
+def test_void_de_ordem_ja_cancelada_e_conflito(recipe):
     wo = _void(recipe)
     with pytest.raises(ProductionConflict):
         backstage_production.apply_void(wo.pk, **_attempt(wo, "void-already-void"))
@@ -119,9 +119,9 @@ def test_void_de_fornada_concluida_e_conflito(recipe):
         backstage_production.apply_void(wo.pk, **_attempt(wo, "void-finished"))
 
 
-# ── FINISH numa ordem estornada ──────────────────────────────────────────────
+# ── FINISH numa ordem cancelada ──────────────────────────────────────────────
 
-def test_finish_de_ordem_estornada_e_conflito(recipe, vitrine):
+def test_finish_de_ordem_cancelada_e_conflito(recipe, vitrine):
     wo = _void(recipe)
     with pytest.raises(ProductionConflict):
         backstage_production.apply_finish(

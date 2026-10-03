@@ -25,8 +25,8 @@ from dataclasses import dataclass
 from django.conf import settings
 
 from shopman.backstage.permissions import (
+    can_expedite,
     can_manage_campaigns,
-    can_manage_orders,
     can_operate_kds,
     can_operate_pos,
     can_operate_production,
@@ -105,7 +105,7 @@ class _AppSpec:
 _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e saída", "chef-hat", "launch", can_operate_kds),
-    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
+    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_expedite),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
     # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console

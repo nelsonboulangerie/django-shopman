@@ -236,6 +236,44 @@ def undo_block_allows_advance(order: Order) -> bool:
 
 
 @dataclass(frozen=True)
+class KitchenStationProjection:
+    """Uma estação da Cozinha neste pedido, vista do Gestor (SUITE-UX §15).
+
+    A mesma régua da Saída da Cozinha (``projections.kds.exit_station_chips``):
+    quem falta, o papel da estação sem tela, o "Pronto" que a Saída dava por
+    ela e o ticket que volta à cozinha.
+    """
+
+    station_ref: str
+    station_name: str
+    #: A estação recebe o pedido impresso (não tem tela).
+    prints: bool
+    #: "pending" · "in_progress" · "done"
+    state: str
+    #: "na fila" · "em preparo" · "pronto"
+    state_label: str
+    paper_label: str = ""
+    paper_failed: bool = False
+    #: Itens desta estação retirados do pedido depois do disparo.
+    cancelled_items: int = 0
+    #: "Pronto de Lanches": a estação sem tela terminou a parte dela.
+    can_mark_ready: bool = False
+    #: "Voltar para Lanches": o ticket concluído que volta à cozinha.
+    recall_ticket_pk: int | None = None
+
+
+@dataclass(frozen=True)
+class KitchenProgressProjection:
+    """Em que pé a Cozinha está com o pedido: o progresso por estação no cartão."""
+
+    #: Os gestos da estação (``kds/expedition/<pk>/printed-stations/…``) são por pedido.
+    order_pk: int
+    stations: tuple[KitchenStationProjection, ...]
+    #: "Falta Café" · "Faltam Café e Lanches" · "" quando todas terminaram.
+    missing_label: str = ""
+
+
+@dataclass(frozen=True)
 class OrderCardProjection:
     """A single order card in the operator queue."""
 
@@ -390,6 +428,10 @@ class OrderCardProjection:
     # "O sistema fez · desfazer" (SUITE-UX §5.1): pronto automático ou saída
     # tocada ainda na janela. Ver ``UndoProjection``.
     undo: UndoProjection | None = None
+    # A Cozinha neste pedido (SUITE-UX §15: a Saída mora no Gestor): no Preparo,
+    # quem falta e o "Pronto" da estação sem tela; no pronto, o "Voltar para…".
+    # ``None`` quando o pedido não passou pela Cozinha.
+    kitchen: KitchenProgressProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -1383,7 +1425,13 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    ready_orders = [o for o in all_orders if o.status == "ready"]
+    # A Cozinha em cada pedido do Preparo e da Saída, numa leitura só (SUITE-UX
+    # §15: a Saída da Cozinha mora no Gestor, com o progresso por estação).
+    from shopman.backstage.projections.kds import kitchen_station_chips
+
+    kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
+    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1396,9 +1444,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     )
     preparing_count = len(prep)
 
-    ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
         _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
         for o in all_orders
@@ -1578,6 +1625,7 @@ def _build_card(
     method_labels=None,
     fiscal_states=None,
     danfe_reads=None,
+    kitchen_chips=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1704,7 +1752,43 @@ def _build_card(
         danfe_printed=danfe.printed,
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
+        kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
     )
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} e {names[-1]}"
+
+
+def _kitchen_progress(order: Order, chips) -> KitchenProgressProjection | None:
+    """O progresso por estação no cartão: "Falta Café", "Pronto de Lanches", "Voltar para…"."""
+    if not chips:
+        return None
+    from shopman.shop.services import order_undo
+
+    # Saída tocada e ainda na janela: o gesto do cartão é desfazer a saída, e
+    # devolver à cozinha um pedido que está saindo misturaria os dois.
+    leaving = bool(order_undo.pending_handoff(order))
+    stations = tuple(
+        KitchenStationProjection(
+            station_ref=chip.station_ref,
+            station_name=chip.station_name,
+            prints=chip.prints,
+            state=chip.state,
+            state_label=chip.state_label,
+            paper_label=chip.paper_label,
+            paper_failed=chip.paper_failed,
+            cancelled_items=chip.cancelled_items,
+            can_mark_ready=chip.can_mark_ready,
+            recall_ticket_pk=None if leaving else chip.recall_ticket_pk,
+        )
+        for chip in chips
+    )
+    missing = [station.station_name for station in stations if station.state != "done"]
+    missing_label = f"{'Falta' if len(missing) == 1 else 'Faltam'} {_join_names(missing)}" if missing else ""
+    return KitchenProgressProjection(order_pk=order.pk, stations=stations, missing_label=missing_label)
 
 
 #: Rótulo pt-BR do equipamento (a ref é contrato do canal; o texto é da tela).

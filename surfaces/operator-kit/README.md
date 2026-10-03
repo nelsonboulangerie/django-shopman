@@ -845,10 +845,10 @@ que fazem sentido para ele.
   móvel do passado (`7d`…`5y`), `to` é o último dia e `""` é "termina hoje"; na do futuro
   (`next7d`…), `from` é o primeiro dia e `""` é "começa hoje"; em `custom`, o intervalo.
   O estado é do consumidor: quem guarda na URL guarda na URL. Quadro que guarda UM dia
-  (Produção, Expedição, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
+  (Abertura, Fechamento, Qualidade, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
   `periodAnchor(seleção, hoje)` num `computed` com setter.
 - **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia a Mês, Próximos, 7D e 28D, personalizado), Produção
-  (grade, Expedição, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
+  (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
   de dia.
 - **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
   anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias

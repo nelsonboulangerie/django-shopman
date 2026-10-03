@@ -608,14 +608,14 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             help_text="Percentual em decimal. Ex.: 0,20 para 20%. Em branco = herda 0%.",
         ),
         "defaults_production_low_yield_threshold": forms.DecimalField(
-            label="Limiar de rendimento baixo",
+            label="Limiar de aproveitamento baixo",
             required=False,
             min_value=Decimal("0"),
             max_value=Decimal("1"),
             max_digits=4,
             decimal_places=2,
             widget=UnfoldAdminDecimalFieldWidget,
-            help_text="Proporção produzido/iniciado. Em branco = herda 0,80.",
+            help_text="Proporção realizado ÷ previsto. Em branco = herda 0,80.",
         ),
         "defaults_production_default_max_started_minutes": forms.IntegerField(
             label="Tempo máximo em produção (minutos)",
@@ -2431,7 +2431,7 @@ _PRODUCTION_FIELDSETS = (
                 ("defaults_sales_silence_minutes",),
             ),
             "description": (
-                "Limiares operacionais para rendimento, fornadas atrasadas e investigação de períodos sem vendas."
+                "Limiares operacionais para aproveitamento, lotes atrasados e investigação de períodos sem vendas."
             ),
         },
     ),

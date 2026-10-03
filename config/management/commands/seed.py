@@ -1050,8 +1050,8 @@ NOTIFICATION_TEMPLATES = {
     # Produção → operador (notification.send de sistema, WP-PE2).
     # Opt-in via Shop.defaults["production"]["notifications"].
     "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
-    "production_low_yield": {"subject": "Yield baixo na produção {work_order_ref}", "body": "A produção *{work_order_ref}* ({output_sku}) fechou com yield de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
-    "production_forgotten": {"subject": "Produção {work_order_ref} não foi iniciada", "body": "A produção *{work_order_ref}* ({output_sku}) planejada para {target_date} nunca foi iniciada.\n\nConclua, reagende ou estorne no planejamento."},
+    "production_low_yield": {"subject": "Aproveitamento baixo no lote {work_order_ref}", "body": "O lote *{work_order_ref}* ({output_sku}) fechou com aproveitamento de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
+    "production_forgotten": {"subject": "Lote {work_order_ref} não foi aberto", "body": "O lote *{work_order_ref}* ({output_sku}) planejado para {target_date} nunca foi aberto.\n\nAbra, reagende ou cancele no planejamento."},
     "production_stock_short": {"subject": "Produção {work_order_ref} sem insumos", "body": "A produção *{work_order_ref}* ({output_sku}) falhou por estoque insuficiente.\n\nDetalhe: {error}"},
 }
 

@@ -104,14 +104,14 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> Op
 
 _PRODUCTION_CONTEXT_PATHS = {
     "production_late": "/",
-    "production_low_yield": "/expedite",
-    "production_stock_short": "/expedite",
+    "production_low_yield": "/quality",
+    "production_stock_short": "/close",
     "production_stock_shortfall": "/plan",
     "production_forgotten": "/plan",
-    "production_unfinished": "/expedite",
-    "production_batch_traceability": "/expedite",
-    "production_quality_communication": "/expedite",
-    "production_quality_hold_risk": "/expedite",
+    "production_unfinished": "/close",
+    "production_batch_traceability": "/close",
+    "production_quality_communication": "/quality",
+    "production_quality_hold_risk": "/quality",
     "stock_discrepancy": "/plan",
     "stock_low": "/plan",
 }

@@ -443,7 +443,7 @@ function fixOvershoot() {
 function onConfirm() {
   if (props.submitting || submitLatched.value) return;
   if (total.value <= 0) {
-    useSonner.warning("Informe a quantidade produzida ou a perda do lote.");
+    useSonner.warning("Informe a quantidade realizada ou a perda do lote.");
     return;
   }
   const questions = pendingQuestions();
@@ -509,7 +509,7 @@ async function requestBack() {
         : {
             title: "Descartar as quantidades e os motivos informados?",
             description:
-              "O lote continua aberto na Expedição, sem nada do que você digitou.",
+              "O lote continua aberto no Fechamento, sem nada do que você digitou.",
             confirmLabel: "Descartar e sair",
           },
     ))
@@ -593,9 +593,9 @@ const fieldCard =
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
         <template v-if="anchor.anchor !== null">
-          {{ anchor.anchor }} produzidos
+          {{ anchor.anchor }} previstos
         </template>
-        <template v-else>Sem quantidade produzida</template>
+        <template v-else>Sem quantidade prevista</template>
       </div>
     </header>
 
@@ -813,7 +813,7 @@ const fieldCard =
           >
             <label class="grid gap-1.5 text-sm">
               <span class="font-medium">
-                Por que a contagem ficou acima do lote iniciado?
+                Por que o realizado ficou acima do previsto?
               </span>
               <UiTextarea
                 v-model="overshootReason"
@@ -821,7 +821,7 @@ const fieldCard =
                 :maxlength="500"
                 required
                 class="bg-background"
-                aria-label="Motivo da quantidade acima do lote produzido"
+                aria-label="Motivo do realizado acima do previsto"
                 placeholder="Ex.: contagem conferida e unidades menores que o padrão"
               />
             </label>

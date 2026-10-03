@@ -18,6 +18,7 @@ vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "" } }));
 vi.stubGlobal("useNuxtData", () => ({ data: ref(null) }));
 vi.stubGlobal("useOperatorResourceKey", (resource: string) => `orders:test:${resource}`);
 vi.stubGlobal("useFetch", () => ({ data: ref({ authorized: false }) }));
+vi.stubGlobal("useGestorAccess", () => ({ expeditesOnly: ref(false), canManageOrders: ref(true) }));
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
