@@ -63,7 +63,7 @@ PROCESSORS: tuple[Processor, ...] = (
         key="efi",
         name="Efí",
         role="recebe o pagamento por Pix",
-        shares="o valor e o identificador da cobrança — nada que diga quem você é",
+        shares="o valor e o identificador da cobrança (nada que diga quem você é)",
         wired_by=("setting:SHOPMAN_PAYMENT_ADAPTERS[pix]",),
         adapters=("payment_efi",),
     ),
@@ -110,7 +110,7 @@ PROCESSORS: tuple[Processor, ...] = (
         name="Focus NFe",
         role="transmite a nota fiscal para a Secretaria da Fazenda",
         shares=(
-            "o que a nota exige quando você pede CPF nela: nome, CPF, e — na entrega — "
+            "o que a nota exige quando você pede CPF nela: nome, CPF e, na entrega, "
             "endereço, telefone e e-mail"
         ),
         wired_by=("setting:SHOPMAN_FISCAL_ADAPTER",),

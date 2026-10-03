@@ -699,7 +699,7 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
       warnings: [{
         code: "customer_required_for_scheduled",
         field: "customer_phone",
-        message: "Pedido agendado precisa de um cliente identificado — é o contato se algo mudar até a data.",
+        message: "Pedido agendado precisa de um cliente identificado: é o contato se algo mudar até a data.",
       }],
     });
     const semCliente = await mountSuspended(PosPaymentWorkspace, {

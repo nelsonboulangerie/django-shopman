@@ -164,7 +164,7 @@ def load_rule(rule_config):
             # ValueError, não TypeError cru: o _safe_load loga esta mensagem
             # concisa (sem traceback) e o readiness/Admin a exibem por extenso.
             raise ValueError(
-                f"parâmetro(s) desconhecido(s) {unknown} em params — a regra NÃO "
+                f"parâmetro(s) desconhecido(s) {unknown} em params: a regra NÃO "
                 f"carrega. Provável rename de parâmetro sem migrar "
                 f"RuleConfig.params (rename exige migração de dados; ver 0010)."
             )

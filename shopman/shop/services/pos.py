@@ -831,7 +831,7 @@ def review_sale(
             "code": "customer_required_for_scheduled",
             "field": "customer_phone",
             "message": (
-                "Pedido agendado precisa de um cliente identificado — "
+                "Pedido agendado precisa de um cliente identificado: "
                 "é o contato se algo mudar até a data."
             ),
         })
@@ -1424,7 +1424,7 @@ def _require_customer_if_scheduled(payload: dict) -> None:
         message="Pedido agendado precisa de um cliente identificado.",
         field="customer_phone",
         focus="customer",
-        recovery="Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+        recovery="Identifique o cliente para agendar: é o contato se algo mudar até a data.",
     )
 
 
@@ -2133,13 +2133,13 @@ def cancel_recent_order(
 
     if channel_ref and order.channel_ref != channel_ref:
         raise ValueError(
-            f"Pedido {order_ref} não é do PDV — cancele pelo gestor de pedidos."
+            f"Pedido {order_ref} não é do PDV. Cancele pelo gestor de pedidos."
         )
 
     age = timezone.now() - order.created_at
     if age > timedelta(minutes=max_age_minutes):
         raise ValueError(
-            f"Pedido {order_ref} criado há mais de {max_age_minutes} minutos — cancelamento não permitido"
+            f"Pedido {order_ref} criado há mais de {max_age_minutes} minutos: cancelamento não permitido"
         )
     # Os status admitidos vivem em `_recent_sale_status_allows_cancel` — o
     # mesmo predicado que a projection usa para anunciar `can_cancel`. O cancel
@@ -4673,7 +4673,7 @@ def _guard_receipt_tax_id_overwrite(
         return
     raise PosTaxIdOverwriteError(
         f"Trocar o CPF do cadastro de {customer.name} ({current} sai, {tax_id} entra) "
-        "precisa de confirmação. Sem ela o cadastro fica como está — a nota vai "
+        "precisa de confirmação. Sem ela o cadastro fica como está, e a nota vai "
         "para o CPF informado de qualquer jeito.",
     )
 

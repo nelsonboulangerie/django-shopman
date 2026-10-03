@@ -184,8 +184,8 @@ function submitDeclare() {
       <label class="block text-xs font-medium text-muted-foreground">
         Esse número é
         <UiNativeSelect v-model="kind" class="mt-1 w-full">
-          <option value="conventional">Exato — é assim que vem embalado</option>
-          <option value="approximate">Aproximado — é uma estimativa</option>
+          <option value="conventional">Exato: é assim que vem embalado</option>
+          <option value="approximate">Aproximado: é uma estimativa</option>
         </UiNativeSelect>
       </label>
       <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">

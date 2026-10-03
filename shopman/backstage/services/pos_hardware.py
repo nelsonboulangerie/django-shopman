@@ -79,7 +79,7 @@ class DeviceAgentConfig:
         if not self.declared or not self.enabled:
             return ""
         if not self.token:
-            return "falta o token — salve este terminal para gerar um"
+            return "falta o token: salve este terminal para gerar um"
         if not self.agent_url:
             return "sem endereço do agente"
         return ""
@@ -117,7 +117,7 @@ class DeviceAgentConfig:
         if not self.enabled:
             return "O agente deste terminal está desligado na configuração."
         if not self.token:
-            return "A impressora deste terminal está sem token — salve o terminal no gestor para gerar um."
+            return "A impressora deste terminal está sem token. Salve o terminal no gestor para gerar um."
         if not self.agent_url:
             return "A impressora deste terminal está sem endereço do agente."
         return "Impressora indisponível neste terminal."
@@ -195,7 +195,7 @@ class CashDrawerConfig:
             # O token nasce no Admin desde que o fluxo inverteu: basta salvar o
             # terminal com "Pelo agente local". Mandar colar o do instalador era
             # instrução do fluxo antigo, e mandava a pessoa para o lado errado.
-            return "falta o token — salve este terminal com “Pelo agente local” para gerar um"
+            return "falta o token: salve este terminal com “Pelo agente local” para gerar um"
         if not self.agent_url:
             return "sem endereço do agente"
         return ""
@@ -247,7 +247,7 @@ class CashDrawerConfig:
         if not self.enabled:
             return "A gaveta deste terminal está desligada na configuração."
         if self.adapter != ADAPTER_AGENT:
-            return "Este balcão abre a gaveta com a chave — o PDV não tem como abrir."
+            return "Este balcão abre a gaveta com a chave: o PDV não tem como abrir."
         return self.misconfigured_reason or "Gaveta indisponível."
 
 

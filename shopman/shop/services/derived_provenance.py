@@ -177,7 +177,7 @@ def record_manual_audit(product, fact: str, *, actor: str, recipe=None) -> dict[
     signer = str(actor or "").strip()
     if not signer:
         raise ManualAuditWithoutActor(
-            "Conferência manual precisa de quem assina — número à mão sem autor "
+            "Conferência manual precisa de quem assina: número à mão sem autor "
             "não é conferência."
         )
     if fact not in DERIVED_FACTS:

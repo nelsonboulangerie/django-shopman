@@ -108,7 +108,7 @@ class SupplierAdmin(BaseModelAdmin):
     def trade_name_display(self, obj: Supplier):
         """O nome do dia a dia em cima, a razão social junto — nessa ordem."""
         if obj.trade_name and obj.trade_name != obj.name:
-            return f"{obj.trade_name} — {obj.name}"
+            return f"{obj.trade_name} · {obj.name}"
         return obj.name
 
     @display(description=_("Contatos"))

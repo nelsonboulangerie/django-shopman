@@ -60,7 +60,7 @@ class TerminalForm(forms.ModelForm):
         # nenhuma tem `selected`) — e salvar sem tocar no campo GRAVAVA
         # `manual`. Estado real e estado exibido divergiam, e ninguém via.
         choices=(
-            ("", "— não configurada —"),
+            ("", "Não configurada"),
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
             (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
         ),
@@ -72,7 +72,7 @@ class TerminalForm(forms.ModelForm):
         widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
         initial=DEFAULT_AGENT_URL,
-        help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço — quem chama é o navegador.",
+        help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço: quem chama é o navegador.",
     )
     drawer_rotate_token = forms.BooleanField(
         label="Gerar um token novo",
@@ -94,7 +94,7 @@ class TerminalForm(forms.ModelForm):
         min_value=2,
         max_value=510,
         initial=DEFAULT_PULSE_ON_MS,
-        help_text="Padrão da TM-T20: 50ms. O teto é 510ms — o solenoide é feito para pulso, não para carga contínua.",
+        help_text="Padrão da TM-T20: 50ms. O teto é 510ms: o solenoide é feito para pulso, não para carga contínua.",
     )
     drawer_pulse_off_ms = forms.IntegerField(
         label="Pulso desligado (ms)",
@@ -168,8 +168,8 @@ class TerminalForm(forms.ModelForm):
         # tem — primeira opção marcada gravando um estado que ninguém escolheu —
         # aqui não existe, porque o estado marcado é o estado real.
         choices=(
-            (ATTENDED, "Atendida — pede PIN ou crachá (balcão, cozinha)"),
-            (AUTONOMOUS, "Autônoma — age sozinha, só na Produção (painel de parede)"),
+            (ATTENDED, "Atendida: pede PIN ou crachá (balcão, cozinha)"),
+            (AUTONOMOUS, "Autônoma: age sozinha, só na Produção (painel de parede)"),
         ),
         initial=ATTENDED,
         help_text=(
@@ -188,7 +188,7 @@ class TerminalForm(forms.ModelForm):
         # aceitaria a conta que `autonomous_operator_for` recusa (superusuária,
         # inativa, fora da casa) e o gestor salvaria feliz uma estação que não
         # age — sem nada escrito em tela dizendo por quê.
-        choices=(("", "— nenhuma —"),),
+        choices=(("", "Nenhuma"),),
         help_text=(
             "Superusuário não aparece aqui e o servidor o recusa: "
             "<code>is_superuser</code> curto-circuita toda checagem de permissão, "
@@ -217,11 +217,11 @@ class TerminalForm(forms.ModelForm):
         # aceite preparação (`resolve_destination`), então um campo que aceita
         # ref inventada só troca o beco visível por um silencioso. As opções
         # saem da MESMA pergunta que o servidor faz na hora de imprimir.
-        choices=(("", "— a impressora desta estação, ou a única da loja —"),),
+        choices=(("", "A impressora desta estação, ou a única da loja"),),
         help_text=(
             "Deixe no automático quando a estação imprime na própria impressora "
             "ou quando a loja só tem uma de preparação. Com duas ou mais, sem "
-            "escolher aqui o servidor recusa o pedido — e não havia por onde escolher."
+            "escolher aqui o servidor recusa o pedido, e não havia por onde escolher."
         ),
     )
 
@@ -246,8 +246,8 @@ class TerminalForm(forms.ModelForm):
         # tinha como ser diagnosticado de nenhum dos dois lados.
         if config.token:
             self.fields["drawer_rotate_token"].help_text += (
-                f" Token atual: {mask_badge(config.token)} "
-                "— confira com `counter-agent --doctor` no balcão."
+                f" Token atual: {mask_badge(config.token)}. "
+                "Confira com `counter-agent --doctor` no balcão."
             )
         self.fields["counter_agent_url"].initial = device_agent.agent_url
         self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
@@ -288,7 +288,7 @@ class TerminalForm(forms.ModelForm):
         station = self._station_config()
         current = str(station.get("operator") or "").strip()
         elegiveis = eligible_station_operators()
-        choices = [("", "— nenhuma —")]
+        choices = [("", "Nenhuma")]
         choices += [
             (conta.username, f"{conta.get_full_name() or conta.username} ({conta.username})")
             for conta in elegiveis
@@ -300,7 +300,7 @@ class TerminalForm(forms.ModelForm):
             # superusuária ou apagada, e o gestor procuraria o defeito na conta
             # certa. O `clean` barra o salvamento até ele repontar.
             self._stale_station_operator = current
-            choices.append((current, f"{current} — conta indisponível"))
+            choices.append((current, f"{current} (conta indisponível)"))
         self.fields["station_operator"].choices = choices
         self.fields["station_operator"].initial = current
         self.fields["station_mode"].initial = terminal_mode(
@@ -315,7 +315,7 @@ class TerminalForm(forms.ModelForm):
         # A própria estação fica FORA da lista: quando ela tem impressora, o
         # automático já resolve nela. Duas opções para a mesma coisa é uma a mais.
         available = preparation_destinations(exclude_ref=own_ref)
-        choices = [("", "— a impressora desta estação, ou a única da loja —")]
+        choices = [("", "A impressora desta estação, ou a única da loja")]
         choices += [
             (ref, label if label == ref else f"{label} ({ref})") for ref, label in available
         ]
@@ -325,7 +325,7 @@ class TerminalForm(forms.ModelForm):
             # impressora que saiu do ar — estado exibido divergindo do real, que
             # é o mesmo buraco da opção vazia do adapter da gaveta.
             self._stale_print_target = current
-            choices.append((current, f"{current} — destino indisponível"))
+            choices.append((current, f"{current} (destino indisponível)"))
         self.fields["print_target_ref"].choices = choices
         self.fields["print_target_ref"].initial = current
 
@@ -341,7 +341,7 @@ class TerminalForm(forms.ModelForm):
                 self.add_error(
                     "station_operator",
                     "Uma estação autônoma age em nome de uma conta. Sem ela o painel "
-                    "volta a pedir PIN — e não há ninguém na parede para digitar.",
+                    "volta a pedir PIN, e não há ninguém na parede para digitar.",
                 )
             elif conta == self._stale_station_operator:
                 self.add_error(
@@ -526,7 +526,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 ),
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
-                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa) — só o navegador do balcão alcança o agente local.",
+                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa): só o navegador do balcão alcança o agente local.",
             },
         ),
         (
@@ -550,7 +550,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                     "O painel de parede da Produção não tem ninguém para digitar PIN, "
                     "então ele age em nome de uma conta. Vale SÓ para a Produção: o "
                     "cookie deste dispositivo alcança o domínio inteiro, e é o servidor "
-                    "que recusa a conta nas demais telas — não a configuração daqui."
+                    "que recusa a conta nas demais telas, não a configuração daqui."
                 ),
             },
         ),
@@ -558,7 +558,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
             "Destino das etiquetas desta estação",
             {
                 "fields": ("print_target_ref", "print_destination_display"),
-                "description": "Quem PEDE a etiqueta e quem IMPRIME podem ser dispositivos diferentes: o tablet da bancada pede, a impressora do balcão imprime. Quem escolhe é o gestor, aqui — o dispositivo nunca manda um endereço de impressora ao servidor.",
+                "description": "Quem PEDE a etiqueta e quem IMPRIME podem ser dispositivos diferentes: o tablet da bancada pede, a impressora do balcão imprime. Quem escolhe é o gestor, aqui: o dispositivo nunca manda um endereço de impressora ao servidor.",
             },
         ),
     )
@@ -588,7 +588,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         if obj is None or not obj.pk:
             return "Salve o terminal primeiro."
         if terminal_mode(obj.ref) != AUTONOMOUS:
-            return unfold_badge("atendida — pede identificação", "base")
+            return unfold_badge("atendida: pede identificação", "base")
         conta = autonomous_operator_for(obj.ref)
         if conta is None:
             return format_html(

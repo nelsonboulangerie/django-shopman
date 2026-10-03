@@ -52,7 +52,7 @@ def check_and_alert(sku: str | None = None) -> int:
             "warning",
             (
                 f"Estoque baixo: {alert.sku} ({available} restantes, "
-                f"mínimo {alert.min_quantity}) — {position_label}"
+                f"mínimo {alert.min_quantity}) em {position_label}"
             ),
         )
         created += 1

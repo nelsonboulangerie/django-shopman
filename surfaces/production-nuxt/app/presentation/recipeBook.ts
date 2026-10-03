@@ -389,7 +389,7 @@ export function originLines(origin: Record<string, unknown> | null | undefined):
       const unit = typeof item.unit === "string" ? item.unit : "";
       const amount =
         (typeof quantity === "string" && quantity) || typeof quantity === "number" ? `${quantity}${unit ? ` ${unit}` : ""}` : "";
-      const text = [name, amount].filter(Boolean).join(" — ");
+      const text = [name, amount].filter(Boolean).join(": ");
       if (text) lines.push(text);
     }
   }

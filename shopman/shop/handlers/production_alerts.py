@@ -523,8 +523,8 @@ def create_stock_shortfall_alert(*, work_order_ref: str, output_sku: str, shortf
     detail = "; ".join(f"{s['sku']} (faltou {s['short']})" for s in shortfalls)
     message = (
         f"Produção {work_order_ref} ({output_sku}) baixou menos insumo do que a "
-        f"ficha pede: {detail}. O estoque de insumo no sistema está acima do real "
-        f"— confira e recontagem se preciso."
+        f"ficha pede: {detail}. O estoque de insumo no sistema está acima do real. "
+        f"Confira e reconte se preciso."
     )
     alert_adapter.create(
         "production_stock_shortfall",

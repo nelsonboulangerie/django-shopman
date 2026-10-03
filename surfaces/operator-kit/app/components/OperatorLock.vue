@@ -174,7 +174,7 @@ async function submitForcedChange(payload: {
         </div>
         <div class="mb-4 space-y-1 rounded-lg border border-dashed p-3 text-sm">
           <p>Seu crachá para de funcionar agora.</p>
-          <p>Seu PIN continua valendo — você segue trabalhando.</p>
+          <p>Seu PIN continua valendo: você segue trabalhando.</p>
           <p class="text-muted-foreground">Um gerente emite outro crachá.</p>
         </div>
 

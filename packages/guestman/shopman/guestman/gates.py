@@ -235,7 +235,7 @@ class Gates:
             # payloads. Configure the webhook secret to enable this endpoint.
             raise GateError(
                 "G4_ProviderEventAuthenticity",
-                "Webhook secret not configured — rejecting unsigned payload.",
+                "Webhook secret not configured: rejecting unsigned payload.",
             )
 
         if not signature:

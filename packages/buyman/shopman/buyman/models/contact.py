@@ -189,7 +189,7 @@ class SupplierContact(models.Model):
         if not (self.email or self.phone):
             raise ValidationError({
                 "email": _(
-                    "Um contato precisa de e-mail ou telefone — sem isso ele é um "
+                    "Um contato precisa de e-mail ou telefone: sem isso ele é um "
                     "nome que o sistema não consegue avisar."
                 )
             })

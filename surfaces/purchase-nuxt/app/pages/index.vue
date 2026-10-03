@@ -1584,7 +1584,7 @@ onBeforeUnmount(stopInvoiceScanner);
                 O pedido de compra vai para <span class="font-medium">{{ selectedSupplier.orderContactName }}</span>.
               </template>
               <template v-else-if="selectedSupplier.contact">
-                Sem contato comercial — o pedido cai na central ({{ selectedSupplier.contact }}).
+                Sem contato comercial: o pedido cai na central ({{ selectedSupplier.contact }}).
               </template>
               <template v-else>
                 Sem contato e sem central: o pedido de compra nao tem para onde ir.

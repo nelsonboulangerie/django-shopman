@@ -1091,7 +1091,7 @@ def _supplier_contact_line(supplier) -> str:
     if not contact:
         return ""
     reach = " / ".join(part for part in (contact.email, contact.phone) if part)
-    return f"{contact.name} ({contact.get_role_display()}) — {reach}"
+    return f"{contact.name} ({contact.get_role_display()}): {reach}"
 
 
 def _purchase_request_snapshot(material, cost) -> dict[str, str]:
@@ -2129,7 +2129,7 @@ def _receipt_rejection_lines(raw_lines: list[Any]) -> str:
         qty = str(raw.get("purchaseQty") or raw.get("purchase_qty") or "").strip()
         note = str(raw.get("lineNote") or raw.get("line_note") or "").strip()
         label = material_names.get(sku, sku or "item")
-        suffix = f" — {note}" if note else ""
+        suffix = f" ({note})" if note else ""
         rows.append(f"- {label}: {qty or '?'}{suffix}")
     return "\n".join(rows)
 

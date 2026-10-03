@@ -611,7 +611,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
               message: "Pedido agendado precisa de um cliente identificado.",
               field: "customer_phone",
               focus: "customer",
-              recovery: "Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+              recovery: "Identifique o cliente para agendar: é o contato se algo mudar até a data.",
             },
           },
         };
@@ -625,7 +625,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
 
     expect(h.sale.customerFocusNonce.value).toBe(1);
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+      "Identifique o cliente para agendar: é o contato se algo mudar até a data.",
     );
     expect(h.sale.result.value).toBeNull();
     expect(h.sale.cart.items).toHaveLength(1); // carrinho preservado

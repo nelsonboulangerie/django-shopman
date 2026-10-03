@@ -81,7 +81,7 @@ describe("KdsExitPreparingCard — um chip por estação", () => {
     const w = mountCard({
       card: card([chip({ paper_label: "não imprimiu", paper_failed: true })]),
     });
-    expect(w.get("[data-testid=exit-station-chip]").text()).toContain("não imprimiu — avise a estação");
+    expect(w.get("[data-testid=exit-station-chip]").text()).toContain("não imprimiu: avise a estação");
   });
 
   it("o Pronto em voo fica desabilitado (sem toque duplo)", () => {

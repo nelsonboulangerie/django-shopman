@@ -50,15 +50,15 @@ CEST_RE = re.compile(r"^\d{7}$")  # CEST: 7 digits (format SS.III.DD).
 #: Origem da mercadoria (campo ``orig`` do ICMS, tabela A do Anexo do Ajuste
 #: SINIEF 07/05 — a mesma do Manual de Orientação da NF-e).
 ORIGINS: dict[str, str] = {
-    "0": "0 — Nacional",
-    "1": "1 — Estrangeira, importação direta",
-    "2": "2 — Estrangeira, adquirida no mercado interno",
-    "3": "3 — Nacional, conteúdo de importação acima de 40% e até 70%",
-    "4": "4 — Nacional, produzida conforme processos produtivos básicos",
-    "5": "5 — Nacional, conteúdo de importação de até 40%",
-    "6": "6 — Estrangeira, importação direta, sem similar nacional (lista CAMEX)",
-    "7": "7 — Estrangeira, mercado interno, sem similar nacional (lista CAMEX)",
-    "8": "8 — Nacional, conteúdo de importação acima de 70%",
+    "0": "0 · Nacional",
+    "1": "1 · Estrangeira, importação direta",
+    "2": "2 · Estrangeira, adquirida no mercado interno",
+    "3": "3 · Nacional, conteúdo de importação acima de 40% e até 70%",
+    "4": "4 · Nacional, produzida conforme processos produtivos básicos",
+    "5": "5 · Nacional, conteúdo de importação de até 40%",
+    "6": "6 · Estrangeira, importação direta, sem similar nacional (lista CAMEX)",
+    "7": "7 · Estrangeira, mercado interno, sem similar nacional (lista CAMEX)",
+    "8": "8 · Nacional, conteúdo de importação acima de 70%",
 }
 DEFAULT_ORIGIN = "0"
 

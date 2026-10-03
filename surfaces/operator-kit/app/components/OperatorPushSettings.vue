@@ -63,7 +63,7 @@ async function toggleCategory(category: string): Promise<void> {
     </button>
     <p v-else-if="unavailableReason === 'deploy'" role="status" data-push-unavailable="deploy" class="mt-4 text-sm text-muted-foreground">
       O envio de avisos ainda não foi configurado nesta instalação. Peça a quem cuida do
-      sistema para ligá-lo — enquanto isso, nenhum dispositivo recebe aviso.
+      sistema para ligá-lo. Enquanto isso, nenhum dispositivo recebe aviso.
     </p>
     <p v-else-if="unavailableReason === 'browser'" role="status" data-push-unavailable="browser" class="mt-4 text-sm text-muted-foreground">
       Este navegador não entrega avisos com o app fechado. No iPhone e no iPad, adicione

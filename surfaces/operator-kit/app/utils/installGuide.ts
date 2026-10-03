@@ -159,7 +159,7 @@ function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan 
         },
         {
           glyph: "share-ios",
-          text: "Já no Safari, toque em **Compartilhar** — o quadradinho com a seta para cima, na barra de baixo.",
+          text: "Já no Safari, toque em **Compartilhar** (o quadradinho com a seta para cima, na barra de baixo).",
         },
         { glyph: "add-home", text: "Role a lista e toque em **Adicionar à Tela de Início**." },
       ],
@@ -176,8 +176,8 @@ function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan 
         {
           glyph: "share-ios",
           text: tablet
-            ? "Toque em **Compartilhar** — o quadradinho com a seta para cima, no alto, à direita."
-            : "Toque em **Compartilhar** — o quadradinho com a seta para cima, na barra de baixo.",
+            ? "Toque em **Compartilhar** (o quadradinho com a seta para cima, no alto, à direita)."
+            : "Toque em **Compartilhar** (o quadradinho com a seta para cima, na barra de baixo).",
         },
         { glyph: "add-home", text: "Role a lista para baixo e toque em **Adicionar à Tela de Início**." },
         { glyph: "confirm", text: "Toque em **Adicionar**, no alto, à direita." },
@@ -259,7 +259,7 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
       { glyph: "add-home", text: "Escolha **Instalar aplicativo**." },
       { glyph: "confirm", text: "Confirme em **Instalar**." },
     ],
-    note: "Em alguns navegadores a opção se chama **Adicionar à tela inicial** — é a mesma coisa.",
+    note: "Em alguns navegadores a opção se chama **Adicionar à tela inicial**: é a mesma coisa.",
   };
 }
 
@@ -285,7 +285,7 @@ function desktopPlan(env: InstallEnvironment, os: InstallOs, browser: InstallBro
     }
     return {
       ...none,
-      note: "Este Safari ainda não instala aplicativos — o **Adicionar ao Dock** chegou no macOS Sonoma. No Chrome ou no Edge funciona hoje.",
+      note: "Este Safari ainda não instala aplicativos: o **Adicionar ao Dock** chegou no macOS Sonoma. No Chrome ou no Edge funciona hoje.",
     };
   }
 
@@ -309,7 +309,7 @@ function desktopPlan(env: InstallEnvironment, os: InstallOs, browser: InstallBro
       steps: [
         {
           glyph: "install-bar",
-          text: "Na barra de endereço, clique no ícone de instalar — um monitor com uma seta para baixo, na ponta direita.",
+          text: "Na barra de endereço, clique no ícone de instalar (um monitor com uma seta para baixo, na ponta direita).",
         },
         { glyph: "confirm", text: "Clique em **Instalar**." },
       ],

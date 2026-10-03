@@ -306,7 +306,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": _("Reembolso — %(ref)s") % {"ref": intent.ref},
+            "title": _("Reembolso %(ref)s") % {"ref": intent.ref},
             "form": form,
             "intent": intent,
             "available_display": format_money(available_q),

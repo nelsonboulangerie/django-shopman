@@ -471,7 +471,7 @@ def courier_quote(order) -> dict:
     estimate = courier.estimate_for_order(order, store=False)
     if estimate is None:
         raise OrderError(
-            "Cotação indisponível — verifique o endereço do pedido e a "
+            "Cotação indisponível. Verifique o endereço do pedido e a "
             "conexão com a central de entregas."
         )
     return {

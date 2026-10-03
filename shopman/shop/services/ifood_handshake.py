@@ -82,7 +82,7 @@ def _items(raw):
             value = str(amount.get("value", ""))
             if value.isascii() and value.isdigit() and len(value) < 15:
                 major, minor = divmod(int(value), 100)
-                label += f" — {amount.get('currency', '')} {major}.{minor:02d}"
+                label += f", {amount.get('currency', '')} {major}.{minor:02d}"
         if item.get("reason"):
             label += f" ({item['reason']})"
         rows.append(label)

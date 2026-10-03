@@ -404,7 +404,7 @@ describe("steps and unmatched", () => {
         ],
         text: "ignored when items exist",
       }),
-    ).toEqual(["Rendimento 2 kg", "farine T65 — 1000 g", "eau — 700"]);
+    ).toEqual(["Rendimento 2 kg", "farine T65: 1000 g", "eau: 700"]);
     expect(originLines({ text: "1 kg farine\n700 g eau\n" })).toEqual(["1 kg farine", "700 g eau"]);
   });
 

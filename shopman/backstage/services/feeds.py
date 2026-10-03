@@ -128,7 +128,7 @@ def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int, expected
     _check_revision(sc, "rotation", expected_revision)
     display = _display(sc)
     if display.get("format"):
-        raise CatalogError(f"'{ref}' é um feed de plataforma — não tem páginas para rotacionar.")
+        raise CatalogError(f"'{ref}' é um feed de plataforma: não tem páginas para rotacionar.")
 
     if (
         display.get("rotate_seconds", 0) != rotate_seconds
@@ -161,7 +161,7 @@ def set_automatic(ref: str, *, enabled: bool, idle_messages: list[str], expected
     _check_revision(sc, "automatic", expected_revision)
     display = _display(sc)
     if display.get("format"):
-        raise CatalogError(f"'{ref}' é um feed de plataforma — modo automático existe apenas no menuboard.")
+        raise CatalogError(f"'{ref}' é um feed de plataforma: modo automático existe apenas no menuboard.")
 
     value = {"enabled": enabled, "idle_messages": list(messages)}
     if display.get("automatic") != value:

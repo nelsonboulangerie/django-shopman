@@ -625,7 +625,7 @@ def _fiscal_authorized_explanation(order) -> str:
         )
         return abertura + (
             f"{porta}. O caminho agora é nota de DEVOLUÇÃO/estorno, ainda dentro deste "
-            "mês — fale com o contador."
+            "mês. Fale com o contador."
         )
     return abertura + (
         "Não foi possível saber a que horas esta nota foi autorizada, então o prazo de "
@@ -705,7 +705,7 @@ def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authoriz
     kds_outcome = outcome.get("kds") or {}
     if stock_outcome.get("skipped") == "goods_left":
         applied.append(
-            "o pedido já saiu, então o estoque NÃO foi ajustado — confira o que foi na sacola"
+            "o pedido já saiu, então o estoque NÃO foi ajustado: confira o que foi na sacola"
         )
     elif any(stock_outcome.get(key) for key in ("released", "returned", "held", "fulfilled")):
         applied.append("o estoque acompanhou")
@@ -713,7 +713,7 @@ def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authoriz
         applied.append("a cozinha recebeu a comanda atualizada")
     if stock_outcome.get("gaps"):
         applied.append(
-            "FALTOU estoque para o que foi acrescentado — veja o alerta de reserva ao lado"
+            "FALTOU estoque para o que foi acrescentado: veja o alerta de reserva ao lado"
         )
     tail = f" A loja acompanhou: {'; '.join(applied)}." if applied else ""
 

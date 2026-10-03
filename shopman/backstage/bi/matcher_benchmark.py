@@ -490,7 +490,7 @@ def render_report(result: BenchmarkResult, *, source: str, accept_at: float) -> 
         f"{result.cases} de-paras confirmados de '{source}' ({with_product} com produto, "
         f"{result.cases - with_product} fora do catálogo).",
         f"O produto certo estava entre os {result.shortlist_size} mais parecidos em {_pct(coverage)} dos casos "
-        "— é o teto de acerto de Jev e LLM, que escolhem só entre eles.",
+        "(é o teto de acerto de Jev e LLM, que escolhem só entre eles).",
         "",
     ]
     for board in result.boards:

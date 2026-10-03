@@ -328,7 +328,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         if for_commit:
             raise PosIntentError(
                 code="cart_empty",
-                message="Carrinho vazio — adicione produtos antes de fechar.",
+                message="Carrinho vazio. Adicione produtos antes de fechar.",
                 field="items",
                 focus="search",
             )

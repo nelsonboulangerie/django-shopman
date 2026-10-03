@@ -344,7 +344,7 @@ const d = computed(() => ({
         class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
       >
         <Icon name="lucide:check-check" class="size-4 shrink-0" />
-        Finalizado — sai em {{ undoWindowSeconds }}s
+        Finalizado. Sai em {{ undoWindowSeconds }}s
       </p>
       <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
         <div class="kds-undo-drain h-full bg-foreground/50" />
