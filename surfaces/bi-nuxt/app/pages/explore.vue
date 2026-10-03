@@ -93,7 +93,7 @@ async function removeLoaded() {
 const timeSeries = computed(() => {
   if (!report.value || report.value.dimension !== "time") return [];
   const rows = report.value.rows.map((row) => ({ date: row.key, value: row.value }));
-  // `report.aggregation` e não uma soma incondicional: ticket médio, rendimento,
+  // `report.aggregation` e não uma soma incondicional: ticket médio, aproveitamento,
   // share e giro não se somam, e pico de salão se pega pelo maior — quem declara
   // é o servidor, no spec da métrica.
   const aggregation = report.value.aggregation;

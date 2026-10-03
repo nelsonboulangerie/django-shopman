@@ -113,6 +113,16 @@ export function coverageLabel(measured: number, finished: number): string {
   return `${formatInt(measured)} de ${formatInt(finished)} lotes medidos`;
 }
 
+/**
+ * Dica do aproveitamento (realizado ÷ previsto). Lote fechado sem abertura
+ * declarada tem o previsto ASSUMIDO igual ao planejado (UX-PROD-AF): a dica diz
+ * quantos foram, em vez de apresentar o número como declarado.
+ */
+export function startedAssumedHint(assumed: number, finished: number): string {
+  if (!assumed) return "Realizado ÷ previsto";
+  return `Realizado ÷ previsto; previsto assumido em ${formatInt(assumed)} de ${formatInt(finished)} lotes`;
+}
+
 // ── Janela de análise ────────────────────────────────────────────────────────
 // Dois vocabulários que coexistem (decisão do dono): "Período atual" é
 // CALENDÁRIO (o dia/semana/mês/ano corrente, do início até hoje) e "Últimos"
@@ -242,7 +252,7 @@ export const EXPLORE_EXAMPLES = [
   { name: "Perda por defeito × receita", config: { metric: "loss", by: "defect", by2: "recipe" } },
   { name: "Perda por dia da semana", config: { metric: "loss", by: "weekday", by2: "recipe" } },
   { name: "Tempo de forno por receita", config: { metric: "oven_minutes", by: "recipe", by2: "" } },
-  { name: "Rendimento por receita", config: { metric: "yield_percent", by: "recipe", by2: "" } },
+  { name: "Aproveitamento por receita", config: { metric: "yield_percent", by: "recipe", by2: "" } },
   { name: "Quebra de caixa por operador", config: { metric: "cash_difference", by: "operator", by2: "" } },
 ] as const;
 
@@ -300,7 +310,7 @@ export function bucketRows<T extends { date: string }>(
  *
  * ⚠️ A página somava tudo. Com "1 ano" + "Ticket médio" + "Tempo", a barra da
  * semana mostrava ~7× o ticket real — formatada como reais, "R$ 178,50",
- * perfeitamente convincente. Rendimento passava de 100%.
+ * perfeitamente convincente. Aproveitamento passava de 100%.
  *
  * A regra não é adivinhada aqui: vem do contrato (`report.aggregation`), porque
  * quem sabe se uma métrica é aditiva é quem a calcula. Uma métrica nova entra

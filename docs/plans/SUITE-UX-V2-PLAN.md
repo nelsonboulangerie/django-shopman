@@ -247,14 +247,15 @@ auditoria confirmou, com arquivo e linha.
 
 ### 4.4 Mapa de endereços por app
 
-URLs em inglês (convenção da casa); endereço antigo responde 301, como já foi feito em outros apps.
+URLs em inglês (convenção da casa). Pré go-live, endereço renomeado não ganha redirect: o antigo
+morre junto (zero legado, decisão do dono; Saída da Cozinha #1431, Produção #1433).
 
 | app | seções (rail) | recortes e itens | muda |
 |---|---|---|---|
 | **PDV** | Comandas `/` · Encomendas `/preorders` · Caixa `/cash` · Tela do cliente (janela) | comanda `/tabs/1007`, pagamento `?step=payment`; encomenda `/preorders/:ref`; relatório e fechamento `/cash/report`, `/cash/closing` | `/session` vira `/cash`; venda ganha endereço |
 | **Cozinha** | Estações `/` · estação `/:ref` (Preparo/Saída) · Painel de retirada (janela) | `?date=` | Painel ganha saída |
 | **Gestor** | Pedidos `/` · Catálogo `/catalog` · Clientes `/customers` · Canais `/channels` | pedido `/:ref`; produto `?sku=&tab=` (escrito, não só lido); coleção `?collection=` | `/feeds` vira `/channels` |
-| **Produção** | Planejamento `/plan` · Preparação `/mise-en-place` · Produção `/` · Expedição `/expedite` · Timers · Receitas · Relatórios · Letreiro (janela) | `?date=&q=` escritos; `?queue=quality`; Finalizar lote `/expedite/:lot/close` | some o "Painel" duplicado |
+| **Produção** | Planejamento `/plan` · Preparação `/mise-en-place` · Abertura `/` · Fechamento `/close` · Qualidade `/quality` · Timers · Receitas · Relatórios · Letreiro (janela) | `?date=&q=` escritos | some o "Painel" duplicado; Expedição `/expedite` virou Fechamento `/close` e Qualidade `/quality` (#1433) |
 | **Compras** | Painel `/` · Comprar `/buy` · Receber `/receive` · Base `/base` | `/base/materials` · `/suppliers` · `/costs` · `/count`; nota em conferência `/receive/:draft` | sai do `useState` |
 | **Marketing** | Hoje `/today` · Campanhas `/campaigns` · Ofertas `/offers` · Plataformas `/platforms` · Histórico `/history` | anúncio `/announcements/:id`; modelos `/campaigns/templates` | some `/v2?area=` e `?experience=v2` |
 | **B.I.** | as 8 seções de hoje | `?period=28d&compare=previous&channel=` em todas; aprofundar leva ao pedido, produto ou insumo no app certo | período vai para a URL |

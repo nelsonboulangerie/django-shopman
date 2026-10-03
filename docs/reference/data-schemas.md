@@ -160,7 +160,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer` ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio ou `gluten_notice` (pergunta só de glúten, `intent=allergy` e `destination=answer`, respondida com o aviso de produção compartilhada da casa; dono, 03/10/2026).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
