@@ -337,7 +337,7 @@ o lugar onde cada uma é cobrada, está em
 | WP-UX-3 erro com saída (PDV) | **PR #977**, na fila — 38 mensagens reescritas |
 | WP-UX-4 jargão e rótulos | **PR #978** — 31 frases; aguarda baseline visual do Marketing |
 | WP-UX-7 (1ª metade) deep links com contexto | **PR #976**, na fila — o link do fechamento carrega `?date=&q=<ref>` |
-| WP-UX-2, 5, 6, 8, 9 | não iniciados |
+| WP-UX-2, 5, 6, 8, 9 | não iniciados — proposta visual com prévias, padrões por intenção e trava de não-regressão em [SUITE-UX-V2-PLAN](SUITE-UX-V2-PLAN.md) (03/10/2026) |
 
 ---
 
