@@ -706,3 +706,28 @@ produto não muda de cliente para cliente.
 dispositivo, com o `client_request_id` que já dá idempotência no servidor) ou (b) servir o sistema
 na loja com no-break, backup na nuvem e o Storefront na nuvem. Fora deste plano de UX; muda deploy,
 dados e a fronteira loja × nuvem.
+
+## 17. Execução (03/10, o dono: "pode seguir")
+
+**Vocação** (ajuste do dono): sai da aba Geral e entra na aba **"Preço e config"** do painel do
+produto, junto da configuração de venda; o aviso "produto novo sem vocação" continua discreto na lista.
+
+**Onda 1** (uma frente = um branch = um PR; registradas no `docs/coordination/BOARD.md`):
+
+| id | frente | por quê agora |
+|---|---|---|
+| UX-N1 | "Shopman" para o operador e "Central" no lugar de "Shopman Apps" | decisão fechada, mecânica, destrava a copy de todo o resto |
+| UX-V1 | Vocação no painel do produto (aba Preço e config) + aviso discreto | decisão fechada; escreve em `ProductConsumptionTag`, sem mudar modelo |
+| UX-R2 | iFood, Meta e Google respeitam o estoque | trilha de regra (§12.2), decisão fechada, só backend |
+| UX-G1 | Gestor: colunas ajustáveis e recolhíveis, lembradas por posto no servidor; posto Saída | começo do piloto (Gestor), com as regras de hoje |
+
+**Ondas seguintes** (na ordem aprovada: kit por forma, Gestor piloto, PDV por último; regras em
+trilha paralela): Saída única no Gestor (aposentar a Saída da Cozinha depois de paridade, com as
+rotas de quiosque preservadas) · "pronto" automático no Gestor · desfazer de 5 s em
+Entregar/Despachar · kit por forma (FILA, CONFERÊNCIA, COMPOSIÇÃO, CADASTRO, LEITURA, PLANEJAR,
+MONITOR) · Fim do dia em corredor, às cegas, com o "dia estranho" registrado · Compras por exceção
+com validade · Qualidade em lote · Planejamento com "Por quê" · Marketing com fila de decisões e
+digital · Central como fila das filas · PDV (comanda, tablet na mesma gaveta, pulso de gaveta pelo
+relay) · UX-14 Respostas ativas · UX-15 Ajustes em todos os apps · UX-16 CRUD no Nuxt · UX-17
+contingência (infra, decisão do dono). Fora desta trilha, já com dono: o vazamento de valores no
+endpoint do fechamento (tarefa aberta pelo dono).
