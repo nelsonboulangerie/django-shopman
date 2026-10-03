@@ -133,6 +133,17 @@ def _surface_urls() -> dict[str, str]:
     return {**base, **override}
 
 
+def purchase_surface_url(user) -> str:
+    """URL do Compras para um atalho vindo de outro app ("Pedir no Compras").
+
+    A mesma pergunta que o tile do launcher faz: quem não opera Compras, ou
+    superfície sem URL, recebe vazio, e o atalho não aparece.
+    """
+    if not can_operate_purchase(user):
+        return ""
+    return _surface_urls().get("purchase", "")
+
+
 def _operator_name(user) -> str:
     full = (getattr(user, "get_full_name", lambda: "")() or "").strip()
     return full or getattr(user, "username", "") or "Operador"
