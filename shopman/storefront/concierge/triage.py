@@ -144,8 +144,9 @@ class Triage:
     #: ``default`` (nada casou) ou ``failures`` (duas tentativas sem resposta útil).
     source: str
     #: Por que o destino não é o da tabela, quando não é: ``order_not_closed``
-    #: (segundo turno seguido de pedido que o chat não fecha) ou
-    #: ``no_useful_answer`` (duas falhas seguidas da resposta automática).
+    #: (segundo turno seguido de pedido que o chat não fecha),
+    #: ``no_useful_answer`` (duas falhas seguidas da resposta automática) ou
+    #: ``cancel_order`` (pedido de cancelamento, regra da casa R4).
     escalated_by: str = ""
     #: Por que o Concierge responde uma intenção que a tabela manda para a
     #: equipe: ``gluten_notice`` (pergunta só de glúten, respondida com o aviso
@@ -430,6 +431,13 @@ def decide(
 
     escalated_by = ""
     if (
+        destination == ANSWER
+        and intent not in SENSITIVE
+        and classify_handoff_request(text) == "order_cancel"
+    ):
+        # Regra da casa R4: cancelar pedido é com a equipe (o bot não cancela).
+        intent, destination, urgency, escalated_by = "order", TEAM, NOW, "cancel_order"
+    elif (
         intent == "order"
         and not commercial_authority
         and (previous or {}).get("intent") == "order"

@@ -27,9 +27,9 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import gluten, small_talk
+from . import gluten, house_rules, small_talk
 from . import tools as tools_module
-from .metrics import LAYER_AGENT, LAYER_COURTESY, stage_of
+from .metrics import LAYER_AGENT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -285,6 +285,16 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             ),
             layer=LAYER_COURTESY,
         )
+
+    from .prompt import _shop
+
+    _rule, fixed = house_rules.fixed_reply_for(
+        customer_text, shop_name=(getattr(_shop(), "name", "") or "").strip()
+    )
+    if fixed:
+        # Regras da casa R7 (nunca negociar preço) e R8 (diz que é a assistente
+        # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.
+        return AgentOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE)
 
     if gluten.is_gluten_question(customer_text):
         # Glúten (dono, 03/10/2026): a resposta é o aviso da casa, o mesmo da

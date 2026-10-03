@@ -1167,7 +1167,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ``Shop``, nunca copy fixa; tenant é config, não código).
     "CONCIERGE_GREETING": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Olá, aqui é o concierge da {shop_name}, um assistente da casa. O que você gostaria de pedir hoje?",
+            message="Olá, aqui é a concierge da {shop_name}, uma assistente da casa. O que você gostaria de pedir hoje?",
         )},
     },
     # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
@@ -1189,7 +1189,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
+            message="Nossa concierge está fora do ar por alguns minutos, e a equipe já foi avisada. Se preferir, peça pelo site.",
         )},
     },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
@@ -1204,7 +1204,20 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_TURN_LIMIT": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Chegamos ao limite de mensagens do assistente por hoje nesta conversa. A equipe segue com você por aqui, ou, se preferir, o pedido pode ser feito pelo site.",
+            message="Chegamos ao limite de mensagens automáticas por hoje nesta conversa. Para continuar, peça pelo site ou escreva \"quero falar com a equipe\".",
+        )},
+    },
+    # Regras da casa (``shopman/storefront/concierge/house_rules.py``): as frases
+    # fixas de R7 (nunca negociar preço) e R8 (diz que é a assistente da casa).
+    # Nenhuma promete ação: a equipe fica a uma frase, pedida pelo cliente.
+    "CONCIERGE_PRICE_NEGOTIATION": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Preço e condição especial quem decide é a equipe da casa, e eu não consigo negociar por aqui. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_IDENTITY": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
         )},
     },
     "CONCIERGE_NO_PHONE": {
