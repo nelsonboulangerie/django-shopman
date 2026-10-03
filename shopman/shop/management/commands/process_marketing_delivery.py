@@ -220,13 +220,23 @@ class Command(BaseCommand):
                 outcomes["worker_error"] += 1
 
         reconciliation_claimed = 0
+        reconciliation_requested = 0
         reconciliation_outcomes: Counter[str] = Counter()
         if with_reconciliation:
             from shopman.shop.services.marketing_delivery_recovery import (
                 claim_reconciliations,
                 execute_reconciliation,
+                request_automatic_reconciliations,
             )
 
+            # O incerto é conferido sozinho (decisão do dono, 03/10/2026): cada
+            # tentativa `unknown` ganha UMA consulta só-leitura, pedida aqui pelo
+            # sistema e executada logo abaixo, na mesma passada. Nada é reenviado.
+            reconciliation_requested = request_automatic_reconciliations(
+                platforms=tuple(providers),
+                now=clock,
+                limit=limit,
+            )
             reconciliation_claims = claim_reconciliations(
                 worker_id=f"{worker_id}:lookup",
                 now=clock,
@@ -264,6 +274,7 @@ class Command(BaseCommand):
             or stale_calling
             or claims.examined
             or outcomes
+            or reconciliation_requested
             or reconciliation_claimed
             or reconciliation_outcomes
         )
@@ -285,6 +296,7 @@ class Command(BaseCommand):
                 f"claimed={len(claims.targets)} suppressed={claims.suppressed} "
                 f"deferred={claims.deferred} stale_calling={stale_calling} "
                 f"outcomes={outcome_text} "
+                f"reconciliations_requested={reconciliation_requested} "
                 f"reconciliations_claimed={reconciliation_claimed} "
                 f"reconciliations={reconciliation_text} "
                 f"publication_checks={confirmation_text}."

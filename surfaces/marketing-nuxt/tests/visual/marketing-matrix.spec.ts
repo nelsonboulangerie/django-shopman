@@ -301,15 +301,32 @@ test.describe("painel", () => {
     });
   }
 
-  test("SSE desconectado fica explícito na caixa de alertas", async ({
-    page,
-  }) => {
-    await openScenario(page, "notifications-dedupe", "/__visual_board", V1440);
-    await page.getByRole("button", { name: /^Alertas:/ }).click();
+});
+
+// A casa do Marketing (UX-M1, decisão do dono de 03/10/2026). O sino deixou de ter
+// lista própria: os retratos "alertas pessoais" e "SSE desconectado na caixa"
+// foram removidos junto com o painel que fotografavam.
+test.describe("fila de decisões", () => {
+  for (const [scenario, state, viewport] of [
+    ["board-pending", "pending", V390],
+    ["board-pending", "pending", V1280],
+    ["board-empty", "empty", V390],
+  ] as const) {
+    test(`${state} em ${viewport.label}`, async ({ page }) => {
+      await openScenario(page, scenario, "/", viewport);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Decisões" }),
+      ).toBeVisible();
+      await expectStableScreenshot(page, `decisions__${state}`, viewport);
+    });
+  }
+
+  test("agendados no celular", async ({ page }) => {
+    await openScenario(page, "board-pending", "/scheduled", V390);
     await expect(
-      page.getByRole("dialog", { name: "Alertas pessoais" }),
-    ).toContainText("reconectando");
-    await expectStableScreenshot(page, "panel__sse-disconnected", V1440);
+      page.getByRole("heading", { level: 1, name: "Agendados" }),
+    ).toBeVisible();
+    await expectStableScreenshot(page, "scheduled__list", V390);
   });
 });
 
@@ -1068,37 +1085,6 @@ test.describe("resultado e histórico", () => {
   }
 });
 
-test.describe("alertas pessoais", () => {
-  for (const [scenario, state, viewport] of [
-    ["notifications-unseen", "sheet", V320],
-    ["notifications-unseen", "action", V390],
-    ["notifications-dedupe", "dedupe", V768],
-    ["notifications-unseen", "popover", V1280],
-    ["notifications-stale", "stale-action", V375],
-  ] as const) {
-    test(`${state} em ${viewport.label}`, async ({ page }) => {
-      await openScenario(page, scenario, "/__visual_board", viewport);
-      await waitForFaithfulPreview(page);
-      await page.getByRole("button", { name: /^Alertas:/ }).click();
-      const dialog = page.getByRole("dialog", { name: "Alertas pessoais" });
-      await expect(dialog).toBeVisible();
-      if (scenario === "notifications-stale") {
-        await expect(
-          dialog.getByRole("button", { name: "Revisar anúncio" }),
-        ).toBeDisabled();
-        await expect(dialog).toContainText("já foi decidido");
-      }
-      await expectStableScreenshot(
-        page,
-        `notifications__${state}`,
-        viewport,
-        "light",
-        { fullPage: false },
-      );
-    });
-  }
-});
-
 test.describe("erros globais", () => {
   test("offline em 320", async ({ page, context }) => {
     await openScenario(page, "board-normal", "/__visual_error/500", V320);
@@ -1186,12 +1172,11 @@ test.describe("modos transversais", () => {
       forcedColors: "active",
       reducedMotion: "reduce",
     });
-    const campaigns = page.getByRole("link", {
-      name: "Campanhas",
-      exact: true,
-    });
-    await campaigns.focus();
-    await expect(campaigns).toBeFocused();
+    const scheduled = page
+      .getByRole("navigation", { name: "Seções do Marketing no celular" })
+      .getByRole("link", { name: "Agendados", exact: true });
+    await scheduled.focus();
+    await expect(scheduled).toBeFocused();
     await expectStableScreenshot(page, "panel__focus-forced-colors", V390);
   });
 

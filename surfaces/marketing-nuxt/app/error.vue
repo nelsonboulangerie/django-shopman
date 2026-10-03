@@ -117,7 +117,7 @@ useHead({ title: presentation.value.title });
           class="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           @click="clearError({ redirect: '/' })"
         >
-          Voltar ao painel
+          Voltar às decisões
         </NuxtLink>
         <UiButton
           v-if="presentation.retry"

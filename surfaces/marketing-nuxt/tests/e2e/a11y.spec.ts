@@ -105,10 +105,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Senha").fill(password!);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(
-    page.getByRole("heading", {
-      level: 1,
-      name: "Uma campanha, consequências honestas em cada destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Decisões" }),
   ).toBeVisible();
 }
 
@@ -166,23 +163,15 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     ),
   ).toBeLessThanOrEqual(0.001);
 
-  const bell = page.getByRole("button", { name: /^Alertas:/ });
-  await bell.focus();
-  await page.keyboard.press("Enter");
-  const alerts = page.getByRole("dialog", { name: "Alertas pessoais" });
-  await expect(alerts).toBeVisible();
-  await expect(page.locator("[data-marketing-app-root]")).toHaveAttribute(
-    "inert",
-    "",
-  );
-  await expectNoAxeViolations(page, "alertas modais");
-  await page.keyboard.press("Escape");
-  await expect(alerts).toBeHidden();
-  await expect(bell).toBeFocused();
+  // O sino é a própria fila (decisão do dono, 03/10/2026): um link para a casa,
+  // marcado como a página atual quando a fila está na tela.
+  const bell = page.getByRole("link", { name: /^Decisões: / });
+  await expect(bell).toHaveAttribute("href", "/");
+  await expect(bell).toHaveAttribute("aria-current", "page");
 
   await page
-    .getByRole("link", { name: "Campanhas", exact: true })
-    .first()
+    .getByRole("navigation", { name: "Seções do Marketing no celular" })
+    .getByRole("link", { name: "Ajustes", exact: true })
     .click();
   await expect(
     page.getByRole("heading", {
@@ -232,10 +221,10 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  await page.getByRole("link", { name: "Hoje", exact: true }).focus();
+  await page.getByRole("link", { name: "Campanhas", exact: true }).focus();
   await page.keyboard.press("Tab");
   const forcedColorsFocus = page.getByRole("link", {
-    name: "Campanhas",
+    name: "Modelos",
     exact: true,
   });
   await expect(forcedColorsFocus).toBeFocused();

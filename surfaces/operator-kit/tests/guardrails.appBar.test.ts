@@ -80,12 +80,24 @@ describe("guardrail do cabeçalho de seções", () => {
       "marketing-nuxt/app/components/CampaignTopBar.vue",
       "purchase-nuxt/app/components/PurchaseTopBar.vue",
     ];
+    // Navegação local que ainda não é peça da layer, declarada com o motivo.
+    const navLocalDeclarada: Record<string, string> = {
+      // UX-M1 (decisão do dono, 03/10/2026, SUITE-UX §6): no celular as quatro
+      // seções do Marketing (Decisões, Agendados, Enviados, Ajustes) vão para a
+      // barra do polegar, no pé da tela, e Ajustes entra por um item só, com as
+      // próprias seções numa segunda linha. A barra do topo continua sendo a do
+      // kit. A barra do pé mora em `MarketingSectionBar.vue`, no fim da coluna de
+      // conteúdo (fixa na janela ela cobria o rail). Quando outro app pedir a barra
+      // do pé, ela vira peça da layer e esta linha sai.
+      "marketing-nuxt/app/components/CampaignTopBar.vue":
+        "segunda linha de Ajustes (a barra do pé é MarketingSectionBar.vue)",
+    };
     for (const file of convertidos) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorAppBar");
       // E a navegação de seção não volta a ser markup local: quem precisar divergir
-      // tira o arquivo desta lista e escreve o motivo.
-      expect(source, file).not.toContain("<nav");
+      // declara o arquivo em `navLocalDeclarada` e escreve o motivo.
+      if (!navLocalDeclarada[file]) expect(source, file).not.toContain("<nav");
     }
   });
 });

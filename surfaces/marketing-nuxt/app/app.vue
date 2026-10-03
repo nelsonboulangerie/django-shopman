@@ -56,6 +56,9 @@ watch(sessionState, async (next, previous) => {
         <div class="flex min-w-0 flex-1 flex-col">
           <CampaignTopBar />
           <component :is="Component" />
+          <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
+               nunca cobrir o rail à esquerda. Ver MarketingSectionBar.vue. -->
+          <MarketingSectionBar />
         </div>
       </template>
 
