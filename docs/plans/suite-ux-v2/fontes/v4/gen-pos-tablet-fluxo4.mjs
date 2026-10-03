@@ -118,29 +118,41 @@ ${payTop("Cartão")}
 </div>
 </div>`;
 
-// ---------- tela 3: dinheiro ----------
-const chip = (l, on) => `<button class="h-14 rounded-xl ${on ? "border-2 border-primary bg-primary/10 font-semibold" : "border border-border bg-card font-medium"} text-[17px] tnum">${l}</button>`;
+// ---------- tela 3: dinheiro (fecha na mesa, gaveta abre no Balcão pelo relay) ----------
 const s3 = `<div class="h-full flex flex-col bg-background text-foreground relative">
 ${status()}
-${header("Pagamento", "Mesa 6 · #1012")}
-${payTop("Dinheiro")}
-<div class="px-5 pt-4">
-  <p class="op-label text-muted-foreground mb-1.5">Recebi do cliente</p>
-  <div class="h-16 px-4 rounded-xl border-2 border-primary bg-card flex items-center"><span class="text-[30px] font-semibold tnum">R$ 100,00</span></div>
-  <div class="grid grid-cols-4 gap-2 mt-2.5">${chip("Exato", false)}${chip("R$ 60", false)}${chip("R$ 100", true)}<button class="h-14 rounded-xl border border-border bg-card text-[15px] font-medium inline-flex items-center justify-center gap-1.5"><i data-i="grid-3x3" class="size-4 text-muted-foreground"></i>Outro</button></div>
+${header("Comandas", "")}
+<div class="mx-4 mt-3 h-14 px-4 rounded-xl bg-success/12 flex items-center gap-3">
+  <i data-i="circle-check" class="size-6 text-success shrink-0"></i>
+  <p class="text-[16px] leading-5"><b class="font-semibold">Mesa 6 fechada</b> <span class="text-muted-foreground">· dinheiro · <span class="tnum">22:06</span></span></p>
+  <span class="ml-auto op-label text-muted-foreground tnum">na mesa</span>
 </div>
-<div class="mx-5 mt-3 h-16 px-4 rounded-xl bg-success/12 flex items-center justify-between">
-  <span class="text-[17px] font-semibold text-success inline-flex items-center gap-2"><i data-i="coins" class="size-6"></i>Troco</span><span class="text-[30px] font-semibold tnum text-success">R$ 45,00</span>
+<div class="mx-4 mt-3 rounded-2xl border-2 border-warning bg-card shadow-[0_6px_18px_rgb(0_0_0/.08)] overflow-hidden">
+  <div class="px-4 pt-3.5 pb-3 bg-warning/10 flex items-start gap-3">
+    <span class="size-12 rounded-xl bg-warning/20 text-warning grid place-items-center shrink-0"><i data-i="banknote" class="size-7"></i></span>
+    <div class="min-w-0">
+      <p class="text-[20px] leading-6 font-semibold">Dinheiro da Mesa 6</p>
+      <p class="text-[16px] leading-5 mt-0.5">troco <b class="tnum font-semibold">R$ 45,00</b> <span class="text-muted-foreground">· leve ao Balcão</span></p>
+    </div>
+  </div>
+  <ol class="px-4 py-3 flex flex-col gap-2.5">
+    <li class="flex items-center gap-3"><span class="size-8 rounded-full bg-success/15 text-success grid place-items-center shrink-0"><i data-i="check" class="size-5"></i></span><span class="text-[16px]">Recebi <b class="tnum font-semibold">R$ 100,00</b> na mesa</span><span class="ml-auto op-label text-muted-foreground tnum">22:06</span></li>
+    <li class="flex items-center gap-3"><span class="size-8 rounded-full bg-warning/20 text-warning grid place-items-center shrink-0 text-[15px] font-bold">2</span><span class="text-[16px] font-semibold">Na frente da gaveta, abra por aqui</span></li>
+  </ol>
+  <div class="px-4 pb-4">
+    <button class="w-full h-16 rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center gap-2.5 text-[19px] font-semibold shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)]"><i data-i="archive" class="size-6"></i>Abrir gaveta do Balcão</button>
+    <p class="mt-2 op-label text-muted-foreground text-center">use quando estiver na frente da gaveta</p>
+  </div>
 </div>
-<div class="mx-5 mt-3 rounded-xl border border-border bg-card p-4 flex gap-3">
-  <span class="size-11 rounded-xl bg-secondary grid place-items-center shrink-0"><i data-i="archive" class="size-6"></i></span>
-  <div><p class="text-[16px] font-semibold leading-5">Entra na gaveta do Balcão (mesmo turno).</p><p class="op-body text-muted-foreground mt-0.5">Leve o dinheiro e traga o troco.</p></div>
+<div class="mx-4 mt-3 rounded-xl bg-muted px-4 py-3 flex flex-col gap-2">
+  <p class="op-label text-muted-foreground inline-flex gap-2"><i data-i="hand" class="size-4 shrink-0 mt-px"></i><span>Nunca abre sozinha enquanto você está na mesa. A gaveta abre em segundos e o Balcão registra quem abriu.</span></p>
+  <p class="op-label text-muted-foreground inline-flex gap-2"><i data-i="key-round" class="size-4 shrink-0 mt-px"></i><span>Sem energia, abra com a chave.</span></p>
 </div>
-<p class="mx-5 mt-2.5 op-label text-muted-foreground inline-flex gap-2"><i data-i="info" class="size-4 shrink-0 mt-px"></i><span>A comanda fecha agora. Até a gaveta, o dinheiro fica com você, como hoje fica com o garçom.</span></p>
+<div class="mx-4 mt-3 flex flex-col gap-2">
+  <div class="h-14 px-4 rounded-xl border border-border bg-card flex items-center gap-3"><span class="op-title">Mesa 2</span><span class="op-label text-muted-foreground">3 itens</span><span class="ml-auto op-title tnum">R$ 38,00</span></div>
+</div>
 <div class="flex-1"></div>
-<div class="px-5 pb-5">
-  <button class="w-full h-16 rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center gap-2.5 text-[19px] font-semibold shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)]"><i data-i="check" class="size-6"></i>Recebi <span class="tnum">R$ 100,00</span> · Confirmar</button>
-</div>
+${nav(0)}
 </div>`;
 
 // ---------- tela 4: sem energia ----------
@@ -161,7 +173,7 @@ ${header("Comandas", "")}
     ${row("ok", "Vender e lançar comandas", "")}
     ${row("ok", "Cartão pela maquininha", "ela tem bateria e 4G próprios")}
     ${row("ok", "PIX", "QR na tela, confirma sozinho")}
-    ${row("ok", "Dinheiro: a gaveta abre na chave", "")}
+    ${row("attn", "Dinheiro: recebe normal, a gaveta abre na chave", "sem energia o pulso do Balcão não chega")}
     ${row("no", "Impressora e cupom", "sem recibo impresso; NFC-e com CPF sai normal")}
     ${row("attn", "Cozinha: só se os tablets dela tiverem bateria ou 4G", "se apagaram, avise a cozinha de voz")}
   </ul>
@@ -199,13 +211,17 @@ const cards = [
   card(capT("receipt", "A comanda mora no servidor"), `<p class="text-[13px] leading-[18px] text-[#3b2a1e]">Aberta no tablet, ela aparece igual no Balcão. Fecha onde for mais perto: na mesa, pelo tablet, ou no caixa, se o cliente levantar para pagar.</p>
     <div class="flex items-center gap-2 mt-1"><span class="h-8 px-3 rounded-full bg-card border border-border text-[12px] font-semibold inline-flex items-center gap-1.5"><i data-i="tablet" class="size-4"></i>Tablet</span><i data-i="arrow-left-right" class="size-4 text-muted-foreground"></i><span class="h-8 px-3 rounded-full bg-card border border-border text-[12px] font-semibold inline-flex items-center gap-1.5"><i data-i="cloud" class="size-4"></i>Mesa 6</span><i data-i="arrow-left-right" class="size-4 text-muted-foreground"></i><span class="h-8 px-3 rounded-full bg-card border border-border text-[12px] font-semibold inline-flex items-center gap-1.5"><i data-i="monitor" class="size-4"></i>Balcão</span></div>`),
   card(capT("qr-code", "Aba PIX: o cliente lê o QR na tela do tablet"), `<div class="flex gap-4 items-center">${qr}<div class="flex flex-col gap-1.5"><span class="text-[22px] font-semibold tnum leading-7">R$ 55,00</span><span class="h-7 px-2.5 rounded-full pill-info text-[12px] font-semibold inline-flex items-center gap-1.5 self-start"><span class="size-2 rounded-full bg-info"></span>Aguardando o pagamento</span><span class="text-[12px] leading-4 text-muted-foreground">Vire a tela para o cliente. Quando o PIX cai, a comanda fecha sozinha: nenhum botão a tocar.</span></div></div>`),
-  card(capT("archive", "Uma gaveta, um turno, um fechamento"), `<div class="flex items-center justify-between px-1">
-    ${mini("tablet", "Tablet", "posto 2", "bg-card border border-border")}
-    <i data-i="arrow-right" class="size-5 text-muted-foreground"></i>
-    ${mini("archive", "Gaveta do Balcão", "turno aberto", "bg-primary/12 text-primary")}
-    <i data-i="arrow-left" class="size-5 text-muted-foreground"></i>
-    ${mini("monitor", "Balcão", "posto 1", "bg-card border border-border")}
-  </div><p class="text-[12px] leading-4 text-muted-foreground">O tablet é provisionado para compartilhar o terminal do Balcão: o dinheiro da mesa entra no mesmo turno e na mesma contagem cega.</p>`),
+  card(capT("archive", "Uma gaveta, um turno, um fechamento"), `<div class="flex items-start justify-between">
+    ${mini("tablet", "Tablet", "toca Abrir", "bg-card border border-border")}
+    <i data-i="arrow-right" class="size-4 text-muted-foreground mt-3.5"></i>
+    ${mini("cloud", "Servidor", "relay", "bg-card border border-border")}
+    <i data-i="arrow-right" class="size-4 text-muted-foreground mt-3.5"></i>
+    ${mini("monitor", "Agente", "PC do Balcão", "bg-card border border-border")}
+    <i data-i="arrow-right" class="size-4 text-muted-foreground mt-3.5"></i>
+    ${mini("archive", "Gaveta", "pulso RJ11", "bg-primary/12 text-primary")}
+  </div>
+  <div class="h-8 px-3 rounded-lg bg-card border border-border flex items-center gap-2 text-[12px]"><i data-i="monitor" class="size-3.5 text-muted-foreground"></i><span class="text-muted-foreground">no Balcão:</span><span class="font-medium">Gaveta aberta pelo tablet (JO) · Mesa 6 · <span class="tnum">22:07</span></span></div>
+  <p class="text-[12px] leading-4 text-muted-foreground">Mesmo turno e contagem cega. Reusa o relay de impressão que já existe.</p>`),
   card(capT("zap-off", "Sem energia: quem segue de pé"), `<div class="flex items-start justify-between">
     ${mini("router", "Roteador", "apagou", "pill-destructive")}
     ${mini("tablet", "Tablet", "bateria + 4G", "pill-success")}
@@ -234,7 +250,7 @@ const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><met
   <div class="flex justify-between">
     ${frame(1, "Na mesa: abre a comanda e lança", s1)}
     ${frame(2, "Cartão: a maquininha vai até a mesa", s2)}
-    ${frame(3, "Dinheiro: recebe na mesa, troco da mesma gaveta", s3)}
+    ${frame(3, "Dinheiro: recebe na mesa, abre a gaveta chegando lá", s3)}
     ${frame(4, "Sem energia: o tablet segue no 4G", s4)}
   </div>
   <div class="flex justify-between mt-5">${cards}</div>
@@ -247,15 +263,15 @@ const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><met
 </body></html>`;
 
 const pins = [
-  [1330, 724, 1], [290, 522, 2], [848, 328, 3], [860, 722, 4], [1305, 446, 5], [1310, 250, 6], [1772, 149, 7], [1772, 490, 8],
+  [1330, 724, 1], [290, 522, 2], [848, 328, 3], [860, 722, 4], [1309, 211, 5], [1294, 363, 6], [1772, 149, 7], [1772, 490, 8],
 ];
 const leg = [
   "Gaveta compartilhada: o tablet é provisionado para usar o mesmo terminal do Balcão (\"todos usam a mesma gaveta e o mesmo turno\"). Venda na mesa fecha no turno aberto do Balcão e entra na mesma contagem cega do fim do dia.",
   "A comanda mora no servidor: abre no tablet, lança, envia à cozinha (uma ação primária). Fecha no tablet ou no Balcão, sem transferir nada.",
   "Cartão igual ao balcão: sem fio até a maquininha hoje. O atendente leva a maquininha (bateria e 4G próprios), digita o valor e confirma no PDV. Integração Stone (TEF) é futuro.",
   "PIX: QR dinâmico na própria tela, virada para o cliente. O status muda sozinho quando o PIX cai (o sistema fez); não há botão de confirmar.",
-  "Dinheiro sem fila: substitui o antigo \"enviar ao caixa\", que fazia o cliente pagar de novo no Balcão. O atendente recebe, a comanda fecha, e ele leva o dinheiro à gaveta e traz o troco, como o garçom faz hoje.",
-  "Valor recebido por atalhos (Exato, R$ 60, R$ 100); o numérico só abre em \"Outro\". O troco aparece calculado antes do gesto de confirmar.",
+  "Dinheiro sem fila: a comanda fecha na mesa (\"Recebi R$ 100,00 · Confirmar\", valor por atalhos, troco calculado). O tablet guarda o cartão pendente \"Dinheiro da Mesa 6 · troco R$ 45,00 · leve ao Balcão\"; diante da gaveta, o atendente toca \"Abrir gaveta do Balcão\". Nunca abre sozinha com ele ainda na mesa.",
+  "Como a gaveta abre: o pulso sai pela impressora do Balcão (RJ11), pelo agente local do PC do Balcão (127.0.0.1:47811), que o tablet não alcança. O servidor repassa pelo relay de impressão que já existe (PrintJob \"relay\" para o terminal, o mesmo que imprime a DANFE do tablet na impressora da expedição); novo é só o tipo \"pulso de gaveta\". O Balcão mostra a linha de auditoria. Sem energia, abre na chave.",
   "Sem energia: o roteador apaga, o tablet segue na bateria e no 4G (ou hotspot). Impressora e abertura automática da gaveta param; NFC-e com CPF continua saindo pelo servidor.",
   "O limite honesto: tudo depende do servidor na nuvem. Sem internet nenhuma, não há venda (não existe fila offline). Modo contingência é decisão de produto à parte.",
 ];
