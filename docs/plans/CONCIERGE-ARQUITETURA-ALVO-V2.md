@@ -13,36 +13,51 @@
 > extremamente Robusto e extremamente Elegante. Sem desculpas, sem preguiça, sem gambiarra."
 >
 > Frentes vizinhas, não duplicadas aqui: **OBS0310-K** (régua de custo e latência por resposta e
-> conjunto de mensagens reais anonimizadas) e **OBS0310-I** (alergias respondidas pelo aviso da
+> conjunto de 209 mensagens reais anonimizadas, PR #1437, comando `concierge_reply_eval`) e **OBS0310-I** (alergias respondidas pelo aviso da
 > casa e pelos alérgenos do produto, PR #1436). Roteiro de teste do Deeliv e do Ailo em
 > [concierge-teste-deeliv.md](concierge-teste-deeliv.md).
 >
 > Legenda: **[MEDIDO]** saída de comando, banco ou código com caminho; **[FONTE]** documento
 > externo com link; **[INFERÊNCIA]** leitura minha.
 
-## 0. Resumo em oito linhas
+## 0. Resumo
+
+O dono definiu a régua (03/10): **confiável é nunca afirmar algo falso**, como uma boa atendente,
+que quando não sabe diz "não tenho essa informação, mas verifico em um instante" e vai verificar.
+E nomeou os dois pilares: reconhecer **intenções, no plural**, e tratar **memória** com
+inteligência; mais um esquema rígido de **regras** que vale sobre qualquer coisa que a IA
+produza. "O resto é ajuste de fluxos e da voz." A v2 é organizada nesses quatro blocos, cada um
+com contrato e com prova no conjunto de 209 mensagens reais da OBS0310-K (PR #1437).
+
+| Bloco | Em uma frase | Contrato |
+|---|---|---|
+| **1. Intenções** | Toda mensagem vira uma **lista** de partes (ato, campos, trecho); uma parte só é o caso particular | seção 5 |
+| **2. Memória** | Um estado pequeno e explícito (a pergunta que a casa deixou no ar, a última lista numerada, o item em foco, o que está sendo verificado), mais o que o sistema já sabe do cliente; o modelo nunca "lembra" | seção 6 |
+| **3. Regras da casa** | Uma tabela declarativa, versionada e testada, que decide o que vai para a equipe e reprova qualquer resposta que a quebre | seção 7 |
+| **4. "Não sei, vou verificar"** | Caminho de primeira classe: a pergunta exata vai para a equipe, a resposta volta ao cliente pela Concierge, com prazo e plano para quando ninguém responde | seção 8 |
+
+Em oito linhas:
 
 1. A rodada 1 acerta o princípio (o código decide e consulta, o modelo só escreve) e erra a
-   unidade: ela classifica **uma intenção por mensagem** e trata "sim" e "mais 2" como exceção.
-   Nos dados reais, 23% das mensagens só se entendem com contexto, e a intenção vem espalhada em
-   várias bolhas. [MEDIDO]
-2. Memória não é transcrição: é um **estado de conversa pequeno e explícito** (a pergunta que a
-   casa deixou no ar, a última lista numerada, o item em foco), mais o que o sistema já sabe do
-   cliente (pedidos abertos, último pedido, endereço). O modelo nunca "lembra"; ele lê o estado.
-3. Várias intenções viram uma **lista de atos** (ato, campos, trecho). Cada ato é executado pelo
-   código certo, e a resposta é **uma mensagem só**, na ordem em que o cliente perguntou.
-4. Quem lê a mensagem e devolve os atos é um modelo pequeno com saída estruturada, numa ida só.
-   Isso substitui ao mesmo tempo a triagem de intenção única e o laço do agente com ferramentas.
-5. Preço, estoque, horário, total, link e prazo **nunca são digitados pelo modelo**: ele escreve
-   com marcadores (`{F1.preco}`) e o código preenche. Afirmação falsa desses tipos fica
-   impossível por construção; o verificador cuida do resto (palavra de disponibilidade, promessa
-   de ação, alérgeno, parte esquecida).
-6. Toda mudança na sacola volta escrita para o cliente ("Coloquei mais 2, agora são 4") e pode
-   ser desfeita com "não, era o outro". Nada fecha sem o resumo e o "sim" (já é assim).
-7. Custo: cerca de US$ 0,004 de modelo por mensagem que precisa dele. Desde 01/10/2026 a Meta
-   cobra cerca de US$ 0,0068 por mensagem de resposta: **o WhatsApp custa mais que a IA**, o que
-   reforça "uma resposta por turno". [FONTE] Latência alvo: 2 a 4 s.
-8. Seis fatias, a primeira já em curso (OBS0310-K). Sete decisões do dono no fim.
+   unidade: classifica **uma intenção por mensagem** e trata "sim" e "mais 2" como exceção. Nos
+   dados reais, 23% das mensagens só se entendem com contexto (a régua da OBS0310-K conta 47 de
+   209), e a intenção vem espalhada em várias bolhas. [MEDIDO]
+2. Memória não é transcrição: das 39 mensagens de contexto que classifiquei, só 10 se resolveriam
+   mandando mais histórico ao modelo; as outras dependem do que a equipe disse, dos pedidos do
+   cliente ou de um post. [MEDIDO]
+3. Quem lê a mensagem e devolve as partes é um modelo pequeno, numa ida só, com saída
+   estruturada. Isso substitui a triagem de intenção única e o laço do agente com ferramentas.
+4. Preço, estoque, horário, total, link e prazo **nunca são digitados pelo modelo**: ele escreve
+   com marcadores e o código preenche. O que não está nos dados não vira frase: vira "vou
+   verificar", com consequência real.
+5. As regras da casa (alergia, pagamento, reclamação, "Indisponível" sem motivo, voz feminina,
+   tamanho) são uma tabela com exemplos que são testes; nenhuma resposta sai sem passar por ela.
+6. Toda mudança na sacola volta escrita ao cliente e pode ser desfeita com "não, era o outro".
+7. Custo: cerca de US$ 0,004 de modelo por mensagem que precisa dele; desde 01/10/2026 a Meta
+   cobra cerca de US$ 0,0068 por mensagem de resposta, então **o WhatsApp custa mais que a IA** e
+   a regra é uma resposta por turno. [FONTE] Velocidade alvo: 2 a 4 s (hoje p50 5,6 a 16,4 s).
+8. Seis fatias, a primeira já entregue em PR (OBS0310-K); cada uma com a meta no placar
+   `concierge_reply_eval`. Oito decisões do dono no fim.
 
 ## 1. O que os clientes escrevem de verdade (medido de novo, com outra lente)
 
@@ -109,17 +124,45 @@ Um provedor cita 1.000 mensagens de serviço grátis por número por mês
 Meta não confirma. **Não verificado** se a conta da casa, via ManyChat, tem meio de pagamento
 cadastrado na Meta; vale conferir.
 
+### 1.5 A régua da OBS0310-K (PR #1437), primeira medição
+
+209 mensagens reais do alpha, redigidas e conferidas à mão, com camada, intenção e destino
+esperados (`shopman/storefront/concierge/golden_set.json`), placar pelo comando
+`concierge_reply_eval`. [MEDIDO pela OBS0310-K; números do PR #1437]
+
+| Triagem | Destino certo | Casos de equipe achados | Intenção certa | Custo por mensagem | Tempo |
+|---|---:|---:|---:|---:|---:|
+| Regra local | 96% | **2 de 11** | 55% | US$ 0 | p50 158 ms |
+| Modelo (Sonnet 5, o do alpha) | 94% | 10 de 11 (e 12 mandados à equipe sem precisar) | 92% | US$ 0,0016 | p50 2,7 s |
+| Jev (sombra, só 167 casos) | 98% | 4 de 6 | 83% | cerca de US$ 0,00002 | p50 166 ms |
+
+- 54% a 64% das mensagens chegam hoje ao agente com modelo; todo link e toda fala de contexto vão
+  para ele. Resposta do alpha: p50 5,6 s sem ferramenta, 7,6 s com uma, 16,4 s com duas ou mais
+  (máximo 43,5 s).
+- 47 mensagens dependem da conversa ("sim", "mais 4 croissant").
+
+O que isso diz para a v2: (a) a regra local é ótima para dizer "isto é simples" e péssima para
+achar o que é da equipe (2 de 11), então ela **soma** ao modelo e nunca é a única porta da
+equipe; (b) o modelo acha a equipe mas manda gente demais (12 a mais), o que a regra de "parte
+sensível no meio" (seção 5.4) reduz, porque responde o resto em vez de entregar a conversa
+inteira; (c) o Jev é rápido e acerta o destino, mas só tem 167 casos e uma intenção por
+mensagem: entra como candidato a segunda opinião, não como roteador (decisão 7).
+
 ## 2. Ataque à rodada 1 e às hipóteses do coordenador
 
 ### 2.1 As hipóteses
 
 **H1. "Confiável = nunca afirmar fato falso, e na dúvida perguntar ou passar para a equipe."**
-Confirmada, com duas correções. (a) Falta um terceiro tipo de mentira: **prometer uma ação que
-não aconteceu** ("separei para você", "já avisei a equipe", "reservado"). No teste do dono de
-04/09 o bot disse "Vou avisar nossa equipe sobre o problema no link do cartão" sem que nada
-fosse avisado [MEDIDO, conversa 1, mensagem 117]. (b) "Na dúvida perguntar" tem limite: perguntar
-demais também é falha (o cliente some). A regra fica: **na dúvida sobre uma mudança, pergunta;
-na dúvida sobre uma consulta, mostra as duas opções mais prováveis e pergunta qual**.
+Confirmada, e o dono a fechou (03/10): "nunca afirmar algo falso" basta, como numa boa atendente.
+Três correções. (a) Falta um tipo de mentira: **prometer uma ação que não aconteceu** ("separei
+para você", "já avisei a equipe"). No teste do dono de 04/09 o bot disse "Vou avisar nossa equipe
+sobre o problema no link do cartão" sem que nada fosse avisado [MEDIDO, conversa 1, mensagem 117].
+(b) "Passar para a equipe" não pode ser a única saída da dúvida: entregar a conversa inteira por
+uma parte que falta é o que gera os 12 casos mandados à equipe sem precisar (1.5). A saída certa
+é **"não sei, vou verificar"** com consequência real (bloco 4, seção 8): a pergunta exata vai para
+a equipe e a resposta volta pela Concierge. (c) Perguntar demais também é falha: na dúvida sobre
+uma **mudança**, pergunta; na dúvida sobre uma **consulta**, mostra as duas opções mais prováveis
+e pergunta qual; sem fato, verifica.
 
 **H2. "Memória = estado de diálogo explícito, não transcrição."** Confirmada pelos dados (1.1),
 com três acréscimos: (a) o estado precisa **expirar** (cliente que volta dias depois não pode ter
@@ -148,7 +191,7 @@ equipe vai assumir e não pode encontrar um pedido pela metade feito pelo robô.
 | C4: redator recebe a ficha e **até 4 falas anteriores** | Falas anteriores não resolvem 29 dos 39 casos (1.1) e abrem espaço para o modelo "lembrar" errado | **Cai**: o redator recebe os atos, os fatos e o estado, não a transcrição |
 | C5: verificador **depois** de o modelo digitar o preço | Verificador por padrão deixa passar o que não previu ("R$ 13" escrito "treze reais", "temos sim" antes de um item esgotado) | **Inverte**: o modelo não digita número, link nem preço; usa marcador. O verificador fica para o que sobra |
 | C6: agente com ferramentas para a fase 2 e para "o que ninguém entendeu" | Laço de 1 a 7 idas, 7 a 36 s medidos; é o mesmo mecanismo que gerou o despejo de dados; a pesquisa mostra 39% de queda média dos modelos em conversa de vários turnos e que eles "tomam um caminho errado e não se recuperam" ([FONTE] <https://arxiv.org/abs/2505.06120>) | **Cai.** A fase 2 vira mais atos (pôr item, trocar quantidade, endereço, confirmar) sobre o mesmo executor |
-| Custo: "US$ 10 a 40 por mês" | Esqueceu a cobrança da Meta por mensagem (1.4), que passou a valer dois dias antes do estudo | **Corrigido** em 7 |
+| Custo: "US$ 10 a 40 por mês" | Esqueceu a cobrança da Meta por mensagem (1.4), que passou a valer dois dias antes do estudo | **Corrigido** em 10 |
 
 O que **fica** da rodada 1: cortesia, mídia e sensível pela regra sem modelo (C1); blocos
 travados (resumo, total, Pix) que o modelo nunca redige; a equipe como saída (C7); a régua e o
@@ -165,7 +208,7 @@ Para cada um: como a rodada 1 se comporta, e o que muda na v2.
 | 2 | **Correção**: "não, era o outro" | Agente tenta entender pela transcrição | Ato `correct`: desfaz a última mudança (o estado guarda o recibo dela) e aplica a alternativa da última lista; se houver mais de uma, pergunta qual, numerada |
 | 3 | **Troca de assunto** no meio do pedido ("vocês abrem domingo?") | Intenção nova substitui a anterior; o pedido fica no limbo | Atos independentes: responde o horário, mantém a sacola e a pergunta pendente; a resposta termina retomando ("Seguimos com o pedido?") só se havia pergunta pendente |
 | 4 | **Bolhas seguidas** (31 a 100 s) | Cada bolha é classificada sozinha | Cada bolha é lida contra o estado deixado pela anterior (foco, lista, pergunta). Bolha que chega durante o turno revoga o turno e entra junto (já existe) |
-| 5 | **Áudio, foto** | Mensagem fixa de mídia | Igual, mais: localização vai para o endereço (já existe); comprovante vai para a equipe como pagamento; story ou foto sem texto: pergunta o que a pessoa quer. Transcrição de áudio é frente própria (seção 9) |
+| 5 | **Áudio, foto** | Mensagem fixa de mídia | Igual, mais: localização vai para o endereço (já existe); comprovante vai para a equipe como pagamento; story ou foto sem texto: pergunta o que a pessoa quer. Transcrição de áudio é frente própria (seção 12) |
 | 6 | **Cliente volta dias depois** | Transcrição antiga entra na janela; "sim" pode responder pergunta de ontem | O estado tem prazo: pergunta pendente vale 30 min; lista e foco, 12 h; depois disso zera. Pedidos e endereço continuam conhecidos porque vêm do sistema, não da memória |
 | 7 | **Intenção implícita**: "Vce teria 2 pães rústicos grandes pra hoje?" | Classificado como pergunta de produto; não oferece reservar | Ato `ask_product` com `quantidade` e `data`: responde disponibilidade e, porque há quantidade, oferece ("Quer que eu separe os 2?") como pergunta pendente |
 | 8 | **Ironia**: "ótimo, de novo sem croissant 🙄" | Pode virar pergunta de produto | O parser marca `frustration`; a regra local de reclamação também olha. Resposta responde o fato e oferece a equipe. Falso positivo custa uma oferta de equipe, aceitável |
@@ -331,9 +374,389 @@ verifica a saída. [INFERÊNCIA]
   que o robô inventou. <https://www.canlii.org/en/bc/bccrt/doc/2024/2024bccrt149/2024bccrt149.html>
   (não lido nesta sessão; citado de memória pelo subagente).
 
-## 4. A arquitetura v2
+## 4. A espinha dorsal: quatro blocos
 
-### 4.1 O fluxo de uma mensagem
+```
+              ┌──────────── 3. REGRAS DA CASA (tabela declarativa, testada) ────────────┐
+              │  antes: decidem o que é da equipe e o que tem texto fixo                 │
+              │  depois: reprovam qualquer resposta que as quebre                        │
+bolhas ──► 1. INTENÇÕES ──► execução pelo código ──► resposta (uma mensagem) ──► envio
+  do         lista de partes     (catálogo, horário,       │
+ turno            ▲               sacola, pedidos)         │ parte sem dado?
+                  │                                        ▼
+              2. MEMÓRIA ◄──────── grava o novo estado ── 4. "NÃO SEI, VOU VERIFICAR"
+              (estado explícito                            pergunta exata à equipe, prazo,
+               + o que o sistema                           resposta volta pela Concierge
+               sabe do cliente)
+```
+
+- **Intenções** dizem o que o cliente quer, parte por parte.
+- **Memória** diz a que se refere ("sim", "o segundo", "mais 2", "e aí?").
+- **Regras** dizem o que a Concierge pode dizer e o que nunca diz, e valem sobre tudo.
+- **"Não sei, vou verificar"** é o que acontece quando os dados não respondem: em vez de inventar
+  ou de entregar a conversa inteira, ela pergunta à equipe exatamente o que falta e devolve.
+
+"O resto é ajuste de fluxos e da voz": as frases da casa continuam como copy editável no Admin
+(Copy Omotenashi), e os fluxos são os executores de cada parte (seção 9). Nenhum dos dois decide
+o que é verdade nem o que é permitido.
+
+## 5. Bloco 1: Intenções, no plural
+
+### 5.1 Por que no plural
+
+Uma intenção por mensagem perde partes em 7% a 25% das falas, conforme a lente (seção 1.3): 3%
+na bolha da observação passiva, 7% com saudação junto, cerca de 10 rajadas espalhadas, e um
+quarto das falas quando o bot conversa de verdade. O desenho trata a lista como o normal: uma
+parte só é uma lista de tamanho um. É a forma da Rasa CALM ("yes. Oh what's my balance?" vira dois
+comandos) e do Ailo de 07/2026 (vários pratos num pedido). [FONTE] seção 3.6 e 3.2.
+
+### 5.2 Contrato: a lista de atos
+
+Uma chamada, modelo pequeno, `output_config.format` com esquema JSON (o formato é garantido pela
+API). Entrada: as bolhas do turno (redigidas: telefone, CPF e e-mail mascarados), o estado em
+texto curto ("pergunta pendente: escolher entre 1. Pão de Passas, 2. Raisin"; "foco: Raisin";
+"sacola: vazia"; "pedido aberto: hoje, retirada 16h, 2 italianos"), a fase (consulta ou pedido).
+Sem transcrição antiga.
+
+```json
+{
+  "acts": [
+    {"act": "answer_pending", "value": {"choice": 2}, "span": "o segundo"},
+    {"act": "ask_hours", "date": "2026-10-04", "span": "vocês abrem domingo?"}
+  ],
+  "frustration": false
+}
+```
+
+Atos (lista fechada; a fase 1 só aceita os de consulta, cortesia e equipe):
+
+| Grupo | Atos | Campos |
+|---|---|---|
+| Cortesia | `greet`, `thank`, `bye` | |
+| Consulta | `ask_product`, `ask_hours`, `ask_delivery`, `ask_house`, `ask_order_status`, `ask_menu` | `product` (texto ou `listed:n` ou `focus`), `qty`, `date`, `topic`, `order` |
+| Pedido (fase 2) | `add_item`, `change_qty`, `remove_item`, `set_fulfillment`, `set_address`, `set_payment`, `confirm` | `product`, `qty`, `delta`, `any_of` ("o que tiver"), `mode`, `when`, `address` |
+| Conversa | `answer_pending`, `correct`, `cancel_last` | `value` (`yes`, `no`, `choice`, texto), `target`, `new` |
+| Alergia | `allergy` | `allergen`, `product` (executado pela OBS0310-I) |
+| Equipe | `complaint`, `cancel_order`, `human`, `special_order`, `job`, `partnership`, `supplier` | `summary` |
+| Resto | `unknown` | `span` |
+
+Validação no código, antes de executar:
+
+- `listed:n` e `focus` só valem se existirem no estado; `answer_pending` só com `pending` vivo.
+- `product` em texto passa pela busca do catálogo (só o nome, nunca a frase); zero resultados:
+  ato vira consulta "não achei"; dois ou mais plausíveis: a resposta pergunta qual (vira
+  `pending choose`).
+- Mudança sem autoridade de compra (fase 1, ou ingresso sem identificador): vira `offer_link`.
+- Ato fora da lista, campo fora do tipo: vira `unknown`.
+- A regra local de sensível (`handoff.py`) roda sobre o texto e **acrescenta** o ato de equipe se o
+  modelo não o trouxe. A regra nunca é tirada pelo modelo.
+
+
+### 5.3 O que o cliente vê
+
+**Antes** (conversa 1 do dono, 04/09, e o comportamento de intenção única):
+
+> Cliente: seguimos. é para entrega, ok. qual a taxa?
+> Bot: Para eu verificar a taxa, você pode me passar o endereço completo com número?
+
+(Respondeu uma parte. Funcionou porque era fácil; a mesma mensagem com "e vocês abrem domingo?"
+no fim perderia a pergunta.)
+
+**Depois** (v2), mensagem de três partes inventada a partir de falas reais:
+
+> Cliente: quero 2 pães italianos pra retirar amanhã, vocês abrem domingo? e o pão de ontem veio
+> queimado
+> Concierge: Sobre o pão de ontem, sinto muito; já chamei a equipe, que continua com você por aqui
+> e também fecha o pedido dos 2 italianos para amanhã. Domingo a casa fica fechada; de segunda a
+> sábado, das 7h às 22h.
+
+Partes: `add_item` (suspenso, porque há equipe), `ask_hours` (respondido), `complaint` (equipe).
+A ordem da resposta põe a reclamação primeiro, por cortesia; as consultas seguem na ordem do
+cliente. Uma mensagem só (a Meta cobra por mensagem).
+
+Mensagem real de duas partes, fase 1:
+
+> Cliente: Boa tarde. Tem aquele pão com passas? Gostaria de reservar um
+> Concierge: Boa tarde! Tem dois com passas: 1. Pão de Passas, R$ 18,00; 2. Raisin, R$ 12,00.
+> Qual deles? Aí te mando o link para reservar.
+
+(Pergunta pendente: escolher 1 ou 2. "O segundo", "o raisin", "2" e "o de 12" resolvem contra a
+lista; "os dois" também.)
+
+
+### 5.4 Parte sensível no meio
+
+Quando uma das partes é da equipe pelas regras (reclamação, cancelamento, reação alérgica,
+pessoa), a Concierge: responde na mesma mensagem as partes de **consulta** (horário, produto,
+status); **não executa** as partes que mudam a sacola (a pessoa da equipe vai assumir e não pode
+achar um pedido pela metade feito pelo robô); diz que chamou a equipe e para quê; e se cala até a
+equipe devolver. O cartão da equipe leva o resumo **de cada parte**, inclusive o pedido suspenso.
+Isso também ataca o "12 mandados à equipe sem precisar" da régua (1.5): a parte simples não arrasta
+a conversa inteira.
+
+### 5.5 Prova no placar
+
+O conjunto da OBS0310-K ganha, por caso, a lista de atos esperada (rótulo novo, sem mexer nos
+rótulos atuais). Metas para ligar a leitura (fatia F4):
+
+| Medida | Meta |
+|---|---|
+| Casos de equipe achados (sensível nunca perdido) | 11 de 11, e nenhum perdido em pass^3 |
+| Partes certas (ato e campos) por caso | 90% ou mais |
+| Mensagens com várias partes em que **todas** foram achadas | 85% ou mais |
+| Mandados à equipe sem precisar | no máximo metade do modelo de hoje (6 ou menos) |
+| Tempo da leitura | p95 abaixo de 2 s |
+
+## 6. Bloco 2: Memória
+
+### 6.1 Onde guardar
+
+`Conversation.flags["dialogue"]`, no app `shop` (`shopman/shop/models/concierge.py`). Sem
+migração (`flags` já é JSON), sem tocar o Core (a sacola continua na `Session` do Orderman, o
+pedido no `Order`, o endereço no Guestman). Documentar a chave na seção "Concierge de WhatsApp"
+de `docs/reference/data-schemas.md` antes de usar. Ele **substitui** a pendência implícita que a
+OBS0310-I criou em `flags["triage"]["answered_by"]` ("ofereci a equipe; o próximo 'sim' chama")
+por uma pergunta pendente de verdade (`kind = "offer_team"`), sem mudar o comportamento.
+
+### 6.2 Formato
+
+```json
+{
+  "v": 1,
+  "fence": 812,
+  "updated_at": "2026-10-03T13:36:34-03:00",
+  "pending": {
+    "kind": "choose",
+    "about": "product",
+    "options": [{"n": 1, "ref": "PAO-PASSAS"}, {"n": 2, "ref": "RAISIN"}],
+    "expires_at": "2026-10-03T14:06:34-03:00"
+  },
+  "listed": [{"n": 1, "ref": "PAO-PASSAS"}, {"n": 2, "ref": "RAISIN"}],
+  "focus": {"ref": "RAISIN", "qty": 1},
+  "last_change": {"receipt": "set_item:CROISSANT:+2", "undo": {"op": "set_item", "ref": "CROISSANT", "qty": 0}},
+  "verifying": [{"id": "v1", "question": "Amanhã vai ter pão de forma?", "alert_id": 991, "asked_at": "2026-10-03T13:36:34-03:00", "due_at": "2026-10-03T13:46:34-03:00"}],
+  "with_team": [{"topic": "complaint", "since": "2026-10-03T13:36:34-03:00"}]
+}
+```
+
+| Campo | O que resolve | Prazo |
+|---|---|---|
+| `pending` | "sim", "não", "pode ser", "o 2": a pergunta que a casa deixou no ar. Tipos fechados: `confirm_order`, `choose`, `offer_team`, `offer_link`, `ask_qty`, `ask_when`, `ask_fulfillment`, `ask_which_allergen` | 30 min, ou até outra pergunta da casa |
+| `listed` | "o segundo", "o de 12", "os dois": a última lista numerada mostrada | 12 h, ou até outra lista |
+| `focus` | "mais 2", "ele tem glúten?", "e para amanhã?": o último item falado | 12 h |
+| `last_change` | "não, era o outro", "tira", "volta": o recibo da última mudança e como desfazer | até a próxima mudança ou a confirmação |
+| `verifying` | "e aí?", "conseguiu ver?": o que a Concierge prometeu verificar, com o cartão e o prazo (bloco 4) | até a resposta da equipe, ou até virar handoff |
+| `with_team` | "já chamei a equipe" sem repetir, e o resumo para o cartão | até a equipe devolver |
+
+O que **não** entra no estado, porque já tem dono: sacola e entrega (`Session`), orçamento
+(`Conversation.quote`), pedidos e último pedido (Orderman, por `customer_ref`), endereço salvo
+(Guestman), transcrição (`ConversationMessage`). Cada turno lê esses ao vivo.
+
+Regras:
+
+- Escrito só no passo 6, na mesma transação da resposta, conferindo `fence` (turno revogado não
+  grava).
+- `return_to_concierge` zera `pending`, `listed` e `focus` (a equipe falou coisas que o sistema
+  não viu).
+- Mais de 12 h sem mensagem: tudo zera menos `with_team`.
+- Tamanho: no máximo 5 itens em `listed`; o estado inteiro cabe em menos de 1 KB.
+
+
+### 6.3 O que o cliente vê
+
+Nos exemplos "depois", preços e disponibilidade são ilustrativos; as falas do cliente são reais
+(paráfrase mínima) salvo quando indicado.
+
+**Antes** (hoje, ou rodada 1), três bolhas reais da conversa 192, com 40 a 50 s entre elas:
+
+> Cliente: Pode separar pra mim dois croassant
+> Bot: (lista de croissant, pain au chocolat, lista de espera)
+> Cliente: E coelinho ou o ursinho (o que tiver)
+> Bot: (busca "coelinho ursinho": três produtos soltos, ou "Preciso consultar os dados da loja")
+> Cliente: Pra comer aí...
+> Bot: "Preciso consultar os dados da loja para responder."
+
+**Depois** (v2, fase 1, sem sacola no chat):
+
+> Cliente: Pode separar pra mim dois croassant
+> Concierge: Tem croissant hoje, R$ 13,00 cada. Para separar, é por aqui: [link da loja]. Quer
+> mais alguma coisa?
+> (estado: foco = Croissant, qtd 2)
+> Cliente: E coelinho ou o ursinho (o que tiver)
+> Concierge: Do coelhinho tem, R$ 10,00; o ursinho está indisponível hoje. Dá para pôr junto no mesmo
+> link.
+> (estado: lista = 1 Coelhinho, 2 Ursinho; foco = Coelhinho)
+> Cliente: Pra comer aí...
+> Concierge: Combinado, para comer aqui. É só chegar e pedir no balcão; o croissant e o coelhinho
+> estão saindo agora.
+
+(Na fase 2, as mesmas falas mudam a sacola: "Separei 2 croissants e 1 coelhinho, R$ 36,00, para
+comer aqui. Confirmo?" O "Confirmo?" vira a pergunta pendente, e o "sim" seguinte fecha.)
+
+Cliente que volta no dia seguinte e escreve "Mais 4 croissant" (caso real, primeira mensagem):
+o estado expirou, então o código procura **pedido aberto do cliente**. Achou um para hoje:
+"Você quer pôr mais 4 croissants no pedido de hoje, retirada às 16h, ou fazer um pedido novo?"
+Não achou: "Quer 4 croissants para quando? Tem hoje, R$ 13,00 cada."
+
+
+### 6.4 Prova no placar
+
+| Medida | Meta |
+|---|---|
+| Das 47 mensagens de contexto da régua, resolvidas certo contra o estado **ou** respondidas com uma pergunta curta (nunca com chute) | 100% |
+| Das que têm referente no estado (pergunta, lista, foco), resolvidas sem pergunta | 85% ou mais |
+| "Sim" aplicado à pergunta errada (inclusive depois de a equipe devolver) | 0 |
+| Estado gravado em turno revogado | 0 (teste de concorrência) |
+
+## 7. Bloco 3: Regras da casa
+
+### 7.1 A forma
+
+Uma tabela em código, `shopman/storefront/concierge/house_rules.py`: cada regra tem um
+identificador, o **gatilho** (ato, tema ou padrão de texto), o **efeito** (equipe, texto fixo,
+verificar, reprovar a resposta), e **exemplos que são testes** (frases que precisam disparar e
+frases que não podem). Um teste parametrizado roda todos os exemplos em toda mudança, e o placar
+conta "violações de regra" com meta zero.
+
+Por que em código, e não em `RuleConfig` no Admin: regra de segurança precisa de versão, revisão e
+teste antes de valer; o que é editável no Admin é a **frase** (copy), nunca a regra. Por que uma
+tabela, e não espalhada: hoje as mesmas regras estão no prompt (`prompt.py`, 7 mil caracteres que
+o modelo pode ignorar), em `handoff.py`, `small_talk.py`, `gluten.py`/`allergens.py` e na triagem.
+A tabela é o lugar único que o dono e a equipe leem e que os testes provam; o prompt passa a
+citar a tabela, não a reescrever.
+
+### 7.2 As regras
+
+| # | Regra | Gatilho | Efeito |
+|---|---|---|---|
+| R1 | Nunca afirmar fato sem fonte (preço, estoque, horário, prazo, total, taxa, link) | qualquer resposta | só por marcador preenchido pelo código; sem fonte, vai para "vou verificar" (bloco 4) |
+| R2 | "Indisponível" é a única palavra para o cliente, sem motivo (pausado, esgotado, fora do canal) | produto não vendável hoje | texto fixo; "esgotado", "pausado", "acabou" reprovados |
+| R3 | Alergia: nunca afirmar ausência de alérgeno, nunca "pode comer"; responder pelo aviso da casa e pelos alérgenos declarados; sempre oferecer a equipe | ato `allergy` ou léxico de alergia | executor da OBS0310-I (texto fixo); o modelo não redige sobre alergia |
+| R4 | Reação, mal-estar, reclamação, cancelamento, pedido de pessoa: equipe, agora | ato de equipe **ou** regra local (`handoff.py`), o que disparar primeiro | seção 5.4; a regra nunca é tirada pelo modelo |
+| R5 | Dinheiro só em bloco travado: total, Pix, link de pagamento, resumo do pedido | `review_order`, `place_order`, pagamento | anexado pelo código; problema de pagamento vai para a equipe |
+| R6 | Nunca prometer ação sem recibo ("separei", "reservei", "avisei a equipe", "confirmado") | resposta com verbo de ação | reprovada se não houver o recibo do executor |
+| R7 | Nunca negociar preço, desconto ou exceção | pedido de desconto, "o dono autorizou" | frase fixa; oferecer a equipe |
+| R8 | Diz que é assistente da casa quando perguntada; nunca nega ser automação; equipe a uma frase | "você é robô?", "qual seu nome?" | texto fixo |
+| R9 | Cortesia curta: cortesia sozinha recebe frase da casa, nunca cardápio | ato `greet`, `thank`, `bye` sozinhos | `small_talk.py` (já existe) |
+| R10 | Voz da concierge no feminino ("Obrigada"), português do Brasil | toda resposta | "obrigado" da Concierge reprovado |
+| R11 | Forma: até 3 linhas e 400 caracteres sem blocos travados, uma pergunta, até 3 itens por lista | toda resposta | reprovada; sai a base |
+| R12 | Sem travessão, sem markdown; emoji só 💛 ✨ (😊 😌 às vezes) e só se o cliente usou | toda resposta | reprovada; sai a base |
+| R13 | Dado pessoal não sai: telefone, CPF, endereço de outro cliente | toda resposta | reprovada |
+| R14 | Fora da janela de 24 h, nada de texto livre | envio | já existe (`transport.authorize_response`) |
+
+### 7.3 Onde as regras atuam
+
+**Antes da execução**, as regras de gatilho (R3, R4, R7, R8, R9) decidem o destino de cada parte.
+**Depois da redação**, as regras de saída (R1, R2, R6, R10 a R13) são o verificador: código puro,
+sobre o texto do modelo antes de preencher os marcadores.
+
+**Verificador** (código, sem modelo), sobre o texto do modelo **antes** de preencher os
+marcadores:
+
+| Checa | Como | Reprovou |
+|---|---|---|
+| Nenhum número, preço, horário, data, link ou total digitado | expressão regular: dígito, "R$", "reais", ":", "h" numérico, "http", número por extenso de 1 a 100 | base |
+| Marcadores só de fatos da ficha | conjunto | base |
+| Nome de produto só da ficha | comparação com nomes do catálogo inteiro; nome do catálogo que não está na ficha = reprovado | base |
+| Disponibilidade só pelo fato | palavras "tem", "temos", "acabou", "esgotado", "disponível", "sai agora" só na mesma frase de um marcador de produto, e com a polaridade do fato | base |
+| Promessa só com recibo | "separei", "reservei", "coloquei", "confirmado", "chamei a equipe", "avisei" só se houver o recibo correspondente | base |
+| Alergia e ingrediente | qualquer palavra do léxico de alérgenos fora do bloco fixo da OBS0310-I | base |
+| Toda parte respondida | `covers` contém todos os atos que pedem resposta, e cada um tem ao menos um fato ou frase | base |
+| Forma | até 3 linhas e 400 caracteres (sem blocos travados), uma pergunta, sem travessão, sem markdown, emoji só 💛 ou ✨ e só se o cliente usou | base |
+
+Blocos travados (resumo do pedido, total, Pix, link de pagamento) continuam fora do alcance do
+modelo: são anexados pelo código depois do texto. Toda reprovação grava o caso no envelope e entra
+no conjunto de avaliação.
+
+
+### 7.4 Prova no placar
+
+| Medida | Meta |
+|---|---|
+| Violações de regra nas respostas do conjunto (base e redigida), em pass^3 | 0 |
+| Exemplos de cada regra (os que precisam disparar e os que não podem) | 100% no teste |
+| Respostas redigidas reprovadas (vão para a base) | medir; acima de 20% a redação não compensa |
+
+## 8. Bloco 4: "Não sei, vou verificar"
+
+O que o dono chamou de ouro: a atendente que, quando não sabe, não inventa e não larga o cliente;
+diz "não tenho essa informação aqui, mas confirmo em um instante" e confirma.
+
+### 8.1 Quando acontece
+
+Quando uma parte pede um fato que os dados não têm, e não é caso de equipe pelas regras. Exemplos
+reais ou plausíveis: "Amanhã vai ter pão de forma?" (o plano de produção de amanhã pode não estar
+publicado), "o bolo dá para 20 pessoas?", "tem sem lactose?" (atributo não cadastrado), "vocês
+estarão abertos no próximo domingo, 04/10?" quando o horário especial não está cadastrado, "aquele
+pão que tem canela, vem 6 ou 8 fatias" sem produto que case. Também: referência que não se resolve
+depois de uma pergunta curta, e parte cuja redação foi reprovada sem base que a responda.
+
+### 8.2 O que o cliente vê
+
+(Valores ilustrativos.)
+
+> Cliente: Boa tarde! Amanhã vai ter pão de forma? Queria para entregar
+> Concierge: Boa tarde! A entrega amanhã é de 8h às 20h, taxa a partir de R$ 8,00. Se vai ter
+> pão de forma amanhã eu não tenho aqui, então já perguntei para a equipe; te respondo por aqui
+> em até 10 minutos.
+> (8 minutos depois)
+> Concierge: A equipe confirmou: amanhã tem pão de forma, sai às 9h. Quer que eu te mande o link
+> para encomendar?
+
+As outras partes são respondidas normalmente na mesma mensagem; a conversa **continua com a
+Concierge** (não é handoff). Se o cliente escreve "e aí?" enquanto espera, a memória sabe o que
+está sendo verificado e responde "Ainda estou esperando a equipe confirmar o pão de forma de
+amanhã; assim que chegar, te aviso."
+
+### 8.3 Quem verifica e como a resposta volta
+
+- A Concierge cria um cartão `concierge_verify` no sino do Gestor de pedidos (mesmo mecanismo de
+  `create_operator_alert` que a triagem já usa para `concierge_handoff`), com **a pergunta exata**
+  em uma linha ("Amanhã vai ter pão de forma? Cliente quer entrega"), o produto ou tema que a
+  leitura identificou, e um campo de resposta curta.
+- A pessoa responde no cartão (texto livre, ou um botão "não sei, assumo a conversa").
+- A resposta volta ao cliente **pela Concierge**, entre aspas da equipe ("A equipe confirmou:
+  ..."), com a mesma voz. É fato de origem humana: não passa pelo verificador de marcadores, mas
+  passa pelas regras de forma (R10 a R13).
+- No estado, a pergunta fica em `verifying` (seção 6) até ser respondida, expirar ou virar handoff.
+
+### 8.4 Prazos e o que acontece se ninguém responder
+
+| Momento | O que acontece |
+|---|---|
+| 0 min | Cartão criado, urgência "hoje"; cliente avisado com prazo ("em até 10 minutos") |
+| 10 min sem resposta | Cartão sobe para urgência "agora" (toca o sino); cliente recebe "Ainda estou confirmando com a equipe; assim que eu tiver, te aviso por aqui." (uma vez só) |
+| 30 min sem resposta | Vira handoff: "Alguém da equipe continua com você por aqui." A Concierge se cala; o cartão de handoff leva a pergunta |
+| Fora do expediente | Prazo honesto: "A equipe confirma amanhã a partir das 7h." O cartão espera a abertura |
+
+Os prazos (10 e 30 min) são configuração (decisão 8), não constante no código.
+
+**Janela de 24 h da Meta**: a resposta da equipe só sai como texto livre até 24 h depois da última
+mensagem do cliente. Sábado às 21h com a casa fechada no domingo dá mais de 24 h até segunda às 7h.
+Nesse caso a Concierge já promete certo ("te respondo segunda a partir das 7h") e a resposta
+segue por template aprovado na Meta ("A equipe respondeu sua pergunta, responda esta mensagem
+para ver"), que precisa ser submetido (fila de 24 a 48 h). Sem template aprovado, a promessa fora
+da janela não é feita: "Para isso, fale com a equipe a partir de segunda, 7h."
+
+### 8.5 A casa aprende com cada verificação
+
+No cartão, a pessoa pode marcar "vale para todo mundo". A resposta vira um fato da casa (FAQ ou
+atributo do produto, conforme o tema, com data de validade quando for do dia), revisado no Admin,
+e a próxima pessoa que perguntar recebe a resposta sem esperar. É o laço que o Deeliv faz à mão
+com a lista "Treinamento (falhas)" (seção 3.1), só que alimentado pela pergunta real e pela
+resposta da equipe.
+
+### 8.6 Prova no placar
+
+| Medida | Meta |
+|---|---|
+| Partes do conjunto sem fato disponível que viram "vou verificar" (e não frase inventada) | 100% |
+| Partes com fato disponível que viram "vou verificar" por engano | 5% ou menos (verificar demais cansa a equipe) |
+| Em produção: verificações respondidas em até 10 min no expediente | medir; meta a combinar com a equipe |
+
+## 9. Como as peças se ligam
+
+### 9.1 O fluxo de uma mensagem
 
 ```
 bolha(s) do cliente ainda não respondidas  (o turno; já existe: claim + turn_fence)
@@ -378,175 +801,13 @@ Por que cada peça existe (e o que foi cortado):
 | 4a. Base | Garante resposta correta mesmo sem modelo; é a queda segura | Falha do redator vira silêncio ou despejo |
 | 4b. Redação | Naturalidade ("tem o coelhinho, o ursinho acabou") que molde não cobre bem | Respostas corretas, porém duras (aceitável: é a decisão 3) |
 | 5. Verificador | Pega o que o marcador não cobre: palavra de disponibilidade, promessa sem recibo, alérgeno, parte esquecida | O texto livre do modelo sai sem controle |
-| 6. Estado | É a memória (seção 5) | "sim", "mais 2", "o segundo" viram adivinhação |
+| 6. Estado | É a memória (seção 6) | "sim", "mais 2", "o segundo" viram adivinhação |
 | ~~Laço do agente~~ | Cortado: a fase 2 vira atos | |
 | ~~Triagem de intenção única como roteador~~ | Cortada: a leitura devolve todos os atos; o resumo para a equipe sai dos atos | |
 | ~~Busca de reserva sobre a frase inteira~~ | Cortada (já era): a busca recebe só o nome do produto do ato | |
 | Jev | **Em prova.** Só fica se o placar mostrar que, como segunda opinião de risco, ele pega o que a regra e a leitura perdem. Se não, sai (decisão 7) | |
 
-### 4.2 O que o cliente vê: memória
-
-Nos exemplos "depois", preços e disponibilidade são ilustrativos; as falas do cliente são reais
-(paráfrase mínima) salvo quando indicado.
-
-**Antes** (hoje, ou rodada 1), três bolhas reais da conversa 192, com 40 a 50 s entre elas:
-
-> Cliente: Pode separar pra mim dois croassant
-> Bot: (lista de croissant, pain au chocolat, lista de espera)
-> Cliente: E coelinho ou o ursinho (o que tiver)
-> Bot: (busca "coelinho ursinho": três produtos soltos, ou "Preciso consultar os dados da loja")
-> Cliente: Pra comer aí...
-> Bot: "Preciso consultar os dados da loja para responder."
-
-**Depois** (v2, fase 1, sem sacola no chat):
-
-> Cliente: Pode separar pra mim dois croassant
-> Concierge: Tem croissant hoje, R$ 13,00 cada. Para separar, é por aqui: [link da loja]. Quer
-> mais alguma coisa?
-> (estado: foco = Croissant, qtd 2)
-> Cliente: E coelinho ou o ursinho (o que tiver)
-> Concierge: Do coelhinho tem, R$ 10,00; o ursinho acabou por hoje. Dá para pôr junto no mesmo
-> link.
-> (estado: lista = 1 Coelhinho, 2 Ursinho; foco = Coelhinho)
-> Cliente: Pra comer aí...
-> Concierge: Combinado, para comer aqui. É só chegar e pedir no balcão; o croissant e o coelhinho
-> estão saindo agora.
-
-(Na fase 2, as mesmas falas mudam a sacola: "Separei 2 croissants e 1 coelhinho, R$ 36,00, para
-comer aqui. Confirmo?" O "Confirmo?" vira a pergunta pendente, e o "sim" seguinte fecha.)
-
-Cliente que volta no dia seguinte e escreve "Mais 4 croissant" (caso real, primeira mensagem):
-o estado expirou, então o código procura **pedido aberto do cliente**. Achou um para hoje:
-"Você quer pôr mais 4 croissants no pedido de hoje, retirada às 16h, ou fazer um pedido novo?"
-Não achou: "Quer 4 croissants para quando? Tem hoje, R$ 13,00 cada."
-
-### 4.3 O que o cliente vê: várias intenções
-
-**Antes** (conversa 1 do dono, 04/09, e o comportamento de intenção única):
-
-> Cliente: seguimos. é para entrega, ok. qual a taxa?
-> Bot: Para eu verificar a taxa, você pode me passar o endereço completo com número?
-
-(Respondeu uma parte. Funcionou porque era fácil; a mesma mensagem com "e vocês abrem domingo?"
-no fim perderia a pergunta.)
-
-**Depois** (v2), mensagem de três partes inventada a partir de falas reais:
-
-> Cliente: quero 2 pães italianos pra retirar amanhã, vocês abrem domingo? e o pão de ontem veio
-> queimado
-> Concierge: Sobre o pão de ontem, sinto muito; já chamei a equipe, que continua com você por aqui
-> e também fecha o pedido dos 2 italianos para amanhã. Domingo a casa fica fechada; de segunda a
-> sábado, das 7h às 22h.
-
-Partes: `add_item` (suspenso, porque há equipe), `ask_hours` (respondido), `complaint` (equipe).
-A ordem da resposta põe a reclamação primeiro, por cortesia; as consultas seguem na ordem do
-cliente. Uma mensagem só (a Meta cobra por mensagem).
-
-Mensagem real de duas partes, fase 1:
-
-> Cliente: Boa tarde. Tem aquele pão com passas? Gostaria de reservar um
-> Concierge: Boa tarde! Tem dois com passas: 1. Pão de Passas, R$ 18,00; 2. Raisin, R$ 12,00.
-> Qual deles? Aí te mando o link para reservar.
-
-(Pergunta pendente: escolher 1 ou 2. "O segundo", "o raisin", "2" e "o de 12" resolvem contra a
-lista; "os dois" também.)
-
-## 5. O estado da conversa (a memória)
-
-### 5.1 Onde guardar
-
-`Conversation.flags["dialogue"]`, no app `shop` (`shopman/shop/models/concierge.py`). Sem
-migração (`flags` já é JSON), sem tocar o Core (a sacola continua na `Session` do Orderman, o
-pedido no `Order`, o endereço no Guestman). Documentar a chave na seção "Concierge de WhatsApp"
-de `docs/reference/data-schemas.md` antes de usar. Ele **substitui** a pendência implícita que a
-OBS0310-I criou em `flags["triage"]["answered_by"]` ("ofereci a equipe; o próximo 'sim' chama")
-por uma pergunta pendente de verdade (`kind = "offer_team"`), sem mudar o comportamento.
-
-### 5.2 Formato
-
-```json
-{
-  "v": 1,
-  "fence": 812,
-  "updated_at": "2026-10-03T13:36:34-03:00",
-  "pending": {
-    "kind": "choose",
-    "about": "product",
-    "options": [{"n": 1, "ref": "PAO-PASSAS"}, {"n": 2, "ref": "RAISIN"}],
-    "expires_at": "2026-10-03T14:06:34-03:00"
-  },
-  "listed": [{"n": 1, "ref": "PAO-PASSAS"}, {"n": 2, "ref": "RAISIN"}],
-  "focus": {"ref": "RAISIN", "qty": 1},
-  "last_change": {"receipt": "set_item:CROISSANT:+2", "undo": {"op": "set_item", "ref": "CROISSANT", "qty": 0}},
-  "with_team": [{"topic": "complaint", "since": "2026-10-03T13:36:34-03:00"}]
-}
-```
-
-| Campo | O que resolve | Prazo |
-|---|---|---|
-| `pending` | "sim", "não", "pode ser", "o 2": a pergunta que a casa deixou no ar. Tipos fechados: `confirm_order`, `choose`, `offer_team`, `offer_link`, `ask_qty`, `ask_when`, `ask_fulfillment`, `ask_which_allergen` | 30 min, ou até outra pergunta da casa |
-| `listed` | "o segundo", "o de 12", "os dois": a última lista numerada mostrada | 12 h, ou até outra lista |
-| `focus` | "mais 2", "ele tem glúten?", "e para amanhã?": o último item falado | 12 h |
-| `last_change` | "não, era o outro", "tira", "volta": o recibo da última mudança e como desfazer | até a próxima mudança ou a confirmação |
-| `with_team` | "já chamei a equipe" sem repetir, e o resumo para o cartão | até a equipe devolver |
-
-O que **não** entra no estado, porque já tem dono: sacola e entrega (`Session`), orçamento
-(`Conversation.quote`), pedidos e último pedido (Orderman, por `customer_ref`), endereço salvo
-(Guestman), transcrição (`ConversationMessage`). Cada turno lê esses ao vivo.
-
-Regras:
-
-- Escrito só no passo 6, na mesma transação da resposta, conferindo `fence` (turno revogado não
-  grava).
-- `return_to_concierge` zera `pending`, `listed` e `focus` (a equipe falou coisas que o sistema
-  não viu).
-- Mais de 12 h sem mensagem: tudo zera menos `with_team`.
-- Tamanho: no máximo 5 itens em `listed`; o estado inteiro cabe em menos de 1 KB.
-
-## 6. Os contratos
-
-### 6.1 Leitura: a lista de atos
-
-Uma chamada, modelo pequeno, `output_config.format` com esquema JSON (o formato é garantido pela
-API). Entrada: as bolhas do turno (redigidas: telefone, CPF e e-mail mascarados), o estado em
-texto curto ("pergunta pendente: escolher entre 1. Pão de Passas, 2. Raisin"; "foco: Raisin";
-"sacola: vazia"; "pedido aberto: hoje, retirada 16h, 2 italianos"), a fase (consulta ou pedido).
-Sem transcrição antiga.
-
-```json
-{
-  "acts": [
-    {"act": "answer_pending", "value": {"choice": 2}, "span": "o segundo"},
-    {"act": "ask_hours", "date": "2026-10-04", "span": "vocês abrem domingo?"}
-  ],
-  "frustration": false
-}
-```
-
-Atos (lista fechada; a fase 1 só aceita os de consulta, cortesia e equipe):
-
-| Grupo | Atos | Campos |
-|---|---|---|
-| Cortesia | `greet`, `thank`, `bye` | |
-| Consulta | `ask_product`, `ask_hours`, `ask_delivery`, `ask_house`, `ask_order_status`, `ask_menu` | `product` (texto ou `listed:n` ou `focus`), `qty`, `date`, `topic`, `order` |
-| Pedido (fase 2) | `add_item`, `change_qty`, `remove_item`, `set_fulfillment`, `set_address`, `set_payment`, `confirm` | `product`, `qty`, `delta`, `any_of` ("o que tiver"), `mode`, `when`, `address` |
-| Conversa | `answer_pending`, `correct`, `cancel_last` | `value` (`yes`, `no`, `choice`, texto), `target`, `new` |
-| Alergia | `allergy` | `allergen`, `product` (executado pela OBS0310-I) |
-| Equipe | `complaint`, `cancel_order`, `human`, `special_order`, `job`, `partnership`, `supplier` | `summary` |
-| Resto | `unknown` | `span` |
-
-Validação no código, antes de executar:
-
-- `listed:n` e `focus` só valem se existirem no estado; `answer_pending` só com `pending` vivo.
-- `product` em texto passa pela busca do catálogo (só o nome, nunca a frase); zero resultados:
-  ato vira consulta "não achei"; dois ou mais plausíveis: a resposta pergunta qual (vira
-  `pending choose`).
-- Mudança sem autoridade de compra (fase 1, ou ingresso sem identificador): vira `offer_link`.
-- Ato fora da lista, campo fora do tipo: vira `unknown`.
-- A regra local de sensível (`handoff.py`) roda sobre o texto e **acrescenta** o ato de equipe se o
-  modelo não o trouxe. A regra nunca é tirada pelo modelo.
-
-### 6.2 Execução e recibos
+### 9.2 Execução e recibos
 
 Cada ato tem um executor puro sobre os services que já existem (`tools.py` vira biblioteca dos
 executores; as funções de consulta e de sacola são as mesmas). Cada executor devolve fatos com id
@@ -554,7 +815,7 @@ e, quando muda algo, um recibo (`{op, ref, qty_before, qty_after, total_q}`). Or
 consultas, depois mudanças, depois equipe; se houver ato de equipe, mudanças não são executadas
 (viram "a equipe fecha com você").
 
-### 6.3 Composição e verificador
+### 9.3 Composição
 
 **Base** (sempre gerada): para cada ato, uma frase da casa com os valores preenchidos pelo código
 (copy editável no Admin, como as de hoje), juntas numa mensagem, até 3 itens por lista, uma
@@ -564,25 +825,10 @@ pergunta só, no fim. Ela passa no verificador por construção e é o que sai s
 `{"reply": "...", "covers": ["a1","a2"], "facts": ["F1","F2"]}`, com marcadores `{F1.nome}`,
 `{F1.preco}`, `{F2.horario}`, `{F3.link}`. Não recebe o texto do cliente.
 
-**Verificador** (código, sem modelo), sobre o texto do modelo **antes** de preencher os
-marcadores:
+Parte sem fato disponível: a base não inventa frase; o executor devolve "sem fato", e a parte vai
+para o bloco 4 (seção 8).
 
-| Checa | Como | Reprovou |
-|---|---|---|
-| Nenhum número, preço, horário, data, link ou total digitado | expressão regular: dígito, "R$", "reais", ":", "h" numérico, "http", número por extenso de 1 a 100 | base |
-| Marcadores só de fatos da ficha | conjunto | base |
-| Nome de produto só da ficha | comparação com nomes do catálogo inteiro; nome do catálogo que não está na ficha = reprovado | base |
-| Disponibilidade só pelo fato | palavras "tem", "temos", "acabou", "esgotado", "disponível", "sai agora" só na mesma frase de um marcador de produto, e com a polaridade do fato | base |
-| Promessa só com recibo | "separei", "reservei", "coloquei", "confirmado", "chamei a equipe", "avisei" só se houver o recibo correspondente | base |
-| Alergia e ingrediente | qualquer palavra do léxico de alérgenos fora do bloco fixo da OBS0310-I | base |
-| Toda parte respondida | `covers` contém todos os atos que pedem resposta, e cada um tem ao menos um fato ou frase | base |
-| Forma | até 3 linhas e 400 caracteres (sem blocos travados), uma pergunta, sem travessão, sem markdown, emoji só 💛 ou ✨ e só se o cliente usou | base |
-
-Blocos travados (resumo do pedido, total, Pix, link de pagamento) continuam fora do alcance do
-modelo: são anexados pelo código depois do texto. Toda reprovação grava o caso no envelope e entra
-no conjunto de avaliação.
-
-## 7. Custo e velocidade
+## 10. Custo e velocidade
 
 Premissas (inferência; a OBS0310-K mede): 150 mensagens por dia (seis vezes a média observada de
 24), 30 dias; 55% param na porta; 45% chegam à leitura; metade dessas usa redação. Leitura:
@@ -609,20 +855,22 @@ Velocidade alvo, do recebimento à resposta gravada: porta, menos de 1,5 s (incl
 p50 7 a 9 s com uma ferramenta, até 36 s com várias. A leitura tem teto de 4 s; estourou, cai
 para o caminho sem modelo.
 
-## 8. Plano de fatias (cada fatia = 1 PR)
+## 11. Plano de fatias (cada fatia = 1 PR, cada uma com prova no placar)
 
-| # | Fatia | Cliente vê? | Muda o quê da rodada 1 |
-|---|---|---|---|
-| **F1** | **Régua e conjunto real** (OBS0310-K, em curso). Pedido desta rodada para ela, sem duplicar: o caso do conjunto é o **turno** (bolhas juntas) com a foto do estado, e o rótulo é a **lista de atos**; incluir os 39 casos de contexto e as rajadas de 1.1 e 1.2; medir com pass^3 | Não | F1 igual, com a unidade e o rótulo novos |
-| F2 | **Estado da conversa** em `flags["dialogue"]`, escrito pelo caminho de hoje (lista mostrada, foco, pergunta pendente), zerado no retorno da equipe e após 12 h; migra a pendência da OBS0310-I para `pending offer_team`; chave em `data-schemas.md` | Pouco ("sim" e "o segundo" passam a funcionar onde hoje funcionam por sorte) | Novo; substitui o "sim contra o `quote`" da F2 antiga |
-| F3 | **Leitura em sombra**: a chamada de atos roda em toda mensagem que passa da porta, grava os atos no envelope, e o placar compara com o conjunto da F1 (acerto por ato, referência resolvida, sensível nunca perdido) | Não | Substitui a F5 antiga (Jev escolhendo produto e assumindo a triagem) |
-| F4 | **Executores + resposta base**, fase 1 (só consultas, cortesia, alergia e equipe): uma mensagem por turno, uma frase por ato, na ordem; sai o laço do agente na fase 1 e a busca de reserva; liga primeiro na coorte do dono | Sim: cada parte respondida, sem despejo, em 2 a 3 s | Junta a F2 antiga (consulta por intenção) com a multi-intenção |
-| F5 | **Redação com marcadores + verificador**: sombra, depois ligado; placar Haiku 4.5 × Sonnet 5.5 | Sim: frases mais naturais | Era F3 e F4 antigas; agora com marcadores em vez de verificação depois |
-| F6 | **Atos de pedido** (fase 2): pôr, trocar, tirar, corrigir, entrega, endereço, confirmar, com eco, desfazer, resumo e "sim"; o laço do agente sai de vez | Sim, quando a autoridade de compra existir | Era F6 antiga (agente da fase 2); agora sem agente |
+| # | Fatia | Bloco | Cliente vê? | Prova para fechar | Muda o quê da rodada 1 |
+|---|---|---|---|---|---|
+| **F1** | **Régua e conjunto real** (OBS0310-K, PR #1437). Pedido desta rodada para uma continuação dela, sem duplicar: rótulo de **lista de atos** por caso, o caso como **turno** (bolhas juntas) com a foto do estado, e os exemplos de cada regra da casa como casos | todos | Não | o placar roda os quatro blocos com a linha de base de hoje | F1 igual, com rótulo e unidade novos |
+| F2 | **Memória**: estado em `flags["dialogue"]`, escrito pelo caminho de hoje (lista mostrada, foco, pergunta pendente), zerado no retorno da equipe e após 12 h; migra a pendência da OBS0310-I para `pending offer_team`; chave em `data-schemas.md` | 2 | Pouco | metas de 6.4 nos casos que o caminho de hoje alcança; teste de concorrência | Novo; substitui o "sim contra o `quote`" da F2 antiga |
+| F3 | **Regras da casa**: `house_rules.py` com R1 a R14, exemplos como testes, verificador sobre a resposta de hoje (sem mudar o que sai; só mede); o prompt passa a citar a tabela | 3 | Não | metas de 7.4 medidas na resposta de hoje (linha de base de violações) | Era o verificador da F3 antiga; agora é a tabela inteira, e vem antes da redação |
+| F4 | **Intenções**: leitura em atos em sombra e depois ligada; executores por ato + resposta base, fase 1 (consulta, cortesia, alergia, equipe); uma mensagem por turno; sai o laço do agente na fase 1 e a busca de reserva; liga primeiro na coorte do dono | 1 | Sim: cada parte respondida, em 2 a 3 s | metas de 5.5; nenhuma meta de 6.4 e 7.4 piora | Junta a F2 antiga (consulta por intenção), a multi-intenção e a F5 antiga (Jev assumindo a triagem, que sai) |
+| F5 | **"Não sei, vou verificar"**: cartão `concierge_verify` no sino, resposta da equipe volta pela Concierge, prazos de 10 e 30 min, "vale para todo mundo" vira fato da casa; template da Meta para fora da janela | 4 | Sim | metas de 8.6 | Novo |
+| F6 | **Redação com marcadores** sobre a base (sombra, depois ligada; placar Haiku 4.5 × Sonnet 5.5) e, quando houver autoridade de compra, os **atos de pedido** (pôr, trocar, tirar, corrigir, entrega, endereço, confirmar, com eco e desfazer); o laço do agente sai de vez | 1 e voz | Sim | 7.4 com zero violação e reprovação abaixo de 20%; atos de pedido com pass^3 | Eram F3, F4 e F6 antigas, sem agente |
 
-A F2 e a F3 podem andar em paralelo depois da F1. A F4 depende das duas.
+F2 e F3 andam em paralelo depois da F1; F4 depende das duas; F5 depende da F4 (precisa do ato
+sem fato); F6 por último. Não dá para pular a F3: sem a tabela de regras, a F4 mudaria o que o
+cliente vê sem a trava que prova que nada piorou.
 
-## 9. O que ficou de fora, e por quê
+## 12. O que ficou de fora, e por quê
 
 - **Transcrição de áudio**: Anota AI, Deeliv e Ailo fazem; é frente própria (custo,
   privacidade, qualidade em ambiente de padaria). A v2 já trata o texto transcrito como qualquer
@@ -638,7 +886,7 @@ A F2 e a F3 podem andar em paralelo depois da F1. A F4 depende das duas.
 - **Juiz automático**: só depois de medido contra a conferência humana do Admin
   (`MessageIntentSample`), como fez a Shopify.
 
-## 10. Decisões do dono (respondíveis com sim/1/2)
+## 13. Decisões do dono (respondíveis com sim/1/2)
 
 1. **Uma resposta por turno**, cada parte do que o cliente perguntou respondida na ordem dele,
    numa mensagem só (e não uma bolha por parte)? sim (recomendo) / não.
@@ -663,3 +911,7 @@ A F2 e a F3 podem andar em paralelo depois da F1. A F4 depende das duas.
    Pix? sim / não.
 7. **Jev:** fica só como segunda opinião de risco se o placar mostrar que ele pega o que a regra e
    o modelo perdem; senão, sai da Concierge? sim (recomendo) / não.
+8. **"Não sei, vou verificar"**: quando a Concierge não tem o dado, ela pergunta à equipe pelo
+   sino do Gestor e responde o cliente pela própria conversa; sem resposta em 10 minutos ela avisa
+   o cliente e toca o sino como urgente, e em 30 minutos a equipe assume a conversa? sim
+   (recomendo) / outros prazos.

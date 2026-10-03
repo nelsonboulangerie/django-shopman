@@ -12,6 +12,12 @@ Memória da conversa (cerca de 20% das mensagens), perguntas com várias intenç
 rodada adversarial à proposta, pesquisa mais funda (Deeliv a fundo, testar um fluxo real),
 "concierge absolutamente confiável", mecanismo simples, robusto e elegante.
 
+## Enquadramento do dono (03/10, via coordenador), espinha dorsal do V2
+Confiável = nunca afirmar algo falso; "não sei, vou verificar" como caminho de primeira classe;
+pilares: intenções no plural e memória; mais um esquema rígido de regras da casa. O V2 foi
+reorganizado nesses quatro blocos (seções 5 a 8), cada um com contrato e meta no placar da
+OBS0310-K (#1437, 209 mensagens reais).
+
 ## Entrega
 - `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`: ataque à rodada 1 e às hipóteses do
   coordenador, dados reais medidos, pesquisa (Deeliv, Ailo, Anota AI, ManyChat, Meta,
@@ -42,4 +48,4 @@ Anota AI, Ailo, ManyChat, Meta). Links no documento. Cobrança da Meta por mensa
 serviço a partir de 01/10/2026 conferida na página oficial.
 
 ## Estado
-PR de documentação. Decisões do dono na seção 10 do V2.
+PR de documentação (#1438). Decisões do dono na seção 13 do V2.
