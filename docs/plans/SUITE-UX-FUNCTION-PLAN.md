@@ -395,8 +395,12 @@ ainda pendente na v3).
 
 ## 10. Dispositivo por trabalho, e as três notas do dono
 
-A cobertura completa (cada tela e estado de cada app, com forma, dispositivo e destino) está em
-[`suite-ux-v2/funcoes/cobertura.md`](suite-ux-v2/funcoes/cobertura.md). Abaixo, as três notas
+A cobertura completa (cada tela e estado de cada app, com forma, posto, andar, dispositivo e
+destino) está em [`suite-ux-v2/funcoes/cobertura.md`](suite-ux-v2/funcoes/cobertura.md):
+**271 linhas**, das quais 150 mantêm a casa (com reforma de forma), 62 se fundem com outra tela do
+mesmo trabalho, 18 mudam de app ou posto, 9 viram automático, 10 somem (com motivo) e 22 são telas
+novas. Um script cruzou a matriz com os 301 identificadores de trabalho das fichas: **nenhum ficou
+sem tela.** Abaixo, as três notas
 que o dono fez sobre a v3, respondidas pela função.
 
 ### 10.1 PDV: o pé da comanda ficou espremido na v3
@@ -556,5 +560,9 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
    regras em paralelo; depois por posto, Balcão por último.
 7. **Os recursos novos** do §11 (visão "todas as estações", telas novas, QR na etiqueta do lote),
    porque a casa não inventa recurso sem decisão do dono.
+8. **Cinco trabalhos que hoje vivem fora dos apps** (Admin ou terminal) e continuam lá até decisão:
+   editar o cadastro do cliente (Gestor U05); cerimônia do disparo e público mínimo (Marketing M38);
+   alarmes, etiquetas de consumo, lugares do salão e cargas de dados do B.I. (BI-22, BI-23, BI-24).
+   Ganham tela ou ficam como estão?
 
 Aprovado isso, a próxima rodada desenha o rosto de cada forma, por dispositivo, a partir da v3.
