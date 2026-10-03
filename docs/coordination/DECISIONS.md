@@ -861,3 +861,21 @@ apontar). O pacote não chega ao ar: `npm run build` do Marketing gera um `.outp
 `listhen`, e `surfaces/Dockerfile.operator-group` copia só o `.output` de cada app para a imagem. O alerta
 vive no servidor de desenvolvimento local. A alternativa de auditar só o que vai ao ar (exceção com
 prazo, ou auditoria do `.output`) foi oferecida e recusada: o vermelho fica até sair o 1.4.1.
+
+---
+
+## D-028 · Jev aprovado no comparador de intenções (D36)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo · **Data:** 2026-10-02 · **revisar_em:** quando se discutir o Jev fora do comparador
+
+**Decisão.** O texto redigido das mensagens dos clientes pode ir ao Jev (TypeSafe) no comparador de
+intenções do Concierge. Foi o dono quem quis: pôs a `JEV_API_KEY` e o `typesafe` na
+`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` no painel e rodou o teste. Na palavra dele: o Jev teve
+desempenho equivalente aos LLMs, e será mais rápido e mais barato.
+
+**O que isto NÃO decide.** O Jev continua só no comparador. Trocar quem classifica em produção
+(hoje a regra local, `triage.py`/`handoff.py`) é outra decisão, ainda não tomada.
+
+**Prova.** Drift do spec em 02/10 (as duas chaves só no vivo); #1373 (as 44 chamadas ao Jev no
+alpha, e o formato da API corrigido).
+
