@@ -311,11 +311,11 @@ ele não está na superfície.**
 | automação | o que pode dar errado | guarda |
 |---|---|---|
 | **Avançar para "pronto" quando a Cozinha conclui** | estação sem tela (Lanches recebe papel) nunca conclui; aviso de "pronto" ao cliente não volta atrás | o "Pronto" manual fica no menu do item e no leitor da Via Cozinha; aviso ao cliente só sai depois do prazo do desfazer |
-| **Pausar produto esgotado** | o estoque inclui o **planejado**, então "esgotado" pode ser falso nos dois sentidos; voltar sozinho antes do QC liberar o lote | pausar só canais remotos; se há lote planejado ou no forno, mostrar "volta ~10:40" em vez de pausar; voltar só depois do QC; push ao gerente com desfazer; "pausar com estoque" manual continua |
-| **Enviar à cozinha sem toque** (30 a 200 vezes por dia) | mesa ainda decidindo, tempo dos pratos, item removido depois de enviado vira card de cancelamento que a estação tem de reconhecer (desperdício) | enviar depois de um intervalo parado ou ao sair da comanda; "segurar" por linha; desfazer enquanto a estação não iniciou; definir o que é "salvar" (hoje o PDV não tem esse ato) |
+| ~~Pausar produto esgotado~~ → **canais externos respeitam o estoque** (revisto em 03/10 a pedido do dono) | Site/app e PDV **já tratam** o esgotado sem pausa (site bloqueia, mostra "esgotado", oferece "Me avise" e avisa quando volta; PDV mostra o selo e desativa o botão). A lacuna real é **iFood e Meta/Google**: o status enviado olha só publicado/vendável, nunca o estoque (`catalog_projection_ifood.py:143`, `views/product_feed.py:121`), então o iFood segue `AVAILABLE` e o pedido entra para ser recusado. Pausa automática **não** é a cura: misturaria "acabou" com "decisão da casa", desligaria o "Me avise" e estragaria a métrica do `ShelfOutage` | as projeções externas passam a mandar `UNAVAILABLE` / `out of stock` quando o vendável zera e reenviam quando volta (o `ShelfOutage` já detecta a passagem por zero), com a mesma regra de estoque do site; a **pausa manual continua** para o que não é falta de estoque (qualidade, decisão da casa, produto sem rastreio). Volta ao dono como "sim" ou "não" |
+| **Enviar à cozinha sem toque** (30 a 200 vezes por dia) · **opcional, desligado por padrão, ligável e reversível por estação** (decisão do dono: depende da equipe e da dinâmica do dia) | mesa ainda decidindo, tempo dos pratos, item removido depois de enviado vira card de cancelamento que a estação tem de reconhecer (desperdício) | enviar depois de um intervalo parado ou ao sair da comanda; "segurar" por linha; desfazer enquanto a estação não iniciou; definir o que é "salvar" (hoje o PDV não tem esse ato) |
 | **Reconciliar resultado incerto** (Marketing M13) | repetir um envio cujo resultado é desconhecido manda a mensagem duas vezes | só leitura; um resultado `unknown` nunca é reenviado sozinho |
 | **Qualidade por exceção** (P19) | liberar aviso ao cliente de lote que ninguém olhou | o portão humano fica, como **um** ato: "N lotes, nenhuma exceção · Confirmar" |
-| **Recebimento por exceção** (C10/C13; hoje o servidor exige o ok linha a linha) | a nota diz 20 kg, chegam 18, entram 20 em silêncio | um ato físico (contar volumes ou bipar cada volume); perecível com validade e lote (C11) nunca entra sem olhar |
+| **Recebimento por exceção** (C10/C13; hoje o servidor exige o ok linha a linha) | a nota diz 20 kg, chegam 18, entram 20 em silêncio | um ato físico (contar volumes ou bipar cada volume). **Validade é incontornável** (dono): quando tudo bate, a tela pede **só a validade**, uma linha por perecível, do jeito mais rápido possível (atalhos "mesma de ontem", a validade típica do item, ler a data da embalagem pela câmera), e nada mais |
 | **Pré-preencher a abertura do caixa** | conferência de custódia vira declaração; o erro se esconde e só aparece na contagem cega do fechamento | a abertura é **contada**, nunca preenchida (P10); o "troco provável" do B.I. vira sugestão de **separação** na véspera (BI-17), não o valor do campo |
 
 ---
@@ -545,10 +545,19 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
 
 ## 13. O que é decisão do dono
 
-**Respostas do dono (03/10/2026):** (1) leis, formas e gestos **aprovados** em geral; (2) nova
-fronteira **aprovada**, mas o nome "Passe" é ruim e pode mudar sem travar o conceito (proposta de
-nome em discussão); (4) recursos novos **aprovados**. Itens 3 (automações) e 5 (trabalhos fora dos
-apps) voltaram para ele em formato curto, para decidir item a item.
+**Respostas do dono (03/10/2026):**
+- Leis, formas e gestos: **aprovados** em geral. Recursos novos: **aprovados**.
+- Nova fronteira: **aprovada**. O posto do "Passe" se chama **"Saída"** (por enquanto), ou **"Saída
+  da Cozinha"** sempre que couber; é o termo que a Cozinha e o vocabulário da casa já usam.
+- Automações: (1) "pronto" sozinho no Gestor **sim**; (2) pausa de esgotado **revista** (ver §5.1:
+  o que falta é iFood e Meta/Google respeitarem o estoque, não pausa); (3) enviar à cozinha sem toque
+  **opcional por estação, desligado por padrão**; (4) Marketing confere o incerto sozinho **sim**;
+  (5) qualidade em lote **sim**; (6) recebimento por exceção **sim, com a validade sempre pedida**, de
+  forma ultra facilitada.
+- Trabalhos fora dos apps: editar cliente ganha tela no Gestor **sim**; alarmes do B.I. com tela e
+  no celular **sim**; feriados e clima automáticos **sim, feriados com confirmação do gestor**; regras
+  de disparo do Marketing ficam no Admin **sim**; etiquetas de consumo e lugares do salão: explicados
+  ao dono, decisão pendente.
 
 1. **As sete leis** (§2) como filtro de toda tela.
 2. **As sete formas, os oito gestos e o contrato de chrome** (§3 e §4) como gramática única.
