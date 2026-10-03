@@ -321,10 +321,14 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
     Surface(
         id="runtime-central-hub",
         kind="registered-runtime-backstage",
-        projections=(ROOT / "shopman/backstage/projections/hub.py",),
+        projections=(
+            ROOT / "shopman/backstage/projections/hub.py",
+            ROOT / "shopman/backstage/projections/hub_queue.py",
+        ),
         replacement=(
             "A Central de Apps (surfaces/hub-nuxt) é o launcher runtime do operador — "
-            "projection `build_operator_hub` + API `GET /api/v1/backstage/hub/`, no MESMO "
+            "projection `build_operator_hub` (com a fila `Precisa de você`, `hub_queue`) + "
+            "API `GET /api/v1/backstage/hub/`, no MESMO "
             "contrato projection+Action das superfícies dedicadas (pos/kds/gestor/Produção). "
             "NÃO hospeda CRUD de Admin; o tile Loja deep-linka pro Unfold canônico (plan §5)."
         ),
@@ -352,6 +356,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         kind="explicit-exception",
         projections=(
             ROOT / "shopman/backstage/projections/order_queue.py",
+            # Histórico do Gestor (pedidos fechados, filtros no servidor).
+            ROOT / "shopman/backstage/projections/order_history.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
             ROOT / "shopman/backstage/projections/ifood.py",
@@ -374,6 +380,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/purchase_count.py",
             ROOT / "shopman/backstage/projections/marketing.py",
             ROOT / "shopman/backstage/projections/marketing_v2.py",
+            ROOT / "shopman/backstage/projections/marketing_decisions.py",
             ROOT / "shopman/backstage/projections/marketing_actions.py",
             ROOT / "shopman/backstage/projections/bi_production.py",
             ROOT / "shopman/backstage/projections/bi_sales.py",

@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, reactive, ref, watch } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
+import PlanReasonCard from "../../app/components/PlanReasonCard.vue";
 import ProductionStageGrid from "../../app/components/ProductionStageGrid.vue";
 import ShortageDialog from "../../app/components/ShortageDialog.vue";
 import type {
   ProductionMatrixRowProjection,
+  ProductionSuggestionProjection,
   WorkOrderCardProjection,
 } from "../../app/types/production";
 import {
@@ -103,6 +105,9 @@ function installGlobals() {
   vi.stubGlobal("reactive", reactive);
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("useSonner", { success: vi.fn(), error: vi.fn() });
+  vi.stubGlobal("useOperatorAppLink", () => ({
+    attrsFor: () => ({ target: "_self" }),
+  }));
   vi.stubGlobal("useRoute", () => ({ query: {} }));
   vi.stubGlobal("useProductionBoard", (initialDate: string) => {
     boardInitialDateSpy(initialDate);
@@ -160,6 +165,12 @@ const stubs = {
   UiDialogDescription: passthrough,
   UiDialogFooter: passthrough,
   UiBadge: passthrough,
+  // O popover do "Por quê": o conteúdo só existe com a linha aberta (o v-if é
+  // da grade), então o stub só precisa repassar o slot.
+  UiPopover: { props: ["open"], template: "<div><slot /></div>" },
+  UiPopoverAnchor: passthrough,
+  UiPopoverContent: passthrough,
+  OperatorKbd: { template: "<kbd><slot /></kbd>" },
   UiButton: UiButtonStub,
   UiNativeSelect: UiNativeSelectStub,
   UiTextarea: UiTextareaStub,
@@ -168,7 +179,7 @@ const stubs = {
 function mountGrid(stage: "plan" | "produce" = "produce") {
   return mount(ProductionStageGrid, {
     props: { stage, title: "Produção" },
-    global: { stubs },
+    global: { stubs, components: { PlanReasonCard } },
   });
 }
 
@@ -194,7 +205,7 @@ function stubBoardAccess(access: Record<string, boolean>) {
   }));
 }
 
-const suggestion = {
+const suggestion: ProductionSuggestionProjection = {
   recipe_pk: 5,
   recipe_ref: "REC-5",
   recipe_name: "Pão",
@@ -206,7 +217,16 @@ const suggestion = {
   confidence: "Alta",
   sample_size: 7,
   high_demand_applied: false,
-  explanation_parts: [],
+  projected: "7",
+  margin: "1",
+  safety_percent: 10,
+  same_weekday: true,
+  season_label: "",
+  soldout_days: 0,
+  waste_percent: 0,
+  waste_discounted: false,
+  material_shortages: [],
+  fits_quantity: "",
 };
 
 const byText = (w: ReturnType<typeof mountGrid>, sel: string, txt: string) =>
@@ -563,6 +583,134 @@ describe("ProductionStageGrid — lote produzido (conferência e estorno)", () =
       .setValue("queimou");
     await byText(w, "button", "Confirmar estorno")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+  });
+});
+
+describe("ProductionStageGrid — Planejamento: o número na linha, o porquê por cima", () => {
+  const butter = {
+    sku: "MANTEIGA",
+    name: "Manteiga",
+    missing_display: "1200 g",
+    fits_quantity: "5",
+  };
+
+  it("linha sem nada a notar mostra só o número e o Por quê, sem sinal nem conta", () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    expect(w.find('[data-testid="suggestion-signal"]').exists()).toBe(false);
+    const trigger = w.find("[data-plan-reason-trigger]");
+    expect(trigger.text()).toContain("Por quê");
+    expect(trigger.attributes("aria-expanded")).toBe("false");
+    expect(w.find('[data-testid="plan-reason"]').exists()).toBe(false);
+    expect(w.text()).not.toContain("margem");
+  });
+
+  it("mostra um sinal só, o de maior prioridade", () => {
+    boardRows.value = [
+      row({
+        suggestion: {
+          ...suggestion,
+          material_shortages: [butter],
+          fits_quantity: "5",
+          soldout_days: 7,
+          waste_percent: 20,
+          waste_discounted: true,
+        },
+      }),
+    ];
+    const w = mountGrid("plan");
+
+    const signals = w.findAll('[data-testid="suggestion-signal"]');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.text()).toBe("falta insumo");
+  });
+
+  it("acabou cedo e sobra aparecem quando são o único fato da linha", () => {
+    boardRows.value = [
+      row({ suggestion: { ...suggestion, soldout_days: 4 } }),
+      row({
+        output_sku: "BRIOCHE",
+        recipe_name: "Brioche",
+        suggestion: {
+          ...suggestion,
+          output_sku: "BRIOCHE",
+          waste_percent: 20,
+          waste_discounted: true,
+        },
+      }),
+    ];
+    const w = mountGrid("plan");
+
+    expect(
+      w.findAll('[data-testid="suggestion-signal"]').map((el) => el.text()),
+    ).toEqual(["acabou cedo", "sobra"]);
+  });
+
+  it("o Por quê abre a conta ancorada na linha, marca a linha e fecha pelo mesmo gesto", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+    const trigger = w.find("[data-plan-reason-trigger]");
+
+    await trigger.trigger("click");
+    expect(trigger.attributes("aria-expanded")).toBe("true");
+    expect(w.find("tbody tr").classes()).toContain("bg-primary/5");
+    expect(w.find('[data-testid="reason-math"]').text()).toContain("margem");
+
+    await trigger.trigger("click");
+    expect(w.find('[data-testid="plan-reason"]').exists()).toBe(false);
+  });
+
+  it("Fechar no detalhe fecha o detalhe", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-reason-trigger]").trigger("click");
+    await w
+      .findAll('[data-testid="plan-reason"] button')
+      .find((button) => button.text().trim() === "Fechar")!
+      .trigger("click");
+
+    expect(w.find('[data-testid="plan-reason"]').exists()).toBe(false);
+  });
+
+  it("Planejar N no detalhe abre o planejamento com a sugestão", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-reason-trigger]").trigger("click");
+    await byText(w, '[data-testid="plan-reason"] button', "Planejar 8")!.trigger(
+      "click",
+    );
+
+    expect(w.find('[data-testid="plan-reason"]').exists()).toBe(false);
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    expect((input.element as HTMLInputElement).value).toBe("8");
+    expect(input.attributes("readonly")).toBeDefined();
+  });
+
+  it("a alternativa que cabe no estoque abre o planejamento com o número dela", async () => {
+    boardRows.value = [
+      row({
+        suggestion: {
+          ...suggestion,
+          material_shortages: [butter],
+          fits_quantity: "5",
+        },
+      }),
+    ];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-reason-trigger]").trigger("click");
+    await byText(
+      w,
+      '[data-testid="plan-reason"] button',
+      "Planejar 5 (cabe no estoque)",
+    )!.trigger("click");
+
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    expect((input.element as HTMLInputElement).value).toBe("5");
+    expect(input.attributes("readonly")).toBeUndefined();
   });
 });
 

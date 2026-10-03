@@ -26,6 +26,15 @@ describe("useOperatorHub", () => {
     expect(h.tiles.value).toHaveLength(1);
     expect(h.tiles.value[0]!.ref).toBe("pos");
     expect(h.hub.value).toEqual(hub);
+    // Projection sem fila (versão anterior do Django) não quebra a tela.
+    expect(h.queue.value).toBeNull();
+  });
+
+  it("expõe a fila Precisa de você como veio do servidor", async () => {
+    const queue = { items: [{ key: "gestor:order:K7Q2", app: "gestor", title: "Pedido K7Q2 para aceitar" }], total_count: 3, more_count: 2, server_now: "2026-10-03T10:00:00-03:00" };
+    fetchResult.value = asyncData({ hub: { operator_name: "Ana", tiles: [], queue } });
+    const h = await useOperatorHub();
+    expect(h.queue.value).toEqual(queue);
   });
 
   it("degrada para []/'' quando o payload vem vazio", async () => {
@@ -34,5 +43,6 @@ describe("useOperatorHub", () => {
     expect(h.hub.value).toBeNull();
     expect(h.tiles.value).toEqual([]);
     expect(h.operatorName.value).toBe("");
+    expect(h.queue.value).toBeNull();
   });
 });

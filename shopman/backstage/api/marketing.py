@@ -7,6 +7,7 @@ de regras e modelos. Cada operação exige sua capability; a permissão ampla
 legada só mantém leitura/edição/preview durante a migração.
 
     GET    campaign/                    → painel (pendentes, recentes, placar)
+    GET    campaign/decisions/          → a fila de decisões, por prazo (a casa do app)
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
     GET    campaign/platforms/          → estado de entrega de cada plataforma
@@ -80,6 +81,7 @@ from shopman.backstage.api.throttles import (
 )
 from shopman.backstage.parsing import as_bool, as_int
 from shopman.backstage.projections import marketing as marketing_projection
+from shopman.backstage.projections import marketing_decisions as marketing_decisions_projection
 from shopman.backstage.projections import marketing_v2 as marketing_projection_v2
 from shopman.backstage.projections.marketing_actions import (
     CampaignActionContext,
@@ -309,6 +311,23 @@ class CampaignBoardView(_CampaignBase):
     def get(self, request):
         board = marketing_projection.build_board()
         return Response({"board": projection_data(board)})
+
+
+class MarketingDecisionQueueView(_CampaignBase):
+    """A casa do Marketing: o que espera o meu sim, do prazo mais curto ao mais longo.
+
+    Só leitura, com a capability de entrar no app. Quem decide de fato é a tela de
+    cada anúncio, que revalida as Actions do operador; a fila só aponta o lugar.
+    """
+
+    def get(self, request):
+        queue = observe_projection(
+            "decisions",
+            marketing_decisions_projection.build_decision_queue,
+        )
+        response = Response({"queue": projection_data(queue)})
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 @extend_schema_view(

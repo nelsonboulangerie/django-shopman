@@ -89,7 +89,9 @@ def test_hub_superuser_sees_all_tiles(client, db):
     assert by_ref["pos"]["kind"] == "launch"
     # Contrato do tile.
     for tile in hub["tiles"]:
-        assert set(tile) == {"ref", "label", "description", "icon", "url", "kind"}
+        assert set(tile) == {
+            "ref", "label", "description", "icon", "url", "kind", "status_attention", "status_summary",
+        }
         assert tile["label"] and tile["url"]
 
 

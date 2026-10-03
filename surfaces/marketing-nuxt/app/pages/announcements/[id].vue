@@ -406,7 +406,7 @@ useHead({ title: "Anúncio" });
       class="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
     >
       <Icon name="lucide:arrow-left" class="size-4" />
-      Voltar ao painel
+      Voltar às decisões
     </NuxtLink>
 
     <!-- O que a decisão causou, em estado. Fica na tela; o toast só acompanha. -->
@@ -485,7 +485,7 @@ useHead({ title: "Anúncio" });
         to="/"
         class="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
       >
-        Ver o painel
+        Ver as decisões
       </NuxtLink>
     </div>
 
@@ -613,7 +613,8 @@ useHead({ title: "Anúncio" });
         v-else-if="
           announcement.status !== 'pending_review' && resultAnnouncement
         "
-        class="mt-4"
+        id="result"
+        class="mt-4 scroll-mt-4"
         :announcement="resultAnnouncement"
         :actions="resultActions"
         :receipt="displayedReceipt"

@@ -188,6 +188,10 @@ class PublicConfigProjection:
     # Kill switch da confirmação visual de ponto. A ausência é ``False`` e
     # deploy nenhum liga a experiência comercial por acidente.
     address_map_confirmation_enabled: bool
+    # Padrão da casa para a chave "Mostrar só disponíveis" do cardápio. Só
+    # EXIBIÇÃO: o item indisponível segue no catálogo e na PDP. Ausência é
+    # ``False`` (os indisponíveis aparecem, com o "Me avise").
+    hide_unavailable_by_default: bool
     # Rede de segurança independente do mapa. Ausente ou inválida projeta
     # ``off``; ``visible`` também cai para off enquanto o mapa estiver desligado.
     address_location_divergence: AddressLocationDivergenceProjection
@@ -340,6 +344,7 @@ def build_shell(
     public_config = PublicConfigProjection(
         google_maps_api_key=browser_api_key(),
         address_map_confirmation_enabled=address_map_confirmation_enabled,
+        hide_unavailable_by_default=bool(storefront_defaults.get("hide_unavailable_by_default", False)),
         address_location_divergence=build_address_location_divergence(
             storefront_defaults.get("address_location_divergence"),
             map_enabled=address_map_confirmation_enabled,

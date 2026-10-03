@@ -1304,6 +1304,166 @@ def test_run_agent_refuses_unfounded_handoff_and_answers_public_facts(conversati
     assert not Session.objects.exists()
 
 
+# ── Cortesia: "bom dia" recebe bom dia (observação do dono, 03/10/2026) ──
+
+
+def _listed(sku: str, name: str, *, description: str = "", stock: str = "5") -> Product:
+    product = Product.objects.create(
+        sku=sku, name=name, short_description=description, base_price_q=1200,
+        is_published=True, is_sellable=True,
+    )
+    CollectionItem.objects.create(collection=Collection.objects.get(ref="paes"), product=product, sort_order=5)
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref=CHANNEL), product=product, price_q=1200,
+        is_published=True, is_sellable=True,
+    )
+    if Decimal(stock):
+        _seed_stock(sku, Decimal(stock))
+    return product
+
+
+@pytest.fixture
+def alpha_menu(surface):
+    """O que a busca do alpha devolveu para "Bom dia, tudo bem?" (mensagem 675).
+
+    O pão com "bom para cachorro quente" na descrição, o croissant, o leviano e as
+    duas perguntas frequentes reais: levain (que cita croissant e "todos os dias")
+    e glúten.
+    """
+    _listed("HOL4", "Pão para Hot Dog", description="Pão amanteigado, bom para cachorro quente", stock="0")
+    _listed("CROISSANT", "Croissant", description="Folhado amanteigado", stock="50")
+    _listed("LEVIANO", "Pão Leviano", description="Pão de fermentação natural")
+    FAQEntry.objects.create(
+        question="O que é fermentação natural (levain)?",
+        answer=(
+            "Levain é o fermento natural. O alimentamos todos os dias. Os pães macios e as massas "
+            "amanteigadas, como croissant e brioche, levam fermento biológico."
+        ),
+        search_terms="levain, fermentação natural, fermento natural, massa madre, pão rústico",
+        is_published=True,
+    )
+    FAQEntry.objects.create(
+        question="Vocês têm opções sem glúten? E quanto a alérgenos?",
+        answer="Não temos. Todos os nossos produtos contêm ou podem conter glúten.",
+        search_terms="glúten, sem glúten, celíaco, alergia, alérgenos, trigo",
+        is_published=True,
+    )
+
+
+def _turn(conversation, text, event_id, *responses):
+    _create_inbound(conversation, text, event_id)
+    conversation = _claim_conversation(conversation)
+    client = ScriptedClient(*responses)
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+    return outcome, client
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Bom dia, tudo bem?", "Bom dia! Tudo ótimo por aqui, obrigada. Aqui é a concierge da Nelson Boulangerie. Em que posso ajudar? 💛"),
+        ("bom dia", "Bom dia! Aqui é a concierge da Nelson Boulangerie. Em que posso ajudar? 💛"),
+        ("obrigado", "Nós que agradecemos! Qualquer coisa, é só chamar. 💛"),
+    ],
+)
+def test_courtesy_gets_a_short_reply_without_model_or_search(conversation, alpha_menu, text, expected):
+    """Regressão do alpha: "Bom dia, tudo bem?" recebeu três produtos, o levain e os alérgenos."""
+    outcome, client = _turn(conversation, text, f"courtesy-{text}")
+
+    assert client.requests == []  # nem o modelo foi chamado
+    assert outcome.tool_events == []  # nem a busca
+    assert outcome.reply_text == expected
+
+
+def test_oi_gets_the_salutation_of_the_shop_clock(conversation, alpha_menu):
+    from shopman.storefront.concierge.small_talk import salutation_for_now
+
+    outcome, client = _turn(conversation, "oi", "courtesy-oi")
+
+    assert client.requests == []
+    assert outcome.reply_text.startswith(f"{salutation_for_now()}! ")
+    assert "R$" not in outcome.reply_text and len(outcome.reply_text) <= 120
+
+
+def test_the_greeting_after_the_first_turn_does_not_introduce_again(conversation, alpha_menu):
+    ConversationMessage.objects.create(
+        conversation=conversation, binding=_binding(conversation), role=ConversationMessage.Role.ASSISTANT,
+        kind=ConversationMessage.Kind.REPLY, text="Olá!",
+    )
+    outcome, _client = _turn(conversation, "Bom dia!", "courtesy-second")
+
+    assert outcome.reply_text == "Bom dia! Em que posso ajudar? 💛"
+
+
+def test_availability_question_answers_the_product_and_nothing_else(conversation, alpha_menu):
+    outcome, _client = _turn(
+        conversation, "tem croissant hoje?", "availability-croissant",
+        _response(_text("Temos sim!"), stop_reason="end_turn"),
+    )
+
+    assert "Croissant" in outcome.reply_text and "R$ 12,00" in outcome.reply_text
+    assert "Disponível" in outcome.reply_text
+    assert "Levain" not in outcome.reply_text  # a FAQ que só cita croissant no corpo fica de fora
+    assert "glúten" not in outcome.reply_text
+    assert "Hot Dog" not in outcome.reply_text
+
+
+def test_greeting_with_a_question_says_good_morning_and_answers_it(conversation, alpha_menu):
+    outcome, _client = _turn(
+        conversation, "Bom dia, tem croissant hoje?", "greeting-croissant",
+        _response(_text("Temos sim!"), stop_reason="end_turn"),
+    )
+
+    assert outcome.reply_text.startswith("Bom dia!\n")
+    assert "Croissant" in outcome.reply_text
+    assert "Hot Dog" not in outcome.reply_text  # "bom" não é termo de busca
+    assert "Levain" not in outcome.reply_text
+
+
+def test_allergen_question_reads_the_allergen_answer_and_goes_to_the_team(ctx, alpha_menu):
+    """Glúten é alergia na triagem (D32): vai para a equipe. A busca, se chamada, traz só o que importa."""
+    from shopman.storefront.concierge import triage
+
+    text = "o pão leviano tem glúten?"
+    assert triage.decide(text).destination == triage.TEAM
+
+    result = tools.search_storefront(ctx, text)
+
+    assert [item["sku"] for item in result["items"]] == ["LEVIANO"]
+    assert [answer["question"] for answer in result["answers"]] == [
+        "Vocês têm opções sem glúten? E quanto a alérgenos?"
+    ]
+
+
+def test_search_over_courtesy_alone_finds_nothing_instead_of_the_menu(ctx, alpha_menu):
+    """A busca que o servidor roda sozinho não transforma "bom dia" em cardápio."""
+    ctx.customer_text = "Bom dia, tudo bem?"
+
+    result = tools.search_storefront(ctx)
+
+    assert result["found"] is False and result["items"] == [] and result["answers"] == []
+
+
+def test_triage_does_not_ask_the_classifier_about_courtesy(settings):
+    from shopman.storefront.concierge import triage
+
+    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "triage_classifier": "jev", "triage_with_model": True}
+
+    class Untouchable:
+        def scores(self, *args, **kwargs):
+            raise AssertionError("cortesia não vai ao classificador")
+
+    decision = triage.decide("Bom dia, tudo bem?", client=Untouchable())
+
+    assert decision.destination == triage.ANSWER
+    assert decision.source == "default"
+
+
 @pytest.mark.parametrize(("text", "category"), [
     ("quero falar com alguém da equipe", "customer_request"),
     ("meu pedido veio queimado", "complaint"),
@@ -1511,7 +1671,7 @@ def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation
 
 
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
-    _create_inbound(conversation, "oi", "agent-iterations")
+    _create_inbound(conversation, "como está minha sacola?", "agent-iterations")
     conversation = _claim_conversation(conversation)
     script = [_response(_tool("view_cart", {}, f"toolu_{i}"), stop_reason="tool_use") for i in range(2)]
     script.append(_response(_text("Um instante."), stop_reason="end_turn"))
@@ -1708,7 +1868,7 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
-    _receive(conversation, "oi", "m1")
+    _receive(conversation, "tem pão?", "m1")
     binding = _binding(conversation)
 
     class BrokenClient:

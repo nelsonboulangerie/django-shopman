@@ -27,10 +27,12 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
-| UX-N1 | Nome: "Shopman" para o operador e "Central" no lugar de "Shopman Apps" (SUITE-UX §16) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-n1-nome-central` | 2026-10-03 12:43 |
-| UX-V1 | Vocação do produto no painel do produto do Gestor, aba "Preço e config" (SUITE-UX §13, §17) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-v1-vocacao` | 2026-10-03 12:43 |
-| UX-R2 | iFood, Meta e Google respeitam o estoque (SUITE-UX §5.1, decisão do dono) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-r2-canais-estoque` | 2026-10-03 12:43 |
-| UX-G1 | Gestor: colunas ajustáveis e recolhíveis; posto Saída = Gestor com Entrada e Preparo recolhidas (SUITE-UX §16) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-g1-colunas-gestor` | 2026-10-03 12:43 |
+| UX-P2 | Planejamento: o número na linha e o "Por quê" por cima (SUITE-UX §15) | EM_PR | suite-ux (session_01UcT9P3) | #1419 | 2026-10-03 14:00 |
+| UX-M1 | Marketing: fila de decisões por prazo (SUITE-UX §9) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | #1420 | 2026-10-03 14:00 |
+| UX-H1 | Central como fila das filas (SUITE-UX §6) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-h1-central-fila` | 2026-10-03 14:08 |
+| UX-G2 | Gestor: "pronto" automático e desfazer de 5 s em Entregar/Despachar (SUITE-UX §5.1, §15) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-g2-pronto-automatico-desfazer` | 2026-10-03 14:47 |
+
+**SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). Registros em `ROUNDS/UX-*.md`.
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),

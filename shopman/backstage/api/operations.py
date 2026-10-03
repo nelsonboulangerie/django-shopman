@@ -96,6 +96,7 @@ from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
+from shopman.backstage.projections.hub import purchase_surface_url
 from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue, payment_link_notice
 from shopman.backstage.projections.pos import (
     build_open_tab,
@@ -1213,6 +1214,7 @@ class ProductionBoardView(APIView):
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
             access=access,
+            purchase_url=purchase_surface_url(request.user),
         )
         return Response(
             {

@@ -90,6 +90,7 @@ from .marketing import (
     CampaignHistoryView,
     CampaignListView,
     CampaignOptionsView,
+    MarketingDecisionQueueView,
     MarketingDualControlView,
     MarketingFreezeView,
     MarketingOfferListView,
@@ -223,6 +224,7 @@ from .operations import (
     WorkOrderVoidView,
 )
 from .operator_capacity import OperatorCapacityView
+from .order_history import OrderHistoryView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -594,6 +596,9 @@ urlpatterns = [
     path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
+    # Histórico do Gestor: pedidos fechados, filtrados no servidor.
+    # ⚠️ ANTES de `orders/<str:ref>/…`: `history` casaria com `<str:ref>`.
+    path("orders/history/", OrderHistoryView.as_view(), name="api-backstage-order-history"),
     # Order tickets (Via Pedido) — o lote do que a tela das Encomendas mostra.
     # ⚠️ ANTES de `orders/<str:ref>/…`: `tickets` casaria com `<str:ref>`.
     path("orders/tickets/", OrderTicketBatchView.as_view(), name="api-backstage-order-tickets"),
@@ -710,6 +715,11 @@ urlpatterns = [
     # Marketing operacional: capabilities por ação; abrir o app não publica.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
     path("marketing/v2/", CampaignBoardV2View.as_view(), name="api-backstage-marketing-v2"),
+    path(
+        "marketing/decisions/",
+        MarketingDecisionQueueView.as_view(),
+        name="api-backstage-marketing-decisions",
+    ),
     path(
         "marketing/v2/announcements/<int:pk>/",
         AnnouncementDetailV2View.as_view(),
