@@ -373,7 +373,7 @@ O código continua em oito apps (deploy, permissões, ADR-030). A **experiência
 | trabalho | hoje | proposta | por quê |
 |---|---|---|---|
 | Entregar encomenda / pedido no balcão | PDV (encomendas) **e** Gestor (receber na retirada) | um trabalho só, uma forma (FILA + RECEBER), aberto pelos dois | é o mesmo fato com duas telas |
-| Saída do pedido (pronto → saiu/retirou) | Cozinha (Saída) **e** Gestor (avançar, despachar) | posto **Passe**: uma fila de saída, aberta pela Cozinha e pelo Gestor | mesma `advance_order`, dois desenhos |
+| Saída do pedido (pronto → saiu/retirou) | Cozinha (Saída) **e** Gestor (avançar, despachar) | **uma** fila de saída, o posto **Saída**, morando no **Gestor** (proposta de 03/10, aguarda o dono); a Cozinha fica só com as estações | mesma `advance_order` (`services/kds.py:975`), dois desenhos; e a Saída da Cozinha hoje manda "abra este pedido no Gestor" quando há maquininha ou troco (`services/kds.py:962`) |
 | Pausar produto / desligar canal | Gestor, no Catálogo e em Canais (escritório) | **automático** quando esgota; interruptor também no posto do passe e no celular do gerente | urgência de minutos no lugar de dias |
 | Avisos transacionais (pedido, pagamento, fila, fidelidade) **e** a ligação mensagem ↔ modelo aprovado do WhatsApp | Marketing › Plataformas (M30 e M31) | os dois juntos, para Gestor › Canais (Ajustes), levando o TOTP e a permissão `configure_platforms`; exige atualizar o contrato do Marketing (`docs/reference/marketing-surface-contract.md`, `make marketing-docs`) | M31 é comunicação da loja, não campanha, e M30 é o mesmo trabalho com outro alvo (separar os dois quebraria a L2). **Decisão do dono** |
 | Contagem de estoque | aba escondida da Base no Compras | trabalho próprio de **Estoque** (gerente, tablet), CONFERÊNCIA cega | é outro papel, outro dispositivo |
@@ -385,7 +385,7 @@ O código continua em oito apps (deploy, permissões, ADR-030). A **experiência
 | Decisões do Marketing | 5 portas, nenhuma tela | uma FILA de decisões ordenada por prazo, que é ao mesmo tempo Hoje, sino e push | é o trabalho central do app |
 
 Postos que saem disso (cada um abre direto na sua fila):
-**Balcão** (PDV, desktop com periféricos) · **Passe** (saída do pedido) · **Estação** (Cozinha) ·
+**Balcão** (PDV, desktop com periféricos) · **Saída** (saída do pedido) · **Estação** (Cozinha) ·
 **Forno** (Produção chão) · **Doca** (Compras receber) · **Estoque** (contagem) · **Fim do dia** ·
 **Escritório** (catálogo, canais, compras, receitas, campanhas, B.I.) · **Dono em movimento**
 (celular: decisões, alertas, olhada; o modo "fora da loja" depende do consentimento de localização,
@@ -534,7 +534,7 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
    checklist, visto, som). Cada item com a guarda do §5.1 e uma decisão do dono.
 3. **Piloto: a fila do Gestor**, com as regras de hoje (como aprovado). Depois, por posto: Doca,
    Forno, Estação, Escritório, Dono em movimento e, por último, Balcão. Juntar a saída do Gestor e
-   a Saída da Cozinha num posto **Passe** é proposta nova (§13), não continuidade: depende de
+   a Saída da Cozinha num posto **Saída** só é proposta nova (§13), não continuidade: depende de
    mudança de regra e puxa a Cozinha, que a v3 classificou como risco alto.
 4. **Trava de forma**: toda tela declara sua forma; o teste do contrato reprova botão primário
    duplicado, paginação em fila, edição fixa em composição, conferência linha a linha sem exceção.
@@ -578,7 +578,7 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
 3. **A nova fronteira** (§9): Estoque e Fim do dia como trabalhos próprios; B.I. como fonte;
    Comprar e Receber como andares separados; avisos transacionais e modelos do WhatsApp saindo
    juntos do Marketing (com mudança no contrato do Marketing). E, como **pedido de mudança de uma
-   decisão já tomada**: juntar a saída do Gestor e a Saída da Cozinha num posto Passe.
+   decisão já tomada**: juntar a saída do Gestor e a Saída da Cozinha num posto só, **Saída** (hospedado no Gestor, §15).
 4. **O que o sistema passa a fazer sozinho** (§5.1 e §12.2), item a item, com a guarda de cada um,
    porque cada um muda regra. Também: a regra de **segunda pessoa** na assinatura (§3.2) e o estorno
    de produção passando a pedir gerente.
@@ -627,3 +627,46 @@ na fila do Balcão.
 **Não desenhado (só na legenda):** passo 2 do Fim do dia (contar a vitrine, mesmo contador por
 produto), abertura de caixa, editor de mesas no tablet, diálogo de exceção assinada do Gestor.
 
+## 15. Rodada de 03/10 (tarde): respostas do dono e o que mudou
+
+**Decidido:**
+- Envio do Marketing confirmado com a **digital do dispositivo**, com segunda pessoa acima do limiar: **sim**.
+- **Desfazer de 5 s** em Entregar e Despachar, e o aviso ao cliente só depois do prazo: **sim**.
+- **Fechamento às cegas sem R$, para ninguém** (nem Gestor, nem gerente): nenhum valor absoluto de
+  venda, esperado ou diferença no corredor do Fim do dia; no máximo relativo (%), e mesmo isso com
+  cautela. A diferença do caixa vira veredito ("dentro da tolerância" / "fora: o gestor confere"). O
+  número só existe na auditoria do Dono (`cashman.audit_shift`). Achado: o endpoint do fechamento
+  (`DayClosingView.get`) entrega ao gerente `expected_amount_q`, `difference_q`, totais por meio e
+  `qty_available` (não renderizados, mas no JSON) — virou tarefa à parte.
+- **Vocação** com o peso da sua utilidade: uma linha pequena no painel, aviso discreto na lista.
+- **Planejamento**: a linha mostra só o número e no máximo um sinal; a conta inteira vai para um
+  "Por quê" que abre por cima.
+
+**Proposta revista: PDV no tablet.** A proposta "dinheiro vai para a fila do Balcão" faria o cliente
+entrar em outra fila. Fatos do código: cartão não tem fio com a maquininha (o operador passa e
+confirma, `payman` `asserted_at_terminal`), PIX mostra QR na tela, e um tablet pode ser provisionado
+**dividindo a gaveta e o turno do Balcão** (`station_terminal_shared`, `api/operations.py:1133`); a
+comanda mora no servidor. Proposta: o tablet é um segundo posto **na mesma gaveta e no mesmo turno**
+do Balcão, com todos os meios na mesa (maquininha vai até a mesa; dinheiro entra na mesma gaveta, mesma
+contagem cega). Sem energia: o tablet segue no 4G, a maquininha tem bateria e 4G, a gaveta abre na
+chave, sem cupom impresso; **sem internet nenhuma o sistema não vende** (não há fila local hoje): um
+modo de contingência é decisão à parte. Prévia: `pos-tablet-fluxo.jpg`.
+
+**Proposta revista: uma Saída só.** Hoje existem duas telas para o mesmo fato (Cozinha › Saída e a
+zona Saída do Gestor), com a mesma `advance_order`. As prévias desenharam as duas, o que pareceu um
+terceiro painel. Proposta: **uma fila de saída, no Gestor** (dono do ciclo do pedido, já resolve
+maquininha e troco, que a Saída da Cozinha hoje recusa), com um modo de toque para o tablet do passe;
+a Cozinha fica com as estações e o "em preparo". Aguarda o dono.
+
+**Novos pacotes de trabalho:**
+- **UX-14 Respostas ativas.** O B.I. "Sobrou ou faltou ontem?" vira padrão da suíte: cada papel tem
+  suas perguntas, respondidas sem pedir, na fila e no push (Produção: o que fazer amanhã e por quê;
+  Compras: o que comprar até sexta; Gestor: quem está esperando demais; Marketing: o que divulgar
+  agora; Balcão: troco para amanhã). Começa por inventariar a pergunta nº 1 de cada papel.
+- **UX-15 Ajustes em todos os apps.** Cada app ganha o andar Ajustes para o que o operador muda com
+  frequência (impressoras, maquininhas, salão, envio à cozinha, som e densidade da estação, canais).
+- **UX-16 CRUD no Nuxt.** Trazer para os apps o cadastro que se mexe na operação; o Admin fica com a
+  configuração geral que quase não muda. Começa por medir quais páginas do Admin o operador abre e
+  com que frequência, e decide por frequência × papel.
+- **Nome.** O sistema se chama **Shopman** na frente do operador. Para a home ("Shopman Apps"), opções
+  em aberto (§13): "Central" (já é o endereço `central.`), "Início", ou só "Shopman".
