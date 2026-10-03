@@ -1671,7 +1671,7 @@ def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation
 
 
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
-    _create_inbound(conversation, "oi", "agent-iterations")
+    _create_inbound(conversation, "como está minha sacola?", "agent-iterations")
     conversation = _claim_conversation(conversation)
     script = [_response(_tool("view_cart", {}, f"toolu_{i}"), stop_reason="tool_use") for i in range(2)]
     script.append(_response(_text("Um instante."), stop_reason="end_turn"))
@@ -1868,7 +1868,7 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
-    _receive(conversation, "oi", "m1")
+    _receive(conversation, "tem pão?", "m1")
     binding = _binding(conversation)
 
     class BrokenClient:
