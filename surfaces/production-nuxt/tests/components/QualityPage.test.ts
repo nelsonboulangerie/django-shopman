@@ -9,7 +9,7 @@ import {
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ExpeditePage from "../../app/pages/expedite.vue";
+import QualityPage from "../../app/pages/quality.vue";
 import type { QCOrderCardProjection } from "../../app/types/production";
 
 const orders = ref<QCOrderCardProjection[]>([]);
@@ -54,6 +54,8 @@ function order(
   };
 }
 
+const navigate = vi.fn();
+
 function installGlobals(hash = "") {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
@@ -61,6 +63,7 @@ function installGlobals(hash = "") {
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useHead", () => {});
+  vi.stubGlobal("navigateTo", navigate);
   vi.stubGlobal("useRoute", () => ({ query: {}, hash }));
   vi.stubGlobal("useSonner", { success, error: vi.fn() });
   vi.stubGlobal("useQcKiosk", () => ({
@@ -146,60 +149,41 @@ afterEach(() => vi.unstubAllGlobals());
 const QualityGatePanelStub = {
   name: "QualityGatePanel",
   props: ["orders", "grades", "defects", "isToday", "batchAvailable", "submitting", "reviewAvailable", "correctionAvailable"],
-  emits: ["confirm-batch", "confirm-one", "correct", "go-expedition"],
+  emits: ["confirm-batch", "confirm-one", "correct", "go-close"],
   template: "<div data-quality-gate-stub />",
 };
+const ProductionHeaderStub = {
+  name: "ProductionHeader",
+  props: ["title", "count", "countLabel", "progress", "pending", "query"],
+  template: "<header />",
+};
 const mountPage = () =>
-  shallowMount(ExpeditePage, {
-    global: { stubs: { QualityGatePanel: QualityGatePanelStub } },
+  shallowMount(QualityPage, {
+    global: {
+      stubs: {
+        QualityGatePanel: QualityGatePanelStub,
+        ProductionHeader: ProductionHeaderStub,
+      },
+    },
   });
 
-describe("Expedição — fila própria de Qualidade", () => {
+describe("Qualidade — aba própria", () => {
   const panel = (wrapper: ReturnType<typeof shallowMount>) =>
     wrapper.findComponent({ name: "QualityGatePanel" });
 
-  it("remove lotes finalizados da expedição e acusa pendências na aba QC", async () => {
+  it("entrega ao portão os lotes do dia e conta os que aguardam revisão", () => {
     const wrapper = mountPage();
 
-    expect(wrapper.text()).toContain("Baguete aberta");
-    expect(wrapper.text()).not.toContain("Croissant aguardando QC");
-    expect(panel(wrapper).exists()).toBe(false);
-    const qualityTab = wrapper
-      .findAll('[role="tab"]')
-      .find((tab) => tab.text().includes("Qualidade (QC)"));
-    expect(qualityTab?.text()).toContain("1");
-    expect(qualityTab?.attributes("aria-selected")).toBe("false");
-
-    await qualityTab!.trigger("click");
-    await nextTick();
-
-    expect(wrapper.text()).not.toContain("Baguete aberta");
-    expect(qualityTab?.attributes("aria-selected")).toBe("true");
     // O portão recebe os lotes do dia (abertos inclusive: ele os deixa fora).
     expect(panel(wrapper).props("orders")).toHaveLength(3);
     expect(panel(wrapper).props("batchAvailable")).toBe(true);
     expect(panel(wrapper).props("isToday")).toBe(true);
-  });
-
-  it("abre diretamente em QC quando veio da notificação do Gestor", () => {
-    vi.unstubAllGlobals();
-    installGlobals("#quality");
-
-    const wrapper = mountPage();
-
-    expect(panel(wrapper).exists()).toBe(true);
-    expect(wrapper.text()).not.toContain("Baguete aberta");
-    expect(
-      wrapper
-        .findAll('[role="tab"]')
-        .find((tab) => tab.text().includes("Qualidade (QC)"))
-        ?.attributes("aria-selected"),
-    ).toBe("true");
+    const header = wrapper.findComponent({ name: "ProductionHeader" });
+    expect(header.props("title")).toBe("Qualidade");
+    expect(header.props("count")).toBe(1);
   });
 
   it("confirma o conjunto sem exceção num ato só, sem caixa do navegador", async () => {
-    vi.unstubAllGlobals();
-    installGlobals("#quality");
     const nativeConfirm = vi.fn(() => true);
     vi.stubGlobal("confirm", nativeConfirm);
     reviewQualityBatch.mockClear();
@@ -215,8 +199,6 @@ describe("Expedição — fila própria de Qualidade", () => {
   });
 
   it("confirma uma exceção assim, sem window.confirm", async () => {
-    vi.unstubAllGlobals();
-    installGlobals("#quality");
     const nativeConfirm = vi.fn(() => true);
     vi.stubGlobal("confirm", nativeConfirm);
     reviewQuality.mockClear();
@@ -229,15 +211,13 @@ describe("Expedição — fila própria de Qualidade", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
-  it("o atalho dos lotes não fechados volta para a Expedição", async () => {
-    vi.unstubAllGlobals();
-    installGlobals("#quality");
+  it("o atalho dos lotes não fechados leva ao Fechamento", async () => {
+    navigate.mockClear();
 
     const wrapper = mountPage();
-    panel(wrapper).vm.$emit("go-expedition");
+    panel(wrapper).vm.$emit("go-close");
     await nextTick();
 
-    expect(wrapper.text()).toContain("Baguete aberta");
-    expect(panel(wrapper).exists()).toBe(false);
+    expect(navigate).toHaveBeenCalledWith({ path: "/close", query: {} });
   });
 });

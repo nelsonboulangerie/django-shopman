@@ -23,7 +23,7 @@ CASH_DESK = "cash_desk"
 SERVICE = "service"
 #: Expedição: o posto da saída dos pedidos, o Gestor com só a coluna "Saída" aberta.
 #: A COLUNA continua "Saída"; o POSTO é "Expedição". (A tela de fechamento de lote
-#: da Produção não é este posto e muda de nome em frente própria.)
+#: da Produção não é este posto: ela se chama Fechamento.)
 DISPATCH = "dispatch"
 #: Estação da Cozinha: Cafés, Lanches.
 KITCHEN_STATION = "kitchen_station"

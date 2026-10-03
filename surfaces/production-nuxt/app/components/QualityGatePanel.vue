@@ -39,7 +39,7 @@ const emit = defineEmits<{
   "confirm-batch": [];
   "confirm-one": [order: QCOrderCardProjection];
   correct: [order: QCOrderCardProjection];
-  "go-expedition": [];
+  "go-close": [];
 }>();
 
 type View = "pending" | "reviewed";
@@ -288,16 +288,16 @@ function closedLine(order: QCOrderCardProjection): string {
                   "lotes ainda no forno ou sem fechar. Entram",
                 )
               }}
-              aqui quando a Expedição fechar.
+              aqui depois do Fechamento.
             </span>
           </p>
           <UiButton
             type="button"
             variant="ghost"
             class="min-h-12 shrink-0"
-            @click="emit('go-expedition')"
+            @click="emit('go-close')"
           >
-            Expedição
+            Fechamento
             <Icon name="lucide:arrow-right" class="size-4" />
           </UiButton>
         </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Cabeçalho de seção do Produção — mora no topo do CONTEÚDO (não é o rail). Segura o
 // controle do rail (kit) + a nav das visões de produção (Planejamento/Preparação/
-// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Central,
+// Abertura/Fechamento/Qualidade) + busca, alertas e atualizar. As funções COMUNS (Central,
 // operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza
 // a horizontal. Touch-first e light-first, como o Gestor.
 import {
@@ -43,8 +43,9 @@ const timersRinging = computed(() =>
 const SHORTCUT_ROUTES = {
   plan: "/plan",
   "mise-en-place": "/mise-en-place",
-  produce: "/",
-  expedite: "/expedite",
+  open: "/",
+  close: "/close",
+  quality: "/quality",
 } as const;
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -77,9 +78,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
-// As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
-// expede. A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada
-// sai do forno já classificada. O que não é etapa do fluxo — o Letreiro
+// As abas são SÓ o fluxo do dia do lote: planeja → separa/pesa → abre → fecha →
+// revisa. O Fechamento classifica o lote na saída do forno (QC, ADR-017 §9); a
+// Qualidade é a revisão do gestor sobre o lote já fechado. O que não é etapa do fluxo — o Letreiro
 // (kiosk de TV) e os Relatórios (persona gestor) — mora no RAIL, não aqui:
 // primeiro nível enxuto, e a fileira nunca mais estoura a janela escondendo
 // aba sem aviso.
@@ -98,15 +99,21 @@ const tabs = computed(() => [
   },
   {
     to: "/",
-    label: "Produção",
+    label: "Abertura",
     icon: "lucide:flame",
     shortcut: "Alt+3",
   },
   {
-    to: "/expedite",
-    label: "Expedição",
+    to: "/close",
+    label: "Fechamento",
     icon: "lucide:package-check",
     shortcut: "Alt+4",
+  },
+  {
+    to: "/quality",
+    label: "Qualidade",
+    icon: "lucide:badge-check",
+    shortcut: "Alt+5",
   },
 ]);
 function isActive(to: string): boolean {

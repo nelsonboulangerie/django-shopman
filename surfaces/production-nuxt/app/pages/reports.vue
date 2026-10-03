@@ -2,7 +2,7 @@
 // Relatórios — a lente de GESTOR do Produção (perm fina
 // backstage.view_production_reports; o gate grosso de chão NÃO abre esta tela).
 // Três blocos, todos servidos pela API de relatórios:
-//   · Gestão do dia: rendimento médio, capacidade % e a tabela de atrasos;
+//   · Gestão do dia: aproveitamento médio, capacidade % e a tabela de atrasos;
 //   · Relatórios por período: Histórico · Produtividade · Desperdício, com
 //     filtros (datas, ficha, posto, operador) e download CSV (link direto);
 //   · Mapa código-cego ↔ preparo: a correlação que as telas de chão NUNCA
@@ -174,13 +174,14 @@ function refreshAll() {
           <p
             class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
-            Rendimento médio
+            Aproveitamento médio
           </p>
           <p class="mt-1 text-xl font-bold tabular-nums">
             {{ management?.average_yield_rate || "—" }}
           </p>
           <p class="text-xs text-muted-foreground">
-            {{ management?.finished_orders ?? 0 }} OPs concluídas
+            Realizado ÷ previsto em
+            {{ management?.finished_orders ?? 0 }} lotes fechados
           </p>
         </div>
         <div class="rounded-md border bg-card p-3">
@@ -213,7 +214,7 @@ function refreshAll() {
             {{ management?.planned_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
-            {{ management?.planned_orders ?? 0 }} OPs planejadas
+            {{ management?.planned_orders ?? 0 }} lotes planejados
           </p>
         </div>
         <div class="rounded-md border bg-card p-3">
@@ -226,8 +227,8 @@ function refreshAll() {
             {{ management?.loss_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
-            Concluído {{ management?.finished_qty || "0" }} de
-            {{ management?.started_qty || "0" }} produzidos
+            Realizado {{ management?.finished_qty || "0" }} de
+            {{ management?.started_qty || "0" }} previstos
           </p>
         </div>
       </div>
@@ -506,7 +507,7 @@ function refreshAll() {
         class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:table-2" class="size-8" />
-        <p class="text-base font-medium">Nada produzido nesse período.</p>
+        <p class="text-base font-medium">Nenhum lote nesse período.</p>
         <p class="text-sm">Ajuste as datas ou os filtros acima.</p>
       </div>
 
@@ -525,10 +526,12 @@ function refreshAll() {
               <th class="px-3 py-2 font-semibold">Ficha técnica</th>
               <th class="px-3 py-2 font-semibold">Posto</th>
               <th class="px-3 py-2 text-right font-semibold">Planejado</th>
-              <th class="px-3 py-2 text-right font-semibold">Produzido</th>
-              <th class="px-3 py-2 text-right font-semibold">Concluído</th>
+              <th class="px-3 py-2 text-right font-semibold">Previsto</th>
+              <th class="px-3 py-2 text-right font-semibold">Realizado</th>
               <th class="px-3 py-2 text-right font-semibold">Perda</th>
-              <th class="px-3 py-2 text-right font-semibold">Rendimento</th>
+              <th class="px-3 py-2 text-right font-semibold">
+                Aproveitamento
+              </th>
               <th class="px-3 py-2 font-semibold">Operador</th>
               <th class="px-3 py-2 text-right font-semibold">Tempo (min)</th>
             </tr>
@@ -548,6 +551,14 @@ function refreshAll() {
               </td>
               <td class="px-3 py-2 text-right tabular-nums">
                 {{ row.qty_started || "—" }}
+                <!-- Fechamento sem abertura: o previsto não foi declarado, foi
+                     assumido igual ao planejado. A tela não o apresenta como fato. -->
+                <span
+                  v-if="row.started_assumed"
+                  class="ml-1 rounded-sm border border-warning/40 bg-warning/10 px-1 text-xs font-medium text-warning"
+                  title="Fechado sem abertura: previsto assumido igual ao planejado"
+                  >assumido</span
+                >
               </td>
               <td class="px-3 py-2 text-right tabular-nums">
                 {{ row.qty_finished || "—" }}
@@ -565,6 +576,14 @@ function refreshAll() {
             </tr>
           </tbody>
         </table>
+        <p
+          v-if="historyRows.some((row) => row.started_assumed)"
+          class="border-t px-3 py-2 text-xs text-muted-foreground"
+        >
+          <b class="font-medium text-warning">assumido</b>: o lote foi fechado
+          sem abertura, e o previsto foi assumido igual ao planejado. Ninguém o
+          declarou.
+        </p>
       </div>
 
       <!-- Produtividade por operador -->
@@ -579,9 +598,9 @@ function refreshAll() {
             <tr>
               <th class="px-3 py-2 font-semibold">Operador</th>
               <th class="px-3 py-2 text-right font-semibold">Ordens</th>
-              <th class="px-3 py-2 text-right font-semibold">Qtd total</th>
+              <th class="px-3 py-2 text-right font-semibold">Qtd realizada</th>
               <th class="px-3 py-2 text-right font-semibold">
-                Rendimento médio
+                Aproveitamento médio
               </th>
               <th class="px-3 py-2 text-right font-semibold">
                 Tempo médio (min)
@@ -658,7 +677,7 @@ function refreshAll() {
               <th class="px-3 py-2 text-right font-semibold">Ordens</th>
               <th class="px-3 py-2 text-right font-semibold">Perda total</th>
               <th class="px-3 py-2 text-right font-semibold">
-                Rendimento médio
+                Aproveitamento médio
               </th>
             </tr>
           </thead>

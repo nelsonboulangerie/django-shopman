@@ -53,7 +53,7 @@ def _operator_error(exc: Exception) -> Exception:
 
     if isinstance(exc, StockError):
         return ProductionError(
-            f"O lote não foi concluído porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
+            f"O lote não foi fechado porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
         )
     if isinstance(exc, ObjectDoesNotExist):
         return ProductionNotFound(
@@ -67,9 +67,9 @@ def _operator_error(exc: Exception) -> Exception:
     data = getattr(exc, "data", {}) or {}
     if code in ("TERMINAL_STATUS", "VOID_FROM_DONE"):
         if str(data.get("status") or "") == "void":
-            return ProductionConflict("Este lote foi estornado. Atualize o painel.", data=data)
+            return ProductionConflict("Este lote foi cancelado. Atualize o painel.", data=data)
         if code == "VOID_FROM_DONE":
-            return ProductionConflict("Lote concluído não pode ser estornado.", data=data)
+            return ProductionConflict("Lote fechado não pode ser cancelado.", data=data)
         return ProductionConflict(
             "Este lote já foi fechado em outra tela. Atualize o painel.",
             data=data,
@@ -135,7 +135,7 @@ class ProductionBatchTraceabilityError(ProductionError):
         self.output_sku = output_sku
         self.cause = cause
         super().__init__(
-            "O lote não foi concluído porque a rastreabilidade falhou. Atualize o painel e tente novamente."
+            "O lote não foi fechado porque a rastreabilidade falhou. Atualize o painel e tente novamente."
         )
 
 
@@ -377,7 +377,7 @@ def apply_void(
     actor: str,
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
-    reason: str = "Estornado via produção rápida",
+    reason: str = "Cancelado via produção rápida",
 ) -> str:
     """Void a work order from the operator surface."""
     from django.db import transaction
@@ -1387,7 +1387,7 @@ def apply_oven_arm(
                     return replay
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível enfornar uma ordem iniciada.",
+                    "Só é possível enfornar um lote aberto.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -1498,7 +1498,7 @@ def apply_oven_conclude(
 
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível retirar do forno uma ordem iniciada.",
+                    "Só é possível retirar do forno um lote aberto.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -2549,7 +2549,7 @@ def apply_quality_correction(
                 return replay
             if work_order.status != WorkOrder.Status.FINISHED:
                 raise ProductionConflict(
-                    "Somente um lote concluído pode ter a qualidade corrigida.",
+                    "Somente um lote fechado pode ter a qualidade corrigida.",
                     data={"work_order": work_order.ref, "cause": "quality_correction_requires_finished"},
                 )
             if work_order.rev != expected_rev:
@@ -2819,9 +2819,9 @@ def apply_finish(
             if yield_deviation > 0:
                 deviation_reason = str(yield_deviation_reason or "").strip()
                 if yield_deviation_confirmed is not True:
-                    raise ProductionError("Confirme explicitamente a produção acima da quantidade iniciada.")
+                    raise ProductionError("Confirme explicitamente o realizado acima do previsto.")
                 if not deviation_reason:
-                    raise ProductionError("Informe o motivo da produção acima da quantidade iniciada.")
+                    raise ProductionError("Informe o motivo do realizado acima do previsto.")
                 deviation_context = {
                     "kind": "yield_overshoot",
                     "anchor_qty": _qty(yield_anchor),
@@ -3229,9 +3229,9 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             [
                 "Operador",
                 "Nome",
-                "Ordens concluídas",
-                "Qtd total",
-                "Rendimento médio",
+                "Lotes fechados",
+                "Qtd realizada",
+                "Aproveitamento médio",
                 "Tempo médio (min)",
             ]
         )
@@ -3277,7 +3277,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Nome",
                 "Ordens",
                 "Perda total",
-                "Rendimento médio",
+                "Aproveitamento médio",
                 "Utilização capacidade",
             ]
         )
@@ -3301,13 +3301,14 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Nome da receita",
                 "Posição",
                 "Qtd planejada",
-                "Qtd iniciada",
-                "Qtd concluída",
+                "Qtd prevista",
+                "Previsto assumido",
+                "Qtd realizada",
                 "Perda",
-                "Rendimento",
+                "Aproveitamento",
                 "Operador",
-                "Iniciada em",
-                "Concluída em",
+                "Aberta em",
+                "Fechada em",
                 "Duração (min)",
             ]
         )
@@ -3321,6 +3322,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.position_ref),
                     row.qty_planned,
                     row.qty_started,
+                    "sim" if row.started_assumed else "",
                     row.qty_finished,
                     row.qty_loss,
                     row.yield_rate,

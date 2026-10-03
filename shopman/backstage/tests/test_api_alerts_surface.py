@@ -220,7 +220,7 @@ def test_production_alert_projects_server_owned_recovery_context(client, shop):
 
     assert context["method"] == "GET"
     assert context["href"] == (
-        f"/expedite?q={work_order.ref}&date={target_date.isoformat()}"
+        f"/close?q={work_order.ref}&date={target_date.isoformat()}"
     )
     assert context["source_alert_effect"] == "keeps_open"
 
@@ -247,10 +247,15 @@ def test_cancellation_request_alert_opens_the_exact_order(client, operator):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "alert_type",
-    ("production_low_yield", "production_batch_traceability"),
+    ("alert_type", "path"),
+    (
+        # Aproveitamento baixo é de lote já fechado: a revisão mora na Qualidade.
+        ("production_low_yield", "/quality"),
+        # O fechamento que não gravou a rastreabilidade se refaz no Fechamento.
+        ("production_batch_traceability", "/close"),
+    ),
 )
-def test_production_close_alerts_route_to_expedition(client, shop, alert_type):
+def test_production_close_alerts_route_to_their_screen(client, shop, alert_type, path):
     operator = User.objects.create_user(
         f"production-{alert_type}",
         password="pw",
@@ -270,7 +275,7 @@ def test_production_close_alerts_route_to_expedition(client, shop, alert_type):
     row = next(item for item in projected["alerts"] if item["pk"] == alert.pk)
     context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
 
-    assert context["href"] == "/expedite?q=WO-42"
+    assert context["href"] == f"{path}?q=WO-42"
 
 
 @pytest.mark.django_db
