@@ -81,7 +81,7 @@ def get_rule_params(ref: str) -> dict:
         for rc in get_active_rules():
             if rc.ref == ref:
                 return rc.params or {}
-    except Exception:
+    except Exception:  # silêncio-deliberado: leitura de params falha fechada ({}), como diz a docstring
         logger.debug("rules.engine: could not load params for rule=%s", ref, exc_info=True)
     return {}
 
@@ -111,7 +111,7 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
             if channel_ref and any(c.ref == channel_ref for c in channels):
                 return rc.params or {}
             return None
-    except Exception:
+    except Exception:  # silêncio-deliberado: falha fechada (sem regra, sem desconto), como diz a docstring
         logger.debug("rules.engine: channel rule lookup failed for rule=%s", ref, exc_info=True)
     return None
 
@@ -225,9 +225,9 @@ def bootstrap_active_rules() -> None:
         try:
             register_active_rules()
             _bootstrapped = True
-        except (OperationalError, ProgrammingError):
+        except (OperationalError, ProgrammingError):  # silêncio-deliberado: tabela ainda não migrada, o bootstrap tenta de novo
             logger.debug("rules.engine: rules table not ready yet; bootstrap deferred.")
-        except Exception:
+        except Exception:  # silêncio-deliberado: bootstrap adiado, a próxima chamada tenta de novo
             logger.debug("rules.engine: deferred bootstrap failed; will retry later.", exc_info=True)
     finally:
         _boot_lock.release()
