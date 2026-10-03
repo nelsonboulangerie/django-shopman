@@ -545,6 +545,11 @@ por tela", **forma por forma**; e as mudanças de regra que a função pede anda
 
 ## 13. O que é decisão do dono
 
+**Respostas do dono (03/10/2026):** (1) leis, formas e gestos **aprovados** em geral; (2) nova
+fronteira **aprovada**, mas o nome "Passe" é ruim e pode mudar sem travar o conceito (proposta de
+nome em discussão); (4) recursos novos **aprovados**. Itens 3 (automações) e 5 (trabalhos fora dos
+apps) voltaram para ele em formato curto, para decidir item a item.
+
 1. **As sete leis** (§2) como filtro de toda tela.
 2. **As sete formas, os oito gestos e o contrato de chrome** (§3 e §4) como gramática única.
 3. **A nova fronteira** (§9): Estoque e Fim do dia como trabalhos próprios; B.I. como fonte;
