@@ -3,7 +3,7 @@
 // da casa. Montada UMA vez, pelo `OperatorPwaRuntime`, que todo app de operador já
 // monta; nenhum app a monta de novo.
 //
-// `AlertDialog` do reka-ui, e não o `UiDialog` do app: a Shopman Apps, o B.I. e o
+// `AlertDialog` do reka-ui, e não o `UiDialog` do app: a Central, o B.I. e o
 // Compras não têm `UiDialog`, e esta peça precisa existir nos nove. Pelo mesmo
 // motivo os botões são `<button>` crus (a convenção do kit, ver
 // `OperatorSessionUnavailable`). AlertDialog porque é a semântica certa: toque fora

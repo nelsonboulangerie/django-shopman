@@ -55,6 +55,32 @@ def pending_alert_count(sku: str) -> int:
     )
 
 
+def pending_bake_alert_counts(skus: Iterable[str]) -> dict[str, int]:
+    """Pessoas que esperam o aviso "saiu do forno" de cada SKU.
+
+    É a fila que a confirmação de qualidade de um lote libera (``review_bake_ready``
+    só olha ``production_ready``): a tela de Qualidade mostra o número ANTES do
+    gesto. Teto, não promessa: o canal ainda pode barrar a entrega (grau não
+    vendável no canal, produto indisponível). Dedupe por telefone, como o badge.
+    """
+    from django.db.models import Count
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    wanted = sorted({str(sku) for sku in skus if sku})
+    if not wanted:
+        return {}
+    rows = (
+        StockAlertSubscription.objects.active()
+        .filter(sku__in=wanted, alert_type="production_ready", revoked_at__isnull=True)
+        .values("sku")
+        .annotate(people=Count("contact_phone", distinct=True))
+    )
+    counts = dict.fromkeys(wanted, 0)
+    counts.update({row["sku"]: int(row["people"]) for row in rows})
+    return counts
+
+
 def notified_alert_count(sku: str) -> int:
     """How many distinct subscriptions have an accepted delivery receipt."""
     from shopman.storefront.models import StockAlertDelivery

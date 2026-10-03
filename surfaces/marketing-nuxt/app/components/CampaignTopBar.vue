@@ -9,7 +9,7 @@
 //
 // Nenhuma rota foi removida: `/v2?area=…`, `/campaigns`, `/templates`, `/platforms` e
 // `/history` continuam onde estavam. Só mudou por onde se chega a elas.
-// As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à esquerda.
+// As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 const route = useRoute();

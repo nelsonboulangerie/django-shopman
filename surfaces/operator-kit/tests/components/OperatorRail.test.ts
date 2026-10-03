@@ -71,7 +71,7 @@ describe("OperatorRail — identidade do app", () => {
     const square = identitySquare(wrapper);
 
     expect(square.get("img").classes()).toContain("group-hover:hidden");
-    // A seta "voltar ao Shopman Apps" continua ali, escondida até o hover/foco.
+    // A seta "voltar à Central" continua ali, escondida até o hover/foco.
     const arrow = square.findAllComponents({ name: "Icon" }).find((c) => c.attributes("name") === "lucide:arrow-left");
     expect(arrow?.exists()).toBe(true);
     expect(wrapper.get("aside > a").attributes("href")).toBe("http://central/");

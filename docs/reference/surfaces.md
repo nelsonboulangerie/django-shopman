@@ -26,7 +26,7 @@ e a superficie `storefront-nuxt` foram **aposentados** no cutover headless.
 | `gestor.` | `surfaces/orders-nuxt` | Gestor de pedidos. |
 | `prod.` | `surfaces/production-nuxt` | Producao e fornadas. |
 | `compras.` | `surfaces/purchase-nuxt` | Compras e recebimento. |
-| `central.` | `surfaces/hub-nuxt` | Central de Apps. |
+| `central.` | `surfaces/hub-nuxt` | Central (home do operador). |
 | `mkt.` | `surfaces/marketing-nuxt` | Cockpit de Marketing. |
 | `bi.` | `surfaces/bi-nuxt` | Leitura analitica. |
 

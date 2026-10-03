@@ -94,6 +94,7 @@ class ProductionActionProjection:
         "start",
         "finish",
         "review_qc",
+        "review_qc_batch",
         "correct_qc",
         "quick_finish",
         "void",
@@ -743,6 +744,26 @@ def _qc_actions(
     access: ProductionSurfaceAccess,
 ) -> tuple[ProductionActionProjection, ...]:
     actions: list[ProductionActionProjection] = []
+    clean_pending = [card for card in cards if card.closed and not card.quality_reviewed and not card.quality_exception]
+    if clean_pending:
+        # Qualidade em lote (P19, decisão do dono 03/10): os lotes sem exceção
+        # são um ato só. A ref prende o conjunto exato (pk@rev) à prova.
+        count = len(clean_pending)
+        actions.append(
+            _production_action(
+                ref=quality_review_batch_ref(
+                    {"work_order_id": card.pk, "expected_rev": card.rev} for card in clean_pending
+                ),
+                kind="review_qc_batch",
+                label=f"{count} {'lote' if count == 1 else 'lotes'}, nenhuma exceção · Confirmar",
+                priority=15,
+                enabled=all(card.can_correct for card in clean_pending),
+                reason="Somente a gestão pode revisar um lote concluído.",
+                href="/api/v1/backstage/production/quality-review/batch/",
+                payload_schema="ProductionQualityReviewBatchMutationRequest",
+                expected_rev=None,
+            )
+        )
     for card in cards:
         if card.closed:
             if not card.quality_reviewed:
@@ -1020,6 +1041,21 @@ class QCOrderCardProjection:
     full_price_qty: str
     discounted_qty: str
     loss_qty: str
+    # Portão de qualidade (P19). ``quality_exception`` é a regra do servidor
+    # (``qc_partition_is_clean``): falso só para lote fechado sem perda, sem
+    # desconto, tudo no grau padrão e contagem igual ao que entrou no forno.
+    # Lote aberto não está no portão e fica falso.
+    quality_exception: bool = False
+    # Quem fechou e quando (o fato FINISHED), para a consequência antes do gesto.
+    closed_by: str = ""
+    closed_at_display: str = ""
+    # Perda média por lote da mesma receita nos 28 dias anteriores; "" sem
+    # histórico suficiente (menos de 3 lotes). É a referência para decidir.
+    typical_loss_qty: str = ""
+    # Pessoas na fila "Me avise" (saiu do forno) do SKU, que a confirmação
+    # libera. Teto: o canal ainda pode barrar. None quando a fila não pôde
+    # ser lida (a tela cala em vez de dizer zero).
+    alert_waiting_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1912,6 +1948,9 @@ def build_qc_kiosk(
         default_markdown=default_markdown,
     )
 
+    finished_orders = [wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED]
+    gate = _qc_gate_facts(finished_orders, selected_date=selected_date)
+
     now = timezone.now()
     open_cards: list[QCOrderCardProjection] = []
     closed_cards: list[QCOrderCardProjection] = []
@@ -1966,6 +2005,7 @@ def build_qc_kiosk(
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
             loss_qty=_qty(loss_qty) if loss_qty is not None else "",
+            **(gate.get(wo.pk, {}) if closed else {}),
         )
         (closed_cards if closed else open_cards).append(card)
 
@@ -2023,6 +2063,134 @@ def build_qc_kiosk(
             access=access,
         ),
     )
+
+
+QC_TYPICAL_LOSS_DAYS = 28
+QC_TYPICAL_LOSS_MIN_LOTS = 3
+
+
+def qc_partition_is_clean(partition, *, anchor, default_grade_ref: str) -> bool:
+    """Lote fechado SEM exceção, a regra única do portão de qualidade em lote.
+
+    Estrita de propósito (decisão do dono, 03/10: na dúvida, olha um humano):
+    sem perda, sem desconto (markdown congelado do lote = 0), todo grupo no
+    grau padrão e sem defeito, e a contagem igual ao que entrou no forno.
+    Partição ilegível ou âncora ausente é exceção, nunca "limpo".
+    """
+    if not partition or anchor is None:
+        return False
+    total = Decimal("0")
+    for group in partition:
+        quantity = Decimal(str(group.get("quantity") or "0"))
+        if quantity <= 0:
+            continue
+        if group.get("loss"):
+            return False
+        if int(group.get("markdown_percent") or 0) > 0:
+            return False
+        if str(group.get("quality_defect_ref") or ""):
+            return False
+        if str(group.get("quality_grade_ref") or default_grade_ref) != default_grade_ref:
+            return False
+        total += quantity
+    return total > 0 and total == Decimal(str(anchor))
+
+
+def quality_review_batch_ref(items) -> str:
+    """Ref da ação "confirmar em lote", presa ao CONJUNTO exato (pk e revisão).
+
+    A prova assinada da projeção cobre esta ref; o servidor recalcula a partir
+    dos itens recebidos. Um lote a mais, a menos ou com outra revisão muda a
+    ref e a ação deixa de valer.
+    """
+    pairs = sorted((int(item["work_order_id"]), int(item["expected_rev"])) for item in items)
+    digest = hashlib.sha256(",".join(f"{pk}@{rev}" for pk, rev in pairs).encode()).hexdigest()[:32]
+    return f"review_qc_batch:{digest}"
+
+
+def _actor_display_names(actors: set[str]) -> dict[str, str]:
+    """``production:<username>`` → primeiro nome do usuário (ou o username)."""
+    usernames = {actor: actor.split(":", 1)[1] if ":" in actor else actor for actor in actors if actor}
+    if not usernames:
+        return {}
+    from django.contrib.auth import get_user_model
+
+    names = {
+        username: (first_name or username)
+        for username, first_name in get_user_model()
+        .objects.filter(username__in=set(usernames.values()))
+        .values_list("username", "first_name")
+    }
+    return {actor: names.get(username, username) for actor, username in usernames.items()}
+
+
+def _qc_gate_facts(finished_orders: list[WorkOrder], *, selected_date: date) -> dict[int, dict]:
+    """Fatos do portão de qualidade por lote fechado (P19): exceção, quem
+    fechou, perda típica da receita e a fila "Me avise" que a confirmação libera."""
+    if not finished_orders:
+        return {}
+    from shopman.craftsman.models import WorkOrderItem
+
+    from shopman.shop.services import quality as quality_service
+
+    default_grade = quality_service.default_grade_ref()
+    partitions = quality_service.effective_partitions(finished_orders)
+
+    finished_events = {}
+    for wo in finished_orders:
+        events = sorted(
+            (event for event in wo.events.all() if event.kind == WorkOrderEvent.Kind.FINISHED),
+            key=lambda event: event.seq,
+        )
+        if events:
+            finished_events[wo.pk] = events[-1]
+    names = _actor_display_names({str(event.actor or "") for event in finished_events.values()})
+
+    recipe_ids = {wo.recipe_id for wo in finished_orders}
+    window_start = selected_date - timedelta(days=QC_TYPICAL_LOSS_DAYS)
+    history = WorkOrder.objects.filter(
+        recipe_id__in=recipe_ids,
+        status=WorkOrder.Status.FINISHED,
+        target_date__gte=window_start,
+        target_date__lt=selected_date,
+    )
+    lots = dict(history.values("recipe_id").annotate(n=Count("pk")).values_list("recipe_id", "n"))
+    losses = dict(
+        WorkOrderItem.objects.filter(work_order__in=history, kind=WorkOrderItem.Kind.WASTE)
+        .values("work_order__recipe_id")
+        .annotate(total=Sum("quantity"))
+        .values_list("work_order__recipe_id", "total")
+    )
+    typical: dict[int, str] = {}
+    for recipe_id, count in lots.items():
+        if count >= QC_TYPICAL_LOSS_MIN_LOTS:
+            average = (Decimal(str(losses.get(recipe_id) or 0)) / count).quantize(Decimal("0.1"))
+            typical[recipe_id] = _qty(average)
+
+    try:
+        from shopman.shop.adapters import audience_sources
+
+        waiting = audience_sources.pending_bake_alert_counts(wo.output_sku for wo in finished_orders)
+    except Exception:
+        logger.debug("qc_gate.alert_waiting_unavailable", exc_info=True)
+        waiting = None
+
+    facts: dict[int, dict] = {}
+    for wo in finished_orders:
+        clean = qc_partition_is_clean(
+            partitions.get(wo.pk, []),
+            anchor=_wo_started_qty(wo),
+            default_grade_ref=default_grade,
+        )
+        event = finished_events.get(wo.pk)
+        facts[wo.pk] = {
+            "quality_exception": not clean,
+            "closed_by": names.get(str(event.actor or ""), "") if event else "",
+            "closed_at_display": (timezone.localtime(wo.finished_at).strftime("%H:%M") if wo.finished_at else ""),
+            "typical_loss_qty": typical.get(wo.recipe_id, ""),
+            "alert_waiting_count": None if waiting is None else int(waiting.get(wo.output_sku, 0)),
+        }
+    return facts
 
 
 def _committed_units(wo: WorkOrder) -> Decimal:

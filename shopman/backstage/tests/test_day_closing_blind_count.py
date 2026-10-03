@@ -88,20 +88,73 @@ class DayClosingBlindCountTests(TestCase):
         StockMovements.receive(quantity=6, sku=self.resale.sku, position=self.loja, reason="recebimento")
 
     def test_closing_projection_classifies_by_lot(self) -> None:
+        from shopman.backstage.projections.closing import build_day_closing
+
         resp = self.client.get("/api/v1/backstage/closing/")
 
         self.assertEqual(resp.status_code, 200)
         closing = resp.json()["closing"]
         self.assertFalse(closing["already_closed"])
         by_sku = {it["sku"]: it for it in closing["items"]}
+        self.assertEqual(by_sku[self.keeper.sku]["classification"], "keep")
+        self.assertEqual(by_sku[self.day_bread.sku]["classification"], "expired")
 
-        keeper = by_sku[self.keeper.sku]
-        self.assertEqual(keeper["classification"], "keep")
-        self.assertEqual(keeper["qty_expiring"], 0)
+        # As quantidades por lote existem na projection (o registro precisa
+        # delas), mas não saem na API antes da contagem.
+        items = {it.sku: it for it in build_day_closing().items}
+        self.assertEqual(items[self.keeper.sku].qty_expiring, 0)
+        self.assertEqual(items[self.day_bread.sku].qty_expiring, 2)
 
-        day = by_sku[self.day_bread.sku]
-        self.assertEqual(day["classification"], "expired")
-        self.assertEqual(day["qty_expiring"], 2)
+    def test_gerente_get_before_count_carries_no_answer_key_and_no_money(self) -> None:
+        """Fechamento às cegas: o gerente (perform_closing) não recebe, nem no
+        JSON cru, o esperado por SKU nem dinheiro do caixa.
+
+        A tela já não mostrava; o servidor mandava — e a aba de rede é tela.
+        Dinheiro (esperado, diferença, mix de meios) é do relatório do Dono
+        (``cashman.audit_shift``), nunca do fechamento.
+        """
+        from shopman.cashman import services as cash
+        from shopman.cashman.models import Terminal
+
+        shift = cash.open_shift(operator=self.staff, terminal=Terminal.default(), float_q=10_000)
+        cash.close_shift(shift, counted_q=9_000, actor=self.staff)
+
+        resp = self.client.get("/api/v1/backstage/closing/")
+
+        self.assertEqual(resp.status_code, 200)
+        raw = resp.content.decode()
+        for leaked in (
+            "qty_available",
+            "total_available",
+            "qty_expiring",
+            "qty_nonconforming",
+            "production_summary",
+            "cash_shift_summary",
+            "expected_amount_q",
+            "difference_q",
+            "blind_closing_amount_q",
+            "payment_method_totals",
+            "total_q",
+            "total_display",
+        ):
+            self.assertNotIn(leaked, raw)
+        closing = resp.json()["closing"]
+        self.assertEqual(
+            {it["sku"] for it in closing["items"]}, {self.keeper.sku, self.day_bread.sku},
+        )
+
+    def test_after_the_count_quantities_return_but_money_never_does(self) -> None:
+        self.client.post(
+            "/api/v1/backstage/closing/",
+            {"quantities": {self.keeper.sku: "3", self.day_bread.sku: "2"}},
+            content_type="application/json",
+        )
+
+        raw = self.client.get("/api/v1/backstage/closing/").content.decode()
+
+        self.assertIn("production_summary", raw)
+        for leaked in ("cash_shift_summary", "expected_amount_q", "difference_q", "payment_method_totals"):
+            self.assertNotIn(leaked, raw)
 
     def test_closing_counts_only_what_the_house_produces(self) -> None:
         """Revenda não entra na contagem do dia; o estoque dela fica intacto."""

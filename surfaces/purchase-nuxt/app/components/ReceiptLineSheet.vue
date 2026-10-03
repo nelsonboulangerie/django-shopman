@@ -237,6 +237,12 @@ function onCheck(checked: boolean) {
           </label>
         </div>
 
+        <!-- 3b. Chegou diferente da nota: nota × chegou × diferença, e o motivo.
+             Sem motivo a entrada não sai, aqui e no servidor. -->
+        <div data-receipt-field="reason" class="scroll-mt-4 transition-shadow" :class="ring('reason')">
+          <ReceiptDifference :preview="preview" @reason="emit('update', { lineNote: $event })" />
+        </div>
+
         <!-- 4. De onde veio e até quando vale. Os dois saem do mesmo grupo
              `rastro` da NF-e e respondem à mesma pergunta. -->
         <ReceiptField

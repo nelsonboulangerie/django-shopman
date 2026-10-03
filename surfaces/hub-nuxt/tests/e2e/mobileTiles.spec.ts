@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 // altura diferente e a grade de duas colunas ficava serrilhada — o olho perdia a coluna
 // e a leitura virava um ziguezague. O teto agora é duas linhas para o nome e duas para a
 // frase, o que passa disso é cortado com reticências, e a altura é fixa.
-test.describe("Shopman Apps — a grade no celular", () => {
+test.describe("Central — a grade no celular", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
   test("todos os tiles têm a mesma altura, e o texto para em duas linhas", async ({ page }) => {

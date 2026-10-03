@@ -817,7 +817,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
 
-    assert set(matrix) == {"surfaces", "rows", "collections"}
+    assert set(matrix) == {"surfaces", "rows", "collections", "vocation_pending"}
 
     surface = matrix["surfaces"][0]
     assert set(surface) == {
@@ -831,7 +831,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
-        "hidden_by_inactive_collection", "product_action", "resync_action",
+        "hidden_by_inactive_collection", "has_vocation", "product_action", "resync_action",
     }
 
     cell = row["cells"][0]
@@ -896,6 +896,8 @@ def test_product_detail_get_shape(client, operator, catalog):
         "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources",
         # somente-leitura: selos do SKU (Comprável · Vendável · Produzido · Usado em receita)
         "roles",
+        # vocação do SKU (ProductConsumptionTag, só para o B.I.) + escolhas ativas
+        "vocation", "vocation_choices",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500

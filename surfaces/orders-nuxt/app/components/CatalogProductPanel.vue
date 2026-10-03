@@ -17,6 +17,7 @@ import type {
   ProductDetailProjection,
   SkuRoles,
 } from "~/types/catalog";
+import { vocationLabel, vocationOptions } from "~/presentation/vocation";
 
 const props = defineProps<{
   open: boolean;
@@ -160,6 +161,8 @@ const draft = reactive({
     social_caption: "",
   },
   fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN", origin: "0" },
+  // Vocação (etiqueta de consumo do SKU): ref do papel, "" = sem vocação.
+  vocation: "",
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
@@ -214,6 +217,8 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.fiscal.cest = f?.cest ?? "";
   draft.fiscal.unit = f?.unit || "UN";
   draft.fiscal.origin = f?.origin || "0";
+
+  draft.vocation = detail?.vocation ?? "";
 }
 
 watch(
@@ -232,6 +237,7 @@ watch(
 );
 
 const fiscalProfiles = computed(() => props.detail?.fiscal_profiles ?? []);
+const vocationChoices = computed(() => vocationOptions(props.detail?.vocation_choices));
 const activeFiscalProfile = computed(
   () => fiscalProfiles.value.find((p) => p.key === draft.fiscal.profile) ?? null,
 );
@@ -302,6 +308,7 @@ function buildPatch(): ProductDetailPatch {
   put("allows_next_day_sale", draft.allows_next_day_sale, current.allows_next_day_sale);
   put("serves", draft.serves.trim(), current.serves);
   put("approx_dimensions", draft.approx_dimensions.trim(), current.approx_dimensions);
+  put("vocation", draft.vocation, current.vocation ?? "");
 
   const price_q = parseBrl(draft.priceText);
   if (price_q !== null && price_q !== current.base_price_q) patch.base_price_q = price_q;
@@ -403,7 +410,7 @@ const conflictLabels: Record<string, string> = {
   "social.condition": "Condição", "social.google_product_category": "Categoria Google",
   "social.tiktok_category_id": "Categoria TikTok", "social.hashtags": "Hashtags",
   "social.social_caption": "Legenda", "fiscal.profile": "Perfil fiscal", "fiscal.ncm": "NCM",
-  "fiscal.cest": "CEST", "fiscal.unit": "Unidade fiscal",
+  "fiscal.cest": "CEST", "fiscal.unit": "Unidade fiscal", vocation: "Vocação",
   ...Object.fromEntries([...SERVING_FIELDS, ...MACRO_FIELDS, ...MICRO_FIELDS].map(f => [`nutrition_facts.${f.key}`, f.label])),
 };
 function sourceChange(field: string): string {
@@ -416,6 +423,7 @@ function sourceChange(field: string): string {
 }
 
 function currentValue(path: string): string {
+  if (path === "vocation") return vocationLabel(props.conflict?.product.vocation ?? "", props.conflict?.product.vocation_choices);
   let value: unknown = props.conflict?.product;
   for (const part of path.split(".")) {
     value = value && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined;
@@ -632,6 +640,31 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                 Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
               </p>
             </div>
+
+            <!-- Vocação: o que a presença do produto na cesta diz ao B.I. (consumo
+                 aqui × levar). Não muda a venda, por isso fica discreta, aqui e não
+                 na aba Geral. Entra no rascunho: grava no "Salvar". -->
+            <fieldset class="space-y-1.5" data-testid="vocation">
+              <legend class="flex w-full items-baseline justify-between gap-2">
+                <span :class="labelClass">Vocação</span>
+                <span class="text-xs text-muted-foreground">só para o B.I.</span>
+              </legend>
+              <UiRadioGroup v-if="vocationChoices.length" v-model="draft.vocation" label="Vocação" class="grid-cols-2 gap-x-3 gap-y-0 sm:grid-cols-3">
+                <UiRadio
+                  v-for="option in vocationChoices" :key="option.value"
+                  :value="option.value" :label="option.label" :title="option.hint || undefined" variant="inline"
+                />
+              </UiRadioGroup>
+              <p v-else class="text-xs text-muted-foreground">Nenhuma vocação cadastrada. O cadastro fica no Admin.</p>
+              <button
+                v-if="draft.vocation" type="button"
+                class="min-h-control text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                @click="draft.vocation = ''"
+              >
+                Deixar sem vocação
+              </button>
+              <p v-else-if="vocationChoices.length" class="text-xs text-muted-foreground">Sem vocação: o B.I. não classifica as vendas deste produto.</p>
+            </fieldset>
 
             <div class="space-y-2 rounded-lg border border-border p-3">
               <p :class="sectionClass">Visibilidade</p>

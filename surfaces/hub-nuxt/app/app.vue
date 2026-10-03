@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// Shopman Apps — a home do Shopman e o launcher pós-login. Lê a projection do hub
+// Central — a home do Shopman e o launcher pós-login. Lê a projection do hub
 // (tiles já filtrados por permissão) e a apresenta como uma grade de ícones fortes.
 // Sem CRUD: cada tile abre a superfície dedicada (ou deep-linka pro Unfold, no caso da
 // Loja). Herda do kit o OfflineBanner, o re-gate de 401 (useOperatorSession) e
 // httpErrorMessage.
 import type { HubFailure } from "~/presentation/hub";
 import type { HubTileProjection } from "~/types/hub";
-import { HUB_NAME, hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
+import { HUB_NAMED_OF, hubBrandLine, hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileLinkAttrs } from "~/presentation/hub";
 
-// Como cada tile abre depende de o Shopman Apps estar instalado (janela própria por app)
+// Como cada tile abre depende de a Central estar instalada (janela própria por app)
 // ou ser uma aba comum. A leitura é reativa: instalar com a tela aberta já muda o link.
 const { installed } = useOperatorAppLink();
 const linkContext = computed(() => ({
@@ -17,7 +17,10 @@ const linkContext = computed(() => ({
 }));
 
 const apiPath = useApiPath();
-useOperatorWindowTitle();
+// A casa (`Shop.short_name`) que o kit já lê do Django para o nome da janela. A Central
+// a mostra ao lado do nome do sistema: "Shopman · Nelson".
+const { prefix: house } = useOperatorWindowTitle();
+const brandLine = hubBrandLine(house);
 
 // Versão publicada deste build (`NUXT_PUBLIC_APP_VERSION`/`SOURCE_VERSION`; "local" na
 // máquina de quem desenvolve). É o que o operador lê para o suporte ao relatar algo.
@@ -68,7 +71,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
       v-if="needsLogin"
       mode="page"
       :login-url="apiPath('/api/v1/backstage/operator/login/')"
-      :title="sessionExpired ? 'Sua sessão expirou' : HUB_NAME"
+      :title="sessionExpired ? 'Sua sessão expirou' : brandLine"
       :description="
         sessionExpired
           ? 'Entre de novo para continuar.'
@@ -117,7 +120,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
             <RailToggle />
             <div class="min-w-0">
               <h1 class="truncate text-base font-semibold leading-tight">{{ hubGreeting(operatorName) }}</h1>
-              <p class="text-xs text-muted-foreground">{{ HUB_NAME }}</p>
+              <p class="text-xs text-muted-foreground">{{ brandLine }}</p>
             </div>
           </header>
 
@@ -176,7 +179,7 @@ function tileImageSrc(tile: HubTileProjection): string | null {
                lia como se fosse propriedade do aviso ("local"); é a versão do build que
                está no ar, e é assim que ele se apresenta agora. -->
           <p class="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
-            Versão do {{ HUB_NAME }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
+            Versão {{ HUB_NAMED_OF }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
           </p>
           </section>
         </div>

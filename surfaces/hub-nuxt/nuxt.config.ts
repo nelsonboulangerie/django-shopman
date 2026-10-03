@@ -3,7 +3,7 @@ import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
-  // Shopman Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
+  // Central: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
   // É o launcher pós-login — não hospeda CRUD; deep-linka pro Unfold quando preciso.
   extends: ["../operator-kit"],
 
@@ -15,7 +15,7 @@ export default defineNuxtConfig({
     operatorSecurityHeaders: true,
     // Exceção da CSP do kit (SEC-SURF-001, decisão do dono em 29/09/2026): cada tile
     // mostra o ícone PWA real do app buscado na origem DELE (tileIconUrl, em
-    // pdv.<zona>, kds.<zona>...), e o Shopman Apps mora em central.<zona>. Mesma
+    // pdv.<zona>, kds.<zona>...), e a Central mora em central.<zona>. Mesma
     // regra do Pedidos: imagem de qualquer https.
     operatorCspAllow: {
       "img-src": ["https:"],
@@ -27,7 +27,7 @@ export default defineNuxtConfig({
       // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
       djangoBaseUrl:
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
-      // O Shopman Apps é a casa: o rail começa colapsado (o operador abre se quiser).
+      // A Central é a casa: o rail começa colapsado (o operador abre se quiser).
       railDefaultState: "collapsed",
     },
   },
@@ -76,7 +76,7 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
-    // LIGHT-first — o Shopman Apps é a casa dos apps de escritório e balcão, todos claros;
+    // LIGHT-first — a Central é a casa dos apps de escritório e balcão, todos claros;
     // só a Cozinha é escura. Sem a declaração ela seguia o tema do SISTEMA e abria de
     // um jeito no Mac e de outro no tablet. O escuro segue no toggle do rail.
     preference: "light",

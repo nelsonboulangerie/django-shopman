@@ -35,6 +35,7 @@ def _nfe_xml(
     rastro: str = "",
     icms: str = "",
     ncm: str = "11010010",
+    transp: str = "",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
 
@@ -86,7 +87,7 @@ def _nfe_xml(
         <ICMSTot>
           <vNF>{total}</vNF>
         </ICMSTot>
-      </total>
+      </total>{transp}
     </infNFe>
   </NFe>
   <protNFe versao="4.00">
@@ -156,6 +157,7 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "requiresConversion": False,
             "conversionSuggestion": None,
             "purchaseQty": "2",
+            "invoicePurchaseQty": "2",
             "costInput": "360,00",
             "expiryDate": "",
             "expiryFromInvoice": False,
@@ -856,3 +858,39 @@ def test_linha_de_revenda_traz_a_divergencia_com_o_cadastro_fiscal(supplier, mat
 def test_insumo_sem_produto_de_venda_nao_tem_o_que_conferir(supplier, material):
     draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(ncm="11022000"), access_key=VALID_ACCESS_KEY)
     assert draft["lines"][0]["fiscalDivergences"] == []
+
+
+# ── Volumes da nota (recebimento por exceção) ────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_volumes_declarados_no_transporte_chegam_ao_rascunho(supplier, material, conversion):
+    """``transp/vol/qVol`` é o número que o recebedor confere contando na doca."""
+    transp = """
+      <transp>
+        <modFrete>0</modFrete>
+        <vol><qVol>2</qVol><esp>SACO</esp></vol>
+        <vol><qVol>3</qVol><esp>CAIXA</esp></vol>
+      </transp>"""
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(transp=transp), access_key=VALID_ACCESS_KEY)
+
+    assert draft["invoiceVolumes"] == 5
+
+
+@pytest.mark.django_db
+def test_nota_sem_volumes_declara_zero(supplier, material, conversion):
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(), access_key=VALID_ACCESS_KEY)
+
+    assert draft["invoiceVolumes"] == 0
+
+
+@pytest.mark.django_db
+def test_quantidade_da_nota_fica_parada_na_unidade_da_linha(supplier, material):
+    """Nota em G para insumo em kg: a quantidade da nota acompanha a conversão física."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(unit="G", quantity="500", tax_unit=None, product_name="FARINHA T65"),
+        access_key=VALID_ACCESS_KEY,
+    )
+    line = draft["lines"][0]
+
+    assert line["purchaseQty"] == line["invoicePurchaseQty"] == "0.5"

@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "finish" | "review_qc" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -543,6 +543,11 @@ export interface QCOrderCardProjection {
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;
+  quality_exception: boolean;
+  closed_by: string;
+  closed_at_display: string;
+  typical_loss_qty: string;
+  alert_waiting_count: number | null;
 }
 
 /** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */
@@ -667,6 +672,13 @@ export interface ProductionWorkOrderMutationSuccess {
   wo_ref: string;
   quantity: string;
   current: ProductionMutationCurrent | null;
+}
+
+/** ProductionQualityReviewBatchMutationSuccess(ok: 'bool', reviewed_count: 'int', current: 'tuple[ProductionMutationCurrent, ...]') */
+export interface ProductionQualityReviewBatchMutationSuccess {
+  ok: boolean;
+  reviewed_count: number;
+  current: ProductionMutationCurrent[];
 }
 
 /** ProductionVoidMutationSuccess(ok: 'bool', wo_ref: 'str', current: 'ProductionMutationCurrent | None') */
@@ -842,6 +854,11 @@ export interface ProductionPartitionGroupRequest {
   loss?: boolean;
 }
 
+export interface ProductionQualityReviewBatchItemRequest {
+  work_order_id: number;
+  expected_rev: number;
+}
+
 export interface ProductionPlanMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -906,6 +923,18 @@ export interface ProductionQualityReviewMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+}
+
+export interface ProductionQualityReviewBatchMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  target_date: string;
+  items: ProductionQualityReviewBatchItemRequest[];
 }
 
 export interface ProductionQualityCorrectionMutationRequest {
@@ -1024,6 +1053,10 @@ export function finishProductionWorkOrder(workOrderId: number, body: ProductionF
 
 export function reviewProductionQuality(workOrderId: number, body: ProductionQualityReviewMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
   return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/quality-review/`, body);
+}
+
+export function reviewProductionQualityBatch(body: ProductionQualityReviewBatchMutationRequest): Promise<ProductionQualityReviewBatchMutationSuccess> {
+  return postProductionMutation<ProductionQualityReviewBatchMutationSuccess>("/api/v1/backstage/production/quality-review/batch/", body);
 }
 
 export function correctProductionQuality(workOrderId: number, body: ProductionQualityCorrectionMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {

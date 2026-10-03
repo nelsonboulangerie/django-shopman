@@ -12,6 +12,7 @@ export const RECEIPT_LINE_STATUS_ROW: Record<ReceiptLineStatus, string> = {
   blocked: "border-destructive/30 bg-destructive/5",
   attention: "border-warning/40 bg-warning/5",
   ready: "border-info/30 bg-info/5",
+  matched: "border-success/30 bg-success/5",
   checked: "border-success/40 bg-success/5",
 };
 
@@ -19,6 +20,7 @@ export const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, string> = {
   blocked: "border-destructive/30 bg-destructive/10 text-destructive",
   attention: "border-warning/30 bg-warning/10 text-warning",
   ready: "border-info/30 bg-info/10 text-info",
+  matched: "border-success/25 bg-success/10 text-success",
   checked: "border-success/25 bg-success/10 text-success",
 };
 
@@ -27,5 +29,6 @@ export const RECEIPT_LINE_STATUS_TEXT: Record<ReceiptLineStatus, string> = {
   blocked: "text-destructive",
   attention: "text-warning",
   ready: "text-info",
+  matched: "text-success",
   checked: "text-success",
 };
