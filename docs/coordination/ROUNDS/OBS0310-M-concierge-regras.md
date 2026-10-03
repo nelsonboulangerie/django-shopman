@@ -36,11 +36,15 @@
   gravadas no golden set (antes e depois) e as falas que ganham frase fixa.
 
 ## Coordenação
-- Cortesia (#1415) e alergia (#1434 no `main`, #1436 aberta) foram reaproveitadas: R9 é o
-  `small_talk.py`, a entrada de R3 é a triagem e o executor de alergia. `house_rules.py` não importa
-  `gluten.py` (que a #1436 apaga); a saída de R3 só proíbe afirmar ausência e "pode comer".
-- Conflito esperado com a #1436 em `agent.py` (bloco vizinho ao do glúten), `copy.py`, `usage.py` e
-  `admin/concierge.py` (linhas vizinhas). Resolver mantendo as duas.
+- Cortesia (#1415) e alergia (#1434 e #1436, ambas no `main`) foram reaproveitadas: R9 é o
+  `small_talk.py`; a entrada de R3 é a triagem (`triage.decide(..., channel_ref=...)`) e o executor
+  `allergens.py` (`decision`, `reply_for`, `answered_by` = `allergy_notice`, `allergy_ask_which`,
+  `allergy_notice_after_ask`). A saída de R3 só proíbe afirmar ausência e "pode comer"; a oferta da
+  equipe da #1436 ("responda sim que eu chamo alguém da equipe") é condicional e passa em R6.
+- O `main` com a #1436 foi trazido para o branch; conflitos resolvidos mantendo os dois lados
+  (`agent.py`: frase fixa de R7/R8 antes do executor de alergia; `handoff.py`: padrões de reação e de
+  pagamento/taxa juntos; `triage.py`, `copy.py`, `usage.py`, `admin/concierge.py`, `data-schemas.md`).
+- As decisões do dono sobre R7 e R4 virão em PR separado (OBS0310-O); esta PR não as antecipa.
 - Teste de campo (PR #1441): "confirme com a loja" sem acionar ninguém entrou em R6. "Toda parte da
   mensagem recebe resposta" depende da decomposição em partes (F4) e fica para ela; o aviso de handoff
   sempre sai quando a tabela segura uma resposta (teste), mas o prazo do retorno é a F5.

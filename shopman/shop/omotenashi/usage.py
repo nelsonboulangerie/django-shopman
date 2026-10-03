@@ -51,6 +51,7 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     "shopman/storefront/concierge/service.py": ("WhatsApp", "Concierge: respostas da casa"),
     "shopman/storefront/concierge/prompt.py": ("WhatsApp", "Concierge: abertura da conversa"),
     "shopman/storefront/concierge/small_talk.py": ("WhatsApp", "Concierge: cumprimento e agradecimento"),
+    "shopman/storefront/concierge/allergens.py": ("WhatsApp", "Concierge: alergia e alérgenos"),
     "shopman/storefront/concierge/house_rules.py": ("WhatsApp", "Concierge: regras da casa"),
     "shopman/storefront/admin/concierge.py": ("Admin", "Conversas do concierge"),
     "shopman/storefront/api/auth.py": ("Loja", "Entrar"),

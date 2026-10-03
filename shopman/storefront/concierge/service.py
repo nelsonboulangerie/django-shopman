@@ -926,6 +926,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 message_ids=ids,
                 commercial_authority=bool(conversation._commercial_authority),
                 client=metrics.triage_client_for(meter, triage_client),
+                channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
             )
         meter.triage_source = decision.source
         triage_module.record(conversation, inbound, decision)

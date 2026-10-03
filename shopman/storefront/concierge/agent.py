@@ -27,7 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import gluten, house_rules, small_talk
+from . import allergens, house_rules, small_talk
 from . import tools as tools_module
 from .metrics import LAYER_AGENT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
@@ -245,6 +245,52 @@ def _current_customer_text(conversation: Conversation) -> str:
     ).strip()
 
 
+def _earlier_customer_text(conversation: Conversation) -> str:
+    """A fala do cliente antes deste turno (a que recebeu "a que é a alergia?")."""
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    return (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(pk__in=inbound_ids)
+        .exclude(text="")
+        .order_by("-pk")
+        .values_list("text", flat=True)
+        .first()
+        or ""
+    )
+
+
+def _allergy_outcome(conversation: Conversation, customer_text: str, *, channel_ref: str) -> AgentOutcome | None:
+    """Alergia (dono, 03/10/2026, ``allergens.py``): a resposta sai das fontes, sem modelo.
+
+    Nada aqui pode ser parafraseado em "sem leite": a resposta é o aviso da casa,
+    os alérgenos declarados do produto citado e a oferta da equipe; ou a pergunta
+    "a quê?". O que a concierge não pode responder vai para a equipe (a triagem
+    já o mandou; aqui é a segunda trava, para quem chama sem triagem).
+    """
+    stamp = (conversation.flags or {}).get("triage") or {}
+    inbound_ids = set(getattr(conversation, "_inbound_ids", ()) or ())
+    # Só vale a triagem DESTE turno: a de um turno anterior não diz nada desta fala.
+    this_turn = bool(inbound_ids & set(stamp.get("message_ids") or ()))
+    answered_by = (stamp.get("answered_by") or "") if this_turn else ""
+    if answered_by not in allergens.ANSWERED_BY:
+        answered_by = allergens.decision(customer_text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
+    if not answered_by:
+        return None
+    if answered_by == allergens.ASK_WHICH:
+        reply = allergens.ask_which(customer_text)
+    else:
+        text = customer_text
+        if answered_by == allergens.NOTICE_AFTER_ASK:
+            text = f"{_earlier_customer_text(conversation)}\n{customer_text}"
+        reply = (
+            allergens.reply_for(text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
+            if answered_by != allergens.TEAM else ""
+        )
+    if reply:
+        return AgentOutcome(reply_text=reply)
+    return AgentOutcome(reply_text="", handoff=True, handoff_reason="alergia")
+
+
 # ── O turno ───────────────────────────────────────────────────────────
 
 
@@ -296,14 +342,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.
         return AgentOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE)
 
-    if gluten.is_gluten_question(customer_text):
-        # Glúten (dono, 03/10/2026): a resposta é o aviso da casa, o mesmo da
-        # página do produto, e os alérgenos declarados do produto citado. Sem
-        # modelo: nada aqui pode ser parafraseado em "sem glúten". Sem aviso
-        # cadastrado a triagem já mandou a conversa para a equipe.
-        reply = gluten.reply_for(customer_text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
-        if reply:
-            return AgentOutcome(reply_text=reply)
+    allergy = _allergy_outcome(conversation, customer_text, channel_ref=channel_ref)
+    if allergy is not None:
+        return allergy
 
     client = client or build_client()
     ctx = ToolContext(

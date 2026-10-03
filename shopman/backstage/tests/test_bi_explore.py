@@ -204,6 +204,20 @@ def test_oven_minutes_by_recipe(recipe):
     assert report.unit == "minutes"
 
 
+def test_aproveitamento_by_recipe_is_realizado_over_previsto(recipe):
+    """Planejado 12, previsto 10, realizado 9: aproveitamento 90% e perda 1 (não 75% e 3)."""
+    wo = craft.plan(recipe, Decimal("12"), date=date.today(), position_ref="forno")
+    craft.start(wo, quantity=Decimal("10"), position_ref="forno", expected_rev=0)
+    craft.finish(wo, finished=Decimal("9"), actor="test")
+
+    aproveitamento = build_bi_explore(metric="yield_percent", by="recipe")
+    loss = build_bi_explore(metric="loss", by="recipe")
+
+    assert aproveitamento.metric_label == "Aproveitamento"
+    assert [(row.label, row.value) for row in aproveitamento.rows] == [(recipe.name, 90)]
+    assert [(row.label, row.value) for row in loss.rows] == [(recipe.name, 1.0)]
+
+
 # ── Cenários salvos (F9) ─────────────────────────────────────────────────────
 
 

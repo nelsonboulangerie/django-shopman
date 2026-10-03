@@ -17,6 +17,7 @@ export interface BIOvenTimeRow {
 export interface BIProductionDay {
   date: string;
   planned: string;
+  started: string;
   finished: string;
   loss: string;
   yield_percent: number | null;
@@ -29,12 +30,13 @@ export interface BIProductionPrevious {
   date_from: string;
   date_to: string;
   batches_finished: number;
+  started_total: string;
   finished_total: string;
   loss_total: string;
   finished_by_day: string[];
 }
 
-/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious') */
+/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_started_assumed: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious') */
 export interface BIProductionReport {
   date_from: string;
   date_to: string;
@@ -42,6 +44,7 @@ export interface BIProductionReport {
   oven_time_by_recipe: BIOvenTimeRow[];
   oven_time_by_oven: BIOvenTimeRow[];
   batches_finished: number;
+  batches_started_assumed: number;
   batches_measured: number;
   oven_coverage_percent: number;
   previous: BIProductionPrevious;

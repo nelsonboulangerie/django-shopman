@@ -8,6 +8,10 @@ impede que volte a rotular qualquer um dos dois.
 
 O rótulo do status tem UMA fonte: os choices de ``WorkOrder.Status``. A projeção
 da Produção, o Admin e o OpenAPI leem dali; nenhuma camada redefine.
+
+O indicador do lote é o APROVEITAMENTO = realizado ÷ previsto (UX-PROD-AF2,
+decisão do dono, 03/10/2026). "Rendimento" fica reservado à ficha técnica e à
+massa: o B.I. e o uso por versão do livro de receitas não o usam para o lote.
 """
 
 from __future__ import annotations
@@ -77,3 +81,31 @@ def test_produzido_nao_rotula_started_nem_finished():
         if PRODUCED.search(line)
     ]
     assert hits == []
+
+
+#: Onde o indicador do LOTE é calculado para o B.I. Nada aqui fala da ficha
+#: técnica nem da massa, então "rendimento" não tem uso legítimo.
+LOT_INDICATOR_SOURCES = (
+    "shopman/backstage/projections/bi_production.py",
+    "shopman/backstage/projections/bi_explore.py",
+    "shopman/backstage/bi/scenarios.py",
+)
+
+
+def test_bi_chama_o_indicador_do_lote_de_aproveitamento():
+    from shopman.backstage.projections.bi_explore import METRICS
+
+    assert METRICS["yield_percent"].label == "Aproveitamento"
+    hits = [
+        f"{relative}:{number}"
+        for relative in LOT_INDICATOR_SOURCES
+        for number, line in enumerate((ROOT / relative).read_text(encoding="utf-8").splitlines(), start=1)
+        if re.search(r"rendimento", line, re.IGNORECASE)
+    ]
+    assert hits == []
+
+
+def test_uso_por_versao_fala_aproveitamento():
+    source = (ROOT / "shopman/backstage/projections/recipe_book.py").read_text(encoding="utf-8")
+    assert "rendimento médio" not in source
+    assert "aproveitamento médio" in source
