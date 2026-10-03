@@ -61,6 +61,12 @@ from shopman.shop.services import order_composition, weighed_sale
 logger = logging.getLogger(__name__)
 
 SOURCE = "pos:edit"
+#: A Concierge acrescentando itens a pedido do cliente (dono, 03/10/2026): o
+#: MESMO caminho do balcão, só com a origem gravada, para o histórico do pedido
+#: dizer quem fez ("Itens acrescentados pela Concierge a pedido do cliente").
+CONCIERGE_SOURCE = "concierge:add"
+#: Origem → (prefixo do ``event_id`` do ajuste, prefixo da referência de estoque).
+_ID_PREFIXES = {SOURCE: ("pos-edit", "pos_edit"), CONCIERGE_SOURCE: ("concierge-edit", "concierge_edit")}
 EVENT_TYPE = "order_edited"
 CUSTOMER_NOTICE_TEMPLATE = "order_updated"
 NOTES_MAX_LENGTH = 500
@@ -271,7 +277,7 @@ def state_refusal(order) -> tuple[str, str]:
 # ── Prévia ───────────────────────────────────────────────────────────────────
 
 
-def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None) -> EditPlan:
+def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, source: str = SOURCE) -> EditPlan:
     """Calcula a edição sem gravar nada: itens, total, diferença e o destino dela.
 
     - ``lines``: a lista FINAL de itens de produto, ``[{line_id?, sku, qty,
@@ -286,7 +292,11 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None) -> E
       delivery_address_structured, delivery_fee_override_q, fiscal_tax_id,
       delivery_payment_method}``; ``None`` mantém.
     - ``schedule``: ``{date, slot}``; ``None`` mantém.
+    - ``source``: quem edita (:data:`SOURCE`, o balcão, ou :data:`CONCIERGE_SOURCE`);
+      vai para a linha nova (``meta.added_by``) e para o evento do histórico.
     """
+    if source not in _ID_PREFIXES:
+        raise ValueError(f"origem de edição desconhecida: {source}")
     code, message = state_refusal(order)
     if code:
         raise EditRefused(message, code=code)
@@ -303,7 +313,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None) -> E
     if lines is None:
         products = [_kept(item, item.qty) for item in editable]
     else:
-        products = _products_from_lines(order, lines, editable, next_revision, new_line_ids)
+        products = _products_from_lines(order, lines, editable, next_revision, new_line_ids, source=source)
     products_q = sum(int(line["line_total_q"]) for line in products)
 
     # ── recebimento (e a taxa de entrega, que é linha)
@@ -396,7 +406,10 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None) -> E
 # ── Gravar ───────────────────────────────────────────────────────────────────
 
 
-def edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None) -> EditResult:
+def edit(
+    order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None,
+    source: str = SOURCE,
+) -> EditResult:
     """Aplica a edição sob o lock do pedido, numa transação.
 
     Estoque sem saldo, data recusada, porta fechada ou meio que não devolve
@@ -410,7 +423,7 @@ def edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None, acto
 
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
-        result = plan(locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule)
+        result = plan(locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule, source=source)
         if not result.changed:
             return EditResult(plan=result, revision=None)
         if result.requires_manager_approval and approved_by is None:
@@ -440,9 +453,9 @@ def edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None, acto
                     locked,
                     items=result.items,
                     total_q=result.total_q,
-                    source=SOURCE,
-                    event_id=f"pos-edit:{locked.ref}:{_next_revision(locked)}",
-                    stock_reference=f"pos_edit:{locked.ref}",
+                    source=source,
+                    event_id=f"{_ID_PREFIXES[source][0]}:{locked.ref}:{_next_revision(locked)}",
+                    stock_reference=f"{_ID_PREFIXES[source][1]}:{locked.ref}",
                     require_stock=True,
                 )
             except ValidationError as exc:
@@ -463,7 +476,7 @@ def edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None, acto
         locked.emit_event(
             event_type=EVENT_TYPE,
             actor=actor,
-            payload=_event_payload(result, revision=revision, approved_by=approved_by),
+            payload=_event_payload(result, revision=revision, approved_by=approved_by, source=source),
         )
 
         if result.settlement.kind == SETTLE_REFUND_GATEWAY:
@@ -486,7 +499,9 @@ def edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None, acto
 # ── Produtos ─────────────────────────────────────────────────────────────────
 
 
-def _products_from_lines(order, lines, editable, next_revision: int, new_line_ids: list[str]) -> list[dict]:
+def _products_from_lines(
+    order, lines, editable, next_revision: int, new_line_ids: list[str], *, source: str = SOURCE,
+) -> list[dict]:
     parsed = _parse_lines(lines)
     if not parsed:
         raise EditRefused(
@@ -538,7 +553,7 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
             "qty": qty,
             "unit_price_q": int(price_q),
             "line_total_q": monetary_mult(qty, int(price_q)),
-            "meta": {"added_by": SOURCE, **({product_options.LINE_OPTIONS_KEY: chosen} if chosen else {})},
+            "meta": {"added_by": source, **({product_options.LINE_OPTIONS_KEY: chosen} if chosen else {})},
         }
         new_lines[key] = line
         new_line_ids.append(line_id)
@@ -589,7 +604,7 @@ def _products_from_lines(order, lines, editable, next_revision: int, new_line_id
             "qty": piece.qty,
             "unit_price_q": int(price_q),
             "line_total_q": monetary_mult(piece.qty, int(price_q)),
-            "meta": {"added_by": SOURCE, "weighed": piece.as_meta()},
+            "meta": {"added_by": source, "weighed": piece.as_meta()},
         })
         new_line_ids.append(line_id)
 
@@ -1345,9 +1360,9 @@ def _relink_production(order, *, previous_skus) -> None:
     queue_order_items_resync(order=order, previous_skus=previous_skus)
 
 
-def _event_payload(result: EditPlan, *, revision, approved_by) -> dict:
+def _event_payload(result: EditPlan, *, revision, approved_by, source: str = SOURCE) -> dict:
     payload = {
-        "source": SOURCE,
+        "source": source,
         "revision": revision,
         "previous_total_q": result.previous_total_q,
         "total_q": result.total_q,
@@ -1374,6 +1389,7 @@ def _event_payload(result: EditPlan, *, revision, approved_by) -> dict:
 
 
 __all__ = [
+    "CONCIERGE_SOURCE",
     "CUSTOMER_NOTICE_TEMPLATE",
     "EVENT_TYPE",
     "EditPlan",

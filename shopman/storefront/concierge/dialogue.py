@@ -69,6 +69,7 @@ ASK_ADDRESS = "ask_address"  # set_fulfillment devolveu o que falta do endereço
 ASK_SLOT = "ask_slot"  # horários mostrados
 CHOOSE_ORDER = "choose_order"  # "acrescentar ao pedido X (1) ou pedido novo (2)?"
 CONFIRM_NEW = "confirm_new"  # "o pedido X já foi entregue; quer um pedido novo?"
+CONFIRM_ADD = "confirm_add"  # "Acrescento 4 croissant ao pedido X? Total novo R$ Y. sim/não" (``order_addition``)
 
 # Copy da casa (registro ``OmotenashiCopy``, editável no Admin).
 ASK_WHAT_KEY = "CONCIERGE_MEMORY_ASK_WHAT"
@@ -204,6 +205,10 @@ def _pending_alive(pending: dict, facts: Facts, *, alive: bool, order_closed: bo
             return status in OPEN_ORDER_STATUSES and alive
         if kind == CONFIRM_NEW:
             return alive
+        if kind == CONFIRM_ADD:
+            # Pedido que fechou não recebe o "sim"; quem confere a porta de novo
+            # no "sim" é o serviço de edição.
+            return status in OPEN_ORDER_STATUSES and alive
     if order_closed:
         return False
     day = _parse_day(pending.get("day"))
@@ -405,10 +410,14 @@ class Resolution:
     refs: tuple[str, ...] = ()
     handoff_reason: str = ""
     memo: dict = field(default_factory=dict)  # o que a resolução grava no estado
+    #: Acrescentar a pedido já feito (``order_addition``): ``{order_ref, add | sku+qty, item}``.
+    #: ``add_preview`` (o cliente pediu: a casa pergunta com os dados do sistema) e
+    #: ``add_apply`` (o "sim" à pergunta) são executados pelo agente, sem modelo.
+    request: dict = field(default_factory=dict)
 
     @property
     def answers_without_model(self) -> bool:
-        return self.outcome in {"ask", "handoff", "courtesy"}
+        return self.outcome in {"ask", "handoff", "courtesy", "add_preview", "add_apply"}
 
 
 _TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2}))?\b")
@@ -462,11 +471,23 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
             not wants_new and bool({"pedido", "nele", "mesmo", "acrescenta", "acrescentar", "junto"} & set(tokens))
         )
         if wants_order:
+            # Acrescentar a pedido já feito (dono, 03/10/2026): pelo mesmo serviço
+            # do PDV, depois de uma pergunta de uma linha (``order_addition``).
+            ref = pending.get("order_ref", "")
+            item = pending.get("item", "")
+            if pending.get("sku") and pending.get("qty"):
+                return Resolution(
+                    outcome="add_preview", reason="add_to_open_order", refs=(ref,),
+                    request={"order_ref": ref, "add": [{"sku": pending["sku"], "qty": pending["qty"]}], "item": item},
+                    memo={"pending": None},
+                )
             return Resolution(
-                outcome="handoff",
-                reason="add_to_open_order",
-                handoff_reason=f"acrescentar {pending.get('item', '')} ao pedido {pending.get('order_ref', '')}".strip(),
-                refs=(pending.get("order_ref", ""),),
+                outcome="resolved", reason="add_to_open_order", refs=(ref,), text=item,
+                note=(
+                    f"O cliente quer acrescentar {item} ao pedido {ref}, que já foi feito. Ache o produto "
+                    f"(search_storefront) e chame add_to_order com order_ref {ref}. Não use set_item."
+                ),
+                memo={"pending": None},
             )
         if wants_new:
             item = pending.get("item", "")
@@ -481,6 +502,14 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
             # "sim" para uma pergunta de duas saídas não escolhe nenhuma.
             options = [{"n": 1, "name": f"acrescentar ao {pending.get('order_ref', 'pedido')}"}, {"n": 2, "name": "pedido novo"}]
             return Resolution(outcome="ask", reply=_fill(copy(ASK_WHICH_KEY), options=_options_text(options)), reason="ask_which")
+    if kind == CONFIRM_ADD:
+        if answer in {"yes", "weak_yes"} or leading_yes(tokens):
+            return Resolution(
+                outcome="add_apply", reason="add_confirmed", refs=(pending.get("order_ref", ""),),
+                request=dict(pending), memo={"pending": None},
+            )
+        if answer == "no":
+            return Resolution(outcome="ask", reply=copy(DECLINED_KEY), reason="declined", memo={"pending": None})
     if kind == CONFIRM_NEW:
         if answer in {"yes", "weak_yes"}:
             item = pending.get("item", "")
@@ -602,7 +631,8 @@ def _quantity(text, qty_request, memory, facts, *, copy) -> Resolution:
         return Resolution(
             outcome="ask", reason="ask_order_or_new", refs=(order.ref,),
             reply=_fill(copy(ASK_ORDER_OR_NEW_KEY), item=item, order=order.label),
-            memo={"pending": {"kind": CHOOSE_ORDER, "order_ref": order.ref, "item": item}},
+            memo={"pending": {"kind": CHOOSE_ORDER, "order_ref": order.ref, "item": item,
+                              **({"sku": target_ref, "qty": qty} if target_ref else {})}},
         )
     if relative and facts.recent_order:
         order = facts.recent_order
@@ -684,6 +714,9 @@ def memo_of(name: str, arguments: dict, result: dict) -> dict:
         ][:MAX_LISTED]}
     if name == "place_order":
         return {"tool": name, "order_ref": str(result.get("order_ref") or "")}
+    if name == "add_to_order":
+        # A pergunta de confirmação (ou a oferta depois da recusa) fica no ar.
+        return {"tool": name, "pending": result.get("pending")} if "pending" in result else {}
     if name == "order_status":
         orders = result.get("orders") or []
         return {"tool": name, "order_ref": orders[0].get("order_ref", "")} if orders else {}
@@ -802,7 +835,9 @@ def _slot_label(slot_ref: str) -> str:
         return ""
     from .tools import _slot_label as label
 
-    return label("", slot_ref)
+    text = label("", slot_ref)
+    # O rótulo do horário é título ("A partir das 9h"); no meio da frase, minúscula.
+    return text[:1].lower() + text[1:]
 
 
 def _closed_at(order):

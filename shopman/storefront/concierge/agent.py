@@ -329,6 +329,25 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
+    if resolution.outcome in {"add_preview", "add_apply"}:
+        # Acrescentar a pedido já feito, pelo mesmo serviço do PDV (dono,
+        # 03/10/2026): a pergunta de uma linha, ou o "sim" a ela. Sem modelo.
+        from . import order_addition
+
+        request = resolution.request
+        if resolution.outcome == "add_preview":
+            addition = order_addition.propose(
+                conversation, order_ref=request.get("order_ref", ""), additions=request.get("add")
+            )
+        else:
+            addition = order_addition.apply(conversation, request)
+        return AgentOutcome(
+            reply_text=addition.text,
+            order_ref=addition.order_ref if addition.code == "added" else "",
+            layer=LAYER_CONTEXT,
+            memory=memory,
+            memory_memos=[*memos, addition.memo],
+        )
     if resolution.answers_without_model:
         return AgentOutcome(
             reply_text=resolution.reply,
