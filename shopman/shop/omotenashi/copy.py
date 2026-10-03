@@ -1220,6 +1220,24 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
         )},
     },
+    # Cancelamento pela Concierge (dono, 03/10/2026; ``storefront/concierge/cancellation.py``):
+    # só quando o cliente poderia cancelar pelo site, e só depois do "sim". O que
+    # aconteceu com o pagamento é anexado pelo sistema, lido depois do cancelamento.
+    "CONCIERGE_CANCEL_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Cancelo o pedido {order_ref}, com {items}? Responda sim ou não.",
+        )},
+    },
+    "CONCIERGE_CANCEL_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Pronto, cancelei o pedido {order_ref}, como você pediu.",
+        )},
+    },
+    "CONCIERGE_CANCEL_KEPT": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Combinado, o pedido {order_ref} segue como está.",
+        )},
+    },
     "CONCIERGE_NO_PHONE": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Este contato não tem um número de telefone associado, e eu preciso dele para registrar o pedido. Para pedir, entre pelo site com o seu número.",

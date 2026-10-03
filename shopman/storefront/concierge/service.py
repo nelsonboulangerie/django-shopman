@@ -918,6 +918,15 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
         # para a equipe (ou para a outra mesa), com o resumo gravado.
         turn_text = "\n".join(message.text for message in inbound if message.text)
         previous_triage = (conversation.flags or {}).get("triage")
+        from . import cancellation
+
+        concierge_answers = ""
+        if cancellation.is_pending_answer(conversation, turn_text):
+            concierge_answers = "cancel_answer"
+        elif cancellation.asks_to_cancel(turn_text) and cancellation.self_cancellable(conversation, turn_text):
+            # Cancelamento que o cliente poderia fazer pelo site: a Concierge
+            # pergunta e cancela. Fora da janela, a triagem manda para a equipe (R4).
+            concierge_answers = "self_cancel"
         with meter.stage("triage"):
             decision = triage_module.decide(
                 turn_text,
@@ -926,6 +935,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 message_ids=ids,
                 commercial_authority=bool(conversation._commercial_authority),
                 client=metrics.triage_client_for(meter, triage_client),
+                concierge_answers=concierge_answers,
             )
         meter.triage_source = decision.source
         triage_module.record(conversation, inbound, decision)

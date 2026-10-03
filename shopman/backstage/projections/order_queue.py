@@ -2530,6 +2530,7 @@ _EVENT_LABELS = {
     "handoff_undone": "Saída desfeita",
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
+    "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve

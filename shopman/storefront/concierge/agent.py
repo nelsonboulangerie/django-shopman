@@ -27,7 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import gluten, house_rules, small_talk
+from . import cancellation, gluten, house_rules, small_talk
 from . import tools as tools_module
 from .metrics import LAYER_AGENT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
@@ -46,6 +46,8 @@ MAX_HISTORY_TOOL_RESULT_CHARS = 400
 #: Montado por partes para o próprio arquivo não carregar a sequência literal.
 _TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
 _LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
+#: O motivo do handoff quando o cancelamento não é do autoatendimento (regra R4).
+CANCEL_HANDOFF_REASON = "Cancelamento de pedido: fora do que o cliente cancela pelo site"
 #: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
 MAX_REPEATED_CALLS = 2
 _CART_STATE_TOOLS = {"view_cart", "set_item", "set_fulfillment", "review_order"}
@@ -271,6 +273,22 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
     customer_text = _current_customer_text(conversation)
     is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
+
+    # Cancelamento conforme a etapa (dono, 03/10/2026): quando o próprio cliente
+    # poderia cancelar pelo site, a Concierge pergunta em uma linha e cancela no
+    # "sim", pelo mesmo serviço. Antes da cortesia: "não, obrigado" responde à
+    # pergunta pendente. Fora da janela, a equipe (regra da casa R4).
+    cancel_turn = cancellation.resolve_pending(conversation, customer_text)
+    if cancel_turn is None and cancellation.asks_to_cancel(customer_text):
+        order = cancellation.self_cancellable(conversation, customer_text)
+        if order is None:
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON)
+        cancel_turn = cancellation.ask(conversation, order, customer_text)
+    if cancel_turn is not None:
+        if cancel_turn.code == "refused":
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON)
+        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE)
+
     courtesy = small_talk.small_talk_kind(customer_text)
     if courtesy:
         # "Bom dia", "obrigado", "tchau": a resposta é cortesia da casa, curta.

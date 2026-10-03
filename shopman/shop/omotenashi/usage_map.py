@@ -102,6 +102,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
+    "CONCIERGE_CANCEL_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_KEPT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
     "CONCIERGE_GREETING": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),

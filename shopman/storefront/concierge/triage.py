@@ -150,7 +150,9 @@ class Triage:
     escalated_by: str = ""
     #: Por que o Concierge responde uma intenção que a tabela manda para a
     #: equipe: ``gluten_notice`` (pergunta só de glúten, respondida com o aviso
-    #: da casa, decisão do dono em 03/10/2026).
+    #: da casa, decisão do dono em 03/10/2026), ``self_cancel`` (cancelamento
+    #: que o cliente poderia fazer pelo site; a Concierge pergunta e cancela) ou
+    #: ``cancel_answer`` (o "sim" ou "não" à pergunta de cancelamento).
     answered_by: str = ""
 
     @property
@@ -384,6 +386,7 @@ def decide(
     message_ids=(),
     commercial_authority: bool = False,
     client=None,
+    concierge_answers: str = "",
 ) -> Triage:
     """Intenção, urgência, destino e resumo de um turno.
 
@@ -395,6 +398,12 @@ def decide(
     """
     if previous and set(previous.get("message_ids") or ()) & set(message_ids):
         previous = None
+    if concierge_answers in {"self_cancel", "cancel_answer"}:
+        # Cancelamento conforme a etapa (dono, 03/10/2026): quem chamou já
+        # conferiu, pela régua do site, que o próprio cliente poderia cancelar
+        # (``cancellation.self_cancellable``), ou que a fala responde à pergunta
+        # de cancelamento. A Concierge pergunta e cancela; fora disso, R4.
+        return Triage("order", NOW, ANSWER, rules_summary("order", text), "rules", answered_by=concierge_answers)
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
     gluten_answer = (
@@ -435,7 +444,8 @@ def decide(
         and intent not in SENSITIVE
         and classify_handoff_request(text) == "order_cancel"
     ):
-        # Regra da casa R4: cancelar pedido é com a equipe (o bot não cancela).
+        # Regra da casa R4: cancelar pedido que o cliente não poderia cancelar
+        # pelo site (em preparo, pago, de outra pessoa) é com a equipe.
         intent, destination, urgency, escalated_by = "order", TEAM, NOW, "cancel_order"
     elif (
         intent == "order"
