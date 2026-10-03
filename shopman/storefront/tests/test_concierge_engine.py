@@ -1427,98 +1427,263 @@ def test_greeting_with_a_question_says_good_morning_and_answers_it(conversation,
 
 HOUSE_NOTICE = (
     "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. Todos os nossos produtos "
-    "contêm ou podem conter glúten, e não temos como assegurar a ausência dele em nenhum item."
+    "contêm ou podem conter glúten, e não temos como assegurar a ausência dele em nenhum item. "
+    "Produzido em cozinha compartilhada, pode conter ainda traços de leite, ovos, castanha-do-brasil, "
+    "castanha de caju, gergelim e pimenta-do-reino."
+)
+TEAM_OFFER = (
+    'Se a alergia for grave, responda "sim" que eu chamo alguém da equipe para conversar com você. 💛'
 )
 
 
 @pytest.fixture
 def house_notice(alpha_menu):
-    """O aviso de produção compartilhada, como o seed o grava (decisão do dono, 08/09)."""
+    """O aviso de produção compartilhada, como o seed o grava (decisão do dono, 08/09).
+
+    O croissant e o panetone têm alérgenos declarados; o levain não tem lista.
+    """
     from shopman.shop.services import attributes
 
     Shop.objects.update(food_safety_notice=HOUSE_NOTICE)
     croissant = Product.objects.get(sku="CROISSANT")
     attributes.set(croissant, "alergenos", ["glúten", "leite", "ovos"], save=False)
     croissant.save(update_fields=["metadata"])
+    panetone = _listed("PANETONE", "Panetone", description="Panetone de frutas", stock="3")
+    attributes.set(panetone, "alergenos", ["glúten", "leite", "ovos"], save=False)
+    panetone.save(update_fields=["metadata"])
     return HOUSE_NOTICE
+
+
+def _answered_alone(conversation, text, event_id):
+    """Triagem e resposta: a concierge responde sem modelo e sem busca."""
+    from shopman.storefront.concierge import triage
+
+    decision = triage.decide(text, channel_ref=CHANNEL)
+    assert (decision.intent, decision.destination, decision.answered_by) == (
+        "allergy", triage.ANSWER, "allergy_notice"
+    ), text
+    outcome, client = _turn(conversation, text, event_id)
+    assert client.requests == []  # nem o modelo
+    assert outcome.tool_events == []  # nem a busca
+    assert not outcome.handoff
+    return outcome.reply_text
+
+
+def _never_affirms_absence(reply: str) -> None:
+    """Fora o aviso da casa (que diz "não temos como assegurar"), nada afirma ausência."""
+    folded = reply.replace(HOUSE_NOTICE, "").casefold()
+    for absent in ("sem glúten", "sem leite", "sem lactose", "não tem", "não leva", "não contém", "pode comer", "seguro"):
+        assert absent not in folded, absent
 
 
 @pytest.mark.parametrize(
     "text",
-    ["tem algo sem glúten?", "o pão de fermentação natural tem glúten?", "o levain tem glúten?"],
+    ["tem algo sem glúten?", "o pão de fermentação natural tem glúten?", "sou alérgico a ovo, o que posso comer?"],
 )
-def test_gluten_question_is_answered_with_the_house_notice(conversation, house_notice, text):
-    """Glúten (dono, 03/10/2026): o aviso da casa, a mesma fonte da página do produto. Sem modelo nem busca."""
-    from shopman.storefront.concierge import triage
+def test_allergy_question_without_a_product_gets_the_notice_and_the_team_offer(conversation, house_notice, text):
+    """Alergia (dono, 03/10/2026): o aviso da casa, a mesma fonte da página do produto, e a oferta da equipe."""
+    reply = _answered_alone(conversation, text, f"allergy-{text}")
 
-    decision = triage.decide(text)
-    assert (decision.intent, decision.destination, decision.answered_by) == (
-        "allergy", triage.ANSWER, "gluten_notice"
+    assert reply == f"{house_notice}\n\n{TEAM_OFFER}"
+    _never_affirms_absence(reply)
+
+
+def test_allergic_to_egg_asking_what_to_eat_gets_no_product_listed(conversation, house_notice):
+    reply = _answered_alone(conversation, "sou alérgico a ovo, o que posso comer?", "allergy-egg")
+
+    for name in ("Croissant", "Panetone", "Levain", "Hot Dog"):
+        assert name not in reply
+
+
+@pytest.mark.parametrize(
+    ("text", "product"),
+    [
+        ("tem castanha no panetone?", "Panetone"),
+        ("tem leite no croissant?", "Croissant"),
+        ("tem glúten ou castanha no panetone?", "Panetone"),
+        ("o croissant tem lactose?", "Croissant"),
+    ],
+)
+def test_allergen_question_about_a_product_gets_its_declared_allergens_the_notice_and_the_offer(
+    conversation, house_notice, text, product
+):
+    """Glúten e outra alergia na mesma fala: as duas partes vêm da mesma fonte, a resposta é inteira."""
+    reply = _answered_alone(conversation, text, f"allergy-{text}")
+
+    assert reply == (
+        f"{product}, alérgenos declarados: glúten, leite e ovos.\n\n{house_notice}\n\n{TEAM_OFFER}"
+    )
+    _never_affirms_absence(reply)
+
+
+def test_celiac_asking_about_a_product_keeps_the_good_morning(conversation, house_notice):
+    reply = _answered_alone(conversation, "Bom dia, sou celíaco, posso comer o croissant?", "allergy-croissant")
+
+    assert reply == (
+        f"Bom dia!\nCroissant, alérgenos declarados: glúten, leite e ovos.\n\n{house_notice}\n\n{TEAM_OFFER}"
     )
 
-    outcome, client = _turn(conversation, text, f"gluten-{text}")
 
-    assert client.requests == []  # nem o modelo
-    assert outcome.tool_events == []  # nem a busca
-    assert outcome.reply_text == house_notice
-    assert "sem glúten" not in outcome.reply_text.casefold()
+@pytest.mark.parametrize("text", ["o levain tem glúten?", "o levain tem leite?"])
+def test_a_product_without_declared_allergens_is_never_presented_as_safe(conversation, house_notice, text):
+    """Lista vazia não vira "não tem": a linha do produto diz que vale o aviso, que pode conter traços."""
+    reply = _answered_alone(conversation, text, f"allergy-{text}")
 
-
-def test_celiac_asking_about_a_product_gets_the_notice_and_its_declared_allergens(conversation, house_notice):
-    outcome, client = _turn(conversation, "Bom dia, sou celíaco, posso comer o croissant?", "gluten-croissant")
-
-    assert client.requests == []
-    assert outcome.reply_text == (
-        f"Bom dia!\n{house_notice}\n\nCroissant (alérgenos declarados): glúten, leite e ovos."
+    assert reply == (
+        "Levain: ainda não há lista de alérgenos cadastrada, então vale o aviso abaixo (pode conter traços)."
+        f"\n\n{house_notice}\n\n{TEAM_OFFER}"
     )
-
-
-def test_a_product_without_declared_allergens_is_never_presented_as_safe(conversation, house_notice):
-    """Lista vazia não vira "não tem": só o aviso, sem o nome do produto."""
-    outcome, _client = _turn(conversation, "o levain tem glúten?", "gluten-levain")
-
-    assert outcome.reply_text == house_notice
-    assert "Levain" not in outcome.reply_text
+    _never_affirms_absence(reply)
 
 
 def test_the_house_notice_edited_in_the_admin_is_what_the_concierge_says(conversation, house_notice):
-    Shop.objects.update(food_safety_notice="Aviso novo da casa. Tudo aqui leva trigo.")
+    Shop.objects.update(food_safety_notice="Aviso novo da casa. Tudo aqui leva trigo e pode ter traços de leite.")
 
-    outcome, _client = _turn(conversation, "tem algo sem glúten?", "gluten-edited")
+    outcome, _client = _turn(conversation, "tem algo sem leite?", "allergy-edited")
 
-    assert outcome.reply_text == "Aviso novo da casa. Tudo aqui leva trigo."
+    assert outcome.reply_text == f"Aviso novo da casa. Tudo aqui leva trigo e pode ter traços de leite.\n\n{TEAM_OFFER}"
 
 
-def test_without_a_house_notice_gluten_still_goes_to_the_team(alpha_menu):
+def test_the_team_offer_is_house_copy_editable_in_the_admin(conversation, house_notice):
+    from shopman.shop.models import OmotenashiCopy
+
+    OmotenashiCopy.objects.create(key="CONCIERGE_ALLERGY_TEAM_OFFER", message="Alergia grave? Diga sim e eu chamo a equipe.")
+
+    outcome, _client = _turn(conversation, "tem algo sem glúten?", "allergy-offer-copy")
+
+    assert outcome.reply_text.endswith("\n\nAlergia grave? Diga sim e eu chamo a equipe.")
+
+
+@pytest.mark.parametrize("text", ["tenho alergia", "tenho alergia, posso comer o croissant?", "Bom dia, sou intolerante"])
+def test_allergy_without_saying_to_what_asks_to_what(conversation, house_notice, text):
+    from shopman.storefront.concierge import triage
+
+    decision = triage.decide(text, channel_ref=CHANNEL)
+    assert (decision.destination, decision.answered_by) == (triage.ANSWER, "allergy_ask_which")
+
+    outcome, client = _turn(conversation, text, f"ask-{text}")
+
+    assert client.requests == []
+    assert outcome.reply_text.endswith(
+        "Me conta a que é a alergia, por favor, que eu confiro o que a casa informa sobre isso."
+    )
+    assert house_notice not in outcome.reply_text and "Croissant" not in outcome.reply_text
+
+
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+def test_the_answer_to_to_what_is_answered_with_the_product_from_the_first_message(conversation, house_notice, outbox):
+    binding = _binding(conversation)
+    _receive(conversation, "tenho alergia, posso comer o croissant?", "ask-1")
+    first = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+    assert first.replies[0].startswith("Me conta a que é a alergia")
+
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
+    _receive(conversation, "a ovo", "ask-2")
+    second = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+
+    conversation.refresh_from_db()
+    assert conversation.flags["triage"]["answered_by"] == "allergy_notice_after_ask"
+    assert not second.handoff
+    assert "\n\n".join(second.replies) == (
+        f"Croissant, alérgenos declarados: glúten, leite e ovos.\n\n{house_notice}\n\n{TEAM_OFFER}"
+    )
+
+
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+def test_an_answer_to_to_what_that_still_does_not_say_goes_to_the_team(conversation, house_notice, outbox):
+    binding = _binding(conversation)
+    _receive(conversation, "tenho alergia", "ask-vague-1")
+    service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
+    _receive(conversation, "não sei direito", "ask-vague-2")
+    result = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+
+    conversation.refresh_from_db()
+    assert result.handoff and conversation.flags["triage"]["destination"] == "team"
+
+
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+def test_yes_to_the_team_offer_calls_the_team(conversation, house_notice, outbox):
+    binding = _binding(conversation)
+    _receive(conversation, "tem castanha no panetone?", "offer-1")
+    first = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+    assert first.replies and not first.handoff
+
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
+    _receive(conversation, "sim, por favor", "offer-2")
+    second = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
+
+    conversation.refresh_from_db()
+    assert second.handoff and conversation.state == Conversation.State.HANDOFF
+    assert conversation.flags["triage"]["escalated_by"] == "allergy_offer_accepted"
+    assert conversation.flags["triage"]["intent"] == "allergy"
+
+
+def test_without_a_house_notice_allergy_still_goes_to_the_team(alpha_menu):
     from shopman.storefront.concierge import triage
 
     Shop.objects.update(food_safety_notice="")
 
-    assert triage.decide("sou celíaco, posso comer o croissant?").destination == triage.TEAM
+    for text in ("sou celíaco, posso comer o croissant?", "tem castanha no panetone?", "tenho alergia"):
+        assert triage.decide(text, channel_ref=CHANNEL).destination == triage.TEAM, text
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        "tem castanha no panetone?",
-        "tem glúten ou castanha no panetone?",
-        "sou celíaca e tenho alergia a ovo, o que posso comer?",
-        "tenho alergia, posso comer o croissant?",
-        "o croissant tem lactose?",
+        "meu filho teve reação depois do pão de ontem",
+        "passei mal depois do croissant, acho que foi alergia",
+        "tive uma reação alérgica ao panetone",
     ],
 )
-def test_other_allergies_still_go_to_the_team(house_notice, text):
-    """O dono decidiu só sobre glúten. Misturado com outra alergia, a mensagem inteira vai para a equipe."""
+def test_an_allergic_reaction_always_goes_to_the_team(house_notice, text):
     from shopman.storefront.concierge import triage
 
-    assert triage.decide(text).destination == triage.TEAM
+    decision = triage.decide(text, channel_ref=CHANNEL)
+    assert (decision.intent, decision.destination, decision.urgency) == ("complaint", triage.TEAM, triage.NOW)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "tem soja no croissant?",  # nem o aviso nem o croissant falam de soja
+        "tem amendoim?",
+        "sou celíaca e vegana, o que posso comer?",  # restrição que não é alérgeno
+    ],
+)
+def test_what_the_house_sources_do_not_cover_goes_to_the_team(house_notice, text):
+    """Responder só com o aviso deixaria o cliente deduzir uma ausência que ninguém afirmou."""
+    from shopman.storefront.concierge import triage
+
+    decision = triage.decide(text, channel_ref=CHANNEL)
+    assert (decision.intent, decision.destination) == ("allergy", triage.TEAM)
+
+
+def test_a_declared_allergen_outside_the_notice_is_answered(conversation, house_notice):
+    from shopman.shop.services import attributes
+
+    croissant = Product.objects.get(sku="CROISSANT")
+    attributes.set(croissant, "alergenos", ["glúten", "leite", "ovos", "soja"], save=False)
+    croissant.save(update_fields=["metadata"])
+
+    reply = _answered_alone(conversation, "tem soja no croissant?", "allergy-soy")
+
+    assert reply.startswith("Croissant, alérgenos declarados: glúten, leite, ovos e soja.")
 
 
 def test_gluten_complaint_still_goes_to_the_team(house_notice):
     from shopman.storefront.concierge import triage
 
-    decision = triage.decide("quero fazer uma reclamação, sou celíaca e o pão veio errado")
+    decision = triage.decide("quero fazer uma reclamação, sou celíaca e o pão veio errado", channel_ref=CHANNEL)
     assert (decision.intent, decision.destination) == ("complaint", triage.TEAM)
+
+
+@pytest.mark.parametrize("text", ["tem ovos de páscoa?", "quero um café com leite", "tem pão de trigo integral?"])
+def test_a_product_named_after_an_allergen_is_not_an_allergy_question(text):
+    from shopman.storefront.concierge import allergens
+
+    assert allergens.read(text) is None
 
 
 def test_the_public_faq_finds_the_gluten_answer_and_it_agrees_with_the_notice(ctx, alpha_menu):

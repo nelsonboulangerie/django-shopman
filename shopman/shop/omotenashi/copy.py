@@ -1187,6 +1187,30 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_SMALL_TALK_FAREWELL": {
         WILDCARD: {WILDCARD: CopyEntry(message="Até logo! Quando precisar, é só chamar. 💛")},
     },
+    # Alergia (dono, 03/10/2026, ``concierge/allergens.py``): a resposta é o
+    # aviso de produção compartilhada da casa (``Shop.food_safety_notice``) e os
+    # alérgenos declarados do produto citado. Daqui saem só a oferta da equipe,
+    # a pergunta "a quê?" e as linhas de produto. Nenhuma delas pode afirmar
+    # ausência de alérgeno: produto sem lista cadastrada NÃO é seguro.
+    # ``{product}`` é o nome do produto; ``{allergens}``, os declarados.
+    "CONCIERGE_ALLERGY_TEAM_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Se a alergia for grave, responda \"sim\" que eu chamo alguém da equipe para conversar com você. 💛",
+        )},
+    },
+    "CONCIERGE_ALLERGY_ASK_WHICH": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Me conta a que é a alergia, por favor, que eu confiro o que a casa informa sobre isso.",
+        )},
+    },
+    "CONCIERGE_ALLERGY_PRODUCT_DECLARED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{product}, alérgenos declarados: {allergens}.")},
+    },
+    "CONCIERGE_ALLERGY_PRODUCT_UNDECLARED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="{product}: ainda não há lista de alérgenos cadastrada, então vale o aviso abaixo (pode conter traços).",
+        )},
+    },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
