@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { OPERATOR_APPS } from "../../operator-kit/appIdentity";
 import {
   HUB_NAME,
+  HUB_NAMED_OF,
+  hubBrandLine,
   hubFailure,
   hubFailureCopy,
   hubGreeting,
@@ -57,14 +59,14 @@ describe("presentation/hub", () => {
     const browser = { installed: false, currentOrigin: HUB };
     const installed = { installed: true, currentOrigin: HUB };
 
-    it("Shopman Apps em ABA: o app abre na mesma aba, como antes", () => {
+    it("Central em ABA: o app abre na mesma aba, como antes", () => {
       expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), browser)).toEqual({ target: "_self" });
     });
 
-    it("Shopman Apps INSTALADO: o app abre na janela DELE — é o conserto da tarja", () => {
-      // Abrir dentro da janela do Shopman Apps sai do `scope` dela: o Chrome desenha a
-      // barra de "você saiu do app" e a janela continua com o nome e a cor do
-      // Shopman Apps, não do PDV.
+    it("Central INSTALADA: o app abre na janela DELE — é o conserto da tarja", () => {
+      // Abrir dentro da janela da Central sai do `scope` dela: o Chrome desenha a
+      // barra de "você saiu do app" e a janela continua com o nome e a cor da
+      // Central, não do PDV.
       expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), installed))
         .toEqual({ target: "_blank", rel: "noopener" });
     });
@@ -76,7 +78,7 @@ describe("presentation/hub", () => {
       }
     });
 
-    it("tile que aponta para o próprio Shopman Apps não sai da janela", () => {
+    it("tile que aponta para a própria Central não sai da janela", () => {
       expect(tileLinkAttrs(tile({ kind: "launch", url: HUB }), installed)).toEqual({ target: "_self" });
     });
   });
@@ -88,15 +90,27 @@ describe("presentation/hub", () => {
 
   it("hubGreeting personaliza com o nome ou cai no nome do app", () => {
     expect(hubGreeting("Ana")).toBe("Olá, Ana");
-    expect(hubGreeting("  ")).toBe("Shopman Apps");
-    expect(hubGreeting("")).toBe("Shopman Apps");
+    expect(hubGreeting("  ")).toBe("Central");
+    expect(hubGreeting("")).toBe("Central");
+  });
+
+  it("a linha de marca é o sistema com a casa do Shop ao lado, nunca uma loja fixa", () => {
+    expect(hubBrandLine("Nelson")).toBe("Shopman · Nelson");
+    expect(hubBrandLine("  Outra Casa ")).toBe("Shopman · Outra Casa");
+    expect(hubBrandLine("")).toBe("Shopman");
+    expect(hubBrandLine(null)).toBe("Shopman");
+  });
+
+  it("as frases sobre a Central seguem o artigo da identidade", () => {
+    expect(HUB_NAMED_OF).toBe("da Central");
+    expect(hubFailureCopy("forbidden").title).toBe("Você não tem acesso à Central");
   });
 });
 
 
-// ── Por que o Shopman Apps falhou ────────────────────────────────────────────
+// ── Por que a Central falhou ────────────────────────────────────────────
 //
-// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e o Shopman Apps reduzia CINCO causas
+// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e a Central reduzia CINCO causas
 // a um booleano que subia o formulário de senha. No balcão: API fora do ar → senha;
 // deploy em andamento → senha; estação travada → SENHA, onde a credencial é PIN.
 

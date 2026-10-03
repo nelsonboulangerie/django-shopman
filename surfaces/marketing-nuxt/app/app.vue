@@ -115,7 +115,7 @@ watch(sessionState, async (next, previous) => {
             Entrar de novo não resolve. Peça a um responsável o acesso ao
             Marketing.
           </p>
-          <!-- Mesma regra do ícone do Shopman Apps no rail: instalado, ele abre na
+          <!-- Mesma regra do ícone da Central no rail: instalado, ele abre na
                janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
           <a
             :href="hubUrl"
@@ -123,7 +123,7 @@ watch(sessionState, async (next, previous) => {
             :rel="hubLink.rel"
             class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           >
-            Voltar ao Shopman Apps
+            Voltar à Central
           </a>
         </div>
       </main>

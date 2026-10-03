@@ -258,7 +258,7 @@ if DEBUG:
         "https://*.trycloudflare.com",
         # Portas de dev das superfícies Nuxt — a MESMA lista de `dev_port` em
         # surfaces/registry.json (a trava de registro confere): loja :3000 ·
-        # Shopman Apps :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
+        # Central :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
         # Produção :3005 · Marketing :3006 · B.I. :3007 · Compras :3008.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -2055,11 +2055,11 @@ SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
-# "Marketing" some do Shopman Apps, sem link morto.
+# "Marketing" some da Central, sem link morto.
 SHOPMAN_MARKETING_BASE_URL = (os.environ.get("SHOPMAN_MARKETING_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
-# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some do Shopman Apps,
+# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
 # sem link morto.
 SHOPMAN_BI_BASE_URL = (os.environ.get("SHOPMAN_BI_BASE_URL") or "").strip().rstrip("/")
 
@@ -2117,9 +2117,9 @@ SHOPMAN_ADMIN_HOST = (
     (os.environ.get("SHOPMAN_ADMIN_HOST", "")).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 )
 
-# URLs das superfícies para o Shopman Apps (surfaces/hub-nuxt). REUSA as base URLs
+# URLs das superfícies para a Central (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
-# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha o Shopman Apps de graça, sem
+# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
 # env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
 # launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
 # abre a loja do cliente (storefront, mesma base dos links de cliente).

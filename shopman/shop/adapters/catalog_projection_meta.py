@@ -112,11 +112,15 @@ def _product_link(sku: str, cfg: dict) -> str:
     return f"{store_url}/{sku}" if store_url else ""
 
 
-def _item_data(item: ProjectedItem, cfg: dict) -> dict:
-    """Build the Meta ``data`` object for one product from a ProjectedItem + its PIM."""
+def _item_data(item: ProjectedItem, cfg: dict, *, in_stock: bool = True) -> dict:
+    """Build the Meta ``data`` object for one product from a ProjectedItem + its PIM.
+
+    ``in_stock`` é a resposta de :mod:`shopman.shop.services.external_availability`:
+    vendável zerado sai ``out of stock``, e a pausa (``is_sellable``) continua vencendo.
+    """
     social = item.metadata.get("social") if isinstance(item.metadata, dict) else {}
     social = social if isinstance(social, dict) else {}
-    available = item.is_published and item.is_sellable
+    available = item.is_published and item.is_sellable and in_stock
 
     data: dict = {
         "title": item.name,
@@ -150,12 +154,30 @@ def _item_data(item: ProjectedItem, cfg: dict) -> dict:
     return data
 
 
-def build_batch_requests(items: list[ProjectedItem], cfg: dict) -> list[dict]:
-    """The ``requests`` list for a project (upsert) — one UPDATE per item."""
+def build_batch_requests(
+    items: list[ProjectedItem], cfg: dict, *, stock: dict[str, bool] | None = None,
+) -> list[dict]:
+    """The ``requests`` list for a project (upsert) — one UPDATE per item.
+
+    ``stock`` (``{sku: tem estoque}``) ausente ou sem o SKU vale "tem estoque".
+    """
+    stock = stock or {}
     return [
-        {"method": "UPDATE", "retailer_id": item.sku, "data": _item_data(item, cfg)}
+        {
+            "method": "UPDATE",
+            "retailer_id": item.sku,
+            "data": _item_data(item, cfg, in_stock=stock.get(item.sku, True)),
+        }
         for item in items
     ]
+
+
+def stock_for(items: list[ProjectedItem], *, channel: str) -> dict[str, bool]:
+    """Estoque dos itens que as flags já deixariam vender (os outros saem fora de estoque igual)."""
+    from shopman.shop.services import external_availability
+
+    sellable = [item.sku for item in items if item.is_published and item.is_sellable]
+    return external_availability.in_stock_map(sellable, channel_ref=channel)
 
 
 def build_retract_requests(skus: list[str]) -> list[dict]:
@@ -209,7 +231,8 @@ class MetaCatalogProjection:
 
         errors: list[str] = []
         projected = 0
-        for chunk in _chunk(build_batch_requests(items, cfg), _batch_size(cfg)):
+        stock = stock_for(items, channel=channel)
+        for chunk in _chunk(build_batch_requests(items, cfg, stock=stock), _batch_size(cfg)):
             try:
                 _post_batch(chunk, cfg, headers)
                 projected += len(chunk)

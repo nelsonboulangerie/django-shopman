@@ -87,7 +87,9 @@ def observe(sku: str, *, channels: list[str] | None = None) -> None:
         for channel_ref in channels if channels is not None else offering_channel_refs():
             _apply(sku, channel_ref, offer_block_reason(sku, channel_ref=channel_ref))
     except Exception:
-        logger.debug("shelf_outage.observe falhou para %s", sku, exc_info=True)
+        # Agora também carrega o reenvio aos canais de fora: a operação precisa
+        # ver a falha, e a reconciliação refaz a transição no ciclo seguinte.
+        logger.warning("shelf_outage.observe falhou para %s", sku, exc_info=True)
 
 
 def _apply(sku: str, channel_ref: str, reason: str | None) -> None:
@@ -108,14 +110,24 @@ def _apply(sku: str, channel_ref: str, reason: str | None) -> None:
             .filter(sku=sku, channel_ref=channel_ref, ended_at__isnull=True)
             .first()
         )
+        changed = False
         if open_outage is not None and (not reason or open_outage.reason != reason):
             open_outage.ended_at = now
             open_outage.save(update_fields=["ended_at"])
             open_outage = None
+            changed = True
         if reason and open_outage is None:
             ShelfOutage.objects.create(
                 sku=sku, channel_ref=channel_ref, reason=reason, started_at=now
             )
+            changed = True
+        if changed:
+            # A passagem por zero (e a volta) é o gatilho dos canais empurrados:
+            # iFood e catálogo da Meta passam a mostrar o produto como o portão de
+            # pedido o vê. Na mesma transação: período sem reenvio não existe.
+            from shopman.shop.services import external_availability
+
+            external_availability.on_offer_changed(sku, channel_ref=channel_ref)
 
 
 def reconcile_outages() -> dict[str, int]:
@@ -146,7 +158,14 @@ def reconcile_outages() -> dict[str, int]:
     )
     for channel_ref in channels:
         for sku, reason in _reasons_for_channel(skus, channel_ref).items():
-            _apply(sku, channel_ref, reason)
+            try:
+                _apply(sku, channel_ref, reason)
+            except Exception:
+                # A transição desfeita volta no próximo ciclo; um SKU com
+                # problema não pode travar a reconciliação dos outros.
+                logger.warning(
+                    "shelf_outage.reconcile falhou para %s@%s", sku, channel_ref, exc_info=True
+                )
     after_open = set(
         ShelfOutage.objects.filter(ended_at__isnull=True).values_list(
             "sku", "channel_ref"

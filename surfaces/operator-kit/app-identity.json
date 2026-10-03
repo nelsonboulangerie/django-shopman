@@ -7,12 +7,12 @@
   },
   "apps": {
     "hub": {
-      "label": "Shopman Apps",
+      "label": "Central",
       "description": "Todos os aplicativos da operação, num lugar só.",
       "symbol": "lucide:layout-grid",
       "fallbackIcon": "layout-grid",
       "color": "#34373B",
-      "article": "o",
+      "article": "a",
       "install": "Abra todos os aplicativos da operação direto da tela inicial deste dispositivo."
     },
     "pos": {

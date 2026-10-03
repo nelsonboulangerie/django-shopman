@@ -3,7 +3,7 @@
 // barra, o alvo de toque, o `aria-current` e a revelação da aba ativa vêm do
 // `OperatorAppBar` (kit): eram quatro barras à mão, desenhadas de três jeitos. Aqui
 // fica só o que é do Gestor: quais são as seções.
-// As funções comuns (Shopman Apps, operador, tema) vivem no OperatorRail à esquerda.
+// As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
 import { gestorSections } from "~/presentation/gestorSections";
 
 // Canal ou feed desligado, pausado ou divergente: um ponto âmbar + "1 desligado" no

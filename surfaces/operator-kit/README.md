@@ -2,7 +2,7 @@
 
 Fundação comum das oito superfícies de operador: `pos-nuxt`, `orders-nuxt`,
 `kds-nuxt`, `production-nuxt`, `purchase-nuxt`, `marketing-nuxt`, `bi-nuxt` e a
-Shopman Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
+Central (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
 do design system sem absorver regras específicas de cada domínio.
 
 **Última verificação dos consumidores:** 2026-09-10, contra os oito
@@ -133,7 +133,7 @@ A `Permissions-Policy` segue o mesmo desenho em `runtimeConfig.operatorPermissio
 `"self"`; `*` ou outra origem levantam erro. Sem a chave, o header é byte a byte o de base.
 
 Cada exceção leva no `nuxt.config` o comentário com a função que a exige, e a decisão do
-dono que a autorizou. Hoje declaram exceções: Pedidos e Shopman Apps (foto de produto e
+dono que a autorizou. Hoje declaram exceções: Pedidos e Central (foto de produto e
 ícone de app de host externo, agente de impressão do balcão), PDV (Google Maps do
 autocompletar de endereço, ViaCEP, foto de produto, agente do balcão) e Compras (câmera
 para ler a NF).
@@ -146,7 +146,7 @@ Rótulo, descrição, símbolo, cor e frase de instalação de cada app de opera
 abre, se a tela fica acesa, o que ele recebe por push e quais atalhos o SO oferece.
 
 Estavam escritos em seis lugares (`nuxt.config`, `package.json`, `tools/pwa-gate`,
-`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — o Shopman Apps com ícone ardósia e barra
+`app.vue` duas vezes, `PWA_ICONS.md`) e derivaram — a Central com ícone ardósia e barra
 de título vinho, o Gestor com dois nomes, a Cozinha com três. Ver `PWA_ICONS.md` para a
 tabela e para a regra "a barra de título é a cor do ícone".
 
@@ -195,7 +195,7 @@ A trava é `tests/appName.guardrails.test.ts`: varre os oito apps (rótulo sem c
 separador, `nuxt.config` sem rótulo/cor/ícone reescritos, título começando pelo `name`,
 nenhum título com hífen de separador, nenhum `document.title` cru, nenhum `app-label` nem
 caminho de ícone escrito à mão, e a barra de título na cor do ícone). Do lado do Django,
-`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles do Shopman Apps com
+`shopman/backstage/tests/test_hub_projection_identity.py` mantém os tiles da Central com
 os mesmos nomes.
 
 ### Convite de instalação: o COMO é comum, o QUÊ é de cada app
@@ -240,13 +240,13 @@ destino. Sem `noopener`, abriria uma janela solta do navegador.
 E o manifesto de todo app de operador declara `launch_handler: { client_mode:
 "focus-existing" }`: chegar num app que **já está aberto** traz a janela dele para a
 frente e descarta o URL. `navigate-existing` recarregaria o PDV com venda na mão só
-porque alguém tocou no atalho do Shopman Apps — a mesma regra do `useOperatorReloadHold`.
+porque alguém tocou no atalho da Central — a mesma regra do `useOperatorReloadHold`.
 
-Os dois lados do caminho usam a mesma peça: o ícone do Shopman Apps no `OperatorRail` de
-cada app, e os tiles do Shopman Apps (`hub-nuxt`, `tileLinkAttrs`).
+Os dois lados do caminho usam a mesma peça: o ícone da Central no `OperatorRail` de
+cada app, e os tiles da Central (`hub-nuxt`, `tileLinkAttrs`).
 
 **O que foi recusado:** `scope_extensions` (declarar as origens irmãs como extensão do
-escopo) tira a tarja, mas pelo motivo errado — passaria a rodar o Shopman Apps *dentro* da
+escopo) tira a tarja, mas pelo motivo errado — passaria a rodar a Central *dentro* da
 janela do PDV, e o título e a cor continuariam sendo os do PDV. É exatamente o sintoma
 que se quer eliminar.
 
@@ -285,7 +285,7 @@ watchEffect(() => {
 Quem declara a rota segura é o app, em `definePwaCapability({ idleReloadPaths })`:
 `"*"` no KDS (nenhuma tela dele tem rascunho), `"/board"` na Produção (preserva os
 editores de receita), `"/"` no PDV (**só a raiz** — `/session` tem contagem digitada e
-`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Shopman Apps,
+`/display` nunca é tocada, então seria "ociosa" para sempre). Lista vazia (Central,
 Gestor, Compras, B.I., Marketing) mantém só o aviso.
 
 ⚠️ **`skipWaiting` vale para a ORIGEM inteira.** Quem aplica não recarrega só a si: o
@@ -783,6 +783,37 @@ no popover dele. Acrescido de ‹ › e de "Voltar para hoje".
   "Semana" vê a semana daquela quinta). Janela móvel recomeça terminando hoje.
 - **Rótulo**: dia diz sempre o dia da semana (`Hoje, qui 01/10`, `Ontem, qua 30/09`,
   `Ter 29/09`); o resto diz nome e intervalo (`Semana · 28/09 a 04/10`). Sem travessão.
+
+## Colunas de fila ajustáveis e recolhíveis (`QueueColumnStrip`, `QueueColumnResizeHandle`)
+
+Forma FILA (SUITE-UX §16): uma fila em colunas deixa cada posto arrumar a tela para o
+trabalho dele. A coluna aberta tem um **peso** (fração da largura entre as abertas); a
+recolhida vira uma **faixa** de 56 px. Primeiro consumidor: o quadro do Gestor (Entrada,
+Preparo, Saída), onde o tablet do passe fica só com a Saída.
+
+- **Regras puras** em `app/presentation/queueColumns.ts`: `defaultQueueLayout`,
+  `normalizeQueueLayout` (higiene do que veio guardado; nunca devolve todas recolhidas),
+  `toggleQueueColumn` (recolher a última aberta não faz nada), `openQueueColumn`,
+  `showAllQueueColumns`, `resizeQueueColumns` (a soma dos dois pesos não muda; durante o
+  arraste nada fica abaixo de `QUEUE_COLUMN_MIN_PX`; ao soltar abaixo de
+  `QUEUE_COLLAPSE_PX`, a coluna recolhe), `nextOpenQueueKey` (com quem a alça divide),
+  `queueGridTemplate` (o `grid-template-columns`), `queueColumnForKey` (teclas 1 a 9),
+  `queueViewLabel` ("Visão: Saída") e `queueStripLabel` (nome acessível da faixa).
+- **`<QueueColumnStrip>`**: a coluna recolhida. Um `<button>` só, a faixa inteira é o
+  gancho (`@open`), com chevron de 48 px (`size-action`). Props: `title`, `count`,
+  `late` (vira o ponto vermelho e a frase "1 atrasado"), `pulse` (novidade esperando
+  alguém olhar: a faixa pulsa, com `motion-safe`), `icon`, `noun` (singular e plural do
+  que se conta; padrão pedido/pedidos). No `lg` é faixa vertical com o nome em pé; abaixo,
+  barra baixa de largura inteira (as colunas empilham).
+- **`<QueueColumnResizeHandle>`**: a alça na borda direita de uma coluna aberta que tem
+  vizinha aberta (o pai põe a coluna em `relative`). Não mede nem guarda: `start` (o pai
+  mede as duas colunas), `drag(deltaPx)` a cada movimento (prévia), `end(deltaPx)` uma vez
+  ao soltar (o pai grava). Setas do teclado andam `QUEUE_KEYBOARD_STEP_PX`. Só aparece no
+  `lg`.
+
+**Quem guarda é o app**, e a lei L7 manda guardar no servidor, por posto: o Gestor usa
+`orders/board-layout/` (`Terminal.metadata["gestor_board"]`, ver
+`docs/reference/data-schemas.md`). Sem servidor, a arrumação padrão (todas abertas).
 
 ## Base de CSS (`operator-base.css`)
 

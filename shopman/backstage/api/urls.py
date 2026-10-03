@@ -123,6 +123,7 @@ from .operations import (
     OperatorUnlockView,
     OrderAdvanceView,
     OrderAssignView,
+    OrderBoardLayoutView,
     OrderCancellationReasonsView,
     OrderCancelView,
     OrderCommentView,
@@ -285,7 +286,7 @@ urlpatterns = [
         MarketingVitalView.as_view(),
         name="api-backstage-marketing-vital",
     ),
-    # Shopman Apps — launcher do operador (surfaces/hub-nuxt)
+    # Central — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
@@ -525,6 +526,9 @@ urlpatterns = [
         name="api-backstage-closing-episode",
     ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
+    # A arrumação das colunas do Gestor neste posto (SUITE-UX §16).
+    # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
+    path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     # Catalog matrix (produto × superfície)

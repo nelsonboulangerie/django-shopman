@@ -78,6 +78,7 @@ def build_feed_items(ref: str) -> list[dict]:
     from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
+    from shopman.shop.services import external_availability
     from shopman.shop.services.channel_switch import effective_active
     from shopman.shop.services.display_prices import resolve_prices
     from shopman.shop.services.storefront_links import path_product
@@ -120,11 +121,17 @@ def build_feed_items(ref: str) -> list[dict]:
             # vazio) apagaria o produto na plataforma — religar viraria cadastro
             # novo, com nova revisão; e um 404 faria a busca agendada falhar, com a
             # plataforma seguindo a anunciar a última versão que conseguiu ler.
+            #
+            # Vendável zerado também sai fora de estoque, lido na hora em que a
+            # plataforma busca o feed, pela mesma regra que recusa o pedido no
+            # canal para onde o clique leva (``services/external_availability``).
+            # A pausa vence: pausado segue fora com estoque cheio.
             available = (
                 switched_on
                 and product.is_published
                 and product.is_sellable
                 and product.sku not in paused
+                and external_availability.in_stock(product.sku, channel_ref=channel.ref)
             )
             items.append({
                 "id": product.sku,
