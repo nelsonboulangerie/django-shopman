@@ -3,7 +3,7 @@
 - **id:** OBS0310-N
 - **sessão:** shopman-improvements-fixes-bd04d4 (Claude; frente executada por subagente em worktree próprio)
 - **branch:** claude/obs0310-concierge-memoria
-- **PR:** (a preencher)
+- **PR:** #1443
 - **início (UTC):** 2026-10-03
 - **estudo:** `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md` (PR #1438), bloco 2 (fatia F2), com a decisão
   do dono de 03/10: a memória vence pelo que acontece, não pelo relógio.
