@@ -38,10 +38,18 @@ custo do erro, exceções, caminho hoje e caminho mínimo, fronteira. Todas lera
 | Marketing | 38 | [`funcoes/marketing.md`](suite-ux-v2/funcoes/marketing.md) |
 | Compras | 29 | [`funcoes/compras.md`](suite-ux-v2/funcoes/compras.md) |
 | B.I. | 26 | [`funcoes/bi.md`](suite-ux-v2/funcoes/bi.md) |
-| **total** | **302** | |
+| **total** | **302 fichas, ~295 trabalhos distintos** | |
+
+O mesmo trabalho do chrome comum ("quem está operando", identificar por PIN/crachá) aparece em até
+cinco fichas (PDV P02, Gestor P28, Produção P45, B.I. BI-25, Cozinha C03); por isso ~295 distintos.
 
 Cada ficha tem também a lista de **todas** as telas e estados do app, com o dispositivo que faz
-sentido para cada uma. É a base da matriz de cobertura do §10: nenhuma tela fica sem destino.
+sentido para cada uma. É a base da matriz de cobertura
+([`funcoes/cobertura.md`](suite-ux-v2/funcoes/cobertura.md)): nenhuma tela fica sem destino.
+
+O plano passou por uma **revisão adversarial** contra as fichas antes de ir ao dono; as correções
+que ela pediu (piloto, guardas das automações, assinatura de duas pessoas, contagem cega, densidades
+da Cozinha, trabalhos que não cabiam nas formas) já estão no texto.
 
 ---
 
@@ -80,14 +88,21 @@ Cada lei sai de evidência repetida nos apps. É o filtro por onde passa toda te
 ### L1. O sistema faz o que sabe; o operador declara só o que só ele vê
 O gesto humano existe para registrar um fato do mundo que o sistema não tem como saber ("saiu",
 "foi retirado", "produzi 26", "contei R$ 412", "esta caixa veio amassada") ou para uma decisão de
-autoridade. Todo o resto é automático e aparece como **fato na linha do tempo, com desfazer**.
-*Consequência de forma:* o botão principal de cada item é o fato que só o humano conhece; quando
-não há tal fato, não há botão.
+autoridade. O que o sistema sabe vira **automático por padrão**, e aparece como fato na linha do
+tempo do item.
+Três travas, porque automático errado custa caro:
+- **Automático é o padrão, nunca o único caminho.** O gesto manual continua no menu do item (há
+  estações sem tela, que recebem papel; há o leitor de código; há o caso que o sistema não viu).
+- **Desfazer só para o que fica dentro da casa.** O que sai da casa (aviso ao cliente, pedido
+  concluído para o iFood, mensagem) **espera o prazo do desfazer antes de sair**, ou não é automático.
+- **Toda automação tem guarda escrita** (§5.1) e é decisão do dono, uma a uma, porque muda regra.
+*Consequência de forma:* o botão principal de cada item é o fato que só o humano conhece; quando o
+sistema já sabe o fato, o item avança sozinho e o botão desce para o menu.
 
 ### L2. Um trabalho, uma forma, muitas portas
 O mesmo trabalho tem a mesma forma em qualquer app, qualquer tela, qualquer dispositivo. A porta
 pode ser a fila, o detalhe, a busca, o aviso ou outro app; o que abre é sempre o mesmo.
-*Consequência:* a suíte inteira cabe em **7 formas de tela** e **6 gestos transversais** (§3 e §4).
+*Consequência:* a suíte inteira cabe em **7 formas de tela**, **8 gestos transversais** e **1 contrato de chrome** (§3 e §4).
 
 ### L3. A informação da decisão está no lugar da decisão, antes do gesto
 O que pode impedir ou mudar a decisão aparece **no item, antes do toque**: bloqueio com motivo,
@@ -96,14 +111,17 @@ falta, prazo, a conta por trás da sugestão. Nunca um toast depois; nunca em ou
 ### L4. Caminho feliz sem atrito; atrito proporcional ao irreversível
 O caso comum custa 0 ou 1 gesto. Atrito existe só onde há **exceção** (motivo, de uma lista curta)
 ou **irreversibilidade** (desfazer para o reversível; selo para o irreversível; assinatura para
-exceção de dinheiro ou de autoridade). Conferência é **por exceção**: o que bate entra sozinho;
-mexe-se no que não bate.
+exceção de dinheiro ou de autoridade). Conferência é **por exceção**: o que bate entra com **um ato
+físico só** (contar volumes, bipar), e mexe-se no que não bate. Nunca entra "sozinho" o que ninguém
+viu: perecível com validade e lote, e lote de forno que libera aviso ao cliente, sempre passam por
+um olhar humano (que pode ser um só, para o conjunto).
 
 ### L5. Atenção é o recurso escasso
 O que pede alguém vira **item numa fila com dono**, não toast nem sino solto. A densidade de uma
 fila é fixada pela atenção (4 a 6 itens em foco numa estação), não pelos pixels; o excedente vira
 número ("+7 na fila") e agregado ("A fazer"). Tela maior aumenta a distância de leitura, não a
-contagem.
+contagem. (A tabela densa do desktop não contradiz isso: é **supervisão** de muitas filas, não um
+posto de execução.)
 
 ### L6. Papel e postura antes de app
 Dentro de quase todo app há duas naturezas de trabalho que não podem ter o mesmo peso: **operar**
@@ -125,34 +143,51 @@ Os rótulos provisórios das sete análises (VIGIAR, TRIAR, AVANÇAR, REGISTRAR-
 CONFERIR, CONFIGURAR, PLANEJAR, LOCALIZAR, ENTENDER, APROVAR, CORRIGIR, AUTORIZAR, EMITIR, AVISAR,
 mais os propostos por elas: SELAR, INTERRUPTOR, ACUSAR-RECEBIMENTO, TRAVA-FÍSICA, ASSUMIR,
 INSTRUIR, ANOTAR, DELEGAR, SEPARAR, SEGUIR-INSTRUÇÃO, REGISTRAR-FATO, AVALIAR, LER-CÓDIGO,
-APONTAR, EXPLICAR-NO-LUGAR) colapsam em **sete formas de tela** e **seis gestos transversais**.
+APONTAR, EXPLICAR-NO-LUGAR) colapsam em **sete formas de tela**, **oito gestos transversais** e
+**um contrato de chrome** (identidade e estação).
 
 ### 3.1 Sete formas de tela
 
 | forma | o trabalho que serve | onde está hoje (exemplos) |
 |---|---|---|
-| **FILA** | VIGIAR + TRIAR + AVANÇAR + APROVAR + ASSUMIR | fila de pedidos (Gestor), estação e Saída (Cozinha), comandas e encomendas do dia (PDV), expedição e timers (Produção), reposição e "a caminho" (Compras), anúncios esperando o meu sim (Marketing), "Precisa de você" (Shopman Apps) |
-| **CONFERÊNCIA** | REGISTRAR-QUANTIDADE + CONFERIR + AVALIAR + SEPARAR | produzir, fechar fornada com QC, corrigir QC, planejar (Produção); conferir NF, contagem (Compras); abrir e fechar caixa, fechar o dia, entregador voltou, maquininha voltou, acerto (PDV/Gestor); separação de insumos e de encomendas |
+| **FILA** | VIGIAR + TRIAR + AVANÇAR + APROVAR + ASSUMIR | fila de pedidos (Gestor), estação e Saída (Cozinha), comandas e encomendas do dia (PDV), expedição e timers (Produção), reposição (Compras), "Precisa de você" (Shopman Apps). **A criar:** "a caminho" (Compras, o pedido de compra não existe como objeto hoje) e a fila de anúncios esperando o meu sim (Marketing, hoje tem 5 portas e nenhuma tela) |
+| **CONFERÊNCIA** | REGISTRAR-QUANTIDADE + CONFERIR + SEPARAR | produzir, fechar fornada com QC, corrigir QC, planejar (Produção); conferir NF (Compras); entregador voltou, maquininha voltou, acerto (Gestor). **Modo cego:** abrir e fechar caixa, fechar o dia, contagem de estoque. **Modo lista (SEPARAR):** separação de insumos e de encomendas, que é marcar o que já foi separado, sem número |
 | **COMPOSIÇÃO** | COMPOR + SELAR | venda (PDV), entrada sem NF e pedido ao fornecedor (Compras), campanha e anúncio (Marketing), receita (Produção), oferta e cupom (Marketing) |
-| **CADASTRO** | CONFIGURAR (cadastral) + CORRIGIR cadastro | catálogo e painel do produto, clientes e unificação, vínculos de canal (Gestor); insumos, fornecedores, custos (Compras); receitas (leitura e versões); modelos e plataformas (Marketing) |
+| **CADASTRO** | CONFIGURAR (cadastral) + CORRIGIR cadastro + AVALIAR | catálogo e painel do produto, clientes e unificação, vínculos de canal (Gestor); insumos, fornecedores, custos (Compras); receitas (versões, e a nota 0–5 da versão, P42, que é juízo e não conferência); modelos e plataformas (Marketing) |
 | **LEITURA** | ENTENDER | B.I. (8 seções), relatórios da Produção, X/Z do PDV, histórico do Marketing |
-| **FOCO** | uma tarefa só, com a mão ocupada ou o cliente na frente | pagamento (PDV), finalizar lote (Produção), leitor de NF e de código (Compras/PDV), selo de anúncio (Marketing), contagem cega |
+| **FOCO** | uma tarefa só, com a mão ocupada ou o cliente na frente | pagamento (PDV), finalizar lote (Produção), leitor de NF e de código (Compras/PDV), selo de anúncio (Marketing). **Variante "executar instrução"** (SEGUIR-INSTRUÇÃO): pesar por ficha (P08) e ler a fórmula na bancada (P34), receita escalada, passo a passo, no tablet |
 | **MONITOR** | VIGIAR à distância, sem gesto | Painel de retirada (Cozinha), Letreiro (Produção), Tela do cliente (PDV), quadro de estação em TV |
 
-### 3.2 Seis gestos transversais (valem dentro de qualquer forma)
+A contagem cega mora só na CONFERÊNCIA (modo cego); quando ela acontece com a mão ocupada, abre em
+FOCO, mas a forma é a da conferência.
+
+### 3.2 Oito gestos transversais (valem dentro de qualquer forma)
 
 | gesto | o que é | onde se repete hoje |
 |---|---|---|
 | **LOCALIZAR** | uma busca, uma tecla, alcance (esta tela · app · suíte), leitura de código pela câmera ou leitor | "Cliente veio buscar?", busca de produto F3, busca de pedido, busca de insumo, cliente no PDV, campanha, código da Via Cozinha |
-| **EXCEÇÃO ASSINADA** | ATO + MOTIVO (lista curta) + ASSINATURA (PIN/crachá; zero passos se o gerente já está logado) | sangria, troco servido, devolução, estorno, desconto acima do limite, cancelar venda, nota avulsa, edição mais barata, gaveta emperrada, cancelar pedido pago, desligar canal, estornar produção |
+| **EXCEÇÃO ASSINADA** | ATO + MOTIVO (lista curta) + ASSINATURA. Duas regras diferentes: **autoridade** (basta ser gerente; zero passos se o gerente já é quem opera) e **segunda pessoa** (a assinatura tem de ser de outra pessoa, nunca de quem está logado) | autoridade: sangria, troco servido, devolução, estorno, desconto acima do limite, cancelar venda, nota avulsa, edição mais barata, gaveta emperrada, desligar canal. Segunda pessoa: cancelar pedido pago (Gestor P19), disparo acima do limiar (Marketing M09). *Proposta, muda regra:* estornar produção (P13, hoje basta `can_void` com motivo opcional) |
+| **CONFIRMAR COM PROVA** | prévia do efeito + idempotência + conflito "manter o meu / usar o atual" + recuperar rascunho | 12 lugares no Gestor (preço, publicação, lote, ordem de coleção…), recuperação de rascunho no Marketing (M36); cresce com a L7, porque estado no servidor aumenta conflito entre dispositivos |
 | **INTERRUPTOR** | ligar/desligar algo que age sozinho: 1 toque, reversível, efeito imediato, no dispositivo onde está a urgência; **automático quando o sistema sabe** | pausar produto por canal, desligar canal, campanha ligada, congelar efeitos externos, aviso transacional ativo, som da estação |
 | **SELO / DESFAZER** | confirmação com atrito proporcional: desfazer por N segundos se reversível; selo (frase, senha, TOTP) se irreversível para fora da casa | finalizar ticket (desfazer 5 s, reabrir 30 min); entregar e despachar (hoje sem nada); disparar campanha e publicar anúncio (selo); remover item (desfazer) |
-| **ANOTAR** | motivo ou ocorrência a partir de uma lista curta da casa, com "Outro" em texto | recusa, cancelamento, perda no QC, ocorrência no recebimento, divergência da contagem, nota da cozinha (tags) |
-| **AVISO** | o que pede alguém vira item na fila do dono, com push quando ele não está olhando, e some quando resolvido | alertas do Gestor, sino da Produção, sino do Marketing, alarmes do B.I. (hoje só no Admin), "Visto", som |
+| **ANOTAR** | motivo ou ocorrência a partir de uma lista curta da casa, com "Outro" em texto; sem destinatário | recusa, cancelamento, perda no QC, ocorrência no recebimento, divergência da contagem, comentário no histórico |
+| **INSTRUIR** | mensagem com destinatário, que tem de chegar ao lugar de quem executa | nota da cozinha (Gestor P16, tags + texto) que precisa aparecer no ticket da estação; observação da linha no PDV |
+| **AVISO** | o que pede alguém vira item na fila do dono, com push quando ele não está olhando, e some quando resolvido | alertas do Gestor, sino da Produção, sino do Marketing, alarmes do B.I. (hoje só no Admin), som |
+| **ACUSAR CIÊNCIA** | provar que viu, quando nada mais prova (diferente de AVISO); registrado no servidor, com escopo de estação | "Recebi o cancelamento" (Cozinha K10, por ticket, evita desperdício); "Visto" do pedido novo (K20, hoje por dispositivo e local, por isso duas telas da mesma estação discordam) |
 
 **EMITIR** (vias, etiquetas, NFC-e) deixa de ser trabalho: é efeito colateral do ato. Só a falha
 vira item (AVISO) no lugar de quem resolve. **TRAVA-FÍSICA** (gaveta fechada, papel bipado) e
-**DELEGAR** (corrida externa) são estados de um item de FILA, não telas.
+**DELEGAR** (corrida externa) são estados de um item de FILA, não telas. **TIMER** (forno, timers de
+chão) é um estado de item de FILA com contagem regressiva e alarme; o alarme some com o fato que o
+resolve (fechar a fornada já declara a retirada, P15), sem "Visto" separado.
+
+### 3.3 Contrato de chrome: identidade e estação
+
+"Quem está operando" (identificar por PIN ou crachá, 5 a 30 vezes por dia no PDV) e "que dispositivo
+é este" (provisionar estação, parear TV, instalar, ativar push) não são cadastro de escritório: são
+feitos **no próprio dispositivo**, por quem está ali. Um contrato único no kit: trava, PIN/crachá,
+troca de operador, e o provisionamento que define de uma vez **estação, som e densidade** (K21/K22;
+hoje o `sound_enabled` existe no modelo e não é lido, e só o PDV oferece virar estação).
 
 ---
 
@@ -180,8 +215,9 @@ navegação, busca/filtro/exibição/paginação, acesso à informação e o que
   trabalho (canal, entrega/retirada, atrasados). **Exibição:** densidade derivada do posto, não
   escolhida. **Paginação:** nunca; o excedente é número.
 - **Tempo real:** push (SSE) com o fetch canônico como verdade; "ao vivo" discreto; desatualizado explícito.
-- **Dispositivo:** parede/tablet fixo (4–6 em foco, leitura a 1–2 m); celular (1 em foco + 6–8 linhas
-  compactas, push e vibração porque a tela apaga); desktop (fila densa em tabela, seleção em lote).
+- **Dispositivo:** parede/tablet fixo (4–6 em foco, leitura a 1–2 m); celular (1 em foco + 3 a 5
+  linhas compactas, push e vibração porque a tela apaga); desktop (tabela densa com seleção em lote,
+  para **supervisão**, não para execução). Densidades por papel no §10.3.
 
 ### 4.2 CONFERÊNCIA — "o que aconteceu de verdade"
 
@@ -260,7 +296,7 @@ navegação, busca/filtro/exibição/paginação, acesso à informação e o que
 
 | nível | o que é | onde mora | exemplo |
 |---|---|---|---|
-| **automática** | o sistema sabe e faz | linha do tempo do item, com desfazer | avançar para "pronto" quando a Cozinha conclui; pausar produto esgotado; enviar à cozinha ao salvar; reconciliar resultado incerto |
+| **automática** | o sistema sabe e faz (padrão, nunca o único caminho; guarda no §5.1) | linha do tempo do item, com desfazer para o que fica na casa; o gesto manual no menu | avançar para "pronto" quando a Cozinha conclui; pausar produto esgotado; enviar à cozinha sem toque; consultar resultado incerto |
 | **primária** | o fato humano do momento, um por item ou tela | botão largo do item; selo da composição | Entregar · Finalizar 26 un. · Pagamento R$ 41,00 · Confirmar entrada |
 | **frequente** | alternativa comum | visível ao lado, peso menor | Recusar · Transferir · Imprimir via |
 | **rara** | existe, pouco usada | menu do item/tela, com a mesma tecla de antes | exportar, reimprimir, histórico, comparar versões |
@@ -269,6 +305,18 @@ navegação, busca/filtro/exibição/paginação, acesso à informação e o que
 
 A regra que corta: **se um botão não é o fato humano do momento nem uma alternativa frequente,
 ele não está na superfície.**
+
+### 5.1 Guardas das automações (cada uma é decisão do dono)
+
+| automação | o que pode dar errado | guarda |
+|---|---|---|
+| **Avançar para "pronto" quando a Cozinha conclui** | estação sem tela (Lanches recebe papel) nunca conclui; aviso de "pronto" ao cliente não volta atrás | o "Pronto" manual fica no menu do item e no leitor da Via Cozinha; aviso ao cliente só sai depois do prazo do desfazer |
+| **Pausar produto esgotado** | o estoque inclui o **planejado**, então "esgotado" pode ser falso nos dois sentidos; voltar sozinho antes do QC liberar o lote | pausar só canais remotos; se há lote planejado ou no forno, mostrar "volta ~10:40" em vez de pausar; voltar só depois do QC; push ao gerente com desfazer; "pausar com estoque" manual continua |
+| **Enviar à cozinha sem toque** (30 a 200 vezes por dia) | mesa ainda decidindo, tempo dos pratos, item removido depois de enviado vira card de cancelamento que a estação tem de reconhecer (desperdício) | enviar depois de um intervalo parado ou ao sair da comanda; "segurar" por linha; desfazer enquanto a estação não iniciou; definir o que é "salvar" (hoje o PDV não tem esse ato) |
+| **Reconciliar resultado incerto** (Marketing M13) | repetir um envio cujo resultado é desconhecido manda a mensagem duas vezes | só leitura; um resultado `unknown` nunca é reenviado sozinho |
+| **Qualidade por exceção** (P19) | liberar aviso ao cliente de lote que ninguém olhou | o portão humano fica, como **um** ato: "N lotes, nenhuma exceção · Confirmar" |
+| **Recebimento por exceção** (C10/C13; hoje o servidor exige o ok linha a linha) | a nota diz 20 kg, chegam 18, entram 20 em silêncio | um ato físico (contar volumes ou bipar cada volume); perecível com validade e lote (C11) nunca entra sem olhar |
+| **Pré-preencher a abertura do caixa** | conferência de custódia vira declaração; o erro se esconde e só aparece na contagem cega do fechamento | a abertura é **contada**, nunca preenchida (P10); o "troco provável" do B.I. vira sugestão de **separação** na véspera (BI-17), não o valor do campo |
 
 ---
 
@@ -327,7 +375,7 @@ O código continua em oito apps (deploy, permissões, ADR-030). A **experiência
 | Entregar encomenda / pedido no balcão | PDV (encomendas) **e** Gestor (receber na retirada) | um trabalho só, uma forma (FILA + RECEBER), aberto pelos dois | é o mesmo fato com duas telas |
 | Saída do pedido (pronto → saiu/retirou) | Cozinha (Saída) **e** Gestor (avançar, despachar) | posto **Passe**: uma fila de saída, aberta pela Cozinha e pelo Gestor | mesma `advance_order`, dois desenhos |
 | Pausar produto / desligar canal | Gestor, no Catálogo e em Canais (escritório) | **automático** quando esgota; interruptor também no posto do passe e no celular do gerente | urgência de minutos no lugar de dias |
-| Avisos transacionais (pedido, pagamento, fila, fidelidade) | Marketing › Plataformas | Gestor › Canais (Ajustes) | é comunicação da loja, não campanha; foi parar no Marketing pelo seletor do ManyChat |
+| Avisos transacionais (pedido, pagamento, fila, fidelidade) **e** a ligação mensagem ↔ modelo aprovado do WhatsApp | Marketing › Plataformas (M30 e M31) | os dois juntos, para Gestor › Canais (Ajustes), levando o TOTP e a permissão `configure_platforms`; exige atualizar o contrato do Marketing (`docs/reference/marketing-surface-contract.md`, `make marketing-docs`) | M31 é comunicação da loja, não campanha, e M30 é o mesmo trabalho com outro alvo (separar os dois quebraria a L2). **Decisão do dono** |
 | Contagem de estoque | aba escondida da Base no Compras | trabalho próprio de **Estoque** (gerente, tablet), CONFERÊNCIA cega | é outro papel, outro dispositivo |
 | Fim do dia | fechar caixa, fechar o dia e contar a vitrine em telas separadas | um **corredor** só, em sequência, no tablet | mesmo dono, mesmo momento, mesma forma (cega) |
 | Projeção, troco, sobra por produto, em risco | B.I. (aba que o decisor não abre) | ao lado da sugestão do plano (Produção), no abrir caixa (PDV), como audiência (Marketing), push | EXPLICAR-NO-LUGAR |
@@ -340,7 +388,8 @@ Postos que saem disso (cada um abre direto na sua fila):
 **Balcão** (PDV, desktop com periféricos) · **Passe** (saída do pedido) · **Estação** (Cozinha) ·
 **Forno** (Produção chão) · **Doca** (Compras receber) · **Estoque** (contagem) · **Fim do dia** ·
 **Escritório** (catálogo, canais, compras, receitas, campanhas, B.I.) · **Dono em movimento**
-(celular: decisões, alertas, olhada).
+(celular: decisões, alertas, olhada; o modo "fora da loja" depende do consentimento de localização,
+ainda pendente na v3).
 
 ---
 
@@ -361,8 +410,10 @@ acontecem 0 a 20 vezes por dia contra 100 a 400 vendas.
 A v3 ganhou altura na lista apertando o rodapé (dois andares de botões em 112 px). A função diz
 outra coisa: **a comanda precisa de lista + total + um selo (Pagamento), e só.**
 - O instrumento de edição aparece **ao tocar a linha** (sobre a parte de baixo da lista), não fixo.
-- "Enviar à cozinha" deixa de ser botão: o canal envia ao salvar ou ao pagar o que tem preparo (L1),
-  com o fato na linha ("na cozinha 21:52").
+- "Enviar à cozinha" sai do rodapé: se o dono aprovar a automação (§5.1, com intervalo parado,
+  "segurar" por linha e desfazer enquanto a estação não iniciou), o envio acontece sozinho e o fato
+  aparece na linha ("na cozinha 21:52"); o gesto manual (F9) continua no cabeçalho da comanda. Sem a
+  automação, ele fica no cabeçalho, não no pé.
 - "Transferir" vai para o modo seleção (onde já se escolhem as linhas).
 - O rodapé fica com **uma faixa só, generosa**: total e Pagamento juntos, o maior alvo da tela.
 - No desktop com teclado, não existe teclado numérico na tela, nem recolhido: os dígitos editam a
@@ -379,7 +430,9 @@ Logo, o tablet **não é o balcão em outro tamanho**: é um **segundo posto sem
 trabalho próprio:
 - **fila longa e comanda de mesa** (lançar e mandar para a cozinha; pagar só eletrônico, PIX e
   maquininha; dinheiro vai para o caixa);
-- **encomendas e retirada** (a lista do dia, ler o QR, entregar);
+- **encomendas e retirada** (a lista do dia, ler o QR, entregar); se a encomenda tem **saldo a
+  receber em dinheiro** (P62), o tablet não recebe: entrega a cobrança ao caixa (a encomenda aparece
+  na fila do Balcão como "receber R$ 22,00 de Ana Ferreira") e só depois libera a entrega;
 - **fim do dia** (contar a vitrine andando).
 Em pé é o padrão (na mão), com a fonte em grade grande ocupando a tela e a comanda como folha de
 baixo (contagem + total + Pagamento sempre visíveis); o teclado numérico só ao tocar uma linha.
@@ -389,18 +442,40 @@ baixo (contagem + total + Pagamento sempre visíveis); o teclado numérico só a
 Não houve prévia de tablet de verdade nem de celular, e o celular foi descartado por julgamento.
 A análise encontrou quem usa e o quê:
 
-| dispositivo | quem | trabalho | densidade (fixada pela atenção) |
+| dispositivo | quem | trabalho | densidade (fixada pela atenção; números da ficha `kds-hub.md` §2b) |
 |---|---|---|---|
-| tablet fixo na bancada/parede | cozinheiro de estação | preparar (iniciar, finalizar, desfazer) | **4 a 6 tickets** em foco + "+N" + faixa "A fazer" |
-| tablet fixo no passe | expedidor | Saída: entregar, despachar, conferir volumes | **3 a 4 prontos** grandes + **5 a 8 linhas** de "em preparo" |
-| tablet na mão | chefe de cozinha / gerente | o que está atrasado em qualquer estação; corrigir | **6 a 10 linhas** (lista, não grade); visão "todas as estações", que hoje não existe |
-| celular | atendente que leva o pedido | prontos para sair: entregar | **1 expandido + 6 a 8 linhas** |
-| celular | cozinheiro de estação pequena (barista, lanches) | a própria estação | **1 em foco + 3 a 5 linhas**; exige push e vibração (o KDS não tem push hoje e a tela do celular apaga) |
-| TV | público | Painel de retirada | 12 a 24 códigos |
+| tablet fixo na bancada/parede | cozinheiro de estação | preparar (iniciar, finalizar, desfazer) | **4 a 6 tickets** em foco (3×2 em ~1280 px); ticket de 6+ itens ocupa duas alturas; o resto vira "+N" e faixa "A fazer" |
+| tablet fixo no passe | expedidor | Saída: entregar, despachar, conferir volumes | **3 a 4 prontos** grandes + **5 a 8 linhas** de "em preparo" (código, tempo, estações faltando) |
+| tablet fixo na separação | separador de encomendas | separar (picking), com aviso de estoque por item | **2 a 4 tickets** longos |
+| tablet na mão | chefe de cozinha / gerente | o que está atrasado em qualquer estação; corrigir | **6 a 10 linhas** (lista, não grade). A visão "todas as estações" **não existe hoje**: é recurso novo (§11) |
+| tablet na mão | atendente de salão ou balcão | achar o pedido do cliente e entregar | **4 a 6 cards** em duas colunas |
+| celular | atendente que leva o pedido à mesa ou à porta | prontos para sair: entregar, conferir volumes | **3 a 5 linhas**, o mais antigo no topo, só o primeiro expandido com os itens |
+| celular | cozinheiro de estação pequena sem tablet (barista, lanches) | a própria estação | **1 em foco + 2 a 3 linhas** ("próximo", "depois"); exige push e vibração (o KDS não tem push hoje e a tela do celular apaga) |
+| celular | gerente fora da cozinha | ser avisado quando passar da meta | **só alerta (push), sem quadro** |
+| TV na cozinha | cozinha grande | quadro da estação, só leitura | **6 a 8 tickets** em densidade ampla; o gesto fica num tablet pequeno ou no leitor de código |
+| TV no salão | público | Painel de retirada | **12 a 24 códigos** |
+
+O entregador **não usa** o KDS: quem despacha é o expedidor; troco e maquininha são do Gestor.
 
 Sobre "caberia mais card no celular": **cabem mais pedidos, como linhas compactas** (código, tempo,
 estado, um gesto), não mais cards completos. O card completo só para o pedido em foco; o resto é
 lista. A v3 mostrava dois cards inteiros e nada mais; a função pede um em foco e a fila visível.
+
+### 10.4 App × dispositivo × papel
+
+Toda célula tem um conjunto de trabalhos ou "não oferecido" com o motivo. A cobertura tela a tela
+está em [`funcoes/cobertura.md`](suite-ux-v2/funcoes/cobertura.md).
+
+| app | desktop | tablet | celular | parede |
+|---|---|---|---|---|
+| **PDV** | Balcão completo (periféricos: gaveta, bobina, leitor, 2º monitor) | segundo posto sem dinheiro físico: fila longa e comanda de mesa, encomendas e retirada, fim do dia (§10.2) | balcão de bolso: encomendas do dia e retirada pelo QR, comanda rápida na fila; dinheiro vai ao caixa | Tela do cliente (MONITOR) |
+| **Cozinha** | não oferecido (a cozinha não tem desktop; o chefe usa tablet na mão) | estação, passe, separação, chefe (§10.3) | atendente, estação pequena, gerente por push (§10.3) | quadro da estação, Painel de retirada |
+| **Gestor** | escritório: fila supervisionada em tabela, catálogo, canais, clientes | passe: fila e saída; interruptores (pausar, desligar canal) | dono em movimento: push, aceitar/recusar, detalhe, interruptores, resumo fora da loja (com consentimento) | não oferecido (a fila de parede é a Saída da Cozinha) |
+| **Produção** | gestão: plano, relatórios, receitas (edição), revisão de QC | forno e bancada: dia de produção, expedição, finalizar lote, separação e pesagem (FOCO executar instrução), timers | no bolso: timers que vibram, finalizar lote, ler etiqueta do lote, separar andando, foto da ficha nova (P35) | Letreiro (MONITOR) |
+| **Compras** | Comprar: reposição, pedido por fornecedor, custos, base | conferência da nota com a linha aberta ao lado; contagem de estoque | Doca: escanear NF, conferir, confirmar; contagem andando (C28); aprovar pedido de compra (C05) para o dono em movimento; olhar a reposição (C01) | não oferecido |
+| **Marketing** | compor campanhas, modelos, ofertas, plataformas | leitura e revisão (o compositor de 5 etapas e o multi-select das ofertas pedem teclado e mouse) | fila de decisões: revisar e selar anúncio do push; interruptor de campanha | não oferecido |
+| **B.I.** | estudo: as perguntas semanais e mensais, com aprofundamento | leitura na véspera: projeção do dia (BI-15) e sobra/falta por produto, sentado ou em casa | a olhada (um número e uma frase) e o alerta | não oferecido |
+| **Shopman Apps** | fila das filas | fila das filas | fila das filas + busca única com câmera | não oferecido |
 
 ---
 
@@ -430,6 +505,9 @@ primeiros são defeitos confirmados no código e já viraram tarefas separadas.
 | Separar e pesar sem nenhum registro (onde o erro é mais caro) | Produção | rastreabilidade |
 | Esgotado conhecido, pausa manual por canal | Gestor | L1 |
 | Peça pesada digitada pela etiqueta; o leitor não lê código de balança (EAN-13 com preço/peso) | PDV | L1 |
+| Visão "todas as estações" para o chefe de cozinha (o que está atrasado em qualquer estação) | Cozinha | **recurso novo** (regra da casa: não inventar sem decisão do dono) |
+| Fila de decisões do Marketing, "a caminho" do Compras, histórico de recebimentos na tela, sobra/falta por produto no B.I. | vários | **telas novas** sobre dado que já existe ou que falta modelar |
+| QR na etiqueta do lote (para "ler etiqueta" na Produção) | Produção | recurso novo (a etiqueta de hoje não tem código) |
 
 Cada linha vira item de backlog com o dono decidindo prioridade; nenhuma entra escondida num PR
 de tela.
@@ -438,19 +516,22 @@ de tela.
 
 ## 12. Como isso muda o plano de execução
 
-A ordem aprovada continua (**kit primeiro, Gestor piloto, PDV por último**). O que muda é a unidade
-de trabalho: em vez de "tela por tela", **forma por forma**.
+A ordem aprovada continua (**kit primeiro, Gestor piloto, PDV por último**), **e a reforma de tela
+não muda regra de negócio** (premissa da v3). O que muda é a unidade de trabalho: em vez de "tela
+por tela", **forma por forma**; e as mudanças de regra que a função pede andam numa trilha à parte.
 
 1. **Kit por forma.** Cada uma das 7 formas vira uma peça do kit com contrato funcional
    (zonas, ação primária única, densidade por posto, regras de busca/filtro/paginação) e teste do
-   contrato. Os 6 gestos transversais idem. A camada visual da v3 (tokens, rail, cabeçalho, busca)
+   contrato. Os 8 gestos transversais e o contrato de chrome idem. A camada visual da v3 (tokens, rail, cabeçalho, busca)
    é o rosto dessas peças.
-2. **"O sistema faz o que sabe"** é um pacote próprio, com backend: avançar automático, pausa por
-   esgotado, enviar à cozinha ao salvar, reconciliações automáticas, conferência por exceção,
-   estado no servidor (rascunhos, timers, checklist, visto, som). Cada item com decisão do dono,
-   porque muda regra.
-3. **Migração por posto**, não por app: Passe (Gestor + Saída da Cozinha) como piloto, depois Doca,
-   Forno, Estação, Escritório, Dono em movimento e, por último, Balcão.
+2. **"O sistema faz o que sabe" é uma trilha separada de mudança de regra**, que não bloqueia o
+   kit nem o piloto: avançar automático, pausa por esgotado, enviar à cozinha sem toque,
+   reconciliações automáticas, conferência por exceção, estado no servidor (rascunhos, timers,
+   checklist, visto, som). Cada item com a guarda do §5.1 e uma decisão do dono.
+3. **Piloto: a fila do Gestor**, com as regras de hoje (como aprovado). Depois, por posto: Doca,
+   Forno, Estação, Escritório, Dono em movimento e, por último, Balcão. Juntar a saída do Gestor e
+   a Saída da Cozinha num posto **Passe** é proposta nova (§13), não continuidade: depende de
+   mudança de regra e puxa a Cozinha, que a v3 classificou como risco alto.
 4. **Trava de forma**: toda tela declara sua forma; o teste do contrato reprova botão primário
    duplicado, paginação em fila, edição fixa em composição, conferência linha a linha sem exceção.
 5. **Inventário de trabalhos como contrato**: as 302 fichas viram o inventário de não-regressão
@@ -461,14 +542,19 @@ de trabalho: em vez de "tela por tela", **forma por forma**.
 ## 13. O que é decisão do dono
 
 1. **As sete leis** (§2) como filtro de toda tela.
-2. **As sete formas e os seis gestos** (§3 e §4) como gramática única.
-3. **A nova fronteira** (§9): Passe como posto único da saída; pausa automática por esgotado;
-   avisos transacionais saindo do Marketing; Estoque e Fim do dia como trabalhos próprios; B.I. como
-   fonte; Comprar e Receber como andares separados.
-4. **O que o sistema passa a fazer sozinho** (§5 e §12.2), item a item, porque cada um muda regra
-   (ex.: avançar para "pronto" quando a Cozinha conclui; enviar à cozinha ao salvar).
+2. **As sete formas, os oito gestos e o contrato de chrome** (§3 e §4) como gramática única.
+3. **A nova fronteira** (§9): Estoque e Fim do dia como trabalhos próprios; B.I. como fonte;
+   Comprar e Receber como andares separados; avisos transacionais e modelos do WhatsApp saindo
+   juntos do Marketing (com mudança no contrato do Marketing). E, como **pedido de mudança de uma
+   decisão já tomada**: juntar a saída do Gestor e a Saída da Cozinha num posto Passe.
+4. **O que o sistema passa a fazer sozinho** (§5.1 e §12.2), item a item, com a guarda de cada um,
+   porque cada um muda regra. Também: a regra de **segunda pessoa** na assinatura (§3.2) e o estorno
+   de produção passando a pedir gerente.
 5. **As respostas às três notas** (§10): comanda com lista + total + Pagamento e edição sob demanda;
    PDV no tablet como segundo posto sem dinheiro físico; Cozinha com papéis e densidades por dispositivo.
-6. **A ordem**: forma por forma no kit, depois por posto, com o Passe como piloto.
+6. **A ordem**: forma por forma no kit; a fila do Gestor como piloto (como aprovado); a trilha de
+   regras em paralelo; depois por posto, Balcão por último.
+7. **Os recursos novos** do §11 (visão "todas as estações", telas novas, QR na etiqueta do lote),
+   porque a casa não inventa recurso sem decisão do dono.
 
 Aprovado isso, a próxima rodada desenha o rosto de cada forma, por dispositivo, a partir da v3.
