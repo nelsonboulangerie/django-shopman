@@ -275,6 +275,7 @@ from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
 from .timer_tags import ProductionTimerTagsView
+from .workstations import WorkstationDetailView, WorkstationDeviceView, WorkstationListView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
@@ -343,6 +344,14 @@ urlpatterns = [
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     # Provisionamento da ESTAÇÃO: uma vez por dispositivo, por quem gere operadores.
     path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
+    # O cadastro de postos de trabalho (Gestor › Postos), pela mesma permissão.
+    path("workstations/", WorkstationListView.as_view(), name="api-backstage-workstations"),
+    path("workstations/<slug:ref>/", WorkstationDetailView.as_view(), name="api-backstage-workstation"),
+    path(
+        "workstations/<slug:ref>/devices/<str:device_id>/",
+        WorkstationDeviceView.as_view(),
+        name="api-backstage-workstation-device",
+    ),
     # Capacidade do contêiner dos apps de operação (BFF operator-kit → /health/capacity)
     path("operator/capacity/", OperatorCapacityView.as_view(), name="api-backstage-operator-capacity"),
     # A antessala da Produção — a MESMA view de `operator/session/`, montada sob o

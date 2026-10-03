@@ -5,11 +5,9 @@ Entrada, Preparo e Saída podem ser recolhidas numa faixa e ter a largura ajusta
 Essa arrumação é da casa, não do navegador (lei L7): trocar o tablet, limpar o
 navegador ou recarregar não pode desfazer o jeito do posto.
 
-**Onde mora.** O posto já tem registro com JSON de configuração: o ``Terminal`` da
-estação confiável (``station_trust.station_ref``), cujo ``metadata`` o backstage já
-escreve (``hardware``, ``station``). A arrumação entra ali, na chave
-``gestor_board`` (inventário em ``docs/reference/data-schemas.md``). Nenhum modelo
-novo, nenhuma migração, nada no Core além do JSON que ele oferece para isso.
+**Onde mora.** No posto de trabalho (``backstage.Workstation``) da estação confiável
+(``station_trust.station_ref``), no ``metadata`` dele, chave ``gestor_board``
+(inventário em ``docs/reference/data-schemas.md``).
 
 **Sem posto, sem memória no servidor.** Um navegador que não é estação confiável (o
 notebook do gestor, por exemplo) não tem de quem ser a arrumação; ele abre com as
@@ -24,7 +22,7 @@ from django.db import transaction
 #: As zonas do quadro, na ordem da tela (``presentation/board.ts``: ``ZoneView.key``).
 ZONES: tuple[str, ...] = ("intake", "prep", "expedition")
 
-#: Chave em ``Terminal.metadata``.
+#: Chave em ``Workstation.metadata``.
 METADATA_KEY = "gestor_board"
 
 WEIGHT_MIN = 0.25
@@ -66,23 +64,23 @@ def normalize_columns(raw) -> dict[str, dict]:
     return columns
 
 
-def _terminal(terminal_ref: str, *, for_update: bool = False):
-    from shopman.cashman.models import Terminal
+def _workstation(workstation_ref: str, *, for_update: bool = False):
+    from shopman.backstage.models import Workstation
 
-    queryset = Terminal.objects.filter(ref=terminal_ref, is_active=True)
+    queryset = Workstation.objects.filter(ref=workstation_ref, is_active=True)
     if for_update:
         queryset = queryset.select_for_update()
     return queryset.first()
 
 
-def read_columns(terminal_ref: str) -> dict[str, dict] | None:
+def read_columns(workstation_ref: str) -> dict[str, dict] | None:
     """A arrumação guardada no posto, ou ``None`` (nunca mexeram, ou guardado inválido)."""
-    if not terminal_ref:
+    if not workstation_ref:
         return None
-    terminal = _terminal(terminal_ref)
-    if terminal is None:
+    workstation = _workstation(workstation_ref)
+    if workstation is None:
         return None
-    metadata = terminal.metadata if isinstance(terminal.metadata, dict) else {}
+    metadata = workstation.metadata if isinstance(workstation.metadata, dict) else {}
     block = metadata.get(METADATA_KEY)
     if not isinstance(block, dict):
         return None
@@ -92,19 +90,19 @@ def read_columns(terminal_ref: str) -> dict[str, dict] | None:
         return None
 
 
-def save_columns(terminal_ref: str, raw) -> dict[str, dict] | None:
+def save_columns(workstation_ref: str, raw) -> dict[str, dict] | None:
     """Grava a arrumação no posto, sem tocar nas outras chaves do ``metadata``.
 
     Devolve ``None`` quando o posto não existe (ou saiu do ar). Trava a linha para
-    não apagar, por corrida, o que o Admin do terminal estiver salvando ao lado.
+    não apagar, por corrida, outra preferência do posto gravada ao lado.
     """
     columns = normalize_columns(raw)
     with transaction.atomic():
-        terminal = _terminal(terminal_ref, for_update=True)
-        if terminal is None:
+        workstation = _workstation(workstation_ref, for_update=True)
+        if workstation is None:
             return None
-        metadata = dict(terminal.metadata) if isinstance(terminal.metadata, dict) else {}
+        metadata = dict(workstation.metadata) if isinstance(workstation.metadata, dict) else {}
         metadata[METADATA_KEY] = {"columns": columns}
-        terminal.metadata = metadata
-        terminal.save(update_fields=["metadata"])
+        workstation.metadata = metadata
+        workstation.save(update_fields=["metadata", "updated_at"])
     return columns

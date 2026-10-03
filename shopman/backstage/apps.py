@@ -115,6 +115,30 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # Postos de trabalho: todo caixa é um posto (o Terminal novo ganha o seu
+        # posto Caixa), e um caixa novo não toma o ref de um posto sem caixa —
+        # senão os dispositivos daquele posto abririam a gaveta dele. Ver
+        # models/workstation.py.
+        from shopman.cashman.models import Terminal
+
+        from shopman.backstage.services.workstations import (
+            ensure_cash_desk_workstation,
+            guard_terminal_ref,
+        )
+
+        pre_save.connect(
+            guard_terminal_ref,
+            sender=Terminal,
+            dispatch_uid="backstage.workstation.guard_terminal_ref",
+            weak=False,
+        )
+        post_save.connect(
+            ensure_cash_desk_workstation,
+            sender=Terminal,
+            dispatch_uid="backstage.workstation.ensure_cash_desk",
+            weak=False,
+        )
+
         # Trilha de acesso: quem entrou, por qual porta, de onde. O sucesso vem
         # do signal do PRÓPRIO Django — os quatro caminhos de operador (senha do
         # Admin, senha do app, PIN, crachá) terminam todos em `login()`, então

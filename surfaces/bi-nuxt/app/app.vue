@@ -5,7 +5,11 @@
 // Gate: `backstage.view_bi` — leitura analítica cross-suite é persona de
 // gestão (ADR-021 §5), não de quem opera o turno.
 const OPERATOR_PERM = "backstage.view_bi";
-const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
+  useOperatorLock(OPERATOR_PERM);
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
+// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -33,6 +37,12 @@ useOperatorWindowTitle();
     <OperatorSessionUnavailable v-if="sessionUnavailable" scope="o painel de B.I." @retry="refresh()" />
     <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+    <OperatorStationSetup
+      v-if="stationSetup.offer.value"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
+    />
     <OperatorSonner />
     <OperatorPwaRuntime />
   </div>

@@ -1,7 +1,7 @@
 """A arrumação das colunas do Gestor fica lembrada por POSTO, no servidor (SUITE-UX §16, L7).
 
-O posto é a estação confiável (``Terminal``); a arrumação mora em
-``Terminal.metadata["gestor_board"]`` sem tocar nas outras chaves. Sem posto não há
+O posto é o ``Workstation`` da estação confiável; a arrumação mora em
+``Workstation.metadata["gestor_board"]`` sem tocar nas outras chaves. Sem posto não há
 de quem ser a arrumação: a leitura volta vazia e a gravação é recusada com 409.
 """
 
@@ -13,6 +13,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import resolve, reverse
 from shopman.cashman.models import Terminal
 
+from shopman.backstage.models import Workstation
 from shopman.backstage.services import order_board_layout
 from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Shop
@@ -64,18 +65,38 @@ def test_posto_sem_arrumacao_le_vazio_e_a_tela_abre_com_as_tres(cliente_no_posto
     assert resposta.json() == {"station": "passe", "columns": None}
 
 
-def test_posto_saida_fica_lembrado_e_nao_apaga_o_resto_do_terminal(cliente_no_posto, passe):
+def test_posto_saida_fica_lembrado_no_posto_e_nao_toca_o_terminal(cliente_no_posto, passe):
     resposta = cliente_no_posto.put(reverse(URL), {"columns": SAIDA}, content_type="application/json")
 
     assert resposta.status_code == 200, resposta.content
     assert resposta.json()["columns"]["expedition"] == {"open": True, "weight": 1.0}
+    posto = Workstation.objects.get(ref="passe")
+    assert posto.metadata["gestor_board"]["columns"]["intake"]["open"] is False
     passe.refresh_from_db()
-    assert passe.metadata["auto_lock_seconds"] == 90
-    assert passe.metadata["station"] == {"mode": "attended"}
-    assert passe.metadata["gestor_board"]["columns"]["intake"]["open"] is False
+    assert passe.metadata == {"auto_lock_seconds": 90, "station": {"mode": "attended"}}
 
     # Outra leitura (outro navegador do mesmo posto, ou depois de recarregar).
     assert cliente_no_posto.get(reverse(URL)).json()["columns"] == resposta.json()["columns"]
+
+
+def test_posto_sem_caixa_tambem_lembra(client, operador):
+    """A Expedição não tem gaveta, e é justamente o posto que recolhe Entrada e Preparo."""
+    Workstation.objects.create(ref="expedicao", label="Expedição", kind="dispatch")
+    trust_station(client, "expedicao")
+    client.force_login(operador)
+
+    resposta = client.put(reverse(URL), {"columns": SAIDA}, content_type="application/json")
+
+    assert resposta.status_code == 200, resposta.content
+    assert client.get(reverse(URL)).json() == {"station": "expedicao", "columns": resposta.json()["columns"]}
+
+
+def test_posto_desativado_nao_grava(cliente_no_posto):
+    Workstation.objects.filter(ref="passe").update(is_active=False)
+
+    resposta = cliente_no_posto.put(reverse(URL), {"columns": SAIDA}, content_type="application/json")
+
+    assert resposta.status_code == 409
 
 
 def test_dispositivo_que_nao_e_posto_nao_grava(client, operador):
@@ -95,8 +116,7 @@ def test_todas_recolhidas_e_recusado(cliente_no_posto, passe):
     assert resposta.status_code == 400
     assert resposta.json()["field"] == "columns"
     assert resposta.json()["detail"] == "Arrumação das colunas inválida. Nada foi guardado."
-    passe.refresh_from_db()
-    assert "gestor_board" not in passe.metadata
+    assert "gestor_board" not in Workstation.objects.get(ref="passe").metadata
 
 
 @pytest.mark.parametrize(
@@ -117,8 +137,7 @@ def test_arrumacao_invalida_e_recusada(cliente_no_posto, colunas):
 
 
 def test_guardado_corrompido_le_como_vazio(cliente_no_posto, passe):
-    passe.metadata = {**passe.metadata, "gestor_board": {"columns": {"intake": "x"}}}
-    passe.save(update_fields=["metadata"])
+    Workstation.objects.filter(ref="passe").update(metadata={"gestor_board": {"columns": {"intake": "x"}}})
 
     assert cliente_no_posto.get(reverse(URL)).json()["columns"] is None
 

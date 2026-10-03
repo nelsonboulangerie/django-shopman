@@ -12,25 +12,33 @@ mockNuxtImport("$fetch", () => fetchMock);
 
 const env = installNuxtGlobals();
 
-describe("useStationProvision — a montagem do balcão", () => {
+describe("useStationProvision: fixar o dispositivo num posto", () => {
   beforeEach(() => {
     env.reset();
     fetchMock.mockReset().mockResolvedValue({});
   });
 
-  it("lê o estado e as opções de quem pode provisionar", async () => {
+  it("lê o estado, os postos do app e a copy de quem pode fixar", async () => {
     fetchMock.mockResolvedValue({
       station: "",
-      terminals: [{ ref: "pdv-main", label: "PDV principal" }],
+      workstation: null,
+      kinds: [{ kind: "production_room", label: "Sala da Produção" }],
+      workstations: [{ ref: "sala-forno", label: "Sala Forno", kind: "production_room" }],
+      copy: { setup_title: "Vincular este dispositivo a um posto de trabalho?" },
     });
 
-    const { load, station, terminals, allowed, loaded } = useStationProvision();
+    const { load, station, workstations, copy, allowed, loaded } = useStationProvision("production");
     await load();
 
     expect(loaded.value).toBe(true);
     expect(allowed.value).toBe(true);
     expect(station.value).toBe("");
-    expect(terminals.value).toHaveLength(1);
+    expect(workstations.value).toHaveLength(1);
+    expect(copy.value.setup_title).toBe("Vincular este dispositivo a um posto de trabalho?");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/operator/station/",
+      { query: { surface: "production" } },
+    );
   });
 
   it("recusa do servidor (403) esconde a oferta em vez de adivinhar", async () => {
@@ -39,44 +47,55 @@ describe("useStationProvision — a montagem do balcão", () => {
     // que responde 403 no toque.
     fetchMock.mockRejectedValue({ statusCode: 403 });
 
-    const { load, allowed, terminals, loaded } = useStationProvision();
+    const { load, allowed, workstations, loaded } = useStationProvision("kds");
     await load();
 
     expect(loaded.value).toBe(true);
     expect(allowed.value).toBe(false);
-    expect(terminals.value).toEqual([]);
+    expect(workstations.value).toEqual([]);
   });
 
-  it("provisiona e passa a se reconhecer como aquela estação", async () => {
-    fetchMock.mockResolvedValue({ ok: true, station: "pdv-main" });
+  it("fixa e passa a se reconhecer como aquele posto", async () => {
+    fetchMock.mockResolvedValue({ ok: true, station: "expedicao" });
 
-    const { provision, station } = useStationProvision();
-    const ok = await provision("pdv-main");
+    const { provision, station } = useStationProvision("kds");
+    const ok = await provision("expedicao");
 
     expect(ok).toBe(true);
-    expect(station.value).toBe("pdv-main");
+    expect(station.value).toBe("expedicao");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/station/",
-      expect.objectContaining({ method: "POST", body: { terminal_ref: "pdv-main" } }),
+      expect.objectContaining({ method: "POST", body: { workstation_ref: "expedicao" } }),
     );
   });
 
-  it("sem terminal escolhido não chama o servidor", async () => {
-    const { provision } = useStationProvision();
+  it("caixa com outro dispositivo pede a segunda palavra", async () => {
+    fetchMock.mockRejectedValue({
+      data: { detail: "Este caixa já tem 1 outro dispositivo.", error: { code: "station_cash_desk_shared" } },
+    });
+
+    const { provision, confirmFor } = useStationProvision("pos");
+    expect(await provision("pdv-main")).toBe(false);
+
+    expect(confirmFor.value).toBe("pdv-main");
+  });
+
+  it("sem posto escolhido não chama o servidor", async () => {
+    const { provision } = useStationProvision("pos");
 
     expect(await provision("")).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("a falha volta como mensagem, e o dispositivo segue sem estação", async () => {
-    fetchMock.mockRejectedValue({ data: { detail: "Terminal não encontrado." } });
+    fetchMock.mockRejectedValue({ data: { detail: "Posto não encontrado." } });
 
-    const { provision, station, error, busy } = useStationProvision();
-    const ok = await provision("pdv-fantasma");
+    const { provision, station, error, busy } = useStationProvision("pos");
+    const ok = await provision("posto-fantasma");
 
     expect(ok).toBe(false);
     expect(station.value).toBe("");
-    expect(error.value).toContain("Terminal não encontrado");
+    expect(error.value).toContain("Posto não encontrado");
     // `busy` tem de soltar mesmo no erro, senão o botão fica morto para sempre.
     expect(busy.value).toBe(false);
   });
@@ -85,7 +104,7 @@ describe("useStationProvision — a montagem do balcão", () => {
     let solta: (v: unknown) => void = () => {};
     fetchMock.mockReturnValue(new Promise((r) => { solta = r; }));
 
-    const { provision } = useStationProvision();
+    const { provision } = useStationProvision("pos");
     const primeira = provision("pdv-main");
     const segunda = await provision("pdv-main");
 
@@ -104,10 +123,10 @@ describe("useStationProvision — rota", () => {
     fetchMock.mockReset().mockResolvedValue({});
   });
 
-  it("fala com operator/station/", async () => {
-    fetchMock.mockResolvedValue({ station: "", terminals: [] });
-    await useStationProvision().load();
+  it("fala com operator/station/, levando o app", async () => {
+    fetchMock.mockResolvedValue({ station: "", workstations: [] });
+    await useStationProvision("orders").load();
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/backstage/operator/station/");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/backstage/operator/station/", { query: { surface: "orders" } });
   });
 });
