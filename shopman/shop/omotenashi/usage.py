@@ -50,6 +50,7 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     # Concierge de WhatsApp: a conversa por IA que vende pelo chat (ADR-026).
     "shopman/storefront/concierge/service.py": ("WhatsApp", "Concierge: respostas da casa"),
     "shopman/storefront/concierge/prompt.py": ("WhatsApp", "Concierge: abertura da conversa"),
+    "shopman/storefront/concierge/small_talk.py": ("WhatsApp", "Concierge: cumprimento e agradecimento"),
     "shopman/storefront/admin/concierge.py": ("Admin", "Conversas do concierge"),
     "shopman/storefront/api/auth.py": ("Loja", "Entrar"),
     "shopman/storefront/api/tracking.py": ("Loja", "Acompanhamento do pedido"),

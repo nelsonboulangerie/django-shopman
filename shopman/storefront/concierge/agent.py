@@ -27,6 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
+from . import small_talk
 from . import tools as tools_module
 from .tools import ToolContext
 
@@ -265,6 +266,22 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             conversation._channel_off = True
             conversation._commercial_authority = False
 
+    customer_text = _current_customer_text(conversation)
+    is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
+    courtesy = small_talk.small_talk_kind(customer_text)
+    if courtesy:
+        # "Bom dia", "obrigado", "tchau": a resposta é cortesia da casa, curta.
+        # Nem o modelo nem a busca entram: a busca sobre "bom dia, tudo bem?"
+        # devolveu três produtos, o levain e os alérgenos (alpha, 03/10/2026).
+        from .prompt import _shop
+
+        shop_name = (getattr(_shop(), "name", "") or "").strip()
+        return AgentOutcome(
+            reply_text=small_talk.reply_for(
+                customer_text, kind=courtesy, shop_name=shop_name, is_first_turn=is_first_turn
+            )
+        )
+
     client = client or build_client()
     ctx = ToolContext(
         conversation=conversation,
@@ -273,10 +290,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         account=str(getattr(binding, "account", "") or ""),
         transport_channel=str(getattr(binding, "transport_channel", "") or ""),
         connection_key=str(getattr(binding, "connection_key", "") or ""),
-        customer_text=_current_customer_text(conversation),
+        customer_text=customer_text,
     )
 
-    is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
     system = build_system(
         conversation,
         is_first_turn=is_first_turn,
@@ -380,6 +396,10 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 if canonical_replies
                 else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
             )
+            salutation = small_talk.opening_salutation(customer_text)
+            if salutation and canonical_replies:
+                # "Bom dia, tem croissant?": o bom dia volta antes do fato.
+                outcome.reply_text = f"{salutation}!\n{outcome.reply_text}"
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 

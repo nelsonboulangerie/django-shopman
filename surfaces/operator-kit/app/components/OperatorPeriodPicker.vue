@@ -9,9 +9,14 @@
 // anterior, semana → semana anterior, mês → mês anterior, N dias → os N dias antes),
 // e "Voltar para hoje" quando o período não é mais o de hoje.
 //
-// Cada consumidor declara as granularidades que aceita (`presets`): o KDS só dia, as
-// Encomendas dia e semana, o B.I. todas mais o personalizado. Sem personalizado, o
-// popover oferece "Ir para o dia" no lugar dele.
+// O popover tem até quatro grupos, sempre na mesma ordem: Período (Dia, Semana,
+// Mês, Ano), Próximos (7D, 14D, 28D a partir de hoje), Últimos (7D…Máx até hoje) e
+// Personalizado (De/Até). Cada consumidor declara o que faz sentido para ele
+// (`presets` e `custom`): a Produção só o dia; as Encomendas olham para a frente;
+// o B.I. todo o passado (`PAST_PERIOD_PRESETS`) mais o personalizado. Sem
+// personalizado, o popover oferece "Ir para o dia" no lugar dele. Quem tem teto de
+// intervalo no servidor diz `max-span-days`: o personalizado recusa com o motivo,
+// em vez de o servidor cortar em silêncio.
 //
 // O estado é do consumidor (`v-model`): quem guarda na URL guarda na URL.
 import { onClickOutside } from "@vueuse/core";
@@ -22,6 +27,7 @@ import {
   PERIOD_PRESETS,
   currentPeriod,
   customPeriod,
+  customPeriodError,
   goToDate,
   isCurrentPeriod,
   periodLabel,
@@ -47,6 +53,8 @@ const props = withDefaults(
     max?: string;
     /** Onde "Máx" começa. */
     epoch?: string;
+    /** O intervalo mais longo aceito no personalizado. */
+    maxSpanDays?: number;
     /** Nome do controle para leitor de tela ("Período de análise"). */
     label?: string;
     /** Lado em que o popover se alinha ao botão. */
@@ -59,6 +67,7 @@ const props = withDefaults(
     min: undefined,
     max: undefined,
     epoch: undefined,
+    maxSpanDays: undefined,
     label: "Período",
     align: "end",
   },
@@ -71,6 +80,7 @@ const bounds = computed<PeriodBounds>(() => ({
   min: props.min,
   max: props.max,
   epoch: props.epoch,
+  maxSpanDays: props.maxSpanDays,
 }));
 const range = computed(() => resolvePeriod(props.modelValue, bounds.value));
 const buttonLabel = computed(() => periodLabel(props.modelValue, range.value, bounds.value.today));
@@ -82,6 +92,8 @@ const current = computed(() => isCurrentPeriod(props.modelValue));
 const allowed = computed(() => PERIOD_PRESETS.filter((preset) => props.presets.includes(preset.key)));
 const calendarPresets = computed(() => allowed.value.filter((preset) => preset.kind === "calendar"));
 const rollingPresets = computed(() => allowed.value.filter((preset) => preset.kind === "rolling"));
+const upcomingPresets = computed(() => allowed.value.filter((preset) => preset.kind === "upcoming"));
+const windowCount = computed(() => rollingPresets.value.length + upcomingPresets.value.length);
 const columns = (count: number) => `grid-template-columns: repeat(${Math.min(Math.max(count, 1), 4)}, minmax(0, 1fr))`;
 
 const open = ref(false);
@@ -111,8 +123,14 @@ function pick(key: string) {
   open.value = false;
 }
 
+// O motivo só aparece depois das duas datas: "Escolha as duas datas" antes de
+// qualquer toque seria bronca por nada.
+const customError = computed(() =>
+  customFrom.value && customTo.value ? customPeriodError(customFrom.value, customTo.value, bounds.value) : "",
+);
+
 function submitCustom() {
-  if (!customFrom.value || !customTo.value) return;
+  if (!customFrom.value || !customTo.value || customError.value) return;
   set(customPeriod(customFrom.value, customTo.value));
   open.value = false;
 }
@@ -184,7 +202,7 @@ const arrowClass =
         :class="align === 'end' ? 'right-0' : 'left-0'"
         data-period-popover
       >
-        <template v-if="calendarPresets.length > 1 || (calendarPresets.length && rollingPresets.length)">
+        <template v-if="calendarPresets.length > 1 || (calendarPresets.length && windowCount)">
           <p class="mb-2 text-xs font-medium text-muted-foreground">Período</p>
           <div class="grid gap-1.5 rounded-md bg-muted p-1" :style="columns(calendarPresets.length)" role="group" aria-label="Período do calendário">
             <button
@@ -193,6 +211,23 @@ const arrowClass =
               type="button"
               class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
               :class="chipClass(modelValue.preset === preset.key)"
+              :data-period-preset="preset.key"
+              @click="pick(preset.key)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+        </template>
+        <template v-if="upcomingPresets.length">
+          <p class="mt-3 mb-2 text-xs font-medium text-muted-foreground">Próximos</p>
+          <div class="grid gap-1.5 rounded-md bg-muted p-1" :style="columns(upcomingPresets.length)" role="group" aria-label="Próximos dias">
+            <button
+              v-for="preset in upcomingPresets"
+              :key="preset.key"
+              type="button"
+              class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
+              :class="chipClass(modelValue.preset === preset.key)"
+              :aria-label="preset.title"
               :data-period-preset="preset.key"
               @click="pick(preset.key)"
             >
@@ -209,6 +244,7 @@ const arrowClass =
               type="button"
               class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
               :class="chipClass(modelValue.preset === preset.key)"
+              :aria-label="preset.title"
               :data-period-preset="preset.key"
               @click="pick(preset.key)"
             >
@@ -244,10 +280,13 @@ const arrowClass =
               />
             </label>
           </div>
+          <p v-if="customError" class="mt-2 text-xs font-medium text-destructive" role="alert" data-period-custom-error>
+            {{ customError }}
+          </p>
           <button
             type="button"
             class="mt-2 inline-flex min-h-control w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            :disabled="!customFrom || !customTo"
+            :disabled="!customFrom || !customTo || !!customError"
             data-period-custom-apply
             @click="submitCustom"
           >
@@ -255,7 +294,7 @@ const arrowClass =
           </button>
         </template>
         <template v-else>
-          <div v-if="calendarPresets.length > 1 || rollingPresets.length" class="my-3 border-t border-border"></div>
+          <div v-if="calendarPresets.length > 1 || windowCount" class="my-3 border-t border-border"></div>
           <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Ir para o dia
             <input

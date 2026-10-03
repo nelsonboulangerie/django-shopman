@@ -42,6 +42,41 @@ const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
 
 onMounted(loadEligible);
 
+// ── O teclado é da trava desde o primeiro instante ──
+// A trava sobe por cima de uma tela viva: no PDV, por ociosidade, com a busca de
+// produto focada (ela nasce com `autofocus`). O foco ficava lá atrás, e o PIN
+// digitado sem tocar na tela não chegava à identificação: era preciso tocar no
+// overlay primeiro para "pegar" o teclado (dono, 03/10/2026). A captura já não
+// entrega tecla a campo de fora da moldura (`useIdentityCapture`, `frame`); aqui
+// a trava também TOMA o foco, para nada lá atrás reagir (Tab, letras, o cursor
+// piscando na busca). E toma de novo quando a janela volta a ter foco: o kiosk
+// que ficou atrás de outra janela, ou a aba que voltou a ficar visível.
+const overlay = ref<HTMLElement | null>(null);
+
+function claimFocus() {
+  const el = overlay.value;
+  if (!el || typeof document === "undefined") return;
+  const active = document.activeElement as HTMLElement | null;
+  // Foco já dentro da trava (um campo da troca de PIN, um botão) é do operador.
+  if (active && active !== document.body && el.contains(active)) return;
+  active?.blur?.();
+  el.focus({ preventScroll: true });
+}
+
+function onVisibility() {
+  if (document.visibilityState === "visible") claimFocus();
+}
+
+onMounted(() => {
+  claimFocus();
+  window.addEventListener("focus", claimFocus);
+  document.addEventListener("visibilitychange", onVisibility);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("focus", claimFocus);
+  document.removeEventListener("visibilitychange", onVisibility);
+});
+
 async function onPin(payload: { person: IdentifiablePerson | null; username: string; pin: string }) {
   // A peça compartilhada devolve o mínimo comum (`username`, `name`). Aqui o
   // bloqueio precisa do ID numérico, então recupera o card completo da lista —
@@ -100,9 +135,13 @@ async function submitForcedChange(payload: {
 <template>
   <!-- `data-operator-lock`: marca DOM estável para as telas por baixo saberem que
        o terminal está travado (os atalhos globais do PDV se desligam por ela). -->
+  <!-- `tabindex="-1"`: a moldura recebe o foco por programa (ver `claimFocus`)
+       sem entrar na ordem do Tab, e sem anel visível (não é um controle). -->
   <div
+    ref="overlay"
     data-operator-lock
-    class="fixed inset-0 z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
+    tabindex="-1"
+    class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
     <div class="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->

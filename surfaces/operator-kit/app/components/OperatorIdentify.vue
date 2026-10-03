@@ -79,7 +79,15 @@ const canSubmit = computed(() => canSubmitPin(username.value || null, pin.value)
 // bloqueia a DIGITAÇÃO (bloquear submissão não pode custar dígito): ele só
 // segura o Enter-submete e a resolução de crachá (autorizar duas vezes pelo
 // mesmo gesto).
+// A moldura modal em volta (overlay da trava ou diálogo): campo de texto dela é
+// do dono (o motivo do cancelamento, o nome livre); o que ficou focado FORA dela
+// (a busca do PDV atrás do overlay) não recebe as teclas. Ver `useIdentityCapture`.
+const root = ref<HTMLElement | null>(null);
+const frame = () =>
+  root.value?.closest("[data-operator-lock], [role='dialog']") ?? root.value;
+
 const { pin, pressDigit, backspace, clear } = useIdentityCapture({
+  frame,
   padVisible: () => showPad.value,
   badgeEnabled: () => props.badgeEnabled !== false && !props.busy,
   canSubmitEnter: () => canSubmit.value && !props.busy,
@@ -138,7 +146,7 @@ defineExpose({ reset });
 </script>
 
 <template>
-  <div class="grid w-full gap-3">
+  <div ref="root" class="grid w-full gap-3">
     <!-- Escolher quem é -->
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>

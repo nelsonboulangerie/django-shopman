@@ -217,6 +217,13 @@ const voidReason = ref("");
 const voidConfirming = ref(false);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
 const shortage = ref<ProductionShortageError | null>(null);
+// De onde veio a recusa: "Revisar quantidade" devolve o operador ao diálogo que
+// ele acabou de confirmar, com o número que digitou.
+const lastStartAttempt = ref<{
+  row: ProductionMatrixRowProjection;
+  workOrderPk: number;
+  quantity: string;
+} | null>(null);
 const lastPlanAttempt = ref<{
   key: string;
   payload: Parameters<typeof plan>[1];
@@ -357,6 +364,7 @@ async function confirmPlan() {
       useSonner.success(successMessage);
     } else if (res.shortage) {
       planRow.value = null;
+      lastStartAttempt.value = null;
       shortage.value = res.shortage;
     } else if (res.blocked && res.blocked.code !== "offline") {
       resyncPlanDialog(row.output_sku);
@@ -451,12 +459,67 @@ async function confirmStart() {
       useSonner.success(
         `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
       );
+    } else if (res.shortage) {
+      // Confirmar abaixo das encomendas nunca é forçável (o servidor não
+      // oferece "force" aqui): a recusa diz quanto falta e devolve o número.
+      lastStartAttempt.value = {
+        row,
+        workOrderPk: wo.pk,
+        quantity: startQty.value.trim(),
+      };
+      lastPlanAttempt.value = null;
+      startRow.value = null;
+      selectedStartPk.value = null;
+      shortage.value = res.shortage;
     } else if (res.blocked && res.blocked.code !== "offline") {
       resyncStartDialog(row.output_sku);
     }
   } finally {
     startSubmitting.value = false;
   }
+}
+
+// "Revisar quantidade": volta ao diálogo de onde a recusa veio, com a linha
+// atual do quadro e o número que o operador digitou.
+function reviewShortage() {
+  shortage.value = null;
+  const startAttempt = lastStartAttempt.value;
+  if (startAttempt) {
+    lastStartAttempt.value = null;
+    const fresh =
+      rows.value.find((r) => r.output_sku === startAttempt.row.output_sku) ??
+      startAttempt.row;
+    startRow.value = fresh;
+    selectedStartPk.value = fresh.planned_orders.some(
+      (o) => o.pk === startAttempt.workOrderPk,
+    )
+      ? startAttempt.workOrderPk
+      : null;
+    startQty.value = startAttempt.quantity;
+    void nextTick(() => startQtyInput.value?.focus());
+    return;
+  }
+  const planAttempt = lastPlanAttempt.value;
+  const row = planAttempt
+    ? rows.value.find((r) => r.output_sku === planAttempt.key)
+    : null;
+  if (!planAttempt || !row) return;
+  planSource.value = planAttempt.payload.source ?? "manual";
+  planRow.value = row;
+  selectedPlannedPk.value = row.planned_orders.some(
+    (o) => o.pk === planAttempt.payload.work_order_id,
+  )
+    ? (planAttempt.payload.work_order_id ?? null)
+    : row.planned_orders.length === 1
+      ? row.planned_orders[0]!.pk
+      : null;
+  planQty.value = String(planAttempt.payload.quantity);
+  void nextTick(() => planQtyInput.value?.focus());
+}
+
+function closeShortage() {
+  shortage.value = null;
+  lastStartAttempt.value = null;
 }
 
 // O lote já produzido abre só para conferência e estorno — nada de gerir
@@ -1298,10 +1361,11 @@ const headerCount = computed(() => {
       :shortage="shortage"
       @update:open="
         (v) => {
-          if (!v) shortage = null;
+          if (!v) closeShortage();
         }
       "
       @confirm="retryPlanWithForce"
+      @review="reviewShortage"
     />
   </main>
 </template>

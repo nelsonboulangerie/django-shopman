@@ -1170,6 +1170,23 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Olá, aqui é o concierge da {shop_name}, um assistente da casa. O que você gostaria de pedir hoje?",
         )},
     },
+    # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
+    # cardápio. O "Bom dia!" do começo sai do próprio cliente (small_talk.py).
+    "CONCIERGE_SMALL_TALK_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Em que posso ajudar? 💛")},
+    },
+    "CONCIERGE_SMALL_TALK_INTRO": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Aqui é a concierge da {shop_name}.")},
+    },
+    "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Tudo ótimo por aqui, obrigada.")},
+    },
+    "CONCIERGE_SMALL_TALK_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Qualquer coisa, é só chamar. 💛")},
+    },
+    "CONCIERGE_SMALL_TALK_FAREWELL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Até logo! Quando precisar, é só chamar. 💛")},
+    },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",

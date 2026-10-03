@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Cabeçalho do B.I.: navegação por domínio + a janela de análise compartilhada.
 // A janela mora aqui (e não em cada página) porque a pergunta "em que período?"
-// é uma só para o app inteiro: trocar de aba não pode trocar de período.
+// é uma só para o app inteiro: trocar de aba não pode trocar de período. Ela vive
+// na URL (`useBiWindow`), e por isso cada aba leva a query da janela no link.
 //
 // O controle de período nasceu aqui e foi promovido ao kit (`OperatorPeriodPicker`,
 // Tipo 2 dos controles de data da casa, decisão do dono de 02/10/2026): UM botão
@@ -12,7 +13,7 @@
 // `OperatorAppBar` do kit.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
-const sections: OperatorSection[] = [
+const BASE_SECTIONS: OperatorSection[] = [
   { key: "production", label: "Produção", icon: "lucide:flame", to: "/" },
   { key: "sales", label: "Vendas", icon: "lucide:shopping-basket", to: "/sales" },
   { key: "cash", label: "Caixa", icon: "lucide:banknote", to: "/cash" },
@@ -25,7 +26,13 @@ const sections: OperatorSection[] = [
   { key: "scenarios", label: "Cenários", icon: "lucide:sparkles", to: "/scenarios" },
 ];
 
-const { selection, bounds, presets } = useBiWindow();
+const { selection, bounds, presets, windowQuery } = useBiWindow();
+
+const sections = computed<OperatorSection[]>(() => {
+  const query = new URLSearchParams(windowQuery.value).toString();
+  if (!query) return BASE_SECTIONS;
+  return BASE_SECTIONS.map((section) => ({ ...section, to: `${section.to}?${query}` }));
+});
 </script>
 
 <template>
