@@ -1209,6 +1209,7 @@ Configuração operacional editável no ShopAdmin. Ausência preserva o fluxo an
 | Chave | Tipo/default | Lido por | Descrição |
 |---|---|---|---|
 | `storefront.address_map_confirmation_enabled` | `bool`, `false` | `storefront.presentation.home`, `AddressPicker` | Kill switch da confirmação visual no mapa. |
+| `storefront.hide_unavailable_by_default` | `bool`, `false` | `storefront.presentation.home` → `public_config`, `useAvailableOnly` | Padrão da casa para a chave "Mostrar só disponíveis" do cardápio e das coleções (Admin › Loja › Cardápio). Só exibição: o item indisponível segue no catálogo e na PDP. A escolha do cliente, guardada no navegador, vence o padrão. |
 | `storefront.address_location_divergence.mode` | `"off" \| "measure" \| "visible"`, `off` | `address_location_config`, `AddressPicker` | `measure` classifica somente após opt-in e emite agregado; `visible` também mostra o aviso. Ambos projetam `off` se o mapa estiver desligado. |
 | `storefront.address_location_divergence.threshold_m` | `int`, 500 | política TypeScript | Limite inferior conservador a partir do qual há divergência; bounds 100–10.000. |
 | `storefront.address_location_divergence.max_accuracy_m` | `int`, 250 | política TypeScript | Accuracy máxima do fix; bounds 20–2.000. Acima disso o resultado é inconclusivo. |

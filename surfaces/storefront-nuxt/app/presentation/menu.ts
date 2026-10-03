@@ -694,3 +694,56 @@ export function sectionEntries (
   }
   return entries
 }
+
+// ── Mostrar só disponíveis ─────────────────────────────────────────────────
+// Escolha de EXIBIÇÃO, não de disponibilidade: o item indisponível continua no
+// catálogo e na PDP (com o "Me avise"); a chave só tira o card do cardápio. A
+// casa decide o padrão no Admin (`public_config.hide_unavailable_by_default`) e
+// o cliente pode virar a chave; a escolha dele, quando existe, vence o padrão.
+
+export const AVAILABLE_ONLY_STORAGE_KEY = 'shop.menu.availableOnly'
+
+export function isOrderableNow (item: Pick<CatalogItemProjection, 'availability'>): boolean {
+  return item.availability !== 'unavailable'
+}
+
+// O valor guardado no navegador: 'on' / 'off'. Qualquer outra coisa (vazio,
+// lixo, storage bloqueado) é "o cliente não escolheu", e vale o padrão da casa.
+export function parseAvailableOnlyChoice (raw: unknown): boolean | null {
+  if (raw === 'on') return true
+  if (raw === 'off') return false
+  return null
+}
+
+export function resolveAvailableOnly (choice: boolean | null, houseDefault: boolean | null | undefined): boolean {
+  return choice ?? Boolean(houseDefault)
+}
+
+// Os itens sem os indisponíveis (para os cartões de escolha e a coleção).
+export function orderableItems (items: ReadonlyArray<CatalogItemProjection>): CatalogItemProjection[] {
+  return items.filter(isOrderableNow)
+}
+
+// As seções sem os indisponíveis; seção que fica vazia sai do cardápio.
+export function availableOnlySections (sections: ReadonlyArray<CatalogSection>): CatalogSection[] {
+  return sections
+    .map(section => ({ ...section, items: orderableItems(section.items) }))
+    .filter(section => section.items.length > 0)
+}
+
+// Quantos SKUs DIFERENTES a chave tira da tela (um SKU em duas seções conta um).
+export function hiddenUnavailableCount (items: ReadonlyArray<CatalogItemProjection>): number {
+  const hidden = new Set<string>()
+  for (const item of items) if (!isOrderableNow(item)) hidden.add(item.sku)
+  return hidden.size
+}
+
+// A linha de apoio da chave. Para o cliente a palavra é só "indisponível": nunca
+// esgotado, pausado ou fora do canal. Ligada com zero, o zero se explica.
+export function availableOnlyHint (on: boolean, hiddenCount: number): string {
+  if (!on) return 'Esconde o que não dá para pedir agora.'
+  if (!hiddenCount) return 'Tudo o que está no cardápio pode ser pedido agora.'
+  return hiddenCount === 1
+    ? '1 item indisponível escondido.'
+    : `${hiddenCount} itens indisponíveis escondidos.`
+}

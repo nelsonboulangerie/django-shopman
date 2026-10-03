@@ -6,7 +6,17 @@
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
-import { cartQtyForSku, enterTargetProduct, filterProducts, gridEntries, orderCollections } from "~/presentation/catalog";
+import {
+  HIDE_UNAVAILABLE_STORAGE_KEY,
+  cartQtyForSku,
+  enterTargetProduct,
+  filterProducts,
+  gridEntries,
+  hiddenUnavailableLabel,
+  hideUnavailableProducts,
+  orderCollections,
+  parseHideUnavailable,
+} from "~/presentation/catalog";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -39,10 +49,29 @@ const density = ref<Density>("cozy");
 const densityCols = computed(() => DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
 const densityIcon = computed(() => DENSITIES.find((d) => d.key === density.value)?.icon ?? DENSITIES[1]!.icon);
 
+// Ocultar indisponíveis: preferência de exibição deste dispositivo (o olho ao
+// lado da densidade). Padrão = mostrar; a regra de disponibilidade não muda.
+const hideUnavailable = ref(false);
+
 onMounted(() => {
   const stored = localStorage.getItem(DENSITY_STORAGE_KEY);
   if (stored === "compact" || stored === "cozy" || stored === "roomy") density.value = stored;
+  try {
+    hideUnavailable.value = parseHideUnavailable(localStorage.getItem(HIDE_UNAVAILABLE_STORAGE_KEY));
+  } catch {
+    hideUnavailable.value = false;
+  }
 });
+
+function setHideUnavailable(value: boolean) {
+  hideUnavailable.value = value;
+  try {
+    localStorage.setItem(HIDE_UNAVAILABLE_STORAGE_KEY, value ? "1" : "0");
+  } catch {
+    // Sem storage, a escolha vale até recarregar.
+  }
+}
+const hideUnavailableActionLabel = computed(() => (hideUnavailable.value ? "Mostrar indisponíveis" : "Ocultar indisponíveis"));
 
 function setDensity(value: Density) {
   density.value = value;
@@ -50,13 +79,20 @@ function setDensity(value: Density) {
 }
 
 const orderedCollections = computed(() => orderCollections(props.collections, props.favoriteRefs));
-const filteredProducts = computed(() =>
+const matchedProducts = computed(() =>
   filterProducts(props.products, { collectionRef: activeCollection.value, query: search.value }),
 );
+// Com o olho fechado, o indisponível sai depois da busca/coleção: o que sobra é
+// a grade, e `hiddenCount` diz quantos casaram mas estão ocultos.
+const visibility = computed(() => hideUnavailableProducts(matchedProducts.value, hideUnavailable.value));
+const filteredProducts = computed(() => visibility.value.products);
+const hiddenCount = computed(() => visibility.value.hiddenCount);
 
 // Cartão de escolha: sem busca, produtos do mesmo `choice_group` viram um tile só
 // que abre a escolha; com busca, cada produto aparece sozinho (o Enter lança).
-const entries = computed(() => gridEntries(filteredProducts.value, props.products, search.value));
+// Oculto, a opção indisponível também sai da escolha.
+const groupSource = computed(() => hideUnavailableProducts(props.products, hideUnavailable.value).products);
+const entries = computed(() => gridEntries(filteredProducts.value, groupSource.value, search.value));
 
 function productQty(sku: string): number {
   return cartQtyForSku(props.cartItems, sku);
@@ -104,6 +140,23 @@ function onSearchEscape() {
         <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
         <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">F3</OperatorKbd>
       </div>
+      <UiButton
+        variant="outline"
+        size="icon"
+        class="relative size-11 shrink-0"
+        :class="hideUnavailable ? 'border-primary text-primary' : ''"
+        :aria-label="hideUnavailableActionLabel"
+        :title="hideUnavailableActionLabel"
+        data-pos-hide-unavailable
+        @click="setHideUnavailable(!hideUnavailable)"
+      >
+        <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-5" />
+        <span
+          v-if="hideUnavailable && hiddenCount > 0"
+          class="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-primary px-1 text-xs font-semibold tabular-nums leading-5 text-primary-foreground"
+          aria-hidden="true"
+        >{{ hiddenCount }}</span>
+      </UiButton>
       <UiPopover>
         <UiPopoverTrigger as-child>
           <UiButton variant="outline" size="icon" class="size-11 shrink-0" aria-label="Densidade da grade" title="Densidade da grade">
@@ -154,6 +207,17 @@ function onSearchEscape() {
            já populada não pisca 12 tiles pulsando em cima do catálogo. -->
       <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">
         <div v-for="idx in 12" :key="idx" class="aspect-[4/3] animate-pulse rounded-md border bg-muted" />
+      </div>
+      <div
+        v-else-if="!filteredProducts.length && hiddenCount > 0"
+        class="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-muted-foreground"
+        data-pos-hidden-unavailable-empty
+      >
+        <p>Nenhum produto disponível encontrado. {{ hiddenUnavailableLabel(hiddenCount) }}.</p>
+        <UiButton variant="outline" @click="setHideUnavailable(false)">
+          <Icon name="lucide:eye" class="size-4" />
+          Mostrar indisponíveis
+        </UiButton>
       </div>
       <div v-else-if="!filteredProducts.length" class="rounded-md border border-dashed p-8 text-center text-muted-foreground">
         Nenhum produto encontrado.
