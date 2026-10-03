@@ -53,6 +53,13 @@ class ProductionWorkOrderMutationSuccess:
 
 
 @dataclass(frozen=True)
+class ProductionQualityReviewBatchMutationSuccess:
+    ok: bool
+    reviewed_count: int
+    current: tuple[ProductionMutationCurrent, ...]
+
+
+@dataclass(frozen=True)
 class ProductionVoidMutationSuccess:
     ok: bool
     wo_ref: str
@@ -435,6 +442,29 @@ class ProductionQualityReviewMutationSerializer(ExistingWorkOrderMutationSeriali
     pass
 
 
+class ProductionQualityReviewBatchItemSerializer(StrictMutationSerializer):
+    work_order_id = serializers.IntegerField(min_value=1)
+    expected_rev = serializers.IntegerField(min_value=0)
+
+
+class ProductionQualityReviewBatchMutationSerializer(MutationAttemptSerializer):
+    """Confirma de uma vez os lotes SEM exceção de um dia (P19, tudo ou nada).
+
+    Cada item é exatamente o que a confirmação de um lote pede (alvo +
+    revisão exibida); o conjunto inteiro está preso à prova pela ref da ação.
+    """
+
+    target_date = serializers.DateField()
+    items = ProductionQualityReviewBatchItemSerializer(many=True, allow_empty=False, max_length=200)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        ids = [item["work_order_id"] for item in attrs["items"]]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError({"items": "Cada lote entra uma vez só."})
+        return attrs
+
+
 class ProductionQuickFinishMutationSerializer(MutationAttemptSerializer):
     override_proof = serializers.CharField(
         required=False,
@@ -535,6 +565,13 @@ PRODUCTION_ACTION_SPECS = (
         "workOrderId",
     ),
     ProductionActionSpec(
+        "reviewProductionQualityBatch",
+        "/api/v1/backstage/production/quality-review/batch/",
+        "ProductionQualityReviewBatchMutationRequest",
+        ProductionQualityReviewBatchMutationSerializer,
+        ProductionQualityReviewBatchMutationSuccess,
+    ),
+    ProductionActionSpec(
         "correctProductionQuality",
         "/api/v1/backstage/production/{workOrderId}/quality-correction/",
         "ProductionQualityCorrectionMutationRequest",
@@ -585,6 +622,7 @@ PRODUCTION_ACTION_SPECS = (
 
 PRODUCTION_REQUEST_SERIALIZERS = (
     ("ProductionPartitionGroupRequest", ProductionPartitionGroupSerializer),
+    ("ProductionQualityReviewBatchItemRequest", ProductionQualityReviewBatchItemSerializer),
     *((spec.request_name, spec.serializer) for spec in PRODUCTION_ACTION_SPECS),
 )
 
@@ -592,6 +630,7 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionMutationCurrent,
     ProductionPlanMutationSuccess,
     ProductionWorkOrderMutationSuccess,
+    ProductionQualityReviewBatchMutationSuccess,
     ProductionVoidMutationSuccess,
     ProductionOvenArmMutationSuccess,
     ProductionOvenConcludeMutationSuccess,
@@ -639,7 +678,9 @@ def validated_body(
     if selected_date is None and work_order_id is None and "board" in projection_kinds:
         selected_date = body.get("target_date")
     if selected_date is None and work_order_id is None and "qc" in projection_kinds:
-        selected_date = timezone.localdate()
+        # A confirmação em lote vale para o dia da projeção (inclusive um dia
+        # anterior aberto no seletor); as demais ações sem alvo são de hoje.
+        selected_date = body.get("target_date") or timezone.localdate()
 
     actual_scope = projection_revision_scope(body["source_revision"])
     expected_subject = f"user:{request.user.pk}"

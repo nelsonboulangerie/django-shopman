@@ -216,6 +216,7 @@ from .operations import (
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
     WorkOrderQualityCorrectionView,
+    WorkOrderQualityReviewBatchView,
     WorkOrderQualityReviewView,
     WorkOrderQuickFinishView,
     WorkOrderStartView,
@@ -802,6 +803,11 @@ urlpatterns = [
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
+    path(
+        "production/quality-review/batch/",
+        WorkOrderQualityReviewBatchView.as_view(),
+        name="api-backstage-wo-quality-review-batch",
+    ),
     path(
         "production/<int:wo_id>/quality-review/",
         WorkOrderQualityReviewView.as_view(),
