@@ -90,6 +90,7 @@ from .marketing import (
     CampaignHistoryView,
     CampaignListView,
     CampaignOptionsView,
+    MarketingDecisionQueueView,
     MarketingDualControlView,
     MarketingFreezeView,
     MarketingOfferListView,
@@ -705,6 +706,11 @@ urlpatterns = [
     # Marketing operacional: capabilities por ação; abrir o app não publica.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
     path("marketing/v2/", CampaignBoardV2View.as_view(), name="api-backstage-marketing-v2"),
+    path(
+        "marketing/decisions/",
+        MarketingDecisionQueueView.as_view(),
+        name="api-backstage-marketing-decisions",
+    ),
     path(
         "marketing/v2/announcements/<int:pk>/",
         AnnouncementDetailV2View.as_view(),
