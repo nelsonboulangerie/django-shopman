@@ -5,7 +5,8 @@
 // A arrumação é a do balcão (pedido do dono, 03/10, OBS0310-D): de cima para
 // baixo, o cabeçalho, a busca, as pílulas e os cards.
 //
-//   Cabeçalho           o título e o Período do kit (Dia ou Semana, ‹ › e a data),
+//   Cabeçalho           o título e o Período do kit (dia, semana, mês, próximos e
+//                       últimos dias, personalizado; ‹ › e a data),
 //                       o mesmo lugar em que a Produção, o KDS e o B.I. o põem; à
 //                       direita, o que age sobre o que a tela mostra: grade ou
 //                       lista (o par de botões de ícone do kit, como o quadro de
@@ -43,6 +44,8 @@ import { NEW_ORDER_ROUTE } from "~/presentation/orderSetup";
 import {
   LAYOUT_OPTIONS,
   LAYOUT_STORAGE_KEY,
+  PREORDERS_MAX_SPAN_DAYS,
+  PREORDERS_PERIOD_PRESETS,
   PREORDERS_SCOPE_NOTE,
   SEARCH_LABEL,
   SEARCH_MIN_CHARS,
@@ -64,6 +67,7 @@ import {
   periodEmptyMessage,
   periodIsToday,
   periodParams,
+  periodSelectionOf,
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
@@ -76,18 +80,14 @@ import {
   toReceiveLine,
   todayFacts,
   todayOf,
+  viewOfPeriod,
   viewPath,
   viewQuery,
   type PreorderFilters,
   type PreordersLayout,
-  type PreordersMode,
   type PreordersView,
 } from "~/presentation/preorders";
-import {
-  periodAnchor,
-  periodOfDay,
-  type PeriodSelection,
-} from "../../../../operator-kit/app/presentation/dates";
+import type { PeriodSelection } from "../../../../operator-kit/app/presentation/dates";
 import type { PreorderCard, PreorderDay } from "~/types/preorders";
 
 useHead({ title: "Encomendas" });
@@ -128,11 +128,11 @@ const showSummary = computed(() => !!summary.value && !periodIsToday(view.value,
 // ── Hoje: do período, quando ele contém hoje; senão, da leitura do selo da barra ──
 const ahead = usePosPreordersAhead();
 const todayLine = computed(() => todayFacts(todayOf(list.value, ahead.value)));
-// O "Período" do kit (Tipo 2) em Dia e Semana: ‹ › andam um dia ou uma semana,
-// e o estado continua na URL (modo + data).
+// O "Período" do kit (Tipo 2): ‹ › andam um período igual ao escolhido, e o
+// estado continua na URL (modo + data, e o fim no personalizado).
 const periodSelection = computed<PeriodSelection>({
-  get: () => periodOfDay(view.value.mode, view.value.date, today),
-  set: (next) => update({ mode: next.preset as PreordersMode, date: periodAnchor(next, today) }),
+  get: () => periodSelectionOf(view.value, today),
+  set: (next) => update(viewOfPeriod(next, today)),
 });
 
 // ── O lote: do que está visível, só as vias que faltam ──
@@ -223,10 +223,12 @@ const storeToday = computed(() => list.value?.today || today);
 const move = usePosPreorderMove({ pos, today: storeToday, refresh: () => period.refresh() });
 const dragging = ref<PreorderCard | null>(null);
 const dropDate = ref("");
-const inWeek = computed(() => view.value.mode === "week");
+// Em qualquer período de vários dias (semana, mês, próximos dias…) o card se
+// arrasta entre os dias da tela; no Dia só há um dia, e o menu leva ao Reagendar.
+const multiDay = computed(() => view.value.mode !== "day");
 
 function movable(card: PreorderCard): boolean {
-  return inWeek.value && canMoveCard(card) && !move.busy.value;
+  return multiDay.value && canMoveCard(card) && !move.busy.value;
 }
 
 function targetsFor(card: PreorderCard) {
@@ -291,7 +293,9 @@ function refreshAll() {
       <OperatorPeriodPicker
         v-model="periodSelection"
         class="min-w-0"
-        :presets="['day', 'week']"
+        :presets="PREORDERS_PERIOD_PRESETS"
+        custom
+        :max-span-days="PREORDERS_MAX_SPAN_DAYS"
         :today="today"
         label="Período das encomendas"
         align="end"

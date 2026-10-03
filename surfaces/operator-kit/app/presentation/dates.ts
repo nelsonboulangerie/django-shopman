@@ -6,8 +6,12 @@
 //   contexto permite (nominada pelo dia da semana) e Outra data.
 //
 //   Tipo 2, "Período" (`OperatorPeriodPicker`): o botão que DIZ a janela ativa, os
-//   chips do B.I. no popover dele, e ‹ › que andam um período igual ao escolhido.
-//   Serve o B.I. (análise) e os quadros (Encomendas, Produção, KDS, Gestor).
+//   chips no popover dele, e ‹ › que andam um período igual ao escolhido. O popover
+//   tem quatro grupos: Período (do calendário), Próximos (janelas que começam hoje),
+//   Últimos (janelas que terminam hoje) e Personalizado (De/Até). Cada consumidor
+//   declara os que fazem sentido para ele: o B.I. só olha o passado, as Encomendas
+//   olham também para a frente. Serve o B.I. (análise) e os quadros (Encomendas,
+//   Produção, KDS, Gestor).
 //
 // Tudo aqui é data LOCAL ("YYYY-MM-DD" no fuso do dispositivo). A versão anterior do
 // B.I. resolvia o "hoje" por `toISOString()`, que é UTC: depois das 21h em Londrina o
@@ -41,9 +45,25 @@ export function isoDate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-export function todayIso(now: Date = new Date()): string {
-  return isoDate(now);
+/**
+ * O "hoje" em "YYYY-MM-DD". Sem `timeZone`, o do dispositivo; com ele (ex.:
+ * `STORE_TIME_ZONE`), o da loja, qualquer que seja o fuso do tablet: às 23h30 de
+ * Londrina já são 02h30 em UTC, e o dia da loja continua sendo o de Londrina.
+ */
+export function todayIso(now: Date = new Date(), timeZone?: string): string {
+  if (!timeZone) return isoDate(now);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
+
+/** O fuso da casa (Londrina). */
+export const STORE_TIME_ZONE = "America/Sao_Paulo";
 
 export function addDays(iso: string, days: number): string {
   const date = parseIsoDate(iso);
@@ -205,11 +225,19 @@ export function otherDayCaption(value: string, options: readonly QuickDayOption[
 
 // ── Tipo 2: período ──────────────────────────────────────────────────────────
 
-export type PeriodKind = "calendar" | "rolling";
+/**
+ * - `calendar`: o dia, a semana, o mês, o ano que contém a âncora;
+ * - `rolling`: os últimos N dias, terminando hoje (o passado);
+ * - `upcoming`: os próximos N dias, começando hoje (o futuro).
+ */
+export type PeriodKind = "calendar" | "rolling" | "upcoming";
 
 export interface PeriodPreset {
   key: string;
+  /** O chip, curto, dentro do grupo que já diz "Últimos"/"Próximos": "7D". */
   label: string;
+  /** O nome por extenso, no botão: "Últimos 7 dias". Ausente, vale `label`. */
+  title?: string;
   kind: PeriodKind;
   /** Só nas janelas móveis; "Máx" corre desde `epoch`. */
   days?: number;
@@ -225,21 +253,35 @@ export const PERIOD_PRESETS_CALENDAR: readonly PeriodPreset[] = [
 
 /** Janelas móveis terminando hoje. */
 export const PERIOD_PRESETS_ROLLING: readonly PeriodPreset[] = [
-  { key: "7d", label: "7D", kind: "rolling", days: 7 },
+  { key: "7d", label: "7D", title: "Últimos 7 dias", kind: "rolling", days: 7 },
   // 28 e não 30: quatro semanas exatas têm o mesmo mix de dias da semana, então
   // médias e comparações não mentem (sábado não é terça numa padaria).
-  { key: "28d", label: "28D", kind: "rolling", days: 28 },
-  { key: "3m", label: "3M", kind: "rolling", days: 90 },
-  { key: "6m", label: "6M", kind: "rolling", days: 180 },
-  { key: "1y", label: "1A", kind: "rolling", days: 365 },
-  { key: "5y", label: "5A", kind: "rolling", days: 1826 },
-  { key: "max", label: "Máx", kind: "rolling" },
+  { key: "28d", label: "28D", title: "Últimos 28 dias", kind: "rolling", days: 28 },
+  { key: "3m", label: "3M", title: "Últimos 3 meses", kind: "rolling", days: 90 },
+  { key: "6m", label: "6M", title: "Últimos 6 meses", kind: "rolling", days: 180 },
+  { key: "1y", label: "1A", title: "Último ano", kind: "rolling", days: 365 },
+  { key: "5y", label: "5A", title: "Últimos 5 anos", kind: "rolling", days: 1826 },
+  { key: "max", label: "Máx", title: "Todo o histórico", kind: "rolling" },
+];
+
+/** Janelas móveis começando hoje: para quem trabalha com o que está por vir. */
+export const PERIOD_PRESETS_UPCOMING: readonly PeriodPreset[] = [
+  { key: "next7d", label: "7D", title: "Próximos 7 dias", kind: "upcoming", days: 7 },
+  { key: "next14d", label: "14D", title: "Próximos 14 dias", kind: "upcoming", days: 14 },
+  { key: "next28d", label: "28D", title: "Próximos 28 dias", kind: "upcoming", days: 28 },
 ];
 
 export const PERIOD_PRESETS: readonly PeriodPreset[] = [
   ...PERIOD_PRESETS_CALENDAR,
+  ...PERIOD_PRESETS_UPCOMING,
   ...PERIOD_PRESETS_ROLLING,
 ];
+
+/** Tudo o que olha para trás: o que o B.I. oferece. */
+export const PAST_PERIOD_PRESETS: readonly string[] = [
+  ...PERIOD_PRESETS_CALENDAR,
+  ...PERIOD_PRESETS_ROLLING,
+].map((preset) => preset.key);
 
 export const CUSTOM_PERIOD = "custom";
 
@@ -248,7 +290,8 @@ export const CUSTOM_PERIOD = "custom";
  *
  * - calendário (`day`/`week`/`month`/`year`): `from` é a DATA-ÂNCORA, o período é o
  *   que a contém; `""` = o que contém hoje (acompanha a virada do dia);
- * - janela móvel (`7d`…`5y`): `to` é o último dia; `""` = termina hoje;
+ * - janela móvel do passado (`7d`…`5y`): `to` é o último dia; `""` = termina hoje;
+ * - janela móvel do futuro (`next7d`…): `from` é o primeiro dia; `""` = começa hoje;
  * - `custom`: `from` e `to` são o intervalo.
  */
 export interface PeriodSelection {
@@ -265,6 +308,8 @@ export interface PeriodBounds {
   max?: string;
   /** Onde "Máx" começa (o primeiro dado da casa). */
   epoch?: string;
+  /** O intervalo mais longo que o consumidor aceita no personalizado (ex.: 62). */
+  maxSpanDays?: number;
 }
 
 export interface PeriodRange {
@@ -316,6 +361,10 @@ export function resolvePeriod(selection: PeriodSelection, bounds: PeriodBounds):
   if (preset.key === "max") {
     return { date_from: bounds.epoch || bounds.min || today, date_to: today };
   }
+  if (preset.kind === "upcoming") {
+    const start = selection.from || today;
+    return { date_from: start, date_to: addDays(start, (preset.days ?? 7) - 1) };
+  }
   const end = selection.to || today;
   return { date_from: addDays(end, -((preset.days ?? 28) - 1)), date_to: end };
 }
@@ -325,6 +374,11 @@ export function isCurrentPeriod(selection: PeriodSelection): boolean {
   if (selection.preset === CUSTOM_PERIOD) return false;
   const preset = findPreset(selection.preset);
   return preset?.kind === "rolling" ? !selection.to : !selection.from;
+}
+
+/** Janela móvel de N dias (do passado ou do futuro)? */
+function isWindow(preset: PeriodPreset | undefined): boolean {
+  return preset?.kind === "rolling" || preset?.kind === "upcoming";
 }
 
 function contains(range: PeriodRange, iso: string): boolean {
@@ -377,6 +431,17 @@ export function stepPeriod(
     return { preset: preset.key, from: "", to: end };
   }
 
+  if (preset.kind === "upcoming") {
+    // O espelho da janela do passado: voltar até hoje (ou antes) volta a ser "os
+    // próximos N dias"; já estando nela, ‹ não tem para onde ir.
+    const days = preset.days ?? 7;
+    const start = addDays(selection.from || today, direction * days);
+    const next = { date_from: start, date_to: addDays(start, days - 1) };
+    if (outOfBounds(next)) return null;
+    if (start <= today) return isCurrentPeriod(selection) ? null : { preset: preset.key, from: "", to: "" };
+    return { preset: preset.key, from: start, to: "" };
+  }
+
   const anchor = selection.from || today;
   let target: string;
   if (preset.key === "week") target = addDays(anchor, 7 * direction);
@@ -394,6 +459,7 @@ function anchorOf(selection: PeriodSelection, today: string): string {
   if (selection.preset === CUSTOM_PERIOD) return selection.to || today;
   const preset = findPreset(selection.preset);
   if (preset?.kind === "rolling") return selection.to || today;
+  // Calendário e janela do futuro: a âncora é o primeiro dia.
   return selection.from || today;
 }
 
@@ -404,7 +470,7 @@ function anchorOf(selection: PeriodSelection, today: string): string {
  */
 export function withPreset(selection: PeriodSelection, key: string, bounds: PeriodBounds): PeriodSelection {
   const preset = findPreset(key);
-  if (!preset || preset.kind === "rolling") return { preset: key, from: "", to: "" };
+  if (!preset || isWindow(preset)) return { preset: key, from: "", to: "" };
   const anchor = anchorOf(selection, bounds.today);
   const range = calendarRange(key, anchor);
   return { preset: key, from: contains(range, bounds.today) ? "" : anchor, to: "" };
@@ -445,13 +511,16 @@ export function currentPeriod(selection: PeriodSelection): PeriodSelection {
 
 /**
  * O rótulo do botão: o período e a janela efetiva, sempre à vista. Dia diz o dia
- * da semana ("Hoje, qui 02/10"); o resto diz nome e intervalo ("Semana · 29/09 a
- * 05/10").
+ * da semana ("Hoje, qui 02/10"); o resto diz o nome por extenso e o intervalo
+ * ("Semana · 29/09 a 05/10", "Próximos 7 dias · 03/10 a 09/10"). O chip pode
+ * dizer "7D" porque o grupo diz "Últimos" ou "Próximos"; o botão não tem grupo,
+ * e "7D" sozinho não diz se é para trás ou para a frente.
  */
 export function periodLabel(selection: PeriodSelection, range: PeriodRange, today: string): string {
   if (selection.preset === "day") return dayLabel(range.date_from, today);
+  const preset = findPreset(selection.preset);
   const name =
-    selection.preset === CUSTOM_PERIOD ? "Personalizado" : (findPreset(selection.preset)?.label ?? "Período");
+    selection.preset === CUSTOM_PERIOD ? "Personalizado" : (preset?.title ?? preset?.label ?? "Período");
   if (range.date_from === range.date_to) return `${name} · ${dayLabel(range.date_from, today)}`;
   return `${name} · ${shortDayMonth(range.date_from)} a ${shortDayMonth(range.date_to)}`;
 }
@@ -463,4 +532,80 @@ export function periodStepLabels(preset: string): { prev: string; next: string }
   if (preset === "month") return { prev: "Mês anterior", next: "Próximo mês" };
   if (preset === "year") return { prev: "Ano anterior", next: "Próximo ano" };
   return { prev: "Período anterior", next: "Próximo período" };
+}
+
+// ── Personalizado: o intervalo que o consumidor aceita ──────────────────────
+
+/**
+ * Por que o intervalo De/Até não se aplica ("" = aplica). O servidor ainda corta,
+ * mas cortar em silêncio faria o botão dizer uma janela e a lista mostrar outra.
+ */
+export function customPeriodError(from: string, to: string, bounds: Omit<PeriodBounds, "today">): string {
+  if (!parseIsoDate(from) || !parseIsoDate(to)) return "Escolha as duas datas.";
+  const [start, end] = from <= to ? [from, to] : [to, from];
+  if (bounds.min && start < bounds.min) return `A primeira data possível é ${shortDayMonth(bounds.min)}.`;
+  if (bounds.max && end > bounds.max) return `A última data possível é ${shortDayMonth(bounds.max)}.`;
+  if (bounds.maxSpanDays && daysBetween(start, end) + 1 > bounds.maxSpanDays) {
+    return `No máximo ${bounds.maxSpanDays} dias por vez.`;
+  }
+  return "";
+}
+
+// ── O período na URL ─────────────────────────────────────────────────────────
+//
+// Período sempre na URL (plano SUITE-UX): o favorito do kiosk e o link colado
+// numa conversa abrem a mesma janela. Três chaves, as mesmas da seleção: `period`
+// (a granularidade), `from` e `to` (só quando não acompanham hoje). O que é igual
+// ao padrão do consumidor sai da URL, para o endereço ficar curto.
+
+export interface PeriodQueryOptions {
+  /** As granularidades que o consumidor aceita (as mesmas do `presets` do controle). */
+  presets: readonly string[];
+  /** Aceita personalizado. */
+  custom?: boolean;
+  /** O período quando a URL não diz nada (ou diz algo que não se aceita). */
+  fallback: PeriodSelection;
+}
+
+/** As chaves que o período ocupa na URL. */
+export const PERIOD_QUERY_KEYS = ["period", "from", "to"] as const;
+
+function firstString(raw: unknown): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" ? value : "";
+}
+
+function dateOrEmpty(raw: unknown): string {
+  const value = firstString(raw);
+  return parseIsoDate(value) ? value : "";
+}
+
+/** URL → seleção. Valor ilegível ou não aceito cai no padrão, nunca em erro. */
+export function periodFromQuery(query: Record<string, unknown>, options: PeriodQueryOptions): PeriodSelection {
+  const key = firstString(query.period);
+  if (!key) return { ...options.fallback };
+  const from = dateOrEmpty(query.from);
+  const to = dateOrEmpty(query.to);
+  if (key === CUSTOM_PERIOD) {
+    return options.custom && from && to ? customPeriod(from, to) : { ...options.fallback };
+  }
+  const preset = findPreset(key);
+  if (!preset || !options.presets.includes(key)) return { ...options.fallback };
+  if (preset.kind === "rolling") return { preset: key, from: "", to };
+  return { preset: key, from, to: "" };
+}
+
+/** Seleção → as chaves da URL (vazio quando é o padrão do consumidor). */
+export function periodToQuery(selection: PeriodSelection, fallback: PeriodSelection): Record<string, string> {
+  if (
+    selection.preset === fallback.preset &&
+    selection.from === fallback.from &&
+    selection.to === fallback.to
+  ) {
+    return {};
+  }
+  const query: Record<string, string> = { period: selection.preset };
+  if (selection.from) query.from = selection.from;
+  if (selection.to) query.to = selection.to;
+  return query;
 }

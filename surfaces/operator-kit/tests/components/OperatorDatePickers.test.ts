@@ -133,4 +133,61 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
     await wrapper.get("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-09-01", to: "2026-09-10" }]]);
   });
+
+  it("os quatro grupos na ordem da casa: Período, Próximos, Últimos, Personalizado", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: {
+        modelValue: { preset: "week", from: "", to: "" },
+        today: TODAY,
+        presets: ["day", "week", "7d", "next7d", "next14d"],
+        custom: true,
+      },
+    });
+    await wrapper.get("[data-period-button]").trigger("click");
+    const popover = wrapper.get("[data-period-popover]");
+    const headings = popover.findAll("p").map((p) => p.text());
+    expect(headings).toEqual(["Período", "Próximos", "Últimos", "Personalizado"]);
+    const keys = wrapper.findAll("[data-period-preset]").map((chip) => chip.attributes("data-period-preset"));
+    expect(keys).toEqual(["day", "week", "next7d", "next14d", "7d"]);
+    // O chip diz "7D" dentro do grupo; o nome acessível diz para que lado.
+    expect(wrapper.get('[data-period-preset="next7d"]').attributes("aria-label")).toBe("Próximos 7 dias");
+    expect(wrapper.get('[data-period-preset="7d"]').attributes("aria-label")).toBe("Últimos 7 dias");
+
+    await wrapper.get('[data-period-preset="next7d"]').trigger("click");
+    expect(wrapper.emitted("update:modelValue")![0]).toEqual([{ preset: "next7d", from: "", to: "" }]);
+  });
+
+  it("Próximos 7 dias: o botão diz a janela e ‹ fica parado em hoje", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: { modelValue: { preset: "next7d", from: "", to: "" }, today: TODAY, presets: ["day", "next7d"] },
+    });
+    expect(wrapper.get("[data-period-label]").text()).toBe("Próximos 7 dias · 01/10 a 07/10");
+    expect(wrapper.get("[data-period-prev]").attributes("disabled")).toBeDefined();
+    await wrapper.get("[data-period-next]").trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "next7d", from: "2026-10-08", to: "" }]]);
+  });
+
+  it("o personalizado recusa o intervalo acima do teto, com o motivo", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: {
+        modelValue: { preset: "week", from: "", to: "" },
+        today: TODAY,
+        presets: ["day", "week"],
+        custom: true,
+        maxSpanDays: 62,
+      },
+    });
+    await wrapper.get("[data-period-button]").trigger("click");
+    await wrapper.get("[data-period-custom-from]").setValue("2026-10-01");
+    await wrapper.get("[data-period-custom-to]").setValue("2026-12-31");
+    expect(wrapper.get("[data-period-custom-error]").text()).toBe("No máximo 62 dias por vez.");
+    expect(wrapper.get("[data-period-custom-apply]").attributes("disabled")).toBeDefined();
+    await wrapper.get("[data-period-custom-apply]").trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+
+    await wrapper.get("[data-period-custom-to]").setValue("2026-11-30");
+    expect(wrapper.find("[data-period-custom-error]").exists()).toBe(false);
+    await wrapper.get("[data-period-custom-apply]").trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-10-01", to: "2026-11-30" }]]);
+  });
 });
