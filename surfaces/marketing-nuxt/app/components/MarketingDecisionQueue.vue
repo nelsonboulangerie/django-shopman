@@ -233,12 +233,10 @@ function deadline(item: DecisionItem) {
             <Icon name="lucide:scan-search" class="size-4" />
           </span>
           <span class="min-w-0 flex-1">
-            <strong class="font-semibold">{{
-              automaticCheckLine(check, shopTimezone, nowMs).title
-            }}</strong>
-            <span class="text-muted-foreground">
-              {{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span
-            >
+            <!-- Título e detalhe na MESMA linha: espaço entre tags que atravessa
+                 quebra de linha o compilador do Vue descarta, e a linha virava
+                 "incerto.O sistema". -->
+            <strong class="font-semibold">{{ automaticCheckLine(check, shopTimezone, nowMs).title }}</strong> <span class="text-muted-foreground">{{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span>
           </span>
         </NuxtLink>
       </li>

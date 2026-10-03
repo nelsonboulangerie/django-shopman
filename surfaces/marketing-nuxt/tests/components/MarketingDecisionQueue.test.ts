@@ -150,8 +150,10 @@ describe("MarketingDecisionQueue", () => {
   it("mostra o incerto conferido sozinho e a linha de agendados", () => {
     const wrapper = render();
 
+    // A frase inteira, com o espaço entre o título e o detalhe: o retrato do CI
+    // pegou "incerto.O sistema" quando o template deixava o espaço sumir.
     expect(wrapper.get("[data-automatic-check]").text()).toContain(
-      "O sistema consultou sem reenviar: publicado às 09:58 · automático",
+      "resultado incerto. O sistema consultou sem reenviar: publicado às 09:58 · automático",
     );
     const line = wrapper.get("[data-decisions-scheduled-line]");
     expect(line.text()).toContain("+2 agendados hoje · 3 campanhas ligadas");
