@@ -1,0 +1,332 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>.note.menu{display:block;background:var(--popover);color:var(--popover-foreground);padding:6px;border-radius:.5rem;white-space:normal;font-size:inherit;font-weight:inherit;line-height:inherit;box-shadow:0 12px 32px rgb(0 0 0/.18)}</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="bi">
+<div class="flex h-[900px] overflow-hidden relative">
+  <!-- Rail v3: trocador de apps + as 8 seções do B.I. + avisos/atalhos/bloquear -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="B.I." icon="chart-no-axes-combined"}}
+    <a class="rail-item"><i data-i="chef-hat"></i>Produção</a>
+    <a class="rail-item on"><i data-i="banknote"></i>Vendas</a>
+    <a class="rail-item"><i data-i="wallet"></i>Caixa</a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="id-card"></i>Perfis</a>
+    <a class="rail-item"><i data-i="telescope"></i>Explorar</a>
+    <a class="rail-item"><i data-i="trending-up"></i>Projeção</a>
+    <a class="rail-item"><i data-i="flask-conical"></i>Cenários</a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Cabeçalho único: título + ao vivo + busca única + período + ⋯; linha 2 = comparação + canais -->
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Vendas</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 22:03:05"><span class="live-dot"></span>22:03</span>
+        <div class="w-3"></div>
+        {{> search3 w="w-[22rem]" placeholder="Buscar produto, canal ou indicador"}}
+        <div class="flex-1"></div>
+        <!-- período global: controle da tela, à direita -->
+        <div class="flex items-center rounded-md border border-border bg-card h-control shrink-0">
+          <button class="size-control grid place-items-center text-foreground border-r border-border" title="Período anterior ([)"><i data-i="chevron-left" class="size-4"></i></button>
+          <button class="h-full px-3 inline-flex items-center gap-2 op-label"><i data-i="calendar" class="size-4 text-muted-foreground"></i><span class="font-semibold">28D</span><span class="tnum text-muted-foreground">05/09 a 02/10</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+          <button disabled class="size-control grid place-items-center text-muted-foreground/40 border-l border-border" title="Já é o período mais recente"><i data-i="chevron-right" class="size-4"></i></button>
+        </div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="git-compare-arrows" class="size-4 text-muted-foreground"></i><span class="text-muted-foreground font-normal">Comparar com:</span><span class="font-semibold">período anterior</span><span class="tnum text-muted-foreground font-normal">(08/08 a 04/09)</span><i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 text-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos os canais</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4"></i>PDV</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="message-circle" class="size-4"></i>WhatsApp</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="globe" class="size-4"></i>Loja online</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>iFood</button>
+        <div class="flex-1"></div>
+        <span class="op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="link" class="size-3.5"></i>?periodo=28d&amp;comparar=anterior</span>
+      </div>
+    </header>
+
+    <!-- Conteúdo -->
+    <div class="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+      <!-- KPIs -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="receipt" class="size-4"></i>Pedidos</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">2.606</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>23%</span><span class="op-micro text-muted-foreground">vs período anterior (3.384)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="banknote" class="size-4"></i>Faturamento</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">R$ 208,6 mil</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>11%</span><span class="op-micro text-muted-foreground">vs período anterior (R$ 234,4 mil)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="ticket" class="size-4"></i>Ticket médio</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">R$ 80,06</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-up" class="size-3.5"></i>16%</span><span class="op-micro text-muted-foreground">vs período anterior (R$ 69,27)</span></p>
+        </div>
+        <div class="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-1">
+          <p class="op-label text-muted-foreground inline-flex items-center gap-1.5"><i data-i="circle-x" class="size-4"></i>Cancelados</p>
+          <p class="text-[2rem] leading-[2.25rem] font-semibold tnum tracking-tight">0</p>
+          <p class="flex items-center gap-2"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>À parte</span><span class="op-micro text-muted-foreground">Fora do faturamento acima</span></p>
+        </div>
+      </div>
+
+      <!-- linha 2 -->
+      <div class="grid grid-cols-3 gap-4">
+        <section class="col-span-2 rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Faturamento por dia</h2>
+              <p class="op-micro text-muted-foreground">Janela longa agrega por semana ou mês. Domingo: fechado.</p>
+            </div>
+            <div class="flex items-center gap-3 op-micro text-muted-foreground pt-1">
+              <span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-[var(--chart-1)]"></span>Shopman</span>
+              <span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-[var(--chart-1)]/35"></span>Histórico Yooga</span>
+              <span class="inline-flex items-center gap-1.5"><span class="w-3 h-[2px] bg-foreground/55"></span>Período anterior</span>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground" title="Mais ações do gráfico"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-7 h-[128px] flex items-end gap-1 border-b border-border"><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:39px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:47px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full h-[3px] rounded-sm bg-border"></div>
+    
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:44px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:51px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:55px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:60px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:51px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:63px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:64px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:74px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:90px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:101px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]/35" style="height:120px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:127px"></div>
+    <span class="absolute left-1/2 -translate-x-1/2 op-micro font-semibold tnum whitespace-nowrap px-1.5 rounded bg-foreground text-background" style="bottom:133px">R$ 18,7 mil</span>
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full h-[3px] rounded-sm bg-border"></div>
+    
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:40px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:46px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:44px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:52px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:61px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:67px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:49px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:60px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:99px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:96px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:97px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:113px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full h-[3px] rounded-sm bg-border"></div>
+    
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:44px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:50px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:49px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:57px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:46px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:56px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:50px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:61px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:88px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:97px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:105px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:116px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full h-[3px] rounded-sm bg-border"></div>
+    
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:45px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:54px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:51px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:58px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:47px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:52px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:51px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:68px"></div>
+    
+  </div><div class="relative flex-1 h-full flex items-end">
+    <div class="w-full rounded-t-[3px] bg-[var(--chart-1)]" style="height:55px"></div>
+    <div class="absolute left-0 right-0 h-[2px] bg-foreground/55" style="bottom:77px"></div>
+    
+  </div></div>
+          <div class="flex gap-1 pt-1.5"><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">05/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">06/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">07/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">08/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">09/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">10/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">11/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">12/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">13/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">14/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">15/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">16/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">17/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">18/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">19/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">20/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">21/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">22/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">23/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">24/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">25/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">26/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">27/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">28/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">29/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">30/09</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">01/10</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">02/10</span></div>
+        </section>
+
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Por canal</h2>
+              <p class="op-micro text-muted-foreground">Faturamento do período e parte de cada canal</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground" title="Mais ações do gráfico"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-4 flex flex-col gap-3.5"><div class="flex flex-col gap-1.5">
+    <div class="flex items-center gap-2"><i data-i="store" class="size-4 text-muted-foreground"></i><span class="op-label font-semibold">PDV</span><span class="op-micro text-muted-foreground tnum">2.532 pedidos</span><span class="ml-auto op-label tnum font-semibold">R$ 195.302,84</span><span class="w-12 text-right op-micro tnum text-muted-foreground">93,6%</span></div>
+    <div class="h-2.5 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-[var(--chart-1)]" style="width:93.6%"></div></div>
+  </div><div class="flex flex-col gap-1.5">
+    <div class="flex items-center gap-2"><i data-i="message-circle" class="size-4 text-muted-foreground"></i><span class="op-label font-semibold">WhatsApp</span><span class="op-micro text-muted-foreground tnum">36 pedidos</span><span class="ml-auto op-label tnum font-semibold">R$ 7.265,00</span><span class="w-12 text-right op-micro tnum text-muted-foreground">3,5%</span></div>
+    <div class="h-2.5 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-[var(--chart-2)]" style="width:3.5%"></div></div>
+  </div><div class="flex flex-col gap-1.5">
+    <div class="flex items-center gap-2"><i data-i="globe" class="size-4 text-muted-foreground"></i><span class="op-label font-semibold">Loja online</span><span class="op-micro text-muted-foreground tnum">24 pedidos</span><span class="ml-auto op-label tnum font-semibold">R$ 4.512,00</span><span class="w-12 text-right op-micro tnum text-muted-foreground">2,2%</span></div>
+    <div class="h-2.5 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-[var(--chart-3)]" style="width:2.2%"></div></div>
+  </div><div class="flex flex-col gap-1.5">
+    <div class="flex items-center gap-2"><i data-i="bike" class="size-4 text-muted-foreground"></i><span class="op-label font-semibold">iFood</span><span class="op-micro text-muted-foreground tnum">14 pedidos</span><span class="ml-auto op-label tnum font-semibold">R$ 1.520,00</span><span class="w-12 text-right op-micro tnum text-muted-foreground">0,7%</span></div>
+    <div class="h-2.5 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-[var(--chart-4)]" style="width:1.2%"></div></div>
+  </div></div>
+        </section>
+      </div>
+
+      <!-- linha 3 -->
+      <div class="grid grid-cols-3 gap-4 flex-1 min-h-0">
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Pedidos por hora</h2>
+              <p class="op-micro text-muted-foreground">Soma do período, hora local</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-auto pt-6 h-[148px] flex items-end gap-[3px] border-b border-border"><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:120px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro font-semibold tnum whitespace-nowrap" style="bottom:124px">2.447</span></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full rounded-t-[2px] bg-[var(--chart-4)]" style="height:3px"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div><div class="relative flex-1 h-full flex items-end"><div class="w-full h-px bg-border"></div></div></div>
+          <div class="flex gap-[3px] pt-1.5"><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">0h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">1h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">2h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">3h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">4h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">5h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">6h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">7h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">8h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">9h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">10h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">11h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">12h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">13h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">14h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">15h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">16h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">17h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">18h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">19h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-muted-foreground">20h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">21h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">22h</span><span class="flex-1 min-w-0 whitespace-nowrap text-center op-micro tnum text-transparent">23h</span></div>
+        </section>
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Pedidos por dia da semana</h2>
+              <p class="op-micro text-muted-foreground">Soma do período</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="mt-auto pt-6 h-[148px] flex items-end border-b border-border"><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]/70" style="height:68px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:72px">318</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]/70" style="height:88px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:92px">412</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]/70" style="height:94px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:98px">436</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]/70" style="height:96px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:100px">448</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]/70" style="height:93px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:97px">433</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full rounded-t-[3px] bg-[var(--chart-3)]" style="height:120px"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap font-semibold" style="bottom:124px">559</span></div><div class="relative flex-1 h-full flex items-end px-1.5"><div class="w-full h-px bg-border"></div><span class="absolute left-1/2 -translate-x-1/2 op-micro tnum whitespace-nowrap text-muted-foreground" style="bottom:4px">fechado</span></div></div>
+          <div class="flex pt-1.5"><span class="flex-1 text-center op-micro text-muted-foreground">seg</span><span class="flex-1 text-center op-micro text-muted-foreground">ter</span><span class="flex-1 text-center op-micro text-muted-foreground">qua</span><span class="flex-1 text-center op-micro text-muted-foreground">qui</span><span class="flex-1 text-center op-micro text-muted-foreground">sex</span><span class="flex-1 text-center op-micro text-muted-foreground">sáb</span><span class="flex-1 text-center op-micro text-muted-foreground">dom</span></div>
+        </section>
+        <section class="rounded-lg border border-border bg-card p-4 flex flex-col">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="op-title">Top produtos</h2>
+              <p class="op-micro text-muted-foreground">Por faturamento no período</p>
+            </div>
+            <button class="size-9 -mr-1.5 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <table class="mt-2 w-full table-fixed">
+            <thead><tr class="h-8 border-b border-border op-eyebrow text-muted-foreground text-left">
+              <th class="font-semibold">Produto</th><th class="w-14 text-right font-semibold">Qtd</th><th class="w-28 text-right font-semibold">Faturamento</th><th class="w-[72px] pl-3 font-semibold">Parte</th>
+            </tr></thead>
+            <tbody><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Pain de Campagne</td>
+    <td class="op-label tnum text-right font-normal">2.021</td>
+    <td class="op-label tnum text-right font-semibold">R$ 52.153,25</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:100%"></div></div></td>
+  </tr><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Baguette de Tradition</td>
+    <td class="op-label tnum text-right font-normal">2.198</td>
+    <td class="op-label tnum text-right font-semibold">R$ 41.092,52</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:78.8%"></div></div></td>
+  </tr><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Croissant</td>
+    <td class="op-label tnum text-right font-normal">1.840</td>
+    <td class="op-label tnum text-right font-semibold">R$ 23.920,00</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:46%"></div></div></td>
+  </tr><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Pain au Chocolat</td>
+    <td class="op-label tnum text-right font-normal">1.212</td>
+    <td class="op-label tnum text-right font-semibold">R$ 16.968,00</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:32.4%"></div></div></td>
+  </tr><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Brioche</td>
+    <td class="op-label tnum text-right font-normal">640</td>
+    <td class="op-label tnum text-right font-semibold">R$ 12.160,00</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:23.2%"></div></div></td>
+  </tr><tr class="h-9 border-b border-border last:border-0">
+    <td class="op-label font-semibold truncate max-w-0">Shokupan</td>
+    <td class="op-label tnum text-right font-normal">302</td>
+    <td class="op-label tnum text-right font-semibold">R$ 9.966,00</td>
+    <td class="pl-3"><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-[var(--chart-1)]" style="width:19.2%"></div></div></td>
+  </tr></tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- menu ⋯ aberto -->
+  <div class="note menu absolute right-4 top-[62px] w-72 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Este recorte</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label bg-accent"><i data-i="download" class="size-4"></i>Exportar CSV</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="link" class="size-4"></i>Copiar link do recorte</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="database" class="size-4"></i>Fontes dos números</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="keyboard" class="size-4"></i>Atalhos desta tela<kbd class="ml-auto op-micro font-mono text-muted-foreground">?</kbd></button>
+  </div>
+
+  <span class="pin" style="left:62px;top:150px">1</span>
+  <span class="pin" style="left:186px;top:4px">2</span>
+  <span class="pin" style="left:290px;top:4px">3</span>
+  <span class="pin" style="left:1080px;top:4px">4</span>
+  <span class="pin" style="left:84px;top:66px">5</span>
+  <span class="pin" style="left:494px;top:58px">6</span>
+  <span class="pin" style="left:84px;top:132px">7</span>
+  <span class="pin" style="left:62px;top:604px">8</span>
+</div>
+<div class="legend">
+  <p class="t">B.I. · Vendas · v3 <span>as 8 seções no rail, uma barra só, uma busca só; período no cabeçalho e na URL</span></p>
+  <div><b>1</b>As 8 seções (Produção, Vendas, Caixa, Clientes, Perfis, Explorar, Projeção, Cenários) cabem no rail a 900 px, sem "Mais". O selo no topo troca de app.</div>
+  <div><b>2</b>Título da tela com "ao vivo" em ponto e hora; só cresce quando a leitura atrasa.</div>
+  <div><b>3</b>A busca volta a ser campo inteiro (na v2 encolhia para um ícone): tecla / ou Ctrl K, esta tela primeiro, a suíte logo abaixo.</div>
+  <div><b>4</b>Período global (presets e personalizado, ‹ › andam um período) e o ⋯ (Exportar CSV, Copiar link, Atualizar R, Fontes, Atalhos ?) à direita.</div>
+  <div><b>5</b>"Comparar com" na linha 2 deixa explícito contra o que os deltas são medidos.</div>
+  <div><b>6</b>Canais como chips, iguais aos do Gestor, recortam todos os cartões; o recorte inteiro fica na URL.</div>
+  <div><b>7</b>Indicadores com delta em pílula, gráficos com legenda e ⋯, canal pelo nome e Top produtos com Parte: iguais à v2.</div>
+  <div><b>8</b>Avisos (7), Atalhos, Bloquear e operador no pé do rail; sem faixa global no cabeçalho.</div>
+</div>
+</body></html>

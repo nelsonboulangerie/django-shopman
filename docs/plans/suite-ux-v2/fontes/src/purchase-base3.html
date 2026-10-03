@@ -1,0 +1,233 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="purchase">
+<div class="flex h-[900px] overflow-hidden relative">
+  <!-- Rail v3: trocador de apps + seções do Compras + avisos/atalhos/bloquear -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Compras" icon="package"}}
+    <a class="rail-item"><i data-i="layout-grid"></i>Painel</a>
+    <a class="rail-item"><i data-i="shopping-cart"></i>Comprar<span class="attn"></span></a>
+    <a class="rail-item"><i data-i="package-open"></i>Receber</a>
+    <a class="rail-item on"><i data-i="database"></i>Base</a>
+    {{> rail3bottom bell="3" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Cabeçalho único: título + ao vivo + cadastros + busca + controles; linha 2 = filtro + métricas -->
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Base</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 10:42:08"><span class="live-dot"></span>10:42</span>
+        <div class="w-1"></div>
+        <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1 shrink-0" role="tablist" aria-label="Cadastros da Base">
+          <button class="h-full px-3 rounded bg-card shadow-sm inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="wheat" class="size-4"></i>Insumos <span class="tnum text-muted-foreground font-normal">142</span></button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="truck" class="size-4"></i>Fornecedores</button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="calculator" class="size-4"></i>Custos</button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="clipboard-check" class="size-4"></i>Contagem</button>
+        </div>
+        <div class="w-1"></div>
+        {{> search3 w="w-[20rem]" placeholder="Buscar insumo ou SKU"}}
+        <div class="flex-1"></div>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="arrow-down-up" class="size-4"></i>Nome<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="triangle-alert" class="size-4 text-warning"></i>Atenção <span class="tnum text-muted-foreground">120</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <span class="op-eyebrow text-muted-foreground mr-1">Compras hoje</span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="triangle-alert" class="size-4 text-warning"></i><span class="tnum font-semibold">0</span> reposições urgentes</button>
+        <button class="h-10 px-3 rounded-full border border-info/40 bg-info/8 inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="badge-alert" class="size-4 text-info"></i><span class="tnum font-semibold">120</span> sem fornecedor preferencial</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="equal-approximately" class="size-4 text-muted-foreground"></i><span class="tnum font-semibold">0</span> custos estimados</button>
+        <span class="ml-auto op-micro text-muted-foreground">Base: referências usadas pelos fluxos de comprar e receber.</span>
+      </div>
+    </header>
+
+    <!-- Conteúdo: tabela + painel docado -->
+    <div class="flex-1 min-h-0 flex">
+      <section class="flex-1 min-w-0 flex flex-col">
+        <div class="flex-1 overflow-hidden px-4 pt-3">
+          <div class="rounded-lg border border-border bg-card overflow-hidden">
+            <table class="w-full table-fixed op-body">
+              <colgroup><col><col class="w-28"><col class="w-28"><col class="w-44"><col class="w-28"><col class="w-28"></colgroup>
+              <thead class="bg-muted/60 text-muted-foreground">
+                <tr class="h-10 text-left">
+                  <th class="pl-4 pr-2 op-eyebrow font-semibold">Insumo</th>
+                  <th class="px-3 op-eyebrow font-semibold text-right">Estoque</th>
+                  <th class="px-3 op-eyebrow font-semibold">Cobertura</th>
+                  <th class="px-3 op-eyebrow font-semibold">Mínimo</th>
+                  <th class="px-3 op-eyebrow font-semibold text-right whitespace-nowrap">Custo-base</th>
+                  <th class="px-3 op-eyebrow font-semibold">Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+<!--ROWS-->
+<tr class="h-16 border-t border-border bg-primary/8 shadow-[inset_3px_0_0_var(--primary)]">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Açúcar</span> <span class="op-micro text-muted-foreground">· Insumo · 13 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">ACUCAR-CRISTAL</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">30.000 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border-2 border-primary bg-card inline-flex items-center gap-1.5"><span class="flex-1 tnum font-semibold text-right">10.000</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5 rounded-full bg-primary" title="Alterado"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Açúcar refinado</span> <span class="op-micro text-muted-foreground">· Insumo · 2 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">ACUCAR-REFINADO</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">5.000 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Água filtrada</span> <span class="op-micro text-muted-foreground">· Insumo · 12 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">AGUA-FILTRADA</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">205.800 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border-2 border-primary bg-card inline-flex items-center gap-1.5"><span class="flex-1 tnum font-semibold text-right">50.000</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5 rounded-full bg-primary" title="Alterado"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Água Mineral com Gás Prata 310ml</span> <span class="op-micro text-muted-foreground">· Revenda · à venda no PDV</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">AGUA-GAS-PRATA-310</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Vendável</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">5 un</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">un</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Água Mineral Prata 310ml</span> <span class="op-micro text-muted-foreground">· Revenda · à venda no PDV</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">AGUA-MINERAL-PRATA-310</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Vendável</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">53 un</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">un</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Alecrim</span> <span class="op-micro text-muted-foreground">· Insumo · 3 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">ALECRIM-FRESCO</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">500 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Alface americana</span> <span class="op-micro text-muted-foreground">· Insumo · 1 receita</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">ALFACE-AMERICANA</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">2.000 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border-2 border-primary bg-card inline-flex items-center gap-1.5"><span class="flex-1 tnum font-semibold text-right">1.000</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5 rounded-full bg-primary" title="Alterado"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Alho</span> <span class="op-micro text-muted-foreground">· Insumo · 4 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">ALHO</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">1.200 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<tr class="h-16 border-t border-border ">
+  <td class="pl-4 pr-2 max-w-0"><p class="truncate"><span class="font-semibold">Amêndoa laminada</span> <span class="op-micro text-muted-foreground">· Insumo · 2 receitas</span></p>
+    <div class="flex items-center gap-1.5 mt-1 min-w-0 overflow-hidden whitespace-nowrap"><span class="op-micro font-mono text-muted-foreground mr-0.5 shrink-0">AMENDOA-LAMINADA</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Comprável</span><span class="h-5 px-1.5 rounded border border-border op-micro text-muted-foreground inline-flex items-center whitespace-nowrap">Usado em receita</span></div></td>
+  <td class="px-3 text-right tnum font-medium whitespace-nowrap">800 g</td>
+  <td class="px-3 text-muted-foreground whitespace-nowrap">sem consumo</td>
+  <td class="px-3"><div class="flex items-center gap-1.5"><label class="h-10 w-32 px-2.5 rounded-md border border-input bg-card inline-flex items-center gap-1.5"><span class="flex-1 text-right op-micro text-muted-foreground">sem mínimo</span><span class="op-micro text-muted-foreground">g</span></label><span class="size-1.5"></span></div></td>
+  <td class="px-3 text-right tnum text-muted-foreground whitespace-nowrap">sem custo</td>
+  <td class="px-3"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Revisar</span></td>
+</tr>
+<!--/ROWS-->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- barra de ação fixa no rodapé -->
+        <div class="px-4 py-3 border-t border-border bg-card flex items-center gap-3">
+          <span class="size-2 rounded-full bg-primary"></span>
+          <p class="op-label"><span class="tnum font-semibold">3</span> mínimos alterados</p>
+          <span class="op-micro text-muted-foreground">Açúcar, Água filtrada, Alface americana</span>
+          <div class="flex-1"></div>
+          <button class="h-control px-4 rounded-md border border-border bg-card op-label">Limpar</button>
+          <button class="h-control px-5 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="check" class="size-4"></i>Salvar mínimos</button>
+        </div>
+      </section>
+
+      <!-- painel lateral docado (detalhe do item) -->
+      <aside class="w-[372px] shrink-0 border-l border-border bg-card flex flex-col">
+        <div class="px-5 pt-4 pb-3 border-b border-border flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="op-eyebrow text-muted-foreground">Insumo</p>
+            <h2 class="op-title text-lg leading-tight">Açúcar</h2>
+            <p class="op-micro text-muted-foreground"><span class="font-mono">ACUCAR-CRISTAL</span> · Insumos</p>
+          </div>
+          <button class="size-10 rounded-md grid place-items-center text-muted-foreground border border-border" title="Fechar (Esc)"><i data-i="x" class="size-4.5"></i></button>
+        </div>
+        <div class="flex-1 overflow-hidden px-5 py-4 flex flex-col gap-3.5">
+          <div class="rounded-md border border-warning/35 bg-warning/10 px-3 py-2 op-label text-warning inline-flex items-center gap-2"><i data-i="triangle-alert" class="size-4"></i>Sem custo preferencial</div>
+          <div class="flex flex-wrap gap-1.5">
+            <span class="h-6 px-2 rounded border border-border op-micro text-muted-foreground inline-flex items-center">Comprável</span>
+            <span class="h-6 px-2 rounded border border-border op-micro text-muted-foreground inline-flex items-center">Usado em receita</span>
+          </div>
+          <div class="border-t border-border pt-4">
+            <label class="flex items-center gap-2.5 op-label font-semibold"><span class="size-5 rounded border border-input bg-card"></span>Permitir revenda</label>
+            <p class="op-micro text-muted-foreground mt-1 pl-7">Pede só o preço. Entra no PDV com o mesmo SKU e o mesmo estoque.</p>
+          </div>
+          <div class="border-t border-border pt-4">
+            <div class="flex items-baseline justify-between"><p class="op-label font-semibold">Quando aberto, vira</p><button class="op-label text-primary font-semibold">Definir</button></div>
+            <p class="op-micro text-muted-foreground mt-1">Só se a produção usa este item em peso. Ela abre uma embalagem quando precisa.</p>
+          </div>
+          <div class="border-t border-border pt-4">
+            <p class="op-label font-semibold">Receitas que consomem <span class="tnum text-muted-foreground font-normal">13</span></p>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Cebolas Assadas</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Creme de Baunilha</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Creme de Leite e Ovos</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Brioche</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Butter</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Croissant</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Forma</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Kuropan</span>
+              <span class="h-7 px-2 rounded-md border border-border op-micro inline-flex items-center">Massa Madeleine</span>
+              <button class="h-7 px-2 rounded-md op-micro font-semibold text-primary">+4 receitas</button>
+                                                                    </div>
+          </div>
+          <!-- exemplo do formulário de revenda aberto (quando marcado) -->
+          <div class="rounded-md border border-dashed border-border p-3 bg-background/60">
+            <p class="op-eyebrow text-muted-foreground mb-2">Ao marcar "Permitir revenda"</p>
+            <div class="flex items-end gap-2">
+              <label class="flex-1"><span class="op-micro text-muted-foreground">Preço de venda por kg</span>
+                <span class="mt-1 h-10 px-3 rounded-md border border-input bg-card flex items-center tnum text-muted-foreground">0,00</span></label>
+              <button class="h-10 px-3 rounded-md bg-primary text-primary-foreground op-label font-semibold">Colocar à venda</button>
+            </div>
+            <p class="op-micro text-muted-foreground mt-1.5">Sem custo de compra registrado: informe o preço.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <span class="pin" style="left:62px;top:300px">1</span>
+  <span class="pin" style="left:150px;top:4px">2</span>
+  <span class="pin" style="left:340px;top:4px">3</span>
+  <span class="pin" style="left:740px;top:4px">4</span>
+  <span class="pin" style="left:226px;top:58px">5</span>
+  <span class="pin" style="left:730px;top:214px">6</span>
+  <span class="pin" style="left:1010px;top:830px">7</span>
+  <span class="pin" style="left:62px;top:604px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Compras · Base › Insumos · v3 <span>seções no rail, uma barra só, uma busca só; nenhuma função sai da tela</span></p>
+  <div><b>1</b>Painel, Comprar, Receber e Base moram no rail; ponto de atenção em Comprar. O selo no topo do rail troca de app.</div>
+  <div><b>2</b>Título da tela com "ao vivo" em ponto e hora; só cresce quando a leitura atrasa.</div>
+  <div><b>3</b>Insumos, Fornecedores, Custos e Contagem seguem no controle segmentado, agora no próprio cabeçalho (endereço /base/insumos).</div>
+  <div><b>4</b>Uma busca só, tecla / ou Ctrl K: filtra os insumos ao digitar e oferece o app e a suíte no dropdown. Ordenar e ⋯ na mesma linha, à direita.</div>
+  <div><b>5</b>Chip "Atenção" e as métricas de Compras hoje viram a linha 2 do cabeçalho (a faixa de resumo some); cada métrica filtra a lista.</div>
+  <div><b>6</b>Tabela igual à v2: SKU e receitas na linha de apoio, Mínimo editável com marca de alterado, situação em pílula.</div>
+  <div><b>7</b>Rodapé de ação e painel docado (revenda, quando aberto vira, receitas que consomem) não mudam.</div>
+  <div><b>8</b>Avisos (3), Atalhos, Bloquear e operador no pé do rail. Cabeçalho: v2 ~172 px em três faixas; v3 ~116 px em duas linhas.</div>
+</div>
+</body></html>

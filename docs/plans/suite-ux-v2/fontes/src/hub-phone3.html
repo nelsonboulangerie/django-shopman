@@ -1,0 +1,133 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="900x1000">
+<style>
+  .sb { height:44px; padding:0 26px 0 30px; display:flex; align-items:center; font:600 15px/1 "Instrument Sans",sans-serif; }
+  .sb svg { width:17px !important; height:17px !important; }
+  .home-ind { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:99px; background:var(--foreground); opacity:.85; }
+  .ico { display:grid; place-items:center; background:var(--app-color); color:#fff; flex:none; }
+  .dot { width:7px; height:7px; border-radius:999px; flex:none; display:inline-block; }
+  .row + .row { border-top:1px solid var(--border); }
+  .screen { font-size:15px; }
+</style>
+</head>
+<body class="font-sans antialiased text-foreground" style="background:#e9dfd6" data-app="hub">
+<div class="relative h-[1000px] overflow-hidden flex justify-center gap-12 pt-5">
+
+  <!-- ============ Celular 1: Shopman Apps ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title">Início: o que pede você + apps</p>
+    <div class="device"><div class="screen bg-background" style="width:390px;height:844px">
+      <div class="sb bg-card"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <!-- barra superior 56px -->
+      <div class="h-14 px-4 flex items-center gap-3 bg-card">
+        <span class="ico size-9 rounded-lg" style="background:#34373B"><i data-i="layout-grid" class="size-5"></i></span>
+        <div class="flex-1 min-w-0">
+          <p class="text-[17px] font-semibold leading-tight">Olá, Admin</p>
+          <p class="op-micro text-muted-foreground inline-flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>22:03 · Nelson Boulangerie</p>
+        </div>
+        <button class="size-12 rounded-full grid place-items-center relative"><i data-i="bell" class="size-6"></i><span class="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold grid place-items-center" style="background:#f2c46b;color:#3b2a1e">7</span></button>
+      </div>
+      <!-- busca única, com câmera -->
+      <div class="px-4 pb-3 bg-card border-b border-border">
+        <label class="h-12 px-4 rounded-xl border border-input bg-background flex items-center gap-3">
+          <i data-i="search" class="size-5 text-muted-foreground"></i>
+          <span class="flex-1 text-[15px] text-muted-foreground">Buscar em toda a suíte</span>
+          <span class="w-px h-6 bg-border"></span>
+          <i data-i="scan-line" class="size-5 text-foreground"></i>
+        </label>
+      </div>
+
+      <div class="px-4 pt-4 flex flex-col gap-4">
+        <section>
+          <div class="flex items-baseline gap-2 mb-2"><h2 class="op-eyebrow">Precisa de você</h2><span class="op-label text-muted-foreground">3</span></div>
+          <div class="rounded-xl border border-border bg-card">
+            <a class="row h-14 px-3 flex items-center gap-3" data-app="kds"><span class="ico size-8 rounded-lg"><i data-i="chef-hat" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold truncate">1 ticket atrasado: Croissant</span><span class="block op-micro text-muted-foreground">Cozinha › Preparo · 14 min</span></span><span class="dot bg-warning"></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-14 px-3 flex items-center gap-3" data-app="orders"><span class="ico size-8 rounded-lg"><i data-i="square-kanban" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold truncate">Canal TV do Café: 1 pendência</span><span class="block op-micro text-muted-foreground">Gestor › Canais</span></span><span class="dot bg-warning"></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-14 px-3 flex items-center gap-3" data-app="pos"><span class="ico size-8 rounded-lg"><i data-i="shopping-basket" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold truncate">2 comandas em aberto</span><span class="block op-micro text-muted-foreground">PDV › Comandas</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+          </div>
+        </section>
+
+        <section>
+          <div class="flex items-baseline gap-2 mb-2"><h2 class="op-eyebrow">Apps</h2><span class="op-label text-muted-foreground">8</span></div>
+          <div class="rounded-xl border border-border bg-card">
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="pos"><span class="ico size-11 rounded-xl"><i data-i="shopping-basket" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">PDV</span><span class="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span class="dot bg-success"></span>Caixa aberto · 10 vendas hoje</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="kds"><span class="ico size-11 rounded-xl"><i data-i="chef-hat" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">Cozinha</span><span class="flex items-center gap-1.5 text-[13px] text-warning font-semibold"><span class="dot bg-warning"></span>1 ticket atrasado<span class="font-normal text-muted-foreground">· 3 em preparo</span></span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="orders"><span class="ico size-11 rounded-xl"><i data-i="square-kanban" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">Gestor de pedidos</span><span class="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span class="dot bg-success"></span>10 ativos · nenhum novo</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="production"><span class="ico size-11 rounded-xl"><i data-i="croissant" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">Produção</span><span class="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span class="dot bg-muted-foreground/50"></span>5 de 15 lotes produzidos hoje</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="purchase"><span class="ico size-11 rounded-xl"><i data-i="package" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">Compras</span><span class="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span class="dot bg-muted-foreground/50"></span>120 insumos sem custo definido</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+            <a class="row h-[62px] px-3 flex items-center gap-3" data-app="marketing"><span class="ico size-11 rounded-xl"><i data-i="megaphone" class="size-5"></i></span><span class="flex-1 min-w-0"><span class="block text-[15px] font-semibold">Marketing</span><span class="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span class="dot bg-success"></span>3 campanhas ligadas</span></span><i data-i="chevron-right" class="size-5 text-muted-foreground"></i></a>
+          </div>
+        </section>
+      </div>
+      <!-- Tem mais abaixo -->
+      <div class="absolute left-0 right-0 bottom-0 h-28 bg-gradient-to-t from-background via-background/90 to-transparent flex items-end justify-center pb-7">
+        <span class="h-9 px-4 rounded-full bg-card border border-border shadow-sm inline-flex items-center gap-2 op-label"><i data-i="chevron-down" class="size-4"></i>Mais 2 apps abaixo</span>
+      </div>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ Celular 2: busca única em tela cheia ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title">Busca única aberta: toda a suíte + câmera</p>
+    <div class="device"><div class="screen bg-card" style="width:390px;height:844px">
+      <div class="sb"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="px-3 pt-1 pb-3 flex items-center gap-2">
+        <button class="size-12 grid place-items-center rounded-full"><i data-i="arrow-left" class="size-6"></i></button>
+        <label class="flex-1 h-12 pl-4 pr-1 rounded-xl border-2 border-primary bg-background flex items-center gap-2">
+          <span class="flex-1 text-[16px]">ma<span class="inline-block w-px h-5 bg-foreground align-middle ml-px"></span></span>
+          <button class="size-10 grid place-items-center text-muted-foreground"><i data-i="x" class="size-5"></i></button>
+          <button class="size-10 rounded-lg bg-primary text-primary-foreground grid place-items-center" title="Ler código com a câmera"><i data-i="scan-line" class="size-5"></i></button>
+        </label>
+      </div>
+      <!-- alcance -->
+      <div class="px-4 pb-3 flex items-center gap-2 overflow-hidden border-b border-border">
+        <span class="h-10 px-3.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 text-[14px] font-semibold shrink-0"><i data-i="check" class="size-4 text-primary"></i>Toda a suíte <span class="text-muted-foreground font-normal tnum">9</span></span>
+        <span class="h-10 px-3.5 rounded-full border border-border inline-flex items-center gap-1.5 text-[14px] shrink-0">Pedidos <span class="text-muted-foreground tnum">2</span></span>
+        <span class="h-10 px-3.5 rounded-full border border-border inline-flex items-center gap-1.5 text-[14px] shrink-0">Clientes <span class="text-muted-foreground tnum">2</span></span>
+        <span class="h-10 px-3.5 rounded-full border border-border inline-flex items-center gap-1.5 text-[14px] shrink-0">Insumos</span>
+      </div>
+
+      <!-- ler código -->
+      <a class="mx-4 mt-3 h-14 px-3 rounded-xl bg-secondary flex items-center gap-3">
+        <span class="size-9 rounded-lg bg-card grid place-items-center"><i data-i="scan-barcode" class="size-5"></i></span>
+        <span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold">Ler um código com a câmera</span><span class="block op-micro text-muted-foreground truncate">QR do pedido · EAN do insumo · chave da NF</span></span>
+        <i data-i="chevron-right" class="size-5 text-muted-foreground"></i>
+      </a>
+
+      <div class="px-4 pt-3 flex flex-col">
+        <p class="op-eyebrow text-muted-foreground pt-2 pb-1.5">Pedidos</p>
+        <a class="h-14 flex items-center gap-3" data-app="orders"><span class="ico size-9 rounded-lg"><i data-i="clipboard-list" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px]"><b>X36</b> · <mark class="bg-primary/25 rounded-[3px]">Ma</mark>ria Santos</span><span class="block op-micro text-muted-foreground">Gestor · Preparo · 1× Croissant · R$ 13,00</span></span></a>
+        <a class="h-14 flex items-center gap-3" data-app="pos"><span class="ico size-9 rounded-lg"><i data-i="calendar" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px]"><b>Encomenda</b> · <mark class="bg-primary/25 rounded-[3px]">Ma</mark>ria Santos</span><span class="block op-micro text-muted-foreground">PDV · retirada sáb 04/10, 09:00 · R$ 41,00</span></span></a>
+        <p class="op-eyebrow text-muted-foreground pt-3 pb-1.5">Clientes</p>
+        <a class="h-14 flex items-center gap-3" data-app="orders"><span class="ico size-9 rounded-lg"><i data-i="user" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold"><mark class="bg-primary/25 rounded-[3px]">Ma</mark>ria Santos</span><span class="block op-micro text-muted-foreground">Gestor › Clientes · 23 pedidos · (43) 99111-1111</span></span><i data-i="phone" class="size-5 text-muted-foreground"></i></a>
+        <p class="op-eyebrow text-muted-foreground pt-3 pb-1.5">Insumos e produtos</p>
+        <a class="h-14 flex items-center gap-3" data-app="purchase"><span class="ico size-9 rounded-lg"><i data-i="package" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold"><mark class="bg-primary/25 rounded-[3px]">Ma</mark>nteiga sem sal 82%</span><span class="block op-micro text-muted-foreground">Compras · insumo · <span class="text-warning font-semibold">4 kg, abaixo do mínimo</span></span></span></a>
+        <a class="h-14 flex items-center gap-3" data-app="orders"><span class="ico size-9 rounded-lg"><i data-i="croissant" class="size-4"></i></span><span class="flex-1 min-w-0"><span class="block text-[14px] font-semibold"><mark class="bg-primary/25 rounded-[3px]">Ma</mark>deleine</span><span class="block op-micro text-muted-foreground">Gestor › Catálogo · produto · R$ 6,50</span></span></a>
+        <p class="op-eyebrow text-muted-foreground pt-3 pb-1.5">Telas</p>
+        <a class="h-12 flex items-center gap-3" data-app="marketing"><span class="ico size-9 rounded-lg"><i data-i="megaphone" class="size-4"></i></span><span class="flex-1 text-[14px]"><mark class="bg-primary/25 rounded-[3px]">Ma</mark>rketing › Campanhas</span><i data-i="arrow-up-right" class="size-4 text-muted-foreground"></i></a>
+      </div>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <span class="pin" style="left:300px;top:112px">1</span>
+  <span class="pin" style="left:396px;top:176px">2</span>
+  <span class="pin" style="left:232px;top:242px">3</span>
+  <span class="pin" style="left:160px;top:456px">4</span>
+  <span class="pin" style="left:872px;top:190px">5</span>
+  <span class="pin" style="left:866px;top:112px">6</span>
+  <span class="pin" style="left:870px;top:254px">7</span>
+  <span class="pin" style="left:620px;top:312px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Shopman Apps · celular · v3 <span>mesma função do desktop, arranjada para o polegar</span></p>
+  <div><b>1</b>Barra superior 56px: selo (troca de app), saudação, ponto ao vivo com a hora, sino com os avisos da suíte.</div>
+  <div><b>2</b>Câmera dentro da busca única: lê o QR do pedido, o EAN do insumo ou a chave da NF e abre o registro certo.</div>
+  <div><b>3</b>"Precisa de você" no topo, mesma lista fina do desktop (até 3 linhas). Toque leva ao lugar certo no app.</div>
+  <div><b>4</b>Apps como linhas grandes (62px): ícone na cor do app, nome, uma linha de estado com ponto. Âmbar só quando pede atenção.</div>
+  <div><b>5</b>Busca em tela cheia com o alcance como chips: "Toda a suíte" no Início, tipos para estreitar (Pedidos, Clientes, Insumos).</div>
+  <div><b>6</b>Botão da câmera fica ao lado do campo, no alcance do polegar; lanterna liga dentro do leitor quando está escuro.</div>
+  <div><b>7</b>Atalho "Ler um código" explícito para quem não sabe o que digitar: o dispositivo faz o trabalho.</div>
+  <div><b>8</b>Resultados agrupados por tipo, com o app de origem e o próximo passo (ligar para a cliente, abrir a tela). Avisos e versão: em Avisos (sino).</div>
+</div>
+</body></html>

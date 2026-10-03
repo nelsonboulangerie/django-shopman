@@ -1,0 +1,42 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="purchase">
+<div class="flex h-[900px] overflow-hidden relative">
+  <!-- Rail v3: trocador de apps + seções do Compras + avisos/atalhos/bloquear -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Compras" icon="package"}}
+    <a class="rail-item"><i data-i="layout-grid"></i>Painel</a>
+    <a class="rail-item"><i data-i="shopping-cart"></i>Comprar<span class="attn"></span></a>
+    <a class="rail-item"><i data-i="package-open"></i>Receber</a>
+    <a class="rail-item on"><i data-i="database"></i>Base</a>
+    {{> rail3bottom bell="3" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Cabeçalho único: título + ao vivo + cadastros + busca + controles; linha 2 = filtro + métricas -->
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Base</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 10:42:08"><span class="live-dot"></span>10:42</span>
+        <div class="w-1"></div>
+        <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1 shrink-0" role="tablist" aria-label="Cadastros da Base">
+          <button class="h-full px-3 rounded bg-card shadow-sm inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="wheat" class="size-4"></i>Insumos <span class="tnum text-muted-foreground font-normal">142</span></button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="truck" class="size-4"></i>Fornecedores</button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="calculator" class="size-4"></i>Custos</button>
+          <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="clipboard-check" class="size-4"></i>Contagem</button>
+        </div>
+        <div class="w-1"></div>
+        {{> search3 w="w-[20rem]" placeholder="Buscar insumo ou SKU"}}
+        <div class="flex-1"></div>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="arrow-down-up" class="size-4"></i>Nome<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="triangle-alert" class="size-4 text-warning"></i>Atenção <span class="tnum text-muted-foreground">120</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <span class="op-eyebrow text-muted-foreground mr-1">Compras hoje</span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="triangle-alert" class="size-4 text-warning"></i><span class="tnum font-semibold">0</span> reposições urgentes</button>
+        <button class="h-10 px-3 rounded-full border border-info/40 bg-info/8 inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="badge-alert" class="size-4 text-info"></i><span class="tnum font-semibold">120</span> sem fornecedor preferencial</button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label whitespace-nowrap"><i data-i="equal-approximately" class="size-4 text-muted-foreground"></i><span class="tnum font-semibold">0</span> custos estimados</button>
+        <span class="ml-auto op-micro text-muted-foreground">Base: referências usadas pelos fluxos de comprar e receber.</span>
+      </div>
+    </header>
+

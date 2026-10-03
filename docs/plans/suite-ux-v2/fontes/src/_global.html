@@ -1,0 +1,11 @@
+<div class="flex items-center gap-2">
+  <button class="h-control w-52 px-3 rounded-md border border-border bg-card text-muted-foreground inline-flex items-center gap-2 op-label font-normal">
+    <i data-i="search" class="size-4"></i><span class="flex-1 text-left">Buscar na suíte</span>
+    <kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-mono">Ctrl K</kbd>
+  </button>
+  <span class="h-control px-3 inline-flex items-center gap-2 rounded-md op-label text-muted-foreground" title="Última leitura {{time}}">
+    <span class="size-2 rounded-full bg-success shadow-[0_0_0_3px_color-mix(in_oklab,var(--success)_22%,transparent)]"></span>Ao vivo <span class="tnum text-foreground/70">{{time}}</span>
+  </span>
+  <button class="size-control rounded-md border border-border bg-card grid place-items-center relative" title="Avisos"><i data-i="bell" class="size-5"></i><span class="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">{{bell}}</span></button>
+  <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Atalhos (?)"><i data-i="keyboard" class="size-5"></i></button>
+</div>
