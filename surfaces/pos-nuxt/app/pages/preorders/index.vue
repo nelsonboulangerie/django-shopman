@@ -2,7 +2,8 @@
 // ENCOMENDAS: a agenda do balcão, numa tela só (redesenho aprovado pelo dono,
 // 28/09/2026; a tela da seção do brief de 02/10). Chega-se aqui pela barra lateral.
 //
-//   Barra               o título e o Período do kit (Dia ou Semana, ‹ › e a data),
+//   Barra               o título e o Período do kit (dia, semana, mês, próximos e
+//                       últimos dias, personalizado; ‹ › e a data),
 //                       o mesmo lugar em que a Produção, o KDS e o B.I. o põem.
 //                       Durante a busca o Período sai: a busca não tem período.
 //   Cliente veio buscar o campo fica SEMPRE no topo e nasce focado: nome,
@@ -35,6 +36,8 @@ import { batchNotice, canPrintBatch, isoDate, printCtaLabel } from "~/presentati
 import { preorderDetailPath } from "~/presentation/preorderDetail";
 import { NEW_ORDER_ROUTE } from "~/presentation/orderSetup";
 import {
+  PREORDERS_MAX_SPAN_DAYS,
+  PREORDERS_PERIOD_PRESETS,
   PREORDERS_SCOPE_NOTE,
   SEARCH_LABEL,
   SEARCH_MIN_CHARS,
@@ -52,6 +55,7 @@ import {
   periodEmptyMessage,
   periodIsToday,
   periodParams,
+  periodSelectionOf,
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
@@ -64,17 +68,13 @@ import {
   toReceiveLine,
   todayFacts,
   todayOf,
+  viewOfPeriod,
   viewPath,
   viewQuery,
   type PreorderFilters,
-  type PreordersMode,
   type PreordersView,
 } from "~/presentation/preorders";
-import {
-  periodAnchor,
-  periodOfDay,
-  type PeriodSelection,
-} from "../../../../operator-kit/app/presentation/dates";
+import type { PeriodSelection } from "../../../../operator-kit/app/presentation/dates";
 import type { PreorderDay } from "~/types/preorders";
 
 useHead({ title: "Encomendas" });
@@ -115,11 +115,11 @@ const showSummary = computed(() => !!summary.value && !periodIsToday(view.value,
 // ── Hoje: do período, quando ele contém hoje; senão, da leitura do selo da barra ──
 const ahead = usePosPreordersAhead();
 const todayLine = computed(() => todayFacts(todayOf(list.value, ahead.value)));
-// O "Período" do kit (Tipo 2) em Dia e Semana: ‹ › andam um dia ou uma semana,
-// e o estado continua na URL (modo + data).
+// O "Período" do kit (Tipo 2): ‹ › andam um período igual ao escolhido, e o
+// estado continua na URL (modo + data, e o fim no personalizado).
 const periodSelection = computed<PeriodSelection>({
-  get: () => periodOfDay(view.value.mode, view.value.date, today),
-  set: (next) => update({ mode: next.preset as PreordersMode, date: periodAnchor(next, today) }),
+  get: () => periodSelectionOf(view.value, today),
+  set: (next) => update(viewOfPeriod(next, today)),
 });
 
 // ── O lote: do que está visível, só as vias que faltam ──
@@ -197,7 +197,9 @@ function refreshAll() {
       <OperatorPeriodPicker
         v-model="periodSelection"
         class="ml-auto min-w-0"
-        :presets="['day', 'week']"
+        :presets="PREORDERS_PERIOD_PRESETS"
+        custom
+        :max-span-days="PREORDERS_MAX_SPAN_DAYS"
         :today="today"
         label="Período das encomendas"
         align="end"
