@@ -122,13 +122,14 @@ guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversati
 (uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
 orçamento vigente `quote`, estado, contadores de turno e tokens) e
 `ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
-`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
-pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve estas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py` (e o desconto, por `discount.py`):
 
 | Chave | Valor | Para quê |
 |---|---|---|
 | `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
 | `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+| `concierge_discount` | `{coupon_code, discount_q, max_percent, conversation_id, at}` | o desconto que a Concierge concedeu nesta sacola (dono, 03/10/2026; `storefront/concierge/discount.py`). Presente = já concedido: é o "uma vez por pedido". `coupon_code` é o cupom `CONCIERGE-…` de uso único que entrou em `coupon_code` pelo caminho do cupom do site; `discount_q` é o que o modifier de fato aplicou; `max_percent` é o teto vigente na hora (texto decimal); `at` em ISO 8601. Não é copiada para o pedido: a origem do desconto no pedido é o cupom (`Order.snapshot.pricing.coupon`) e o evento `concierge_discount` |
 
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
@@ -159,7 +160,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer` ou `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
@@ -176,7 +177,7 @@ cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
 `layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
 laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
-`agent_handoff` (o agente chamou a equipe). `triage.classifier` é `anthropic` ou `jev`; `source` como
+`agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
 `envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
 cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
@@ -189,6 +190,18 @@ e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `a
 `Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
 como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
 Registros anteriores a 03/10/2026 têm `usage = {}`.
+Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
+`purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
+repaired, recorded, violations, replaced?}`. `version` é a versão da tabela (inteiro); `held`,
+`repaired`, `recorded` são listas ordenadas de ids de regra (`R1`…`R14`) pelo efeito: `held`
+(segurada; só aparece aqui quando escapou até a última trava, e vai também para o log
+`concierge.house_rule_unenforced`), `repaired` (palavra consertada, a resposta saiu) e `recorded`
+(só medida, hoje a forma R11 da resposta da casa). `violations` é `[{rule, effect, found}]`, com
+`found` cortado em 80 caracteres (o que R13 acha vira `[dado pessoal omitido]`). As violações consertadas no turno vão no primeiro bloco.
+`replaced` só existe no aviso de handoff que substituiu uma resposta segurada em `run_turn`: é o
+mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Conversation.handoff_reason`
+começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
@@ -1172,6 +1185,15 @@ Lido por: `setup.py` (registro), validators, modifiers.
 | `auto_sync_fulfillment` | `bool` | `False` | Sync automático fulfillment → order status |
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
+
+### Pricing — preço do canal e desconto da Concierge
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
+| `concierge_discount_max_percent` | `number` | `2` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola; `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+
+Lido por: `storefront/concierge/discount.py`.
 
 ### 8. Display — como um canal `display` exibe
 

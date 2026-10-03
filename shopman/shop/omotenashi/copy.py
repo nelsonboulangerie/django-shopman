@@ -1167,7 +1167,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ``Shop``, nunca copy fixa; tenant é config, não código).
     "CONCIERGE_GREETING": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Olá, aqui é o concierge da {shop_name}, um assistente da casa. O que você gostaria de pedir hoje?",
+            message="Olá, aqui é a concierge da {shop_name}, uma assistente da casa. O que você gostaria de pedir hoje?",
         )},
     },
     # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
@@ -1213,7 +1213,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
+            message="Nossa concierge está fora do ar por alguns minutos, e a equipe já foi avisada. Se preferir, peça pelo site.",
         )},
     },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
@@ -1228,7 +1228,48 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_TURN_LIMIT": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Chegamos ao limite de mensagens do assistente por hoje nesta conversa. A equipe segue com você por aqui, ou, se preferir, o pedido pode ser feito pelo site.",
+            message="Chegamos ao limite de mensagens automáticas por hoje nesta conversa. Para continuar, peça pelo site ou escreva \"quero falar com a equipe\".",
+        )},
+    },
+    # Regras da casa (``shopman/storefront/concierge/house_rules.py``): as frases
+    # fixas de R7 (nunca negociar preço) e R8 (diz que é a assistente da casa).
+    # Nenhuma promete ação: a equipe fica a uma frase, pedida pelo cliente.
+    "CONCIERGE_PRICE_NEGOTIATION": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Preço e condição especial quem decide é a equipe da casa, e eu não consigo negociar por aqui. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_IDENTITY": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    # Desconto da Concierge (dono, 03/10/2026; ``storefront/concierge/discount.py``):
+    # até o teto da casa, como cupom do site. Os valores vêm do sistema
+    # ({before}, {after}); acima do teto, quem decide é a equipe (R7).
+    "CONCIERGE_DISCOUNT_GRANTED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Consegui um arredondamento para você 💛 O total passa de {before} para {after}.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Mais do que isso quem decide é a equipe da casa. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Neste pedido eu já fiz o arredondamento que está ao meu alcance. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Seu pedido já tem um cupom aplicado, e vale um cupom por pedido. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_NO_CART": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quando o pedido estiver montado, posso arredondar o total para você, dentro do que a casa permite. O que você gostaria de pedir?",
         )},
     },
     "CONCIERGE_NO_PHONE": {
