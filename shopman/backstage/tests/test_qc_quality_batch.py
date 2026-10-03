@@ -346,3 +346,26 @@ def test_exception_lot_is_confirmed_one_by_one_and_correction_needs_a_real_reaso
     assert fixed.status_code == 200, fixed.content
     event = WorkOrderEvent.objects.get(work_order=loss, kind=WorkOrderEvent.Kind.QUALITY_CORRECTED)
     assert reason in str(event.payload)
+
+
+@pytest.mark.django_db
+def test_card_carries_the_output_unit_so_grams_are_not_summed_with_pieces(recipes, monkeypatch):
+    """Lote de preparo medido em gramas e pão contado em peças chegam à tela
+    com a unidade de cada um (UX-P1b): o cartão do conjunto limpo agrupa por ela."""
+    from shopman.offerman.models import Product
+
+    Product.objects.create(sku="LOTE-0", name="Pão 0", unit="un", base_price_q=1000)
+    dough = Recipe.objects.create(
+        ref="massa-lote",
+        name="Massa Tradição",
+        output_sku="MASSA-LOTE",
+        batch_size=Decimal("1000"),
+        meta={"output_unit": "g"},
+    )
+    bread = _finished(recipes[0], monkeypatch)
+    dough_wo = _finished(dough, monkeypatch)
+
+    cards = {card.pk: card for card in build_qc_kiosk(selected_date=date.today()).orders}
+
+    assert cards[bread.pk].output_unit == "un"
+    assert cards[dough_wo.pk].output_unit == "g"

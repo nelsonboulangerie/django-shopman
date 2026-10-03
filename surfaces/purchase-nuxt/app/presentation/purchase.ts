@@ -10,6 +10,7 @@ import type {
   MaterialIssue,
   MaterialTone,
   ReceiptBlocker,
+  ReceiptConferenceTally,
   ReceiptConversionSuggestion,
   ReceiptExceptionView,
   ReceiptExpiryShortcut,
@@ -523,6 +524,29 @@ export function receiptOutcomeSummary(outcome: ReceiptOutcome): string {
   if (outcome.totalCostQ > 0) parts.push(formatMoney(outcome.totalCostQ));
   if (outcome.supplierName) parts.push(outcome.supplierName);
   return parts.join(" · ");
+}
+
+/**
+ * A linha veio da nota já na unidade-base do insumo?
+ *
+ * O leitor de NF-e responde isso, e não a tela: quando a unidade da nota
+ * alcança a base pela física (a própria base, ou kg↔g, l↔ml), o servidor já
+ * converte a quantidade e devolve a linha sem conversão e sem pedir uma
+ * (`conversionId: null`, `requiresConversion: false`). Aplicar a embalagem
+ * padrão do insumo por cima multiplicava de novo: "5 KG" de creme de leite
+ * virava "5.000 × litros = 5.050.000 g".
+ */
+export function receiptLineInBaseUnit(line: ReceiptLine): boolean {
+  return Boolean(line.invoiceUnit) && !line.conversionId && !line.requiresConversion;
+}
+
+/**
+ * A conversão que a linha recebe quando ninguém escolheu uma: a primeira das
+ * candidatas, salvo quando a nota já veio na unidade-base (aí nenhuma).
+ */
+export function receiptDefaultConversionId(line: ReceiptLine, candidates: MaterialConversion[]): string | null {
+  if (receiptLineInBaseUnit(line)) return null;
+  return candidates[0]?.id ?? null;
 }
 
 /**
@@ -1103,7 +1127,16 @@ function formatDecimalPtBr(value: string): string {
 /** Os motivos de diferença, em lista curta. Gravam na ocorrência da linha. */
 export const RECEIPT_DIFFERENCE_REASONS = ["Faltou", "Avariado", "Trocado", "Outro"] as const;
 
-const MEASURE_UNITS = new Set(["mg", "g", "kg", "ml", "l", "lt", "lts", "litro", "litros", "liter", "liters"]);
+const MASS_UNITS = new Set(["mg", "g", "kg"]);
+const VOLUME_UNITS = new Set(["ml", "l", "lt", "lts", "litro", "litros", "liter", "liters"]);
+const MEASURE_UNITS = new Set([...MASS_UNITS, ...VOLUME_UNITS]);
+
+/** As duas unidades são peso, ou as duas são volume: a física leva uma à outra. */
+function sameMeasureDimension(first: string | undefined, second: string | undefined): boolean {
+  const a = (first ?? "").trim().toLowerCase();
+  const b = (second ?? "").trim().toLowerCase();
+  return (MASS_UNITS.has(a) && MASS_UNITS.has(b)) || (VOLUME_UNITS.has(a) && VOLUME_UNITS.has(b));
+}
 
 function sameQty(a: number, b: number): boolean {
   return Math.abs(a - b) < 1e-9;
@@ -1147,6 +1180,10 @@ export function receiptLineMatchesInvoice(preview: ReceiptLinePreview, mode: Rec
   const line = preview.line;
   if (preview.warnings.some((warning) => warning.tone === "block" && warning.key !== "missing-expiry")) return false;
   if (preview.conversionDiverges) return false;
+  // A nota veio em peso ou volume que já alcança a base (o leitor converteu a
+  // quantidade). Uma embalagem escolhida por cima multiplica de novo: isso não
+  // bate com a nota, pede o ok da linha. O servidor recusa igual.
+  if (preview.conversion && sameMeasureDimension(line.invoiceUnit, preview.material.unit)) return false;
   const invoiceQty = line.invoicePurchaseQty;
   if (invoiceQty === null || invoiceQty === undefined || !(invoiceQty > 0) || !sameQty(line.purchaseQty, invoiceQty)) {
     return false;
@@ -1205,6 +1242,32 @@ export function receiptExpiryShortcuts(material: Material, today: string): Recei
     }
   }
   return shortcuts;
+}
+
+/**
+ * Quantos itens estão prontos para entrar, e o que ainda falta, numa frase.
+ *
+ * Era "3 de 3 conferidos" com os três itens em "Pendente": a contagem de
+ * volumes assina a QUANTIDADE, mas a validade continua incontornável, e o selo
+ * do `Confirmar entrada` dizia o contrário do cabeçalho. Agora pronto é o que
+ * entra se confirmar agora: assinado (ok da linha, ou batendo com a nota com os
+ * volumes contados) e sem bloqueio nenhum.
+ */
+export function receiptConferenceTally(
+  previews: ReceiptLinePreview[],
+  matchedIds: ReadonlySet<string>,
+  countOk: boolean,
+): ReceiptConferenceTally {
+  const total = previews.length;
+  const ready = previews.filter(
+    (preview) =>
+      (preview.line.checked || (countOk && matchedIds.has(preview.line.id))) &&
+      !preview.warnings.some((warning) => warning.tone === "block"),
+  ).length;
+  const missingExpiry = previews.filter((preview) => preview.needsExpiry).length;
+  const parts = [`${ready} de ${total} prontos para entrar`];
+  if (missingExpiry > 0) parts.push(`falta a validade de ${missingExpiry}`);
+  return { total, ready, missingExpiry, label: total ? parts.join(" · ") : "Nenhum item ainda" };
 }
 
 /** A conferência por exceção da entrada: o que bate, o que não bate, e o passo da vez. */

@@ -682,3 +682,18 @@ export interface ReceiptExceptionView {
   /** O passo da vez: contar, validade, resolver exceção, ou pronto. */
   step: "count" | "expiry" | "exceptions" | "done";
 }
+
+/**
+ * A contagem do cabeçalho "Itens da entrada", dita sem mentir.
+ *
+ * `ready` só conta o item que entra se o operador confirmar agora: assinado
+ * (ok da linha ou contagem de volumes que fechou) E sem nada que bloqueie,
+ * validade inclusa. Bater com a nota não é estar pronto.
+ */
+export interface ReceiptConferenceTally {
+  total: number;
+  ready: number;
+  /** Perecíveis ainda sem validade. */
+  missingExpiry: number;
+  label: string;
+}

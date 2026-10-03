@@ -101,7 +101,7 @@ function productQty(sku: string): number {
 // F3 focuses the search field (the shell owns the shortcut, the grid the field).
 // `seed` é o search-as-you-type: uma letra digitada fora de input começa uma
 // busca NOVA com aquele caractere (as teclas seguintes já caem no campo focado).
-const searchInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const searchInputRef = ref<{ inputRef?: HTMLInputElement | null } | null>(null);
 function focusSearch(seed?: string) {
   if (seed !== undefined) search.value = seed;
   searchInputRef.value?.inputRef?.focus();
@@ -135,11 +135,7 @@ function onSearchEscape() {
 <template>
   <section class="flex h-full min-h-0 flex-col gap-3">
     <div class="flex shrink-0 items-center gap-2">
-      <div class="relative flex-1">
-        <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
-        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">F3</OperatorKbd>
-      </div>
+      <PosSearchField ref="searchInputRef" v-model="search" kbd="F3" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
       <UiButton
         variant="outline"
         size="icon"
