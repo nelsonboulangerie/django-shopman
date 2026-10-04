@@ -55,7 +55,7 @@ function signed(value: number): string {
     <div>
       <p class="text-xs font-medium text-muted-foreground">Por quê?</p>
       <UiRadioGroup
-        class="mt-1 grid-cols-2 sm:grid-cols-4"
+        class="mt-1 grid-cols-2"
         label="Motivo da diferença"
         :model-value="chosen"
         :options="reasonOptions"

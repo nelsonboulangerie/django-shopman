@@ -153,7 +153,7 @@ const KNOWN_INERT: Record<string, string[]> = {
   "pos-nuxt/app/pages/session/report.vue": ["goToCashSession"],
   "production-nuxt/app/components/ProductionStageGrid.vue": ["confirmVoid"],
   "production-nuxt/app/pages/board.vue": ["toggleFullscreen"],
-  "purchase-nuxt/app/pages/index.vue": ["addAndOpenReceiptLine", "focusReceiptLine", "toggleScannerTorch"],
+  "purchase-nuxt/app/pages/index.vue": ["addAndOpenReceiptLine", "toggleScannerTorch"],
 };
 
 describe("clique nunca inerte (layer + apps de operador)", () => {

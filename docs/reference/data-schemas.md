@@ -1699,6 +1699,7 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 |-------|------|-------------|----------|-----------|
 | `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
 | `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
+| `purchase.eans` | `list[str]` (GTIN-8/12/13/14, dígito verificador conferido) | `_learn_material_eans` em `confirm_receipt` (`backstage/services/purchase.py`): o EAN lido na embalagem (`scannedEan` da linha, "Ler EAN") e os da nota (`invoiceEan`, `invoicePackageEan`) de toda linha confirmada | `_material_projection` (`eans`); "Ler EAN" do Receber (`presentation/scanning.ts`) | **Os códigos de barras que já chegaram com este insumo e foram conferidos.** Só acrescenta (sem duplicar, na ordem em que apareceram); quem confirma o item é a fonte. É o que permite à câmera do recebimento achar o item da caixa sem a nota dizer. |
 | `purchase.request_status` | `str` | `set_purchase_request_status` | projection (`purchaseRequestStatuses`) | `review` \| `approved` \| `sent`. Não há model de solicitação: o estado mora aqui. |
 | `purchase.request_status_at` | `str` ISO 8601 | `set_purchase_request_status` | auditoria | Quando o status mudou. |
 | `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
@@ -2350,6 +2351,30 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
 - Entrada divergente (mesmo `cProd` apontando para outro insumo) é
   substituída — a confirmação do operador é a verdade mais fresca — com
   `warning` estruturado `purchase.invoice_product_map_overwrite`.
+
+### `purchase.receipt_volume_counts`
+
+A contagem de volumes na doca, por NF ainda não confirmada (o operador conta os
+volumes antes de conferir item a item; a contagem sobrevive à troca de dispositivo).
+
+```json
+{
+  "purchase": {
+    "receipt_volume_counts": {
+      "<chave da NF, 44 dígitos>": {"counted": 12, "counted_by": "ana", "counted_at": "2026-10-04T09:12:00-03:00"}
+    }
+  }
+}
+```
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `receipt_volume_counts.<chave>` | `{counted: int, counted_by: str, counted_at: ISO str}` | `backstage/services/purchase.py::save_receipt_volumes` (`POST purchase/receipts/volumes/`) | `counted_receipt_volumes` (scan da NF e `ActiveReceiptProjection.volumesCounted`) |
+
+- O fornecedor é o do CNPJ embutido na chave da NF; sem fornecedor cadastrado, a
+  gravação recusa com `supplier_not_found`.
+- A entrada sai do mapa quando a NF é confirmada ou quando o operador desfaz a contagem
+  (`forget_receipt_volumes`).
 
 O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
