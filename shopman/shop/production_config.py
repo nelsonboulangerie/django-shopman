@@ -42,6 +42,11 @@ class ProductionConfig:
         safety_stock_percent: str | None = None
         # Decimal-string (ex: "0.20") — margem sobre (demanda + committed).
         # None = default do Core (CRAFTSMAN["SAFETY_STOCK_PERCENT"]).
+        season_min_samples: int = 3
+        # Dias-amostra da estação corrente, na janela do histórico, abaixo dos
+        # quais a sugestão usa o histórico da estação anterior. É o começo de
+        # estação: a janela ainda está quase toda na estação que acabou, e sem
+        # essa troca a sugestão sumiria por semanas. 0 = desligado.
 
         @property
         def high_demand_multiplier_decimal(self) -> Decimal | None:
@@ -56,6 +61,31 @@ class ProductionConfig:
             for months in (self.seasons or {}).values():
                 if isinstance(months, list) and month in months:
                     return [int(m) for m in months]
+            return None
+
+        def season_name_for(self, month: int) -> str | None:
+            """Nome da estação que contém ``month`` (None = fora de estação)."""
+            for name, months in (self.seasons or {}).items():
+                if isinstance(months, list) and month in months:
+                    return str(name)
+            return None
+
+        def previous_season_for(self, month: int) -> tuple[str | None, list[int] | None] | None:
+            """A estação que veio antes da que contém ``month``.
+
+            Anda para trás, mês a mês, até sair da estação corrente: o primeiro
+            mês fora dela diz qual estação acabou. Devolve ``(nome, meses)``; mês
+            que não pertence a estação nenhuma volta ``(None, None)`` (histórico
+            sem filtro). None quando ``month`` não tem estação ou quando uma
+            estação sozinha cobre o ano inteiro (não há anterior).
+            """
+            current = self.season_months_for(month)
+            if current is None:
+                return None
+            for step in range(1, 12):
+                previous_month = (month - step - 1) % 12 + 1
+                if previous_month not in current:
+                    return self.season_name_for(previous_month), self.season_months_for(previous_month)
             return None
 
     # ── 2. Alertas ──
@@ -225,6 +255,9 @@ class ProductionConfig:
             if overlap:
                 raise ValueError("production.suggestion.seasons não pode atribuir o mesmo mês a mais de uma estação")
             assigned_months.update(months)
+        min_samples = self.suggestion.season_min_samples
+        if not isinstance(min_samples, int) or isinstance(min_samples, bool) or min_samples < 0:
+            raise ValueError("production.suggestion.season_min_samples deve ser inteiro >= 0")
         _require_decimal_or_none(
             self.suggestion.high_demand_multiplier,
             "production.suggestion.high_demand_multiplier",

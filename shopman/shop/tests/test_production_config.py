@@ -133,6 +133,30 @@ class TestSuggestion:
     def test_season_months_for_without_seasons(self):
         assert ProductionConfig().suggestion.season_months_for(3) is None
 
+    def test_previous_season_walks_back_from_the_current_one(self):
+        config = ProductionConfig.from_dict(
+            {"suggestion": {"seasons": {"hot": [10, 11, 12, 1, 2, 3], "mild": [4, 5, 9], "cold": [6, 7, 8]}}}
+        )
+        # Outubro abre a quente: a anterior é a amena (setembro).
+        assert config.suggestion.previous_season_for(10) == ("mild", [4, 5, 9])
+        # Fevereiro ainda é quente: a anterior continua sendo a amena.
+        assert config.suggestion.previous_season_for(2) == ("mild", [4, 5, 9])
+        assert config.suggestion.previous_season_for(6) == ("mild", [4, 5, 9])
+        assert config.suggestion.previous_season_for(9) == ("cold", [6, 7, 8])
+        assert config.suggestion.season_name_for(10) == "hot"
+
+    def test_previous_season_outside_any_season_is_unfiltered(self):
+        config = ProductionConfig.from_dict({"suggestion": {"seasons": {"hot": [12, 1, 2]}}})
+        assert config.suggestion.previous_season_for(12) == (None, None)
+
+    def test_previous_season_none_without_current_or_full_year(self):
+        assert ProductionConfig().suggestion.previous_season_for(10) is None
+        full = ProductionConfig.from_dict({"suggestion": {"seasons": {"all": list(range(1, 13))}}})
+        assert full.suggestion.previous_season_for(10) is None
+
+    def test_season_min_samples_default(self):
+        assert ProductionConfig().suggestion.season_min_samples == 3
+
     def test_decimal_properties_none_when_unset(self):
         config = ProductionConfig()
         assert config.suggestion.high_demand_multiplier_decimal is None
@@ -153,6 +177,9 @@ class TestValidation:
                 {"suggestion": {"seasons": {"hot": [1, 2], "mild": [2, 3]}}},
                 "mesmo mês",
             ),
+            ({"suggestion": {"season_min_samples": -1}}, "season_min_samples"),
+            ({"suggestion": {"season_min_samples": "3"}}, "season_min_samples"),
+            ({"suggestion": {"season_min_samples": True}}, "season_min_samples"),
             ({"suggestion": {"high_demand_multiplier": "abc"}}, "high_demand_multiplier"),
             ({"suggestion": {"high_demand_multiplier": "-1"}}, "high_demand_multiplier"),
             ({"suggestion": {"safety_stock_percent": "x"}}, "safety_stock_percent"),

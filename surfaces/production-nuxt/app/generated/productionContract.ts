@@ -187,6 +187,8 @@ export interface ProductionSuggestionProjection {
   waste_discounted: boolean;
   material_shortages: SuggestionMaterialShortageProjection[];
   fits_quantity: string;
+  season_fallback: boolean;
+  current_season_label: string;
 }
 
 /** A high-volume production matrix row grouped by SKU. */

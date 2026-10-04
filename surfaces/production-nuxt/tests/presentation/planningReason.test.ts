@@ -33,6 +33,8 @@ function suggestion(
     safety_percent: 4,
     same_weekday: true,
     season_label: "",
+    season_fallback: false,
+    current_season_label: "",
     soldout_days: 0,
     waste_percent: 0,
     waste_discounted: false,
@@ -154,6 +156,30 @@ describe("suggestionHistory: o que a média sozinha não conta", () => {
       "Histórico só da estação quente",
     ]);
     expect(lines[1]!.note).toBe("a média já desconta essa sobra");
+  });
+
+  it("começo de estação diz que usou a anterior e qual ainda falta", () => {
+    const lines = suggestionHistory(
+      suggestion({
+        season_fallback: true,
+        season_label: "estação amena",
+        current_season_label: "estação quente",
+      }),
+      SATURDAY,
+    );
+    expect(lines.map((line) => line.text)).toEqual([
+      "Baseado na estação amena, ainda sem histórico da estação quente",
+    ]);
+  });
+
+  it("começo de estação sem nome conhecido ainda diz que é a anterior", () => {
+    const lines = suggestionHistory(
+      suggestion({ season_fallback: true }),
+      SATURDAY,
+    );
+    expect(lines.map((line) => line.text)).toEqual([
+      "Baseado na estação anterior, ainda sem histórico desta",
+    ]);
   });
 
   it("sobra abaixo do teto aparece sem dizer que foi descontada", () => {
