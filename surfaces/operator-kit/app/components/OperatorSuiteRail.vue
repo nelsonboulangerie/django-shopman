@@ -65,6 +65,13 @@ const showAppImage = computed(() => Boolean(identity?.iconSrc) && !appIconBroken
 
 const route = useRoute();
 const active = computed(() => props.current ?? activeSectionKey(route.path, props.sections));
+// v4: a operação em cima (com o rótulo do grupo); Ajustes no pé, longe da fila.
+const topSections = computed(() => props.sections.filter((section) => !section.foot));
+const footSections = computed(() => props.sections.filter((section) => section.foot));
+function groupStarts(index: number): string {
+  const group = topSections.value[index]?.group;
+  return group && topSections.value[index - 1]?.group !== group ? group : "";
+}
 
 const { attrsFor } = useOperatorAppLink();
 const hubLink = computed(() => attrsFor(props.hubUrl || ""));
@@ -143,8 +150,28 @@ function hideRail() {
     <div class="mb-2 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
 
     <nav class="flex flex-col items-center gap-1" :aria-label="label">
+      <template v-for="(section, index) in topSections" :key="section.key">
+        <p v-if="groupStarts(index)" class="mt-0.5 mb-1 text-[9px] leading-none font-semibold tracking-[0.09em] uppercase opacity-[.62]" data-rail-group>{{ groupStarts(index) }}</p>
+        <RailSection
+          :icon="section.icon"
+          :label="section.label"
+          :to="section.to"
+          :active="active === section.key"
+          :badge="section.badge"
+          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :attention="section.attention"
+          :shortcut="section.shortcut"
+          :data-section="section.key"
+          @activate="emit('select', section.key)"
+        />
+      </template>
+    </nav>
+
+    <div class="flex-1" />
+
+    <nav v-if="footSections.length" class="flex flex-col items-center gap-1" :aria-label="`${label}: ajustes`">
       <RailSection
-        v-for="section in sections"
+        v-for="section in footSections"
         :key="section.key"
         :icon="section.icon"
         :label="section.label"
@@ -157,9 +184,8 @@ function hideRail() {
         :data-section="section.key"
         @activate="emit('select', section.key)"
       />
+      <div class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
     </nav>
-
-    <div class="flex-1" />
 
     <div class="flex flex-col items-center gap-1">
       <!-- O que é do app no pé (avisos, alertas). -->

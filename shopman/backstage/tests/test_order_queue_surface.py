@@ -210,7 +210,7 @@ class OrderQueueSurfaceTests(TestCase):
         expected_labels = {
             "accepted": "Iniciar preparo",
             "preparing": "Marcar pronto",
-            "dispatched": "Marcar como Entregue",
+            "dispatched": "Marcar como entregue",
             "delivered": "Concluir",
         }
 
@@ -222,7 +222,7 @@ class OrderQueueSurfaceTests(TestCase):
 
         pickup_ready = build_order_card(_order("A-ready-pickup", "ready", "pickup"))
         delivery_ready = build_order_card(_order("A-ready-delivery", "ready", "delivery"))
-        self.assertEqual(pickup_ready.next_action_label, "Marcar como Retirado")
+        self.assertEqual(pickup_ready.next_action_label, "Marcar como retirado")
         self.assertEqual(delivery_ready.next_action_label, "Marcar saída para entrega")
 
     def test_new_orders_keep_confirm_or_reject_as_the_only_primary_decision(self) -> None:

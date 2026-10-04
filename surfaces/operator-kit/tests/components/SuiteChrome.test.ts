@@ -54,6 +54,24 @@ describe("OperatorSuiteRail", () => {
     expect(items[0]!.attributes("aria-current")).toBeUndefined();
   });
 
+  it("dois andares (v4): o rótulo do grupo uma vez, e a seção do pé longe da operação", async () => {
+    const wrapper = await mountRail({
+      sections: [
+        { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: "/", group: "Operação" },
+        { key: "exit", label: "Saída", icon: "lucide:package-check", to: "/?columns=expedition", group: "Operação" },
+        { key: "settings", label: "Ajustes", icon: "lucide:settings-2", to: "/settings", foot: true, attention: "1 desligado" },
+      ],
+      current: "settings",
+    });
+    const navs = wrapper.findAll("nav");
+    expect(navs[0]!.findAll("[data-rail-group]").map((g) => g.text())).toEqual(["Operação"]);
+    expect(navs[0]!.findAll("[data-rail-section]").map((s) => s.attributes("data-section"))).toEqual(["orders", "exit"]);
+    const foot = navs[1]!;
+    expect(foot.attributes("aria-label")).toBe("Seções do Gestor: ajustes");
+    expect(foot.get("[data-section='settings']").attributes("aria-current")).toBe("page");
+    expect(foot.get("[data-section='settings']").attributes("aria-label")).toBe("Ajustes: 1 desligado");
+  });
+
   it("o selo é visual; o que ele conta vai por extenso no nome acessível", async () => {
     const wrapper = await mountRail();
     const orders = wrapper.get("nav [data-section='orders']");

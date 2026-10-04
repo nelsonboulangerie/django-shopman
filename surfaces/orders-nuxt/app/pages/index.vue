@@ -15,6 +15,7 @@ import {
   fulfillmentCounts,
   lucideIcon,
   moneyInput,
+  nextOutRef,
   nextSort,
   oneTapDispatch,
   realtimeIndicator,
@@ -23,10 +24,12 @@ import {
   SORT_OPTIONS,
   splitRef,
   statusTone,
+  stripSummary,
   timerChip,
   timerTone,
   toneBadge,
   triageCards,
+  waitingStripText,
   zoneEmptyText,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
@@ -139,6 +142,18 @@ const triagedPreorders = computed(() =>
 const preordersCount = computed(() => triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0));
 
 // ── bulk selection (Arc 4) ──────────────────────────────────────────────────
+// Seleção em lote é um MODO (UX-KIT-V2, prévia v4): a caixa saiu do cartão; liga pelo ⋯
+// do cabeçalho, pelo ⋯ do cartão ou pelo toque longo, e a barra de ação aparece em cima.
+const selectingMode = ref(false);
+const selecting = computed(() => selectingMode.value || selected.value.size > 0);
+function startSelection(ref_?: string) {
+  selectingMode.value = true;
+  if (ref_ && !selected.value.has(ref_)) selected.value = new Set([...selected.value, ref_]);
+}
+function stopSelection() {
+  selectingMode.value = false;
+  selected.value = new Set();
+}
 const isSelected = (ref_: string) => selected.value.has(ref_);
 function toggleSelect(ref_: string) {
   const next = new Set(selected.value);
@@ -173,8 +188,14 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(async () =
 
 // sort menu (house pattern: button + backdrop + absolute panel).
 const sortOpen = ref(false);
-// ⋯ da fila: exportar e imprimir.
+// ⋯ da fila: atualizar, Ciente, seleção, exportar e imprimir (e, no posto Saída e no
+// celular, também ordenar, a visão e o som).
 const moreOpen = ref(false);
+const channelOpen = ref(false);
+function menuDo(fn: () => void, close = true) {
+  if (close) moreOpen.value = false;
+  fn();
+}
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = useMediaQuery("(max-width: 767.98px)");
 // Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
@@ -200,14 +221,83 @@ const boardLayout = useBoardLayout(() => zoneTitles.value);
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
 // `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
-onMounted(() => {
-  if (route.query[BOARD_COLUMNS_QUERY] !== "expedition") return;
-  boardLayout.showOnly("expedition");
+// O rail usa o mesmo parâmetro: "Pedidos" abre as três colunas (`?columns=all`) e
+// "Saída" abre o posto do passe, inclusive com o quadro já na tela.
+function applyColumnsQuery() {
+  const wanted = route.query[BOARD_COLUMNS_QUERY];
+  if (wanted !== "expedition" && wanted !== "all") return;
+  if (wanted === "expedition") boardLayout.showOnly("expedition");
+  else boardLayout.showAll();
+  // No celular as colunas são abas: "Saída" abre a aba da Saída; "Pedidos", a da vez.
+  pickedZone.value = wanted === "expedition" ? "expedition" : null;
   const { [BOARD_COLUMNS_QUERY]: _applied, ...rest } = route.query;
   void router.replace({ path: route.path, query: rest });
-});
+}
+onMounted(applyColumnsQuery);
+watch(() => route.query[BOARD_COLUMNS_QUERY], () => { if (route.path === "/") applyColumnsQuery(); });
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
 const touchCards = computed(() => viewMode.value === "board" && boardLayout.exitPost.value);
+const exitPostView = computed(() => viewMode.value === "board" && boardLayout.exitPost.value && !isPhone.value);
+// Tablet em pé (e o posto Saída): a linha de cima fica com o essencial; ordenar e a
+// visão entram no ⋯, para o cabeçalho não quebrar em duas linhas.
+// Só depois de montar: o servidor não sabe a largura, e classe divergente na hidratação
+// não é corrigida pelo Vue (o campo ficaria com a largura do servidor).
+const isNarrow = useMediaQuery("(max-width: 1023.98px)");
+const mounted = ref(false);
+onMounted(() => { mounted.value = true; });
+const compactHeader = computed(() => mounted.value && (exitPostView.value || (isNarrow.value && !isPhone.value)));
+
+// O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
+// acende "Saída" quando o posto está só com ela. Fora do quadro os selos somem.
+const rail = useGestorRail();
+watch(
+  () => ({
+    exitPost: isPhone.value ? phoneZone.value === "expedition" : boardLayout.exitPost.value,
+    intake: zones.value.find((z) => z.key === "intake")?.count ?? 0,
+    exit: zones.value.find((z) => z.key === "expedition")?.count ?? 0,
+  }),
+  (next) => { rail.value = { onBoard: true, ...next }; },
+  { immediate: true },
+);
+onBeforeUnmount(() => { rail.value = { ...rail.value, onBoard: false, exitPost: false }; });
+
+// A Saída larga (posto do passe): uma grade de cartões de altura igual em duas linhas,
+// como na v4; o que não cabe vira a faixa "+N esperando" e aparece quando um sair. A
+// faixa abre todos (nunca paginação, nunca cartão inalcançável).
+const exitGrid = ref<HTMLElement | null>(null);
+function setExitGrid(el: unknown) {
+  exitGrid.value = el instanceof HTMLElement ? el : null;
+}
+const EXIT_FILTERS = [
+  { key: "all", label: "Todos", icon: "lucide:check" },
+  { key: "pickup", label: "Retirada", icon: "lucide:store" },
+  { key: "delivery", label: "Entrega", icon: "lucide:bike" },
+] as const;
+const { width: exitGridWidth } = useElementSize(exitGrid);
+const exitShowAll = ref(false);
+const exitCapacity = computed(() => {
+  const width = exitGridWidth.value;
+  if (!width) return 6;
+  const columns = Math.max(1, Math.floor((width + 12) / (272 + 12)));
+  return columns * 2;
+});
+function exitCards(zone: ZoneView) {
+  const cards = triaged(zone);
+  return exitShowAll.value ? cards : cards.slice(0, exitCapacity.value);
+}
+function exitOverflow(zone: ZoneView) {
+  return exitShowAll.value ? [] : triaged(zone).slice(exitCapacity.value);
+}
+const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+function zoneNext(zone: ZoneView): string {
+  return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
+}
+// Onde a arrumação do posto mora (a frase curta da v4).
+const layoutMemory = computed(() => {
+  if (!boardLayout.station.value) return "vale até recarregar a tela";
+  if (boardLayout.saveFailed.value) return "não deu para guardar neste posto";
+  return "lembrada neste posto · salva no servidor";
+});
 // A coluna sozinha na tela (posto Saída) usa a largura: grade de cartões, não fila única.
 function wideColumn(key: string): boolean {
   return !isPhone.value && key === "expedition" && boardLayout.exitPost.value;
@@ -237,6 +327,13 @@ const shortcutHint = (key: string) => String(BOARD_ZONE_KEYS.indexOf(key as (typ
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Esc fecha primeiro o painel aberto (⋯, ordenar, canal); só depois limpa os recortes.
+  if (e.key === "Escape" && (moreOpen.value || sortOpen.value || channelOpen.value)) {
+    moreOpen.value = false;
+    sortOpen.value = false;
+    channelOpen.value = false;
+    return;
+  }
   const el = e.target as HTMLElement | null;
   const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   const column = viewMode.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
@@ -266,6 +363,7 @@ function onKeydown(e: KeyboardEvent) {
       sort.value = nextSort(sort.value);
       break;
     case "clear-filters":
+      if (selecting.value && !typing) stopSelection();
       query.value = "";
       channel.value = "all";
       fulfillment.value = "all";
@@ -460,10 +558,13 @@ function printQueue() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-board3.html`): título +
-         ao vivo + busca única + controles; os recortes na segunda linha. -->
-    <OperatorPageHeader title="Pedidos">
+  <main class="flex min-h-0 flex-1 flex-col" :class="exitPostView ? 'h-dvh max-h-dvh' : ''">
+    <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
+         busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
+         a seleção em lote e a última leitura útil moram no ⋯; Ciente aparece aqui só
+         enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
+         "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
+    <OperatorPageHeader title="Pedidos" :eyebrow="exitPostView && boardLayout.station.value ? 'Posto Saída · este dispositivo' : ''">
       <template #status>
         <OperatorLiveStatus
           :tone="liveTone"
@@ -475,8 +576,9 @@ function printQueue() {
       <template #search>
         <UiSearchInput
           ref="searchInput"
+          :class="compactHeader ? 'suite:md:w-[15rem]!' : ''"
           :model-value="query"
-          placeholder="Buscar pedido, cliente ou item"
+          :placeholder="exitPostView ? 'Código ou cliente' : 'Buscar pedido, cliente ou item'"
           aria-label="Buscar por código, cliente ou item (atalho: /)"
           shortcut="/"
           @update:model-value="(v) => (query = v)"
@@ -485,32 +587,45 @@ function printQueue() {
       <template #phone-actions>
         <GestorPhoneBells />
       </template>
-      <template #actions>
-        <!-- a visão deste posto, discreta, e o caminho de volta às três colunas -->
-        <template v-if="viewMode === 'board' && !boardLayout.allOpen.value">
+      <template v-if="!isPhone" #actions>
+        <!-- No posto Saída a faixa da Entrada pulsa e o Ciente fica no ⋯ (a linha da v4
+             não tem lugar para ele ao lado da busca, no tablet). -->
+        <button
+          v-if="attentionPending && !exitPostView && !isPhone"
+          type="button"
+          class="inline-flex h-control items-center gap-2 rounded-md border border-primary/50 bg-primary/10 px-3 op-label font-semibold transition hover:bg-primary/15"
+          aria-label="Reconhecer aviso de pedido novo"
+          @click="acknowledgeAttention"
+        >
+          <Icon name="lucide:check" class="size-4" />
+          Ciente
+        </button>
+        <!-- a visão deste posto e o caminho de volta às três colunas -->
+        <template v-if="viewMode === 'board' && !boardLayout.allOpen.value && !isPhone">
           <span
-            class="hidden h-control items-center gap-1.5 rounded-md border border-border bg-secondary px-3 op-label text-muted-foreground lg:inline-flex"
+            class="hidden h-control items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3.5 op-label lg:inline-flex"
             :title="boardLayout.memoryText.value"
             data-board-view-label
           >
-            <Icon name="lucide:panel-left-close" class="size-4" aria-hidden="true" />
-            {{ boardLayout.viewLabel.value }}
+            <Icon name="lucide:panel-left-close" class="size-5 text-primary" aria-hidden="true" />
+            <span class="text-muted-foreground">Visão:</span>
+            <b class="font-semibold">{{ boardLayout.viewLabel.value.replace(/^Visão:\s*/, "") }}</b>
           </span>
           <button
             type="button"
-            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent"
+            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
             title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
             data-board-show-all
             @click="boardLayout.showAll()"
           >
-            <Icon name="lucide:columns-3" class="size-4" aria-hidden="true" />
+            <Icon name="lucide:columns-3" class="size-5" aria-hidden="true" />
             Mostrar as 3 colunas
           </button>
         </template>
         <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
-             ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). O
-             mesmo toque pede a permissão de notificação do browser. -->
+             ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). -->
         <button
+          v-if="!isPhone"
           type="button"
           class="relative grid size-control place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
           :class="soundOn && soundBlocked ? 'border-warning/50 text-warning' : 'text-foreground'"
@@ -522,82 +637,74 @@ function printQueue() {
           <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-5" />
           <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
         </button>
-        <button
-          v-if="attentionPending"
-          type="button"
-          class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent"
-          aria-label="Reconhecer aviso de pedido novo"
-          @click="acknowledgeAttention"
-        >
-          <Icon name="lucide:check" class="size-4" />
-          Ciente
-        </button>
 
-        <!-- ordenar -->
-        <div class="relative">
-          <button
-            type="button"
-            class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
-            aria-haspopup="menu"
-            :aria-expanded="sortOpen"
-            title="Ordenar (atalho: s)"
-            @click="sortOpen = !sortOpen"
-          >
-            <Icon name="lucide:arrow-up-down" class="size-4" />
-            <span>{{ sortLabel }}</span>
-            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          </button>
-          <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
-          <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
+        <template v-if="!compactHeader && !isPhone">
+          <!-- ordenar -->
+          <div class="relative">
             <button
-              v-for="opt in SORT_OPTIONS"
-              :key="opt.key"
               type="button"
-              role="menuitemradio"
-              :aria-checked="sort === opt.key"
-              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
-              @click="pickSort(opt.key)"
+              class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+              aria-haspopup="menu"
+              :aria-expanded="sortOpen"
+              title="Ordenar (atalho: s)"
+              @click="sortOpen = !sortOpen"
             >
-              {{ opt.label }}
-              <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
+              <Icon name="lucide:arrow-up-down" class="size-4" />
+              <span>{{ sortLabel }}</span>
+              <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+            </button>
+            <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
+            <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
+              <button
+                v-for="opt in SORT_OPTIONS"
+                :key="opt.key"
+                type="button"
+                role="menuitemradio"
+                :aria-checked="sort === opt.key"
+                class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
+                @click="pickSort(opt.key)"
+              >
+                {{ opt.label }}
+                <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
+              </button>
+            </div>
+          </div>
+
+          <!-- visão: quadro ou tabela (o alternador segmentado da v4, com a tecla) -->
+          <!-- os dois botões têm 44px cada (alvo da casa): o trilho não tem respiro
+               interno, e o ativo se destaca pelo cartão com contorno. -->
+          <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary">
+            <button
+              type="button"
+              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+              :class="viewMode === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
+              aria-label="Ver em colunas"
+              title="Colunas (atalho: v)"
+              :aria-pressed="viewMode === 'board'"
+              @click="viewMode = 'board'"
+            >
+              <Icon name="lucide:columns-3" class="size-4" />
+              <span class="hidden xl:inline" aria-hidden="true">Quadro</span>
+              <kbd v-if="viewMode !== 'board'" class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">V</kbd>
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+              :class="viewMode === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
+              aria-label="Ver em tabela"
+              title="Tabela (atalho: v)"
+              :aria-pressed="viewMode === 'table'"
+              @click="viewMode = 'table'"
+            >
+              <Icon name="lucide:table-2" class="size-4" />
+              <span class="hidden xl:inline" aria-hidden="true">Tabela</span>
+              <kbd v-if="viewMode !== 'table'" class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">V</kbd>
             </button>
           </div>
-        </div>
+        </template>
 
-        <!-- visão: quadro ou tabela (alternador segmentado da prévia) -->
-        <!-- os dois botões têm 44px cada (alvo da casa): o trilho não tem respiro
-             interno, e o ativo se destaca pelo cartão com contorno. -->
-        <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary">
-          <button
-            type="button"
-            class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-            :class="viewMode === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-            aria-label="Ver em colunas"
-            title="Colunas (atalho: v)"
-            :aria-pressed="viewMode === 'board'"
-            @click="viewMode = 'board'"
-          >
-            <Icon name="lucide:columns-3" class="size-4" />
-            <span class="hidden xl:inline" aria-hidden="true">Quadro</span>
-          </button>
-          <button
-            type="button"
-            class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-            :class="viewMode === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-            aria-label="Ver em tabela"
-            title="Tabela (atalho: v)"
-            :aria-pressed="viewMode === 'table'"
-            @click="viewMode = 'table'"
-          >
-            <Icon name="lucide:table-2" class="size-4" />
-            <span class="hidden xl:inline" aria-hidden="true">Tabela</span>
-          </button>
-        </div>
-
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
-
-        <!-- ⋯ : exportar e imprimir (o que se usa na troca de turno, não a cada pedido) -->
-        <div class="relative">
+        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes) -->
+        <div v-if="!isPhone" class="relative">
           <UiIconButton
             icon="lucide:ellipsis"
             label="Mais ações da fila"
@@ -607,55 +714,153 @@ function printQueue() {
             @click="moreOpen = !moreOpen"
           />
           <div v-if="moreOpen" class="fixed inset-0 z-40" @click="moreOpen = false" />
-          <div v-if="moreOpen" class="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent" @click="moreOpen = false; exportCsv()">
-              <Icon name="lucide:download" class="size-4 text-muted-foreground" /> Exportar CSV
-            </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent" @click="moreOpen = false; printQueue()">
-              <Icon name="lucide:printer" class="size-4 text-muted-foreground" /> Imprimir fila
-            </button>
+          <div v-if="moreOpen" class="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-5rem)] w-72 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-lg">
+            <BoardMenu
+              :metadata="readMetadata"
+              :failed="Boolean(error)"
+              :pending="pending"
+              :sort="sort"
+              :view-mode="viewMode"
+              :sound-on="soundOn"
+              :sound-blocked="soundBlocked"
+              :attention-pending="attentionPending"
+              :selecting="selecting"
+              :full="compactHeader"
+              @refresh="refresh()"
+              @acknowledge="menuDo(acknowledgeAttention)"
+              @select="menuDo(() => (selecting ? stopSelection() : startSelection()))"
+              @sort="(key) => menuDo(() => pickSort(key))"
+              @view="(mode) => menuDo(() => (viewMode = mode))"
+              @sound="menuDo(handleSoundAction)"
+              @export="menuDo(exportCsv)"
+              @print="menuDo(printQueue)"
+            />
           </div>
         </div>
       </template>
 
-      <template v-if="allCards.length" #filters>
-        <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
-          <template v-if="channel === 'all'" #icon>
+      <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
+           seletor só ("+ Canal"). No posto Saída os recortes do fluxo sobem para a
+           cabeça da coluna, como na prévia. -->
+      <template v-if="(allCards.length && !exitPostView) || isPhone" #filters>
+        <UiFilterChip :active="channel === 'all' && fulfillment === 'all'" :count="allCards.length" @click="channel = 'all'; fulfillment = 'all'">
+          <template v-if="channel === 'all' && fulfillment === 'all'" #icon>
             <Icon name="lucide:check" class="size-4 text-primary" />
           </template>
           Todos
         </UiFilterChip>
-        <UiFilterChip
-          v-for="opt in channels"
-          :key="opt.ref"
-          :active="channel === opt.ref"
-          :count="opt.count"
-          @click="channel = opt.ref"
-        >
-          <template #icon>
-            <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-4" />
-          </template>
-          {{ opt.label }}
-        </UiFilterChip>
-        <!-- eixo do fluxo (rota vs balcão) -->
         <span class="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />
         <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
           <template #icon><Icon name="lucide:bike" class="size-4" /></template>
           Entrega
         </UiFilterChip>
         <UiFilterChip :active="fulfillment === 'pickup'" :count="fulfillment_.pickup" @click="fulfillment = fulfillment === 'pickup' ? 'all' : 'pickup'">
-          <template #icon><Icon name="lucide:shopping-bag" class="size-4" /></template>
+          <template #icon><Icon name="lucide:store" class="size-4" /></template>
           Retirada
         </UiFilterChip>
-        <ReadFreshness inline class="ml-auto shrink-0 pl-3" :metadata="readMetadata" :failed="Boolean(error)" />
+        <!-- o canal: um seletor; o canal escolhido vira chip cheio, com o × de volta -->
+        <div v-if="channels.length" class="relative">
+          <button
+            type="button"
+            class="inline-flex h-10 items-center gap-2 rounded-full border px-3 op-label transition"
+            :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
+            aria-haspopup="menu"
+            :aria-expanded="channelOpen"
+            data-channel-picker
+            @click="channelOpen = !channelOpen"
+          >
+            <Icon :name="channel !== 'all' ? `lucide:${lucideIcon(allCards.find((c) => c.channel_ref === channel)?.channel_icon || '')}` : 'lucide:plus'" class="size-4" />
+            {{ channel !== "all" ? channelLabel(channel) : "Canal" }}
+            <span v-if="channel !== 'all'" class="tnum text-muted-foreground">{{ channels.find((o) => o.ref === channel)?.count ?? 0 }}</span>
+          </button>
+          <div v-if="channelOpen" class="fixed inset-0 z-40" @click="channelOpen = false" />
+          <div v-if="channelOpen" class="absolute left-0 z-50 mt-1 w-56 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg" role="menu">
+            <button
+              type="button"
+              role="menuitemradio"
+              :aria-checked="channel === 'all'"
+              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+              @click="channel = 'all'; channelOpen = false"
+            >
+              <Icon name="lucide:layers" class="size-4 text-muted-foreground" />
+              <span class="flex-1">Todos os canais</span>
+              <Icon v-if="channel === 'all'" name="lucide:check" class="size-4 text-primary" />
+            </button>
+            <button
+              v-for="opt in channels"
+              :key="opt.ref"
+              type="button"
+              role="menuitemradio"
+              :aria-checked="channel === opt.ref"
+              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+              @click="channel = opt.ref; channelOpen = false"
+            >
+              <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-4 text-muted-foreground" />
+              <span class="flex-1">{{ opt.label }}</span>
+              <span class="tnum text-muted-foreground">{{ opt.count }}</span>
+              <Icon v-if="channel === opt.ref" name="lucide:check" class="size-4 text-primary" />
+            </button>
+          </div>
+        </div>
+        <button
+          v-if="channel !== 'all'"
+          type="button"
+          class="grid size-10 place-items-center rounded-full text-muted-foreground transition hover:bg-accent"
+          :aria-label="`Tirar o recorte ${channelLabel(channel)}`"
+          @click="channel = 'all'"
+        >
+          <Icon name="lucide:x" class="size-4" />
+        </button>
+        <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
+             da linha para nunca ficar fora da tela -->
+        <span v-if="isPhone" class="order-first">
+        <button
+          type="button"
+          class="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
+          aria-haspopup="menu"
+          :aria-expanded="moreOpen"
+          aria-label="Mais ações da fila"
+          data-board-more
+          @click="moreOpen = !moreOpen"
+        >
+          <Icon name="lucide:sliders-horizontal" class="size-4" />
+          Filtros
+          <span v-if="attentionPending || (soundOn && soundBlocked)" class="size-2 rounded-full bg-warning" aria-hidden="true" />
+        </button>
+        </span>
       </template>
       <template #below>
-        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
-             recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
+        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
         <ChannelQueueSignal />
-        <ReadFreshness v-if="!allCards.length" :metadata="readMetadata" :failed="Boolean(error)" />
       </template>
     </OperatorPageHeader>
+
+    <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
+    <template v-if="isPhone && moreOpen">
+      <div class="fixed inset-0 z-40 bg-black/30" @click="moreOpen = false" />
+      <div class="fixed inset-x-2 bottom-2 z-50 max-h-[80dvh] overflow-y-auto rounded-xl border bg-popover text-popover-foreground shadow-xl" data-board-menu-sheet>
+        <BoardMenu
+          :metadata="readMetadata"
+          :failed="Boolean(error)"
+          :pending="pending"
+          :sort="sort"
+          :view-mode="viewMode"
+          :sound-on="soundOn"
+          :sound-blocked="soundBlocked"
+          :attention-pending="attentionPending"
+          :selecting="selecting"
+          full
+          @refresh="refresh()"
+          @acknowledge="menuDo(acknowledgeAttention)"
+          @select="menuDo(() => (selecting ? stopSelection() : startSelection()))"
+          @sort="(key) => menuDo(() => pickSort(key))"
+          @view="(mode) => menuDo(() => (viewMode = mode))"
+          @sound="menuDo(handleSoundAction)"
+          @export="menuDo(exportCsv)"
+          @print="menuDo(printQueue)"
+        />
+      </div>
+    </template>
 
     <!-- celular: as colunas viram abas -->
     <div
@@ -683,11 +888,11 @@ function printQueue() {
       </button>
     </div>
 
-    <!-- bulk action bar -->
-    <div v-if="selected.size" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden">
-      <Icon name="lucide:check-square" class="size-4 text-primary" />
-      <span class="font-semibold">{{ selected.size }} selecionado{{ selected.size > 1 ? "s" : "" }}</span>
-      <div class="ml-auto flex items-center gap-1.5">
+    <!-- barra da seleção em lote (o modo ligado) -->
+    <div v-if="selecting" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden" data-bulk-bar>
+      <Icon name="lucide:list-checks" class="size-4 text-primary" />
+      <span class="font-semibold">{{ selected.size ? `${selected.size} selecionado${selected.size > 1 ? "s" : ""}` : "Toque nos pedidos para marcar" }}</span>
+      <div class="ml-auto flex flex-wrap items-center gap-1.5">
         <button
           v-if="confirmableSel.length"
           type="button"
@@ -701,27 +906,30 @@ function printQueue() {
         <button
           v-if="advanceableSel.length"
           type="button"
-          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent disabled:cursor-progress disabled:opacity-80"
+          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent disabled:cursor-progress disabled:opacity-80"
           :disabled="bulkAdvancing"
           :aria-busy="bulkAdvancing || undefined"
           @click="bulkAdvance"
         >
           <Icon :name="bulkAdvancing ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-3.5" aria-hidden="true" /> Avançar {{ advanceableSel.length }}
         </button>
-        <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
+        <button type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="toggleSelectAll">
+          {{ allVisibleSelected ? "Desmarcar todos" : "Marcar todos" }}
+        </button>
+        <button v-if="selected.size" type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
           Limpar
+        </button>
+        <button type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent" data-bulk-done @click="stopSelection">
+          Concluir
         </button>
       </div>
     </div>
 
-    <section ref="queueViewport" class="min-h-0 flex-1 overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
+    <section ref="queueViewport" class="flex min-h-0 flex-1 flex-col overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
-      <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`
-           e este parágrafo dizia "Falha ao carregar a fila. Reconectando…" —
-           erro de identificação vestido de erro de rede, na abertura de todo
-           turno e a cada auto-lock. Quem fala nesse estado é a identificação
-           que sobe por cima (app.vue), e ela não é uma falha. -->
-      <p v-else-if="error && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
+      <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
+           fala nesse estado é a identificação que sobe por cima (app.vue). -->
+      <p v-else-if="error && !stationLocked" class="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
         Falha ao atualizar a fila. Mantivemos a última leitura; atualize antes de confirmar ações.
       </p>
 
@@ -745,6 +953,7 @@ function printQueue() {
         <div
           v-else-if="viewMode === 'board'"
           class="grid gap-4 lg:[grid-template-columns:var(--board-columns)]"
+          :class="exitPostView ? 'min-h-0 flex-1 lg:gap-2 lg:[grid-template-rows:minmax(0,1fr)]' : ''"
           :style="{ '--board-columns': boardLayout.gridTemplate.value }"
           data-board-columns
         >
@@ -752,7 +961,7 @@ function printQueue() {
             v-for="zone in zones"
             :key="zone.key"
             :ref="(el) => setColumnEl(zone.key, el)"
-            class="relative min-w-0 flex-col gap-3"
+            class="relative min-h-0 min-w-0 flex-col gap-3"
             :class="isPhone && zone.key !== phoneZone ? 'hidden' : 'flex'"
             :data-zone="zone.key"
             :data-collapsed="(!isPhone && !boardLayout.isOpen(zone.key)) || undefined"
@@ -763,17 +972,36 @@ function printQueue() {
               :icon="zone.icon"
               :count="triaged(zone).length"
               :late="lateCount(zone)"
+              :summary="stripSummary(zone.key, triaged(zone), nowMs).text"
               :pulse="zone.key === 'intake' && attentionPending"
               @open="boardLayout.open(zone.key)"
             />
             <template v-else>
-            <!-- cabeça da coluna (prévia v3): ícone, nome em versalete, contagem e a
-                 frase do que mora aqui; o recolher fica discreto, sem moldura. -->
-            <div v-if="!isPhone" class="flex items-center gap-2 border-b border-border pb-1">
-              <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
+            <!-- cabeça da coluna (v4): nome em versalete, contagem e a frase do que mora
+                 aqui; no posto Saída, também os recortes do fluxo e onde a arrumação mora. -->
+            <div v-if="!isPhone" class="flex min-h-11 items-center gap-2" :class="wideColumn(zone.key) ? '' : 'border-b border-border pb-2'">
+              <Icon v-if="!wideColumn(zone.key)" :name="zone.icon" class="size-4 text-muted-foreground" />
               <h2 class="op-eyebrow">{{ zone.title }}</h2>
-              <span class="op-label tnum text-muted-foreground">{{ triaged(zone).length }}</span>
-              <span class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
+              <span class="op-label tnum text-muted-foreground"><b class="font-semibold text-foreground">{{ triaged(zone).length }}</b><template v-if="wideColumn(zone.key)">{{ triaged(zone).length === 1 ? " pedido" : " pedidos" }}</template></span>
+              <span v-if="wideColumn(zone.key)" class="ml-3 hidden items-center gap-1.5 op-micro text-muted-foreground xl:inline-flex" :title="boardLayout.memoryText.value" data-board-layout-memory>
+                <Icon name="lucide:cloud-check" class="size-4" aria-hidden="true" />{{ layoutMemory }}
+              </span>
+              <span v-else class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
+              <template v-if="wideColumn(zone.key)">
+                <span class="flex-1" />
+                <button
+                  v-for="opt in EXIT_FILTERS"
+                  :key="opt.key"
+                  type="button"
+                  class="inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
+                  :class="fulfillment === opt.key ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+                  :aria-pressed="fulfillment === opt.key"
+                  @click="fulfillment = opt.key"
+                >
+                  <Icon v-if="opt.key !== 'all' || fulfillment === 'all'" :name="opt.icon" class="size-4" :class="fulfillment === opt.key ? 'text-primary' : ''" />
+                  {{ opt.label }}
+                </button>
+              </template>
               <UiIconButton
                 v-if="boardLayout.canCollapse(zone.key)"
                 class="-mr-2 ml-auto shrink-0 border-transparent !bg-transparent text-muted-foreground sm:ml-0"
@@ -784,38 +1012,87 @@ function printQueue() {
               />
             </div>
 
-            <div v-if="!triaged(zone).length" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card/60 px-6 py-8 text-center">
+            <div v-if="!triaged(zone).length" class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-card/60 px-6 py-8 text-center">
               <span class="grid size-11 place-items-center rounded-full bg-success/10 text-success">
                 <Icon name="lucide:circle-check" class="size-6" />
               </span>
               <p class="op-label font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
             </div>
 
-            <!-- posto Saída (só a Saída aberta, tablet ou desktop): a coluna larga vira
-                 uma grade de cartões, como na prévia v4 `gestor-colunas4.html`. -->
-            <div
-              v-else
-              :class="wideColumn(zone.key) ? 'grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]' : 'flex flex-col gap-3'"
-              data-zone-cards
-            >
-            <OrderCard
-              v-for="card in triaged(zone)"
-              :key="card.ref"
-              :card="card"
-              :busy="isBusy(card.ref)"
-              :error="actionError(card.ref)"
-              :selected="isSelected(card.ref)"
-              :danfe-printing="danfePrint.isPrinting(card.ref)"
-              :touch="touchCards"
-              :can-open="canManageOrders"
-              @action="(action) => onAction(card.ref, action)"
-              @dismiss-error="clearActionError(card.ref)"
-              @toggle-select="toggleSelect(card.ref)"
-              @toggle-assign="onToggleAssign(card)"
-              @print-danfe="danfePrint.printDanfe(card.ref)"
-              @station-ready="(stationRef) => onStationReady(card, stationRef)"
-              @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
-            />
+            <!-- posto Saída: a grade da v4 (cartões de altura igual, duas linhas que
+                 enchem a tela; o excedente vira a faixa "+N esperando"). -->
+            <template v-else-if="wideColumn(zone.key)">
+              <div
+                :ref="setExitGrid"
+                class="-m-1 grid min-h-0 flex-1 gap-3 overflow-y-auto p-1 [grid-auto-rows:minmax(min-content,1fr)] [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))] [grid-template-rows:repeat(2,minmax(min-content,1fr))]"
+                data-zone-cards
+              >
+                <OrderCard
+                  v-for="card in exitCards(zone)"
+                  :key="card.ref"
+                  :card="card"
+                  :busy="isBusy(card.ref)"
+                  :error="actionError(card.ref)"
+                  :selected="isSelected(card.ref)"
+                  :selecting="selecting"
+                  :next="card.ref === zoneNext(zone)"
+                  fill
+                  :danfe-printing="danfePrint.isPrinting(card.ref)"
+                  :touch="touchCards"
+                  :can-open="canManageOrders"
+                  @action="(action) => onAction(card.ref, action)"
+                  @dismiss-error="clearActionError(card.ref)"
+                  @toggle-select="toggleSelect(card.ref)"
+                  @toggle-assign="onToggleAssign(card)"
+                  @select-mode="startSelection(card.ref)"
+                  @print-danfe="danfePrint.printDanfe(card.ref)"
+                  @station-ready="(stationRef) => onStationReady(card, stationRef)"
+                  @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
+                />
+              </div>
+              <button
+                v-if="exitOverflow(zone).length"
+                type="button"
+                class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label transition hover:bg-accent"
+                data-exit-overflow
+                @click="exitShowAll = true"
+              >
+                <b class="tnum">+{{ exitOverflow(zone).length }}</b>
+                <span class="font-normal text-muted-foreground">{{ waitingStripText(exitOverflow(zone)) }} · aparecem aqui quando um destes sair</span>
+                <span class="inline-flex items-center gap-1 font-semibold">Ver todos<Icon name="lucide:chevron-right" class="size-4" /></span>
+              </button>
+              <button
+                v-else-if="exitShowAll && triaged(zone).length > exitCapacity"
+                type="button"
+                class="flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed border-border op-label text-muted-foreground transition hover:bg-accent"
+                @click="exitShowAll = false"
+              >
+                Mostrar só os {{ exitCapacity }} primeiros
+              </button>
+            </template>
+
+            <div v-else class="flex flex-col gap-3" data-zone-cards>
+              <OrderCard
+                v-for="card in triaged(zone)"
+                :key="card.ref"
+                :card="card"
+                :busy="isBusy(card.ref)"
+                :error="actionError(card.ref)"
+                :selected="isSelected(card.ref)"
+                :selecting="selecting"
+                :next="card.ref === zoneNext(zone)"
+                :danfe-printing="danfePrint.isPrinting(card.ref)"
+                :touch="touchCards"
+                :can-open="canManageOrders"
+                @action="(action) => onAction(card.ref, action)"
+                @dismiss-error="clearActionError(card.ref)"
+                @toggle-select="toggleSelect(card.ref)"
+                @toggle-assign="onToggleAssign(card)"
+                @select-mode="startSelection(card.ref)"
+                @print-danfe="danfePrint.printDanfe(card.ref)"
+                @station-ready="(stationRef) => onStationReady(card, stationRef)"
+                @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
+              />
             </div>
             <QueueColumnResizeHandle
               v-if="!isPhone && boardLayout.nextOpen(zone.key)"
@@ -968,12 +1245,14 @@ function printQueue() {
                 :busy="isBusy(card.ref)"
                 :error="actionError(card.ref)"
                 :selected="isSelected(card.ref)"
+                :selecting="selecting"
                 :danfe-printing="danfePrint.isPrinting(card.ref)"
                 :can-open="canManageOrders"
                 @action="(action) => onAction(card.ref, action)"
                 @dismiss-error="clearActionError(card.ref)"
                 @toggle-select="toggleSelect(card.ref)"
                 @toggle-assign="onToggleAssign(card)"
+                @select-mode="startSelection(card.ref)"
                 @print-danfe="danfePrint.printDanfe(card.ref)"
               />
             </div>

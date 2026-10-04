@@ -48,6 +48,16 @@ export interface OperatorSection {
   badge?: string;
   /** O que o selo conta, por extenso, para leitor de tela ("10 pedidos na fila"). */
   badgeLabel?: string;
+  /**
+   * Rótulo do grupo (rail da suíte, prévia v4: "Operação"). Sai uma vez, acima da
+   * primeira seção do grupo. A barra do polegar ignora.
+   */
+  group?: string;
+  /**
+   * Mora no pé do rail, separada da operação (v4: "Ajustes não divide barra com a
+   * operação"). Na barra do polegar entra no fim, como as outras.
+   */
+  foot?: boolean;
 }
 
 /** `/pedidos/` e `/pedidos` são a mesma tela. Uma normalização só, com teste. */

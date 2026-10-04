@@ -78,6 +78,21 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* O código do pedido no cartão da v4 (`gestor-colunas4.html`: 2.2rem/2.3rem, negrito):
+   o número que se lê de longe, no passe. */
+@utility op-code {
+  font-size: 2.2rem;
+  line-height: 2.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+/* O gesto largo do cartão no tablet (botão de 56px da v4: 17px, seminegrito). */
+@utility op-action {
+  font-size: 1.0625rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+}
 @utility tnum {
   font-variant-numeric: tabular-nums;
 }

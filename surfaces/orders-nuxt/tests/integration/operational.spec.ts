@@ -567,6 +567,9 @@ for (const resource of ["queue", "detail", "catalog", "feeds"]) {
     const destination = { queue: "/", detail: `/${lab.notes_ref}`, catalog: "/catalog", feeds: "/feeds" }[resource]!;
     const endpoint = { queue: "/api/v1/backstage/orders/", detail: `/api/v1/backstage/orders/${lab.notes_ref}/`, catalog: "/api/v1/backstage/catalog/", feeds: "/api/v1/backstage/feeds/" }[resource]!;
     await page.goto(destination);
+    // Na fila (v4, UX-KIT-V2) a última leitura útil e o Atualizar moram no ⋯ do quadro,
+    // que fica aberto enquanto se atualiza.
+    if (resource === "queue") await page.locator("[data-board-more]").click();
     const freshness = page.locator("[data-read-freshness]");
     await expect(freshness.getByText(/Última leitura útil:/)).toBeVisible();
     await page.route(`**${endpoint}?*`, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read outage" }) }));

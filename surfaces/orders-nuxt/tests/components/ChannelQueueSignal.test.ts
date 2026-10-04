@@ -6,6 +6,7 @@ import { mount } from "@vue/test-utils";
 
 import ChannelQueueSignal from "../../app/components/ChannelQueueSignal.vue";
 import GestorNav from "../../app/components/GestorNav.vue";
+import { useGestorSections } from "../../app/composables/useGestorSections";
 import type { ChannelAttentionProjection } from "../../app/types/channelAttention";
 
 vi.stubGlobal("computed", computed);
@@ -20,6 +21,8 @@ vi.stubGlobal("useOperatorResourceKey", (resource: string) => `orders:test:${res
 vi.stubGlobal("useFetch", () => ({ data: ref({ authorized: false }) }));
 vi.stubGlobal("useGestorAccess", () => ({ expeditesOnly: ref(false), canManageOrders: ref(true) }));
 vi.stubGlobal("useMediaQuery", () => ref(false));
+vi.stubGlobal("useState", (_key: string, init: () => unknown) => ref(init()));
+vi.stubGlobal("useGestorSections", useGestorSections);
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
@@ -81,17 +84,20 @@ describe("aviso de canal na fila de Pedidos", () => {
   });
 });
 
-describe("indicador no item Canais da navegação", () => {
+// Canais mora em Ajustes desde o UX-KIT-V2 (v4): o ponto de atenção acende o item
+// Ajustes do rail e da barra do polegar (e a linha de Canais na página de Ajustes).
+describe("indicador de Canais no item Ajustes da navegação", () => {
   beforeEach(() => { attention.value = projection(); });
 
   const navStubs = { ...stubs, OperatorSuiteRail: navStub, OperatorSectionBar: navStub, AlertsBell: true, NotificationBell: true };
 
-  it.each(["rail", "bar"] as const)("estado normal: nada ao lado de Canais (%s)", (place) => {
+  it.each(["rail", "bar"] as const)("estado normal: nada ao lado de Ajustes (%s)", (place) => {
     expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).find("[data-channels-attention]").exists()).toBe(false);
   });
 
   it.each(["rail", "bar"] as const)("feed ou canal desligado: ponto âmbar + a contagem (%s)", (place) => {
     attention.value = projection({ count: 2, label: "2 desligados", items: [item("tv-1", "display", "off", "x"), item("web", "sale", "off", "y")] });
     expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).get("[data-channels-attention]").text()).toBe("2 desligados");
+    expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).get("[data-channels-attention]").attributes("data-channels-attention")).toBe("settings");
   });
 });
