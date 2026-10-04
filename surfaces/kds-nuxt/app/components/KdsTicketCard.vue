@@ -1,31 +1,27 @@
 <script setup lang="ts">
-// Card de preparo. TRÊS zonas, na ordem em que a cozinha pergunta — QUE PEDIDO ·
-// QUANTO TEMPO · QUE TAREFA — e um só ato por vez:
+// Ticket de preparo, no desenho da prévia v4 (`cozinha-estacao4.html`, `.tk`). TRÊS
+// zonas, na ordem em que a cozinha pergunta (QUE PEDIDO · QUANTO TEMPO · QUE TAREFA)
+// e um só ato por vez:
 //
-// - IDENTIDADE (topo) = a mesma da Saída (KdsCardIdentity): linha de chamada
-//   com o canal e "Entrega"/"Retirada", o código grande na sua própria linha, o
-//   cliente embaixo dele, e à direita só o relógio. A barra de SLA fecha o bloco.
-// - TAREFA (meio) = só os itens. Nada é truncado nem escondido: nome e observação
-//   quebram linha, e o card cresce o quanto precisar (a grade alinha a altura).
-// - AÇÃO (rodapé) = UM botão, com o ato escrito: "Iniciar preparo" → "Finalizar
-//   preparo". O botão fica na base do card, então numa linha da grade todos os
-//   botões caem na mesma altura, ao alcance do polegar.
-//
-// A moldura é a comum dos cards do KDS (`cardScale`): margem em volta de tudo,
-// ritmo vertical único, e o botão DENTRO da moldura, arredondado — não uma laje
-// colada na borda. Era a diferença que fazia o card da Saída parecer mais limpo.
+// - IDENTIDADE (topo): o código grande e, embaixo, "Retirada"/"Entrega" com o
+//   cliente; à direita o relógio (o tempo contra a meta num número só, a cor diz se
+//   está no prazo) e a pílula do estado ("Próximo · atrasado", "Novo", "Em preparo",
+//   "Bloqueado").
+// - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
+//   cresce o quanto precisar; ticket longo ocupa duas alturas na grade em vez de
+//   cortar a lista (quem decide é a página, por `isTallTicket`).
+// - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Finalizar
+//   preparo". Quando o servidor recusaria o Finalizar (pagamento não confirmado), o
+//   card diz ANTES do toque, numa caixa com cadeado, e o botão fica tracejado.
 //
 // A área grande (identidade + itens) faz o que é SEGURO: abre o detalhe. O ato que
-// sai da cozinha exige o botão rotulado. Antes era o contrário — o cabeçalho
-// inteiro era um botão invisível, e a tela precisava de uma faixa só para avisar
-// que aquilo era um alvo de toque.
+// sai da cozinha exige o botão rotulado.
 //
 // Finalizar não some com o card: por 5 s ele fica no lugar, apagado, com
 // "Desfazer" exatamente onde o dedo acabou de tocar.
 //
-// O preparo é estado do TICKET, guardado no servidor — todos os tablets veem quem
-// já pegou o pedido. Cor só onde tem significado: a barra de SLA (urgência) e o
-// vermelho do item cancelado que trava o finalizar.
+// O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
+// já pegou o pedido.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   cardScale,
@@ -33,18 +29,17 @@ import {
   fulfillmentLabel,
   KDS_ARM_DELAY_MS,
   KDS_UNDO_WINDOW_MS,
+  pillClass,
   shortDateLabel,
-  slaPercent,
   splitRef,
   ticketAction,
+  ticketPill,
   ticketTone,
-  toneBar,
   toneNextSurface,
-  toneTimer,
+  toneTimerChip,
   type KDSDensity,
 } from "~/presentation/board";
 import KdsCardButton, { type KdsCardButtonTone } from "~/components/KdsCardButton.vue";
-import KdsCardIdentity from "~/components/KdsCardIdentity.vue";
 import KdsTestOrderBanner from "~/components/KdsTestOrderBanner.vue";
 
 const props = withDefaults(
@@ -60,6 +55,10 @@ const props = withDefaults(
     finishing?: boolean;
     /** Data de serviço do quadro (ISO) — o card agendado precisa DIZER a data. */
     serviceDate?: string;
+    /** Rótulo fino acima do código (celular: "Agora"). */
+    eyebrow?: string;
+    /** Seletor para onde o botão vai (celular: a barra do polegar). Vazio = no card. */
+    actionTarget?: string;
   }>(),
   {
     density: "cozy",
@@ -68,29 +67,28 @@ const props = withDefaults(
     addition: false,
     finishing: false,
     serviceDate: "",
+    eyebrow: "",
+    actionTarget: "",
   },
 );
-const emit = defineEmits<{ start: []; finish: []; blocked: []; undo: []; open: [] }>();
+const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: [] }>();
 
 const tone = computed(() => ticketTone(props.ticket.timer_class));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
-const fill = computed(() =>
-  slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds),
-);
 const overline = computed(() => fulfillmentLabel(props.ticket.fulfillment_icon));
 // Sem cliente nomeado, o nome cai para a própria comanda — que já aparece riscada.
 const customerLabel = computed(() =>
   props.ticket.customer_name === props.ticket.previous_tab_ref ? "" : props.ticket.customer_name,
 );
-const scheduledDate = computed(() =>
-  props.serviceDate ? shortDateLabel(props.serviceDate) : "",
+const scheduledDate = computed(() => (props.serviceDate ? shortDateLabel(props.serviceDate) : ""));
+const finishLocked = computed(
+  () => Boolean(props.ticket.finish_block_label) && !props.ticket.is_scheduled && !props.finishing,
 );
 
 // Armar o finalizar: o botão fica no MESMO lugar nos dois estados, então o toque
 // que INICIOU não pode, quicando, finalizar também. O rótulo já é "Finalizar
-// preparo" durante o intervalo — o que muda é só ele não aceitar o toque, e assim
-// nada pisca na cara de ninguém. Card que já chega em preparo (outro tablet,
-// recarga) nasce armado.
+// preparo" durante o intervalo — o que muda é só ele não aceitar o toque. Card que
+// já chega em preparo (outro tablet, recarga) nasce armado.
 const armed = ref(props.ticket.status !== "pending");
 let armTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
@@ -123,6 +121,7 @@ function onAction() {
   if (kind === "start") emit("start");
   else if (kind === "finish") emit("finish");
   else if (kind === "blocked") emit("blocked");
+  else if (kind === "locked") emit("locked");
   else if (kind === "undo") emit("undo");
 }
 
@@ -135,52 +134,63 @@ const actionAria = computed(() => {
   if (kind === "undo") return `Desfazer a finalização do pedido ${code.value}`;
   if (kind === "blocked")
     return `Pedido ${code.value}: confirme o cancelamento no cartão vermelho para poder finalizar`;
+  if (kind === "locked")
+    return `Pedido ${code.value}: ${props.ticket.finish_block_label}. ${props.ticket.finish_block_reason}`;
   return "";
 });
 
-// Tom do botão por ato. Iniciar e finalizar têm a MESMA cor (o neutro invertido —
-// o mesmo do "Despachar" da Saída): iniciar é contornado, finalizar é o único
-// sólido. Bloqueado é contornado em vermelho, porque não se convida ninguém a
-// apertá-lo.
+// Tom do botão por ato (v4): o convite do PRÓXIMO é o único sólido de iniciar; os
+// outros convites são contornados; finalizar é verde sólido; travado é tracejado.
 const actionTone = computed<KdsCardButtonTone>(() => {
   const kind = action.value.kind;
-  if (kind === "start") return "invite";
+  if (kind === "start") return props.next ? "lead" : "invite";
   if (kind === "finish") return "confirm";
   if (kind === "blocked") return "blocked";
+  if (kind === "locked") return "locked";
   return "outline";
 });
 
-const timerChip = computed(() => toneTimer(tone.value));
-const barFill = computed(() => toneBar(tone.value));
-const nextSurface = computed(() => toneNextSurface(tone.value));
+const pill = computed(() =>
+  props.finishing
+    ? null
+    : ticketPill(props.ticket, { next: props.next, blocked: props.blocked || finishLocked.value }),
+);
+const surface = computed(() => {
+  if (props.finishing) return "border border-dashed border-border bg-muted/40";
+  if (props.next) return toneNextSurface(tone.value);
+  if (props.blocked || finishLocked.value) return "border border-destructive/50 bg-card";
+  if (props.ticket.status === "in_progress") return "border border-primary/50 bg-card";
+  return "border border-border bg-card";
+});
+const timerChip = computed(() =>
+  props.ticket.is_scheduled ? "border border-border bg-muted text-muted-foreground" : toneTimerChip(tone.value),
+);
 const undoWindowSeconds = Math.round(KDS_UNDO_WINDOW_MS / 1000);
+// Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
+// ganha a caixa "Obs.:" embaixo dele, inteira. As duas em âmbar (v4).
+function isShortNote(notes: string): boolean {
+  return Boolean(notes) && notes.length <= 24 && !notes.includes("\n");
+}
 
-// Moldura comum (margem, ritmo, código, botão) + o que só o preparo tem: o
-// relógio, o corpo dos itens e das notas. `timerH` segue a escada do canon do
-// kit (operator-base.css, "ALTURAS DE CONTROLE"): h-9 = chip, h-11 = controle.
+// Moldura comum (margem, ritmo, código, botão) + o que só o preparo tem: o relógio e
+// o corpo dos itens e das notas. `timerH` segue a escada do canon do kit
+// (operator-base.css, "ALTURAS DE CONTROLE"): h-9 = chip, h-11 = controle.
 const d = computed(() => ({
   ...cardScale(props.density),
   ...{
-    compact: { timer: "text-base", timerH: "h-9", item: "text-sm", note: "text-xs" },
-    cozy: { timer: "text-lg", timerH: "h-9", item: "text-base", note: "text-sm" },
-    roomy: { timer: "text-xl", timerH: "h-11", item: "text-lg", note: "text-base" },
+    compact: { timer: "text-base", timerH: "h-9", item: "text-base leading-snug", note: "text-xs" },
+    cozy: { timer: "text-lg", timerH: "h-9", item: "text-lg leading-[1.375rem]", note: "text-sm" },
+    roomy: { timer: "text-xl", timerH: "h-11", item: "text-xl leading-snug", note: "text-base" },
   }[props.density],
 }));
 </script>
 
 <template>
   <article
-    class="relative flex w-full flex-col overflow-hidden rounded-md border transition"
-    :class="[
-      d.gap,
-      d.padB,
-      finishing
-        ? 'border-dashed bg-muted/40'
-        : next
-          ? `shadow-lg ${nextSurface}`
-          : 'bg-card shadow-sm',
-    ]"
+    class="relative flex w-full flex-col overflow-hidden rounded-xl transition"
+    :class="[d.gap, d.padB, surface]"
     :data-status="ticket.status"
+    :data-next="next || undefined"
   >
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
@@ -188,7 +198,7 @@ const d = computed(() => ({
       <button
         v-if="!finishing"
         type="button"
-        class="absolute inset-0 z-0 transition hover:bg-accent/20 active:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        class="absolute inset-0 z-0 rounded-t-xl transition hover:bg-accent/20 active:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         :aria-label="`Ver o detalhe do pedido ${code}`"
         data-kds-open
         @click="emit('open')"
@@ -198,188 +208,183 @@ const d = computed(() => ({
         class="pointer-events-none relative z-10 flex flex-1 flex-col"
         :class="[d.inset, d.padT, d.gap, finishing ? 'opacity-45' : '']"
       >
-        <!-- Pedido de teste da homologação do iFood: a trava do servidor não cria
-             ticket para ele, então este card só existe para o que já estava no
-             painel. O aviso vem ANTES do código: quem lê o card tem de saber que
-             aquilo não se forna antes de ler o que é. -->
+        <!-- Pedido de teste da homologação do iFood: o aviso vem ANTES do código. -->
         <KdsTestOrderBanner
           v-if="ticket.test_order_label"
           :label="ticket.test_order_label"
           forbids="não produzir"
         />
 
-        <!-- IDENTIDADE: chamada (canal + entrega/retirada) · CÓDIGO · contexto.
-             "Adicional" é a única marca com selo, porque é a única que muda o que
-             se FAZ — o resto acompanha o nome, sem caixa. -->
-        <KdsCardIdentity
-          :code="code"
-          :code-class="d.code"
-          :channel-icon="ticket.channel_icon"
-          :overline="overline"
-        >
-          <div
-            v-if="customerLabel || addition || ticket.previous_tab_ref"
-            class="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-muted-foreground"
-          >
-            <span
-              v-if="addition"
-              class="inline-flex items-center gap-1 rounded border border-foreground/30 px-1.5 text-xs font-bold uppercase tracking-wide text-foreground"
+        <!-- IDENTIDADE: código · Retirada/Entrega e cliente | relógio + pílula. -->
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <span v-if="eyebrow" class="block op-micro text-muted-foreground">{{ eyebrow }}</span>
+            <p
+              class="whitespace-nowrap font-bold leading-none tracking-tight tabular-nums"
+              :class="d.code"
             >
-              <Icon name="lucide:plus" class="size-3" />Adicional
-            </span>
-            <span v-if="customerLabel" class="min-w-0 max-w-full truncate text-foreground/80">{{
-              customerLabel
-            }}</span>
-            <span
-              v-if="ticket.previous_tab_ref"
-              class="line-through"
-              :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
-              >Comanda {{ ticket.previous_tab_ref }}</span
-            >
+              {{ code }}
+            </p>
+            <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 op-label text-muted-foreground">
+              <span
+                v-if="addition"
+                class="inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs font-semibold pill-info"
+              >
+                <Icon name="lucide:plus" class="size-3" />Adicional
+              </span>
+              <span>{{ overline }}</span>
+              <template v-if="customerLabel">
+                <span aria-hidden="true">·</span>
+                <span class="min-w-0 max-w-full truncate">{{ customerLabel }}</span>
+              </template>
+              <span
+                v-if="ticket.previous_tab_ref"
+                class="line-through"
+                :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
+                >Comanda {{ ticket.previous_tab_ref }}</span
+              >
+            </div>
           </div>
 
-          <!-- À direita, o relógio — o único chip. A marca do detalhe é um sinal
-               (a área inteira já é o alvo), não um segundo botão para errar, e
-               por isso não ganha moldura. -->
-          <template #aside>
-            <div class="flex shrink-0 items-center gap-1">
-              <div
-                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 font-bold tabular-nums"
-                :class="[
-                  ticket.is_scheduled ? 'bg-muted text-muted-foreground' : timerChip,
-                  d.timerH,
-                  d.timer,
-                ]"
-              >
-                <Icon
-                  :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
-                  class="size-4 shrink-0 opacity-70"
-                />
-                {{
-                  ticket.is_scheduled
-                    ? scheduledDate || "Agendado"
-                    : elapsedLabel(ticket.elapsed_seconds)
-                }}
-              </div>
+          <!-- À direita, o relógio (o único chip com moldura) e a pílula do estado. -->
+          <div class="flex shrink-0 flex-col items-end gap-1">
+            <span
+              class="inline-flex items-center gap-1.5 rounded-lg px-2.5 font-bold tabular-nums"
+              :class="[timerChip, d.timerH, d.timer]"
+            >
               <Icon
-                name="lucide:info"
-                class="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
+                :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
+                class="size-5 shrink-0"
+                :class="tone === 'ok' && !ticket.is_scheduled ? 'text-muted-foreground' : ''"
               />
-            </div>
-          </template>
-        </KdsCardIdentity>
-
-        <!-- Notas do pedido: completas (podem ser alergia), num bloco só. -->
-        <div
-          v-if="ticket.kitchen_note || ticket.customer_note"
-          class="flex flex-col gap-1 rounded-md border border-foreground/20 bg-muted/60 px-2 py-1.5 leading-snug"
-          :class="d.note"
-        >
-          <p v-if="ticket.kitchen_note" class="flex items-start gap-1.5 font-medium">
-            <Icon name="lucide:chef-hat" class="mt-0.5 size-3.5 shrink-0 opacity-70" />
-            <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.kitchen_note }}</span>
-          </p>
-          <p v-if="ticket.customer_note" class="flex items-start gap-1.5 text-muted-foreground">
-            <Icon name="lucide:user" class="mt-0.5 size-3.5 shrink-0" />
-            <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.customer_note }}</span>
-          </p>
-        </div>
-
-        <!-- time-to-SLA: fecha o bloco de identidade. Trilha dentro da margem, no
-             lugar do fio que separa identidade e itens na Saída. -->
-        <div
-          v-if="!ticket.is_scheduled"
-          class="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
-          aria-hidden="true"
-        >
-          <div
-            class="h-full rounded-full transition-[width] duration-500"
-            :class="barFill"
-            :style="{ width: `${fill}%` }"
-          />
+              {{ ticket.is_scheduled ? scheduledDate || "Agendado" : elapsedLabel(ticket.elapsed_seconds) }}
+            </span>
+            <span
+              v-if="pill"
+              class="inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold whitespace-nowrap"
+              :class="pillClass(pill.tone)"
+              data-kds-pill
+            >
+              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ pill.label }}
+            </span>
+          </div>
         </div>
 
         <!-- TAREFA: só os itens, inteiros. -->
-        <ul class="-my-1.5 flex flex-col divide-y divide-border/50">
+        <ul class="flex flex-col divide-y divide-border border-t border-border">
           <li
             v-for="(item, idx) in ticket.items"
             :key="idx"
             class="flex items-start gap-2.5 py-1.5"
           >
             <span
-              class="min-w-[2.5ch] shrink-0 text-right font-bold leading-snug tabular-nums"
+              class="w-[2.5ch] shrink-0 font-semibold tabular-nums"
               :class="d.item"
               >{{ item.qty }}×</span
             >
             <div class="min-w-0 flex-1">
-              <p class="break-words font-semibold leading-snug" :class="d.item">
-                {{ item.name }}
+              <p class="break-words font-semibold" :class="d.item">
+                {{ item.name
+                }}<span v-if="isShortNote(item.notes)" class="text-sm text-warning"> · {{ item.notes }}</span>
               </p>
               <p
-                v-if="item.notes"
-                class="mt-0.5 flex items-start gap-1 font-semibold leading-snug text-foreground/85"
+                v-if="item.notes && !isShortNote(item.notes)"
+                class="mt-1 flex w-fit max-w-full items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-1 font-semibold leading-snug text-warning"
                 :class="d.note"
               >
-                <Icon name="lucide:corner-down-right" class="mt-0.5 size-3.5 shrink-0 opacity-60" />
-                <span class="min-w-0 whitespace-pre-wrap break-words">{{ item.notes }}</span>
+                <Icon name="lucide:message-square-warning" class="mt-0.5 size-4 shrink-0" />
+                <span class="min-w-0 whitespace-pre-wrap break-words">Obs.: {{ item.notes }}</span>
               </p>
               <p
                 v-if="item.stock_warning"
-                class="mt-0.5 flex items-start gap-1 font-semibold leading-snug"
+                class="mt-1 flex items-start gap-1.5 font-semibold leading-snug text-warning"
                 :class="d.note"
               >
-                <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
                 <span class="min-w-0 break-words">{{ item.stock_warning }}</span>
               </p>
             </div>
           </li>
         </ul>
+
+        <!-- Notas do pedido: completas (podem ser alergia), destacadas, depois dos itens (v4). -->
+        <div
+          v-if="ticket.kitchen_note || ticket.customer_note"
+          class="flex flex-col gap-1 rounded-md bg-warning/15 px-2.5 py-1.5 font-semibold leading-snug text-warning"
+          :class="d.note"
+          data-kds-order-notes
+        >
+          <p v-if="ticket.kitchen_note" class="flex items-start gap-1.5">
+            <Icon name="lucide:chef-hat" class="mt-0.5 size-4 shrink-0" />
+            <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.kitchen_note }}</span>
+          </p>
+          <p v-if="ticket.customer_note" class="flex items-start gap-1.5">
+            <Icon name="lucide:message-square-warning" class="mt-0.5 size-4 shrink-0" />
+            <span class="min-w-0 whitespace-pre-wrap break-words">{{ ticket.customer_note }}</span>
+          </p>
+        </div>
+
+        <!-- O motivo do bloqueio ANTES do toque (era um toast 5 s depois, K11). -->
+        <div
+          v-if="finishLocked"
+          class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5"
+          data-kds-finish-block
+        >
+          <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
+          <p class="op-label leading-snug">
+            <b class="text-destructive">{{ ticket.finish_block_label }}.</b>
+            {{ ticket.finish_block_reason }}
+          </p>
+        </div>
       </div>
     </div>
 
-    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura. -->
-    <div v-if="finishing" class="flex flex-col gap-2" :class="d.inset" data-kds-undo>
-      <p
-        class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
-      >
-        <Icon name="lucide:check-check" class="size-4 shrink-0" />
-        Finalizado. Sai em {{ undoWindowSeconds }}s
-      </p>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        <div class="kds-undo-drain h-full bg-foreground/50" />
+    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura (no
+         celular, o card em foco leva o botão para a barra do polegar). -->
+    <Teleport defer :to="actionTarget || 'body'" :disabled="!actionTarget">
+      <div v-if="finishing" class="flex flex-col gap-2" :class="actionTarget ? '' : d.inset" data-kds-undo>
+        <p
+          class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
+        >
+          <Icon name="lucide:check-check" class="size-4 shrink-0" />
+          Finalizado. Sai em {{ undoWindowSeconds }}s
+        </p>
+        <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <div class="kds-undo-drain h-full bg-foreground/50" />
+        </div>
+        <KdsCardButton
+          tone="outline"
+          :icon="action.icon"
+          :label="action.label"
+          :size-class="d.action"
+          :aria-label="actionAria"
+          data-kds-action
+          @click="onAction"
+        />
       </div>
-      <KdsCardButton
-        tone="outline"
-        :icon="action.icon"
-        :label="action.label"
-        :size-class="d.action"
-        :aria-label="actionAria"
-        data-kds-action
-        @click="onAction"
-      />
-    </div>
-    <div v-else-if="ticket.is_scheduled" :class="d.inset">
-      <KdsCardButton
-        tone="inert"
-        icon="lucide:calendar-clock"
-        :label="`Prévia${scheduledDate ? ` · começa em ${scheduledDate}` : ''}`"
-        :size-class="d.action"
-        data-kds-action
-      />
-    </div>
-    <div v-else :class="d.inset">
-      <KdsCardButton
-        :tone="actionTone"
-        :icon="action.icon"
-        :label="action.label"
-        :size-class="d.action"
-        :disabled="!action.enabled"
-        :aria-label="actionAria"
-        data-kds-action
-        @click="onAction"
-      />
-    </div>
+      <div v-else-if="ticket.is_scheduled" :class="actionTarget ? '' : d.inset">
+        <KdsCardButton
+          tone="inert"
+          icon="lucide:calendar-clock"
+          :label="`Prévia${scheduledDate ? ` · começa em ${scheduledDate}` : ''}`"
+          :size-class="d.action"
+          data-kds-action
+        />
+      </div>
+      <div v-else :class="actionTarget ? '' : d.inset">
+        <KdsCardButton
+          :tone="actionTone"
+          :icon="action.icon"
+          :label="action.label"
+          :size-class="d.action"
+          :disabled="!action.enabled"
+          :aria-label="actionAria"
+          :title="action.kind === 'locked' ? ticket.finish_block_reason : undefined"
+          data-kds-action
+          @click="onAction"
+        />
+      </div>
+    </Teleport>
   </article>
 </template>
 

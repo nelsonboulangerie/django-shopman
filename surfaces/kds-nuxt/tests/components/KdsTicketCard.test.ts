@@ -51,6 +51,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     kitchen_note: "",
     customer_note: "",
     test_order_label: "",
+    finish_block_label: "",
+    finish_block_reason: "",
     ...over,
   };
 }
@@ -251,8 +253,8 @@ describe("KdsTicketCard — o canon do kit", () => {
   it("o botão de ação nunca desce do alvo de toque (h-11), nem no compact", () => {
     for (const [density, height] of [
       ["compact", "h-11"],
-      ["cozy", "h-11"],
-      ["roomy", "h-14"],
+      ["cozy", "h-14"],
+      ["roomy", "h-16"],
     ] as const) {
       const action = mountCard({ ticket: ticket({ status: "pending" }), density }).get(
         "button[data-kds-action]",
@@ -299,17 +301,55 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
   it("o botão fica DENTRO da moldura, arredondado, e não uma laje colada na borda", () => {
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     const action = w.get("button[data-kds-action]");
-    expect(action.classes()).toContain("rounded-md");
-    expect(action.element.parentElement?.className).toContain("px-4");
+    expect(action.classes()).toContain("rounded-lg");
+    expect(action.element.parentElement?.className).toContain("px-3.5");
   });
 
-  it("Iniciar e Finalizar têm a mesma cor: um contornado, o outro sólido (decisão de 21/09)", () => {
-    const iniciar = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
-    expect(iniciar.classes()).toContain("border-foreground");
-    expect(iniciar.classes()).toContain("text-foreground");
-    expect(iniciar.classes().some((c) => c === "bg-foreground" || c.includes("primary"))).toBe(false);
+  it("v4: só o PRÓXIMO convida sólido; os outros convites são contornados; finalizar é verde", () => {
+    // A parede amarela de 21/09 (#913) não volta: um sólido de iniciar por grade.
+    const proximo = mountCard({ ticket: ticket({ status: "pending" }), next: true }).get("button[data-kds-action]");
+    expect(proximo.classes()).toContain("bg-primary");
+    const outro = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
+    expect(outro.classes()).toContain("border-foreground/80");
+    expect(outro.classes().some((c) => c.startsWith("bg-primary") || c === "bg-success")).toBe(false);
     const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
-    expect(finalizar.classes()).toContain("bg-foreground");
+    expect(finalizar.classes()).toContain("bg-success");
+  });
+
+  it("pagamento não confirmado: o motivo aparece no card e o Finalizar tranca, sem emitir finish", async () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "in_progress",
+        finish_block_label: "Pix não confirmado",
+        finish_block_reason: "Pode adiantar; o Finalizar libera quando o pagamento entrar.",
+      }),
+    });
+    expect(w.get("[data-kds-finish-block]").text()).toContain("Pix não confirmado.");
+    expect(w.get("[data-kds-pill]").text()).toContain("Bloqueado");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Finalizar preparo");
+    expect(action.classes()).toContain("border-dashed");
+    await action.trigger("click");
+    expect(w.emitted("locked")).toHaveLength(1);
+    expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("pagamento não confirmado não impede de adiantar: Iniciar segue livre", async () => {
+    const w = mountCard({ ticket: ticket({ status: "pending", finish_block_label: "Pix não confirmado" }) });
+    await w.get("button[data-kds-action]").trigger("click");
+    expect(w.emitted("start")).toHaveLength(1);
+  });
+
+  it("a pílula diz o estado: Próximo · atrasado, Novo, Em preparo", () => {
+    expect(
+      mountCard({ ticket: ticket({ status: "pending", timer_class: "timer-late" }), next: true })
+        .get("[data-kds-pill]")
+        .text(),
+    ).toContain("Próximo · atrasado");
+    expect(mountCard({ ticket: ticket({ status: "pending" }) }).get("[data-kds-pill]").text()).toContain("Novo");
+    expect(mountCard({ ticket: ticket({ status: "in_progress" }) }).get("[data-kds-pill]").text()).toContain(
+      "Em preparo",
+    );
   });
 
   it("à direita do código há UM chip (o relógio); a marca do detalhe não tem moldura", () => {
