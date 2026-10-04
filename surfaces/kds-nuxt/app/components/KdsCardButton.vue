@@ -8,10 +8,10 @@
 //    na grade (o destacado), então não vira a parede amarela de 21/09 (#913): os
 //    outros convites são contornados.
 //  - `invite`  convite para começar, contornado: "Iniciar preparo" dos demais.
-//  - `confirm` o ato que tira o pedido da tela: "Finalizar preparo", sólido verde.
+//  - `confirm` o ato que tira o pedido da tela: "Pronto W07", sólido verde.
 //  - `outline` o gesto de volta: "Desfazer".
 //  - `blocked` contornado em vermelho: item cancelado, não se convida ninguém.
-//  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Finalizar
+//  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Pronto
 //    (pagamento não confirmado). O toque diz o motivo.
 export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked";
 

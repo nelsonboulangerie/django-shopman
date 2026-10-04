@@ -12,14 +12,15 @@
 // - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
 //   cresce o quanto precisar; ticket longo ocupa duas alturas na grade em vez de
 //   cortar a lista (quem decide é a página, por `isTallTicket`).
-// - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Finalizar
-//   preparo" (no polegar do celular, "Pronto W07", `thumbActionLabel`). Quando o servidor recusaria o Finalizar (pagamento não confirmado), o
+// - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Pronto W07"
+//   (o mesmo nome no polegar do celular, `thumbActionLabel`). Quando o servidor
+//   recusaria o Pronto (pagamento não confirmado), o
 //   card diz ANTES do toque, numa caixa com cadeado, e o botão fica tracejado.
 //
 // A área grande (identidade + itens) faz o que é SEGURO: abre o detalhe. O ato que
 // sai da cozinha exige o botão rotulado.
 //
-// Finalizar não some com o card: por 5 s ele fica no lugar, apagado, com
+// Pronto não some com o card: por 5 s ele fica no lugar, apagado, com
 // "Desfazer" exatamente onde o dedo acabou de tocar.
 //
 // O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
@@ -32,6 +33,7 @@ import {
   KDS_UNDO_WINDOW_MS,
   pillClass,
   splitRef,
+  cardActionLabel,
   thumbActionLabel,
   ticketAction,
   ticketOverline,
@@ -83,8 +85,8 @@ const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && 
 const longPress = useLongPress(() => emit("hold"));
 
 // Armar o finalizar: o botão fica no MESMO lugar nos dois estados, então o toque
-// que INICIOU não pode, quicando, finalizar também. O rótulo já é "Finalizar
-// preparo" durante o intervalo — o que muda é só ele não aceitar o toque. Card que
+// que INICIOU não pode, quicando, finalizar também. O rótulo já é "Pronto"
+// durante o intervalo — o que muda é só ele não aceitar o toque. Card que
 // já chega em preparo (outro tablet, recarga) nasce armado.
 const armed = ref(props.ticket.status !== "pending");
 let armTimer: ReturnType<typeof setTimeout> | null = null;
@@ -127,7 +129,7 @@ function onAction() {
 const actionAria = computed(() => {
   const kind = action.value.kind;
   if (kind === "start") return `Iniciar o preparo do pedido ${code.value}`;
-  if (kind === "finish") return `Finalizar o preparo do pedido ${code.value}`;
+  if (kind === "finish") return `Marcar o pedido ${code.value} como pronto`;
   if (kind === "undo") return `Desfazer a finalização do pedido ${code.value}`;
   if (kind === "blocked")
     return `Pedido ${code.value}: confirme o cancelamento no cartão vermelho para poder finalizar`;
@@ -160,9 +162,10 @@ const surface = computed(() => {
   return "border border-border bg-card";
 });
 const timerChip = computed(() => toneTimerChip(tone.value));
-// No polegar do celular o ato leva o código ("Pronto W07"): o card em foco fica longe do dedo.
+// O Pronto leva o código em todo tamanho ("Pronto W07"); no polegar do celular os
+// outros atos também levam, porque o card em foco fica longe do dedo.
 const actionLabel = computed(() =>
-  props.actionTarget ? thumbActionLabel(action.value, code.value) : action.value.label,
+  props.actionTarget ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
 );
 const undoWindowSeconds = Math.round(KDS_UNDO_WINDOW_MS / 1000);
 // Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
