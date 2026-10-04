@@ -154,6 +154,7 @@ from .operations import (
     OrderUnassignView,
     OrderUndoHandoffView,
     OrderUndoReadyView,
+    OrderVolumesView,
     POSAccountBalancesView,
     POSAccountSettleView,
     POSCancelRecentSaleView,
@@ -682,6 +683,7 @@ urlpatterns = [
     path("orders/<str:ref>/edit/", OrderEditView.as_view(), name="api-backstage-order-edit"),
     path("orders/<str:ref>/edit/preview/", OrderEditPreviewView.as_view(), name="api-backstage-order-edit-preview"),
     path("orders/<str:ref>/notes/", OrderNotesView.as_view(), name="api-backstage-order-notes"),
+    path("orders/<str:ref>/volumes/", OrderVolumesView.as_view(), name="api-backstage-order-volumes"),
     path(
         "orders/<str:ref>/courier-dispatch/",
         OrderCourierDispatchView.as_view(),

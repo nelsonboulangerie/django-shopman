@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
 from django.db.models import Q
@@ -432,6 +433,17 @@ class OrderCardProjection:
     # quem falta e o "Pronto" da estação sem tela; no pronto, o "Voltar para…".
     # ``None`` quando o pedido não passou pela Cozinha.
     kitchen: KitchenProgressProjection | None = None
+    # Volumes (sacolas, caixas) declarados por quem embalou (``Order.data["volumes"]``).
+    # 0 = ninguém declarou: o cartão mostra a contagem de itens, nunca um volume
+    # deduzido.
+    volumes: int = 0
+    # Quando o pedido ficou PRONTO desta vez (a última entrada em READY no log de
+    # eventos; ``Order.ready_at`` guarda só a primeira, e o pronto desfeito volta).
+    # Vazio fora de READY. É o "pronto há N min" do cartão e da Fila.
+    ready_at_iso: str = ""
+    # Quando saiu para a entrega (``Order.dispatched_at``), em DISPATCHED/DELIVERED:
+    # o "na rua há N min".
+    dispatched_at_iso: str = ""
 
 
 @dataclass(frozen=True)
@@ -1431,6 +1443,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     from shopman.backstage.projections.kds import kitchen_station_chips
 
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
+    ready_moments = ready_moments_for(ready_orders)
     prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
@@ -1444,15 +1457,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     )
     preparing_count = len(prep)
 
-    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
         _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
 
-    from datetime import datetime, time, timedelta
+    from datetime import time, timedelta
 
     service_day = timezone.localdate()
     service_day_ends_at = timezone.make_aware(
@@ -1582,6 +1595,41 @@ def _waitlist_badge(order: Order, *, states: dict[str, str] | None = None) -> tu
     return state, deadline, _WAITLIST_LABELS.get(state, "")
 
 
+def _declared_volumes(order: Order) -> int:
+    value = (order.data or {}).get("volumes")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def ready_moments_for(orders) -> dict[int, datetime]:
+    """A última entrada em READY de cada pedido pronto, numa consulta só.
+
+    ``Order.ready_at`` é carimbado uma vez (a primeira) e não volta quando o
+    pronto é desfeito ou a Cozinha chama o pedido de volta; o log de eventos
+    sabe a vez que vale.
+    """
+    from django.db.models import Max
+    from shopman.orderman.models import OrderEvent
+
+    pks = [order.pk for order in orders if order.status == Order.Status.READY]
+    if not pks:
+        return {}
+    rows = (
+        OrderEvent.objects.filter(order_id__in=pks, type="status_changed", payload__new_status=Order.Status.READY)
+        .values("order_id")
+        .annotate(at=Max("created_at"))
+    )
+    return {row["order_id"]: row["at"] for row in rows}
+
+
+def _ready_moment_iso(order: Order, moments: dict[int, datetime] | None) -> str:
+    if order.status != Order.Status.READY:
+        return ""
+    if moments is None:
+        moments = ready_moments_for([order])
+    moment = moments.get(order.pk) or order.ready_at
+    return moment.isoformat() if moment else ""
+
+
 def _channel_configs_for(orders):
     """Resolve each channel once for this projection; commands read their own config."""
     from shopman.shop.config import ChannelConfig
@@ -1626,6 +1674,7 @@ def _build_card(
     fiscal_states=None,
     danfe_reads=None,
     kitchen_chips=None,
+    ready_moments=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1708,6 +1757,9 @@ def _build_card(
         next_status=next_status if undo_block_allows_advance(order) else "",
         next_action_label=next_label,
         undo=_undo_projection(order),
+        volumes=_declared_volumes(order),
+        ready_at_iso=_ready_moment_iso(order, ready_moments),
+        dispatched_at_iso=order.dispatched_at.isoformat() if order.dispatched_at and order.status in ("dispatched", "delivered") else "",
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
@@ -2530,8 +2582,15 @@ _EVENT_LABELS = {
     "handoff_undone": "Saída desfeita",
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
+    "volumes_declared": "Volumes declarados",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
+}
+
+#: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
+#: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
+_EDIT_SOURCE_LABELS = {
+    "concierge:add": "Itens acrescentados pela Concierge a pedido do cliente",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -2549,6 +2608,8 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
         new_status = payload.get("new_status", "")
         if event.type in _STATUS_EVENT_TYPES and new_status:
             label = order_status_label(new_status)
+        elif event.type == "order_edited" and payload.get("source") in _EDIT_SOURCE_LABELS:
+            label = _EDIT_SOURCE_LABELS[payload["source"]]
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
@@ -2590,7 +2651,7 @@ def _event_detail(payload: dict) -> str:
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
         return f"{moved}: {payload['reason']}" if payload.get("reason") else moved
-    if payload.get("source") == "pos:edit" and payload.get("customer_note"):
+    if payload.get("source") in {"pos:edit", "concierge:add"} and payload.get("customer_note"):
         # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
         # mudou, o total novo e o destino da diferença.
         return str(payload["customer_note"])

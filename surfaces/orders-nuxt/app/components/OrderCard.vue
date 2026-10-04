@@ -21,6 +21,7 @@ import {
   cardSeal,
   channelLabel,
   onRoadLine,
+  packLabel,
   primaryVerb,
   sealClass,
   splitRef,
@@ -60,10 +61,28 @@ const emit = defineEmits<{
   (e: "action", ref: AffordanceRef): void;
   (e: "dismiss-error" | "toggle-select" | "toggle-assign" | "print-danfe" | "select-mode"): void;
   (e: "station-ready", stationRef: string): void;
-  (e: "station-recall", ticketPk: number): void;
+  (e: "station-recall" | "volumes", value: number): void;
 }>();
 
 const code = computed(() => splitRef(props.card.ref));
+const pack = computed(() => packLabel(props.card));
+// "Volumes" no ⋯: quem embalou diz quantas sacolas ou caixas saem (0 apaga). Só aparece
+// quando o servidor oferece o gesto (ação "volumes"), com a mesma régua das outras.
+const volumesAction = computed(() => props.card.actions.find((action) => action.ref === "volumes") ?? null);
+const volumesEditing = ref(false);
+const volumesDraft = ref(0);
+function openVolumes() {
+  volumesDraft.value = props.card.volumes || Math.max(1, Math.min(props.card.items_count || 1, 99));
+  volumesEditing.value = true;
+}
+function stepVolumes(delta: number) {
+  volumesDraft.value = Math.max(0, Math.min(99, volumesDraft.value + delta));
+}
+function saveVolumes() {
+  menuOpen.value = false;
+  volumesEditing.value = false;
+  emit("volumes", volumesDraft.value);
+}
 const nowMs = useNowTick(() => props.card.server_now_iso);
 const clock = computed(() => cardClock(props.card, nowMs.value));
 const seal = computed(() => cardSeal(props.card, { next: props.next }));
@@ -116,6 +135,7 @@ const ringStyle = computed(() => {
 
 // ⋯ do cartão: atender, seleção em lote, voltar para a estação, abrir o pedido.
 const menuOpen = ref(false);
+watch(menuOpen, (open) => { if (!open) volumesEditing.value = false; });
 function pick(fn: () => void) {
   menuOpen.value = false;
   fn();
@@ -241,7 +261,7 @@ function secondaryClass(priority: string): string {
           data-card-clock
         ><template v-if="seal.label !== card.status_label">{{ card.status_label }} · </template>{{ clock.text }}</span>
       </div>
-      <span v-else class="shrink-0 pt-1 op-micro text-muted-foreground">{{ card.fulfillment_label }} · {{ card.items_count }} {{ card.items_count === 1 ? "item" : "itens" }}</span>
+      <span v-else class="shrink-0 pt-1 op-micro text-muted-foreground">{{ card.fulfillment_label }}<template v-if="pack"> · {{ pack }}</template></span>
     </div>
 
     <!-- Entregue, na janela do desfazer: o cartão fica no lugar, com o anel do tempo. -->
@@ -261,8 +281,8 @@ function secondaryClass(priority: string): string {
         <span :class="[CHIP, chipSize]">
           <Icon :name="card.fulfillment_type === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4" />{{ card.fulfillment_label }}
         </span>
-        <span v-if="card.items_count" :class="[CHIP, chipSize, 'tnum']">
-          <Icon name="lucide:package" class="size-4" />{{ card.items_count }} {{ card.items_count === 1 ? "item" : "itens" }}
+        <span v-if="pack" :class="[CHIP, chipSize, 'tnum']" :data-card-pack="card.volumes ? 'volumes' : 'items'">
+          <Icon name="lucide:package" class="size-4" />{{ pack }}
         </span>
         <span v-if="card.is_preorder" :class="[CHIP, chipSize]" data-preorder-badge>
           <Icon name="lucide:calendar-clock" class="size-4" />Agendado{{ card.commitment_date_display ? ` · ${card.commitment_date_display}` : "" }}
@@ -571,6 +591,41 @@ function secondaryClass(priority: string): string {
           >
             <Icon name="lucide:list-checks" class="size-4 shrink-0 text-muted-foreground" />
             {{ selecting ? (selected ? "Desmarcar este pedido" : "Marcar este pedido") : "Selecionar vários" }}
+          </button>
+          <div v-if="volumesEditing" class="flex flex-col gap-2 px-3 py-2" data-card-volumes-editor>
+            <p class="op-label font-semibold">Quantos volumes saem?</p>
+            <div class="flex items-center gap-2">
+              <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a menos" @click="stepVolumes(-1)">
+                <Icon name="lucide:minus" class="size-4" />
+              </button>
+              <span class="min-w-10 text-center op-title tnum" aria-live="polite" data-card-volumes-draft>{{ volumesDraft }}</span>
+              <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a mais" @click="stepVolumes(1)">
+                <Icon name="lucide:plus" class="size-4" />
+              </button>
+              <button
+                type="button"
+                class="ml-auto inline-flex items-center rounded-md bg-primary px-3 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+                :class="target"
+                :disabled="busy"
+                data-card-volumes-save
+                @click="saveVolumes"
+              >Gravar</button>
+            </div>
+            <p class="op-micro text-muted-foreground">{{ volumesDraft === 0 ? "Zero apaga: o cartão volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}</p>
+          </div>
+          <button
+            v-else-if="volumesAction"
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent disabled:opacity-60"
+            :class="target"
+            :disabled="busy || !volumesAction.enabled"
+            :title="volumesAction.reason || undefined"
+            data-card-volumes
+            @click="openVolumes"
+          >
+            <Icon name="lucide:package" class="size-4 shrink-0 text-muted-foreground" />
+            {{ card.volumes ? `Volumes: ${card.volumes} (mudar)` : "Declarar volumes" }}
           </button>
           <button
             v-for="option in recallOptions"

@@ -41,8 +41,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // A Cozinha carrega relógio ao vivo e seletor de dia operacional no cabeçalho.
   "kds-nuxt/app/pages/[ref].vue",
   "kds-nuxt/app/pages/index.vue",
-  // O Hub é a home: o cabeçalho dele é a saudação, e não há seções para navegar.
-  "hub-nuxt/app/app.vue",
 ].sort();
 
 

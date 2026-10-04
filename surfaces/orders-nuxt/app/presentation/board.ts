@@ -755,17 +755,40 @@ export interface CardClock {
   countdown: boolean;
 }
 
-type ClockSource = Pick<OrderCardProjection, "confirmation_deadline_iso" | "confirmation_action" | "elapsed_seconds" | "timer_class">;
+type ClockSource = Pick<OrderCardProjection, "confirmation_deadline_iso" | "confirmation_action" | "elapsed_seconds" | "timer_class">
+  & Partial<Pick<OrderCardProjection, "ready_at_iso" | "dispatched_at_iso">>;
 
-/** A linha do tempo do canto: o prazo, quando há ("aceita sozinho em 2:40"), senão o
- *  decorrido ("há 9 min"). Um relógio só: quanto falta decide; quanto passou, não. */
+/** Segundos desde um instante ISO do servidor; `null` quando o instante não existe. */
+export function secondsSince(iso: string | undefined, nowMs: number): number | null {
+  const at = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(at) ? Math.max(0, Math.round((nowMs - at) / 1000)) : null;
+}
+
+/** A linha do tempo do canto: o prazo, quando há ("aceita sozinho em 2:40"); no pronto,
+ *  desde quando está pronto ("pronto há 6 min"); na rua, desde a saída ("na rua há 18
+ *  min"); senão, o decorrido desde a chegada ("há 9 min"). Um relógio só: quanto falta
+ *  decide; quanto passou, não. */
 export function cardClock(card: ClockSource, nowMs: number): CardClock {
   const left = confirmationRemainingLabel(card.confirmation_deadline_iso, nowMs);
   if (left) {
     const verb = card.confirmation_action === "cancel" ? "cancela sozinho em" : "aceita sozinho em";
     return { text: `${verb} ${left}`, tone: deadlineTone(card.confirmation_deadline_iso, nowMs), countdown: true };
   }
-  return { text: agoLabel(card.elapsed_seconds), tone: timerTone(card.timer_class as OrderTimerClass), countdown: false };
+  const tone = timerTone(card.timer_class as OrderTimerClass);
+  const ready = secondsSince(card.ready_at_iso, nowMs);
+  if (ready !== null) return { text: ready < 60 ? "pronto agora" : `pronto ${agoLabel(ready)}`, tone, countdown: false };
+  const road = secondsSince(card.dispatched_at_iso, nowMs);
+  if (road !== null) return { text: road < 60 ? "saiu agora" : `na rua ${agoLabel(road)}`, tone, countdown: false };
+  return { text: agoLabel(card.elapsed_seconds), tone, countdown: false };
+}
+
+/** "3 volumes" quando quem embalou declarou; senão a contagem de itens ("2 itens").
+ *  Volume nunca é deduzido: sem declaração, o cartão conta itens. */
+export function packLabel(card: Pick<OrderCardProjection, "items_count"> & Partial<Pick<OrderCardProjection, "volumes">>): string {
+  const volumes = card.volumes ?? 0;
+  if (volumes > 0) return `${volumes} ${volumes === 1 ? "volume" : "volumes"}`;
+  if (!card.items_count) return "";
+  return `${card.items_count} ${card.items_count === 1 ? "item" : "itens"}`;
 }
 
 /** O primeiro nome, quando o "nome" do cliente é mesmo um nome (não telefone nem vazio). */

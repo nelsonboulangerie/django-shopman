@@ -49,12 +49,18 @@ const props = withDefaults(defineProps<{
   printShortcuts?: boolean;
   /** Rótulos de 10px para nomes longos (v4 da Produção: "Planejamento", "Preparação"). */
   denseLabels?: boolean;
+  /**
+   * Mostra Bloquear quando há operador (padrão). `false`: o app não trava operador (a
+   * Central, que é a porta de entrada; cada app trava o seu), e as iniciais seguem no pé.
+   */
+  lockable?: boolean;
 }>(), {
   hubUrl: undefined,
   operatorName: undefined,
   current: undefined,
   printShortcuts: false,
   denseLabels: false,
+  lockable: true,
 });
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -216,7 +222,7 @@ function hideRail() {
       </div>
 
       <RailSection
-        v-if="operatorName"
+        v-if="operatorName && lockable"
         icon="lucide:lock"
         label="Bloquear"
         :aria-label="`${operatorName}: travar ou trocar`"
