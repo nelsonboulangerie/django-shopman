@@ -2605,6 +2605,12 @@ _EVENT_LABELS = {
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }
 
+#: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
+#: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
+_EDIT_SOURCE_LABELS = {
+    "concierge:add": "Itens acrescentados pela Concierge a pedido do cliente",
+}
+
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
 # `status_changed` e o histórico importado escreve `status_change`. Só a
 # primeira era reconhecida, então a esmagadora maioria dos eventos virava
@@ -2620,6 +2626,8 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
         new_status = payload.get("new_status", "")
         if event.type in _STATUS_EVENT_TYPES and new_status:
             label = order_status_label(new_status)
+        elif event.type == "order_edited" and payload.get("source") in _EDIT_SOURCE_LABELS:
+            label = _EDIT_SOURCE_LABELS[payload["source"]]
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
@@ -2661,7 +2669,7 @@ def _event_detail(payload: dict) -> str:
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
         return f"{moved}: {payload['reason']}" if payload.get("reason") else moved
-    if payload.get("source") == "pos:edit" and payload.get("customer_note"):
+    if payload.get("source") in {"pos:edit", "concierge:add"} and payload.get("customer_note"):
         # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
         # mudou, o total novo e o destino da diferença.
         return str(payload["customer_note"])

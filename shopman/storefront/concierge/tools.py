@@ -80,6 +80,8 @@ class ToolContext:
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff montado pela casa (motivo + "já chamei a equipe").
+    handoff_ack: str = ""
     order_ref: str = ""
     rendered_results: list[str] = field(default_factory=list)
 
@@ -1454,6 +1456,26 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
     return {"ok": True, "orders": orders}
 
 
+def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
+    """Acrescentar a um pedido JÁ FEITO do cliente: só a PERGUNTA, nada muda aqui.
+
+    Pelo mesmo serviço do balcão (``order_addition`` → ``order_edit``). Devolve a
+    pergunta de uma linha da casa (itens, pedido, total novo, saldo) ou o motivo
+    de não dar com o caminho que existe; a pergunta fica pendente na memória da
+    conversa e o "sim" do cliente é aplicado pelo servidor, sem modelo.
+    """
+    from . import order_addition
+
+    outcome = order_addition.propose(
+        ctx.conversation, order_ref=str(order_ref or ""), additions=[{"sku": sku, "qty": qty}]
+    )
+    if outcome.handoff:
+        ctx.handoff = True
+        ctx.handoff_reason = outcome.handoff_reason
+        ctx.handoff_ack = outcome.text
+    return {"ok": True, "code": outcome.code, "message": outcome.text, "pending": outcome.pending}
+
+
 def last_order(ctx: ToolContext) -> dict:
     """O último pedido do cliente, para o "o de sempre"."""
     from shopman.guestman.services import customer as customer_service
@@ -1703,7 +1725,7 @@ def _guard(handler):
     return guarded
 
 
-for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
+for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "add_to_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
 
 
@@ -1959,6 +1981,22 @@ TOOL_SPECS: list[dict] = [
         ),
     },
     {
+        "name": "add_to_order",
+        "description": (
+            "Acrescentar item a um pedido JÁ FEITO do cliente (não a sacola). Use SÓ quando o cliente "
+            "pedir; nunca ofereça. Não muda nada: devolve a pergunta de confirmação da casa, ou o motivo "
+            "de não dar. O \"sim\" do cliente o servidor aplica."
+        ),
+        "input_schema": _schema(
+            {
+                "order_ref": {"type": "string", "description": "Número do pedido do cliente."},
+                "sku": {"type": "string", "description": "SKU do produto (de search_storefront)."},
+                "qty": {"type": "integer", "description": "Quantos a mais, de 1 a 99."},
+            },
+            ["order_ref", "sku", "qty"],
+        ),
+    },
+    {
         "name": "last_order",
         "description": "Itens do último pedido do cliente, para repetir (\"o de sempre\").",
         "input_schema": _schema({}, []),
@@ -1996,6 +2034,7 @@ _HANDLERS = {
     "review_order": review_order,
     "place_order": place_order,
     "order_status": order_status,
+    "add_to_order": add_to_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,
