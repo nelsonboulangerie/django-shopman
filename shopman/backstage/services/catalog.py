@@ -599,12 +599,70 @@ def _detail_payload(product) -> dict:
         # somente leitura, do registro de faltas (``ShelfOutage``). Pausar segue
         # no interruptor do canal, na tabela.
         "channel_availability": _channel_availability_payload(product.sku),
+        # "Volta ~10:40: lote de 42 no forno" (G23): o próximo lote do SKU hoje, pela
+        # previsão da Produção (início real + duração medida). Vazio sem lote aberto.
+        **_back_payload(product.sku),
+        # O histórico de alterações do produto (⋯ do painel, v4): o do Admin.
+        "admin_history_path": _admin_history_path(product),
     }
 
 
 #: Canais que recebem a indisponibilidade sozinhos (o iFood pelo catálogo
 #: projetado; os de exibição pelo estoque do canal de origem, #1404).
 _AUTOMATIC_CHANNELS = frozenset({"ifood"})
+
+
+def _next_batch(sku: str) -> dict | None:
+    """O próximo lote do SKU hoje na previsão da Produção: hora e quantidade.
+
+    Mesma leitura do painel de fornadas (``build_production_forecast``): o lote
+    em produção volta no início real mais a duração medida; o planejado, na hora
+    típica de término. Lote já atrasado ou sem previsão não promete hora.
+    """
+    from shopman.backstage.projections.production import build_production_forecast
+
+    try:
+        rows = build_production_forecast().rows
+    except Exception:
+        logger.warning("catalog.next_batch_failed sku=%s", sku, exc_info=True)
+        return None
+    for row in rows:
+        if row.output_sku != sku or row.status not in ("in_progress", "scheduled") or row.eta_display in ("", "—"):
+            continue
+        qty = row.qty.rstrip("0").rstrip(".").rstrip(",") if any(c in row.qty for c in ".,") else row.qty
+        where = "no forno" if row.status == "in_progress" else "programado"
+        return {"at": row.eta_display, "reason": f"lote de {qty} {where}", "in_oven": row.status == "in_progress"}
+    return None
+
+
+def _back_payload(sku: str) -> dict:
+    batch = _next_batch(sku)
+    return {"back_at": batch["at"] if batch else "", "back_reason": batch["reason"] if batch else ""}
+
+
+def _admin_history_path(product) -> str:
+    from django.urls import NoReverseMatch, reverse
+
+    try:
+        return reverse(f"admin:{product._meta.app_label}_{product._meta.model_name}_history", args=[product.pk])
+    except NoReverseMatch:
+        return ""
+
+
+def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
+    """A segunda linha do canal indisponível (v4): o que o cliente vê ali agora."""
+    if state == "available":
+        return ""
+    ref = channel.ref
+    if ref == "web":
+        return f'"Me avise" ligado, {waiting} esperando' if waiting else '"Me avise" ligado'
+    if ref in ("pdv", "pos", "balcao"):
+        return "selo no botão, venda desativada"
+    # A TV (menuboard) é o canal de exibição sem formato de feed (``feeds._switch_kind``).
+    display = (channel.config or {}).get("display") or {}
+    if not sale and not display.get("format"):
+        return 'letreiro mostra "esgotado"'
+    return ""
 
 
 def _channel_availability_payload(sku: str) -> list[dict]:
@@ -622,19 +680,29 @@ def _channel_availability_payload(sku: str) -> list[dict]:
     from shopman.shop.services import external_availability
 
     try:
+        from shopman.shop.services.fomo import demand_count
+
         open_rows = {row.channel_ref: row for row in ShelfOutage.objects.filter(sku=sku, ended_at__isnull=True)}
+        waiting = demand_count(sku) if open_rows else 0
+        batch = _next_batch(sku) if open_rows else None
         rows = []
         for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name"):
             sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
             source = channel.ref if sale else external_availability.stock_channel_ref(channel.ref)
             outage = open_rows.get(source)
+            state = outage.reason if outage else "available"
             rows.append({
                 "ref": channel.ref,
                 "name": channel.name or channel.ref,
                 "kind": "sale" if sale else "display",
-                "state": outage.reason if outage else "available",
+                "state": state,
                 "since": timezone.localtime(outage.started_at).strftime("%H:%M") if outage else "",
                 "automatic": (not sale) or channel.ref in _AUTOMATIC_CHANNELS,
+                # "volta ~10:40 (lote no forno)": só o esgotado volta com o lote; a
+                # pausa é decisão de alguém e não volta sozinha.
+                "back_at": batch["at"] if batch and state == "sold_out" else "",
+                "back_hint": ("lote no forno" if batch["in_oven"] else "lote programado") if batch and state == "sold_out" else "",
+                "note": _channel_note(channel, state=state, sale=sale, waiting=waiting),
             })
         return rows
     except Exception:
@@ -738,7 +806,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():

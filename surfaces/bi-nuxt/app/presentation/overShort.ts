@@ -2,7 +2,12 @@
 // `bi-sobra4.html`). A projeção (`bi_over_short`) manda os fatos crus: quantidades
 // string, horas "HH:MM", vereditos em inglês. Aqui eles viram as frases da prévia:
 // a resposta, "faltou 3 de 4", "típico vende ~50; fez 44", "~14 perdidas".
-import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
+import type {
+  BIOverShortAnswerGroup,
+  BIOverShortReport,
+  BIOverShortRow,
+  BIOverShortUnavailable,
+} from "~/types/bi";
 import { formatInt, formatQty, shortDate } from "./bi";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
@@ -80,9 +85,39 @@ export function typicalName(day: string): string {
 }
 
 /** "num sábado típico", "numa segunda típica" (o artigo concorda com o dia). */
-export function inTypical(day: string): string {
-  const name = typicalName(day);
-  return `${name.endsWith("típica") ? "numa" : "num"} ${name}`;
+export function inTypical(day: string, compare = "typical"): string {
+  const name = compareName(day, compare);
+  const feminine = name.endsWith("típica") || name.endsWith("anterior") && weekdayIndex(day) < 5;
+  return `${feminine ? "numa" : "num"} ${name}`;
+}
+
+/** As bases do "Comparar com" (a chave vai na URL, `?compare=`). */
+export const COMPARE_KEYS = ["typical", "last", "typical8"] as const;
+export type CompareKey = (typeof COMPARE_KEYS)[number];
+
+const WEEKDAY_LAST = [
+  "segunda anterior",
+  "terça anterior",
+  "quarta anterior",
+  "quinta anterior",
+  "sexta anterior",
+  "sábado anterior",
+  "domingo anterior",
+] as const;
+
+/** O nome da base: "sábado típico" ou "sábado anterior". */
+export function compareName(day: string, compare = "typical"): string {
+  return compare === "last" ? WEEKDAY_LAST[weekdayIndex(day)]! : typicalName(day);
+}
+
+/** As opções do controle, com o alcance de cada uma ("4 sábados", "8 sábados", "um só"). */
+export function compareOptions(day: string): { key: CompareKey; label: string; reach: string }[] {
+  const many = WEEKDAY_TYPICAL[weekdayIndex(day)]!.many;
+  return [
+    { key: "typical", label: typicalName(day), reach: `4 ${many}` },
+    { key: "last", label: WEEKDAY_LAST[weekdayIndex(day)]!, reach: "um só" },
+    { key: "typical8", label: typicalName(day), reach: `8 ${many}` },
+  ];
 }
 
 /** "4 sábados: 05/09 a 26/09" (os dias de comparação, do mais antigo ao mais recente). */
@@ -110,15 +145,64 @@ function nameList(rows: readonly BIOverShortRow[]): string {
   return rest.length ? `${first.name} e mais ${rest.length}` : first.name;
 }
 
+const SHIFT_TEXT: Record<string, string> = {
+  morning: "de manhã",
+  afternoon: "à tarde",
+  evening: "à noite",
+};
+
+/** "nos folhados", "nas bebidas quentes", "na mercearia": o artigo pela primeira palavra. */
+function inCollection(label: string): string {
+  const lower = label.toLocaleLowerCase("pt-BR");
+  const first = lower.split(/\s+/)[0] ?? lower;
+  if (first.endsWith("as")) return `nas ${lower}`;
+  if (first.endsWith("os") || first.endsWith("es") || first.endsWith("s")) return `nos ${lower}`;
+  if (first.endsWith("a")) return `na ${lower}`;
+  return `no ${lower}`;
+}
+
+function groupText(group: BIOverShortAnswerGroup): string {
+  const where = group.kind === "collection" ? inCollection(group.label) : group.label;
+  const shift = SHIFT_TEXT[group.shift] ?? "";
+  return shift ? `${where} ${shift}` : where;
+}
+
+function groupsText(groups: readonly BIOverShortAnswerGroup[]): string {
+  const shown = groups.slice(0, 2).map(groupText);
+  const rest = groups.length - shown.length;
+  if (rest > 0) shown.push(`mais ${rest}`);
+  if (shown.length <= 1) return shown[0] ?? "";
+  return `${shown.slice(0, -1).join(", ")} e ${shown[shown.length - 1]}`;
+}
+
 /**
- * A resposta em uma frase (pino 5): onde faltou e quando acabou, onde sobrou e quanto.
+ * A resposta em uma frase (pino 5): "Faltou nos folhados de manhã; sobrou baguete à
+ * tarde." Os grupos vêm da projeção (coleção quando 2 ou mais produtos dela tiveram o
+ * mesmo veredito, senão o produto), com o turno em que acabou ou em que a venda parou.
+ */
+export function overShortAnswer(
+  report: Pick<BIOverShortReport, "rows"> & Partial<Pick<BIOverShortReport, "answer_short" | "answer_over">>,
+): string {
+  if (!report.rows.length) return "Nenhum lote fechado neste dia: não há o que comparar.";
+  if (report.answer_short?.length || report.answer_over?.length) {
+    const parts: string[] = [];
+    if (report.answer_short?.length) parts.push(`faltou ${groupsText(report.answer_short)}`);
+    if (report.answer_over?.length) parts.push(`sobrou ${groupsText(report.answer_over)}`);
+    if (!parts.length) return "Tudo na medida: nada acabou cedo e nada sobrou além de 2 unidades.";
+    const sentence = parts.join("; ");
+    return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+  }
+  return productAnswer(report);
+}
+
+/**
+ * A resposta produto a produto (quando a projeção não agrupa): onde faltou e quando acabou, onde sobrou e quanto.
  * Os produtos já vêm na ordem da leitura (faltou primeiro, o que acabou mais cedo antes;
  * sobrou pela maior sobra).
  */
-export function overShortAnswer(report: Pick<BIOverShortReport, "rows">): string {
+function productAnswer(report: Pick<BIOverShortReport, "rows">): string {
   const short = report.rows.filter((row) => row.verdict === "short");
   const over = report.rows.filter((row) => row.verdict === "over");
-  if (!report.rows.length) return "Nenhum lote fechado neste dia: não há o que comparar.";
   const parts: string[] = [];
   if (short.length) {
     const first = short[0]!;
@@ -160,7 +244,7 @@ export function overUnit(report: BIOverShortReport): string {
 /** A comparação embaixo de cada número ("sábado típico: 2 produtos"). */
 export function typicalLine(report: BIOverShortReport, verdict: Verdict): string {
   const typical = report.typical;
-  const name = typicalName(report.day);
+  const name = compareName(report.day, report.compare);
   if (!typical.days) return `${name}: sem dias de comparação ainda`;
   if (verdict === "short") return `${name}: ${formatQty(typical.short)} ${plural(num(typical.short), "produto", "produtos")}`;
   if (verdict === "over") {
@@ -287,6 +371,59 @@ export function collectionsOf(rows: readonly BIOverShortRow[]): { ref: string; n
   const seen = new Map<string, string>();
   for (const row of rows) if (row.collection_ref && !seen.has(row.collection_ref)) seen.set(row.collection_ref, row.collection);
   return [...seen].map(([ref, name]) => ({ ref, name })).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+// ── O que aconteceu depois e os caminhos ─────────────────────────────────────
+
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+/** "iFood, Meta e Google indisponíveis às 10:40" (o "(automático)" fica com a tela). */
+export function unavailableText(item: BIOverShortUnavailable): string {
+  const verb = item.channels.length === 1 ? "indisponível" : "indisponíveis";
+  return `${joinNames(item.channels)} ${verb} às ${item.at}`;
+}
+
+/** "5 clientes" (o "Me avise" do site, por produto e dia). */
+export function clientCount(count: number): string {
+  return `${formatInt(count)} ${plural(count, "cliente", "clientes")}`;
+}
+
+/** "Abrir os 44 pedidos" / "Abrir o pedido". */
+export function ordersLinkLabel(count: number): string {
+  return count === 1 ? "Abrir o pedido" : `Abrir os ${formatInt(count)} pedidos`;
+}
+
+/** "Os 4 sábados" (os dias da comparação em que o produto foi feito). */
+export function historyDaysLabel(day: string, count: number): string {
+  const many = WEEKDAY_TYPICAL[weekdayIndex(day)]!.many;
+  const one = many.replace(/s$/, "");
+  return count === 1 ? `O ${one}` : `Os ${count} ${many}`;
+}
+
+const ORDINAL = (n: number) => `${n}º`;
+
+/**
+ * A linha sob os lotes: "Sem 3º lote: o plano dizia 44." quando o plano tinha mais
+ * lotes do que os que fecharam; senão "2 lotes · 44 un. feitas".
+ */
+export function lotsLine(row: BIOverShortRow): string {
+  const done = row.lots.length;
+  const made = row.lots.reduce((sum, lot) => sum + num(lot.qty), 0);
+  if (row.planned_lots > done) {
+    return `Sem ${ORDINAL(done + 1)} lote: o plano dizia ${formatQty(row.planned)}.`;
+  }
+  return `${done === 1 ? "1 lote" : `${done} lotes`} · ${formatQty(String(made))} un. feitas`;
+}
+
+/** O gesto do cabeçalho: "Levar ao plano do próximo sábado" / "da próxima segunda". */
+export function carryLabel(planDay: string): string {
+  if (!planDay) return "";
+  const index = weekdayIndex(planDay);
+  const name = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][index]!;
+  return index >= 5 ? `Levar ao plano do próximo ${name}` : `Levar ao plano da próxima ${name}`;
 }
 
 /** O botão do plano: "Abrir o plano de sábado 10/10". */

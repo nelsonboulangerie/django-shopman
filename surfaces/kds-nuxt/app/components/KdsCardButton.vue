@@ -13,10 +13,7 @@
 //  - `blocked` contornado em vermelho: item cancelado, não se convida ninguém.
 //  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Finalizar
 //    (pagamento não confirmado). O toque diz o motivo.
-//  - `inert`   não é botão (prévia, espera do servidor): o mesmo lugar e a mesma
-//    altura, apagado, e renderizado como TEXTO, para o leitor de tela não ouvir um
-//    controle que não faz nada.
-export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked" | "inert";
+export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked";
 
 const props = withDefaults(
   defineProps<{
@@ -31,7 +28,7 @@ const props = withDefaults(
 );
 defineEmits<{ click: [event: MouseEvent] }>();
 
-const TONES: Record<Exclude<KdsCardButtonTone, "inert">, string> = {
+const TONES: Record<KdsCardButtonTone, string> = {
   lead: "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
   invite: "border-2 border-foreground/80 text-foreground hover:bg-foreground/10 active:bg-foreground/20",
   confirm: "bg-success text-success-foreground hover:bg-success/90 active:bg-success/80",
@@ -40,20 +37,11 @@ const TONES: Record<Exclude<KdsCardButtonTone, "inert">, string> = {
   locked:
     "border-2 border-dashed border-border text-muted-foreground bg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_oklab,var(--destructive)_9%,transparent)_7px_14px)]",
 };
-const toneClass = computed(() => (props.tone === "inert" ? "" : TONES[props.tone]));
+const toneClass = computed(() => TONES[props.tone]);
 </script>
 
 <template>
-  <p
-    v-if="tone === 'inert'"
-    class="flex w-full items-center justify-center gap-2 rounded-lg border px-2 font-semibold text-muted-foreground opacity-60"
-    :class="sizeClass"
-  >
-    <Icon v-if="icon" :name="icon" class="size-5 shrink-0" />
-    <span class="truncate">{{ label }}</span>
-  </p>
   <button
-    v-else
     type="button"
     class="flex w-full shrink-0 items-center justify-center gap-2.5 rounded-lg px-2 font-semibold transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
     :class="[sizeClass, toneClass]"
@@ -61,6 +49,6 @@ const toneClass = computed(() => (props.tone === "inert" ? "" : TONES[props.tone
     @click="$emit('click', $event)"
   >
     <Icon v-if="icon" :name="icon" class="size-5 shrink-0" />
-    <span class="truncate">{{ label }}</span>
+    <span class="line-clamp-2 text-center leading-tight">{{ label }}</span>
   </button>
 </template>

@@ -15,3 +15,10 @@ export function gestorExitUrl(ordersUrl: string): string {
   const base = (ordersUrl || "").trim().replace(/\/+$/, "");
   return base ? `${base}/?columns=expedition` : "";
 }
+
+/** A palavra do selo no índice, concordando com o número (auditoria D08: "1 ativos").
+ *  Estação de preparo conta pedidos ativos; a Saída, os prontos para sair. */
+export function stationCountWord(type: string, count: number): string {
+  if (type === EXIT_STATION_TYPE) return count === 1 ? "pronto" : "prontos";
+  return count === 1 ? "ativo" : "ativos";
+}

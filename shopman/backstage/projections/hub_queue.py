@@ -262,7 +262,7 @@ def _kds(user, base: str, label: str, now: datetime, out: _Collected) -> None:
     for ticket in tickets:
         source = kds_projection._resolve_ticket_source(ticket)
         # Mesma régua do quadro da estação: hoje inclui backlog; encomenda futura não.
-        if kds_projection._source_matches_service_date(source, selected_date=today, today=today):
+        if kds_projection._due_today(source, today=today):
             on_today.append((ticket, source))
 
     late = 0
@@ -410,7 +410,10 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
         out.statuses.get("production"),
         HubAppStatusProjection(
             attention=_plural(late, "lote passou do tempo", "lotes passaram do tempo") if late else "",
-            summary=f"{finished} de {_plural(total, 'lote finalizado hoje', 'lotes finalizados hoje')}" if total else "",
+            # Todo bloco tem estado (prévia v4): dia sem lote também é um fato.
+            summary=f"{finished} de {_plural(total, 'lote finalizado hoje', 'lotes finalizados hoje')}"
+            if total
+            else "Nenhum lote para hoje",
         ),
     )
 
@@ -576,7 +579,7 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
             attention=_plural(pending, "decisão", "decisões") if pending else "",
             summary=_plural(decisions.active_campaign_count, "campanha ligada", "campanhas ligadas")
             if decisions.active_campaign_count
-            else "",
+            else "Nenhuma campanha ligada",
         ),
     )
 
@@ -604,7 +607,10 @@ def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected
             on_the_way.add(ref or f"sku:{material.sku}")
     out.statuses["purchase"] = HubAppStatusProjection(
         attention=_plural(to_send, "pedido para enviar", "pedidos para enviar") if to_send else "",
-        summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho") if on_the_way else "",
+        # Todo bloco tem estado (prévia v4): sem pedido, o estado calmo diz isso.
+        summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho")
+        if on_the_way
+        else ("" if to_send else "Nenhum pedido em andamento"),
     )
 
 
@@ -634,6 +640,7 @@ def _bi_status(user, base: str, label: str, now: datetime, out: _Collected) -> N
 
     current, previous = cache.get_or_set(key, compute, BI_STATUS_CACHE_SECONDS)
     if not current and not previous:
+        out.statuses["bi"] = HubAppStatusProjection(summary=f"Sem vendas nos últimos {DEFAULT_WINDOW_DAYS} dias")
         return
     summary = f"{DEFAULT_WINDOW_DAYS}D: {_compact_money(current)}"
     if previous:

@@ -10,7 +10,9 @@ import {
   queueDetailLine,
   queueDueText,
   queueMoreLabel,
+  queuePhoneLine,
   queueTimeLabel,
+  PHONE_QUEUE_ROWS,
   serverClockOffset,
   tileForItem,
   tileStatus,
@@ -167,5 +169,26 @@ describe("a linha de estado do bloco do app", () => {
     expect(status.hasStatus).toBe(false);
     expect(status.parts).toEqual([]);
     expect(status.tone).toBe("neutral");
+  });
+});
+
+// Central no celular (v3 `depois-hub-celular`, auditoria H03): linhas finas, até 3, o
+// selo na barra de 56px, apps como linhas de 62px com chevron.
+describe("Central no celular", () => {
+  it("a linha fina diz o app e há quanto espera, numa linha", () => {
+    expect(queuePhoneLine(item({ waiting_since: at(-14 * 60) }), NOW)).toBe("Gestor de pedidos · há 14 min");
+    expect(PHONE_QUEUE_ROWS).toBe(3);
+  });
+
+  it("o desenho do celular não volta a ser cartão alto com botão largo", async () => {
+    const { readFileSync } = await import("node:fs");
+    const app = readFileSync(new URL("../app/app.vue", import.meta.url), "utf8");
+    expect(app).toContain("data-hub-queue-phone");
+    expect(app).toContain("data-hub-apps-phone");
+    expect(app).toContain("min-h-[62px]");
+    expect(app).toContain("data-hub-seal");
+    expect(app).toContain("<MoreBelow");
+    // Tablet em pé: título e detalhe da fila numa linha só (H04).
+    expect(app).toContain('class="op-body font-semibold md:truncate"');
   });
 });

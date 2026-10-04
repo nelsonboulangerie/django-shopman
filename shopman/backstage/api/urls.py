@@ -13,6 +13,7 @@ from .bi import (
     BICustomersView,
     BIExploreView,
     BIForecastView,
+    BIOverShortCarryView,
     BIOverShortView,
     BIProductionView,
     BISalesView,
@@ -59,11 +60,12 @@ from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
     KDSExitPrintedStationDoneView,
-    KDSExpeditionActionView,
-    KDSExpeditionUndoView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
     KDSPrintedTicketScanView,
+    KDSStationFollowView,
+    KDSStationSeenView,
+    KDSStationSettingsView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
     KDSTicketRecallView,
@@ -144,6 +146,7 @@ from .operations import (
     OrderIFoodHandshakeView,
     OrderNotesView,
     OrderQueueView,
+    OrderRailCountsView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
@@ -251,6 +254,7 @@ from .purchase import (
     PurchaseCountView,
     PurchaseMinStockView,
     PurchaseOpeningView,
+    PurchaseReceiptVolumesView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
@@ -302,6 +306,9 @@ urlpatterns = [
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
+    path("kds/<slug:ref>/seen/", KDSStationSeenView.as_view(), name="api-backstage-kds-station-seen"),
+    path("kds/<slug:ref>/settings/", KDSStationSettingsView.as_view(), name="api-backstage-kds-station-settings"),
+    path("kds/<slug:ref>/follow/", KDSStationFollowView.as_view(), name="api-backstage-kds-station-follow"),
     path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
@@ -309,12 +316,6 @@ urlpatterns = [
         "kds/tickets/<int:ticket_pk>/acknowledge/",
         KDSTicketAcknowledgeView.as_view(),
         name="api-backstage-kds-ticket-acknowledge",
-    ),
-    path(
-        "kds/expedition/<int:order_pk>/action/", KDSExpeditionActionView.as_view(), name="api-backstage-kds-expedition"
-    ),
-    path(
-        "kds/expedition/<int:order_pk>/undo/", KDSExpeditionUndoView.as_view(), name="api-backstage-kds-expedition-undo"
     ),
     path(
         "kds/expedition/<int:order_pk>/printed-stations/<slug:station_ref>/done/",
@@ -479,6 +480,11 @@ urlpatterns = [
         name="api-backstage-purchase-confirm-receipt",
     ),
     path(
+        "purchase/receipts/volumes/",
+        PurchaseReceiptVolumesView.as_view(),
+        name="api-backstage-purchase-receipt-volumes",
+    ),
+    path(
         "purchase/receipts/reject/",
         PurchaseRejectReceiptView.as_view(),
         name="api-backstage-purchase-reject-receipt",
@@ -529,6 +535,7 @@ urlpatterns = [
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
     path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
+    path("bi/over-short/carry/", BIOverShortCarryView.as_view(), name="api-backstage-bi-over-short-carry"),
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
     path("bi/cash/", BICashView.as_view(), name="api-backstage-bi-cash"),
     path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
@@ -553,6 +560,7 @@ urlpatterns = [
     # A arrumação das colunas do Gestor neste posto (SUITE-UX §16).
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
+    path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     # Catalog matrix (produto × superfície)

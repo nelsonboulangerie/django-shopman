@@ -32,6 +32,9 @@ export default defineNuxtConfig({
       wakeLock: true,
       kiosk: true,
       idleReloadPaths: ["*"],
+      // A estação pequena no celular (barista, lanches): o pedido novo chega por push
+      // e vibra com a tela apagada (SUITE-UX §10.3, prévia v4 `cozinha-celular` b).
+      push: { surfaceRef: "kds", categories: ["kitchen"] },
     }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',

@@ -495,6 +495,16 @@ def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: 
         )
 
 
+def emit_kds_station_settings(instance) -> None:
+    """A estação mudou densidade ou som: todas as telas dela releem o quadro."""
+    _emit_backstage(
+        "kds",
+        "backstage-kds-update",
+        {"kind": "station", "kds_instance_ref": instance.ref, "station": instance.ref},
+        scope=instance.ref,
+    )
+
+
 def _track_kds_ticket_state(sender, instance, **kwargs):
     if not instance.pk:
         instance._sse_old_status = None
