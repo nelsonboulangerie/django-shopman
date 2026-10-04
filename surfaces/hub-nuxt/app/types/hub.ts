@@ -15,6 +15,8 @@ export interface HubTileProjection {
   status_attention: string;
   /** O resto da linha de estado, calmo ("11 ativos"); vazio quando o app não tem fonte. */
   status_summary: string;
+  /** O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém. */
+  status_positive: string;
 }
 
 /**

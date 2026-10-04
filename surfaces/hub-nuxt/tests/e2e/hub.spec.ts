@@ -36,4 +36,19 @@ test.describe("Central — launcher", () => {
     // A linha de estado do bloco concorda com a fila.
     await expect(page.getByText("1 para aceitar")).toBeVisible();
   });
+
+  test("o gesto longo não alarga o botão, e o estado bom acende o ponto verde", async ({ page }) => {
+    await page.goto("/");
+
+    const widths = await page.locator("[data-hub-queue-action]").evaluateAll(nodes =>
+      nodes.map(node => Math.round(node.getBoundingClientRect().width)),
+    );
+    expect(widths.length).toBe(2);
+    expect(new Set(widths).size, "todos os gestos com a mesma largura").toBe(1);
+    await expect(page.getByRole("link", { name: "Resolver no contexto: Produção sem insumo suficiente" })).toBeVisible();
+
+    const pdv = page.getByRole("link", { name: /PDV/i });
+    await expect(pdv).toContainText("Caixa aberto");
+    await expect(pdv.locator("[data-tile-tone]")).toHaveAttribute("data-tile-tone", "positive");
+  });
 });

@@ -66,6 +66,9 @@ class HubTileProjection:
     #: resto, calmo ("11 ativos"). Vazios quando o app não tem fonte de estado.
     status_attention: str = ""
     status_summary: str = ""
+    #: O estado bom e sabido ("Caixa aberto", "Aberta"): o ponto do bloco fica verde
+    #: quando nada pede alguém. Vazio quando o app não tem estado positivo a dizer.
+    status_positive: str = ""
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,14 @@ class _AppSpec:
     icon: str
     kind: str
     can_access: Callable[[object], bool]
+    #: Nome curto, onde o inteiro não cabe ao lado de outra coisa (a coluna do app na fila
+    #: "Precisa de você"). Vazio = o próprio ``label``. Espelha ``shortLabel`` de
+    #: ``app-identity.json`` (o mesmo teste de identidade compara os dois).
+    short_label: str = ""
+
+    @property
+    def queue_label(self) -> str:
+        return self.short_label or self.label
 
 
 # Registro declarativo das superfícies (ordem = ordem de exibição). Ícone forte por
@@ -105,7 +116,7 @@ class _AppSpec:
 _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e saída", "chef-hat", "launch", can_operate_kds),
-    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_expedite),
+    _AppSpec("gestor", "Gestor de pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_expedite, "Gestor"),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
     # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console
@@ -158,7 +169,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
     queue, statuses = collect_hub_queue(
         user,
         urls={spec.ref: urls[spec.ref] for spec in visible},
-        labels={spec.ref: spec.label for spec in visible},
+        labels={spec.ref: spec.queue_label for spec in visible},
     )
     tiles = tuple(
         HubTileProjection(
@@ -170,6 +181,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
             kind=spec.kind,
             status_attention=statuses[spec.ref].attention if spec.ref in statuses else "",
             status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
+            status_positive=statuses[spec.ref].positive if spec.ref in statuses else "",
         )
         for spec in visible
     )

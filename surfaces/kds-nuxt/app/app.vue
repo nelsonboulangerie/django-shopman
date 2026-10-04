@@ -18,44 +18,32 @@ const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 useOperatorWindowTitle();
-
-async function goToStations() {
-  await navigateTo("/");
-}
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
+  <!-- `data-suite="v3"`: a Cozinha veste a camada visual da suíte (UX-KIT-V1, prévia v4
+       `cozinha-estacao4.html`). Os primitivos do kit leem esse atributo. -->
+  <div class="min-h-dvh bg-background text-foreground" data-suite="v3">
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo e global de conexão (kit) — só aparece offline (paridade POS/Gestor/Produção). -->
     <OfflineBanner />
     <!-- Painel público de retirada: tela cheia, sem rail e sem auth. -->
     <NuxtPage v-if="isCustomerBoard" />
-    <!-- Telas de operador: rail canônico (kit) + conteúdo. -->
-    <div v-else class="flex min-h-screen">
-      <div
+    <!-- Telas de operador: rail da suíte (kit) do tablet para cima; no celular as
+         seções vão para a barra do polegar, no fim da coluna de conteúdo. -->
+    <div v-else class="flex min-h-dvh">
+      <KdsNav
         v-if="canIdentify"
-        class="sticky top-0 flex h-screen shrink-0 print:hidden"
-      >
-        <OperatorRail
-          :hub-url="hubUrl"
-          :operator-name="operator?.name"
-          @lock="lock"
-        >
-          <template #nav>
-            <!-- Nav própria do KDS: trocar de estação (voltar ao seletor). -->
-            <RailItem
-              icon="grid-2x2"
-              label="Estações"
-              :active="route.path === '/'"
-              @activate="goToStations"
-            />
-          </template>
-        </OperatorRail>
-      </div>
+        place="rail"
+        :hub-url="hubUrl"
+        :operator-name="operator?.name"
+        @lock="lock"
+      />
       <div class="flex min-w-0 flex-1 flex-col">
         <NuxtPage />
+        <KdsNav v-if="canIdentify && !locked && !mustChange" place="bar" />
       </div>
+      <KdsSettingsDialog v-if="canIdentify" />
     </div>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->
