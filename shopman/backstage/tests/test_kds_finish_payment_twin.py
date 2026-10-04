@@ -59,7 +59,7 @@ def test_unpaid_pix_ticket_says_so_before_the_tap(station):
     card = _card(station, "F15")
 
     assert card.finish_block_label.endswith("não confirmado")
-    assert "Finalizar libera quando o pagamento entrar" in card.finish_block_reason
+    assert "o botão Pronto libera quando o pagamento entrar" in card.finish_block_reason
 
 
 @pytest.mark.django_db

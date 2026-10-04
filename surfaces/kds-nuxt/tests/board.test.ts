@@ -9,6 +9,7 @@ import {
   KDS_UNDO_WINDOW_MS,
   additionTicketPks,
   nextTicketPk,
+  cardActionLabel,
   thumbActionLabel,
   ticketAction,
   ticketOverline,
@@ -154,6 +155,16 @@ describe("kds board presentation", () => {
     );
     expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("entrega às 11:00");
     expect(ticketStartLine(ticket())).toBe("");
+  });
+
+  it("o card do tablet e do desktop diz Pronto com o código, como o celular (dono, 04/10/2026)", () => {
+    const armed = { armed: true, blocked: false };
+    expect(cardActionLabel(ticketAction(ticket({ status: "in_progress" }), armed), "W07")).toBe("Pronto W07");
+    expect(cardActionLabel(ticketAction(ticket({ status: "in_progress", finish_block_label: "Pix não confirmado" }), armed), "W07")).toBe(
+      "Pronto W07",
+    );
+    expect(cardActionLabel(ticketAction(ticket({ status: "pending" }), armed), "W07")).toBe("Iniciar preparo");
+    expect(cardActionLabel(ticketAction(ticket(), { ...armed, finishing: true }), "W07")).toBe("Desfazer");
   });
 
   it("o polegar do celular leva o código: Pronto W07 (v4 cozinha-celular b)", () => {
@@ -327,7 +338,7 @@ describe("o botão do card", () => {
     });
     expect(ticketAction(ticket({ status: "in_progress" }), armed)).toMatchObject({
       kind: "finish",
-      label: "Finalizar preparo",
+      label: "Pronto",
       enabled: true,
     });
   });
@@ -338,7 +349,7 @@ describe("o botão do card", () => {
       blocked: false,
     });
     expect(justStarted.kind).toBe("finish");
-    expect(justStarted.label).toBe("Finalizar preparo");
+    expect(justStarted.label).toBe("Pronto");
     expect(justStarted.enabled).toBe(false);
   });
 
@@ -366,7 +377,7 @@ describe("o botão do card", () => {
   it("pagamento não confirmado tranca o finalizar ANTES do toque, mas não o iniciar", () => {
     const unpaid = { finish_block_label: "Pix não confirmado" };
     const locked = ticketAction(ticket({ status: "in_progress", ...unpaid }), armed);
-    expect(locked).toMatchObject({ kind: "locked", label: "Finalizar preparo", icon: "lucide:lock", enabled: true });
+    expect(locked).toMatchObject({ kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true });
     expect(ticketAction(ticket({ status: "pending", ...unpaid }), armed).kind).toBe("start");
     // O cancelamento fala primeiro (é a cozinha que destrava), e o Desfazer ganha de tudo.
     expect(ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: true }).kind).toBe("blocked");

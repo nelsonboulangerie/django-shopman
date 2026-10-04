@@ -123,9 +123,9 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
 
 // ── Os dois gestos da cozinha ───────────────────────────────────────────────
 // O card tem UM botão, e o botão diz o ato pelo nome: "Iniciar preparo" e
-// depois "Finalizar preparo" (no tablet, como a prévia v4 `cozinha-estacao`); no
-// polegar do celular o mesmo ato se chama "Pronto W07" (`cozinha-celular` b,
-// `thumbActionLabel`). A área grande do card (cabeçalho + itens) faz o
+// depois "Pronto W07". O ato de terminar se chama Pronto em todo tamanho (decisão
+// do dono, 04/10/2026): no card do tablet e do desktop (`cardActionLabel`) e no
+// polegar do celular (`cozinha-celular` b, `thumbActionLabel`). A área grande do card (cabeçalho + itens) faz o
 // que é SEGURO — abre o detalhe. O ato que sai da cozinha exige o botão
 // rotulado. O preparo é estado do TICKET (o servidor guarda e todos os tablets
 // veem), nunca do item.
@@ -133,11 +133,11 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
 /** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. O
  *  botão fica no MESMO lugar nos dois estados, então um toque duplo (ou o dedo
  *  que quica na tela molhada) iniciaria e finalizaria o mesmo pedido em 300 ms.
- *  Durante o intervalo o rótulo já é "Finalizar preparo" — o que muda é só ele
+ *  Durante o intervalo o rótulo já é "Pronto" — o que muda é só ele
  *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
 
-/** Janela de "Desfazer" do finalizar. Finalizar tem efeito fora da cozinha
+/** Janela de "Desfazer" do Pronto. O Pronto tem efeito fora da cozinha
  *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
  *  ninguém — então o POST só sai quando a janela fecha. Durante a janela o card
  *  FICA NO LUGAR, apagado, com o Desfazer no mesmo ponto onde o dedo acabou de
@@ -163,7 +163,7 @@ const NO_ACTION: KDSTicketAction = { kind: "none", label: "", icon: "", enabled:
  *  - `blocked` — há item cancelado deste pedido esperando confirmação: o servidor
  *    recusaria o finalizar, então a tela recusa antes e diz PARA ONDE ir. Iniciar
  *    nunca é bloqueado — começar o que sobrou é seguro.
- *  - `locked` — o servidor recusaria o Finalizar por outro motivo (pagamento digital
+ *  - `locked` — o servidor recusaria o Pronto por outro motivo (pagamento digital
  *    ainda não capturado, pedido sem confirmação: `finish_block_label`). O botão fica
  *    no lugar, tracejado e com cadeado, e o toque diz o motivo em vez de fingir que
  *    finalizou. Iniciar continua livre: "pode adiantar".
@@ -185,18 +185,25 @@ export function ticketAction(
       enabled: true,
     };
   if (ticket.finish_block_label)
-    return { kind: "locked", label: "Finalizar preparo", icon: "lucide:lock", enabled: true };
+    return { kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true };
   return {
     kind: "finish",
-    label: "Finalizar preparo",
+    label: "Pronto",
     icon: "lucide:check",
     enabled: state.armed,
   };
 }
 
+/** O botão do card no tablet e no desktop: o Pronto leva o código do pedido ("Pronto
+ *  W07"), como no celular; os outros atos ficam como estão ("Iniciar preparo"). */
+export function cardActionLabel(action: KDSTicketAction, code: string): string {
+  if (action.kind === "finish" || action.kind === "locked") return `Pronto ${code}`;
+  return action.label;
+}
+
 /** O ato no polegar do celular (prévia v4 `cozinha-celular` b): o mesmo botão do card,
  *  com o código do pedido no rótulo, porque o card em foco fica longe do dedo.
- *  "Pronto W07" no lugar de "Finalizar preparo"; os outros atos levam o código junto. */
+ *  "Pronto W07", e os outros atos também levam o código junto. */
 export function thumbActionLabel(action: KDSTicketAction, code: string): string {
   if (action.kind === "finish" || action.kind === "locked") return `Pronto ${code}`;
   if (action.kind === "start") return `Iniciar ${code}`;

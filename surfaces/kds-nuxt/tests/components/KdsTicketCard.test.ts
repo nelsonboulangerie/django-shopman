@@ -171,10 +171,11 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.emitted("finish")).toBeUndefined();
   });
 
-  it("em preparo (já armado): o botão vira Finalizar preparo e emite finish", async () => {
+  it("em preparo (já armado): o botão vira Pronto com o código e emite finish", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }) });
     const action = w.get("button[data-kds-action]");
-    expect(action.text()).toContain("Finalizar preparo");
+    expect(action.text()).toContain("Pronto 0007");
+    expect(action.attributes("aria-label")).toBe("Marcar o pedido 0007 como pronto");
     await action.trigger("click");
     expect(w.emitted("finish")).toHaveLength(1);
   });
@@ -185,7 +186,7 @@ describe("KdsTicketCard — os dois gestos", () => {
     await w.get("button[data-kds-action]").trigger("click");
     await w.setProps({ ticket: ticket({ status: "in_progress" }) }); // otimista
     // O rótulo já é o do próximo ato — o que não passa é o toque.
-    expect(w.get("button[data-kds-action]").text()).toContain("Finalizar preparo");
+    expect(w.get("button[data-kds-action]").text()).toContain("Pronto 0007");
     expect(w.get("button[data-kds-action]").attributes("disabled")).toBeDefined();
     await w.get("button[data-kds-action]").trigger("click"); // o quique do dedo
     expect(w.emitted("finish")).toBeUndefined();
@@ -354,18 +355,18 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(finalizar.classes()).toContain("bg-success");
   });
 
-  it("pagamento não confirmado: o motivo aparece no card e o Finalizar tranca, sem emitir finish", async () => {
+  it("pagamento não confirmado: o motivo aparece no card e o Pronto tranca, sem emitir finish", async () => {
     const w = mountCard({
       ticket: ticket({
         status: "in_progress",
         finish_block_label: "Pix não confirmado",
-        finish_block_reason: "Pode adiantar; o Finalizar libera quando o pagamento entrar.",
+        finish_block_reason: "Pode adiantar; o botão Pronto libera quando o pagamento entrar.",
       }),
     });
     expect(w.get("[data-kds-finish-block]").text()).toContain("Pix não confirmado.");
     expect(w.get("[data-kds-pill]").text()).toContain("Bloqueado");
     const action = w.get("button[data-kds-action]");
-    expect(action.text()).toContain("Finalizar preparo");
+    expect(action.text()).toContain("Pronto 0007");
     expect(action.classes()).toContain("border-dashed");
     await action.trigger("click");
     expect(w.emitted("locked")).toHaveLength(1);

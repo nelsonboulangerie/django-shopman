@@ -282,7 +282,7 @@ function warnBlocked() {
     "Este pedido tem item cancelado. Confirme o cancelamento no cartão vermelho para poder finalizar.",
   );
 }
-// Toque no Finalizar travado pelo pagamento: o motivo, com as palavras do servidor.
+// Toque no Pronto travado pelo pagamento: o motivo, com as palavras do servidor.
 function warnLocked(pk: number) {
   const card = tickets.value.find((c) => c.pk === pk);
   if (!card) return;

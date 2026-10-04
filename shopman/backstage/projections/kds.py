@@ -89,7 +89,7 @@ class KDSTicketProjection:
     # verdade — quem vê o crachá sabe que aquilo não se produz.
     test_order_label: str = ""
     # A gêmea do gate no card da estação (prévia v4, cozinha-estacao4.html, K11):
-    # quando o servidor vai recusar o Finalizar (pedido sem confirmação, pagamento
+    # quando o servidor vai recusar o Pronto (pedido sem confirmação, pagamento
     # digital ainda não capturado), o card diz ANTES do toque. Era um toast 5 s
     # depois de tocar, quando a janela de "Desfazer" fechava e o POST voltava
     # recusado. Iniciar continua livre ("pode adiantar"). "" quando libera.
@@ -898,7 +898,7 @@ def _start_fields(ticket, source_data: dict, names: dict[str, str]) -> dict:
 
 
 def _finish_block(ticket, source) -> dict[str, str]:
-    """Por que o Finalizar deste ticket seria recusado agora, na voz da cozinha.
+    """Por que o Pronto deste ticket seria recusado agora, na voz da cozinha.
 
     A mesma régua de ``kds.complete_ticket``: pedido NEW ainda não foi confirmado;
     pedido ACCEPTED só entra em preparo quando o ``payment_gate`` deixa. Comanda
@@ -910,7 +910,7 @@ def _finish_block(ticket, source) -> dict[str, str]:
     if source.status == Order.Status.NEW:
         return {
             "finish_block_label": "Pedido não confirmado",
-            "finish_block_reason": "Pode adiantar; o Finalizar libera quando o pedido for confirmado.",
+            "finish_block_reason": "Pode adiantar; o botão Pronto libera quando o pedido for confirmado.",
         }
     if source.status != Order.Status.ACCEPTED:
         return empty
@@ -926,7 +926,7 @@ def _finish_block(ticket, source) -> dict[str, str]:
     name = payment_method_label(method) if method else "Pagamento"
     return {
         "finish_block_label": f"{name} não confirmado",
-        "finish_block_reason": "Pode adiantar; o Finalizar libera quando o pagamento entrar.",
+        "finish_block_reason": "Pode adiantar; o botão Pronto libera quando o pagamento entrar.",
     }
 
 
