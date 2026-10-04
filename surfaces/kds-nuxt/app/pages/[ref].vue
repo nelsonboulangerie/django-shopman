@@ -297,13 +297,13 @@ function warnLocked(pk: number) {
         <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :detail="liveCue.title" />
       </template>
       <template #search>
-        <UiSearchInput
+        <OperatorSuiteSearch
           ref="searchInput"
           v-model="query"
           class="suite:md:w-[19rem]!"
+          screen-label="filtrando os tickets"
           placeholder="Código, cliente ou item"
           aria-label="Buscar pedido por código, cliente ou item (atalho: /)"
-          shortcut="/"
         />
       </template>
       <!-- Celular (prévia v4 b): a barra de cima é só selo, título, ao vivo, busca e

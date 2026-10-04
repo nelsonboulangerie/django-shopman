@@ -384,7 +384,7 @@ Como um app migra:
    Avisos por `provideOperatorInboxAlerts`; teclas da tela, na ajuda de atalhos, por
    `provideOperatorShortcuts`.
 3. Cada tela abre com `<OperatorPageHeader title="…">`: `#status` (o
-   `<OperatorLiveStatus>` e pílulas), `#search` (a busca, renderizada uma vez só),
+   `<OperatorLiveStatus>` e pílulas), `#search` (a busca da suíte, uma vez só; ver abaixo),
    `#actions` (controles), `#filters` (recortes na segunda linha), `#lead` (o voltar),
    `#phone-actions` (ações de polegar da tela na barra de 56px; Avisos o kit já põe).
 
@@ -415,6 +415,31 @@ script. Alvos ≥ 44px em tudo (as prévias tinham chips de
 40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.
+
+## Busca da suíte (`OperatorSuiteSearch`)
+
+Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
+`depois-hub-celular` e o campo do cabeçalho das v4). O `OperatorPageHeader` já a traz
+(`search = true`): toda tela tem o campo de 22rem do tablet para cima e a lupa na barra de
+56px do celular, que abre a busca em tela cheia (com a câmera onde o navegador lê código).
+
+- **Esta tela**: a tela que filtra a própria lista passa a sua no `#search`, com `v-model`
+  (e `screen-label="filtrando o quadro"`, `screen-count` se souber contar). Digitar filtra a
+  tela, como antes; Esc fecha o painel e mantém o filtro.
+- **App** e **Toda a suíte**: `GET /api/v1/backstage/search/?q=` (projeção
+  `shopman/backstage/projections/suite_search.py`): pedidos, encomendas, clientes, produtos,
+  insumos, fornecedores, lotes, receitas, campanhas e telas que o operador abre, agrupados por
+  tipo, cada um com o link profundo para o app de destino. "App" recorta pelo app atual
+  (`operatorPwa.app`; o Gestor é `orders` no kit e `gestor` no Django).
+- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem; ↑↓ anda, Enter abre, Tab
+  troca o alcance. Impressas só com ponteiro fino.
+- Variantes: `header` (padrão), `hero` (a barra grande da Central, 34rem, "/" e Ctrl K) e
+  `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
+  produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a suíte).
+
+Contrato em `tests/components/OperatorSuiteSearch.test.ts` e `tests/suiteSearch.test.ts`;
+`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm e que o
+`#search` do cabeçalho é sempre ela, e uma só.
 
 ## Próximo foco (`useNextFocus`)
 

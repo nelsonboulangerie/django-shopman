@@ -57,6 +57,11 @@ function openCustomerDisplay() {
            (slot `period`) e as ações à direita. No celular as ações descem para uma
            linha que rola, sem empurrar a página para o lado. -->
       <OperatorPageHeader title="Encomendas">
+        <!-- O campo da tela é o "cliente veio buscar" (com o `/`); a busca da suíte fica no
+             Ctrl K e na lupa do celular, sem um segundo campo na mesma tela. -->
+        <template #search>
+          <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+        </template>
         <template v-if="$slots.period" #status>
           <slot name="period" />
         </template>

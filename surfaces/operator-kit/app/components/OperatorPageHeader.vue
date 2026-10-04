@@ -7,19 +7,19 @@
 //
 // Por dispositivo:
 //   - celular (abaixo de `md`): barra de 56px com o selo do app (volta à Central), o
-//     título, o ponto ao vivo, a lupa (abre a busca numa linha própria), as ações de
+//     título, o ponto ao vivo, a lupa (abre a busca da suíte em tela cheia), as ações de
 //     polegar da tela (`#phone-actions`) e Avisos (a caixa do kit, V6-KIT). Os
 //     controles (`#actions`) e os recortes (`#filters`) descem cada um para uma linha
 //     que rola na horizontal. O selo e Avisos valem também no tablet em pé, onde o rail
 //     dá lugar à barra de seções embaixo;
-//   - a busca da tela é o `#search`; a busca da SUÍTE (frente BUSCA, peça
-//     `OperatorSuiteSearch`) entra pelo mesmo lugar quando existir;
 //   - tablet e desktop: a linha inteira. Os controles quebram para baixo antes de
 //     espremer a busca (`flex-wrap`), sem rolagem horizontal da página.
 //
-// A busca é renderizada UMA vez (o atalho "/" segura a referência dela): no celular
-// ela só muda de linha.
-import { computed, nextTick, ref } from "vue";
+// A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
+// cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
+// o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
+// cheia.
+import { computed, ref } from "vue";
 
 import type { OperatorSession } from "../types/operator";
 
@@ -41,11 +41,16 @@ const props = withDefaults(defineProps<{
    * em pé). Padrão: sim, em toda tela; do tablet deitado para cima ela mora no rail.
    */
   inbox?: boolean;
-}>(), { eyebrow: "", filtersWrap: true, inbox: true });
+  /** `false` só onde a tela não é lugar de trabalho (não há hoje). */
+  search?: boolean;
+  /** O texto do campo da busca padrão (sem filtro próprio da tela). */
+  searchPlaceholder?: string;
+}>(), { eyebrow: "", filtersWrap: true, inbox: true, search: true, searchPlaceholder: "Buscar pedido, cliente, produto ou tela" });
 
 // A busca é lida de `$slots` no render, nunca num `computed`: `useSlots()` não é
 // reativo, e um `computed` guardava a ausência do primeiro render (a tela que nasce
-// sem busca e ganha uma depois ficava sem campo e sem lupa; V6 C01).
+// sem busca e ganha uma depois ficava sem campo e sem lupa; V6 C01). Sem `#search`, a
+// busca padrão da suíte (`search = true`).
 
 const config = useRuntimeConfig().public as { operatorHubUrl?: string };
 const hubUrl = config.operatorHubUrl || "";
@@ -60,13 +65,7 @@ const eyebrowText = computed(() => {
   return context ? `${context} · este dispositivo` : "";
 });
 
-const searchOpen = ref(false);
-const searchBox = ref<HTMLElement | null>(null);
-function openSearch() {
-  searchOpen.value = !searchOpen.value;
-  if (!searchOpen.value) return;
-  void nextTick(() => searchBox.value?.querySelector<HTMLInputElement>("input")?.focus());
-}
+const { request: openSearch } = useSuiteSearchRequest();
 </script>
 
 <template>
@@ -106,15 +105,13 @@ function openSearch() {
         <slot name="status" />
       </div>
 
-      <div v-if="$slots.search" class="hidden w-1 md:block" aria-hidden="true" />
+      <div v-if="$slots.search || search" class="hidden w-1 md:block" aria-hidden="true" />
       <div
-        v-if="$slots.search"
-        ref="searchBox"
-        class="order-last w-full pb-2.5 md:order-none md:w-auto md:pb-0"
-        :class="searchOpen ? 'block pr-2' : 'hidden md:block'"
+        v-if="$slots.search || search"
+        class="hidden md:block md:w-auto"
         data-page-header-search
       >
-        <slot name="search" />
+        <slot name="search"><OperatorSuiteSearch :placeholder="searchPlaceholder" /></slot>
       </div>
 
       <div class="hidden flex-1 md:block" />
@@ -122,15 +119,15 @@ function openSearch() {
       <!-- celular: lupa e ações de polegar na barra de 56px -->
       <div class="flex items-center md:hidden">
         <button
-          v-if="$slots.search"
+          v-if="$slots.search || search"
           type="button"
           class="grid size-12 place-items-center rounded-md text-foreground"
-          :aria-label="searchOpen ? 'Fechar a busca' : 'Buscar'"
-          :aria-expanded="searchOpen"
+          aria-label="Buscar"
+          aria-haspopup="dialog"
           data-page-header-search-toggle
           @click="openSearch"
         >
-          <Icon :name="searchOpen ? 'lucide:x' : 'lucide:search'" class="size-6" />
+          <Icon name="lucide:search" class="size-6" />
         </button>
         <slot name="phone-actions" />
       </div>

@@ -345,14 +345,25 @@ describe("OperatorPageHeader", () => {
     expect(wrapper.get("h1").text()).toBe("Pedidos");
   });
 
-  it("a busca aparece uma vez; no celular a lupa a abre numa linha própria", async () => {
+  it("a busca aparece uma vez; no celular a lupa pede a busca da suíte em tela cheia", async () => {
     const wrapper = await mountHeader({ search: "<input aria-label='Buscar pedido' />" });
     expect(wrapper.findAll("input[aria-label='Buscar pedido']")).toHaveLength(1);
     const box = wrapper.get("[data-page-header-search]");
-    expect(box.classes()).toContain("hidden");
-    await wrapper.get("[data-page-header-search-toggle]").trigger("click");
-    expect(box.classes()).not.toContain("hidden");
-    expect(wrapper.get("[data-page-header-search-toggle]").attributes("aria-expanded")).toBe("true");
+    // No celular o campo não ocupa a barra: a lupa abre a tela cheia da busca da suíte.
+    expect(box.classes()).toEqual(expect.arrayContaining(["hidden", "md:block"]));
+    const { requests } = useSuiteSearchRequest();
+    const before = requests.value;
+    const toggle = wrapper.get("[data-page-header-search-toggle]");
+    expect(toggle.attributes("aria-haspopup")).toBe("dialog");
+    await toggle.trigger("click");
+    expect(requests.value).toBe(before + 1);
+  });
+
+  it("toda tela tem a busca da suíte, mesmo sem filtro próprio (T-10/T-11)", async () => {
+    const wrapper = await mountHeader();
+    const box = wrapper.get("[data-page-header-search]");
+    expect(box.find("[data-suite-search]").exists()).toBe(true);
+    expect(wrapper.find("[data-page-header-search-toggle]").exists()).toBe(true);
   });
 
   it("os controles não somem no celular: descem para uma linha que rola", async () => {

@@ -39,9 +39,10 @@ const OperatorPageHeaderStub = defineComponent({
   },
 });
 
-const UiSearchInputStub = defineComponent({
+// A busca do cabeçalho é a da suíte (kit, testada lá): aqui só o campo e o `focus()`.
+const SuiteSearchStub = defineComponent({
   inheritAttrs: false,
-  props: { modelValue: { type: String, default: "" }, shortcut: String },
+  props: { modelValue: { type: String, default: "" } },
   emits: ["update:modelValue"],
   setup(props, { attrs, emit, expose }) {
     const input = ref<HTMLInputElement | null>(null);
@@ -52,7 +53,7 @@ const UiSearchInputStub = defineComponent({
         ref: input,
         type: "search",
         value: props.modelValue,
-        "aria-keyshortcuts": props.shortcut,
+        "aria-keyshortcuts": "/ Control+K",
         onInput: (event: Event) =>
           emit("update:modelValue", (event.target as HTMLInputElement).value),
       });
@@ -66,7 +67,7 @@ const stubs = {
     props: ["tone", "time", "label"],
     template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
-  UiSearchInput: UiSearchInputStub,
+  OperatorSuiteSearch: SuiteSearchStub,
   Icon: true,
   NuxtLink: {
     props: ["to"],
@@ -190,7 +191,7 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     expect(shortcutsOpen.value).toBe(true);
     expect(
       wrapper!.find('input[type="search"]').attributes("aria-keyshortcuts"),
-    ).toBe("/");
+    ).toBe("/ Control+K");
     expect(
       wrapper!.find("[data-header-refresh]").attributes("aria-keyshortcuts"),
     ).toBe("R");

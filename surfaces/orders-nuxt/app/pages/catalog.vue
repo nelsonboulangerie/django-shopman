@@ -573,14 +573,13 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #search>
-        <div class="flex flex-wrap items-center gap-2">
-          <UiSearchInput v-model="query" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
-          <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
-               ao lado da busca; a coleção continua nas pills, que também reordenam. -->
-          <FilterBar v-model="filters" :dimensions="dimensions" touch />
-        </div>
+        <OperatorSuiteSearch v-model="query" screen-label="filtrando o catálogo" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
       </template>
       <template #actions>
+        <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
+             logo depois da busca; a coleção continua nas pills, que também reordenam. No
+             celular desce com os controles para a linha que rola (a busca é a tela cheia). -->
+        <FilterBar v-model="filters" :dimensions="dimensions" touch />
         <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
              declarada no seletor). A escolha persiste por estação. -->
         <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />

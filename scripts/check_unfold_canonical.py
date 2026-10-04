@@ -327,12 +327,17 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
         projections=(
             ROOT / "shopman/backstage/projections/hub.py",
             ROOT / "shopman/backstage/projections/hub_queue.py",
+            # A busca da suíte (o campo do cabeçalho dos oito apps e a barra da Central):
+            # `GET /api/v1/backstage/search/`, recortada pelo que o operador abre.
+            ROOT / "shopman/backstage/projections/suite_search.py",
         ),
         replacement=(
             "A Central de Apps (surfaces/hub-nuxt) é o launcher runtime do operador — "
             "projection `build_operator_hub` (com a fila `Precisa de você`, `hub_queue`) + "
             "API `GET /api/v1/backstage/hub/`, no MESMO "
             "contrato projection+Action das superfícies dedicadas (pos/kds/gestor/Produção). "
+            "A busca da suíte (`build_suite_search`, `GET /api/v1/backstage/search/`) mora junto: "
+            "é o alcance App/Toda a suíte do campo do cabeçalho dos oito apps e da Central. "
             "NÃO hospeda CRUD de Admin; o tile Loja deep-linka pro Unfold canônico (plan §5)."
         ),
     ),

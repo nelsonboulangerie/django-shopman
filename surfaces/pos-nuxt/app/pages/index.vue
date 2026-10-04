@@ -1103,6 +1103,9 @@ onBeforeUnmount(() => {
       <!-- Barra de contexto da v4 (`pos-sale4.html`): 56px, voltar, modo, a comanda,
            os três fatos do pedido (F6 · F7 · F8), o ao vivo, Últimas vendas e Liberar.
            Atalhos e Terminal foram para o pé do rail. -->
+      <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
+           abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
+      <OperatorSuiteSearch v-if="pos" variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
       <header v-if="pos" ref="contextHeader" class="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2" data-pos-context-header>
         <!-- Rail oculto (menu das iniciais): o caminho de volta para ele. -->
         <button

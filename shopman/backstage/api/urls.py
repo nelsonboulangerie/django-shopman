@@ -288,6 +288,7 @@ from .recipe_book import (
     RecipeVersionRatingView,
     RecipeVersionView,
 )
+from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
@@ -313,6 +314,8 @@ urlpatterns = [
     ),
     # Central — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
+    # Busca da suíte: o campo do cabeçalho dos oito apps e a barra da Central
+    path("search/", SuiteSearchView.as_view(), name="api-backstage-search"),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),

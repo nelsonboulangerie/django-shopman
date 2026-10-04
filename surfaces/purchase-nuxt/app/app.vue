@@ -5,7 +5,7 @@ const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, 
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
-const { view } = usePurchaseDesk();
+const { view, selectMaterial, selectSupplier } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const route = useRoute();
 
@@ -19,6 +19,15 @@ function applyShortcutView(value: unknown) {
 }
 applyShortcutView(route.query.view);
 watch(() => route.query.view, applyShortcutView);
+
+// A busca da suíte abre um insumo ou um fornecedor na Base (`/?view=base&material=SKU`,
+// `&supplier=REF`): o mesmo gesto do clique na lista.
+function applyBaseLink(material: unknown, supplier: unknown) {
+  if (typeof material === "string" && material) selectMaterial(material);
+  else if (typeof supplier === "string" && supplier) selectSupplier(supplier);
+}
+applyBaseLink(route.query.material, route.query.supplier);
+watch(() => [route.query.material, route.query.supplier], ([material, supplier]) => applyBaseLink(material, supplier));
 
 useOperatorWindowTitle();
 </script>
