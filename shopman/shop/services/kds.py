@@ -808,14 +808,36 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
-    if ticket.status == "pending":
+    first_start = ticket.status == "pending"
+    if first_start:
         ticket.status = "in_progress"
         ticket.save(update_fields=["status"])
 
     order = source if isinstance(source, Order) else None
     if order is not None:
         _ensure_order_preparing_for_work(order, actor=actor)
+        if first_start:
+            _record_ticket_start(order, ticket, actor=actor)
     return True
+
+
+def _record_ticket_start(order, ticket, *, actor: str) -> None:
+    """Quem iniciou o ticket e quando, em ``Order.data["kds_started"]``.
+
+    Chave = ``str(ticket.pk)``, valor ``{at, by}``. Só o PRIMEIRO início conta
+    (o recall reabre em preparo sem apagar). Comanda ainda não paga (``Session``)
+    não registra: o ticket dela muda de dono no commit e o registro não
+    sobreviveria sem um caminho próprio. Ver ``docs/reference/data-schemas.md``.
+    """
+    data = dict(order.data or {})
+    started = dict(data.get("kds_started") or {})
+    key = str(ticket.pk)
+    if key in started:
+        return
+    started[key] = {"at": timezone.now().isoformat(), "by": actor}
+    data["kds_started"] = started
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
 
 
 def complete_ticket(ticket, *, actor: str, via: str = "station") -> bool:

@@ -388,9 +388,9 @@ def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="syste
     return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision, actor=actor)
 
 
-def save_volumes(order, *, volumes, expected_revision=None, actor="system"):
+def save_volumes(order, *, volumes, expected_revision=None, actor="system", surface="orders"):
     try:
-        return operator_orders.save_volumes(order, volumes=volumes, expected_revision=expected_revision, actor=actor)
+        return operator_orders.save_volumes(order, volumes=volumes, expected_revision=expected_revision, actor=actor, surface=surface)
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
     except ValueError as exc:

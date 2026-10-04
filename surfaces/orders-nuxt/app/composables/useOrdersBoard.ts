@@ -560,8 +560,10 @@ export function useOrdersBoard() {
     return res.reasons;
   }
   const assign = (ref_: string) => act(ref_, "assign");
-  // Volumes declarados por quem embalou (0 apaga a declaração).
-  const declareVolumes = (ref_: string, volumes: number) => act(ref_, "volumes", { volumes });
+  // Volumes declarados por quem embalou (0 apaga a declaração). ``surface`` diz de onde:
+  // o ⋯ do cartão ("orders") ou a coluna/posto Saída ("exit"); o evento guarda as duas.
+  const declareVolumes = (ref_: string, volumes: number, surface: "orders" | "exit" = "orders") =>
+    act(ref_, "volumes", { volumes, surface });
   const unassign = (ref_: string) => act(ref_, "unassign");
 
   // Bulk action over many refs: fire all POSTs, capture per-ref failures inline,

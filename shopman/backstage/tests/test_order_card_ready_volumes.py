@@ -109,7 +109,10 @@ def test_declare_volumes_through_the_intention_protocol(client, operator):
     order.refresh_from_db()
     assert order.data["volumes"] == 3
     assert _queue_card(order.ref).volumes == 3
-    assert OrderEvent.objects.filter(order=order, type="volumes_declared", payload__volumes=3).exists()
+    event = OrderEvent.objects.get(order=order, type="volumes_declared", payload__volumes=3)
+    # Quem e de onde: o ⋯ do cartão do Gestor é a superfície padrão.
+    assert event.payload == {"volumes": 3, "actor": operator.username, "surface": "orders"}
+    assert event.actor == operator.username
 
     # Zero apaga a declaração: o cartão volta a contar itens.
     response = client.post(
@@ -148,7 +151,7 @@ def test_declare_volumes_with_a_stale_revision_is_409(client, operator):
     assert order.data["volumes"] == 4
 
 
-def test_declare_volumes_needs_manage_orders(client, operator):
+def test_declare_volumes_needs_board_access(client, operator):
     viewer = User.objects.create_user("so-ve", password="pw", is_staff=True)
     client.force_login(viewer)
     order = _order("VOL-4", status=Order.Status.READY)
@@ -158,3 +161,73 @@ def test_declare_volumes_needs_manage_orders(client, operator):
         content_type="application/json",
     )
     assert response.status_code == 403
+
+
+def _expediter():
+    """Quem só expede (``backstage.operate_kds``): a Cozinha e o posto Saída."""
+    user = User.objects.create_user("cozinha-volumes", password="pw", is_staff=True)
+    user.user_permissions.add(Permission.objects.get(
+        content_type__app_label="backstage", codename="operate_kds",
+    ))
+    return user
+
+
+def _volumes_payload(order: Order, user, **inputs) -> dict:
+    from uuid import uuid4
+
+    from shopman.shop.services.operator_orders import operational_revision
+
+    return {
+        **inputs,
+        "expected_actor_id": user.pk,
+        "base_revision": operational_revision(order, field="volumes"),
+        "idempotency_key": str(uuid4()),
+    }
+
+
+def test_whoever_packed_declares_from_the_kitchen_with_who_and_where(client, operator):
+    """Quem só expede (Cozinha, posto Saída) também declara; o evento diz quem e de onde."""
+    cook = _expediter()
+    client.force_login(cook)
+    order = _order("VOL-KDS", status=Order.Status.PREPARING)
+
+    card = build_order_card(order, user=cook)
+    action = next(action for action in card.actions if action.ref == "volumes")
+    assert action.enabled
+
+    response = client.post(
+        reverse("api-backstage-order-volumes", args=[order.ref]),
+        _volumes_payload(order, cook, volumes=2, surface="kds"),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    order.refresh_from_db()
+    assert order.data["volumes"] == 2
+    event = OrderEvent.objects.get(order=order, type="volumes_declared")
+    assert event.payload == {"volumes": 2, "actor": "cozinha-volumes", "surface": "kds"}
+
+
+def test_declare_volumes_from_the_exit_post(client, operator):
+    client.force_login(operator)
+    order = _order("VOL-EXIT", status=Order.Status.READY)
+    response = client.post(
+        reverse("api-backstage-order-volumes", args=[order.ref]),
+        context_payload(client, order.ref, "volumes", volumes=4, surface="exit"),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    assert OrderEvent.objects.get(order=order, type="volumes_declared").payload["surface"] == "exit"
+
+
+def test_declare_volumes_refuses_an_unknown_surface(client, operator):
+    client.force_login(operator)
+    order = _order("VOL-SURF", status=Order.Status.READY)
+    response = client.post(
+        reverse("api-backstage-order-volumes", args=[order.ref]),
+        context_payload(client, order.ref, "volumes", volumes=2, surface="pdv"),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "surface"
+    order.refresh_from_db()
+    assert "volumes" not in order.data

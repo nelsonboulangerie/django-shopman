@@ -86,6 +86,52 @@ def test_ready_delivery_waits_the_dispatch_against_the_whole_promise(operator):
     assert card.attention_since_iso == order.created_at.isoformat()
 
 
+def test_stage_goals_default_to_the_owner_numbers():
+    """Sem config de canal valem os padrões do dono (04/10/2026)."""
+    from shopman.backstage.projections.order_attention import stage_goal
+
+    assert {kind: stage_goal(kind) for kind in (
+        "start", "station", "mark_ready", "handoff", "dispatch", "courier_back", "settle", "blocked",
+    )} == {
+        "start": 5, "station": 15, "mark_ready": 15, "handoff": 10,
+        "dispatch": 30, "courier_back": 45, "settle": 15, "blocked": 5,
+    }
+
+
+def test_station_goal_on_the_card_is_fifteen_by_default(operator):
+    preparing = _order("ATT-GOAL-ST", status=Order.Status.PREPARING)
+    _, cards = _cards(operator)
+    card = cards[preparing.ref]
+    assert card.attention == "mark_ready"
+    assert card.goal_minutes == 15
+    assert card.goal_label == "meta 15"
+
+
+def test_channel_overrides_one_stage_goal_and_inherits_the_rest(operator):
+    """O canal declara só a etapa que muda (cascata por chave); a loja também pode."""
+    Channel.objects.filter(ref="web").update(config={"fulfillment": {"stage_goal_minutes": {"dispatch": 40}}})
+    shop = Shop.objects.get()
+    shop.defaults = {"fulfillment": {"stage_goal_minutes": {"station": 25}}}
+    shop.save()
+    delivery = _order("ATT-GOAL-DLV", status=Order.Status.READY, fulfillment="delivery")
+    preparing = _order("ATT-GOAL-PRP", status=Order.Status.PREPARING)
+    ready = _order("ATT-GOAL-RDY", status=Order.Status.READY)
+    _, cards = _cards(operator)
+    assert cards[delivery.ref].goal_minutes == 40
+    assert cards[delivery.ref].goal_label == "meta 40"
+    assert cards[preparing.ref].goal_minutes == 25
+    assert cards[ready.ref].goal_minutes == 10
+
+
+def test_stage_goal_config_refuses_unknown_stage_and_non_positive_minutes():
+    from shopman.shop.config import ChannelConfig, deep_merge
+
+    for bad in ({"despacho": 30}, {"dispatch": 0}, {"dispatch": "30"}, {"dispatch": True}):
+        config = ChannelConfig.from_dict(deep_merge(ChannelConfig.defaults(), {"fulfillment": {"stage_goal_minutes": bad}}))
+        with pytest.raises(ValueError, match="stage_goal_minutes"):
+            config.validate()
+
+
 def test_kitchen_work_and_the_road_need_nobody(operator):
     preparing = _order("ATT-PREP", status=Order.Status.PREPARING)
     station = KDSInstance.objects.create(ref="forno-att", name="Forno", type="prep")

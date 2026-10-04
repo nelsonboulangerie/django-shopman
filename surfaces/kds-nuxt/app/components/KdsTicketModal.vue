@@ -1,8 +1,12 @@
 <script setup lang="ts">
 // Detalhe do pedido — aberto por um toque na área de leitura do card (a que mostra
-// identidade e itens; o `i` é a marca dela). Só leitura: canal, horário, cliente,
+// identidade e itens; o `i` é a marca dela). Canal, horário, cliente, quem iniciou,
 // notas e itens completos. A ação (iniciar/finalizar) mora no BOTÃO do card, e só
 // lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
+//
+// O gesto daqui é outro: "Declarar volumes" (quem embalou declara, onde estiver;
+// decisão do dono, 04/10/2026). O mesmo do Gestor: − N +, Gravar, zero apaga. Só no
+// ticket de pedido (`volumes_order_ref`); comanda ainda sem pedido não tem onde gravar.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
@@ -15,11 +19,37 @@ import {
   toneTimer,
 } from "~/presentation/board";
 
-const props = defineProps<{
-  open: boolean;
-  ticket: KDSTicketProjection | null;
-}>();
-defineEmits<{ "update:open": [boolean] }>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    ticket: KDSTicketProjection | null;
+    /** Gravando os volumes (o Gravar espera). */
+    volumesBusy?: boolean;
+    /** Quadro de outra data: só leitura. */
+    readOnly?: boolean;
+  }>(),
+  { volumesBusy: false, readOnly: false },
+);
+const emit = defineEmits<{ "update:open": [boolean]; volumes: [number] }>();
+
+const canDeclareVolumes = computed(() => Boolean(props.ticket?.volumes_order_ref) && !props.readOnly);
+const volumesEditing = ref(false);
+const volumesDraft = ref(0);
+watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });
+function openVolumes() {
+  const t = props.ticket;
+  if (!t) return;
+  const itemCount = t.items.length || 1;
+  volumesDraft.value = t.volumes || Math.max(1, Math.min(itemCount, 99));
+  volumesEditing.value = true;
+}
+function stepVolumes(delta: number) {
+  volumesDraft.value = Math.max(0, Math.min(99, volumesDraft.value + delta));
+}
+function saveVolumes() {
+  volumesEditing.value = false;
+  emit("volumes", volumesDraft.value);
+}
 
 const ref_ = computed(() =>
   props.ticket ? splitRef(props.ticket.order_ref) : { prefix: "", code: "" },
@@ -89,6 +119,13 @@ const fill = computed(() =>
             >
               {{ ticket.customer_name }}
             </p>
+            <p
+              v-if="ticket.started_by"
+              class="mt-1 op-label text-muted-foreground"
+              data-kds-started
+            >
+              Iniciado por {{ ticket.started_by }}<template v-if="ticket.started_at_display"> às {{ ticket.started_at_display }}</template>
+            </p>
           </div>
           <div
             class="flex shrink-0 flex-col items-end gap-0.5 rounded-md border px-3 py-2 text-right"
@@ -138,6 +175,53 @@ const fill = computed(() =>
           <Icon name="lucide:user" class="mt-0.5 size-4 shrink-0" />
           <span class="min-w-0 whitespace-pre-wrap">{{ ticket.customer_note }}</span>
         </p>
+      </div>
+
+      <!-- volumes: quem embalou declara aqui mesmo (a mesma porta do Gestor). -->
+      <div v-if="canDeclareVolumes" class="border-b px-4 py-3" data-kds-volumes>
+        <div v-if="volumesEditing" class="flex flex-col gap-2" data-kds-volumes-editor>
+          <p class="op-label font-semibold">Quantos volumes saem?</p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="grid size-12 place-items-center rounded-md border border-border transition hover:bg-accent"
+              aria-label="Um volume a menos"
+              @click="stepVolumes(-1)"
+            >
+              <Icon name="lucide:minus" class="size-5" />
+            </button>
+            <span class="min-w-12 text-center op-title tabular-nums" aria-live="polite" data-kds-volumes-draft>{{ volumesDraft }}</span>
+            <button
+              type="button"
+              class="grid size-12 place-items-center rounded-md border border-border transition hover:bg-accent"
+              aria-label="Um volume a mais"
+              @click="stepVolumes(1)"
+            >
+              <Icon name="lucide:plus" class="size-5" />
+            </button>
+            <button
+              type="button"
+              class="ml-auto inline-flex h-12 items-center rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              :disabled="volumesBusy"
+              data-kds-volumes-save
+              @click="saveVolumes"
+            >Gravar</button>
+          </div>
+          <p class="op-micro text-muted-foreground">
+            {{ volumesDraft === 0 ? "Zero apaga: o pedido volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}
+          </p>
+        </div>
+        <button
+          v-else
+          type="button"
+          class="flex h-12 w-full items-center gap-2 rounded-md border border-border px-3 text-left op-label font-semibold transition hover:bg-accent disabled:opacity-60"
+          :disabled="volumesBusy"
+          data-kds-volumes-open
+          @click="openVolumes"
+        >
+          <Icon name="lucide:package" class="size-5 shrink-0 text-muted-foreground" />
+          {{ ticket.volumes ? `Volumes: ${ticket.volumes} (mudar)` : "Declarar volumes" }}
+        </button>
       </div>
 
       <!-- itens: inteiros, observação em destaque -->

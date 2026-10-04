@@ -473,7 +473,14 @@ def _headline_name(name: str, width: int) -> str:
     return label[:width]
 
 
-def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint: bool = False) -> bytes:
+def order_ticket(
+    order,
+    *,
+    shop_name: str = "",
+    tracking_url: str = "",
+    reprint: bool = False,
+    volume: tuple[int, int] | None = None,
+) -> bytes:
     """Ficha do pedido REMOTO — o papel que vai para o painel físico.
 
     Irmã do :func:`sale_receipt`, e o parentesco para aí: o recibo é a projeção
@@ -500,6 +507,12 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     ``tracking_url`` é o acompanhamento do pedido na loja — e, no pedido de
     link em aberto, é a MESMA página onde se paga. Vazio quando o deployment
     não configurou a base da loja: o papel sai sem QR em vez de com um QR mudo.
+
+    ``volume`` = ``(k, n)``: esta é a via do volume ``k`` de ``n`` (o pedido sai
+    em mais de uma sacola ou caixa, declarado por quem embalou em
+    ``Order.data["volumes"]``). O papel diz "Volume k de N" no bloco de longe,
+    para cada sacola levar a sua e ninguém entregar o pedido pela metade. Quem
+    gera as N vias é ``order_ticket.ticket_bytes``.
     """
     from shopman.utils.monetary import format_money
 
@@ -551,6 +564,8 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         # Sem nome, o número do iFood ocupa a posição do nome (decisão do dono):
         # identifica o pedido para a casa sem revelar ninguém.
         out += _double(f"iFood #{display_id}" if display_id else f"Pedido {order.ref}")
+    if volume is not None:
+        out += _double(f"Volume {volume[0]} de {volume[1]}")
     out += _line("")
     out += _rule()
 

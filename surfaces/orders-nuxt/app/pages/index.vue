@@ -1154,7 +1154,7 @@ function printQueue() {
                   @print-danfe="danfePrint.printDanfe(card.ref)"
                   @station-ready="(stationRef) => onStationReady(card, stationRef)"
                   @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
-                  @volumes="(count) => declareVolumes(card.ref, count)"
+                  @volumes="(count) => declareVolumes(card.ref, count, 'exit')"
                 />
               </div>
               <button
@@ -1199,7 +1199,7 @@ function printQueue() {
                 @print-danfe="danfePrint.printDanfe(card.ref)"
                 @station-ready="(stationRef) => onStationReady(card, stationRef)"
                 @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
-                  @volumes="(count) => declareVolumes(card.ref, count)"
+                @volumes="(count) => declareVolumes(card.ref, count, zone.key === 'expedition' ? 'exit' : 'orders')"
               />
             </div>
             <QueueColumnResizeHandle

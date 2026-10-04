@@ -149,6 +149,47 @@ def test_ticket_start_puts_ticket_in_progress_and_replay_is_success(client, kds_
 
 
 @pytest.mark.django_db
+def test_ticket_start_records_who_started_and_when_only_once(client, kds_operator, kds_setup):
+    """Quem iniciou e a que horas, no ``Order.data`` (sem migração); o replay não sobrescreve."""
+    ticket = kds_setup[2]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-ticket-start", args=[ticket.pk])
+    first = client.post(url, content_type="application/json").json()["ticket"]
+    assert first["started_by"] == "kds-api"
+    assert first["started_at_display"]
+
+    order = Order.objects.get(ref="KDS-API-1")
+    record = order.data["kds_started"][str(ticket.pk)]
+    assert record["by"] == "kds-api"
+
+    other = User.objects.create_user("kds-api-2", password="pw", is_staff=True)
+    other.user_permissions.add(_operate_kds_perm())
+    client.force_login(other)
+    again = client.post(url, content_type="application/json").json()["ticket"]
+    assert again["started_by"] == "kds-api"
+    order.refresh_from_db()
+    assert order.data["kds_started"][str(ticket.pk)] == record
+
+
+@pytest.mark.django_db
+def test_board_ticket_carries_volumes_and_the_base_to_declare_them(client, kds_operator, kds_setup):
+    """A estação declara volumes pela mesma porta do Gestor: o ticket traz o pedido e a base."""
+    from shopman.shop.services.operator_orders import operational_revision
+
+    prep, _, ticket, _ = kds_setup
+    order = Order.objects.get(ref="KDS-API-1")
+    order.data = {**order.data, "volumes": 2}
+    order.save(update_fields=["data"])
+    client.force_login(kds_operator)
+    board = client.get(reverse("api-backstage-kds-board", args=[prep.ref])).json()["board"]
+    card = next(item for item in board["tickets"] if item["pk"] == ticket.pk)
+    assert card["volumes"] == 2
+    assert card["volumes_order_ref"] == "KDS-API-1"
+    assert card["volumes_revision"] == operational_revision(order, field="volumes")
+    assert card["started_by"] == ""
+
+
+@pytest.mark.django_db
 def test_ticket_start_refuses_closed_ticket(client, kds_operator, kds_setup):
     ticket = kds_setup[2]
     ticket.status = "done"

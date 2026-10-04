@@ -346,3 +346,27 @@ describe("OrderCard: por que o botão está travado", () => {
     expect(mountCard({ card: card({ advance_block_reason: "" }) }).find("[data-advance-block]").exists()).toBe(false);
   });
 });
+
+describe("OrderCard: quem embalou declara os volumes", () => {
+  const volumesAction = (enabled = true) => ({
+    ref: "volumes", label: "Declarar volumes", enabled, reason: enabled ? "" : "Sem permissão", priority: "menu",
+    kind: "mutation", href: "", method: "POST", payload_schema: { expected_actor_id: 1, base_revision: "v" },
+    idempotency: "required", confirmation: {},
+  });
+  it("a etiqueta abre o editor num toque, e Gravar emite o número", async () => {
+    const base = card();
+    const w = mountCard({ card: { ...base, actions: [...base.actions, volumesAction()] } });
+    await w.get("[data-card-pack-declare]").trigger("click");
+    expect(w.find("[data-card-volumes-editor]").exists()).toBe(true);
+    expect(w.get("[data-card-volumes-draft]").text()).toBe("3");
+    await w.get("[aria-label='Um volume a menos']").trigger("click");
+    await w.get("[data-card-volumes-save]").trigger("click");
+    expect(w.emitted("volumes")?.[0]).toEqual([2]);
+  });
+  it("sem o gesto liberado, a etiqueta é só leitura", () => {
+    const base = card();
+    const w = mountCard({ card: { ...base, actions: [...base.actions, volumesAction(false)] } });
+    expect(w.find("[data-card-pack-declare]").exists()).toBe(false);
+    expect(w.find("[data-card-pack]").exists()).toBe(true);
+  });
+});

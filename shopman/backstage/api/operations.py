@@ -3684,18 +3684,30 @@ class OrderNotesView(_OrderActionBase):
 
 
 class OrderVolumesView(_OrderActionBase):
-    """Quantos volumes o pedido leva, declarado por quem embala (``Order.data["volumes"]``)."""
+    """Quantos volumes o pedido leva, declarado por quem embala (``Order.data["volumes"]``).
+
+    Quem embalou declara, onde estiver (dono, 04/10/2026): o ⋯ do cartão do Gestor
+    (``surface: "orders"``, o padrão), o posto Saída do Gestor (``"exit"``) e a
+    estação da Cozinha (``"kds"``). Mesma porta de quem opera o quadro (gerencia
+    pedidos ou expede, que inclui a Cozinha); o evento guarda quem e de onde.
+    """
 
     intention_operation = "volumes"
+    permission_classes = [HasOrderBoardAccess]
 
     def post(self, request, ref: str):
+        from shopman.shop.services.operator_orders import VOLUME_SURFACES
+
         order, err = self._get_order(ref)
         if err:
             return err
         volumes = request.data.get("volumes")
         if isinstance(volumes, bool) or not isinstance(volumes, int):
             return Response({"detail": "Volumes deve ser um número inteiro.", "field": "volumes", "errors": {"volumes": ["Volumes deve ser um número inteiro."]}}, status=400)
-        return self._context_response(request, order, "volumes", {"volumes": volumes}, lambda base: orders_service.save_volumes(order, volumes=volumes, expected_revision=base, actor=_actor(request)))
+        surface = request.data.get("surface") or "orders"
+        if surface not in VOLUME_SURFACES:
+            return Response({"detail": "Superfície desconhecida.", "field": "surface", "errors": {"surface": ["Superfície desconhecida."]}}, status=400)
+        return self._context_response(request, order, "volumes", {"volumes": volumes, "surface": surface}, lambda base: orders_service.save_volumes(order, volumes=volumes, expected_revision=base, actor=_actor(request), surface=surface))
 
 
 def _operator_identity(request) -> tuple[int, str]:

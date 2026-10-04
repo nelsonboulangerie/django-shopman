@@ -75,6 +75,11 @@ function openVolumes() {
   volumesDraft.value = props.card.volumes || Math.max(1, Math.min(props.card.items_count || 1, 99));
   volumesEditing.value = true;
 }
+// A etiqueta de volumes/itens abre o ⋯ já no editor (um toque, não dois).
+function openVolumesMenu() {
+  menuOpen.value = true;
+  openVolumes();
+}
 function stepVolumes(delta: number) {
   volumesDraft.value = Math.max(0, Math.min(99, volumesDraft.value + delta));
 }
@@ -281,7 +286,21 @@ function secondaryClass(priority: string): string {
         <span :class="[CHIP, chipSize]">
           <Icon :name="card.fulfillment_type === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4" />{{ card.fulfillment_label }}
         </span>
-        <span v-if="pack" :class="[CHIP, chipSize, 'tnum']" :data-card-pack="card.volumes ? 'volumes' : 'items'">
+        <!-- Quem embalou declara onde estiver: com o gesto liberado, a etiqueta abre o
+             "Quantos volumes saem?" num toque (o mesmo do ⋯). -->
+        <button
+          v-if="pack && volumesAction?.enabled"
+          type="button"
+          :class="[CHIP, chipSize, 'tnum transition hover:bg-accent']"
+          :data-card-pack="card.volumes ? 'volumes' : 'items'"
+          :aria-label="card.volumes ? `${pack}. Toque para mudar os volumes` : `${pack}. Toque para declarar os volumes`"
+          :disabled="busy"
+          data-card-pack-declare
+          @click="openVolumesMenu"
+        >
+          <Icon name="lucide:package" class="size-4" />{{ pack }}
+        </button>
+        <span v-else-if="pack" :class="[CHIP, chipSize, 'tnum']" :data-card-pack="card.volumes ? 'volumes' : 'items'">
           <Icon name="lucide:package" class="size-4" />{{ pack }}
         </span>
         <span v-if="card.is_preorder" :class="[CHIP, chipSize]" data-preorder-badge>

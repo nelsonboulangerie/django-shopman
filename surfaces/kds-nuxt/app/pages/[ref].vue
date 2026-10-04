@@ -49,6 +49,8 @@ const {
   undoFinish,
   recall,
   acknowledge,
+  declareVolumes,
+  volumesBusy,
 } = useKdsBoard(stationRef.value, serviceDate);
 
 // A estação de Saída não tem tela na Cozinha (UX-G3, SUITE-UX §15: a Saída é a
@@ -239,8 +241,17 @@ const openTicketPk = ref<number | null>(null);
 const openTicket = computed<KDSTicketProjection | null>(() => {
   const pk = openTicketPk.value;
   if (pk == null) return null;
-  return tickets.value.find((c) => c.pk === pk) ?? null;
+  // O concluído recente também abre: embalar vem depois de finalizar, e os volumes se
+  // declaram no detalhe.
+  return tickets.value.find((c) => c.pk === pk) ?? view.value?.recentDone.find((c) => c.pk === pk) ?? null;
 });
+async function onVolumes(count: number) {
+  if (openTicket.value) await declareVolumes(openTicket.value, count);
+}
+function openFromRecent(pk: number) {
+  recallOpen.value = false;
+  openTicketPk.value = pk;
+}
 function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
@@ -629,7 +640,14 @@ function warnLocked(pk: number) {
     />
 
     <!-- detalhe (aberto pelo card) -->
-    <KdsTicketModal :open="openTicket != null" :ticket="openTicket" @update:open="setModalOpen" />
+    <KdsTicketModal
+      :open="openTicket != null"
+      :ticket="openTicket"
+      :volumes-busy="volumesBusy"
+      :read-only="readOnly"
+      @update:open="setModalOpen"
+      @volumes="onVolumes"
+    />
 
     <!-- recall: concluídos recentes (desfazer finalização) -->
     <UiDialog :open="recallOpen" @update:open="recallOpen = Boolean($event)">
@@ -657,6 +675,17 @@ function warnLocked(pk: number) {
                   }}<template v-if="t.completed_at_display"> · {{ t.completed_at_display }}</template>
                 </p>
               </div>
+              <button
+                v-if="t.volumes_order_ref && !readOnly"
+                type="button"
+                class="ml-auto inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
+                :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
+                data-kds-recent-volumes
+                @click="openFromRecent(t.pk)"
+              >
+                <Icon name="lucide:package" class="size-4" />
+                {{ t.volumes ? t.volumes : "Volumes" }}
+              </button>
               <button
                 type="button"
                 :disabled="readOnly"
