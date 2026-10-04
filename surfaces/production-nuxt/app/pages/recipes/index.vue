@@ -50,7 +50,7 @@ function clearFilters() {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader
       v-model:query="query"
       title="Inventário"
@@ -195,12 +195,12 @@ function clearFilters() {
         </UiButton>
       </div>
 
-      <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         <!-- A estrela fica FORA do link (botão dentro de <a> não é HTML válido) e por cima do canto do cartão. -->
         <div v-for="entry in visible" :key="entry.ref" class="relative">
           <NuxtLink
             :to="`/recipes/${entry.ref}`"
-            class="grid h-full gap-2 rounded-md border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
+            class="grid h-full min-w-0 grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
             :class="entry.is_archived ? 'opacity-70' : ''"
           >
             <div class="flex items-start justify-between gap-2 pr-10">
