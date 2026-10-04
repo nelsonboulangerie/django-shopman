@@ -201,7 +201,7 @@ defineExpose({ filled, totalQ, touched: computed(() => (props.mode === "total" ?
           v-for="key in row"
           :key="String(key)"
           type="button"
-          class="h-16 rounded-lg border text-2xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40"
+          class="h-16 rounded-lg border text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40"
           :class="key === 'plus' ? 'border-transparent bg-secondary text-base font-semibold' : 'border-border bg-card'"
           :disabled="disabled || (key === 'plus' && mode === 'total')"
           :aria-label="typeof key === 'number' ? `Dígito ${key}` : key === 'back' ? 'Apagar último dígito' : 'Mais um'"

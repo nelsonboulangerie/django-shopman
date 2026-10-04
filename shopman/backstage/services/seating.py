@@ -336,7 +336,7 @@ def save_fixtures(fixtures) -> None:
         if not isinstance(raw, dict) or raw.get("kind") not in kinds:
             raise SeatingError("Elemento fixo desconhecido.", field=f"fixtures[{index}].kind")
 
-        def number(key, default, low=0, high=FIXTURE_MAX):
+        def number(key, default, low=0, high=FIXTURE_MAX, raw=raw, index=index):
             try:
                 value = int(raw.get(key, default))
             except (TypeError, ValueError):

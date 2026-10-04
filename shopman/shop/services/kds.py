@@ -316,6 +316,7 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
     estação fica de fora (é mercadoria que o cliente já leva).
     """
     from shopman.offerman.models import ProductComponent
+
     from shopman.shop.adapters import get_adapter
     from shopman.shop.adapters import kds as kds_adapter
 

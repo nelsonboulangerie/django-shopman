@@ -67,7 +67,7 @@ function accept(raw: string) {
   try {
     navigator.vibrate?.(60);
   } catch {
-    // Vibrar é enfeite: sem ele, o código sai do mesmo jeito.
+    // silêncio-deliberado: vibrar é enfeite; sem ele, o código sai do mesmo jeito.
   }
   stop();
   emit("code", value);
@@ -110,6 +110,7 @@ async function toggleTorch() {
     await controls.switchTorch(next);
     torchOn.value = next;
   } catch {
+    // silêncio-deliberado: lanterna é enfeite; o botão some e a leitura segue.
     canTorch.value = false;
   }
 }

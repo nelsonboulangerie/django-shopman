@@ -5482,7 +5482,9 @@ class POSTabRenameView(APIView):
             # (a mesa tocada no renomear, ou "" para "sem mesa"). Sem a chave, o
             # renomear não mexe no vínculo.
             if "seating_spot_ref" in body:
-                session = pos_tabs_service.set_pos_tab_seating(
+                from shopman.backstage.services.pos_seating import link_tab_to_spot
+
+                session = link_tab_to_spot(
                     channel_ref=POS_CHANNEL_REF,
                     session_key=session.session_key,
                     seating_spot_ref=str(body.get("seating_spot_ref") or "").strip(),

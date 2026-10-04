@@ -19,6 +19,7 @@ from __future__ import annotations
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.parsing import as_bool
 from shopman.backstage.services import pos_settings
 
 from .permissions import HasBackstagePermission
@@ -65,13 +66,13 @@ class POSSettingsView(APIView):
                     ref=str(body.get("ref") or ""),
                     label=str(body.get("label") or ""),
                     identification=str(body.get("identification") or ""),
-                    active=bool(body.get("active", True)),
+                    active=as_bool(body, "active", default=True),
                     actor=actor,
                 )
             elif section == "kitchen_station":
                 pos_settings.set_station_auto_fire(
                     station_ref=str(body.get("station_ref") or ""),
-                    enabled=bool(body.get("auto_fire")),
+                    enabled=as_bool(body, "auto_fire", default=False),
                     actor=actor,
                 )
             elif section == "shortcuts":

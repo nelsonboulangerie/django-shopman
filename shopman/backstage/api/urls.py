@@ -230,6 +230,7 @@ from .operations import (
 )
 from .operator_capacity import OperatorCapacityView
 from .order_history import OrderHistoryView
+from .pos_settings import POSSettingsView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -273,7 +274,6 @@ from .recipe_book import (
     RecipeVersionRatingView,
     RecipeVersionView,
 )
-from .pos_settings import POSSettingsView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView

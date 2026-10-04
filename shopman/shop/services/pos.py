@@ -1705,6 +1705,7 @@ def set_pos_tab_seating(
     session_key: str,
     seating_spot_ref: str,
     operator_username: str,
+    spot_label: str = "",
 ) -> Session:
     """Vincula (ou desvincula) a comanda a uma mesa do Salão. OPCIONAL.
 
@@ -1716,11 +1717,10 @@ def set_pos_tab_seating(
 
     Mora em ``Session.data["seating_spot_ref"]`` (sem campo novo). Uma mesa tem
     no máximo uma comanda aberta: a segunda é recusada com o nome da primeira.
-    ``seating_spot_ref=""`` desfaz o vínculo.
+    ``seating_spot_ref=""`` desfaz o vínculo. Que a mesa exista no salão de hoje
+    é conferido por quem chama (``backstage/services/pos_seating.py``): o shop
+    não lê o cadastro do backstage.
     """
-    from shopman.backstage.models import SeatingSpot
-    from shopman.backstage.services import seating as seating_service
-
     channel, _config = _channel_and_config(channel_ref)
     session = _get_open_pos_tab_session_by_key(channel_ref=channel.ref, session_key=session_key)
     if session is None:
@@ -1729,14 +1729,6 @@ def set_pos_tab_seating(
     spot_ref = str(seating_spot_ref or "").strip()
     data = dict(session.data or {})
     if spot_ref:
-        spot = SeatingSpot.objects.filter(ref=spot_ref).first()
-        if spot is None or not spot.existed_on(seating_service.today()):
-            raise PosIntentError(
-                code="seating_spot_not_found",
-                message="Essa mesa não está no salão de hoje.",
-                field="seating_spot_ref",
-                focus="cart",
-            )
         holder = (
             Session.objects.filter(channel_ref=channel.ref, state="open", data__seating_spot_ref=spot_ref)
             .exclude(session_key=session.session_key)
@@ -1746,7 +1738,7 @@ def set_pos_tab_seating(
             holder_display = str((holder.data or {}).get("tab_display") or holder.handle_ref or "")
             raise PosIntentError(
                 code="seating_spot_in_use",
-                message=f"{spot.label} já está com a comanda {holder_display}.",
+                message=f"{spot_label or 'Esta mesa'} já está com a comanda {holder_display}.",
                 field="seating_spot_ref",
                 focus="cart",
             )

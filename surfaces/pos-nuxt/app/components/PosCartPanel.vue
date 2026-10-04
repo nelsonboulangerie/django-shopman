@@ -943,10 +943,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
         <span class="min-w-0 flex-1">
           <span class="block truncate whitespace-nowrap op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
           <span v-if="fireBar.unfired && fireBar.visible" class="flex min-w-0 items-center gap-1 op-micro text-muted-foreground" data-pos-sheet-kitchen>
-            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span class="truncate">{{ fireBar.unfired }} ainda não {{ fireBar.unfired === 1 ? "foi" : "foram" }} à cozinha</span>
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span>{{ fireBar.unfired }} ainda não {{ fireBar.unfired === 1 ? "foi" : "foram" }} à cozinha</span>
           </span>
           <span v-else-if="fireBar.fired" class="flex min-w-0 items-center gap-1 op-micro text-success" data-pos-sheet-kitchen>
-            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span class="truncate">{{ fireBar.fired }} na cozinha</span>
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span>{{ fireBar.fired }} na cozinha</span>
           </span>
         </span>
         <Icon name="lucide:chevron-up" class="size-5 shrink-0 text-muted-foreground" />
@@ -964,7 +964,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           @click="$emit('fire')"
         >
           <Icon :name="firing ? 'lucide:loader-circle' : 'lucide:chef-hat'" class="size-5 shrink-0" :class="firing ? 'animate-spin motion-reduce:animate-none' : ''" />
-          <span class="truncate">{{ fireBar.label }}</span>
+          <span>{{ fireBar.label }}</span>
           <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-full bg-primary-foreground/20 px-1.5 op-label font-bold tnum">{{ fireBar.unfired }}</span>
         </button>
         <button
@@ -975,7 +975,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           @click="$emit('prepare')"
         >
           <Icon :name="primaryIconName" class="size-5 shrink-0" />
-          <span class="truncate">{{ primaryText }}</span>
+          <span>{{ primaryText }}</span>
         </button>
       </div>
       <button
@@ -1091,10 +1091,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </p>
         <div class="flex-1" />
         <button
-          v-if="canMove && hasOpenTab"
+          v-if="canMove && hasOpenTab && selection.count"
           type="button"
           class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
-          :disabled="loading || !selection.count"
+          :disabled="loading"
           title="Transferir as linhas marcadas para outra comanda (F10)"
           @click="$emit('move', selection.lineIds)"
         >
@@ -1357,7 +1357,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <template v-else>Quantidade de <b class="font-semibold text-foreground">{{ activeItem.name }}</b> <span class="tnum">(era {{ qtyWas }})</span></template>
           </p>
           <output
-            class="grid h-12 min-w-20 shrink-0 place-items-center rounded-md border-2 border-foreground/80 bg-card px-3 text-2xl font-semibold tnum"
+            class="grid h-12 min-w-20 shrink-0 place-items-center rounded-md border-2 border-foreground/80 bg-card px-3 text-3xl font-semibold tnum"
             :aria-label="inDiscountMode ? 'Desconto' : `Quantidade de ${activeItem.name}`"
             data-pos-touch-editor-value
           >{{ touchEditorValue }}</output>
@@ -1537,7 +1537,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             v-for="key in row"
             :key="String(key)"
             type="button"
-            class="h-14 rounded-md border border-border bg-card text-2xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40 sm:h-16"
+            class="h-14 rounded-md border border-border bg-card text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40 sm:h-16"
             :aria-label="typeof key === 'number' ? 'Dígito ' + key : key === 'back' ? 'Apagar último dígito' : 'Vírgula'"
             :disabled="mutationBusy || !numpadCanType || (key === 'decimal' && numpadMode !== 'disc_brl')"
             @click="typeof key === 'number' ? onDigit(String(key)) : key === 'back' ? onBackspace() : onComma()"
@@ -1554,21 +1554,21 @@ defineExpose({ focusItem, onDigit, onBackspace });
             :disabled="mutationBusy || lineAdjustmentsBlocked"
             data-pos-line-discount
             @click="toggleDiscount"
-          ><Icon name="lucide:percent" class="size-4 shrink-0" /><span class="truncate">{{ discountOpen ? "Quantidade" : "Desconto" }}</span></button>
+          ><Icon name="lucide:percent" class="size-4 shrink-0" /><span>{{ discountOpen ? "Quantidade" : "Desconto" }}</span></button>
           <button
             v-else-if="rowIndex === 1"
             type="button"
             class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-transparent bg-secondary px-2 op-label font-semibold transition disabled:opacity-40 sm:h-16"
             :disabled="mutationBusy || lineAdjustmentsBlocked"
             @click="chooseMode('note')"
-          ><Icon name="lucide:message-square-text" class="size-4 shrink-0" /><span class="truncate">Observação</span></button>
+          ><Icon name="lucide:message-square-text" class="size-4 shrink-0" /><span>Observação</span></button>
           <button
             v-else-if="rowIndex === 2"
             type="button"
             class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 op-label font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-40 sm:h-16"
             :disabled="mutationBusy"
             @click="askRemove(activeItem.line_id)"
-          ><Icon name="lucide:trash-2" class="size-4 shrink-0" /><span class="truncate">Remover</span></button>
+          ><Icon name="lucide:trash-2" class="size-4 shrink-0" /><span>Remover</span></button>
           <button
             v-else
             type="button"
@@ -1641,7 +1641,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
     <div v-else-if="sheet && sheetOpen && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
       <div class="mb-2 flex items-baseline gap-2">
         <span class="op-label text-muted-foreground">Pagar</span>
-        <strong class="text-2xl font-semibold tnum">{{ totalDisplay }}</strong>
+        <strong class="text-3xl font-semibold tnum">{{ totalDisplay }}</strong>
         <span class="flex-1" />
         <button
           type="button"

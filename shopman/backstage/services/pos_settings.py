@@ -55,9 +55,10 @@ def _printer(terminal) -> dict:
 
 
 def build_settings(*, terminal=None) -> dict:
-    from shopman.backstage.models import DeliveryDevice, KDSInstance
     from shopman.cashman.models import Terminal
     from shopman.offerman.models import Collection
+
+    from shopman.backstage.models import DeliveryDevice, KDSInstance
 
     terminals = list(Terminal.objects.filter(is_active=True).order_by("ref"))
     stations = list(

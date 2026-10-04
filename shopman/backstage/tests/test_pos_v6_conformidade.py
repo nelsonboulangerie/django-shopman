@@ -27,6 +27,7 @@ from shopman.backstage.models import DeliveryDevice, KDSInstance, POSTab, Seatin
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.pos import build_open_tab, build_pos_tabs
 from shopman.backstage.projections.seating import build_seating
+from shopman.backstage.services.pos_seating import link_tab_to_spot
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.kds import kitchen_routes_for_skus
@@ -95,7 +96,7 @@ def test_mesa_vinculada_uma_comanda_por_mesa_e_o_salao_ve_ocupada(loja):
     first = _open("1007")
     second = _open("1008")
 
-    pos_service.set_pos_tab_seating(
+    link_tab_to_spot(
         channel_ref="pdv", session_key=first.session_key, seating_spot_ref="mesa-4", operator_username="alice",
     )
     first.refresh_from_db()
@@ -105,12 +106,12 @@ def test_mesa_vinculada_uma_comanda_por_mesa_e_o_salao_ve_ocupada(loja):
     assert tabs["00001007"].seating_spot_ref == "mesa-4"
 
     with pytest.raises(PosIntentError) as exc:
-        pos_service.set_pos_tab_seating(
+        link_tab_to_spot(
             channel_ref="pdv", session_key=second.session_key, seating_spot_ref="mesa-4", operator_username="alice",
         )
     assert exc.value.code == "seating_spot_in_use"
 
-    pos_service.set_pos_tab_seating(
+    link_tab_to_spot(
         channel_ref="pdv", session_key=first.session_key, seating_spot_ref="", operator_username="alice",
     )
     first.refresh_from_db()
@@ -142,7 +143,7 @@ def test_renomear_pela_api_com_a_mesa_liga_o_vinculo(loja, client):
 def test_mesa_que_nao_esta_no_salao_e_recusada(loja):
     session = _open("1007")
     with pytest.raises(PosIntentError) as exc:
-        pos_service.set_pos_tab_seating(
+        link_tab_to_spot(
             channel_ref="pdv", session_key=session.session_key, seating_spot_ref="nao-existe",
             operator_username="alice",
         )

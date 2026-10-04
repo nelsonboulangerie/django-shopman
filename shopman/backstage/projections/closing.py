@@ -219,7 +219,6 @@ _WEEKDAY_TYPICAL = (
 def _orders_by_hour(day) -> dict[int, int]:
     from django.db.models import Count
     from django.db.models.functions import ExtractHour
-
     from shopman.orderman.models import Order
 
     rows = (
@@ -246,6 +245,7 @@ def _hourly_shape(today) -> dict | None:
         today_counts = _orders_by_hour(today)
         past = [_orders_by_hour(today - timedelta(days=7 * week)) for week in range(1, 5)]
     except Exception:
+        logger.debug("closing_hourly_shape_failed", exc_info=True)
         return None
     past = [counts for counts in past if counts]
     if not past:
