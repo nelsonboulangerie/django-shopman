@@ -174,6 +174,11 @@ function onNewSale() {
       {{ courierChange }}
     </p>
 
+    <!-- O dinheiro da venda do TABLET esperando a gaveta do Balcão (o cartão
+         "Abrir gaveta do Balcão"). Quem preenche é a página: a gaveta é do
+         caixa, não da tela de resultado. -->
+    <slot name="drawer" />
+
     <!-- NFC-e FALHOU — a venda existe, a nota não. Dito aqui, e não num toast
          que some: o próximo passo mora nas Últimas vendas (reenfileirar). -->
     <div

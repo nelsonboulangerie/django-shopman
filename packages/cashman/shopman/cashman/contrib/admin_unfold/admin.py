@@ -40,7 +40,27 @@ _KIND_COLORS = {
     Entry.Kind.COUNT: "blue",
     Entry.Kind.COUNT_CORRECTION: "blue",
     Entry.Kind.DRAWER_UNLOCK: "yellow",
+    Entry.Kind.DRAWER_OPEN: "yellow",
 }
+
+#: Como a abertura chegou à gaveta (``drawer_open.payload["via"]``).
+_DRAWER_VIA_LABELS = {
+    "relay": "pelo relay do balcão",
+    "local": "no próprio balcão",
+}
+
+#: O que o agente do balcão respondeu ao pulso (nota ``drawer_pulse_result``).
+_PULSE_RESULT_LABELS = {
+    "sent": "pulso entregue à impressora da gaveta",
+    "failed": "pulso recusado pelo agente do balcão",
+    "expired": "pulso não chegou ao balcão (agente sem resposta)",
+    "uncertain": "pulso sem confirmação do agente",
+}
+
+#: As notas que o backstage escreve no livro com evento conhecido. A chave
+#: ``event`` é o schema (docs/reference/data-schemas.md); o pacote só lê.
+TOLERANCE_EVENT = "cash_tolerance"
+PULSE_RESULT_EVENT = "drawer_pulse_result"
 
 
 def _money(amount_q: int) -> str:
@@ -81,6 +101,20 @@ def entry_detail(entry: Entry) -> str:
             parts.append("em " + ", ".join(format_money(int(v)) for v in pedidas))
         if payload.get("note"):
             parts.append(str(payload["note"]))
+    elif kind == Entry.Kind.DRAWER_OPEN:
+        purpose = payload.get("purpose") or "no_sale"
+        parts.append("venda" if purpose == "sale" else "sem venda")
+        via = _DRAWER_VIA_LABELS.get(str(payload.get("via") or ""))
+        if via:
+            parts.append(via)
+        if payload.get("station_device_id"):
+            parts.append(f"dispositivo {payload['station_device_id']}")
+    elif kind == Entry.Kind.NOTE and payload.get("event") == PULSE_RESULT_EVENT:
+        parts.append(_PULSE_RESULT_LABELS.get(str(payload.get("status") or ""), "pulso"))
+        if payload.get("detail"):
+            parts.append(str(payload["detail"]))
+    elif kind == Entry.Kind.NOTE and payload.get("event") == TOLERANCE_EVENT:
+        parts.append(tolerance_sentence(payload))
     elif kind == Entry.Kind.DRAWER_UNLOCK and payload.get("drawer_raw"):
         parts.append(f"sensor {payload['drawer_raw']}")
     elif kind == Entry.Kind.RECEIPT_RESULT:
@@ -96,6 +130,25 @@ def entry_detail(entry: Entry) -> str:
     if entry.order_ref:
         parts.append(f"pedido {entry.order_ref}")
     return " · ".join(p for p in parts if p)
+
+
+def tolerance_sentence(payload: dict) -> str:
+    """O veredito da tolerância, como o gerente lê: dentro ou fora, e de quanto."""
+    within = bool(payload.get("within"))
+    tolerance = int(payload.get("tolerance_q") or 0)
+    difference = int(payload.get("difference_q") or 0)
+    verdict = "dentro da tolerância" if within else "fora da tolerância"
+    return f"{verdict} (diferença {_money(difference)}, tolerância R$ {format_money(tolerance)})"
+
+
+def latest_tolerance(shift) -> dict | None:
+    """O último veredito de tolerância do turno (a correção da contagem refaz)."""
+    note = (
+        Entry.objects.filter(shift=shift, kind=Entry.Kind.NOTE, payload__event=TOLERANCE_EVENT)
+        .order_by("-at", "-id")
+        .first()
+    )
+    return dict(note.payload) if note is not None else None
 
 
 class EntryInline(BaseTabularInline):
@@ -162,6 +215,7 @@ class ShiftAdmin(BaseModelAdmin):
         "expected_display",
         "counted_display",
         "difference_display",
+        "tolerance_display",
     )
     list_filter = ("status", "terminal", "opened_at")
     # ``opened_by`` é FK para User: buscar nele direto vira ``opened_by__icontains``,
@@ -183,6 +237,8 @@ class ShiftAdmin(BaseModelAdmin):
         "expected_display",
         "counted_display",
         "difference_display",
+        "tolerance_display",
+        "drawer_openings_display",
     )
     inlines = [EntryInline]
     ordering = ("-opened_at",)
@@ -245,6 +301,29 @@ class ShiftAdmin(BaseModelAdmin):
             return "—"
         difference = int(_annotated(obj, "_difference_q", lambda: ledger.difference(obj)) or 0)
         return unfold_badge_numeric(_money(difference), "green" if difference == 0 else "yellow")
+
+
+    @display(description=_("Tolerância"))
+    def tolerance_display(self, obj):
+        verdict = latest_tolerance(obj)
+        if verdict is None:
+            return "—"
+        within = bool(verdict.get("within"))
+        return unfold_badge("dentro" if within else "fora", "green" if within else "red")
+
+    @display(description=_("Aberturas da gaveta"))
+    def drawer_openings_display(self, obj):
+        """Quantas vezes a gaveta abriu, por quê e de onde: o rastro da diferença."""
+        openings = list(obj.entries.filter(kind=Entry.Kind.DRAWER_OPEN).values_list("payload", flat=True))
+        if not openings:
+            return "nenhuma"
+        sales = sum(1 for p in openings if (p or {}).get("purpose") == "sale")
+        relay = sum(1 for p in openings if (p or {}).get("via") == "relay")
+        no_sale = len(openings) - sales
+        return (
+            f"{len(openings)} no total · {sales} por venda · {no_sale} sem venda · "
+            f"{relay} pelo tablet (relay). Cada uma está na linha do tempo, com quem, de onde e por quê."
+        )
 
 
 def _annotated(obj, name: str, fallback):

@@ -40,6 +40,8 @@ beforeEach(() => {
     // ela fica fechada para o gate de sessão ser o único assunto.
     useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
+    // A revisão em tela cheia esconde a barra do polegar pelo `meta` da rota.
+    useRoute: () => ({ meta: {}, path: "/" }),
   });
 });
 

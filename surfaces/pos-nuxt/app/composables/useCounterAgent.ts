@@ -201,6 +201,31 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   }
 
   /**
+   * Este dispositivo É o Balcão? Só ele alcança o agente na própria loopback.
+   *
+   * O tablet vinculado ao mesmo caixa recebe a MESMA configuração de gaveta (ela
+   * é do terminal), mas o agente vive no PC do Balcão: ali o chute local falha.
+   * A pergunta honesta é a rede, não a config: o agente responde aqui ou não. A
+   * resposta positiva fica guardada; a negativa é refeita depois de um tempo
+   * (o agente pode ter subido).
+   */
+  let reachableUntil = 0;
+  let reachableAnswer = false;
+  async function reachable(): Promise<boolean> {
+    if (!import.meta.client || !canKick.value) return false;
+    const now = Date.now();
+    if (now < reachableUntil) return reachableAnswer;
+    try {
+      const payload = await callAgent("/health", undefined, DRAWER_READ_TIMEOUT_MS);
+      reachableAnswer = Boolean(payload);
+    } catch {
+      reachableAnswer = false;
+    }
+    reachableUntil = now + (reachableAnswer ? 10 * 60_000 : 30_000);
+    return reachableAnswer;
+  }
+
+  /**
    * Lê se a gaveta está aberta agora. **Nunca lança**: toda falha vira
    * `{ known: false }` com o motivo.
    *
@@ -247,6 +272,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
     print,
     probe,
     readState,
+    reachable,
   };
 }
 

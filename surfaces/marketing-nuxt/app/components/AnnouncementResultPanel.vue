@@ -157,7 +157,7 @@ const approvalEvidence = computed(() => {
           ? `Agendada para ${scheduleSummary(scheduledFor, props.shopTimezone)}`
           : "Agendada"
         : scheduledFor
-          ? `Imediata — ${scheduleSummary(scheduledFor, props.shopTimezone)}`
+          ? `Imediata (${scheduleSummary(scheduledFor, props.shopTimezone)})`
           : "Imediata",
     timezone:
       props.shopTimezone === "America/Sao_Paulo"
@@ -194,7 +194,7 @@ const recoveryDialogPresentation = computed(() => {
   if (action?.kind === "reconcile_unknown_delivery") {
     return {
       icon: "lucide:search",
-      safetyTitle: "Somente consulta — nada será reenviado",
+      safetyTitle: "Somente consulta: nada será reenviado",
       safetyDetail: "O sistema apenas pergunta ao provedor o que aconteceu.",
       confirmLabel: "Consultar resultado",
     };
@@ -279,6 +279,26 @@ async function startRecovery(action: MarketingActionProjectionV2) {
   if (action.kind === "cancel_announcement") return;
   await requestRecovery();
 }
+
+// Chegou pelo item dos Agendados (v4 pino 5: "reagendar, cancelar o que não começou"
+// no próprio item): `?action=cancel_announcement` ou `reschedule_announcement` abre o
+// mesmo gesto que o botão daqui abriria, uma vez. A ação continua sendo a que o
+// servidor ofereceu: sem ela habilitada, nada abre.
+const route = useRoute();
+const DEEP_LINK_ACTIONS = new Set(["cancel_announcement", "reschedule_announcement"]);
+let deepLinkUsed = false;
+watch(
+  () => props.actions,
+  (actions) => {
+    const wanted = typeof route.query.action === "string" ? route.query.action : "";
+    if (deepLinkUsed || !DEEP_LINK_ACTIONS.has(wanted)) return;
+    const action = actions.find((candidate) => candidate.kind === wanted && candidate.enabled);
+    if (!action) return;
+    deepLinkUsed = true;
+    void startRecovery(action);
+  },
+  { immediate: true },
+);
 
 async function requestRecovery() {
   const action = activeAction.value;

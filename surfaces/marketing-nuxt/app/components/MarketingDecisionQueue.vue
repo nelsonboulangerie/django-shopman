@@ -15,11 +15,13 @@ import { platformIcon } from "~/presentation/campaign";
 import {
   automaticCheckLine,
   deadlinePresentation,
+  decisionIcon,
   decisionTitle,
-  destinationsLine,
   failureHeadline,
   failureReason,
+  failureSubtitle,
   queueHeadline,
+  reviewSubtitle,
   scheduledSummaryParts,
   type DeadlineTone,
 } from "~/presentation/decisions";
@@ -43,22 +45,21 @@ const live = useMarketingLiveStatus({
   timeZone: shopTimezone,
 });
 
-const TRIGGER_ICONS: Record<string, string> = {
-  production_finished: "lucide:croissant",
-  low_stock: "lucide:package-minus",
-  stock_back: "lucide:package-check",
-  product_created: "lucide:sparkles",
-  manual: "lucide:megaphone",
-  schedule: "lucide:calendar-clock",
-};
-
 function icon(item: DecisionItem): string {
   // A falha mostra ONDE falhou (v4: a miniatura do cartão de falha é a plataforma).
   const failed = item.failures[0]?.platform_ref;
   if (item.kind !== "review" && failed) return platformIcon(failed);
   if (item.kind === "reconcile_unknown") return "lucide:circle-help";
   if (item.kind === "retry_failed") return "lucide:triangle-alert";
-  return TRIGGER_ICONS[item.trigger] ?? "lucide:megaphone";
+  return decisionIcon(item.trigger);
+}
+
+/** Foto na miniatura (v4 pino 2): a do anúncio ou a do produto; quebrou, volta o ícone. */
+const brokenImages = ref(new Set<string>());
+function photo(item: DecisionItem): string {
+  // Na falha a miniatura é a plataforma que falhou (v4): a foto é da revisão.
+  if (item.kind !== "review") return "";
+  return item.image_url && !brokenImages.value.has(item.ref) ? item.image_url : "";
 }
 
 function title(item: DecisionItem): string {
@@ -66,30 +67,43 @@ function title(item: DecisionItem): string {
 }
 
 function subtitle(item: DecisionItem): string {
-  if (item.kind === "review") {
-    const where = destinationsLine(item.platform_refs, item.reach);
-    const occasion = decisionTitle(item);
-    // O nome da campanha só entra quando o título não é ele mesmo.
-    return item.campaign_name && occasion !== item.campaign_name
-      ? `${item.campaign_name} · ${where}`
-      : where;
-  }
-  return decisionTitle(item);
+  return item.kind === "review"
+    ? reviewSubtitle(item, shopTimezone.value, nowMs.value)
+    : failureSubtitle(item, shopTimezone.value);
 }
 
+// Atenção ao tempo é UM número e a intensidade (v4, SPEC4 §cor): o prazo curto fica no
+// latão/âmbar, mais forte quanto mais perto. Vermelho é de "bloqueado com motivo" (a
+// faixa da falha), nunca de relógio.
 const toneClasses: Record<DeadlineTone, string> = {
-  urgent: "font-semibold text-destructive",
-  soon: "font-semibold text-warning",
+  urgent: "font-semibold text-warning",
+  soon: "font-medium text-warning",
   calm: "text-muted-foreground",
   none: "text-muted-foreground",
 };
 
 const iconToneClasses: Record<DeadlineTone, string> = {
-  urgent: "text-destructive",
+  urgent: "text-warning",
   soon: "text-warning",
   calm: "text-muted-foreground",
   none: "text-muted-foreground",
 };
+
+// Atualizar mora no ⋯ do cabeçalho, com a tecla R (v3: "Atualizar R").
+const DECISIONS_MENU = [
+  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/templates" },
+  { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
+  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
+];
+function onMenu(key: string) {
+  if (key === "refresh") void refresh();
+}
+onKeyStroke(["r", "R"], (event) => {
+  const target = event.target as HTMLElement | null;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+  void refresh();
+});
 
 function deadline(item: DecisionItem) {
   return deadlinePresentation(item, shopTimezone.value, nowMs.value);
@@ -113,7 +127,16 @@ const scheduledLine = computed(() =>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-decisions>
-    <MarketingPageHeader title="Decisões">
+    <MarketingPageHeader title="Decisões" phone-hides-actions>
+      <!-- Do tablet para cima (v3): o ⋯ com o que não é o gesto da tela e a ação
+           primária por último, na mesma linha. No celular o polegar tem o sino e o menu. -->
+      <template #actions>
+        <MarketingPageMenu heading="Decisões" :items="DECISIONS_MENU" @select="onMenu" />
+        <UiButton to="/campaigns" data-decisions-primary>
+          <Icon name="lucide:send" class="size-4" aria-hidden="true" />
+          Preparar disparo
+        </UiButton>
+      </template>
       <template #status>
         <!-- Cede antes do título: fora do ao vivo o rótulo por extenso ("Atualiza a
              cada 1 min") não cabe ao lado do título, do sino e do menu em 320px, e o
@@ -131,18 +154,11 @@ const scheduledLine = computed(() =>
     </MarketingPageHeader>
 
     <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-4 pt-3 pb-5 sm:px-6">
-      <div class="flex min-h-11 items-center gap-2">
-        <p class="min-w-0 flex-1 text-[14px] text-muted-foreground" role="status" aria-live="polite">
-          <strong class="font-semibold text-foreground">{{ headline.strong }}</strong><template v-if="headline.rest"> · {{ headline.rest }}</template>
-        </p>
-        <UiIconButton
-          icon="lucide:refresh-cw"
-          label="Atualizar decisões"
-          :spinning="loading"
-          :disabled="loading"
-          @click="refresh()"
-        />
-      </div>
+      <!-- Uma linha limpa (v4): quantas e em que ordem. Atualizar mora no ⋯ do
+           cabeçalho (tecla R), não aqui. -->
+      <p class="flex min-h-8 items-center text-[14px] text-muted-foreground" role="status" aria-live="polite" :aria-busy="loading" data-decisions-headline>
+        <span><strong class="font-semibold text-foreground">{{ headline.strong }}</strong><template v-if="headline.rest"> · {{ headline.rest }}</template></span>
+      </p>
 
       <div
         v-if="error && !queue"
@@ -174,7 +190,17 @@ const scheduledLine = computed(() =>
           :data-decision-focus="index === 0 || undefined"
         >
           <div class="flex gap-3">
+            <img
+              v-if="photo(item)"
+              :src="photo(item)"
+              alt=""
+              class="size-[60px] shrink-0 rounded-lg object-cover"
+              loading="lazy"
+              data-decision-photo
+              @error="brokenImages = new Set([...brokenImages, item.ref])"
+            >
             <span
+              v-else
               class="grid size-[60px] shrink-0 place-items-center rounded-lg"
               :class="
                 item.kind === 'review'

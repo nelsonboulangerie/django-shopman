@@ -32,6 +32,9 @@ function item(over: Partial<DecisionItem>): DecisionItem {
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
+    ref,
+    // A tecla R atualiza a fila (V6-MKT); sem runtime Nuxt, o atalho é inerte.
+    onKeyStroke: () => undefined,
     useMarketingDecisions: () => ({
       queue,
       items: computed(() => queue.value?.items ?? []),
@@ -127,7 +130,7 @@ describe("MarketingDecisionQueue", () => {
     ]);
     expect(wrapper.text()).toContain("2 pedem você");
     expect(cards[0]!.text()).toContain("Lote pronto: Croissant");
-    expect(cards[0]!.text()).toContain("Instagram, Facebook e WhatsApp (86 pessoas)");
+    expect(cards[0]!.text()).toContain("Instagram, Facebook e WhatsApp (86 clientes)");
     expect(cards[0]!.text()).toContain("Decide até 10:15");
     expect(cards[0]!.text()).toContain("faltam 12 min");
     // O mais urgente tem destaque (v4: a borda na cor da ação).
@@ -154,7 +157,7 @@ describe("MarketingDecisionQueue", () => {
   it("escreve o motivo da falha no cartão", () => {
     const failure = render().findAll("[data-decision]")[1]!;
 
-    expect(failure.text()).toContain("Falhou no Instagram · 1 postagem");
+    expect(failure.text()).toContain("Falhou no Instagram · 1 envio");
     expect(failure.text()).toContain("A conexão com a plataforma caiu antes do envio.");
     expect(failure.text()).toContain("Repetir até 11:40");
   });

@@ -295,7 +295,7 @@ useHead(() => ({
             {{ limit.action }}
           </p>
           <NuxtLink
-            :to="{ path: '/v2', query: { area: 'platforms' } }"
+            :to="{ path: '/platforms' }"
             class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold underline"
           >
             Ver em Plataformas

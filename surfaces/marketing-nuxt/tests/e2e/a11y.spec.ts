@@ -178,16 +178,16 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     .getByRole("link", { name: "Ajustes", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Planeje uma vez, adapte por destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "campanhas 320×568");
   await expectNoHorizontalOverflow(page, "campanhas 320×568");
   await expectTouchTargets(page, "campanhas 320×568");
 
-  const create = page.getByRole("link", { name: "Nova campanha" }).first();
+  const create = page
+    .getByRole("button", { name: /^Nova campanha/ })
+    .filter({ visible: true })
+    .first();
   await create.click();
   const campaignDialog = page.getByRole("dialog").last();
   await expect(campaignDialog).toBeVisible();
@@ -202,10 +202,7 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     .first()
     .click();
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Plataformas possíveis e situação real",
-    }),
+    page.getByRole("heading", { level: 1, name: "Plataformas" }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "plataformas em equivalente a zoom 200%");
   await expectNoHorizontalOverflow(
@@ -246,20 +243,17 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   ).not.toBe("none");
 });
 
-test("workspace V2 preserva reflow, toque e semântica no mobile", async ({
+test("Ofertas e cupons preserva reflow, toque e semântica no mobile", async ({
   page,
 }) => {
   await signIn(page);
-  await page.goto("/v2?area=campaigns");
+  await page.goto("/offers");
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Planeje uma vez, adapte por destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();
-  await expectNoAxeViolations(page, "Marketing V2 campanhas 320×568");
-  await expectNoHorizontalOverflow(page, "Marketing V2 campanhas 320×568");
-  await expectTouchTargets(page, "Marketing V2 campanhas 320×568");
+  await expectNoAxeViolations(page, "ofertas 320×568");
+  await expectNoHorizontalOverflow(page, "ofertas 320×568");
+  await expectTouchTargets(page, "ofertas 320×568");
 });
 
 declare global {

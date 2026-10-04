@@ -243,6 +243,7 @@ const {
   cancelRecentSale,
   cancelRecentSaleWithBadge,
   drawerLock,
+  drawerOpening,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
 // ── Editar a encomenda (WP-E6) ────────────────────────────────────────────
@@ -1219,6 +1220,23 @@ onBeforeUnmount(() => {
 
       <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 md:min-h-0 md:overflow-hidden" :class="ticketAsSheet && inSaleView && !checkoutMode && !orderSetupPending ? 'max-lg:pb-40' : ''">
+      <!-- O dinheiro das vendas do tablet que ainda não chegou à gaveta: o
+           cartão segue de pé depois da "Nova venda", até o atendente abrir a
+           gaveta do Balcão na frente dela (pos-tablet-fluxo.jpg, passo 3). -->
+      <div v-if="!result && drawerOpening.pendingCash.value.length" class="grid gap-2" data-pending-cash>
+        <PosDrawerPulseCard
+          v-for="pending in drawerOpening.pendingCash.value"
+          :key="pending.orderRef"
+          compact
+          :pending="pending"
+          :terminal-label="drawerOpening.terminalLabel.value"
+          :state="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.state.value : 'idle'"
+          :message="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.message.value : ''"
+          :relay-warning="drawerOpening.relay.value?.online ? '' : drawerOpening.relay.value?.reason"
+          @open="drawerOpening.open({ purpose: 'sale', orderRef: pending.orderRef })"
+          @dismiss="drawerOpening.dismissPendingCash(pending.orderRef)"
+        />
+      </div>
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
@@ -1238,7 +1256,21 @@ onBeforeUnmount(() => {
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
           @payment-notice="sendPaymentNotice"
-        />
+        >
+          <template #drawer>
+            <PosDrawerPulseCard
+              v-for="pending in drawerOpening.pendingCash.value.filter((item) => item.orderRef === result?.orderRef)"
+              :key="pending.orderRef"
+              :pending="pending"
+              :terminal-label="drawerOpening.terminalLabel.value"
+              :state="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.state.value : 'idle'"
+              :message="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.message.value : ''"
+              :relay-warning="drawerOpening.relay.value?.online ? '' : drawerOpening.relay.value?.reason"
+              @open="drawerOpening.open({ purpose: 'sale', orderRef: pending.orderRef })"
+              @dismiss="drawerOpening.dismissPendingCash(pending.orderRef)"
+            />
+          </template>
+        </PosSaleResult>
       </div>
 
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">

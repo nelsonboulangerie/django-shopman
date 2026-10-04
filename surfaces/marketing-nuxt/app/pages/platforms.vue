@@ -13,12 +13,6 @@ import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const route = useRoute();
-if (typeof route.query.platform !== "string") {
-  await navigateTo(
-    { path: "/v2", query: { area: "platforms" } },
-    { redirectCode: 301, replace: true },
-  );
-}
 // Produtos publicáveis, para o teste de envio escolher por NOME em vez de digitar SKU.
 const { products } = useCampaigns();
 const waTemplate = useWhatsAppTemplate();
@@ -30,10 +24,7 @@ const opened = ref<Platform | null>(null);
 async function closePlatformWorkspace() {
   const platformRef = opened.value?.platform || "";
   opened.value = null;
-  await navigateTo(
-    { path: "/v2", query: { area: "platforms" } },
-    { replace: true },
-  );
+  await navigateTo({ path: "/platforms" }, { replace: true });
   await nextTick();
   if (platformRef) {
     document
@@ -230,7 +221,7 @@ const templateOptions = computed(() => [
   {
     value: "",
     label: "Sem modelo",
-    hint: "Texto livre — alcança só quem conversou nas últimas 24 horas.",
+    hint: "Texto livre: alcança só quem conversou nas últimas 24 horas.",
   },
   ...waTemplate.available.value.map((option) => ({
     value: option.ns,
@@ -401,6 +392,7 @@ useHead({ title: "Plataformas" });
         <!-- A linha inteira abre os detalhes; o alvo amplo reduz precisão e navegação do operador. -->
         <button
           type="button"
+          :data-marketing-platform="platform.platform"
           class="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-muted"
           @click="opened = platform"
         >
@@ -562,7 +554,7 @@ useHead({ title: "Plataformas" });
               class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
             >
               Com o modelo escolhido, o texto enviado no WhatsApp é o aprovado
-              na Meta — o modelo entra só com as variáveis. O texto do modelo
+              na Meta: o modelo entra só com as variáveis. O texto do modelo
               continua valendo para Instagram, Facebook e para a sua revisão.
             </p>
           </section>
@@ -696,7 +688,7 @@ useHead({ title: "Plataformas" });
                   >Produto (opcional)</label
                 >
                 <UiNativeSelect id="test-product" v-model="testSku">
-                  <option value="">Sem produto — só o texto do modelo</option>
+                  <option value="">Sem produto (só o texto do modelo)</option>
                   <option
                     v-for="product in products"
                     :key="product.value"
@@ -748,7 +740,7 @@ useHead({ title: "Plataformas" });
                   {{ key }}
                 </dt>
                 <dd class="min-w-0 flex-1 truncate">
-                  {{ value || "— vazio, o modelo renderiza sem" }}
+                  {{ value || "(vazio: o modelo renderiza sem)" }}
                 </dd>
               </div>
             </dl>

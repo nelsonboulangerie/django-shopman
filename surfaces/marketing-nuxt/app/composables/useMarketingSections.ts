@@ -7,8 +7,8 @@
 // Plataformas). Na camada visual da suíte (V4-MKT), Ajustes mora no pé do rail, longe
 // da operação, como no Gestor.
 //
-// Nenhuma rota foi removida: `/v2?area=…`, `/campaigns`, `/templates`, `/platforms` e
-// `/history` continuam onde estavam. Só mudou por onde se chega a elas.
+// Um nome por lugar (`depois-navegacao.jpg`): cada seção de Ajustes é uma rota própria,
+// `/campaigns`, `/templates`, `/offers` e `/platforms`.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export type MarketingSectionKey = "decisions" | "scheduled" | "sent" | "settings";
@@ -20,10 +20,10 @@ export const MARKETING_SETTINGS_SECTIONS: ReadonlyArray<{
   icon: string;
   to: string;
 }> = [
-  { key: "campaigns", label: "Campanhas", icon: "lucide:megaphone", to: "/v2?area=campaigns" },
+  { key: "campaigns", label: "Campanhas", icon: "lucide:megaphone", to: "/campaigns" },
   { key: "templates", label: "Modelos", icon: "lucide:file-text", to: "/templates" },
-  { key: "offers", label: "Ofertas e cupons", icon: "lucide:ticket-percent", to: "/v2?area=offers" },
-  { key: "platforms", label: "Plataformas", icon: "lucide:radio-tower", to: "/v2?area=platforms" },
+  { key: "offers", label: "Ofertas e cupons", icon: "lucide:ticket-percent", to: "/offers" },
+  { key: "platforms", label: "Plataformas", icon: "lucide:radio-tower", to: "/platforms" },
 ];
 
 /** "3 esperando você": o que o selo de Decisões conta, por extenso. */
@@ -40,21 +40,14 @@ export function useMarketingSections() {
     if (path === "/" || path.startsWith("/announcements")) return "decisions";
     if (path === "/scheduled") return "scheduled";
     if (path === "/history") return "sent";
-    // O panorama antigo (`/v2` sem área, ou Hoje) continua acessível pela URL e
-    // pertence ao andar de operação, não aos ajustes.
-    if (path === "/v2") {
-      const area = String(route.query.area || "today");
-      return area === "today" ? "decisions" : "settings";
-    }
+    if (path.startsWith("/second-control")) return "decisions";
     return "settings";
   });
 
   const activeSettings = computed<MarketingSettingsKey>(() => {
     if (route.path === "/templates") return "templates";
     if (route.path === "/platforms") return "platforms";
-    if (route.path === "/campaigns") return "campaigns";
-    const area = String(route.query.area || "");
-    if (area === "offers" || area === "platforms") return area;
+    if (route.path === "/offers") return "offers";
     return "campaigns";
   });
 
@@ -86,8 +79,8 @@ export function useMarketingSections() {
       key: "settings",
       label: "Ajustes",
       icon: "lucide:settings-2",
-      to: "/v2?area=campaigns",
-      match: ["/campaigns", "/templates", "/platforms"],
+      to: "/campaigns",
+      match: ["/campaigns", "/templates", "/offers", "/platforms"],
       foot: true,
     },
   ]);

@@ -900,6 +900,12 @@ def acknowledge_job(
             from shopman.backstage.services import kitchen_ticket_print
 
             transaction.on_commit(lambda: kitchen_ticket_print.on_job_changed(job))
+        elif job.kind == PrintJob.Kind.DRAWER_PULSE:
+            # O pulso da gaveta pedido pelo tablet: a resposta do agente vai ao
+            # livro, ao lado da abertura (services/drawer_pulse.py).
+            from shopman.backstage.services import drawer_pulse
+
+            transaction.on_commit(lambda: drawer_pulse.on_job_changed(job))
         return job
 
 

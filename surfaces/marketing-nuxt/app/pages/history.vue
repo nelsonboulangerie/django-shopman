@@ -7,6 +7,7 @@ import {
   historyLinkLabel,
   historyOccurredAt,
   historySubject,
+  historyWhen,
 } from "~/presentation/marketingHistory";
 import {
   deliveryCountItems,
@@ -16,7 +17,6 @@ import {
   platformResultLabel,
   platformSwitchedOff,
 } from "~/presentation/marketingResult";
-import { scheduleSummary } from "~/utils/marketingSchedule";
 import type { AnnouncementProjectionV2 } from "~/types/campaign";
 
 type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
@@ -132,6 +132,41 @@ function changeFilter(name: MarketingHistoryFilterName, event: Event) {
   if (target instanceof HTMLSelectElement) void setFilter(name, target.value);
 }
 
+// O ponto e a hora da última leitura (v4: lista calma, ao vivo).
+const lastRead = ref<string | null>(null);
+watch(
+  loading,
+  (now, before) => {
+    if (before && !now && !error.value) lastRead.value = new Date().toISOString();
+  },
+);
+onMounted(() => {
+  if (!loading.value && !error.value) lastRead.value = new Date().toISOString();
+});
+const live = useMarketingLiveStatus({
+  generatedAt: lastRead,
+  failed: computed(() => Boolean(error.value)),
+  timeZone: shopTimezone,
+});
+
+/** "Situação: Todas" (o recorte em chip, v4: "lista calma com recortes em chips"). */
+function chipValue(filter: (typeof FILTERS)[number]): string {
+  const current = filters.value[filter.name] || filter.options[0][0];
+  return filter.options.find((option) => option[0] === current)?.[1] ?? filter.options[0][1];
+}
+function chipActive(filter: (typeof FILTERS)[number]): boolean {
+  const current = filters.value[filter.name] || "";
+  return Boolean(current) && current !== filter.options[0][0];
+}
+
+onKeyStroke(["r", "R"], (event) => {
+  const target = event.target as HTMLElement | null;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+  void refresh();
+});
+const MENU = [{ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" }];
+
 useHead({ title: "Enviados" });
 </script>
 
@@ -148,59 +183,43 @@ useHead({ title: "Enviados" });
         />
       </template>
       <template #status>
-        <span class="hidden op-micro text-muted-foreground lg:inline">Resultado rastreado por plataforma, sem confundir aceite com entrega.</span>
+        <span class="flex min-w-0 shrink-[1000] overflow-hidden" data-marketing-live>
+          <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :detail="live.detail" />
+        </span>
       </template>
       <template #actions>
-        <UiIconButton
-          icon="lucide:refresh-cw"
-          label="Atualizar"
-          :spinning="loading"
-          :disabled="loading"
-          @click="refresh()"
-        />
+        <MarketingPageMenu heading="Enviados" :items="MENU" @select="refresh()" />
       </template>
-    </MarketingPageHeader>
-    <div class="mx-auto w-full max-w-5xl px-4 py-6">
-
-    <section
-      class="mb-5 rounded-md border border-border bg-card p-4"
-      aria-labelledby="history-filters-title"
-    >
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="history-filters-title" class="text-sm font-semibold">
-          Encontrar um resultado
-        </h2>
-        <UiButton
-          v-if="hasActiveFilters"
-          type="button"
-          variant="link"
-          @click="clearFilters()"
-        >
-          Limpar filtros
-        </UiButton>
-      </div>
-      <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <template #filters>
         <label
           v-for="filter in FILTERS"
           :key="filter.name"
-          class="grid gap-1.5 text-xs font-medium text-muted-foreground"
+          class="relative inline-flex min-h-control items-center gap-2 rounded-full border px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40"
+          :class="chipActive(filter) ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+          :data-history-chip="filter.name"
         >
-          {{ filter.label }}
-          <UiNativeSelect
+          <span class="font-normal text-muted-foreground">{{ filter.label }}:</span> {{ chipValue(filter) }}
+          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+          <select
             :value="filters[filter.name] || ''"
+            class="absolute inset-0 cursor-pointer opacity-0"
+            :aria-label="filter.label"
             @change="changeFilter(filter.name, $event)"
           >
-            <option
-              v-for="option in filter.options"
-              :key="option[0]"
-              :value="option[0]"
-            >
-              {{ option[1] }}
-            </option>
-          </UiNativeSelect>
+            <option v-for="option in filter.options" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
+          </select>
         </label>
-      </div>
-    </section>
+        <button
+          v-if="hasActiveFilters"
+          type="button"
+          class="inline-flex min-h-control items-center gap-1 px-2 op-label font-semibold text-primary"
+          @click="clearFilters()"
+        >
+          <Icon name="lucide:x" class="size-4" aria-hidden="true" />Limpar filtros
+        </button>
+      </template>
+    </MarketingPageHeader>
+    <div class="mx-auto w-full max-w-5xl px-4 py-5">
 
     <div
       v-if="error && announcements.length === 0"
@@ -324,12 +343,7 @@ useHead({ title: "Enviados" });
                   {{ historySubject(announcement, productLabels) }}
                 </h2>
                 <span class="text-xs text-muted-foreground">
-                  {{
-                    scheduleSummary(
-                      historyOccurredAt(announcement),
-                      shopTimezone,
-                    )
-                  }}
+                  {{ historyWhen(historyOccurredAt(announcement), shopTimezone) }}
                 </span>
               </div>
               <p
