@@ -31,13 +31,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SURFACES = resolve(here, "../..");
 
 /** Cabeçalhos ricos ainda não convertidos. Cada linha é uma dívida com endereço. */
-const CABECALHOS_PROPRIOS_CONHECIDOS = [
-  // O PDV monta o cabeçalho por página porque cada uma carrega um contexto diferente
-  // (comanda aberta, caixa) — e o `PosTabHeader` é editável. As Encomendas já
-  // nasceram no `OperatorAppBar` (`PosPreordersShell`), e a antiga tela de fichas
-  // saiu da lista com elas.
-  "pos-nuxt/app/pages/index.vue",
-  "pos-nuxt/app/pages/session/index.vue",
+const CABECALHOS_PROPRIOS_CONHECIDOS: string[] = [
+  // Vazia desde a onda V4: Produção (V4-PROD) e PDV (V4-PDV) migraram para o cabeçalho
+  // da layer. Cabeçalho próprio novo volta a reprovar até ser declarado aqui com motivo.
 ].sort();
 
 
@@ -98,6 +94,8 @@ describe("guardrail do cabeçalho de seções", () => {
     const migrados = [
       "orders-nuxt/app/components/GestorNav.vue",
       "kds-nuxt/app/components/KdsNav.vue",
+      // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
+      "pos-nuxt/app/components/PosFunctionRail.vue",
       // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
       "production-nuxt/app/components/ProductionNav.vue",
       "bi-nuxt/app/components/BiNav.vue",

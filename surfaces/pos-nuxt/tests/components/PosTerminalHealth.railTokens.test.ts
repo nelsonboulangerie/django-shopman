@@ -46,6 +46,17 @@ describe("PosTerminalHealth — gatilho do rail", () => {
     wrapper.unmount();
   });
 
+  it("suíte (V4-PDV): o item Terminal do pé do rail, nos tokens do rail, sem ponto quando está tudo bem", async () => {
+    const wrapper = await mountSuspended(PosTerminalHealth, { props: { pos, variant: "suite" } });
+    const trigger = wrapper.find("[data-terminal-health-trigger]");
+    expect(trigger.text()).toBe("Terminal");
+    expect(trigger.classes()).toContain("text-rail-foreground");
+    expect(trigger.attributes("class")).not.toContain("primary-foreground");
+    expect(trigger.attributes("aria-label")).toContain("OK");
+    expect(wrapper.find("[data-terminal-health-attention]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it("estendido: ganha rótulo com o estado, como os demais itens do rail", async () => {
     showLabels.value = true;
     const wrapper = await mountSuspended(PosTerminalHealth, { props: { pos, compact: true } });

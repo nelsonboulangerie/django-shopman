@@ -12,6 +12,14 @@
   strategy: "class";
 }
 
+/* Tablet e celular (v4, SPEC4 §7): sem teclas impressas. Quem não tem teclado físico
+   não aprende atalho; a tecla ao lado do botão vira ruído. O atalho continua valendo. */
+@media (pointer: coarse) and (hover: none) {
+  [data-pos-shell="operator"] kbd {
+    display: none;
+  }
+}
+
 /* Tile de produto sem foto: --tile-color é a cor da coleção primária
    (Collection.metadata via Projection, presentation/catalog decide se sai).
    Os tints derivam por color-mix sobre --background/--foreground, então
