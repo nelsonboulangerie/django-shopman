@@ -1498,6 +1498,18 @@ SHOPMAN_CONCIERGE = {
     # o piloto mede o Jev em sombra (`intent_pilot.shadow_triage`); esta chave é a
     # troca para quando ela atender. A regra local sensível vence os dois.
     "triage_classifier": os.environ.get("CONCIERGE_TRIAGE_CLASSIFIER", "anthropic"),
+    # Intenções no plural (OBS0310-Q, v2 bloco 1): a mensagem vira uma lista de partes, cada
+    # parte pelo executor da casa, uma resposta só na ordem do cliente. O Jev decide primeiro;
+    # a leitura com o modelo pequeno entra só quando ele hesita ou há mais de uma parte.
+    # `off` (padrão), `subjects` (só os subscribers de CONCIERGE_INTENTS_SUBSCRIBERS: a
+    # coorte do dono) ou `all`.
+    "intents_plural": os.environ.get("CONCIERGE_INTENTS_PLURAL", "off"),
+    "intents_subjects": [
+        value.strip()
+        for value in os.environ.get("CONCIERGE_INTENTS_SUBSCRIBERS", "").split(",")
+        if value.strip()
+    ],
+    "intents_model": os.environ.get("CONCIERGE_INTENTS_MODEL", "claude-haiku-4-5"),
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {

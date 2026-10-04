@@ -31,6 +31,7 @@ import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
+from django.conf import settings
 from django.test import override_settings
 
 GOLDEN_PATH = pathlib.Path(__file__).with_name("golden_set.json")
@@ -44,6 +45,7 @@ LAYER_LABELS = {
     "team": "equipe",
     "other_desk": "outra mesa",
     "house_rule": "regra da casa",
+    "intents": "intenções no plural",
 }
 #: Quem responde no caminho de hoje (``current_layer``).
 TODAY_LABELS = {
@@ -408,4 +410,212 @@ def _run_shadow(cases: list[dict]) -> Report:
                 triage_ms=float(alpha["jev_latency_ms"]),
             )
         )
+    return report
+
+
+# ── Intenções no plural (OBS0310-Q) ───────────────────────────────────
+
+#: Leitores das intenções no plural: ``local`` (divisão local, sem rede) ou ``model``
+#: (a leitura com o modelo pequeno quando o porteiro não decide; chama a Anthropic).
+READERS = ("local", "model")
+
+
+def expected_parts(case: dict) -> list[list[str]]:
+    """As partes que o caso pede (sem cortesia): o rótulo ``parts``, ou a intenção única.
+
+    Fala que só se entende com a conversa (``context``), cortesia, mídia e conversa solta
+    sem intenção não entram: quem as resolve é a memória, não a leitura de partes.
+    """
+    expected = case["expected"]
+    if expected.get("parts"):
+        return [list(part) for part in expected["parts"]]
+    if expected.get("intent") and expected["layer"] in {"answer", "team", "other_desk"}:
+        return [[expected["intent"], *expected.get("accept", [])]]
+    return []
+
+
+def parts_found(wanted: list[list[str]], acts: list[str]) -> int:
+    """Quantas partes esperadas têm um ato previsto que as cobre (cada ato cobre uma)."""
+    pool = list(acts)
+    found = 0
+    for part in sorted(wanted, key=len):
+        match = next((act for act in pool if act in part), None)
+        if match is not None:
+            pool.remove(match)
+            found += 1
+    return found
+
+
+@dataclass
+class PluralCase:
+    case: dict
+    before: list[str]
+    after: list[str]
+    source: str
+    reason: str
+    team_before: bool
+    team_after: bool
+    cost_usd: float | None = 0.0
+    read_ms: float = 0.0
+    total_ms: float = 0.0
+    error: str = ""
+
+
+@dataclass
+class PluralReport:
+    reader: str
+    results: list[PluralCase] = field(default_factory=list)
+
+    def render(self, *, show_misses: int = 15) -> str:
+        from .intents import COURTESY
+
+        results = self.results
+        total = len(results)
+        if not total:
+            return "Conjunto vazio."
+        scored = [r for r in results if expected_parts(r.case)]
+        multi = [r for r in scored if len(expected_parts(r.case)) >= 2]
+
+        def all_found(r, acts):
+            wanted = expected_parts(r.case)
+            return parts_found(wanted, acts) == len(wanted)
+
+        lines = [
+            f"{total} casos ({len(multi)} com mais de uma parte). Leitura: {self.reader}. "
+            "Porteiro: regra local e, nos casos observados, as notas do Jev gravadas em sombra.",
+            "",
+            f"  {'':<34}{'antes (uma intenção)':<24}depois (partes)",
+        ]
+        for label, group in (("Todas as partes achadas, várias", multi), ("Todas as partes achadas, todos", scored)):
+            b = sum(all_found(r, r.before) for r in group)
+            a = sum(all_found(r, r.after) for r in group)
+            lines.append(f"  {label:<34}{f'{b}/{len(group)}':<24}{a}/{len(group)}")
+        wanted_total = sum(len(expected_parts(r.case)) for r in scored)
+        b = sum(parts_found(expected_parts(r.case), r.before) for r in scored)
+        a = sum(parts_found(expected_parts(r.case), r.after) for r in scored)
+        lines.append(f"  {'Partes achadas':<34}{f'{b}/{wanted_total}':<24}{a}/{wanted_total}")
+        sensitive = [r for r in results if r.case["expected"]["destination"] != "answer"]
+        tb, ta = sum(r.team_before for r in sensitive), sum(r.team_after for r in sensitive)
+        lines.append(f"  {'Equipe achada':<34}{f'{tb}/{len(sensitive)}':<24}{ta}/{len(sensitive)}")
+        plain = [r for r in results if r.case["expected"]["destination"] == "answer"]
+        pb, pa = sum(r.team_before for r in plain), sum(r.team_after for r in plain)
+        lines.append(f"  {'Equipe sem precisar':<34}{pb:<24}{pa}")
+        single = [r for r in scored if len(expected_parts(r.case)) == 1]
+        extra = sum(1 for r in single if len([a for a in r.after if a not in COURTESY]) > 1)
+        lines.append(f"  {'Uma parte lida como várias':<34}{'':<24}{extra}/{len(single)}")
+        lines.append("")
+        by_source = Counter(r.source for r in results)
+        reasons = Counter(r.reason for r in results)
+        lines.append(
+            "Quem decidiu as partes: "
+            + ", ".join(f"{name} {by_source[name]}" for name in ("gate", "model", "local") if by_source[name])
+            + " · motivo do porteiro: "
+            + ", ".join(f"{k} {v}" for k, v in reasons.most_common())
+        )
+        read = [r for r in results if r.source == "model"]
+        costs = [r.cost_usd for r in results if r.cost_usd is not None]
+        if read:
+            read_costs = [r.cost_usd for r in read if r.cost_usd is not None]
+            lines.append(
+                f"Leitura com o modelo: {len(read)} de {total} ({len(read) / total:.0%}); "
+                f"US$ {sum(read_costs) / max(1, len(read_costs)):.5f} por leitura; tempo p50 "
+                f"{_q([r.read_ms for r in read], 0.5):.0f} ms, p95 {_q([r.read_ms for r in read], 0.95):.0f} ms"
+            )
+        lines.append(
+            f"Por mensagem (todas): US$ {sum(costs) / max(1, len(costs)):.6f} de modelo · porteiro + leitura p50 "
+            f"{_q([r.total_ms for r in results], 0.5):.0f} ms, p95 {_q([r.total_ms for r in results], 0.95):.0f} ms"
+        )
+        errors = Counter(r.error for r in results if r.error)
+        if errors:
+            lines.append(
+                "Falhas da leitura (caiu na divisão local): " + ", ".join(f"{k} {v}" for k, v in errors.items())
+            )
+        for label, group in (
+            ("Equipe perdida", [r for r in sensitive if not r.team_after]),
+            ("Equipe sem precisar", [r for r in plain if r.team_after]),
+        ):
+            if group and show_misses:
+                lines.append(f"{label}: " + "; ".join(
+                    f"{r.case['ref']} \"{r.case['text'][:50]}\" ({' + '.join(r.after)})" for r in group
+                ))
+        misses = [r for r in scored if not all_found(r, r.after)]
+        if misses and show_misses:
+            lines.append("")
+            lines.append(f"Partes perdidas ({len(misses)}; as primeiras {min(show_misses, len(misses))}):")
+            for r in misses[:show_misses]:
+                lines.append(
+                    f"  {r.case['ref']} \"{r.case['text'][:70]}\": esperado "
+                    + " + ".join("|".join(p) for p in expected_parts(r.case))
+                    + f", saiu {' + '.join(r.after) or 'nada'} ({r.source})"
+                )
+        return "\n".join(lines)
+
+
+def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> PluralReport:
+    """Cada caso pelo porteiro e pela leitura das intenções no plural, contra a intenção única de hoje.
+
+    "Antes" é a triagem de hoje com a regra local (uma intenção por mensagem). "Depois" é a
+    lista de partes. O Jev entra pelas notas gravadas em sombra no alpha (``alpha.jev_scores``,
+    sem a pergunta "mais de uma parte", que a sombra não fazia). A execução de cada parte
+    precisa do catálogo vivo e fica nos testes; aqui se mede quem entendeu o quê, quanto
+    custou e quanto demorou.
+    """
+    import time as _time
+
+    from . import intents, metrics, triage
+    from .service import CONVERSATIONAL_MESSAGE_TYPES
+    from .small_talk import small_talk_kind
+
+    if reader not in READERS:
+        raise ValueError(f"leitor desconhecido: {reader}")
+    if reader == "model" and client is None:
+        client = intents.build_client()
+        if client is None:
+            raise ValueError("leitura com o modelo indisponível neste ambiente (AI_ASSIST_API_KEY vazia).")
+    report = PluralReport(reader=reader)
+    team = intents.TEAM_ACTS | intents.OTHER_DESK_ACTS
+    config = {**(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}), "triage_with_model": False}
+    with override_settings(SHOPMAN_CONCIERGE=config):
+        for case in cases:
+            text = case["text"]
+            if small_talk_kind(text) or case.get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES:
+                continue  # cortesia sozinha e mídia respondem antes das partes (``intents.run``)
+            rules_intent, rules_source = triage.classify_rules(text)
+            decision = triage.decide(
+                text, context=[(line["who"], line["text"]) for line in case.get("previous", [])]
+            )
+            before = [] if decision.source == "default" else [decision.intent]
+            meter = metrics.TurnMeter()
+            metered = meter.wrap(client, "intents") if client is not None else None
+            started = _time.perf_counter()
+            found = intents.plan(
+                text,
+                rules_intent=rules_intent,
+                rules_source=rules_source,
+                jev_scores=(case.get("alpha") or {}).get("jev_scores"),
+                client=metered,
+                use_model=reader == "model",
+            )
+            if decision.escalates:
+                needed = intents.CANCEL if decision.escalated_by == "cancel_order" else decision.intent
+                if needed not in {act.act for act in found.acts}:
+                    found.acts.append(intents.Act(needed, span=text))
+            elapsed = (_time.perf_counter() - started) * 1000
+            usage = meter.as_usage()
+            after = [act.act for act in found.acts]
+            report.results.append(
+                PluralCase(
+                    case=case,
+                    before=before,
+                    after=after,
+                    source=found.source,
+                    reason=found.reason,
+                    team_before=decision.escalates,
+                    team_after=any(act in team for act in after) or decision.escalates,
+                    cost_usd=usage["cost_usd"],
+                    read_ms=found.read_ms,
+                    total_ms=elapsed,
+                    error=found.read_error,
+                )
+            )
     return report

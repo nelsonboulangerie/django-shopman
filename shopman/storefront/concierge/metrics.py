@@ -42,6 +42,7 @@ LAYER_ERROR = "error"  # o agente falhou; mensagem de indisponível
 LAYER_TEAM = "team"  # C7: a triagem mandou para a equipe ou outra mesa
 LAYER_AGENT_HANDOFF = "agent_handoff"  # o agente chamou a equipe
 LAYER_HOUSE_RULE = "house_rule"  # regra da casa: frase fixa (R7, R8) ou resposta segurada (equipe)
+LAYER_INTENTS = "intents"  # intenções no plural: cada parte pelo executor da casa, uma resposta
 
 
 def _int(value) -> int:
@@ -62,6 +63,8 @@ class TurnMeter:
         self.received_at: datetime | None = None
         self.triage_source = ""
         self.triage_classifier = ""
+        #: Intenções no plural: as partes do turno e quem as leu (``intents.Plan.as_dict``).
+        self.intents: dict = {}
 
     # ── Etapas ───────────────────────────────────────────────────────
 
@@ -136,6 +139,8 @@ class TurnMeter:
         }
         if unpriced:
             payload["unpriced_models"] = sorted(set(unpriced))
+        if self.intents:
+            payload["intents"] = self.intents
         return payload
 
 

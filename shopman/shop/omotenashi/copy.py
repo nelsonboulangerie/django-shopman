@@ -1270,6 +1270,33 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Preço e condição especial quem decide é a equipe da casa, e eu não consigo negociar por aqui. Se quiser falar com alguém da equipe, é só pedir.",
         )},
     },
+    # Intenções no plural (OBS0310-Q): cada parte da mensagem recebe resposta, inclusive
+    # "isso eu não tenho". Só a de equipe afirma uma ação, e sai com o handoff feito.
+    "CONCIERGE_PARTS_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre {topic}, já chamei a equipe, que continua com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_ORDER_WITH_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre o pedido, a equipe fecha com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_NOT_FOUND": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não tenho essa informação aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Se quiser, chamo alguém da equipe para confirmar.",
+        )},
+    },
+    "CONCIERGE_PARTS_UNCLEAR": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não entendi bem. Pode me dizer de outro jeito?",
+        )},
+    },
     "CONCIERGE_IDENTITY": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",

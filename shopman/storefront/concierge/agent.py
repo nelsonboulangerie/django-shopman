@@ -88,6 +88,12 @@ class AgentOutcome:
     disclosure: dict = field(default_factory=dict)
     #: Quem respondeu (``metrics.LAYER_*``): a régua grava em ``usage["layer"]``.
     layer: str = LAYER_AGENT
+    #: Intenções no plural (``intents.Plan.as_dict``): as partes do turno e quem as leu.
+    intents: dict = field(default_factory=dict)
+    #: Intenções no plural: a triagem do cartão da equipe (parte sensível no turno) e a
+    #: que a conversa guarda quando a alergia foi respondida pelo aviso da casa.
+    team_triage: object | None = None
+    triage_update: object | None = None
     #: Memória da conversa (``dialogue``): o estado que valia no começo do turno e
     #: o que a resolução quer gravar. ``None`` quando o turno não passou por ela
     #: (mídia, teto diário): aí o estado fica como estava.
