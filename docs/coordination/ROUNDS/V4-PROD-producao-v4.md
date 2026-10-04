@@ -2,7 +2,7 @@
 
 - **id:** V4-PROD
 - **branch:** claude/v4-prod
-- **PR:** (preenchido na abertura)
+- **PR:** #1459
 - **estado:** na fila (auto-merge)
 - **início (UTC):** 2026-10-04
 
