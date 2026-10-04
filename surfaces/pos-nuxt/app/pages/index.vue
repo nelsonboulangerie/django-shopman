@@ -637,15 +637,21 @@ const kitchenStations = computed<Record<string, string>>(() => {
 // lidos da projeção; um meio que o canal não oferece não aparece.
 const quickPayments = computed(() => {
   const methods = pos.value?.payment_methods || [];
-  const out: Array<{ ref: string; label: string; icon: string }> = [];
+  const out: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }> = [];
   if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "PIX", icon: "lucide:qr-code" });
   const card = methods.find((m) => m.ref === "credit") || methods.find((m) => m.ref === "card") || methods.find((m) => m.ref === "debit");
   if (card) out.push({ ref: card.ref, label: "Maquininha", icon: "lucide:credit-card" });
+  // V6-CAIXA: o dinheiro recebido na mesa. A venda fecha aqui e vira o cartão
+  // "Abrir gaveta do Balcão" (useDrawerOpening, pulso pelo relay); a gaveta nunca
+  // abre sozinha longe do Balcão.
+  if (methods.some((m) => m.ref === "cash")) {
+    out.push({ ref: "cash", label: "Dinheiro", icon: "lucide:banknote", hint: "abre a gaveta do Balcão", secondary: true });
+  }
   return out;
 });
 // Pagar pela folha: abre o Pagamento já com o meio escolhido lançado (a mesma
 // tecla do checkout, `pressMethodKey`), sem o operador escolher de novo.
-const QUICK_PAYMENT_KEYS: Record<string, string> = { pix: "P", credit: "C", card: "C", debit: "D" };
+const QUICK_PAYMENT_KEYS: Record<string, string> = { pix: "P", credit: "C", card: "C", debit: "D", cash: "R" };
 async function payOnSheet(method: string) {
   await prepareCheckout();
   if (!checkoutMode.value) return;

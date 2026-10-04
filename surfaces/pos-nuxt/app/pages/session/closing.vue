@@ -145,8 +145,8 @@ const cashOpen = computed<boolean | null>(() => {
 });
 const step = ref<"cash" | "count" | "day">(cashOpen.value ? "cash" : "count");
 
-// PASSO 1: a contagem cega da gaveta. Nada de esperado, nem antes nem depois (a
-// tolerância não aparece ao operador: decisão do dono). O selo ecoa o número.
+// PASSO 1: a contagem cega da gaveta. Nada de esperado, nem antes nem depois (o
+// veredito da conferência fica com o gerente: decisão do dono). O selo ecoa o número.
 const { busy: cashBusy, closeCashShift } = usePosCashSession({ pos, actions, refresh: refreshPos, action });
 const drawerMode = ref<"denominations" | "total">("denominations");
 const drawerQ = ref(0);

@@ -80,8 +80,12 @@ const props = defineProps<{
    * Os meios eletrônicos que a folha oferece direto (v4 tablet, `pos-tablet.jpg`
    * b): PIX e Maquininha. Vazio, a folha mostra só o Pagamento de sempre.
    */
-  quickPayments?: Array<{ ref: string; label: string; icon: string }>;
+  quickPayments?: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }>;
 }>();
+// Folha aberta: PIX e Maquininha são o gesto principal; o dinheiro (V6-CAIXA)
+// vem embaixo, secundário.
+const primaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => !m.secondary));
+const secondaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => m.secondary));
 const sheetOpen = ref(false);
 const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
 const primaryText = computed(() => props.primaryLabel || "Pagamento");
@@ -1651,9 +1655,9 @@ defineExpose({ focusItem, onDigit, onBackspace });
           @click="$emit('prepare')"
         >Outras formas</button>
       </div>
-      <div class="grid gap-2" :class="quickPayments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
+      <div class="grid gap-2" :class="primaryQuickPayments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
         <button
-          v-for="method in quickPayments"
+          v-for="method in primaryQuickPayments"
           :key="method.ref"
           type="button"
           class="flex h-14 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
@@ -1663,6 +1667,21 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
           <Icon :name="method.icon" class="size-6 shrink-0" />
           {{ method.label }}
+        </button>
+        <!-- V6-CAIXA: dinheiro na mesa, secundário; a gaveta do Balcão abre pelo
+             cartão que a venda deixa (nunca sozinha longe dela). -->
+        <button
+          v-for="method in secondaryQuickPayments"
+          :key="method.ref"
+          type="button"
+          class="col-span-full flex h-12 items-center justify-center gap-2.5 rounded-lg border border-border bg-card op-label font-semibold transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!items.length || loading || saving"
+          :data-pos-sheet-pay-method="method.ref"
+          @click="$emit('pay', method.ref)"
+        >
+          <Icon :name="method.icon" class="size-5 shrink-0" />
+          {{ method.label }}
+          <span v-if="method.hint" class="font-normal text-muted-foreground">· {{ method.hint }}</span>
         </button>
       </div>
     </div>

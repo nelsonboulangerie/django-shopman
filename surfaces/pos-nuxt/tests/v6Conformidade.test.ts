@@ -94,6 +94,13 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).toContain("data-pos-sheet-fire");
     expect(cart).toContain("data-pos-sheet-pay");
   });
+  it("a folha aberta leva o dinheiro da V6-CAIXA uma vez só, secundário, e a gaveta não abre dali", () => {
+    const page = read("../app/pages/index.vue");
+    expect(page.match(/ref: "cash", label: "Dinheiro"/g)).toHaveLength(1);
+    expect(page).toContain('cash: "R"');
+    expect(cart).toContain("secondaryQuickPayments");
+    expect(cart).not.toMatch(/drawerOpening|kick\(/);
+  });
   it("'vai à cozinha' na linha nova e o envio automático à vista", () => {
     expect(cart).toContain("data-pos-line-goes-to-kitchen");
     expect(cart).toContain("envio automático:");
