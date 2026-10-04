@@ -27,7 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import allergens, dialogue, house_rules, small_talk
+from . import allergens, dialogue, discount, house_rules, small_talk
 from . import tools as tools_module
 from .metrics import LAYER_AGENT, LAYER_CONTEXT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
@@ -368,6 +368,15 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     _rule, fixed = house_rules.fixed_reply_for(
         customer_text, shop_name=(getattr(_shop(), "name", "") or "").strip()
     )
+    if _rule == "R7":
+        # Pedido de desconto (dono, 03/10/2026): até o teto da casa, a Concierge
+        # concede pelo mesmo cupom do site, e o valor é do sistema. Quando não
+        # dá (teto 0, sem autoridade, cupom recusado), segue a frase fixa de R7.
+        granted = discount.handle_request(
+            conversation=conversation, channel_ref=channel_ref, customer_text=customer_text
+        )
+        if granted.text:
+            return AgentOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory)
     if fixed:
         # Regras da casa R7 (nunca negociar preço) e R8 (diz que é a assistente
         # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.

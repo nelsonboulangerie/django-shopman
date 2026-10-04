@@ -282,6 +282,12 @@ class ChannelConfig:
         policy: str = "internal"
         # "internal" — preço resolvido pelo backend (padrão para canais próprios)
         # "external" — preço definido externamente (marketplace)
+        concierge_discount_max_percent: float = 2.5
+        # Teto do desconto que a Concierge concede sozinha quando o cliente pede,
+        # em % do subtotal da sacola (dono, 03/10/2026: "algo como arredondar um
+        # valor até 2%"; padrão 2,5%, decidido por ele no mesmo dia). Aceita decimal;
+        # 0 desliga. O desconto entra como cupom de uso único,
+        # pelo mesmo caminho do cupom do site (``storefront/concierge/discount.py``).
 
     # ── 7. Editing ──
 
@@ -544,6 +550,9 @@ class ChannelConfig:
             )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
+        cap = self.pricing.concierge_discount_max_percent
+        if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not 0 <= cap <= 100:
+            raise ValueError("pricing.concierge_discount_max_percent deve ser um número entre 0 e 100")
         if self.editing.policy not in ("open", "locked"):
             raise ValueError(f"editing.policy inválido: {self.editing.policy}")
         if self.rules.validators is not None and not isinstance(self.rules.validators, list):
