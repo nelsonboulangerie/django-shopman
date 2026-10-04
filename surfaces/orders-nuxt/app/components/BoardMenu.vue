@@ -22,6 +22,8 @@ defineProps<{
   full?: boolean;
   /** Quadro com alguma coluna recolhida: oferece as três de volta. */
   canShowAll?: boolean;
+  /** A Fila existe nesta largura (desktop e tablet deitado, fora do posto Saída). */
+  queueAvailable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -81,9 +83,13 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
         {{ opt.label }}
       </button>
       <p class="mt-1.5 border-t border-border px-2.5 pt-2.5 pb-1 op-eyebrow text-muted-foreground">Ver como</p>
+      <button v-if="queueAvailable" type="button" role="menuitemradio" :aria-checked="viewMode === 'queue'" :class="ITEM" @click="emit('view', 'queue')">
+        <Icon name="lucide:list-checks" class="size-4" :class="viewMode === 'queue' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
+        Fila
+      </button>
       <button type="button" role="menuitemradio" :aria-checked="viewMode === 'board'" :class="ITEM" @click="emit('view', 'board')">
         <Icon name="lucide:columns-3" class="size-4" :class="viewMode === 'board' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
-        Quadro
+        Supervisão
       </button>
       <button type="button" role="menuitemradio" :aria-checked="viewMode === 'table'" :class="ITEM" @click="emit('view', 'table')">
         <Icon name="lucide:table-2" class="size-4" :class="viewMode === 'table' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />

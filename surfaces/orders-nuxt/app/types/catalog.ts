@@ -209,6 +209,20 @@ export interface ProductDetailProjection {
   /** Vocação do SKU (ref do papel de consumo); "" = sem vocação. Só para o B.I. */
   vocation: string;
   readonly vocation_choices: VocationChoice[];
+  /** Onde dá para comprar agora (V4-G4): do registro de faltas, somente leitura. */
+  readonly channel_availability?: ChannelAvailability[];
+}
+
+/** Um canal no painel do produto: vende agora, esgotado ou pausado, e desde quando. */
+export interface ChannelAvailability {
+  readonly ref: string;
+  readonly name: string;
+  readonly kind: "sale" | "display";
+  readonly state: "available" | "sold_out" | "paused";
+  /** "09:52" quando indisponível. */
+  readonly since: string;
+  /** O canal recebe a indisponibilidade sozinho (iFood, Meta, Google). */
+  readonly automatic: boolean;
 }
 
 /**

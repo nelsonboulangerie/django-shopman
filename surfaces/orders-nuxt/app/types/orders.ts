@@ -15,6 +15,10 @@ import type {
 } from "~/generated/ordersContract";
 
 export type {
+  QueueAwarenessProjection,
+  SystemActionProjection,
+  MenuOutageProjection,
+  MenuChannelProjection,
   AwaitingWorkOrderProjection,
   CancellationPresetGroupProjection,
   OrderItemProjection,

@@ -172,7 +172,7 @@ describe("Vocação", () => {
     expect(w.text()).toContain("Sem vocação: o B.I. não classifica as vendas deste produto.");
     await radios(w)[2]!.trigger("click");
     expect(w.emitted("save")).toBeUndefined();
-    expect(w.text()).toContain("1 campo(s) alterado(s)");
+    expect(w.text()).toContain("1 campo alterado");
     await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
     expect(w.emitted("save")).toEqual([[{ vocation: "hibrido" }]]);
   });
@@ -190,5 +190,26 @@ describe("Vocação", () => {
     await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
     await w.setProps({ conflict: { product: { ...detail, vocation: "hibrido", vocation_choices: choices }, conflicting_fields: ["vocation"] } });
     expect(w.text()).toContain("Vocação. Valor atual: Híbrido");
+  });
+});
+
+describe("disponibilidade nos canais (V4-G4)", () => {
+  it("um estado só no topo e o porquê por canal; o automático é marcado", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, channel_availability: [
+      { ref: "web", name: "Loja online", kind: "sale", state: "sold_out", since: "09:52", automatic: false },
+      { ref: "ifood", name: "iFood", kind: "sale", state: "sold_out", since: "09:52", automatic: true },
+      { ref: "pos", name: "PDV", kind: "sale", state: "available", since: "", automatic: false },
+    ] } });
+    const block = w.find("[data-panel-availability]");
+    expect(block.text()).toContain("Esgotado em 2 de 3 desde 09:52");
+    const rows = w.findAll("[data-panel-channel]");
+    expect(rows).toHaveLength(3);
+    expect(rows[1]!.text()).toContain("automático");
+    expect(rows[2]!.text()).toContain("À venda");
+  });
+
+  it("sem a leitura, o bloco não aparece", () => {
+    expect(panel().find("[data-panel-availability]").exists()).toBe(false);
   });
 });

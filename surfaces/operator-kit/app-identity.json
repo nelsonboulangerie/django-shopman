@@ -36,6 +36,7 @@
     },
     "orders": {
       "label": "Gestor de pedidos",
+      "shortLabel": "Gestor",
       "description": "Fila e acompanhamento de pedidos.",
       "symbol": "lucide:square-kanban",
       "fallbackIcon": "square-kanban",

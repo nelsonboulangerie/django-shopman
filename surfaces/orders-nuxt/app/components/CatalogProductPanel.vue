@@ -64,6 +64,25 @@ function onPurchaseChange(event: Event) {
   emit("set-purchasable", wanted);
 }
 
+// Disponibilidade nos canais (V4-G4): o que o servidor leu do registro de faltas.
+const availability = computed(() => props.detail?.channel_availability ?? []);
+const unavailableCount = computed(() => availability.value.filter((row) => row.state !== "available").length);
+const availabilityHeadline = computed(() => {
+  const off = availability.value.filter((row) => row.state !== "available");
+  const paused = off.some((row) => row.state === "paused");
+  const since = off.map((row) => row.since).filter(Boolean).sort()[0] ?? "";
+  const word = paused ? "Pausado" : "Esgotado";
+  const where = off.length === availability.value.length ? "" : ` em ${off.length} de ${availability.value.length}`;
+  return `${word}${where}${since ? ` desde ${since}` : ""}`;
+});
+function channelIcon(row: { ref: string; kind: string }): string {
+  if (row.ref === "ifood") return "lucide:bike";
+  if (row.ref === "pos" || row.ref === "balcao") return "lucide:store";
+  if (row.ref === "whatsapp") return "lucide:message-circle";
+  if (row.kind === "display") return "lucide:rss";
+  return "lucide:globe";
+}
+
 // Comprável · Vendável · Produzido · Usado em receita — só o que é verdade.
 const roleBadges = computed(() => {
   const roles = props.roles;
@@ -444,7 +463,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
 <template>
   <UiSheet :open="open" @update:open="requestClose">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg" :title="undefined">
+    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-[520px]" :title="undefined">
       <!-- Cabeçalho do painel (prévia v4 `catalogo-produto4.html`): a inicial do
            produto num quadrado, o nome e a linha do que ele é. -->
       <div class="flex items-center gap-3 border-b border-border px-5 py-4 pr-14">
@@ -454,11 +473,19 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <div class="min-w-0">
           <p class="sr-only">Editar produto</p>
           <h2 class="truncate text-xl leading-tight font-semibold text-foreground">{{ detail?.name || "Produto" }}</h2>
-          <p class="flex items-center gap-1.5 op-label font-normal text-muted-foreground">
+          <p class="flex min-w-0 flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground" data-panel-subtitle>
             <span class="font-mono">{{ sku }}</span>
+            <template v-if="detail">
+              <span aria-hidden="true">·</span>
+              <span class="tnum">R$ {{ centsToText(detail.base_price_q) }}{{ detail.unit === "kg" ? "/kg" : "" }}</span>
+            </template>
             <template v-if="detail?.primary_collection_name">
               <span aria-hidden="true">·</span>
               <span>{{ detail.primary_collection_name }}</span>
+            </template>
+            <template v-for="badge in roleBadges" :key="badge">
+              <span aria-hidden="true">·</span>
+              <span>{{ badge }}</span>
             </template>
           </p>
         </div>
@@ -482,15 +509,17 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
       <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
-      <div class="flex gap-1 overflow-x-auto border-b border-border px-3 pt-2">
+      <div class="flex gap-0 overflow-x-auto border-b border-border px-3" role="tablist" aria-label="Partes do produto">
         <button
           v-for="t in TABS"
           :key="t.id"
           type="button"
-          class="min-h-control shrink-0 rounded-t-md px-3 py-2 op-body transition"
+          role="tab"
+          :aria-selected="tab === t.id"
+          class="min-h-12 shrink-0 px-3 op-body whitespace-nowrap transition"
           :class="tab === t.id
-            ? 'border-b-2 border-primary font-semibold text-foreground'
-            : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'"
+            ? 'font-semibold text-foreground shadow-[inset_0_-2px_0_var(--primary)]'
+            : 'text-muted-foreground hover:text-foreground'"
           @click="tab = t.id"
         >{{ t.label }}</button>
       </div>
@@ -507,6 +536,39 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <template v-else>
           <!-- Geral -->
           <div v-show="tab === 'geral'" class="space-y-4">
+            <!-- Disponibilidade nos canais (v4): um estado só e o porquê, por canal.
+                 Somente leitura (registro de faltas); pausar segue no interruptor do
+                 canal, na tabela do Catálogo. -->
+            <section
+              v-if="availability.length"
+              class="overflow-hidden rounded-lg border"
+              :class="unavailableCount ? 'border-destructive/30' : 'border-border'"
+              data-panel-availability
+            >
+              <div class="flex flex-wrap items-center gap-2 px-3.5 py-3" :class="unavailableCount ? 'bg-destructive/6' : 'bg-muted/40'">
+                <h3 class="op-label font-semibold">Disponibilidade nos canais</h3>
+                <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold">
+                  <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ availabilityHeadline }}
+                </span>
+                <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold">À venda em todos</span>
+                <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
+              </div>
+              <div v-for="row in availability" :key="row.ref" class="flex min-h-12 items-center gap-3 border-t border-border px-3.5 py-2" data-panel-channel>
+                <Icon :name="channelIcon(row)" class="size-4 shrink-0 text-muted-foreground" />
+                <span class="w-32 shrink-0 truncate op-body" :title="row.name">{{ row.name }}</span>
+                <span class="min-w-0 flex-1 op-micro">
+                  <b v-if="row.state !== 'available'" class="font-semibold text-destructive">{{ row.state === "paused" ? "Pausado" : row.kind === "display" ? "Fora de estoque" : "Esgotado" }}</b>
+                  <span v-else class="text-muted-foreground">À venda</span>
+                  <span v-if="row.since" class="text-muted-foreground"> desde {{ row.since }}</span>
+                  <span v-if="row.automatic && row.state !== 'available'" class="ml-1 inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 font-semibold text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />automático</span>
+                </span>
+              </div>
+              <p class="flex items-start gap-1.5 border-t border-border px-3.5 py-2 op-micro text-muted-foreground">
+                <Icon name="lucide:sparkles" class="mt-0.5 size-3 shrink-0" />
+                O sistema avisa o iFood, a Meta e o Google sozinho quando o estoque zera e quando volta. Pausar fica no interruptor de cada canal, na tabela.
+              </p>
+            </section>
+
             <label class="block">
               <span :class="labelClass">Nome</span>
               <input v-model="draft.name" :class="fieldClass" type="text" placeholder="Ex.: Pão francês" />
@@ -944,7 +1006,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
       </div>
 
       <div class="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-        <span v-if="patchSize" class="mr-auto text-xs text-muted-foreground">{{ patchSize }} campo(s) alterado(s)</span>
+        <span class="mr-auto op-micro text-muted-foreground" data-panel-changes>{{ patchSize ? `${patchSize} ${patchSize === 1 ? "campo alterado" : "campos alterados"}` : "" }}</span>
         <button
           type="button"
           class="min-h-control rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-accent"
