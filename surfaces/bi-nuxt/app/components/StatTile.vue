@@ -46,7 +46,7 @@ const VALUE_TONE = {
     <p class="flex items-center gap-1.5 op-label text-muted-foreground">
       <Icon v-if="icon" :name="icon" class="size-4" aria-hidden="true" />{{ label }}
     </p>
-    <p class="mt-0.5 text-foreground" :class="size === 'hero' ? 'text-[34px] leading-tight font-bold tracking-[-0.02em] tnum' : 'op-figure'">
+    <p class="mt-0.5 text-foreground" :class="size === 'hero' ? 'op-display font-bold tnum' : 'op-figure'">
       <span class="whitespace-nowrap" :class="tone ? VALUE_TONE[tone] : ''">{{ value }}</span>
       <span v-if="unit" class="ml-1.5 op-label font-normal text-muted-foreground">{{ unit }}</span>
     </p>

@@ -16,6 +16,7 @@ existe).
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -121,6 +122,8 @@ class BISalesReport:
     #: Dias da semana sem expediente regular (0 = segunda): o gráfico diz "fechado".
     closed_weekdays: tuple[int, ...]
 
+
+logger = logging.getLogger(__name__)
 
 def build_bi_sales(
     *,
@@ -307,6 +310,7 @@ def _channel_names() -> dict[str, tuple[str, str]]:
             out[channel.ref] = (channel.name or channel.ref, _kind_from_channel(channel))
         return out
     except Exception:
+        logger.warning("bi_sales: nomes de canal indisponíveis; caindo nas chaves", exc_info=True)
         return {}
 
 
@@ -358,4 +362,5 @@ def _closed_weekdays() -> tuple[int, ...]:
 
         return tuple(closed_weekdays())
     except Exception:
+        logger.warning("bi_sales: calendário da loja indisponível; nenhum dia marcado fechado", exc_info=True)
         return ()
