@@ -900,6 +900,9 @@ def test_product_detail_get_shape(client, operator, catalog):
         "vocation", "vocation_choices",
         # somente-leitura: onde dá para comprar agora (V4-G4, registro de faltas)
         "channel_availability",
+        "back_at",
+        "back_reason",
+        "admin_history_path",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500

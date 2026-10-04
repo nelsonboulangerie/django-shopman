@@ -688,7 +688,7 @@ class OperatorOrderProjection:
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""
     # Onde fica a loja (G18, "fora da loja: mostrando o que pede decisão"): o celular
-    # que consentiu compara a própria posição com esta, no aparelho; a posição de
+    # que consentiu compara a própria posição com esta, no dispositivo; a posição de
     # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
     store_location: dict[str, float] | None = None
 

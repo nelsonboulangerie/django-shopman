@@ -113,6 +113,7 @@ def test_kitchen_cards_carry_the_eta_and_the_awareness_says_where_it_comes_from(
 def test_menu_channels_carry_the_same_switch_as_the_channels_tab():
     from django.contrib.auth import get_user_model
     from django.contrib.auth.models import Permission
+
     from shopman.shop.models import Channel
 
     Channel.objects.update_or_create(ref="ifood", defaults={"name": "iFood", "commerce_policy": Channel.CommercePolicy.ORDER, "is_active": True})
