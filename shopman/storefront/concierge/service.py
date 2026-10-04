@@ -890,7 +890,9 @@ def _best_window_evidence(
 
 
 @_observed("turn")
-def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_client=None) -> TurnResult:
+def run_turn(
+    conversation_id: int, binding_id: int, *, client=None, triage_client=None, intents_client=None
+) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
     result = TurnResult(
@@ -918,6 +920,15 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
         # para a equipe (ou para a outra mesa), com o resumo gravado.
         turn_text = "\n".join(message.text for message in inbound if message.text)
         previous_triage = (conversation.flags or {}).get("triage")
+        from . import cancellation
+
+        concierge_answers = ""
+        if cancellation.is_pending_answer(conversation, turn_text):
+            concierge_answers = "cancel_answer"
+        elif cancellation.asks_to_cancel(turn_text) and cancellation.self_cancellable(conversation, turn_text):
+            # Cancelamento que o cliente poderia fazer pelo site: a Concierge
+            # pergunta e cancela. Fora da janela, a triagem manda para a equipe (R4).
+            concierge_answers = "self_cancel"
         with meter.stage("triage"):
             decision = triage_module.decide(
                 turn_text,
@@ -927,11 +938,18 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 commercial_authority=bool(conversation._commercial_authority),
                 client=metrics.triage_client_for(meter, triage_client),
                 channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
+                concierge_answers=concierge_answers,
             )
         meter.triage_source = decision.source
         triage_module.record(conversation, inbound, decision)
         result.triage = decision
-        if decision.escalates:
+        from . import intents as intents_module
+
+        # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
+        # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
+        # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
+        plural = intents_module.enabled_for(binding.subject)
+        if decision.escalates and not plural:
             meter.layer = metrics.LAYER_TEAM
             mark_handoff(
                 conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision, meter=meter
@@ -963,12 +981,18 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
             result.fallback = "turn_limit"
         else:
             try:
-                with meter.stage("agent"):
-                    outcome = agent_module.run_agent(
-                        conversation=conversation,
-                        history=agent_module.history_for(conversation),
-                        client=meter.wrap(client, "model", factory=agent_module.build_client),
+                if plural:
+                    outcome = intents_module.run(
+                        conversation, binding=binding, decision=decision, client=intents_client
                     )
+                    meter.intents = getattr(outcome, "intents", {}) or {}
+                else:
+                    with meter.stage("agent"):
+                        outcome = agent_module.run_agent(
+                            conversation=conversation,
+                            history=agent_module.history_for(conversation),
+                            client=meter.wrap(client, "model", factory=agent_module.build_client),
+                        )
             except TurnRevoked:
                 raise
             except Exception:
@@ -1008,19 +1032,45 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 )
                 result.fallback = "error"
         meter.layer = outcome.layer
+        from . import house_rules
+        from .transport import semantic_blocks
+
+        if getattr(outcome, "triage_update", None) is not None:
+            triage_module.record(conversation, inbound, outcome.triage_update)
         if outcome.handoff:
-            meter.layer = metrics.LAYER_AGENT_HANDOFF
+            team = getattr(outcome, "team_triage", None)
+            ack_text = ""
+            if team is not None:
+                # Intenções no plural: o cartão leva cada parte, e o aviso ao cliente leva as
+                # dúvidas já respondidas mais a frase de que a equipe foi chamada.
+                triage_module.record(conversation, inbound, team)
+                result.triage = team
+                if outcome.reply_text:
+                    reviewed_ack = house_rules.review(
+                        [outcome.reply_text],
+                        house_rules.ReplyContext(
+                            receipts=house_rules.receipts_for(outcome, handoff=True),
+                            customer_text=turn_text,
+                            house_contacts=house_rules.house_contacts(),
+                        ),
+                    )
+                    ack_text = "" if reviewed_ack.held else reviewed_ack.texts[0]
+            else:
+                meter.layer = metrics.LAYER_AGENT_HANDOFF
+                # Quem chamou a equipe pode ter montado o aviso com o motivo (a
+                # Concierge recusando o acréscimo numa encomenda): ele substitui o
+                # padrão e passa pelas regras da casa em ``_prepare_reply``.
+                ack_text = getattr(outcome, "handoff_ack", "") or ""
             mark_handoff(
                 conversation,
                 binding,
                 outcome.handoff_reason or "pedido do cliente",
                 consumed_ids=ids,
                 meter=meter,
-                ack_text=getattr(outcome, "handoff_ack", ""),
+                triage=team,
+                ack_text=ack_text,
             )
-            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
-        from . import house_rules
-        from .transport import semantic_blocks
+            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=team)
 
         # Regras da casa (OBS0310-M): toda resposta do turno, inclusive a montada
         # pelo sistema, passa pela tabela antes de ser gravada. O que ela segura
@@ -1428,9 +1478,11 @@ def mark_handoff(
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
 
-    ``ack_text`` substitui o aviso padrão (``CONCIERGE_HANDOFF_ACK``) quando quem
-    chamou a equipe montou a frase com o motivo (a Concierge recusando o acréscimo
-    numa encomenda). Passa pelas regras da casa como qualquer aviso de handoff.
+    ``ack_text`` substitui o aviso de atendimento humano da casa
+    (``CONCIERGE_HANDOFF_ACK``): intenções no plural, em que o aviso leva as dúvidas
+    já respondidas e a frase de que a equipe foi chamada, e a Concierge recusando o
+    acréscimo numa encomenda (o motivo e "já chamei a equipe"). Passa pelas regras
+    da casa como qualquer aviso de handoff.
 
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
     ``house_rules_held`` é a resposta que as regras da casa seguraram

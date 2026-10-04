@@ -344,3 +344,68 @@ def test_turn_refused_preorder_says_why_and_the_team_is_really_called(conversati
         "Já chamei a equipe para ver isso com você."
     ]
     assert _unchanged(order)
+
+
+# ── Intenções no plural: o acréscimo no meio de outras partes ─────────
+
+
+def test_compose_puts_the_addition_confirmation_last_as_the_only_question():
+    from shopman.storefront.concierge import intents
+    from shopman.storefront.concierge.intents import Act, Execution, PartReply
+
+    confirm = "Acrescento 2 Pão Francês ao pedido P7? Total novo R$ 3,60, saldo a pagar R$ 1,80. Responda sim ou não."
+    run = Execution(replies=[
+        PartReply(Act("order"), text=confirm, closing=True),
+        PartReply(Act("product_question"), text="“Croissant”: R$ 13,00.\n“Brioche”: R$ 9,00.\nQual deles você prefere?"),
+        PartReply(Act("hours_delivery"), text="Abrimos de segunda a sábado, das 7h às 20h."),
+    ])
+
+    text = intents.compose(run)
+
+    assert text.endswith(confirm)
+    assert "Qual deles" not in text and text.count("?") == 1
+
+
+def test_addition_part_is_recognised_only_with_an_order_mention():
+    from shopman.storefront.concierge.intents import asks_to_add_to_order
+
+    assert asks_to_add_to_order("acrescenta 2 croissants no meu pedido")
+    assert asks_to_add_to_order("coloca mais um pão no pedido M63")
+    assert not asks_to_add_to_order("quero 2 croissants por favor")
+    assert not asks_to_add_to_order("meu pedido já saiu?")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_plural_turn_adds_through_the_same_path_with_the_confirmation_last(conversation, customer, outbox, settings):
+    from django.test import override_settings
+
+    from shopman.storefront.tests.test_concierge_intents import PLURAL_SETTINGS, ReaderClient, _act
+
+    settings.AI_ASSIST_API_KEY = "sk-teste"
+    order = _order("NB-ADD-M", customer.ref)
+    reader = ReaderClient([
+        _act("order", "acrescenta 2 pães franceses no meu pedido", "pão francês", 2),
+        _act("house_info", "vocês aceitam vale refeição?"),
+    ])
+
+    _receive(conversation, "acrescenta 2 pães franceses no meu pedido, e vocês aceitam vale refeição?", "plural-add-1")
+    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
+        asked = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(),
+                                 intents_client=reader)
+    assert not asked.handoff and len(outbox.sent) == 1
+    reply = outbox.sent[0]
+    assert "vale refeição" in reply  # a outra parte também recebe resposta
+    assert reply.endswith(
+        "Acrescento 2 Pão Francês ao pedido NB-ADD-M, retirada hoje a partir das 9h? "
+        "Total novo R$ 3,60, saldo a pagar R$ 3,60. Responda sim ou não."
+    )
+    assert reply.count("?") == 1
+    assert _unchanged(order)
+
+    _receive(conversation, "sim", "plural-add-2")
+    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
+        done = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(),
+                                intents_client=ReaderClient())
+    assert done.replies[0].startswith("Pronto, acrescentei 2 Pão Francês ao pedido NB-ADD-M.")
+    order.refresh_from_db()
+    assert order_composition.effective_total_q(order) == 360

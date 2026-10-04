@@ -27,7 +27,7 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
-from . import allergens, dialogue, house_rules, small_talk
+from . import allergens, cancellation, dialogue, discount, house_rules, small_talk
 from . import tools as tools_module
 from .metrics import LAYER_AGENT, LAYER_CONTEXT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
@@ -46,6 +46,8 @@ MAX_HISTORY_TOOL_RESULT_CHARS = 400
 #: Montado por partes para o próprio arquivo não carregar a sequência literal.
 _TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
 _LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
+#: O motivo do handoff quando o cancelamento não é do autoatendimento (regra R4).
+CANCEL_HANDOFF_REASON = "Cancelamento de pedido: fora do que o cliente cancela pelo site"
 #: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
 MAX_REPEATED_CALLS = 2
 _CART_STATE_TOOLS = {"view_cart", "set_item", "set_fulfillment", "review_order"}
@@ -91,6 +93,12 @@ class AgentOutcome:
     disclosure: dict = field(default_factory=dict)
     #: Quem respondeu (``metrics.LAYER_*``): a régua grava em ``usage["layer"]``.
     layer: str = LAYER_AGENT
+    #: Intenções no plural (``intents.Plan.as_dict``): as partes do turno e quem as leu.
+    intents: dict = field(default_factory=dict)
+    #: Intenções no plural: a triagem do cartão da equipe (parte sensível no turno) e a
+    #: que a conversa guarda quando a alergia foi respondida pelo aviso da casa.
+    team_triage: object | None = None
+    triage_update: object | None = None
     #: Memória da conversa (``dialogue``): o estado que valia no começo do turno e
     #: o que a resolução quer gravar. ``None`` quando o turno não passou por ela
     #: (mídia, teto diário): aí o estado fica como estava.
@@ -302,6 +310,39 @@ def _allergy_outcome(conversation: Conversation, customer_text: str, *, channel_
 # ── O turno ───────────────────────────────────────────────────────────
 
 
+def addition_outcome(conversation, resolution, *, memory, memos) -> AgentOutcome | None:
+    """Acrescentar a pedido já feito, pelo mesmo serviço do PDV (dono, 03/10/2026).
+
+    A memória resolveu o "1" (``add_preview``: a pergunta de uma linha) ou o "sim" a
+    ela (``add_apply``). Sem modelo. Recusa numa encomenda chama a equipe com o
+    motivo no aviso. ``None`` quando a fala é outra coisa. Usado pelo agente e
+    pelas intenções no plural.
+    """
+    if resolution.outcome not in {"add_preview", "add_apply"}:
+        return None
+    from . import order_addition
+
+    request = resolution.request
+    if resolution.outcome == "add_preview":
+        addition = order_addition.propose(
+            conversation, order_ref=request.get("order_ref", ""), additions=request.get("add")
+        )
+    else:
+        addition = order_addition.apply(conversation, request)
+    if addition.handoff:
+        return AgentOutcome(
+            reply_text="", handoff=True, handoff_reason=addition.handoff_reason,
+            handoff_ack=addition.text, layer=LAYER_CONTEXT, memory=memory, memory_memos=memos,
+        )
+    return AgentOutcome(
+        reply_text=addition.text,
+        order_ref=addition.order_ref if addition.code == "added" else "",
+        layer=LAYER_CONTEXT,
+        memory=memory,
+        memory_memos=[*memos, addition.memo],
+    )
+
+
 def run_agent(*, conversation: Conversation, history: list[dict], client=None) -> AgentOutcome:
     """Roda um turno completo. ``history`` já contém a(s) mensagem(ns) do cliente."""
     from .prompt import build_system
@@ -330,32 +371,28 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     # estado explícito da conversa, sem modelo. Sem referente que ainda valha, a
     # casa pergunta; nunca supõe.
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
+
+    # Cancelamento conforme a etapa (dono, 03/10/2026): quando o próprio cliente
+    # poderia cancelar pelo site, a Concierge pergunta em uma linha e cancela no
+    # "sim", pelo mesmo serviço. Antes da memória e da cortesia: o "sim" e o
+    # "não, obrigado" respondem à pergunta pendente de cancelamento. Fora da
+    # janela, a equipe (regra da casa R4).
+    cancel_turn = cancellation.resolve_pending(conversation, customer_text)
+    if cancel_turn is None and cancellation.asks_to_cancel(customer_text):
+        order = cancellation.self_cancellable(conversation, customer_text)
+        if order is None:
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        cancel_turn = cancellation.ask(conversation, order, customer_text)
+    if cancel_turn is not None:
+        if cancel_turn.code == "refused":
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
-    if resolution.outcome in {"add_preview", "add_apply"}:
-        # Acrescentar a pedido já feito, pelo mesmo serviço do PDV (dono,
-        # 03/10/2026): a pergunta de uma linha, ou o "sim" a ela. Sem modelo.
-        from . import order_addition
-
-        request = resolution.request
-        if resolution.outcome == "add_preview":
-            addition = order_addition.propose(
-                conversation, order_ref=request.get("order_ref", ""), additions=request.get("add")
-            )
-        else:
-            addition = order_addition.apply(conversation, request)
-        if addition.handoff:
-            return AgentOutcome(
-                reply_text="", handoff=True, handoff_reason=addition.handoff_reason,
-                handoff_ack=addition.text, layer=LAYER_CONTEXT, memory=memory, memory_memos=memos,
-            )
-        return AgentOutcome(
-            reply_text=addition.text,
-            order_ref=addition.order_ref if addition.code == "added" else "",
-            layer=LAYER_CONTEXT,
-            memory=memory,
-            memory_memos=[*memos, addition.memo],
-        )
+    addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
+    if addition is not None:
+        return addition
     if resolution.answers_without_model:
         return AgentOutcome(
             reply_text=resolution.reply,
@@ -389,6 +426,15 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     _rule, fixed = house_rules.fixed_reply_for(
         customer_text, shop_name=(getattr(_shop(), "name", "") or "").strip()
     )
+    if _rule == "R7":
+        # Pedido de desconto (dono, 03/10/2026): até o teto da casa, a Concierge
+        # concede pelo mesmo cupom do site, e o valor é do sistema. Quando não
+        # dá (teto 0, sem autoridade, cupom recusado), segue a frase fixa de R7.
+        granted = discount.handle_request(
+            conversation=conversation, channel_ref=channel_ref, customer_text=customer_text
+        )
+        if granted.text:
+            return AgentOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory)
     if fixed:
         # Regras da casa R7 (nunca negociar preço) e R8 (diz que é a assistente
         # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.

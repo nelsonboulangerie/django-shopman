@@ -32,7 +32,7 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     elapsed_seconds: 600, timer_class: "timer-ok", items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00",
     fulfillment_icon: "storefront", fulfillment_label: "Retirada", fulfillment_type: "pickup", delivery_address: "",
     delivery_instructions: "", can_confirm: false, can_advance: true, next_status: "completed",
-    next_action_label: "Marcar como Retirado", payment_method: "cash", payment_method_label: "Dinheiro",
+    next_action_label: "Marcar como retirado", payment_method: "cash", payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "", ifood_pickup_code: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
     ifood_negotiations: [], payment_status: "captured", payment_pending: false, can_settle_delivery_cash: false,
     fiscal_status_label: "", fiscal_status: "", has_kitchen_note: false, has_customer_note: false, is_gift: false,
@@ -98,7 +98,7 @@ describe("cardAffordances", () => {
   });
 
   it("saída na janela: nenhum outro gesto no card", () => {
-    const c = card({ actions: [action("undo-handoff", "Desfazer"), action("advance", "Marcar como Retirado")] });
+    const c = card({ actions: [action("undo-handoff", "Desfazer"), action("advance", "Marcar como retirado")] });
     expect(cardAffordances(c)).toEqual([]);
   });
 });
@@ -106,19 +106,22 @@ describe("cardAffordances", () => {
 describe("OrderCard — o sistema fez · desfazer", () => {
   it("pronto automático: selo, aviso que espera e Desfazer que emite undo_ready", async () => {
     nowMs.value = NOW;
-    const w = mountCard(card({ undo: autoReady(inSeconds(24)), actions: [action("advance", "Marcar como Retirado"), action("undo-ready", "Desfazer", { priority: "secondary" })] }));
+    const w = mountCard(card({ undo: autoReady(inSeconds(24)), actions: [action("advance", "Marcar como retirado"), action("undo-ready", "Desfazer", { priority: "secondary" })] }));
     const row = w.find('[data-undo="auto_ready"]');
     expect(row.text()).toContain("Pronto · automático");
     expect(row.text()).toContain("aviso ao cliente sai em 0:24");
     await row.find("[data-undo-button]").trigger("click");
     expect(w.emitted("action")?.[0]).toEqual(["undo_ready"]);
-    // O fato humano do momento continua sendo o botão principal.
-    expect(w.text()).toContain("Marcar como Retirado");
+    // O fato humano do momento continua sendo o botão principal, com o verbo e o nome
+    // (v4: "Entregar a Ana"); o rótulo do servidor fica no title.
+    const primary = w.get("[data-card-primary]");
+    expect(primary.text()).toMatch(/^Entregar /);
+    expect(primary.attributes("title")).toBe("Marcar como retirado");
   });
 
   it("pronto automático depois do prazo: sem Desfazer", () => {
     nowMs.value = NOW;
-    const w = mountCard(card({ undo: autoReady(""), actions: [action("advance", "Marcar como Retirado")] }));
+    const w = mountCard(card({ undo: autoReady(""), actions: [action("advance", "Marcar como retirado")] }));
     expect(w.find('[data-undo="auto_ready"]').text()).toContain("Cozinha concluiu às 14:59");
     expect(w.find("[data-undo-button]").exists()).toBe(false);
   });
@@ -126,11 +129,14 @@ describe("OrderCard — o sistema fez · desfazer", () => {
   it('saída: "Entregue às 15:00 · Desfazer 5 s", e só esse gesto', async () => {
     nowMs.value = NOW;
     const w = mountCard(card({ undo: handoff(inSeconds(5)), actions: [action("undo-handoff", "Desfazer")] }));
+    // O cartão fica no lugar (v4): o fato com o anel do tempo e o Desfazer largo.
     const row = w.find('[data-undo="handoff"]');
     expect(row.text()).toContain("Entregue às 15:00");
-    expect(row.find("[data-undo-button]").text()).toContain("Desfazer 5 s");
-    expect(w.text()).not.toContain("Marcar como Retirado");
-    await row.find("[data-undo-button]").trigger("click");
+    expect(w.get("[data-card-state]").attributes("data-card-state")).toBe("handoff");
+    expect(w.get("[data-undo-button]").text()).toContain("Desfazer 5 s");
+    expect(w.text()).not.toContain("Marcar como retirado");
+    expect(w.find("[data-card-primary]").exists()).toBe(false);
+    await w.get("[data-undo-button]").trigger("click");
     expect(w.emitted("action")?.[0]).toEqual(["undo_handoff"]);
   });
 

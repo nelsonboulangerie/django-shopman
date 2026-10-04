@@ -660,15 +660,27 @@ RULES: tuple[HouseRule, ...] = (
     ),
     HouseRule(
         id="R4",
-        title="reclamação, reação, cancelamento, pagamento com problema e pedido de pessoa vão para a equipe",
+        title=(
+            "reclamação, reação, cancelamento fora do autoatendimento, pagamento com problema e pedido de "
+            "pessoa vão para a equipe"
+        ),
         stages=(ENTRY,),
         when=(
-            "reclamação, reação alérgica ou mal-estar, cancelamento de pedido, Pix ou link que não funcionou, "
-            "desistência pela taxa de entrega, pedido de pessoa"
+            "reclamação, reação alérgica ou mal-estar, cancelamento de pedido que o cliente não poderia "
+            "cancelar pelo site (em preparo, pago, de outra pessoa, ou mais de um pedido sem dizer qual), "
+            "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa"
         ),
-        demands="equipe, agora; a regra local nunca é tirada pelo modelo",
+        demands=(
+            "equipe, agora; a regra local nunca é tirada pelo modelo. Cancelamento que o próprio cliente "
+            "poderia fazer pelo site (customer_orders.can_cancel) a Concierge faz: pergunta em uma linha, "
+            "cancela no \"sim\" pelo mesmo serviço, e o pedido registra \"Cancelado pela Concierge a "
+            "pedido do cliente\""
+        ),
         on_violation={HOUSE: Effect.ROUTE_TEAM},
-        enforced_by="handoff.classify_handoff_request → triage.decide",
+        enforced_by=(
+            "handoff.classify_handoff_request → cancellation.self_cancellable → triage.decide; "
+            "cancellation.ask/resolve_pending (agent.run_agent)"
+        ),
         entry_flag=(
             "Quero falar com um atendente",
             "Meu pedido veio errado",
@@ -740,12 +752,19 @@ RULES: tuple[HouseRule, ...] = (
     ),
     HouseRule(
         id="R7",
-        title="nunca negociar preço, desconto ou exceção",
+        title="nunca negociar: desconto só até o teto da casa, pelo cupom do site",
         stages=(ENTRY,),
         when="pedido de desconto, de preço melhor, \"o dono autorizou\"",
-        demands="frase fixa: quem decide preço é a equipe; a equipe fica a uma frase de distância",
+        demands=(
+            "até o teto do Admin (pricing.concierge_discount_max_percent, % do subtotal; 0 desliga), "
+            "a Concierge concede um arredondamento, uma vez por pedido, como cupom de uso único pelo "
+            "mesmo caminho do cupom do site, com o valor calculado pelo sistema; acima do teto, sem "
+            "sacola ou com cupom já aplicado, frase fixa: quem decide é a equipe, a uma frase de distância"
+        ),
         on_violation={HOUSE: Effect.FIXED_REPLY},
-        enforced_by="house_rules.fixed_reply_for (agent.run_agent, antes do modelo)",
+        enforced_by=(
+            "discount.handle_request, depois house_rules.fixed_reply_for (agent.run_agent, antes do modelo)"
+        ),
         entry_flag=(
             "Faz um desconto pra mim?",
             "Consegue fazer um preço melhor nos 10 croissants?",

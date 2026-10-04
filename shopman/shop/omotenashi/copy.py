@@ -1287,9 +1287,82 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Preço e condição especial quem decide é a equipe da casa, e eu não consigo negociar por aqui. Se quiser falar com alguém da equipe, é só pedir.",
         )},
     },
+    # Intenções no plural (OBS0310-Q): cada parte da mensagem recebe resposta, inclusive
+    # "isso eu não tenho". Só a de equipe afirma uma ação, e sai com o handoff feito.
+    "CONCIERGE_PARTS_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre {topic}, já chamei a equipe, que continua com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_ORDER_WITH_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre o pedido, a equipe fecha com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_NOT_FOUND": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não tenho essa informação aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Se quiser, chamo alguém da equipe para confirmar.",
+        )},
+    },
+    "CONCIERGE_PARTS_UNCLEAR": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não entendi bem. Pode me dizer de outro jeito?",
+        )},
+    },
     "CONCIERGE_IDENTITY": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    # Cancelamento pela Concierge (dono, 03/10/2026; ``storefront/concierge/cancellation.py``):
+    # só quando o cliente poderia cancelar pelo site, e só depois do "sim". O que
+    # aconteceu com o pagamento é anexado pelo sistema, lido depois do cancelamento.
+    "CONCIERGE_CANCEL_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Cancelo o pedido {order_ref}, com {items}? Responda sim ou não.",
+        )},
+    },
+    "CONCIERGE_CANCEL_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Pronto, cancelei o pedido {order_ref}, como você pediu.",
+        )},
+    },
+    "CONCIERGE_CANCEL_KEPT": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Combinado, o pedido {order_ref} segue como está.",
+        )},
+    },
+    # Desconto da Concierge (dono, 03/10/2026; ``storefront/concierge/discount.py``):
+    # até o teto da casa, como cupom do site. Os valores vêm do sistema
+    # ({before}, {after}); acima do teto, quem decide é a equipe (R7).
+    "CONCIERGE_DISCOUNT_GRANTED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Consegui um arredondamento para você 💛 O total passa de {before} para {after}.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Mais do que isso quem decide é a equipe da casa. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Neste pedido eu já fiz o arredondamento que está ao meu alcance. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Seu pedido já tem um cupom aplicado, e vale um cupom por pedido. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_NO_CART": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quando o pedido estiver montado, posso arredondar o total para você, dentro do que a casa permite. O que você gostaria de pedir?",
         )},
     },
     "CONCIERGE_NO_PHONE": {

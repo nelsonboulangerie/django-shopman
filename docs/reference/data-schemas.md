@@ -122,13 +122,14 @@ guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversati
 (uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
 orçamento vigente `quote`, estado, contadores de turno e tokens) e
 `ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
-`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
-pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve estas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py` (e o desconto, por `discount.py`):
 
 | Chave | Valor | Para quê |
 |---|---|---|
 | `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
 | `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+| `concierge_discount` | `{coupon_code, discount_q, max_percent, conversation_id, at}` | o desconto que a Concierge concedeu nesta sacola (dono, 03/10/2026; `storefront/concierge/discount.py`). Presente = já concedido: é o "uma vez por pedido". `coupon_code` é o cupom `CONCIERGE-…` de uso único que entrou em `coupon_code` pelo caminho do cupom do site; `discount_q` é o que o modifier de fato aplicou; `max_percent` é o teto vigente na hora (texto decimal); `at` em ISO 8601. Não é copiada para o pedido: a origem do desconto no pedido é o cupom (`Order.snapshot.pricing.coupon`) e o evento `concierge_discount` |
 
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
@@ -159,9 +160,26 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+
+Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
+a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
+request}` (`asked_at` ISO 8601; vale 30 minutos; `request` é a fala do cliente, até 300 caracteres).
+Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O cancelamento passa por
+`customer_orders.cancel(order, actor="concierge")`, a mesma régua do site (`can_cancel`), e grava
+`Order.data["cancelled_by"] = "concierge"`, o evento `concierge_cancelled` (ator `concierge`,
+`payload = {note: "Cancelado pela Concierge a pedido do cliente: \"<fala>\"", conversation_id}`) e
+uma nota na conversa (`ConversationMessage` `kind=note`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
+Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`, atrás de
+`CONCIERGE_INTENTS_PLURAL`): a triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
+neste turno (as 12 intenções e `multiple_parts`, a pergunta "a mensagem traz mais de uma coisa?",
+feita só com a chave ligada; vazio sem Jev). Com parte sensível no turno, a triagem gravada é a do
+turno inteiro: `source=intents`, `intent` a primeira parte de equipe (cancelamento grava
+`intent=order`, `escalated_by=cancel_order`), `summary` com cada parte numerada e o que houve com ela
+(`respondida`, `com a equipe`, `suspenso, a equipe fecha`). Alergia respondida pelo aviso da casa
+dentro de uma mensagem com várias partes grava `source=intents` e o `answered_by` de sempre.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
 `ConversationMessage.envelope["triage_shadow"]` = `{rules, rules_source, jev, jev_scores, latency_ms,
 model, at}`: `rules`/`rules_source` como `triage.classify_rules`; `jev` é a intenção mais provável
@@ -188,6 +206,12 @@ e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `a
 `model` (soma das idas ao modelo da resposta), `tools` (soma das ferramentas). Os contadores da
 `Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
 como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
+Com as intenções no plural (OBS0310-Q): `layer` pode ser `intents` (cada parte pelo executor da
+casa, uma resposta), a etapa `intents` aparece em `latency_ms` (porteiro, leitura e execução) e em
+`calls` (`stage: intents`, a leitura com o modelo pequeno, quando houve), e `usage.intents` =
+`{acts: [{act, span, product, qty}], source: gate|model|local, reason, read_ms, read_error?}`: as
+partes na ordem do cliente (`act` da lista fechada `intents.ACT_NAMES`), quem as decidiu (o porteiro
+sozinho, a leitura com o modelo, ou a divisão local quando a leitura falhou) e por quê.
 Registros anteriores a 03/10/2026 têm `usage = {}`.
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
@@ -314,7 +338,7 @@ for key in (
 | `fiscal.tax_id` | `string` | POS checkout ("CPF na nota") · checkout da loja na entrega (`fiscal_tax_id` do payload, só dígitos) · concierge `set_fulfillment(tax_id)` | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão), `DeliveryFiscalIdentityRule` (porta do pedido de entrega) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `fiscal.issue_override` | `dict` | `backstage.services.orders.emit_fiscal_on_demand` (Últimas vendas do PDV, `POST pos/orders/<ref>/emit-fiscal/`, sempre após `validate_manager_override`) | `shop.services.fiscal.emission_resolver` (passa por cima da regra), `fiscal.issue_override` | Emissão AVULSA da NFC-e que a regra da casa não emitiu: `{approved_by, requested_by, at}` — `approved_by` é o username do gerente VERIFICADO pelo desafio (crachá ou PIN), `requested_by` o ator do PDV, `at` ISO datetime. Presente ⇒ `emission_resolver` diz sim para ESTE pedido. Escritor único; gravada na mesma transação da Directive (sem Directive, a chave não fica). Evento `fiscal_issue_override` no OrderEvent. Só vale para venda sem nota em andamento (`fiscal_state == not_expected`), do dia de operação da venda, ou até `pos.late_fiscal_emission_days` dias depois (Shop.defaults) e com pagamento capturado quando a cobrança exige. ⚠️ A nota sai com a data e a hora da emissão, não da venda |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
-| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
+| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry: `{sku, hold_id, qty}` |
 | `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) e pela Concierge acrescentando itens a pedido do cliente (`concierge/order_addition.apply` → `order_edit.edit(source="concierge:add")`, `event_id: "concierge-edit:<ref>:<revision>"`, só aumento de itens) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by` = a origem (`"pos:edit"` ou `"concierge:add"`); a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
@@ -1208,6 +1232,15 @@ Lido por: `setup.py` (registro), validators, modifiers.
 | `auto_sync_fulfillment` | `bool` | `False` | Sync automático fulfillment → order status |
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
+
+### Pricing — preço do canal e desconto da Concierge
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
+| `concierge_discount_max_percent` | `number` | `2.5` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola (aceita decimal); `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+
+Lido por: `storefront/concierge/discount.py`.
 
 ### 8. Display — como um canal `display` exibe
 

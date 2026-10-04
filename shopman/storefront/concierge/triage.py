@@ -37,7 +37,7 @@ import json
 import logging
 import re
 import unicodedata
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from django.conf import settings
 from django.utils import timezone
@@ -154,8 +154,15 @@ class Triage:
     #: equipe (alergia, decisão do dono em 03/10/2026, ``allergens.py``):
     #: ``allergy_notice`` (respondida com o aviso da casa e os alérgenos
     #: declarados), ``allergy_ask_which`` (alergia sem dizer a quê: pergunta) ou
-    #: ``allergy_notice_after_ask`` (a resposta a essa pergunta, respondida).
+    #: ``allergy_notice_after_ask`` (a resposta a essa pergunta, respondida);
+    #: e no cancelamento: ``self_cancel`` (cancelamento que o cliente poderia
+    #: fazer pelo site; a Concierge pergunta e cancela) ou ``cancel_answer`` (o
+    #: "sim" ou "não" à pergunta de cancelamento).
     answered_by: str = ""
+    #: As probabilidades que o Jev deu a cada intenção neste turno (e a de "mais de uma
+    #: parte", quando as intenções no plural estão ligadas). Vazio sem Jev. É a primeira
+    #: opinião do porteiro das intenções (``intents.gate``).
+    jev_scores: dict = field(default_factory=dict)
 
     @property
     def intent_label(self) -> str:
@@ -341,7 +348,7 @@ def jev_categories() -> list:
     ]
 
 
-def jev_scores(text: str, *, contender=None):
+def jev_scores(text: str, *, contender=None, with_parts: bool = False):
     """A probabilidade de cada uma das 12 intenções pelo Jev (``Prediction``).
 
     O texto vai REDIGIDO (``redact_observation_text``), o mesmo que o comparador
@@ -354,7 +361,15 @@ def jev_scores(text: str, *, contender=None):
 
     contender = contender or JevContender(timeout=10.0)
     sample = Sample(0, redact_observation_text(text).text, frozenset())
-    return contender.scores(sample, jev_categories())
+    categories = jev_categories()
+    if with_parts:
+        # Uma pergunta a mais na MESMA chamada: "a mensagem traz mais de uma coisa?"
+        # (``intents.MULTIPLE_PARTS``). O Jev responde cada pergunta sim/não sozinha.
+        from .intent_benchmark import Category
+        from .intents import MULTIPLE_PARTS, MULTIPLE_PARTS_DESCRIPTION
+
+        categories = [*categories, Category(MULTIPLE_PARTS, MULTIPLE_PARTS, MULTIPLE_PARTS_DESCRIPTION)]
+    return contender.scores(sample, categories)
 
 
 def best_jev_intent(scores: dict[str, float]) -> str:
@@ -367,14 +382,20 @@ def best_jev_intent(scores: dict[str, float]) -> str:
     return ranked[0][1] if ranked else ""
 
 
-def classify_with_jev(text: str, *, contender=None) -> dict | None:
-    """Proposta do Jev no formato da do modelo, sem urgência nem resumo; ou None."""
+def classify_with_jev(text: str, *, contender=None, with_parts: bool = False) -> dict | None:
+    """Proposta do Jev no formato da do modelo, sem urgência nem resumo; ou None.
+
+    ``scores`` leva todas as probabilidades (para o porteiro das intenções no plural),
+    mesmo quando nenhuma intenção passa do corte.
+    """
     try:
-        intent = best_jev_intent(jev_scores(text, contender=contender).intents)
+        scores = jev_scores(text, contender=contender, with_parts=with_parts).intents
     except Exception as exc:  # sem aprovação, sem chave, rede, resposta ilegível: vale a regra
         logger.warning("concierge.triage.jev_failed exception_type=%s", type(exc).__name__)
         return None
-    return {"intent": intent, "urgency": "", "summary": ""} if intent else None
+    intent = best_jev_intent(scores)
+    rounded = {ref: round(p, 3) for ref, p in scores.items()}
+    return {"intent": intent, "urgency": "", "summary": "", "scores": rounded}
 
 
 # ── Decisão ───────────────────────────────────────────────────────────
@@ -424,6 +445,7 @@ def decide(
     commercial_authority: bool = False,
     client=None,
     channel_ref: str = "",
+    concierge_answers: str = "",
 ) -> Triage:
     """Intenção, urgência, destino e resumo de um turno.
 
@@ -435,8 +457,17 @@ def decide(
     """
     if previous and set(previous.get("message_ids") or ()) & set(message_ids):
         previous = None
+    if concierge_answers in {"self_cancel", "cancel_answer"}:
+        # Cancelamento conforme a etapa (dono, 03/10/2026): quem chamou já
+        # conferiu, pela régua do site, que o próprio cliente poderia cancelar
+        # (``cancellation.self_cancellable``), ou que a fala responde à pergunta
+        # de cancelamento. A Concierge pergunta e cancela; fora disso, R4.
+        return Triage("order", NOW, ANSWER, rules_summary("order", text), "rules", answered_by=concierge_answers)
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
+    from .intents import mode as intents_mode
+
+    with_parts = intents_mode() != "off"
     allergy = _allergy_route(text, rules_intent, context=context, previous=previous, channel_ref=channel_ref)
     if allergy is not None and (allergy.destination == ANSWER or allergy.escalated_by):
         return allergy
@@ -448,10 +479,13 @@ def decide(
         # responde a cortesia sem ferramenta. Nem Jev nem modelo são consultados.
         proposal = None
     elif with_jev:
-        proposal = classify_with_jev(text, contender=client) if _model_toggle() else None
+        proposal = classify_with_jev(text, contender=client, with_parts=with_parts) if _model_toggle() else None
     else:
         proposal = classify_with_model(text, list(context), client=client)
 
+    scores = dict((proposal or {}).get("scores") or {})
+    if proposal is not None and not proposal["intent"]:
+        proposal = None  # o Jev não passou do corte em nenhuma: vale a regra (as probabilidades ficam)
     if allergy_to_team:
         intent, source = "allergy", "rules"
     elif rules_intent in SENSITIVE or rules_intent == "special_order":
@@ -471,7 +505,8 @@ def decide(
         and intent not in SENSITIVE
         and classify_handoff_request(text) == "order_cancel"
     ):
-        # Regra da casa R4: cancelar pedido é com a equipe (o bot não cancela).
+        # Regra da casa R4: cancelar pedido que o cliente não poderia cancelar
+        # pelo site (em preparo, pago, de outra pessoa) é com a equipe.
         intent, destination, urgency, escalated_by = "order", TEAM, NOW, "cancel_order"
     elif (
         intent == "order"
@@ -482,7 +517,7 @@ def decide(
         destination, urgency, escalated_by = TEAM, NOW, "order_not_closed"
 
     summary = (proposal or {}).get("summary") or rules_summary(intent, text)
-    return Triage(intent, urgency, destination, summary, source, escalated_by)
+    return Triage(intent, urgency, destination, summary, source, escalated_by, jev_scores=scores)
 
 
 def after_failures(previous: dict | None, text: str) -> Triage:
