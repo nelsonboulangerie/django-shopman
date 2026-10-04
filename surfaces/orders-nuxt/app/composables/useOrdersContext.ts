@@ -4,7 +4,7 @@ type BoardContext = {
   owner: number | null; query: string; channel: string; fulfillment: FulfillmentFilter;
   sort: SortKey; viewMode: ViewMode; selected: string[]; scrollTop: number; windowY: number; focusLabel: string;
 };
-const emptyContext = (owner: number | null): BoardContext => ({ owner, query: "", channel: "all", fulfillment: "all", sort: "arrival", viewMode: "board", selected: [], scrollTop: 0, windowY: 0, focusLabel: "" });
+const emptyContext = (owner: number | null): BoardContext => ({ owner, query: "", channel: "all", fulfillment: "all", sort: "arrival", viewMode: "queue", selected: [], scrollTop: 0, windowY: 0, focusLabel: "" });
 
 /** Contexto somente na sessão atual. Trocar pessoa descarta inclusive a seleção. */
 export function useOrdersContext() {
@@ -24,7 +24,7 @@ export function useOrdersContext() {
     ...(state.value.owner ? { person: String(state.value.owner) } : {}),
     ...(query.value ? { q: query.value } : {}), ...(channel.value !== "all" ? { channel: channel.value } : {}),
     ...(fulfillment.value !== "all" ? { fulfillment: fulfillment.value } : {}),
-    ...(sort.value !== "arrival" ? { sort: sort.value } : {}), ...(viewMode.value !== "board" ? { view: viewMode.value } : {}),
+    ...(sort.value !== "arrival" ? { sort: sort.value } : {}), ...(viewMode.value !== "queue" ? { view: viewMode.value } : {}),
   } }));
   function readLocation(params: Record<string, unknown>) {
     if (!state.value.owner) return;
@@ -36,7 +36,7 @@ export function useOrdersContext() {
     query.value = text("q"); channel.value = text("channel") || "all";
     fulfillment.value = ["delivery", "pickup"].includes(text("fulfillment")) ? text("fulfillment") as FulfillmentFilter : "all";
     sort.value = ["urgency", "recent"].includes(text("sort")) ? text("sort") as SortKey : "arrival";
-    viewMode.value = text("view") === "table" ? "table" : "board";
+    viewMode.value = text("view") === "table" ? "table" : text("view") === "board" ? "board" : "queue";
   }
   return { state, query, channel, fulfillment, sort, viewMode, selected, location, readLocation };
 }

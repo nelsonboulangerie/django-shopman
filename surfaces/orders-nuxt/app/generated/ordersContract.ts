@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -493,6 +493,10 @@ export interface OrderCardProjection {
   volumes: number;
   ready_at_iso: string;
   dispatched_at_iso: string;
+  attention: string;
+  attention_since_iso: string;
+  goal_minutes: number;
+  goal_label: string;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -661,6 +665,45 @@ export interface OrderQueueProjection {
   active_filter: string;
 }
 
+/** Uma linha de "O sistema fez": o que mudou sozinho e por quê. */
+export interface SystemActionProjection {
+  order_ref: string;
+  verb: string;
+  reason: string;
+  at_iso: string;
+  at_display: string;
+  undo_action: string;
+  undo_until_iso: string;
+}
+
+/** Um produto que não dá para comprar agora (esgotado ou pausado). */
+export interface MenuOutageProjection {
+  sku: string;
+  name: string;
+  reason: string;
+  line: string;
+  detail: string;
+}
+
+/** Um canal de venda: recebe pedido agora? */
+export interface MenuChannelProjection {
+  ref: string;
+  name: string;
+  active: boolean;
+  line: string;
+  focus_path: string;
+}
+
+/** QueueAwarenessProjection(system_actions: 'tuple[SystemActionProjection, ...]' = (), system_window_minutes: 'int' = 15, menu_outages: 'tuple[MenuOutageProjection, ...]' = (), menu_outages_more: 'int' = 0, menu_channels: 'tuple[MenuChannelProjection, ...]' = (), can_open_channels: 'bool' = False) */
+export interface QueueAwarenessProjection {
+  system_actions: SystemActionProjection[];
+  system_window_minutes: number;
+  menu_outages: MenuOutageProjection[];
+  menu_outages_more: number;
+  menu_channels: MenuChannelProjection[];
+  can_open_channels: boolean;
+}
+
 /** Operator queue grouped by action area: intake, prep and expedition */
 export interface TwoZoneQueueProjection {
   intake: OrderCardProjection[];
@@ -679,6 +722,7 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
+  awareness: QueueAwarenessProjection | null;
 }
 
 /** CustomerFilterOption(ref: 'str', label: 'str', active: 'bool') */
