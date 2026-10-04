@@ -38,32 +38,38 @@
      da leitura e o resto é lido normalmente.
    - A triagem não aceita "reclamação" do Jev ou do modelo numa cobrança sem queixa explícita (vale
      a regra local); a leitura descarta o ato `complaint` cujo trecho é cobrança.
-2. **Cancelamento dentro de várias partes segue o #1445.** O #1445 continua ABERTO (sem fila) no
-   fim desta frente, então ficou o ponto de ligação pronto: `intents._cancellation()` importa
-   `concierge/cancellation.py` quando ele existir. Com ele: parte de cancelamento que a régua do
-   site permite vira a pergunta de confirmação da Concierge (`self_cancellable` + `ask`), que fica
-   como a pergunta única do fim da resposta; o "sim"/"não" é resolvido no começo do turno
-   (`resolve_pending`), como no agente; fora da régua, equipe (R4). Sem o módulo, a equipe, como
-   antes. Testado com um módulo de mentira com a mesma assinatura do #1445.
+2. **Cancelamento dentro de várias partes segue o #1445.** O #1445 entrou no `main` durante esta
+   frente (merge de `origin/main` no branch, sem conflito), então a ligação está feita, não só
+   preparada: parte de cancelamento que a régua do site permite vira a pergunta de confirmação da
+   Concierge (`cancellation.self_cancellable` + `ask`), que vai para o fim da resposta como a
+   pergunta única; o "sim"/"não" é resolvido no começo do turno (`resolve_pending`), como no
+   agente; fora da régua, equipe (R4), e as partes simples continuam respondidas. Provado com o
+   módulo real em `test_concierge_cancellation.py` (pede, "sim", pedido cancelado pela Concierge;
+   em preparo, equipe).
 
 ## Prova
 
-- `pytest shopman/storefront/tests -k concierge` + admin + omotenashi: 720 passed, 29 skipped.
-  Copy/usage/vocabulário/travessão/privacidade: 3.516 passed (com `usage_map.py` regenerado).
+- Depois do merge do `main`: `pytest shopman/storefront/tests` + copy, usage, vocabulário,
+  travessão, Admin, privacidade e drift do spec: 6.211 passed, 60 skipped, 1 failed
+  (`api/test_checkout_card_web.py::test_card_checkout_on_web_commits_and_initiates_payment`, que
+  passa sozinho: instável sob `-n 8`, fora desta frente). `usage_map.py` regenerado.
 - As suítes que medem o agente (uma intenção) declaram `intents_plural: off` nos settings delas;
   a suíte das intenções (`test_concierge_intents.py`) cobre o padrão `cohort`, o `off`, o
   `subjects`, a pergunta repetida (memória, fala anterior, nada achado), a triagem com o Jev
   dizendo reclamação, e o ponto de ligação do cancelamento.
 - Golden set (`concierge_reply_eval --plural`), antes → depois:
 
-  | Medida | local antes | local depois | modelo antes | modelo depois |
-  |---|---:|---:|---:|---:|
-  | Várias partes, todas achadas | 12/16 | 12/16 | 15/16 | 15/16 |
-  | Todas as partes, todos os casos | 48/66 | 48/66 | 61/66 | 62/66 |
-  | Partes achadas | 67/85 | 67/85 | 80/85 | 81/85 |
-  | Equipe achada | 6/13 | 6/13 | 11/13 | 11/13 |
-  | Equipe sem precisar | 4 | 4 | 5 | 5 |
-  | Uma parte lida como várias | 7/50 | 7/50 | 3/50 | 2/50 |
+  | Medida | local antes | local depois | modelo antes | modelo depois (1) | modelo depois (2) |
+  |---|---:|---:|---:|---:|---:|
+  | Várias partes, todas achadas | 12/16 | 12/16 | 15/16 | 15/16 | 14/16 |
+  | Todas as partes, todos os casos | 48/66 | 48/66 | 61/66 | 62/66 | 60/66 |
+  | Partes achadas | 67/85 | 67/85 | 80/85 | 81/85 | 79/85 |
+  | Equipe achada | 6/13 | 6/13 | 11/13 | 11/13 | 11/13 |
+  | Equipe sem precisar | 4 | 4 | 5 | 5 | 4 |
+  | Uma parte lida como várias | 7/50 | 7/50 | 3/50 | 2/50 | 3/50 |
+
+  A rodada (2) é depois do merge do `main`. A variação entre rodadas é do modelo (o #1449 mediu a
+  mesma faixa: 15 a 16 de 16); a leitura local, determinística, não mudou.
 
   O caso do teste de campo `campo-2` ("você não respondeu: até que horas vocês abrem? e o croissant
   tem castanha?") perdeu o ato `complaint` que a leitura com o modelo inventava; continua na lista
@@ -73,5 +79,4 @@
 
 ## O que ficou de fora
 
-- Ligar o #1445 de fato: depende do merge dele. Quando entrar, o caminho em partes já o usa.
 - Abrir para mais clientes: é abrir a coorte da Concierge (`allowed_subjects`), decisão do dono.

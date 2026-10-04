@@ -466,7 +466,7 @@ def test_without_parts_in_memory_the_earlier_question_is_the_pending_one(convers
     assert intents._earlier_question(conversation) == earlier.text
 
 
-# ── 7. Cancelamento dentro de várias partes (ponto de ligação do #1445) ─
+# ── 7. Cancelamento dentro de várias partes (régua do #1445) ──────────
 
 
 class FakeCancellation:
@@ -509,22 +509,13 @@ def test_cancel_outside_the_rule_stays_with_the_team(monkeypatch):
     assert run.to_team and run.team[0].act == "cancel_order"
 
 
-def test_without_the_cancellation_module_the_team_cancels_as_before(monkeypatch):
-    monkeypatch.setattr(intents, "_cancellation", lambda: None)
-    found = intents.Plan(acts=[Act("cancel_order", span="cancela meu pedido")])
-
-    run = intents.execute(found, conversation=SimpleNamespace(), channel_ref="whatsapp", copy=lambda key: "")
-
-    assert run.to_team
-
-
 def test_the_cancel_confirmation_is_the_one_question_left_in_the_reply():
     run = Execution(replies=[
-        PartReply(Act("cancel_order"), text="Cancelo o pedido NB-1? Responda sim ou não?", self_served=True, keeps_question=True),
+        PartReply(Act("cancel_order"), text="Cancelo o pedido NB-1? Responda sim ou não?", self_served=True,
+                  keeps_question=True),
         PartReply(Act("product_question"), text="Temos croissant.\nQuer reservar?"),
     ])
 
     text = intents.compose(run)
 
-    assert text.endswith("Temos croissant.")
-    assert "Cancelo o pedido NB-1?" in text
+    assert text == "Temos croissant.\n\nCancelo o pedido NB-1? Responda sim ou não?"

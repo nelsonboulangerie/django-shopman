@@ -627,24 +627,21 @@ def _search_text(act: Act) -> str:
 
 
 def _cancellation():
-    """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``), quando existe.
+    """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
-    Ponto de ligação da decisão da coordenação (03/10/2026): cancelamento dentro de uma
-    mensagem com várias partes segue a mesma régua da Concierge (o que o cliente poderia
-    cancelar pelo site, ela pergunta e cancela no "sim"; fora disso, a equipe, R4). Sem o
-    módulo no ``main``, o cancelamento segue com a equipe, como antes.
+    Decisão da coordenação (03/10/2026): cancelamento dentro de uma mensagem com várias
+    partes segue a mesma régua da Concierge (o que o cliente poderia cancelar pelo site,
+    ela pergunta e cancela no "sim"; fora disso, a equipe, R4).
     """
-    try:
-        from . import cancellation
-    except ImportError:
-        return None
+    from . import cancellation
+
     return cancellation
 
 
 def _self_cancel(conversation, act: Act) -> str:
     """A pergunta de confirmação quando a Concierge pode cancelar; vazio = equipe (R4)."""
     module = _cancellation()
-    if module is None or conversation is None:
+    if conversation is None:
         return ""
     try:
         order = module.self_cancellable(conversation, act.span)
@@ -777,23 +774,27 @@ def compose(run: Execution) -> str:
     """Uma mensagem: as partes na ordem do cliente e uma pergunta só.
 
     Fica a pergunta da última parte que pergunta; as outras perdem a linha de pergunta
-    (a casa pergunta uma coisa por vez). Parte repetida sai uma vez. Com a equipe
+    (a casa pergunta uma coisa por vez). A confirmação que espera "sim" ou "não" (o
+    cancelamento) é sempre essa pergunta, e vai para o fim. Parte repetida sai uma vez. Com a equipe
     chamada no turno, a oferta "posso chamar a equipe" das outras frases sai.
     """
     blocks: list[str] = []
-    kept = -1
+    kept = ""
     for reply in run.replies:
         text = (reply.text or "").strip()
         if run.to_team:
             for offer in run.team_offers:
                 text = text.replace(offer, "").strip()
+        if reply.keeps_question and text:
+            kept = text  # a confirmação que espera resposta vai para o fim
+            continue
         if text and text not in blocks:
             blocks.append(text)
-            if reply.keeps_question and text.rstrip().endswith("?"):
-                kept = len(blocks) - 1
-    last_question = kept if kept >= 0 else max(
-        (i for i, block in enumerate(blocks) if block.rstrip().endswith("?")), default=-1
-    )
+    if kept:
+        blocks.append(kept)
+        last_question = len(blocks) - 1
+    else:
+        last_question = max((i for i, block in enumerate(blocks) if block.rstrip().endswith("?")), default=-1)
     cleaned: list[str] = []
     for index, block in enumerate(blocks):
         if index != last_question:
@@ -887,19 +888,16 @@ def run(conversation, *, binding, decision, client=None):
     customer_text = _current_customer_text(conversation)
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
 
-    # O "sim"/"não" à pergunta de cancelamento (#1445), quando ele existe: antes de tudo,
-    # como no agente. Qualquer outra fala desfaz a pergunta.
-    cancel_module = _cancellation()
-    if cancel_module is not None and hasattr(cancel_module, "resolve_pending"):
-        cancel_turn = cancel_module.resolve_pending(conversation, customer_text)
-        if cancel_turn is not None:
-            from . import agent as agent_module
-            from .metrics import LAYER_HOUSE_RULE
+    # O "sim"/"não" à pergunta de cancelamento (#1445): antes de tudo, como no agente.
+    # Qualquer outra fala desfaz a pergunta.
+    cancel_turn = _cancellation().resolve_pending(conversation, customer_text)
+    if cancel_turn is not None:
+        from .agent import CANCEL_HANDOFF_REASON
+        from .metrics import LAYER_HOUSE_RULE
 
-            if cancel_turn.code == "refused":
-                reason = getattr(agent_module, "CANCEL_HANDOFF_REASON", "") or PART_LABELS[CANCEL]
-                return AgentOutcome(reply_text="", handoff=True, handoff_reason=reason, memory=memory)
-            return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+        if cancel_turn.code == "refused":
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
 
     # Pergunta repetida (decisão da coordenação, 03/10/2026): "você não respondeu",
     # "e a minha pergunta?" sem outra pergunta junto. A Concierge responde as partes
