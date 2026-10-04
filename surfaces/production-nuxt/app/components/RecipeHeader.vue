@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// Cabeçalho das telas de receitas — irmão do ProductionHeader (mesmo lugar, mesmo
-// desenho: RailToggle + eyebrow + título + busca + atualizar), SEM as abas do fluxo
-// do dia: o inventário de receitas não é etapa da fornada, é conhecimento da casa.
-// O que é comum (Central, operador/travar, tema) mora no OperatorRail à esquerda.
-defineProps<{
+// Cabeçalho das telas de receitas na camada visual da suíte (V4-PROD): o mesmo
+// `OperatorPageHeader` de uma linha das outras telas da Produção, com a linha fina
+// "Receitas" acima do título, o voltar (`#lead`), a busca e os controles da tela. SEM o
+// progresso do dia nem as teclas do ciclo: o inventário de receitas não é etapa do lote,
+// é conhecimento da casa. Receitas mora no pé do rail (e no ⋯ do celular).
+const props = defineProps<{
   title: string;
   /** Linha pequena sob o título (kind, SKU, versão) — opcional. */
   subtitle?: string;
@@ -19,65 +20,44 @@ defineProps<{
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
+
+const eyebrow = computed(() =>
+  props.subtitle ? `Receitas · ${props.subtitle}` : "Receitas",
+);
 </script>
 
 <template>
-  <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-2.5">
-    <RailToggle />
-    <NuxtLink
-      v-if="back"
-      :to="back"
-      class="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-      aria-label="Voltar"
-      title="Voltar"
-    >
-      <Icon name="lucide:arrow-left" class="size-5" />
-    </NuxtLink>
-    <div class="mr-2 min-w-0">
-      <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Receitas</p>
-      <h1 class="truncate text-lg font-bold leading-tight">{{ title }}</h1>
-      <p v-if="subtitle" class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
-    </div>
-
-    <div class="ml-auto flex items-center gap-1.5">
-      <slot name="actions" />
-      <div v-if="searchable" class="relative">
-        <Icon
-          name="lucide:search"
-          class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <UiInput
-          v-model="query"
-          type="search"
-          inputmode="search"
-          placeholder="Buscar…"
-          class="w-32 pl-8 pr-7 focus:w-44 sm:w-40"
-          :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
-        />
-        <!-- Limpar ocupa o espaço reservado dentro do campo; é affordance do input, não botão de toolbar. -->
-        <button
-          v-if="query"
-          type="button"
-          class="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground transition hover:text-foreground"
-          aria-label="Limpar busca"
-          @click="query = ''"
-        >
-          <Icon name="lucide:x" class="size-3.5" />
-        </button>
-      </div>
-      <AlertsBell />
-      <UiButton
-        v-if="!hideRefresh"
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        class="min-h-11 min-w-11"
-        aria-label="Atualizar"
-        title="Atualizar"
-        @click="emit('refresh')"
+  <OperatorPageHeader :title="title" :eyebrow="eyebrow">
+    <template v-if="back" #lead>
+      <NuxtLink
+        :to="back"
+        class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        aria-label="Voltar"
+        title="Voltar"
       >
-        <Icon name="lucide:refresh-cw" class="size-4" :class="pending ? 'animate-spin' : ''" />
-      </UiButton>
-    </div>
-  </header>
+        <Icon name="lucide:arrow-left" class="size-5" />
+      </NuxtLink>
+    </template>
+    <template v-if="searchable" #search>
+      <UiSearchInput
+        v-model="query"
+        class="suite:md:w-[18rem]!"
+        placeholder="Buscar receita"
+        :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
+      />
+    </template>
+    <template #phone-actions>
+      <AlertsBell placement="phone" />
+    </template>
+    <template #actions>
+      <slot name="actions" />
+      <UiIconButton
+        v-if="!hideRefresh"
+        icon="lucide:refresh-cw"
+        label="Atualizar"
+        :spinning="pending"
+        @click="emit('refresh')"
+      />
+    </template>
+  </OperatorPageHeader>
 </template>

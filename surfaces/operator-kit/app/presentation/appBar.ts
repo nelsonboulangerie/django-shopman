@@ -30,6 +30,12 @@ export interface OperatorSection {
   /** Identidade da seção. É o que o app compara e o que o teste nomeia. */
   key: string;
   label: string;
+  /**
+   * Rótulo curto para a barra do polegar no celular, quando o nome não cabe em 1/5 da
+   * tela (ex.: a Produção, "Plano" para Planejamento, como nas prévias v4). O rail e o
+   * nome acessível seguem com `label`. Ausente = `label`.
+   */
+  shortLabel?: string;
   /** Ícone lucide (`lucide:*`). */
   icon: string;
   /** Rota da seção. Sem ela, a aba vira botão e a barra emite `select`. */

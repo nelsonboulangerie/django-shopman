@@ -72,8 +72,7 @@ const period = computed<PeriodSelection>({
     selectedDate.value = day === todayISO ? "" : day;
   },
 });
-// Menu ⋯ do painel — a exceção mora aqui, fora de evidência.
-const menuOpen = ref(false);
+// O lote avulso (a exceção) mora no ⋯ do cabeçalho, fora de evidência.
 
 // ── Navegação interna (painel ⇄ fechamento) ─────────────────────────────────
 const selectedOrder = ref<QCOrderCardProjection | null>(null);
@@ -396,7 +395,7 @@ function onTimerKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       v-model:query="query"
       title="Fechamento"
@@ -408,8 +407,35 @@ function onTimerKeydown(event: KeyboardEvent) {
           : null
       "
       :pending="pending"
+      :stale="stale"
       @refresh="refresh"
-    />
+    >
+      <template v-if="!(selectedOrder || selectedRecipe)" #actions>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="['day']"
+          :today="todayISO"
+          :max="todayISO"
+          label="Data dos lotes"
+          align="end"
+        />
+      </template>
+      <template v-if="quickFinishAvailable" #menu="{ close }">
+        <button
+          type="button"
+          role="menuitem"
+          class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+          data-close-off-plan
+          @click="
+            close();
+            recipePickerOpen = true;
+          "
+        >
+          <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
+          Lote avulso
+        </button>
+      </template>
+    </ProductionHeader>
 
     <!-- Tela de fechamento. -->
     <QcCloseScreen
@@ -429,56 +455,13 @@ function onTimerKeydown(event: KeyboardEvent) {
     <!-- Painel de lotes do dia. -->
     <div
       v-else
-      class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4"
+      class="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
     >
-      <div class="flex items-center justify-between gap-3">
-        <OperatorPeriodPicker
-          v-model="period"
-          :presets="['day']"
-          :today="todayISO"
-          :max="todayISO"
-          label="Data dos lotes"
-          align="start"
-        />
-
-        <UiPopover
-          v-if="quickFinishAvailable"
-          :open="menuOpen"
-          @update:open="(v: boolean) => (menuOpen = v)"
-        >
-          <UiPopoverTrigger as-child>
-            <UiButton
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              aria-label="Mais ações"
-            >
-              <Icon name="lucide:ellipsis-vertical" class="size-4" />
-            </UiButton>
-          </UiPopoverTrigger>
-          <UiPopoverContent align="end" :side-offset="6" class="w-52 p-1.5">
-            <UiButton
-              type="button"
-              class="w-full justify-start"
-              variant="ghost"
-              size="sm"
-              @click="
-                menuOpen = false;
-                recipePickerOpen = true;
-              "
-            >
-              <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
-              Lote avulso
-            </UiButton>
-          </UiPopoverContent>
-        </UiPopover>
-      </div>
-
       <div
         v-if="stale"
         role="status"
         aria-live="polite"
-        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
+        class="inline-flex items-center gap-2 self-start rounded-full border border-warning/40 bg-warning/10 px-3 py-2 op-label font-semibold text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
         <span>Sem atualizar. Mostrando o último painel carregado.</span>
@@ -490,17 +473,18 @@ function onTimerKeydown(event: KeyboardEvent) {
       <button
         v-if="kiosk && kiosk.previous_open_count > 0"
         type="button"
-        class="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition hover:bg-warning/20"
+        class="flex min-h-12 items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-left op-label font-semibold text-warning transition hover:bg-warning/20"
         @click="selectedDate = kiosk.previous_open_date"
       >
         <Icon name="lucide:history" class="size-4 shrink-0" />
-        <span>
+        <span class="flex-1">
           <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
           {{
             kiosk.previous_open_count === 1 ? "lote aberto" : "lotes abertos"
           }}
           de dias anteriores. Toque para ver.
         </span>
+        <Icon name="lucide:chevron-right" class="size-4 shrink-0" />
       </button>
 
       <p
@@ -522,20 +506,23 @@ function onTimerKeydown(event: KeyboardEvent) {
         Nenhum lote aguardando fechamento.
       </p>
 
-      <div class="grid gap-2">
+      <p v-if="openOrders.length" class="op-eyebrow text-muted-foreground">
+        Para finalizar <span class="tnum">{{ openOrders.length }}</span>
+      </p>
+      <div class="grid gap-2.5 lg:grid-cols-2">
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
              fornada é o botão quadrado do previsto, à direita. Alarmando, o
              card inteiro oscila em danger — visível do outro lado do fournil. -->
         <div
           v-for="order in openOrders"
           :key="order.pk"
-          class="flex items-stretch justify-between gap-3 rounded-md border bg-card p-4 text-left transition"
+          class="flex items-stretch justify-between gap-3 rounded-xl border border-border bg-card p-4 text-left transition"
           :class="[
             ovenFactAvailable(order) ? 'cursor-pointer hover:bg-accent' : '',
             ovenMode(order) === 'ringing'
               ? 'qc-ringing border-destructive/60'
               : {
-                  'border-primary ring-2 ring-primary/30': order.pk === nextPk,
+                  'border-2 border-primary': order.pk === nextPk,
                 },
           ]"
         >
@@ -552,11 +539,14 @@ function onTimerKeydown(event: KeyboardEvent) {
             "
             @click="ovenFactAvailable(order) && openOven(order)"
           >
-            <p class="truncate text-base font-semibold">
+            <p class="truncate op-title">
               {{ order.recipe_name }}
+              <span class="font-mono op-micro font-normal text-muted-foreground">{{
+                order.output_sku
+              }}</span>
             </p>
-            <p class="truncate text-sm text-muted-foreground">
-              {{ order.output_sku }}
+            <p class="op-label text-muted-foreground">
+              Lote {{ order.ref }}
               <template v-if="showPosition && order.position_ref">
                 · {{ order.position_ref }}</template
               >
@@ -575,7 +565,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             </p>
             <p
               v-if="ovenFactAvailable(order)"
-              class="mt-2 flex items-center gap-2 text-lg font-semibold tabular-nums"
+              class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3 op-figure"
               :class="
                 ovenMode(order) === 'ringing'
                   ? 'text-destructive'
@@ -599,7 +589,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <!-- Tile de 80px mostra quantidade e encerra a fornada com mão ocupada. -->
           <button
             type="button"
-            class="group flex h-20 w-24 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-md border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex h-20 w-28 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-lg border border-primary/40 bg-primary/10 transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :class="{
               'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
                 !finishAvailable(order) || ovenFacts.isPending(order.pk),
@@ -609,11 +599,11 @@ function onTimerKeydown(event: KeyboardEvent) {
             :aria-label="`Finalizar o lote de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
-            <span class="text-xl font-semibold leading-none tabular-nums"
+            <span class="op-figure leading-none"
               >{{ cardAnchor(order) }} un.</span
             >
             <span
-              class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground"
+              class="op-eyebrow text-foreground group-hover:text-primary-foreground"
               >{{
                 ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
               }}</span

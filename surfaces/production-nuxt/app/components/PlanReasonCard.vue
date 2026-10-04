@@ -55,15 +55,15 @@ const HISTORY_TONE = {
 
 <template>
   <div class="flex flex-col gap-3 text-left" data-testid="plan-reason">
-    <header class="flex items-start gap-2 border-b px-4 pb-3 pt-3">
+    <header class="flex items-start gap-2 border-b border-border px-4 pb-3 pt-3.5">
       <div class="min-w-0 flex-1">
-        <h2 class="text-base font-semibold">
+        <h2 class="op-title">
           Por que {{ suggestion.quantity }}
           <span class="font-normal text-muted-foreground"
             >· {{ productName }}</span
           >
         </h2>
-        <p class="text-xs text-muted-foreground">{{ basisLine }}</p>
+        <p class="op-micro text-muted-foreground">{{ basisLine }}</p>
       </div>
       <OperatorKbd class="mt-1 hidden md:inline-flex">Esc</OperatorKbd>
       <button
@@ -91,10 +91,10 @@ const HISTORY_TONE = {
             +
           </li>
           <li
-            class="flex min-w-16 flex-1 flex-col items-center rounded-md bg-muted px-2 py-1.5"
+            class="flex min-w-16 flex-1 flex-col items-center rounded-lg bg-muted px-2 py-1.5"
           >
-            <span class="text-xl font-bold tabular-nums">{{ term.value }}</span>
-            <span class="text-xs text-muted-foreground">{{ term.label }}</span>
+            <span class="op-heading leading-[1.1] tnum">{{ term.value }}</span>
+            <span class="op-micro text-muted-foreground">{{ term.label }}</span>
           </li>
         </template>
         <li
@@ -104,12 +104,12 @@ const HISTORY_TONE = {
           =
         </li>
         <li
-          class="flex min-w-16 flex-1 flex-col items-center rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5"
+          class="flex min-w-16 flex-1 flex-col items-center rounded-lg bg-primary/12 px-2 py-1.5"
         >
-          <span class="text-xl font-bold tabular-nums">{{
+          <span class="op-heading leading-[1.1] tnum text-primary">{{
             math.total.value
           }}</span>
-          <span class="text-xs text-muted-foreground">{{
+          <span class="op-micro text-muted-foreground">{{
             math.total.label
           }}</span>
         </li>
@@ -155,7 +155,7 @@ const HISTORY_TONE = {
     <!-- A falta de insumo, antes de planejar: o que falta e onde pedir. -->
     <section
       v-if="suggestion.material_shortages.length"
-      class="mx-4 flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 p-3"
+      class="mx-4 flex flex-col gap-2 rounded-lg bg-warning/12 p-3"
       data-testid="reason-material"
       aria-label="Falta de insumo"
     >
@@ -183,12 +183,12 @@ const HISTORY_TONE = {
       </a>
     </section>
 
-    <footer class="flex flex-wrap items-center gap-2 border-t px-4 py-3">
+    <footer class="flex flex-wrap items-center gap-2 px-4 pb-4">
       <UiButton
         v-if="alternative"
         type="button"
         variant="outline"
-        class="min-h-12"
+        class="min-h-12 border-primary text-primary hover:bg-primary/10 hover:text-primary"
         @click="emit('plan', alternative, 'manual')"
       >
         <Icon name="lucide:check" class="size-4" />
@@ -197,7 +197,8 @@ const HISTORY_TONE = {
       <UiButton
         v-else-if="canPlanSuggested"
         type="button"
-        class="min-h-12"
+        variant="outline"
+        class="min-h-12 border-primary text-primary hover:bg-primary/10 hover:text-primary"
         @click="emit('plan', suggestion.quantity, 'suggested')"
       >
         <Icon name="lucide:check" class="size-4" />

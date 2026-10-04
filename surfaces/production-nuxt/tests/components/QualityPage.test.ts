@@ -63,6 +63,7 @@ function installGlobals(hash = "") {
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useHead", () => {});
+  vi.stubGlobal("useProductionRail", () => productionRail);
   vi.stubGlobal("navigateTo", navigate);
   vi.stubGlobal("useRoute", () => ({ query: {}, hash }));
   vi.stubGlobal("useSonner", { success, error: vi.fn() });
@@ -152,9 +153,12 @@ const QualityGatePanelStub = {
   emits: ["confirm-batch", "confirm-one", "correct", "go-close"],
   template: "<div data-quality-gate-stub />",
 };
+// O selo da Qualidade no rail (V4-PROD): a tela conta ao rail os lotes à espera.
+const productionRail = ref({ qualityPending: 0 });
+
 const ProductionHeaderStub = {
   name: "ProductionHeader",
-  props: ["title", "count", "countLabel", "progress", "pending", "query"],
+  props: ["title", "count", "countLabel", "progress", "pending", "query", "eyebrow", "stale", "searchable"],
   template: "<header />",
 };
 const mountPage = () =>
@@ -180,7 +184,8 @@ describe("Qualidade — aba própria", () => {
     expect(panel(wrapper).props("isToday")).toBe(true);
     const header = wrapper.findComponent({ name: "ProductionHeader" });
     expect(header.props("title")).toBe("Qualidade");
-    expect(header.props("count")).toBe(1);
+    // A contagem dos que aguardam revisão vai para o selo da Qualidade no rail.
+    expect(productionRail.value.qualityPending).toBe(1);
   });
 
   it("confirma o conjunto sem exceção num ato só, sem caixa do navegador", async () => {

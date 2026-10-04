@@ -125,9 +125,10 @@ function refreshAll() {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       title="Relatórios"
+      :searchable="false"
       :pending="pending || managementPending"
       @refresh="refreshAll()"
     />
@@ -155,7 +156,7 @@ function refreshAll() {
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <!-- ── Gestão do dia ─────────────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-lg font-semibold">Gestão do dia</h2>
+        <h2 class="op-title">Gestão do dia</h2>
         <OperatorPeriodPicker
           v-model="managementPeriod"
           :presets="['day']"
