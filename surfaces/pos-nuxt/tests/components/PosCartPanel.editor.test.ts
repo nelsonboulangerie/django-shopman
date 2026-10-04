@@ -105,6 +105,23 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
     expect(wrapper.emitted("fire")).toHaveLength(1);
   });
 
+  it("folha (tablet e celular): fechada mostra o resumo e o Pagamento; puxada mostra as linhas", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ sheet: true }) });
+    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("closed");
+    expect(wrapper.find("[data-pos-sheet-summary]").text()).toContain("3 itens");
+    expect(wrapper.find("[data-pos-sheet-summary]").text()).toContain(formatBRL(1100));
+    expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(false);
+    expect(wrapper.find("[data-receipt-list]").attributes("style") ?? "").toContain("display: none");
+    await wrapper.find("[data-pos-sheet-primary]").trigger("click");
+    expect(wrapper.emitted("prepare")).toHaveLength(1);
+    await wrapper.find("[data-pos-sheet-summary]").trigger("click");
+    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("open");
+    expect(wrapper.find("[data-receipt-list]").attributes("style") ?? "").not.toContain("display: none");
+    expect(wrapper.find("[data-pos-primary]").exists()).toBe(true);
+    await wrapper.find('[aria-label="Recolher a comanda"]').trigger("click");
+    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("closed");
+  });
+
   it("Pagamento é uma faixa só, com o total dentro", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     const primary = wrapper.find("[data-pos-primary]");

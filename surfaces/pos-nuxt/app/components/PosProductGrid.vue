@@ -138,7 +138,7 @@ function onSearchEscape() {
   <section class="flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
       <PosSearchField
         ref="searchInputRef"
         v-model="search"

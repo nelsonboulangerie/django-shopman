@@ -61,7 +61,13 @@ const props = defineProps<{
    * mostrar o gesto seria deixar o operador fazer algo que some ao salvar.
    */
   lineAdjustmentsBlockedReason?: string;
+  /**
+   * A comanda é a FOLHA de baixo (tablet e celular, v4 `pos-tablet.jpg`): fechada,
+   * resumo e Pagamento; aberta, as linhas e o editor. No desktop ela é a coluna.
+   */
+  sheet?: boolean;
 }>();
+const sheetOpen = ref(false);
 const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
 const primaryText = computed(() => props.primaryLabel || "Pagamento");
 const primaryIconName = computed(() => props.primaryIcon || "lucide:credit-card");
@@ -854,12 +860,66 @@ defineExpose({ focusItem, onDigit, onBackspace });
        digita a quantidade). -->
   <div
     v-else
-    class="relative flex min-h-0 flex-col overflow-hidden bg-card text-card-foreground md:h-full"
+    class="relative flex min-h-0 flex-col bg-card text-card-foreground"
+    :class="sheet ? 'max-h-[82dvh] rounded-t-2xl border-t border-border shadow-[0_-12px_30px_rgb(0_0_0/.16)]' : 'overflow-hidden md:h-full'"
+    :data-pos-sheet="sheet ? (sheetOpen ? 'open' : 'closed') : undefined"
     data-pos-ticket
   >
+    <!-- FOLHA (v4 tablet, `pos-tablet.jpg`): abaixo do desktop a comanda é a folha de
+         baixo. Fechada, mostra o resumo e o Pagamento na zona do polegar; puxada, as
+         linhas, o editor e o numérico (só ao tocar a linha). -->
+    <template v-if="sheet">
+      <div v-if="sheetOpen" class="fixed inset-0 -z-10 bg-black/35" aria-hidden="true" data-pos-sheet-backdrop @click="sheetOpen = false" />
+      <button
+        type="button"
+        class="mx-auto grid h-5 w-20 shrink-0 place-items-center"
+        :aria-label="sheetOpen ? 'Recolher a comanda' : 'Abrir a comanda'"
+        :aria-expanded="sheetOpen"
+        data-pos-sheet-handle
+        @click="sheetOpen = !sheetOpen"
+      >
+        <span class="h-1.5 w-12 rounded-full bg-border" aria-hidden="true" />
+      </button>
+      <div v-if="!sheetOpen" class="flex items-center gap-3 px-4 pt-1 pb-3">
+      <button
+        type="button"
+        class="flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left"
+        aria-label="Abrir a comanda"
+        data-pos-sheet-summary
+        @click="sheetOpen = true"
+      >
+        <span class="relative grid size-11 shrink-0 place-items-center rounded-lg bg-secondary">
+          <Icon name="lucide:receipt-text" class="size-5" />
+          <span v-if="cartUnits" class="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-suite-badge px-1 op-micro font-bold text-suite-badge-foreground tnum">{{ cartUnits }}</span>
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
+          <span v-if="fireBar.fired" class="flex items-center gap-1 truncate op-micro text-success">
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.fired }} na cozinha
+          </span>
+          <span v-else-if="fireBar.unfired && fireBar.visible" class="flex items-center gap-1 truncate op-micro text-muted-foreground">
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.unfired }} ainda não foram à cozinha
+          </span>
+        </span>
+        <Icon name="lucide:chevron-up" class="size-5 shrink-0 text-muted-foreground" />
+      </button>
+      <!-- Pagamento na zona do polegar, sem abrir a folha (v4: 250 x 64). -->
+      <button
+        type="button"
+        class="flex h-16 w-40 shrink-0 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none sm:w-56"
+        :disabled="!items.length || loading || saving"
+        :title="`${primaryText} (F4)`"
+        data-pos-sheet-primary
+        @click="$emit('prepare')"
+      >
+        <Icon :name="primaryIconName" class="size-6 shrink-0" />
+        {{ primaryText }}
+      </button>
+      </div>
+    </template>
     <!-- Cabeçalho da comanda: contagem, Selecionar (Alt S) e Enviar à cozinha (F9). -->
     <header
-      v-if="!batchMode"
+      v-if="!batchMode && (!sheet || sheetOpen)"
       class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border py-1.5 pr-2.5 pl-3.5"
     >
       <div class="min-w-0 leading-none">
@@ -906,11 +966,20 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
         <OperatorKbd aria-hidden="true">F9</OperatorKbd>
       </button>
+      <button
+        v-if="sheet"
+        type="button"
+        class="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent"
+        aria-label="Recolher a comanda"
+        @click="sheetOpen = false"
+      >
+        <Icon name="lucide:chevron-down" class="size-5" />
+      </button>
     </header>
 
     <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote. Só aqui
          mora Transferir (F10 continua valendo em toda a venda). -->
-    <template v-else>
+    <template v-else-if="!sheet || sheetOpen">
       <header class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-3 py-1.5">
         <button
           type="button"
@@ -1000,6 +1069,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
     </template>
 
     <div
+      v-show="!sheet || sheetOpen"
       ref="receiptList"
       class="min-h-0 flex-1 overflow-y-auto"
       data-receipt-list
@@ -1205,7 +1275,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
          cima. Clicar (ou ↑↓) numa linha abre o editor DELA; Fechar (Esc) devolve a
          lista inteira. Com a seleção ligada, o mesmo lugar recebe o desconto do lote. -->
     <section
-      v-if="editorVisible || (batchMode && discountOpen)"
+      v-if="(editorVisible || (batchMode && discountOpen)) && (!sheet || sheetOpen)"
       class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 pb-2.5 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
       aria-label="Console do item"
       data-pos-line-editor
@@ -1403,7 +1473,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
 
     <!-- O teclado físico edita a linha ativa: a dica mora aqui, no balcão (v4). -->
     <p
-      v-if="items.length && !batchMode && !coarsePointer"
+      v-if="items.length && !batchMode && !coarsePointer && !sheet"
       class="hidden h-7 shrink-0 items-center gap-2 overflow-hidden border-t border-border bg-muted/50 px-3.5 op-micro whitespace-nowrap text-muted-foreground md:flex"
       data-pos-keyboard-hint
     >
@@ -1417,7 +1487,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <span class="op-label text-muted-foreground">Total parcial</span>
       <strong class="text-xl font-semibold tnum">{{ totalDisplay }}</strong>
     </div>
-    <div v-else class="shrink-0 border-t border-border p-3">
+    <div v-else-if="!sheet || sheetOpen" class="shrink-0 border-t border-border p-3">
       <button
         type="button"
         class="flex h-16 w-full items-center gap-3 rounded-lg bg-primary pr-3.5 pl-4 text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"

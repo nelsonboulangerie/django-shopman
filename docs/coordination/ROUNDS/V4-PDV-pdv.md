@@ -1,8 +1,8 @@
 # V4-PDV: o PDV igual à prévia v4 (último app da onda)
 
 - **id:** V4-PDV
-- **branch:** claude/v4-pdv (PR 1: casca + Venda), claude/v4-pdv-fim-do-dia (PR 2)
-- **PR:** #1462 (PR 1), PR 2 aberto em seguida (Fim do dia)
+- **branch:** claude/v4-pdv (PR 1), claude/v4-pdv-fim-do-dia (PR 2), claude/v4-pdv-tablet (PR 3)
+- **PR:** #1462 (casca + Venda), #1463 (Fim do dia), PR 3 (tablet) em seguida
 - **estado:** PR aberto, auto-merge (onda V4, merge autorizado pelo dono)
 - **início (UTC):** 2026-10-04
 
@@ -59,6 +59,26 @@ perda, lote misto) calculadas só do que se contou e da classificação do lote,
 livre) gravado pela rota que já existia (`closing/episodes/<id>/`), e o selo "Fechar o dia"
 com a consequência escrita embaixo. Sem R$ em nenhum passo.
 
+## O que entrou (PR 3: tablet, `pos-tablet.jpg`)
+Abaixo do desktop (< 1024px: tablet em pé e celular) a comanda vira a **folha de baixo**:
+fechada, o resumo ("N itens · R$ total" e o fato da cozinha) e o **Pagamento na zona do
+polegar**; puxada (alça, resumo ou chevron), o cabeçalho com Selecionar e Enviar à cozinha,
+as linhas, o editor e o numérico (no toque, só ao tocar a linha), com o fundo escurecido
+que recolhe ao tocar. A grade ganha a tela inteira (4 colunas no tablet em pé). No celular a
+folha fica acima da barra do polegar. Em dispositivo de toque as teclas impressas somem
+(SPEC4 §7; o atalho segue valendo). Desktop e tablet deitado (≥ 1024px) seguem com a coluna.
+
+**Ajustes › Salão (`salao-mesas.jpg`): não entrou, e o que falta é dado.** O cadastro do
+salão já existe no Admin (`backstage.SeatingSpot`: rótulo, tipo, área, lugares, "conta na
+capacidade oficial", existe desde/até) e o B.I. já mede a lotação com ele
+(`services/room.py`). Para o editor visual faltam: (1) **posição e forma** da mesa na
+planta (x, y, giro, redonda/quadrada/comprida/banqueta), que não existem no model; (2) uma
+**API** de leitura/gravação para o PDV (hoje só o Admin escreve) com a regra de tempo
+(`active_from`/`active_until`: mudar vale de hoje em diante) e permissão de gestor; (3) o
+andar **Ajustes** no rail do PDV (item do pé, como na prévia) com Terminal, Impressoras,
+Maquininhas, Salão, Envio à cozinha e Atalhos de venda. Os itens (1) e (2) pedem migração
+no app `backstage` (não é Core) e a decisão de quem pode mexer no salão.
+
 ## Função (não regride)
 Todas as teclas seguem (F2 a F10, ?, Alt S, Esc, setas, Del, 0 a 9). O que mudou de lugar:
 Atalhos e Terminal foram para o pé do rail (no celular, Atalhos fica na barra de contexto);
@@ -78,7 +98,12 @@ cancelamento, tela do cliente e SSE intactos.
 - "Mesa 6" como nome da comanda: a comanda tem só a referência (`#1007`).
 - Atalho impresso no item do rail ("F2" sob Comandas): o `RailSection` anuncia a tecla, não a
   imprime (o rail é estreito).
-- Celular: a venda segue em pilha (grade e comanda embaixo); a folha da comanda é do PR 3.
+- Tablet da prévia sem rail (seções numa barra embaixo: Comandas, Encomendas, Retirada, Fim
+  do dia, Mais): o PDV mantém o rail da suíte do tablet para cima, como os outros apps.
+- Fluxo do tablet como segundo posto (PIX/Maquininha na folha, "Dinheiro: enviar ao caixa",
+  "Ler código" pela câmera): o posto Atendimento existe (#1429), mas não há serviço que
+  mande a cobrança em dinheiro do tablet para a fila do Caixa; a folha cobra pelo mesmo
+  Pagamento de sempre. Abrir gaveta pelo tablet fica para a frente do relay (decisão do dono).
 - Fim do dia, passo 1 dentro do corredor (contador de cédulas em tela cheia com o numérico):
   a contagem cega da gaveta segue no diálogo da Sessão de caixa (mesmo contador por cédula);
   o corredor leva até ele.

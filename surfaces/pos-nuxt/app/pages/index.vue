@@ -25,6 +25,9 @@ const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined,
 const { isCollapsed: railCollapsed, set: setRail } = useRailState();
 // O ao vivo discreto da barra de contexto: estado do push e hora da última leitura.
 const liveStatus = usePosLiveStatus();
+// Tablet em pé e celular (v4 `pos-tablet.jpg`): a grade é a tela e a comanda vira a
+// folha de baixo. Do desktop (1024px) para cima ela segue como coluna.
+const ticketAsSheet = useMediaQuery("(max-width: 1023.98px)");
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -1215,7 +1218,8 @@ onBeforeUnmount(() => {
         </UiAlertDescription>
       </UiAlert>
 
-      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 md:min-h-0 md:overflow-hidden">
+      <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
+      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 md:min-h-0 md:overflow-hidden" :class="ticketAsSheet && inSaleView && !checkoutMode && !orderSetupPending ? 'max-lg:pb-40' : ''">
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
@@ -1425,10 +1429,12 @@ onBeforeUnmount(() => {
          edge alongside the rail; on mobile it wraps below the product grid). -->
     <aside
       v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="flex w-full shrink-0 flex-col border-t border-border bg-card md:order-none md:h-full md:w-[360px] xl:w-[400px] md:border-l md:border-t-0"
+      class="flex shrink-0 flex-col max-lg:fixed max-lg:right-0 max-lg:left-0 max-lg:z-30 max-md:bottom-16 md:max-lg:bottom-0 lg:h-full lg:bg-card lg:w-[360px] lg:border-l lg:border-border xl:w-[400px]"
+      :class="railCollapsed ? '' : 'md:max-lg:left-[76px]'"
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
+            :sheet="ticketAsSheet"
             :items="cart.items"
             :requires-tab="tabRequiredForCart"
             :has-open-tab="hasOpenTab"
