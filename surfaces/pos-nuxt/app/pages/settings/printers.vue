@@ -26,7 +26,10 @@ function save(printer: PosPrinterSetting) {
 
 <template>
   <PosSettingsShell title="Impressoras" subtitle="rolo e corte de cada balcão">
-    <p v-if="settings.error.value && !settings.data.value" class="op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as impressoras.") }}</p>
+    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
+      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as impressoras. Confira a conexão e tente de novo.") }}</p>
+      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
+    </div>
     <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo as impressoras…</p>
     <template v-else>
       <p v-if="!settings.data.value.printers.length" class="rounded-xl border border-dashed p-6 text-center op-body text-muted-foreground">Nenhum terminal ativo. Cadastre o terminal no Admin.</p>

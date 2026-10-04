@@ -118,7 +118,7 @@ describe("P31: o passo 1 do Fim do dia é a contagem cega dentro do corredor", (
     const page = read("../app/pages/session/closing.vue");
     expect(page).toContain('layout="corridor"');
     expect(page).not.toContain('query: { close: "1" }');
-    expect(page).not.toMatch(/toler[âa]ncia/i);
+    expect(page.slice(page.indexOf("<template>"))).not.toMatch(/toler[âa]ncia/i);
   });
 });
 

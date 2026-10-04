@@ -268,10 +268,6 @@ const detailsPrefix = useId();
 function detailsId(lineId: string) {
   return `${detailsPrefix}-${encodeURIComponent(lineId)}`;
 }
-function toggleDetails(lineId: string) {
-  selectLine(lineId);
-  expandedLineId.value = expandedLineId.value === lineId ? "" : lineId;
-}
 watch(
   () => props.items.map((item) => item.line_id),
   (ids) => {

@@ -20,7 +20,10 @@ function toggle(station: PosKitchenStationSetting) {
 
 <template>
   <PosSettingsShell title="Envio à cozinha" subtitle="estações e envio automático">
-    <p v-if="settings.error.value && !settings.data.value" class="op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as estações.") }}</p>
+    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
+      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as estações. Confira a conexão e tente de novo.") }}</p>
+      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
+    </div>
     <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo as estações…</p>
     <template v-else>
       <p class="op-body text-muted-foreground">

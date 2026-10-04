@@ -124,7 +124,12 @@ def test_renomear_pela_api_com_a_mesa_liga_o_vinculo(loja, client):
     client.force_login(_operador())
     response = client.post(
         "/api/v1/backstage/pos/tabs/rename/",
-        data=json.dumps({"session_key": session.session_key, "new_tab_ref": "Mesa 6", "seating_spot_ref": "mesa-6"}),
+        data=json.dumps({
+            "session_key": session.session_key,
+            "expected_revision": build_open_tab(session)["revision"],
+            "new_tab_ref": "Mesa 6",
+            "seating_spot_ref": "mesa-6",
+        }),
         content_type="application/json",
     )
     assert response.status_code == 200, response.content

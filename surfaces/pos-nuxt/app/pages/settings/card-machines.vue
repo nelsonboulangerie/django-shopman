@@ -36,7 +36,10 @@ function toggle(machine: PosCardMachineSetting) {
         <Icon name="lucide:plus" class="size-4" />Nova maquininha
       </UiButton>
     </template>
-    <p v-if="settings.error.value && !settings.data.value" class="op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as maquininhas.") }}</p>
+    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
+      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as maquininhas. Confira a conexão e tente de novo.") }}</p>
+      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
+    </div>
     <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo as maquininhas…</p>
     <template v-else>
       <p v-if="!settings.data.value.card_machines.length" class="rounded-xl border border-dashed p-6 text-center op-body text-muted-foreground">Nenhuma maquininha cadastrada.</p>

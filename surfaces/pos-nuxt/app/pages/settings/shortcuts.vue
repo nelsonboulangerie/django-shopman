@@ -37,7 +37,10 @@ function save() {
     <template #actions>
       <UiButton :disabled="!changed || settings.saving.value === 'shortcuts'" data-settings-shortcuts-save @click="save">Gravar atalhos</UiButton>
     </template>
-    <p v-if="settings.error.value && !settings.data.value" class="op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler os atalhos.") }}</p>
+    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
+      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler os atalhos. Confira a conexão e tente de novo.") }}</p>
+      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
+    </div>
     <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo os atalhos…</p>
     <template v-else>
       <p class="op-body text-muted-foreground">
