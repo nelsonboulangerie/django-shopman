@@ -1001,7 +1001,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground norail:pb-16 md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
+  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground norail:pb-16 max-md:overflow-x-clip md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
     <PosFunctionRail
       v-if="pos"
       :pos="pos"

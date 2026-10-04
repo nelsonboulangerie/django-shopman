@@ -11,6 +11,7 @@ import { computed } from "vue";
 import { useNow } from "@vueuse/core";
 
 import { useOperatorCapacity } from "../composables/useOperatorCapacity";
+import { useSharedCapacity } from "../composables/useSuiteChrome";
 import {
   CAPACITY_LEVEL_META,
   capacityLevel,
@@ -30,7 +31,9 @@ const emit = defineEmits<{ lock: []; hide: [] }>();
 const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
 const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
 
-const { reading, authorized, stale } = useOperatorCapacity();
+// A leitura que a caixa de Avisos já faz; sem ela (tela sem a caixa), uma própria.
+const shared = useSharedCapacity().value;
+const { reading, authorized, stale } = shared ?? useOperatorCapacity();
 const now = useNow({ interval: 10_000 });
 const level = computed(() => capacityLevel(reading.value));
 const capacityMeta = computed(() => CAPACITY_LEVEL_META[level.value]);

@@ -8,10 +8,11 @@
 // tela. O app declara UMA vez, na navegação dele (`GestorNav`, `ProductionNav`), e as
 // peças do kit leem daqui. O estado mora no `nuxtApp` (um por requisição no servidor,
 // um por app no cliente), nunca no módulo.
-import { computed, onScopeDispose, shallowRef, toValue, watchEffect, type MaybeRefOrGetter, type ShallowRef } from "vue";
+import { computed, onScopeDispose, shallowRef, toValue, watchEffect, type MaybeRefOrGetter, type Ref, type ShallowRef } from "vue";
 import { useMediaQuery } from "@vueuse/core";
 
 import { SUITE_RAIL_MEDIA, type ShortcutGroup } from "../presentation/suiteChrome";
+import type { CapacityResponse } from "../types/capacity";
 
 /** O rail existe nesta tela? (a mesma régua da variante `rail:` do CSS). */
 export function useSuiteRailShown() {
@@ -50,7 +51,15 @@ export interface OperatorInboxAlertSource {
   isPending?: (key: string | number) => boolean;
 }
 
+/** A leitura de capacidade que a caixa de Avisos já faz, para o menu não ler de novo. */
+export interface SharedCapacity {
+  reading: Ref<CapacityResponse | null>;
+  authorized: Ref<boolean>;
+  stale: Ref<boolean>;
+}
+
 interface ChromeState {
+  capacity: ShallowRef<SharedCapacity | null>;
   inboxAlerts: ShallowRef<OperatorInboxAlertSource | null>;
   shortcutGroups: ShallowRef<ShortcutGroup[]>;
   shortcutsDescription: ShallowRef<string>;
@@ -59,11 +68,20 @@ interface ChromeState {
 function chromeState(): ChromeState {
   const nuxtApp = useNuxtApp() as unknown as { _operatorSuiteChrome?: ChromeState };
   nuxtApp._operatorSuiteChrome ??= {
+    capacity: shallowRef(null),
     inboxAlerts: shallowRef(null),
     shortcutGroups: shallowRef([]),
     shortcutsDescription: shallowRef(""),
   };
   return nuxtApp._operatorSuiteChrome;
+}
+
+/**
+ * A capacidade do serviço lida UMA vez por tela: a caixa de Avisos (sempre montada)
+ * publica a leitura dela, e o menu do operador a mostra sem abrir outra.
+ */
+export function useSharedCapacity() {
+  return chromeState().capacity;
 }
 
 /** A fonte de alertas que o app registrou (ou nenhuma: só a caixa pessoal). */

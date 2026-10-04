@@ -17,12 +17,12 @@
 // O painel abre num portal (K05): fora do `<aside>` do rail, ele não herda o creme do
 // texto do rail (o título sumia) e fica por cima da fila (o cadeado do cartão
 // atravessava o painel).
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { PopoverClose, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 
 import { useNotifications } from "../composables/useNotifications";
 import { useOperatorCapacity } from "../composables/useOperatorCapacity";
-import { useOperatorInboxAlerts, type OperatorInboxAlert } from "../composables/useSuiteChrome";
+import { useOperatorInboxAlerts, useSharedCapacity, type OperatorInboxAlert } from "../composables/useSuiteChrome";
 import {
   CAPACITY_LEVEL_META,
   capacityGuidance,
@@ -42,7 +42,13 @@ const props = withDefaults(defineProps<{
 
 const source = useOperatorInboxAlerts();
 const { items, unread, markRead, signIns, loadSignIns, error, signInError, refresh } = useNotifications();
-const { reading, authorized } = useOperatorCapacity();
+const { reading, authorized, stale } = useOperatorCapacity();
+// Publica a leitura para o menu do operador (uma leitura por tela, não duas).
+const sharedCapacity = useSharedCapacity();
+sharedCapacity.value = { reading, authorized, stale };
+onBeforeUnmount(() => {
+  if (sharedCapacity.value?.reading === reading) sharedCapacity.value = null;
+});
 
 const capacity = computed(() => (authorized.value ? capacityLevel(reading.value) : "unknown"));
 // A capacidade só entra na caixa quando passa do limite: abaixo dele, ela mora no menu
