@@ -29,6 +29,11 @@ import table from "./app-identity.json";
 export interface OperatorAppIdentity {
   /** Rótulo do app ("PDV"), e só ele: a casa entra em runtime. */
   label: string;
+  /**
+   * Rótulo curto, onde o nome inteiro não cabe ao lado de outra coisa (a coluna do app na
+   * fila "Precisa de você" da Central: "Gestor"). Ausente = o próprio `label`.
+   */
+  shortLabel?: string;
   /** Frase do manifesto. Sem o nome da casa — ela é dado do tenant. */
   description: string;
   /** Símbolo Iconify do ícone gerado (`<coleção>:<nome>`) — ver PWA_ICONS.md. */

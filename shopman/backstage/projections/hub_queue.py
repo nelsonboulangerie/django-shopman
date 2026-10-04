@@ -17,6 +17,13 @@ de destino já faz, recortada para o que pede alguém agora.
 - Avisos: alerta operacional ainda não visto, de erro ou crítico, que tem lugar num app
   (o sino do Gestor ou o contexto da Produção).
 
+**Só estado (sem item na fila)**, a linha do bloco de cada app (V4-HUB2): o caixa aberto
+do PDV (``cashman.Shift``, nunca valor), as decisões e as campanhas ligadas do Marketing
+(``marketing_decisions``), os pedidos para enviar e a caminho do Compras
+(``metadata.purchase.request_status``), as vendas da janela padrão do B.I.
+(``sales_series``) e a Loja aberta ou fechada (horário do ``Shop`` e canal ligado) com os
+pedidos de hoje. O estado bom e sabido vai em ``positive`` (o ponto verde do bloco).
+
 **Permissão é por item, não por tela.** Cada fonte só entra para quem pode AGIR nela, com o
 mesmo predicado que guarda a porta do app (e, no Marketing, a permissão de aprovar). Se o app
 de destino não tem URL configurada, o item também não entra: nunca um gesto para link morto.
@@ -93,6 +100,8 @@ class HubAppStatusProjection:
 
     attention: str = ""  # o que pede alguém ("1 para aceitar"), pintado de âmbar
     summary: str = ""  # o resto, calmo ("11 ativos")
+    #: O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém.
+    positive: str = ""
 
 
 @dataclass(frozen=True)
@@ -343,9 +352,12 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
             )
         )
 
-    out.statuses["pos"] = HubAppStatusProjection(
-        attention=f"{due_now} para retirar na próxima hora" if due_now else "",
-        summary=_plural(len(open_pickups), "encomenda para retirar hoje", "encomendas para retirar hoje"),
+    out.statuses["pos"] = _merge_status(
+        out.statuses.get("pos"),
+        HubAppStatusProjection(
+            attention=f"{due_now} para retirar na próxima hora" if due_now else "",
+            summary=_plural(len(open_pickups), "encomenda para retirar hoje", "encomendas para retirar hoje"),
+        ),
     )
 
 
@@ -457,9 +469,6 @@ def _marketing(user, base: str, label: str, now: datetime, out: _Collected) -> N
             )
         )
 
-    out.statuses["marketing"] = HubAppStatusProjection(
-        attention=_plural(len(pending), "anúncio para decidir", "anúncios para decidir") if pending else "",
-    )
 
 
 def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, out: _Collected) -> None:
@@ -534,12 +543,162 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
         )
 
 
+# ── Só estado (o bloco do app, sem item na fila) ──────────────────────────────
+#
+# Estas fontes não põem item na fila: dizem o estado do app no bloco dele, com a MESMA
+# leitura que o app de destino faz. Fonte que não existe não vira número.
+
+
+def _pos_cash(user, base: str, label: str, now: datetime, out: _Collected) -> None:
+    """PDV: a gaveta está aberta? (``cashman.Shift`` aberto; nunca valor, o fechamento é às cegas)."""
+    from django.apps import apps
+
+    Shift = apps.get_model("cashman", "Shift")
+    open_shifts = Shift.objects.filter(status=Shift.Status.OPEN).count()
+    if open_shifts:
+        status = HubAppStatusProjection(positive="Caixa aberto" if open_shifts == 1 else f"{open_shifts} caixas abertos")
+    else:
+        status = HubAppStatusProjection(summary="Caixa fechado")
+    # O caixa vem antes das encomendas na linha do bloco.
+    current = out.statuses.get("pos")
+    out.statuses["pos"] = status if current is None else _merge_status(status, current)
+
+
+def _marketing_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
+    """Marketing: quantas decisões a fila do app tem (#1420) e quantas campanhas estão ligadas."""
+    from shopman.backstage.projections.marketing_decisions import build_decision_queue
+
+    decisions = build_decision_queue(now=now)
+    pending = len(decisions.items)
+    out.statuses["marketing"] = _merge_status(
+        out.statuses.get("marketing"),
+        HubAppStatusProjection(
+            attention=_plural(pending, "decisão", "decisões") if pending else "",
+            summary=_plural(decisions.active_campaign_count, "campanha ligada", "campanhas ligadas")
+            if decisions.active_campaign_count
+            else "",
+        ),
+    )
+
+
+def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
+    """Compras: pedido pronto para enviar (pede alguém) e pedido enviado ao fornecedor.
+
+    A mesma marca que o quadro do Compras lê (``metadata.purchase.request_status``):
+    ``approved`` é "Pronto" (falta enviar), ``sent`` é "Enviado". Um pedido é um
+    ``request_ref``; insumo enviado sem ``request_ref`` conta como um pedido.
+    """
+    from django.apps import apps
+
+    from shopman.backstage.projections.purchase import _purchase_meta, _purchase_request_status
+
+    Material = apps.get_model("buyman", "Material")
+    to_send = 0
+    on_the_way: set[str] = set()
+    for material in Material.objects.filter(is_active=True).only("sku", "metadata"):
+        status = _purchase_request_status(material)
+        if status == "approved":
+            to_send += 1
+        elif status == "sent":
+            ref = str(_purchase_meta(material).get("request_ref") or "").strip()
+            on_the_way.add(ref or f"sku:{material.sku}")
+    out.statuses["purchase"] = HubAppStatusProjection(
+        attention=_plural(to_send, "pedido para enviar", "pedidos para enviar") if to_send else "",
+        summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho") if on_the_way else "",
+    )
+
+
+#: Quanto tempo a Central guarda o número de vendas do B.I. (a fila relê a cada 30 s).
+BI_STATUS_CACHE_SECONDS = 300
+
+
+def _bi_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
+    """B.I.: as vendas da janela padrão do app (28 dias até hoje) e a variação contra a anterior.
+
+    É o faturamento conciliado da série diária (``sales_series.daily_sales``), a mesma
+    leitura do painel de vendas. Nada de caixa: fechamento é às cegas.
+    """
+    from django.core.cache import cache
+
+    from shopman.backstage.projections.bi_production import DEFAULT_WINDOW_DAYS, _normalize_window, _previous_window
+    from shopman.backstage.projections.sales_series import daily_sales
+
+    date_from, date_to = _normalize_window(None, None)
+    key = f"hub:bi_sales:{date_from.isoformat()}:{date_to.isoformat()}"
+
+    def compute() -> tuple[int, int]:
+        prev_from, prev_to = _previous_window(date_from, date_to)
+        current = sum(day.revenue_q for day in daily_sales(date_from, date_to).values())
+        previous = sum(day.revenue_q for day in daily_sales(prev_from, prev_to).values())
+        return current, previous
+
+    current, previous = cache.get_or_set(key, compute, BI_STATUS_CACHE_SECONDS)
+    if not current and not previous:
+        return
+    summary = f"{DEFAULT_WINDOW_DAYS}D: {_compact_money(current)}"
+    if previous:
+        change = round((current - previous) * 100 / previous)
+        summary += f" ({_signed_percent(change)})"
+    out.statuses["bi"] = HubAppStatusProjection(summary=summary)
+
+
+def _store_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
+    """Loja online: aberta agora (horário do ``Shop`` e o canal da loja ligado) e pedidos de hoje."""
+    from django.conf import settings
+    from shopman.orderman.models import Order
+
+    from shopman.shop.projections.channel_state import accepting_orders
+    from shopman.shop.services.business_calendar import current_business_state, format_next_opening
+
+    channel_ref = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    state = current_business_state(now=now)
+    local_now = timezone.localtime(now)
+    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    orders_today = (
+        Order.objects.filter(channel_ref=channel_ref, created_at__gte=day_start, created_at__lt=day_start + timedelta(days=1))
+        .exclude(status__in=("cancelled", "returned"))
+        .count()
+    )
+    orders = _plural(orders_today, "pedido hoje", "pedidos hoje")
+    if not state.is_open:
+        reopens = format_next_opening(state.next_open_at, now=now)
+        out.statuses["loja"] = HubAppStatusProjection(
+            summary=" · ".join(part for part in ("Fechada", f"abre {reopens}" if reopens else "", orders) if part),
+        )
+    elif not accepting_orders(channel_ref):
+        out.statuses["loja"] = HubAppStatusProjection(summary=f"Aberta, pedidos online desligados · {orders}")
+    else:
+        out.statuses["loja"] = HubAppStatusProjection(positive="Aberta", summary=orders)
+
+
+def _compact_money(value_q: int) -> str:
+    """Centavos em R$ para o bloco: "R$ 208,6 mil", "R$ 1,2 mi", "R$ 950"."""
+    reais = value_q / 100
+    if abs(reais) >= 1_000_000:
+        text, unit = f"{reais / 1_000_000:.1f}", " mi"
+    elif abs(reais) >= 1_000:
+        text, unit = f"{reais / 1_000:.1f}", " mil"
+    else:
+        return f"R$ {round(reais)}"
+    return f"R$ {text.replace('.', ',').removesuffix(',0')}{unit}"
+
+
+def _signed_percent(change: int) -> str:
+    """A variação com sinal: "+12%", "−11%" (sinal de menos tipográfico), "0%"."""
+    if change > 0:
+        return f"+{change}%"
+    if change < 0:
+        return f"\u2212{abs(change)}%"
+    return "0%"
+
+
 def _merge_status(current: HubAppStatusProjection | None, extra: HubAppStatusProjection) -> HubAppStatusProjection:
     if current is None:
         return extra
     return HubAppStatusProjection(
         attention=" · ".join(part for part in (current.attention, extra.attention) if part),
         summary=" · ".join(part for part in (current.summary, extra.summary) if part),
+        positive=" · ".join(part for part in (current.positive, extra.positive) if part),
     )
 
 
@@ -554,6 +713,12 @@ _SOURCES: tuple[tuple[str, Callable[[object], bool], _Source], ...] = (
     ("pos", permissions.can_operate_pos, _preorders),
     ("production", permissions.can_operate_production, _production),
     ("marketing", permissions.can_manage_campaigns, _marketing),
+    # Só estado: o predicado é o mesmo que mostra o bloco do app (``hub._REGISTRY``).
+    ("pos", permissions.can_operate_pos, _pos_cash),
+    ("marketing", permissions.can_manage_campaigns, _marketing_status),
+    ("purchase", permissions.can_operate_purchase, _purchase_status),
+    ("bi", permissions.can_view_bi, _bi_status),
+    ("loja", permissions.is_superuser, _store_status),
 )
 
 
