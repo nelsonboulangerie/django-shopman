@@ -48,11 +48,11 @@ describe("o selo", () => {
         platform: "whatsapp",
         label: "WhatsApp",
         kind: "mensagem direta",
-        amount: "86 pessoas",
+        amount: "86 clientes",
         strong: true,
       },
     ]);
-    expect(sealRows({ platforms: ["whatsapp"], audienceCount: 1 })[0]!.amount).toBe("1 pessoa");
+    expect(sealRows({ platforms: ["whatsapp"], audienceCount: 1 })[0]!.amount).toBe("1 cliente");
   });
 
   it("separa o que volta (postagem) do que não volta (mensagem)", () => {

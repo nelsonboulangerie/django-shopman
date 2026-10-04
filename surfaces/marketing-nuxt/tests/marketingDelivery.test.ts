@@ -9,18 +9,17 @@ import {
 
 describe("rótulo do último gesto", () => {
   it("dá verbo próprio a cada ato, porque são atos diferentes", () => {
-    // Mensagem se envia e não se apaga; postagem se publica e se apaga. Só quando o
-    // anúncio faz os dois é que não há verbo específico — aí vale o genérico da casa.
-    expect(deliveryActionLabel({ platforms: ["whatsapp"] })).toBe("Enviar agora");
-    expect(deliveryActionLabel({ platforms: ["instagram"] })).toBe(
-      "Publicar agora",
-    );
+    // Mensagem se envia e não se apaga; postagem se publica e se apaga. Quando o
+    // anúncio faz os dois, o botão diz os dois (v4 da revisão, V6-MKT): "Publicar e
+    // enviar". O "agora" saiu: o quando mora no seletor "Quando" logo acima.
+    expect(deliveryActionLabel({ platforms: ["whatsapp"] })).toBe("Enviar");
+    expect(deliveryActionLabel({ platforms: ["instagram"] })).toBe("Publicar");
     expect(deliveryActionLabel({ platforms: ["instagram", "whatsapp"] })).toBe(
-      "Disparar agora",
+      "Publicar e enviar",
     );
   });
 
-  it("agendar vence os três, porque 'agora' mentiria sobre o quando", () => {
+  it("agendar vence os três, porque o gesto é marcar a hora", () => {
     expect(
       deliveryActionLabel({ platforms: ["instagram", "whatsapp"], scheduled: true }),
     ).toBe("Agendar");
@@ -29,7 +28,7 @@ describe("rótulo do último gesto", () => {
   it("sem plataforma nenhuma, não promete mensagem que ninguém vai receber", () => {
     expect(includesDirectMessage([])).toBe(false);
     expect(includesPublicPost([])).toBe(false);
-    expect(deliveryActionLabel({ platforms: [] })).toBe("Publicar agora");
+    expect(deliveryActionLabel({ platforms: [] })).toBe("Publicar");
   });
 
   it("separa mural de mensagem — a distinção que dá o verbo", () => {

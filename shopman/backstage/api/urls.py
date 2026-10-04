@@ -105,6 +105,15 @@ from .marketing import (
     WhatsAppTemplateView,
     WhatsAppTestSendView,
 )
+from .marketing_seal import (
+    MarketingAnnouncementPhotoView,
+    MarketingDeviceStepUpOptionsView,
+    MarketingDeviceStepUpView,
+    MarketingSecondControlRequestView,
+    MarketingSecondControlView,
+    OperatorPasskeyRegistrationOptionsView,
+    OperatorPasskeyRegistrationView,
+)
 from .notifications import (
     NotificationAcknowledgeView,
     NotificationActionView,
@@ -805,6 +814,41 @@ urlpatterns = [
         "marketing/announcements/<int:pk>/reject/",
         AnnouncementRejectView.as_view(),
         name="api-backstage-marketing-reject",
+    ),
+    path(
+        "marketing/announcements/<int:pk>/photo/",
+        MarketingAnnouncementPhotoView.as_view(),
+        name="api-backstage-marketing-announcement-photo",
+    ),
+    path(
+        "marketing/security/device/register/options/",
+        OperatorPasskeyRegistrationOptionsView.as_view(),
+        name="api-backstage-marketing-device-register-options",
+    ),
+    path(
+        "marketing/security/device/register/",
+        OperatorPasskeyRegistrationView.as_view(),
+        name="api-backstage-marketing-device-register",
+    ),
+    path(
+        "marketing/security/device/options/",
+        MarketingDeviceStepUpOptionsView.as_view(),
+        name="api-backstage-marketing-device-options",
+    ),
+    path(
+        "marketing/security/device/",
+        MarketingDeviceStepUpView.as_view(),
+        name="api-backstage-marketing-device",
+    ),
+    path(
+        "marketing/security/second-control/request/",
+        MarketingSecondControlRequestView.as_view(),
+        name="api-backstage-marketing-second-control-request",
+    ),
+    path(
+        "marketing/security/second-control/<str:ref>/",
+        MarketingSecondControlView.as_view(),
+        name="api-backstage-marketing-second-control",
     ),
     path(
         "marketing/announcements/<int:pk>/cancel/",

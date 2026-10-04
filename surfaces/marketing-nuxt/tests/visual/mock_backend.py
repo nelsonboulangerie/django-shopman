@@ -1256,6 +1256,31 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/backstage/marketing/security/step-up/":
             self._send(200, {"ok": True, "step_up": {"level": "password"}})
             return
+        if re.fullmatch(r"/api/v1/backstage/marketing/announcements/\d+/approve/", path) and scenario == "seal-dual":
+            # V6-MKT: acima do limiar, o selo pede a segunda pessoa por push; sem digital
+            # cadastrada neste navegador, a frase e a senha seguem como caminho.
+            self._send(428, {
+                "code": "confirmation_required",
+                "detail": "Confirme a consequência antes de publicar.",
+                "confirmation": {
+                    "token": "visual-confirmation-token",
+                    "ref": "00000000-0000-4000-8000-000000000041",
+                    "expires_at": _anda("2026-09-10T10:35:00-03:00"),
+                    "mode": "typed",
+                    "step_up": "password",
+                    "dual_control": True,
+                    "dual_control_threshold": 500,
+                    "device_available": False,
+                    "typed_phrase": "ENVIAR 642",
+                    "consequence": "publishes_now_to_eligible_audience",
+                    "resource_ref": "announcement:41",
+                    "base_version": 3,
+                    "audience_count": 642,
+                    "platforms": ["instagram", "whatsapp"],
+                    "scheduled_for": None,
+                },
+            })
+            return
         if re.fullmatch(r"/api/v1/backstage/marketing/announcements/\d+/approve/", path):
             self._send(428, {
                 "code": "confirmation_required",

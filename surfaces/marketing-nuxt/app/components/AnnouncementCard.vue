@@ -13,7 +13,6 @@ import type {
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
-  expirySummary,
   isQuietHoursNow,
   resolveScheduleInput,
   scheduleSummary,
@@ -23,8 +22,6 @@ import type { ScheduleFold } from "~/utils/marketingSchedule";
 import {
   audienceSummary,
   displayHashtag,
-  expiryLabel,
-  expiryTone,
   parseHashtags,
   platformIcon,
   platformsSummary,
@@ -37,7 +34,6 @@ import {
 import {
   platformReadinessNote,
   readinessByPlatform,
-  readinessPillClass,
 } from "~/presentation/platformReadiness";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import {
@@ -318,31 +314,6 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
 
 const timezoneName = computed(() => props.shopTimezone || "UTC");
 const expiresAtMs = computed(() => Date.parse(props.announcement.expires_at));
-const exactExpiryMinutes = computed(() => {
-  if (!Number.isFinite(expiresAtMs.value))
-    return props.announcement.expires_in_minutes;
-  const remaining = expiresAtMs.value - clockMs.value;
-  return remaining <= 0 ? 0 : Math.ceil(remaining / 60_000);
-});
-const expiry = computed(() =>
-  props.announcement.expires_at
-    ? expirySummary(
-        props.announcement.expires_at,
-        timezoneName.value,
-        clockMs.value,
-      )
-    : expiryLabel(props.announcement.expires_in_minutes),
-);
-const expiryClass = computed(
-  () =>
-    ({
-      urgent: "bg-destructive/10 text-destructive",
-      warning: "bg-warning/10 text-warning",
-      calm: "bg-muted text-muted-foreground",
-      none: "",
-    })[expiryTone(exactExpiryMinutes.value)],
-);
-
 const audience = computed(() => audienceSummary(props.announcement.audience));
 const vip = computed(() => vipSummary(props.announcement.audience));
 const platformLabels = computed<Record<string, string>>(() =>
@@ -430,7 +401,7 @@ function edits(): AnnouncementEdits {
 function publishNow() {
   if (!canPublishNow.value) return;
   draft.flush();
-  emit("approve", props.announcement.pk, edits(), "now");
+  emit("approve", props.announcement.pk, editsWithPhoto(), "now");
 }
 
 function schedule() {
@@ -439,7 +410,7 @@ function schedule() {
   emit(
     "approve",
     props.announcement.pk,
-    { ...edits(), publish_at: scheduleResolution.value.candidate.instant },
+    { ...editsWithPhoto(), publish_at: scheduleResolution.value.candidate.instant },
     "scheduled",
   );
 }
@@ -467,43 +438,148 @@ function askToReject() {
   draft.flush();
   emit("reject", props.announcement.pk);
 }
+
+// ── Revisão v4 (MKT-14) ─────────────────────────────────────────────────────
+
+/** "Rascunho do lote: Croissant, 24 un" (v3 a): de onde o rascunho veio. */
+const draftOrigin = computed(() => {
+  const product = productLabel.value;
+  const quantity = props.announcement.lot_quantity
+    ? `, ${props.announcement.lot_quantity.replace(".", ",")} un`
+    : "";
+  if (props.announcement.lot_quantity && product) return `Rascunho do lote: ${product}${quantity}`;
+  if (props.announcement.template_name) return `Rascunho do modelo: ${props.announcement.template_name}`;
+  return "";
+});
+
+function clockOf(instant: string): string {
+  const ms = Date.parse(instant);
+  if (!Number.isFinite(ms)) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: timezoneName.value,
+  }).format(new Date(ms));
+}
+
+// "Tirar outra" (MKT-17): a câmera do dispositivo, sem sair do fluxo. A foto vai ao
+// servidor (que a regrava em JPEG, sem os metadados da câmera) e o endereço viaja
+// junto com a aprovação, como o texto: o selo congela o que a pessoa conferiu.
+const photoUrl = ref("");
+const photoBusy = ref(false);
+const photoError = ref("");
+const photoInput = ref<HTMLInputElement | null>(null);
+const shownPhoto = computed(() => photoUrl.value || outgoingImage.value);
+const photoCaption = computed(() => {
+  if (photoUrl.value) return "Foto tirada agora";
+  const at = props.announcement.lot_finished_at ? clockOf(props.announcement.lot_finished_at) : "";
+  return props.announcement.lot_quantity ? `Foto do lote${at ? `, ${at}` : ""}` : "Foto do produto";
+});
+
+async function onPhotoPicked(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  photoBusy.value = true;
+  photoError.value = "";
+  try {
+    const form = new FormData();
+    form.append("photo", file);
+    const response = await $fetch<{ image_url: string }>(
+      `/api/v1/backstage/marketing/announcements/${props.announcement.pk}/photo/`,
+      { method: "POST", credentials: "same-origin", body: form },
+    );
+    photoUrl.value = response.image_url;
+  } catch (err) {
+    flagMarketingSessionError(err);
+    photoError.value = httpErrorMessage(err, "A foto não subiu. A anterior continua.");
+  } finally {
+    photoBusy.value = false;
+  }
+}
+
+// O limite do texto é o da plataforma mais curta escolhida (v3 a: "118 / 2.200").
+const TEXT_LIMITS: Record<string, number> = {
+  instagram: 2200,
+  facebook: 63206,
+  google_business: 1500,
+  whatsapp: 1024,
+};
+const textLimit = computed(() => {
+  const limits = platforms.value.map((ref) => TEXT_LIMITS[ref]).filter((value): value is number => Boolean(value));
+  return limits.length ? Math.min(...limits) : 2200;
+});
+const textLength = computed(() => body.value.length);
+const formatCountPt = (value: number) => new Intl.NumberFormat("pt-BR").format(value);
+
+/** As linhas de plataforma (v3 a): nome, o que é ali, e a chave. */
+const PLATFORM_ROW_LABELS: Record<string, { label: string; kind: string }> = {
+  instagram: { label: "Instagram", kind: "feed e story" },
+  facebook: { label: "Facebook", kind: "" },
+  google_business: { label: "Google", kind: "perfil da loja" },
+  whatsapp: { label: "WhatsApp", kind: "mensagem direta" },
+};
+function rowLabel(option: { value: string; label: string }) {
+  return PLATFORM_ROW_LABELS[option.value]?.label ?? option.label;
+}
+function rowKind(option: { value: string; label: string }): string {
+  const kind = PLATFORM_ROW_LABELS[option.value]?.kind ?? "";
+  if (option.value !== "whatsapp") return kind;
+  const total = props.announcement.audience_total;
+  return total ? `${kind} · ${formatCountPt(total)} ${total === 1 ? "cliente" : "clientes"}` : kind;
+}
+
+/** Uma frase para o que está fora (MKT-16), em vez de um parágrafo por plataforma. */
+const readinessSummary = computed(() => {
+  const notes = selectedReadinessNotes.value;
+  if (!notes.length) return null;
+  const names = notes.map((note) => PLATFORM_ROW_LABELS[note.platform]?.label ?? note.platform);
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} e ${names.at(-1)}` : names[0];
+  const blocked = notes.some((note) => note.tone === "blocked");
+  const switchedOff = notes.every((note) => note.badge === "desligada");
+  if (switchedOff) {
+    return {
+      tone: "blocked" as const,
+      text: `${joined} ${names.length > 1 ? "estão desligados" : "está desligado"} neste ambiente: o que for aprovado fica na fila até ligar.`,
+      link: true,
+    };
+  }
+  return {
+    tone: blocked ? ("blocked" as const) : ("limited" as const),
+    text: notes.map((note) => note.text).join(" "),
+    link: notes.some((note) => note.tone !== "limited"),
+  };
+});
+
+const showPreview = ref(false);
+const showHashtags = ref(props.announcement.hashtags.length > 0);
+
+function editsWithPhoto(): AnnouncementEdits {
+  return photoUrl.value ? { ...edits(), image_url: photoUrl.value } : edits();
+}
+
+defineExpose({ openScheduling, askToReject });
 </script>
 
 <template>
-  <article
-    class="overflow-hidden rounded-md border border-border bg-card shadow-sm"
-  >
-    <!-- Cabeçalho: de onde veio e quanto tempo ainda vale -->
-    <header
-      class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5"
-    >
-      <Icon name="lucide:zap" class="size-4 text-muted-foreground" />
-      <span class="text-sm font-semibold">{{
-        announcement.rule_name || "Anúncio avulso"
-      }}</span>
-      <span
-        v-if="announcement.trigger_label"
-        class="text-xs text-muted-foreground"
-      >
-        {{ announcement.trigger_label }}
+  <!-- A revisão do anúncio (v4 "a revisão aberta" e v3 a "revisar o anúncio do lote"):
+       a origem escrita, a foto grande com "Tirar outra", o texto com o limite da
+       plataforma, as plataformas numa lista com chave por linha, e "Recusar" +
+       "Continuar" fixos no polegar. O prazo mora no cabeçalho da tela. -->
+  <article class="flex flex-col gap-4 pb-28 sm:pb-0" data-announcement-review>
+    <p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]" data-review-origin>
+      <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-warning/12 px-2.5 font-semibold text-warning">
+        <span class="size-1.5 rounded-full bg-warning" aria-hidden="true" />Pede sua aprovação
       </span>
-      <!-- ⚠️ Era o SKU em monoespaçado ("BAGUETE"). O gestor fala "Baguete
-           tradicional"; o código só aparece quando o catálogo não deu nome. -->
+      <span v-if="draftOrigin" class="text-muted-foreground">{{ draftOrigin }}</span>
       <span
-        v-if="announcement.sku"
-        class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+        v-else-if="announcement.sku"
+        class="text-muted-foreground"
         :class="productLabel === announcement.sku ? 'font-mono' : ''"
-      >
-        {{ productLabel }}
-      </span>
-      <span
-        v-if="expiry"
-        class="ml-auto rounded-full px-2 py-0.5 text-xs font-semibold"
-        :class="expiryClass"
-      >
-        {{ expiry }}
-      </span>
-    </header>
+      >{{ productLabel }}</span>
+    </p>
 
     <DraftRecoveryNotice
       :state="draft.state.value"
@@ -511,357 +587,265 @@ function askToReject() {
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
       :describe="describeDraftValue"
-      class="m-3 mb-0"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
     />
 
-    <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
-      <!-- Foto do produto: o anúncio é visual antes de ser texto.
-           ⚠️ A foto NÃO mora em `announcement.image_url` — esse campo é o óbvio e quase
-           sempre está vazio. A imagem de verdade está no conteúdo POR PLATAFORMA
-           (`platform_content.instagram.image_url`), porque cada mural tem o seu
-           formato. Lendo só o campo do topo, o cartão mostrava o quadrado vazio em
-           anúncio que TEM foto — e o gestor aprovava achando que ia sair sem imagem.
-           `outgoingImageUrl()` é a mesma função que a caixa de confirmação usa; a
-           armadilha já estava documentada lá e o cartão tinha caído nela.
-           Largura cheia no celular; no desktop volta ao quadrado.
-           ⚠️ O alinhamento com os campos ao lado sai do RÓTULO, não de margem
-           calculada: a foto ganhou o dela, no mesmo estilo de "Texto do anúncio", e aí
-           as duas colunas começam na mesma linha de base sozinhas. Antes o quadrado
-           nascia colado no topo do cartão e os campos nasciam abaixo dos rótulos
-           deles — desencontro de uma linha, que não se conserta com número mágico. -->
-      <div class="w-full shrink-0 sm:w-32">
-        <p class="mb-1 block text-xs font-medium text-muted-foreground">Foto</p>
-        <img
-          v-if="outgoingImage"
-          :src="outgoingImage"
-          :alt="`Foto de ${productLabel || 'produto'}`"
-          class="h-40 w-full rounded-lg border border-border object-cover sm:size-32"
-        />
-        <div
-          v-else
-          class="grid h-40 w-full place-content-center justify-items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 text-xs text-muted-foreground sm:size-32"
-        >
-          <Icon name="lucide:image-off" class="size-6" />
-          Sem foto
-        </div>
+    <!-- A foto como vai sair, grande. ⚠️ A imagem de verdade costuma morar no conteúdo
+         POR PLATAFORMA: `outgoingImageUrl()` lê os dois, como a caixa de confirmação. -->
+    <figure class="relative overflow-hidden rounded-2xl border border-border bg-muted/40" data-review-photo>
+      <img
+        v-if="shownPhoto"
+        :src="shownPhoto"
+        :alt="`Foto de ${productLabel || 'produto'}`"
+        class="h-56 w-full object-cover sm:h-72"
+      >
+      <div v-else class="grid h-56 w-full place-content-center justify-items-center gap-1.5 text-sm text-muted-foreground sm:h-72">
+        <Icon name="lucide:image-off" class="size-7" aria-hidden="true" />
+        Sem foto
       </div>
+      <span
+        v-if="shownPhoto"
+        class="absolute top-3 left-3 inline-flex h-8 items-center gap-1.5 rounded-full bg-black/55 px-3 text-[13px] font-semibold text-white backdrop-blur-sm"
+      >
+        <Icon name="lucide:image" class="size-4" aria-hidden="true" />{{ photoCaption }}
+      </span>
+      <button
+        type="button"
+        class="absolute right-3 bottom-3 inline-flex h-11 items-center gap-2 rounded-full bg-card/95 px-4 text-[14px] font-semibold text-foreground shadow-sm disabled:opacity-60"
+        :disabled="photoBusy || busy"
+        data-review-retake
+        @click="photoInput?.click()"
+      >
+        <Icon :name="photoBusy ? 'lucide:loader-circle' : 'lucide:camera'" class="size-5" :class="photoBusy ? 'animate-spin' : ''" aria-hidden="true" />
+        {{ photoBusy ? "Enviando a foto…" : shownPhoto ? "Tirar outra" : "Tirar foto" }}
+      </button>
+      <input
+        ref="photoInput"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        class="sr-only"
+        aria-label="Tirar a foto do lote"
+        tabindex="-1"
+        @change="onPhotoPicked"
+      >
+    </figure>
+    <p v-if="photoError" class="-mt-2 text-[13px] text-destructive" role="alert">{{ photoError }}</p>
 
-      <div class="min-w-0 flex-1 space-y-3">
-        <!-- Texto editável: o template escreveu o rascunho, o gestor dá o tom -->
+    <!-- O texto: editável no lugar, com o limite da plataforma mais curta escolhida. -->
+    <div>
+      <div class="mb-1.5 flex items-center justify-between gap-2">
+        <label :for="`body-${announcement.pk}`" class="op-eyebrow text-muted-foreground">Texto</label>
+        <span class="flex items-center gap-2">
+          <UiButton
+            v-if="aiAssistAvailable && announcement.ai_suggestion_enabled"
+            type="button"
+            :disabled="rewriting || busy"
+            variant="outline"
+            size="xs"
+            @click="rewrite"
+          >
+            <Icon
+              :name="rewriting ? 'lucide:loader-circle' : 'lucide:sparkles'"
+              class="size-3.5"
+              :class="rewriting ? 'animate-spin' : ''"
+            />
+            {{ rewriting ? "Preparando…" : "Sugerir texto" }}
+          </UiButton>
+          <span
+            class="op-micro tnum"
+            :class="textLength > textLimit ? 'font-semibold text-destructive' : 'text-muted-foreground'"
+            data-review-counter
+          >{{ formatCountPt(textLength) }} / {{ formatCountPt(textLimit) }}</span>
+        </span>
+      </div>
+      <UiTextarea
+        :id="`body-${announcement.pk}`"
+        v-model="body"
+        name="announcement_body"
+        :rows="4"
+        autocomplete="off"
+        class="resize-y rounded-xl text-[16px] leading-relaxed"
+      />
+      <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">O anúncio precisa de um texto.</p>
+      <p v-else-if="textLength > textLimit" class="mt-1 text-xs text-destructive" role="alert">
+        O texto passou do limite da plataforma mais curta escolhida.
+      </p>
+      <p
+        v-if="assistError"
+        class="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        role="alert"
+        data-testid="ai-assist-error"
+      >{{ assistError }}</p>
+      <section
+        v-if="suggestion"
+        class="mt-3 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3"
+        aria-label="Comparação da sugestão de IA"
+        data-testid="ai-suggestion-compare"
+      >
         <div>
-          <div class="mb-1 flex items-center justify-between gap-2">
-            <label
-              :for="`body-${announcement.pk}`"
-              class="block text-xs font-medium text-muted-foreground"
-            >
-              Texto do anúncio
-            </label>
-            <UiButton
-              v-if="aiAssistAvailable && announcement.ai_suggestion_enabled"
-              type="button"
-              :disabled="rewriting || busy"
-              variant="outline"
-              size="xs"
-              @click="rewrite"
-            >
-              <Icon
-                :name="rewriting ? 'lucide:loader-circle' : 'lucide:sparkles'"
-                class="size-3.5"
-                :class="rewriting ? 'animate-spin' : ''"
-              />
-              {{ rewriting ? "Preparando…" : "Sugerir texto" }}
-            </UiButton>
-          </div>
-          <UiTextarea
-            :id="`body-${announcement.pk}`"
-            v-model="body"
-            name="announcement_body"
-            :rows="4"
-            autocomplete="off"
-            class="resize-y"
-          />
-          <p
-            v-if="!body.trim()"
-            class="mt-1 text-xs text-destructive"
-            role="alert"
-          >
-            O anúncio precisa de um texto.
-          </p>
-          <p
-            v-if="assistError"
-            class="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-            role="alert"
-            data-testid="ai-assist-error"
-          >
-            {{ assistError }}
-          </p>
-          <section
-            v-if="suggestion"
-            class="mt-3 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3"
-            aria-label="Comparação da sugestão de IA"
-            data-testid="ai-suggestion-compare"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p class="text-sm font-semibold">
-                  Sugestão pronta para comparar
-                </p>
-                <p class="text-xs text-muted-foreground">
-                  Usar muda só este rascunho. Nada é publicado.
-                </p>
-              </div>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <div class="rounded-md border border-border bg-background p-2">
-                <p
-                  class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Seu texto
-                </p>
-                <p class="whitespace-pre-wrap text-sm">
-                  {{ beforeSuggestion?.body }}
-                </p>
-              </div>
-              <div
-                class="rounded-md border border-primary/30 bg-background p-2"
-              >
-                <p
-                  class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary"
-                >
-                  Sugestão
-                </p>
-                <p class="whitespace-pre-wrap text-sm">{{ suggestion.body }}</p>
-                <p
-                  v-if="suggestion.hashtags.length"
-                  class="mt-2 text-xs text-muted-foreground"
-                >
-                  {{ suggestion.hashtags.map(displayHashtag).join(" ") }}
-                </p>
-              </div>
-            </div>
-            <div v-if="suggestion.facts.length" class="text-xs">
-              <p class="font-semibold">Dados usados</p>
-              <ul class="mt-1 flex flex-wrap gap-1.5">
-                <li
-                  v-for="fact in suggestion.facts"
-                  :key="fact.id"
-                  class="rounded-full border border-border bg-background px-2 py-1"
-                >
-                  {{ fact.label }}: {{ fact.value }}
-                </li>
-              </ul>
-            </div>
-            <ul
-              v-if="suggestion.warnings.length"
-              class="space-y-1 text-xs text-warning"
-            >
-              <li v-for="warning in suggestion.warnings" :key="warning">
-                {{
-                  warningLabels[warning] ??
-                  "Confira esta sugestão antes de usar."
-                }}
-              </li>
-            </ul>
-            <div class="flex flex-wrap gap-2">
-              <UiButton
-                v-if="!suggestionUsed"
-                type="button"
-                size="xs"
-                data-testid="use-ai-suggestion"
-                @click="useSuggestion"
-              >
-                Usar no rascunho
-              </UiButton>
-              <UiButton
-                v-else
-                type="button"
-                variant="outline"
-                size="xs"
-                data-testid="undo-ai-suggestion"
-                @click="undoSuggestion"
-              >
-                Desfazer uso
-              </UiButton>
-              <UiButton
-                type="button"
-                variant="outline"
-                size="xs"
-                @click="discardSuggestion"
-              >
-                Descartar
-              </UiButton>
-            </div>
-          </section>
+          <p class="text-sm font-semibold">Sugestão pronta para comparar</p>
+          <p class="text-xs text-muted-foreground">Usar muda só este rascunho. Nada é publicado.</p>
         </div>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <div class="rounded-md border border-border bg-background p-2">
+            <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Seu texto</p>
+            <p class="whitespace-pre-wrap text-sm">{{ beforeSuggestion?.body }}</p>
+          </div>
+          <div class="rounded-md border border-primary/30 bg-background p-2">
+            <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary">Sugestão</p>
+            <p class="whitespace-pre-wrap text-sm">{{ suggestion.body }}</p>
+            <p v-if="suggestion.hashtags.length" class="mt-2 text-xs text-muted-foreground">
+              {{ suggestion.hashtags.map(displayHashtag).join(" ") }}
+            </p>
+          </div>
+        </div>
+        <div v-if="suggestion.facts.length" class="text-xs">
+          <p class="font-semibold">Dados usados</p>
+          <ul class="mt-1 flex flex-wrap gap-1.5">
+            <li v-for="fact in suggestion.facts" :key="fact.id" class="rounded-full border border-border bg-background px-2 py-1">
+              {{ fact.label }}: {{ fact.value }}
+            </li>
+          </ul>
+        </div>
+        <ul v-if="suggestion.warnings.length" class="space-y-1 text-xs text-warning">
+          <li v-for="warning in suggestion.warnings" :key="warning">
+            {{ warningLabels[warning] ?? "Confira esta sugestão antes de usar." }}
+          </li>
+        </ul>
+        <div class="flex flex-wrap gap-2">
+          <UiButton v-if="!suggestionUsed" type="button" size="xs" data-testid="use-ai-suggestion" @click="useSuggestion">
+            Usar no rascunho
+          </UiButton>
+          <UiButton v-else type="button" variant="outline" size="xs" data-testid="undo-ai-suggestion" @click="undoSuggestion">
+            Desfazer uso
+          </UiButton>
+          <UiButton type="button" variant="outline" size="xs" @click="discardSuggestion">Descartar</UiButton>
+        </div>
+      </section>
 
-        <!-- Hashtags: guardadas limpas, lidas com "#" -->
-        <div>
-          <label
-            :for="`tags-${announcement.pk}`"
-            class="mb-1 block text-xs font-medium text-muted-foreground"
-          >
-            Hashtags
-          </label>
+      <!-- Hashtags: guardadas limpas, lidas com "#". Uma linha discreta sob o texto. -->
+      <div class="mt-2">
+        <button
+          v-if="!showHashtags"
+          type="button"
+          class="inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-muted-foreground underline underline-offset-2"
+          @click="showHashtags = true"
+        >
+          <Icon name="lucide:hash" class="size-3.5" aria-hidden="true" />Pôr hashtags
+        </button>
+        <template v-else>
+          <label :for="`tags-${announcement.pk}`" class="sr-only">Hashtags</label>
           <UiInput
             :id="`tags-${announcement.pk}`"
             v-model="hashtagsText"
             name="announcement_hashtags"
             type="text"
             autocomplete="off"
-            placeholder="#padaria #fornada"
+            placeholder="Hashtags, ex.: #padaria #croissant"
+            class="h-10 text-[14px]"
           />
-        </div>
-
-        <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
-        <fieldset>
-          <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Disparado via
-          </legend>
-          <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
-               Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
-               numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
-               não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
-               tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
-               de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
-          <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
-               quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
-          <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-            <!-- ⚠️ `UiToggleChip` do kit: escolha múltipla desenhada como pílula, que é
-               o que estas sempre foram. Antes era um `<input type="checkbox">` `sr-only`
-               embrulhado num `<label>` pintado — semântica escondida num lugar, alvo de
-               toque noutro, e o desenho da seleção escrito à mão em cada tela.
-               O estado da plataforma ("não publica", "não verificada") continua na
-               pílula, passado como classe: ele conta ANTES do clique, e era por não
-               contar que a recusa só chegava depois de aprovar. -->
-            <UiToggleChip
-              v-for="option in platformOptions"
-              :key="option.value"
-              :model-value="platforms.includes(option.value)"
-              :class="readinessPillClass(readinessNote(option).tone)"
-              :data-readiness="readinessNote(option).tone"
-              @update:model-value="togglePlatform(option.value)"
-            >
-              <Icon :name="platformIcon(option.value)" class="size-3.5" />
-              {{ option.label }}
-              <span v-if="readinessNote(option).badge" class="text-xs"
-                >· {{ readinessNote(option).badge }}</span
-              >
-            </UiToggleChip>
-          </div>
-          <p
-            v-if="platforms.length === 0"
-            class="mt-1 text-xs text-destructive"
-            role="alert"
-          >
-            Escolha ao menos uma plataforma.
-          </p>
-          <!-- Aprovar continua possível (a pré-condição é de publicar): o gestor só
-               fica sabendo AGORA, e não no comprovante, onde o anúncio não vai sair. -->
-          <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
-            <li
-              v-for="note in selectedReadinessNotes"
-              :key="note.platform"
-              class="text-xs"
-              :class="
-                note.tone === 'blocked' ? 'text-destructive' : 'text-warning'
-              "
-              role="status"
-            >
-              {{ note.text }}
-              <NuxtLink
-                v-if="note.tone !== 'limited'"
-                :to="{ path: '/v2', query: { area: 'platforms' } }"
-                class="font-semibold underline"
-              >
-                Ver em Plataformas
-              </NuxtLink>
-            </li>
-          </ul>
-        </fieldset>
-
-        <GoogleBusinessPostOptions
-          v-if="publishesOnGoogle"
-          v-model="googleOptions"
-          :id-prefix="`google-${announcement.pk}`"
-          :has-link="!!announcement.link"
-        />
-
-        <!-- A decisão e a representação enviada não podem morar em telas diferentes.
-             A mesma prévia batch/cancelável usada no formulário de campanha acompanha
-             toda edição deste rascunho, por plataforma — mas lida do conteúdo GRAVADO
-             do anúncio (`announcement-id`), montado como a aprovação monta. Com o
-             produto de exemplo do formulário ela mostrava link que o post não teria. -->
-        <AnnouncementPreview
-          :body="body"
-          :announcement-id="announcement.pk"
-          :hashtags="parseHashtags(hashtagsText)"
-          :platforms="platforms"
-          :platform-labels="platformLabels"
-          :google-business="previewGoogleBusiness"
-        />
-
-        <!-- Audiência só governa mensagens diretas. Publicações não têm destinatário individual. -->
-        <div v-if="hasDirectMessage" class="rounded-lg bg-muted/50 px-3 py-2">
-          <p class="flex items-center gap-1.5 text-sm">
-            <Icon name="lucide:users" class="size-4 text-muted-foreground" />
-            <span>{{ audience }}</span>
-          </p>
-          <p v-if="vip" class="mt-0.5 pl-6 text-xs text-muted-foreground">
-            {{ vip }}
-          </p>
-        </div>
-        <!-- ⚠️ "Postagem pública. Não escolhe contatos." — a MESMA frase que o painel
-             de disparo já usa. Eram quinze palavras dizendo isso, e metade delas em
-             "publicação", que é o termo do ciclo anterior: o nome do resultado público
-             nesta casa é POSTAGEM. -->
-        <div v-else class="rounded-lg bg-muted/50 px-3 py-2 text-sm">
-          <p class="flex items-center gap-1.5">
-            <Icon name="lucide:globe-2" class="size-4 text-muted-foreground" />
-            <span>Postagem pública. Não escolhe contatos.</span>
-          </p>
-        </div>
+        </template>
       </div>
     </div>
 
-    <!-- Decisão -->
-    <footer
-      class="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 px-4 py-3"
-    >
-      <div class="w-full">
-        <p class="text-xs text-muted-foreground">
-          O texto que você conferir na próxima tela é o que será disparado —
-          agora ou na hora que você marcar.
-        </p>
-      </div>
-
-      <!-- ⚠️ "Quando" é ATRIBUTO do disparo, não destino. Era um botão "Agendar" que
-           não agendava — abria o seletor de hora —, ao lado de "Recusar", que decide o
-           destino da coisa. Botão é para caminho; atributo é para campo. Com o quando
-           virando campo, a decisão desta tela fica binária de verdade: segue ou não
-           segue. Quem agenda é o botão final da caixa, onde o ato acontece. -->
-      <div class="w-full space-y-1.5">
-        <!-- ⚠️ "Envio" era o nome de metade dos casos: este cartão pode carregar
-             WhatsApp e mural ao mesmo tempo, e mural não se envia, se publica. O
-             genérico da casa cobre os dois. -->
-        <span class="text-xs font-medium text-muted-foreground">Disparo</span>
-        <div
-          role="group"
-          aria-label="Disparo"
-          class="flex gap-1 rounded-lg bg-muted p-1"
+    <!-- Plataformas: uma linha por plataforma, com a chave (v3 a). Publicação pública e
+         mensagem direta separadas pela segunda linha de cada uma. -->
+    <fieldset>
+      <legend class="sr-only">Disparado via</legend>
+      <ul class="rounded-2xl border border-border bg-card px-4" data-review-platforms>
+        <li
+          v-for="option in platformOptions"
+          :key="option.value"
+          class="flex min-h-[60px] items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
+          :data-readiness="readinessNote(option).tone"
+          :data-review-platform="option.value"
         >
+          <Icon :name="platformIcon(option.value)" class="size-5 shrink-0" aria-hidden="true" />
+          <span class="min-w-0 flex-1 leading-tight">
+            <span class="text-[16px]">{{ rowLabel(option) }}</span>
+            <span v-if="rowKind(option)" class="ml-1.5 text-[13px] text-muted-foreground">{{ rowKind(option) }}</span>
+            <span
+              v-if="readinessNote(option).badge"
+              class="block text-[12px] font-medium"
+              :class="readinessNote(option).tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+            >{{ readinessNote(option).badge }}</span>
+          </span>
+          <UiSwitch
+            :model-value="platforms.includes(option.value)"
+            :aria-label="`${platforms.includes(option.value) ? 'Tirar' : 'Pôr'} ${rowLabel(option)}`"
+            @update:model-value="togglePlatform(option.value)"
+          />
+        </li>
+      </ul>
+      <p v-if="platforms.length === 0" class="mt-1 text-xs text-destructive" role="alert">Escolha ao menos uma plataforma.</p>
+      <!-- Aprovar continua possível (a pré-condição é de publicar): o gestor só fica
+           sabendo AGORA, e não no comprovante, onde o anúncio não vai sair. Uma frase
+           só para todas, não um parágrafo por plataforma. -->
+      <p
+        v-if="readinessSummary"
+        class="mt-2 text-[13px]"
+        :class="readinessSummary.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+        role="status"
+        data-review-readiness
+      >
+        {{ readinessSummary.text }}
+        <NuxtLink v-if="readinessSummary.link" to="/platforms" class="font-semibold underline">Ver em Ajustes › Plataformas</NuxtLink>
+      </p>
+      <p v-if="hasDirectMessage" class="mt-2 text-[13px] text-muted-foreground" data-review-audience>
+        <Icon name="lucide:users" class="mr-1 inline size-4 align-[-3px]" aria-hidden="true" />{{ audience }}<template v-if="vip"> · {{ vip }}</template>
+      </p>
+      <p v-else class="mt-2 text-[13px] text-muted-foreground">
+        <Icon name="lucide:globe-2" class="mr-1 inline size-4 align-[-3px]" aria-hidden="true" />Postagem pública. Não escolhe contatos.
+      </p>
+    </fieldset>
+
+    <GoogleBusinessPostOptions
+      v-if="publishesOnGoogle"
+      v-model="googleOptions"
+      :id-prefix="`google-${announcement.pk}`"
+      :has-link="!!announcement.link"
+    />
+
+    <!-- Como fica em cada plataforma: a mesma prévia do formulário de campanha, lida do
+         conteúdo GRAVADO do anúncio com as edições daqui. Abre sob pedido: a revisão já
+         mostra a foto e o texto. -->
+    <div>
+      <button
+        type="button"
+        class="inline-flex min-h-11 items-center gap-1.5 text-[14px] font-semibold text-foreground"
+        :aria-expanded="showPreview"
+        data-review-preview-toggle
+        @click="showPreview = !showPreview"
+      >
+        <Icon :name="showPreview ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
+        Ver como fica em cada plataforma
+      </button>
+      <AnnouncementPreview
+        v-if="showPreview"
+        class="mt-2"
+        :body="body"
+        :announcement-id="announcement.pk"
+        :hashtags="parseHashtags(hashtagsText)"
+        :platforms="platforms"
+        :platform-labels="platformLabels"
+        :google-business="previewGoogleBusiness"
+      />
+    </div>
+
+    <!-- Quando: atributo do disparo, não destino. Agora é o padrão; agendar abre a hora. -->
+    <div class="rounded-2xl border border-border bg-card px-4 py-3" data-review-when>
+      <div class="flex items-center gap-3">
+        <span class="flex-1 text-[15px]">Quando</span>
+        <div role="group" aria-label="Disparo" class="flex gap-1 rounded-lg bg-muted p-1">
           <button
             type="button"
             data-testid="delivery-now"
             :aria-pressed="!scheduling"
-            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
-            :class="
-              scheduling
-                ? 'font-medium text-muted-foreground'
-                : 'bg-card font-semibold shadow-sm'
-            "
+            class="min-h-10 rounded-md px-4 text-sm transition"
+            :class="scheduling ? 'font-medium text-muted-foreground' : 'bg-card font-semibold shadow-sm'"
             @click="scheduling = false"
           >
             Imediato
@@ -870,47 +854,29 @@ function askToReject() {
             type="button"
             data-testid="delivery-scheduled"
             :aria-pressed="scheduling"
-            class="min-h-11 flex-1 basis-0 rounded-md text-sm transition"
-            :class="
-              scheduling
-                ? 'bg-card font-semibold shadow-sm'
-                : 'font-medium text-muted-foreground'
-            "
+            class="min-h-10 rounded-md px-4 text-sm transition"
+            :class="scheduling ? 'bg-card font-semibold shadow-sm' : 'font-medium text-muted-foreground'"
             @click="openScheduling"
           >
             Agendado
           </button>
         </div>
-        <!-- ⚠️ Os dois avisos moram aqui, colados na escolha de hora, porque é aqui
-             que o fato muda o que dá para escolher. Eles CONTAM o fato e dizem o que
-             está disponível; não mandam agendar — a decisão é do gestor. -->
-        <p
-          v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
-          class="text-xs font-medium text-sky-700 dark:text-sky-300"
-          role="status"
-        >
-          Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem
-          é enviada deste computador.
-        </p>
-        <p
-          v-else-if="scheduleRecommended"
-          class="text-xs font-medium text-warning"
-          role="status"
-        >
-          O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}).
-          Envio imediato fica indisponível até as 08:00. Em Agendado, o próximo
-          horário permitido já vem preenchido.
-        </p>
       </div>
+      <p
+        v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
+        class="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300"
+        role="status"
+      >
+        Ensaio local: o silêncio das 20:00 às 08:00 está suspenso e nenhuma mensagem é enviada deste computador.
+      </p>
+      <p v-else-if="scheduleRecommended" class="mt-2 text-xs font-medium text-warning" role="status">
+        O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Envio imediato fica indisponível até as
+        08:00. Em Agendado, o próximo horário permitido já vem preenchido.
+      </p>
 
-      <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
-      <div v-if="scheduling" class="w-full space-y-2 pt-2">
+      <div v-if="scheduling" class="mt-3 space-y-2">
         <div class="flex flex-wrap items-center gap-2">
-          <label
-            :for="`when-${announcement.pk}`"
-            class="text-xs font-medium text-muted-foreground"
-            >Disparar em</label
-          >
+          <label :for="`when-${announcement.pk}`" class="text-xs font-medium text-muted-foreground">Disparar em</label>
           <UiInput
             :id="`when-${announcement.pk}`"
             v-model="publishAt"
@@ -918,46 +884,23 @@ function askToReject() {
             :aria-describedby="`when-help-${announcement.pk}`"
             @update:model-value="publishFold = ''"
           />
-          <span class="text-xs font-semibold text-muted-foreground">{{
-            timezoneName
-          }}</span>
+          <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
         </div>
         <p
-          v-if="
-            scheduleResolution.problem &&
-            scheduleResolution.problem !== 'ambiguous'
-          "
+          v-if="scheduleResolution.problem && scheduleResolution.problem !== 'ambiguous'"
           :id="`when-help-${announcement.pk}`"
           class="text-xs text-destructive"
           role="alert"
         >
           {{ scheduleResolution.detail }}
-          <UiButton
-            v-if="scheduleResolution.nextAllowedLocal"
-            type="button"
-            variant="link"
-            class="ml-1"
-            @click="useNextAllowedTime"
-          >
+          <UiButton v-if="scheduleResolution.nextAllowedLocal" type="button" variant="link" class="ml-1" @click="useNextAllowedTime">
             Usar o próximo horário permitido
           </UiButton>
         </p>
-        <fieldset
-          v-if="scheduleResolution.problem === 'ambiguous'"
-          class="rounded-md border border-warning/40 bg-warning/5 p-2"
-        >
-          <legend class="px-1 text-xs font-semibold">
-            Horário repetido pela mudança do relógio
-          </legend>
-          <p class="text-xs text-muted-foreground">
-            {{ scheduleResolution.detail }}
-          </p>
-          <UiRadioGroup
-            v-model="publishFold"
-            label="Qual das duas ocorrências"
-            orientation="horizontal"
-            class="mt-1 text-xs"
-          >
+        <fieldset v-if="scheduleResolution.problem === 'ambiguous'" class="rounded-md border border-warning/40 bg-warning/5 p-2">
+          <legend class="px-1 text-xs font-semibold">Horário repetido pela mudança do relógio</legend>
+          <p class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
+          <UiRadioGroup v-model="publishFold" label="Qual das duas ocorrências" orientation="horizontal" class="mt-1 text-xs">
             <UiRadio
               v-for="(candidate, index) in scheduleResolution.candidates"
               :key="candidate.instant"
@@ -967,63 +910,49 @@ function askToReject() {
             />
           </UiRadioGroup>
         </fieldset>
-        <p
-          v-if="schedulePreview && scheduleResolution.ok"
-          class="text-xs text-muted-foreground"
-        >
-          Será entregue em {{ schedulePreview }} · UTC{{
-            scheduleResolution.candidate?.offset
-          }}.
-          {{
-            quietHoursSuspendedForLocalSimulation
-              ? "Ensaio local sem efeito externo."
-              : "WhatsApp respeita 20:00–08:00."
-          }}
+        <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
+          Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
+          {{ quietHoursSuspendedForLocalSimulation ? "Ensaio local sem efeito externo." : "WhatsApp respeita o silêncio das 20:00 às 08:00." }}
         </p>
       </div>
+    </div>
 
-      <!-- ⚠️ Recusar ANTES de Continuar, os dois da mesma largura: pedido do dono. E
-           "Continuar" não promete o disparo, porque não dispara — leva à caixa onde o
-           ato acontece e lá o botão se chama pelo nome (Enviar/Publicar/Disparar/
-           Agendar). Um botão só, porque a decisão desta tela virou binária quando o
-           "quando" saiu de botão e virou campo. -->
-      <p
-        v-if="expired"
-        class="w-full text-xs font-medium text-destructive"
-        role="alert"
-      >
-        O prazo deste anúncio venceu — preço e estoque já podem ter mudado.
-        <NuxtLink to="/campaigns" class="font-semibold underline">
-          Prepare um disparo novo em Campanhas.
-        </NuxtLink>
-      </p>
+    <p v-if="expired" class="text-xs font-medium text-destructive" role="alert">
+      O prazo deste anúncio venceu: preço e estoque já podem ter mudado.
+      <NuxtLink to="/campaigns" class="font-semibold underline">Prepare um disparo novo em Campanhas.</NuxtLink>
+    </p>
 
-      <div class="flex w-full gap-2 pt-1">
+    <!-- A decisão, fixa no polegar (v3 a). ⚠️ "Continuar" é pedido do dono: este botão
+         não dispara, leva ao selo, e lá o ato tem o nome (Publicar e enviar, Agendar).
+         Recusar ANTES, da mesma largura. -->
+    <footer
+      class="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:rounded-2xl sm:border sm:bg-card sm:pb-3"
+      data-review-actions
+    >
+      <div class="mx-auto flex max-w-2xl gap-2.5">
         <UiButton
           type="button"
           :disabled="busy"
           variant="outline"
-          class="min-h-11 flex-1 basis-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          class="h-14 flex-1 basis-0 rounded-xl text-[16px] font-semibold sm:h-12 sm:flex-none sm:basis-auto sm:px-6"
           @click="askToReject"
         >
-          <Icon name="lucide:trash-2" class="size-4" />
           Recusar
         </UiButton>
-
         <UiButton
           type="button"
           data-testid="publish-now"
-          :disabled="scheduling ? !canSchedule : !canPublishNow"
-          class="min-h-11 flex-1 basis-0"
+          :disabled="(scheduling ? !canSchedule : !canPublishNow) || textLength > textLimit"
+          class="h-14 flex-[2] basis-0 rounded-xl text-[16px] font-semibold sm:h-12 sm:flex-1"
           @click="scheduling ? schedule() : publishNow()"
         >
-          <Icon
-            :name="busy ? 'line-md:loading-loop' : 'lucide:arrow-right'"
-            class="size-4"
-          />
+          <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-5" aria-hidden="true" />
           Continuar
         </UiButton>
       </div>
+      <p class="mt-1.5 text-center text-[12px] text-muted-foreground">
+        O texto que você conferir na próxima tela é o que vai: agora, ou na hora que você marcar.
+      </p>
     </footer>
   </article>
 </template>

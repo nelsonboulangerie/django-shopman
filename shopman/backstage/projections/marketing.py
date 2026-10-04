@@ -105,6 +105,10 @@ class AnnouncementProjection:
     rejected_reason: str
     #: Template opted into a review-only suggestion. This never implies publication.
     ai_suggestion_enabled: bool = False
+    #: O fato do lote que gerou o anúncio (a revisão diz "Rascunho do lote: Croissant,
+    #: 24 un" e "Foto do lote, 21:58"). Vazios fora do gatilho de produção.
+    lot_quantity: str = ""
+    lot_finished_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -571,7 +575,25 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         rejected_by=(rejecter.get_full_name() or rejecter.username) if rejecter else "",
         rejected_reason=announcement.rejected_reason,
         ai_suggestion_enabled=bool(announcement.template_id and announcement.template.use_ai_generation),
+        lot_quantity=_lot_quantity(announcement, context),
+        lot_finished_at=str(context.get("finished_at") or "") if _is_lot(announcement) else "",
     )
+
+
+def _is_lot(announcement: Announcement) -> bool:
+    return bool(announcement.rule_id and announcement.rule.trigger == "production_finished")
+
+
+def _lot_quantity(announcement: Announcement, context: dict) -> str:
+    if not _is_lot(announcement):
+        return ""
+    from decimal import Decimal, InvalidOperation
+
+    raw = str(context.get("quantity") or "").strip()
+    try:
+        return format(Decimal(raw).normalize(), "f") if raw else ""
+    except (InvalidOperation, ValueError):
+        return ""
 
 
 def _announcements_queryset():
