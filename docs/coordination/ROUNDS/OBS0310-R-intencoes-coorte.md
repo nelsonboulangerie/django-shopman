@@ -3,7 +3,7 @@
 - **id:** OBS0310-R
 - **sessão:** shopman-improvements-fixes-bd04d4 (Claude; frente executada por subagente em worktree próprio)
 - **branch:** claude/obs0310-intencoes-coorte
-- **PR:** (preencher)
+- **PR:** #1452
 - **início (UTC):** 2026-10-03
 - **pré-requisito:** #1449 (OBS0310-Q, intenções no plural) no `main`, desligado atrás de
   `CONCIERGE_INTENTS_PLURAL`, que só ligaria aplicando o spec do alpha. Aplicar o spec é proibido
