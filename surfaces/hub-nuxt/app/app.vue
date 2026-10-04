@@ -235,7 +235,10 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- Cabeçalho de uma linha (76px): a saudação e a linha fina com o ao vivo, a
              hora e a assinatura "Shopman · Nelson". -->
-        <header class="flex min-h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2 md:h-[76px] md:gap-6 md:px-8 md:py-0">
+        <!-- Celular: embaixo da barra de 56px, o campo "Buscar em toda a suíte" (com a câmera),
+             que abre a busca em tela cheia. Tablet e desktop: a barra grande da busca ao lado
+             da saudação (v4 `hub.jpg`, V6-BUSCA). -->
+        <header class="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-card px-4 pt-2 md:h-[76px] md:flex-nowrap md:gap-6 md:px-8 md:py-0">
           <!-- celular: o selo da Central na barra de 56px (o rail não existe abaixo de md) -->
           <span
             class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-[10px] md:hidden"
@@ -277,6 +280,10 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
           <div v-if="isPhone" class="shrink-0">
             <NotificationBell />
           </div>
+          <div class="order-last w-full pt-1 pb-3 md:order-none md:w-auto md:py-0" data-hub-search>
+            <OperatorSuiteSearch variant="hero" placeholder="Buscar pedido, cliente, produto, insumo ou tela" />
+          </div>
+          <div class="hidden flex-1 xl:block" aria-hidden="true" />
         </header>
 
         <div class="flex-1">

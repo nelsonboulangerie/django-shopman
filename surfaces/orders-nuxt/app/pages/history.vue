@@ -58,7 +58,7 @@ const loading = computed(() => pending.value && !history.value);
         <span class="hidden op-micro text-muted-foreground lg:inline">Pedidos concluídos e cancelados</span>
       </template>
       <template #search>
-        <UiSearchInput v-model="search" placeholder="Pedido, nome ou telefone" aria-label="Buscar pedido no histórico" />
+        <OperatorSuiteSearch v-model="search" screen-label="filtrando o histórico" placeholder="Pedido, nome ou telefone" aria-label="Buscar pedido no histórico" />
       </template>
       <template #phone-actions>
         <GestorPhoneBells />

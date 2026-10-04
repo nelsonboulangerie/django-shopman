@@ -147,6 +147,21 @@ def _surface_urls() -> dict[str, str]:
     return {**base, **override}
 
 
+def accessible_surfaces(user) -> dict[str, tuple[str, str]]:
+    """Os apps de operador que ``user`` abre, na ordem do launcher: ``ref → (nome curto, URL)``.
+
+    A mesma pergunta do tile (permissão do app e URL configurada); a Loja fica de fora (é a
+    superfície do cliente, não um lugar de trabalho). A busca da suíte
+    (``projections/suite_search.py``) só aponta para estes.
+    """
+    urls = _surface_urls()
+    return {
+        spec.ref: (spec.queue_label, urls[spec.ref])
+        for spec in _REGISTRY
+        if spec.kind == "launch" and urls.get(spec.ref) and spec.can_access(user)
+    }
+
+
 def purchase_surface_url(user) -> str:
     """URL do Compras para um atalho vindo de outro app ("Pedir no Compras").
 

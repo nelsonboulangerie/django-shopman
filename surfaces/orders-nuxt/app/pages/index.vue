@@ -721,13 +721,13 @@ function printQueue() {
         />
       </template>
       <template #search>
-        <UiSearchInput
+        <OperatorSuiteSearch
           ref="searchInput"
           :class="compactHeader ? 'suite:md:w-[15rem]!' : ''"
           :model-value="query"
+          screen-label="filtrando o quadro"
           :placeholder="exitPostView ? 'Código ou cliente' : 'Buscar pedido, cliente ou item'"
           aria-label="Buscar por código, cliente ou item (atalho: /)"
-          shortcut="/"
           @update:model-value="(v) => (query = v)"
         />
       </template>

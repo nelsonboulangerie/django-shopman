@@ -325,14 +325,14 @@ const ITEM =
       >
         <Icon name="lucide:search" class="size-5" />
       </button>
-      <UiSearchInput
+      <OperatorSuiteSearch
         v-else
         ref="searchInput"
         v-model="query"
         class="suite:md:w-[18rem]!"
+        screen-label="filtrando a lista"
         :placeholder="searchPlaceholder"
         aria-label="Buscar por código, SKU ou receita"
-        shortcut="/"
         @focusout="closeTabletSearchIfEmpty"
       />
     </template>

@@ -1194,18 +1194,19 @@ function onPackageCode(code: string) {
         </template>
 
         <template v-if="view === 'base' && baseView !== 'suppliers'" #search>
-          <UiSearchInput
+          <OperatorSuiteSearch
             ref="searchInput"
             v-model="baseSearch"
+            screen-label="filtrando a base"
             :placeholder="baseSearchPlaceholder"
             :aria-label="baseSearchPlaceholder"
-            shortcut="/"
           />
         </template>
         <!-- Receber com a conferência aberta: a lupa acha o item da entrada (C08). -->
         <template v-else-if="view === 'receive' && !receiveStart && !isPhone && (isWide || receiveSearchOpen)" #search>
-          <UiSearchInput
+          <OperatorSuiteSearch
             v-model="receiveQuery"
+            screen-label="filtrando a entrada"
             placeholder="Buscar item da entrada"
             aria-label="Buscar item da entrada"
           />

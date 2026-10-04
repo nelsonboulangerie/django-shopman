@@ -39,9 +39,10 @@ const eyebrow = computed(() =>
       </NuxtLink>
     </template>
     <template v-if="searchable" #search>
-      <UiSearchInput
+      <OperatorSuiteSearch
         v-model="query"
         class="suite:md:w-[18rem]!"
+        screen-label="filtrando as receitas"
         placeholder="Buscar receita"
         :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
       />
