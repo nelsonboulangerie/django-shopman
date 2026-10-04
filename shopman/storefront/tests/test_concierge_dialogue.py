@@ -232,8 +232,10 @@ def test_next_day_more_croissant_with_open_order_asks_order_or_new():
     state = dialogue.next_state({}, [asked.memo], now=NOW, fence=1, until=NOW + timedelta(days=1))
     new = _resolve("2", state, facts)
     assert new.outcome == "resolved" and new.text == "4 croissant" and new.reason == "new_order"
+    # "1": acrescentar ao pedido já feito (dono, 03/10/2026). Sem o SKU na memória,
+    # o modelo acha o produto e chama add_to_order; nada muda sem a pergunta.
     add = _resolve("1", state, facts)
-    assert add.outcome == "handoff" and "P7" in add.handoff_reason
+    assert add.outcome == "resolved" and add.reason == "add_to_open_order" and "add_to_order" in add.note
     assert _resolve("sim", state, facts).reason == "ask_which"
 
 

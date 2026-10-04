@@ -575,7 +575,8 @@ class PartReply:
     suspended: bool = False
     #: Parte sensível que a própria Concierge conduz (cancelamento pela régua do site).
     self_served: bool = False
-    #: A pergunta desta parte é a que fica no fim da resposta (a confirmação do cancelamento).
+    #: A pergunta desta parte é a que fica no fim da resposta: a confirmação que só o
+    #: "sim" aplica (o cancelamento, o acréscimo a pedido já feito).
     keeps_question: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
@@ -602,7 +603,10 @@ class Execution:
 
     @property
     def memos(self) -> list[dict]:
-        return [reply.memo for reply in self.replies if reply.memo]
+        # A confirmação que fecha a mensagem é a pergunta no ar: grava por último,
+        # para nenhuma outra parte sobrescrever a pendência dela.
+        ordered = sorted(self.replies, key=lambda reply: reply.keeps_question)
+        return [reply.memo for reply in ordered if reply.memo]
 
 
 def _clip(text: str, limit: int = SPAN_CHARS) -> str:
@@ -721,6 +725,11 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 # A equipe vai assumir: nada de pedido pela metade feito pelo robô.
                 run.replies.append(PartReply(act, text=copy(ORDER_WITH_TEAM_COPY_KEY) or "", suspended=True))
                 continue
+            if asks_to_add_to_order(act.span):
+                added = _add_to_order(act, conversation=conversation, search=search, run=run)
+                if added is not None:
+                    run.replies.append(added)
+                    continue
             run.replies.append(search(act))
             continue
         if act.act == STATUS:
@@ -770,12 +779,58 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     return run
 
 
+#: "acrescenta 2 croissants no meu pedido", "coloca mais um pão no pedido M63".
+_ADD_VERB_RE = re.compile(
+    r"\b(?:acrescent\w*|adicion\w*|coloc\w*|poe|bota\w*|inclu\w*|junt\w*)\b"
+)
+
+
+def asks_to_add_to_order(text: str) -> bool:
+    """A parte pede para acrescentar a um pedido JÁ FEITO (não à sacola)."""
+    folded = _fold(text)
+    return bool(_ADD_VERB_RE.search(folded) and re.search(r"\bpedido\b", folded))
+
+
+def _add_to_order(act: Act, *, conversation, search, run: Execution) -> PartReply | None:
+    """O acréscimo pedido no meio de outras partes, pelo mesmo caminho (``order_addition``).
+
+    O produto sai da busca pública (um item só, senão a parte vira a busca e o cliente
+    escolhe); o pedido é o citado na fala ou o aberto do cliente. A confirmação vai no
+    fim da mensagem e é a única pergunta. Recusa numa encomenda chama a equipe.
+    """
+    from . import cancellation, dialogue, order_addition
+
+    found = search(act)
+    items = ((found.memo or {}).get("items") or []) if found.memo.get("tool") == "search_storefront" else []
+    if len(items) != 1:
+        return None
+    target = cancellation.target_order(conversation, act.span)
+    if target is None:
+        facts = dialogue.load_facts(conversation)
+        order_ref = facts.open_order.ref if facts.open_order else ""
+    else:
+        order_ref = target.ref
+    if not order_ref:
+        return None
+    outcome = order_addition.propose(
+        conversation, order_ref=order_ref, additions=[{"sku": items[0]["ref"], "qty": act.qty or 1}]
+    )
+    reply = PartReply(act, text=outcome.text, memo=outcome.memo, tool_events=found.tool_events)
+    if outcome.handoff:
+        # Encomenda que o serviço recusa: a equipe conduz, o motivo vai no aviso.
+        run.team.append(Act(ORDER, span=act.span))
+        reply.memo = {}
+    else:
+        reply.keeps_question = outcome.code == "asked"
+    return reply
+
+
 def compose(run: Execution) -> str:
     """Uma mensagem: as partes na ordem do cliente e uma pergunta só.
 
     Fica a pergunta da última parte que pergunta; as outras perdem a linha de pergunta
     (a casa pergunta uma coisa por vez). A confirmação que espera "sim" ou "não" (o
-    cancelamento) é sempre essa pergunta, e vai para o fim. Parte repetida sai uma vez. Com a equipe
+    cancelamento, o acréscimo a pedido já feito) é sempre essa pergunta, e vai para o fim. Parte repetida sai uma vez. Com a equipe
     chamada no turno, a oferta "posso chamar a equipe" das outras frases sai.
     """
     blocks: list[str] = []
@@ -908,6 +963,11 @@ def run(conversation, *, binding, decision, client=None):
 
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
+    from .agent import addition_outcome
+
+    addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
+    if addition is not None:
+        return addition
     if resolution.answers_without_model:
         return AgentOutcome(
             reply_text=resolution.reply,
