@@ -259,6 +259,135 @@ export function rowCommittedUnits(row: ProductionMatrixRowProjection): number {
   );
 }
 
+// ── Números da bancada (V6-PROD R07) ─────────────────────────────────────────
+// A quantidade chega do servidor como texto com ponto decimal ("1230.77"). A tela
+// fala português e diz a unidade: base em gramas acima de um quilo vira quilo
+// ("18,72 kg"), que é como o padeiro conta; peça fica só o número.
+const QTY_FORMAT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
+const COUNT_UNITS = new Set(["", "un", "un.", "und", "pc", "pç", "unidade"]);
+
+/** "1.230,77 g", "18,72 kg", "52" (peças sem unidade), "1,5 l". */
+export function formatQty(value: string | number, unit = ""): string {
+  const amount =
+    typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value ?? "0").replace(",", ".")) || 0;
+  const normalized = (unit ?? "").trim().toLowerCase();
+  if (COUNT_UNITS.has(normalized)) return QTY_FORMAT.format(amount);
+  if (normalized === "g" && Math.abs(amount) >= 1000)
+    return `${QTY_FORMAT.format(amount / 1000)} kg`;
+  if (normalized === "ml" && Math.abs(amount) >= 1000)
+    return `${QTY_FORMAT.format(amount / 1000)} l`;
+  return `${QTY_FORMAT.format(amount)} ${normalized}`;
+}
+
+/** A quantidade com a unidade sempre escrita: "26 un.", "1,2 kg". */
+export function formatQtyUnit(value: string | number, unit = ""): string {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  return COUNT_UNITS.has(normalized)
+    ? `${formatQty(value)} un.`
+    : formatQty(value, normalized);
+}
+
+/** A linha do dia no cabeçalho do Planejamento (R04): ocasião e clima.
+ *  "Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na
+ *  conta)". Vazio quando o servidor não sabe nada do dia. */
+export function dayContextLine(
+  context:
+    | { occasion: string; weather: string; weather_kind: string }
+    | null
+    | undefined,
+  sampleNote = "",
+): string {
+  if (!context) return "";
+  const parts: string[] = [];
+  if (context.occasion) parts.push(context.occasion);
+  if (context.weather) {
+    parts.push(
+      context.weather_kind === "forecast"
+        ? `previsão ${context.weather}`
+        : context.weather,
+    );
+  }
+  const line = parts.join(" · ");
+  return line && sampleNote ? `${line} (${sampleNote})` : line;
+}
+
+// ── Etiqueta do lote (R19) ───────────────────────────────────────────────────
+// A etiqueta de preparo leva um QR com `shopman-lote:<SKU>` (impressa pelo relay
+// em ESC/POS e pelo navegador). O Fechamento lê e abre o lote daquele produto.
+// Aceita também o código do lote ("WO-2026-00020") e o SKU puro, digitados ou
+// lidos de outra etiqueta.
+export const LOT_LABEL_PREFIX = "shopman-lote:";
+
+export function lotLabelPayload(outputSku: string): string {
+  return `${LOT_LABEL_PREFIX}${outputSku}`;
+}
+
+/** O lote aberto que o código lido identifica, ou `null`. */
+export function matchLotCode<T extends { ref: string; output_sku: string }>(
+  rawCode: string,
+  orders: readonly T[],
+): T | null {
+  const code = rawCode.trim();
+  if (!code) return null;
+  const lower = code.toLowerCase();
+  const sku = lower.startsWith(LOT_LABEL_PREFIX)
+    ? code.slice(LOT_LABEL_PREFIX.length).split(":")[0]!.trim().toLowerCase()
+    : "";
+  if (sku) return orders.find((order) => order.output_sku.toLowerCase() === sku) ?? null;
+  return (
+    orders.find((order) => order.ref.toLowerCase() === lower) ??
+    orders.find((order) => order.output_sku.toLowerCase() === lower) ??
+    null
+  );
+}
+
+/** A hora do primeiro compromisso da linha ("08:30"), ou "" sem hora marcada. */
+export function rowDueTime(row: ProductionMatrixRowProjection): string {
+  const times = rowCommitments(row)
+    .map((commitment) => commitment.due_time ?? "")
+    .filter(Boolean)
+    .sort();
+  return times[0] ?? "";
+}
+
+/** O chip das encomendas: "6 un. para 08:30" (ou "6 un." sem hora marcada). */
+export function commitmentChipLabel(row: ProductionMatrixRowProjection): string {
+  const units = QTY_FORMAT.format(rowCommittedUnits(row));
+  const due = rowDueTime(row);
+  return due ? `${units} un. para ${due}` : `${units} un.`;
+}
+
+/** A hora do plano mais recente entre os planejados ("15:12"), ou "". */
+export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
+  const times = rows
+    .flatMap((row) => [
+      ...row.planned_orders,
+      ...row.started_orders,
+      ...row.finished_orders,
+    ])
+    .map((order) => order.created_at_time ?? "")
+    .filter(Boolean)
+    .sort();
+  return times.at(-1) ?? "";
+}
+
+/** Planejou exatamente o que a sugestão dizia. */
+export function plannedAsSuggested(row: ProductionMatrixRowProjection): boolean {
+  if (!row.suggestion) return false;
+  const planned =
+    row.planned_qty !== "0"
+      ? row.planned_qty
+      : row.started_qty !== "0"
+        ? row.started_qty
+        : row.finished_qty;
+  return (
+    (Number.parseFloat(planned) || 0) ===
+    (Number.parseFloat(row.suggestion.quantity) || 0)
+  );
+}
+
 // ── Honest board feedback (stale data beats an empty board) ────────────────
 
 /** Como um board TOLERANTE a dado velho deve se apresentar. Só troca o board por uma

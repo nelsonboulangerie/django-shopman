@@ -177,6 +177,7 @@ from .operations import (
     POSCashDrawerBlockView,
     POSCashDrawerLeftOpenView,
     POSCashDrawerOpenView,
+    POSCashDrawerPulseView,
     POSCashDrawerUnlockAttemptView,
     POSCashDrawerUnlockView,
     POSCashOpenView,
@@ -922,6 +923,11 @@ urlpatterns = [
     path("pos/cash/movement/", POSMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    path(
+        "pos/cash/drawer-pulse/<uuid:ref>/",
+        POSCashDrawerPulseView.as_view(),
+        name="api-backstage-pos-cash-drawer-pulse",
+    ),
     # A trava vive no PDV (é ele que lê a gaveta); o destrave passa aqui para
     # ficar no livro com quem liberou.
     path(

@@ -17,11 +17,18 @@
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
-import { nextTick } from "vue";
+import { nextTick, onMounted } from "vue";
+import { useMediaQuery } from "@vueuse/core";
 
 import {
   boardDisplay,
+  commitmentChipLabel,
+  dayContextLine,
+  formatQty,
+  formatQtyUnit,
   fullDateLabel,
+  latestPlanTime,
+  plannedAsSuggested,
   isoForOffset,
   isStale,
   matchesRowQuery,
@@ -258,9 +265,14 @@ const selectedStartOrder = computed<WorkOrderCardProjection | null>(
     ) ?? null,
 );
 
+const startedDialogOrders = computed<WorkOrderCardProjection[]>(() => {
+  const row = startedRow.value;
+  if (!row) return [];
+  return row.started_orders.length ? row.started_orders : row.planned_orders;
+});
 const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
   () =>
-    startedRow.value?.started_orders.find(
+    startedDialogOrders.value.find(
       (candidate) => candidate.pk === selectedStartedPk.value,
     ) ?? null,
 );
@@ -623,6 +635,82 @@ async function confirmVoid() {
   }
 }
 
+// ── ⋯ da linha aberta (R12) e "pressione e segure" no tablet deitado (R13) ──
+const MENU_ITEM =
+  "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
+const rowMenuSku = ref<string | null>(null);
+function fromRowMenu(action: () => void) {
+  rowMenuSku.value = null;
+  action();
+}
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
+function onRowPress(event: PointerEvent, row: ProductionMatrixRowProjection) {
+  if (event.pointerType !== "touch") return;
+  if ((event.target as Element | null)?.closest("button, a, input")) return;
+  cancelRowPress();
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    rowMenuSku.value = row.output_sku;
+  }, 550);
+}
+function cancelRowPress() {
+  if (pressTimer) clearTimeout(pressTimer);
+  pressTimer = null;
+}
+function onRowContextMenu(event: Event, row: ProductionMatrixRowProjection) {
+  if (!docked.value) return;
+  event.preventDefault();
+  rowMenuSku.value = row.output_sku;
+}
+function rowVoidable(row: ProductionMatrixRowProjection): boolean {
+  return [...row.started_orders, ...row.planned_orders].some((order) => order.can_void);
+}
+// "Cancelar lote…" direto do menu: o diálogo do lote abre já na confirmação.
+function openVoid(row: ProductionMatrixRowProjection) {
+  startedRow.value = row;
+  const orders = voidableOrders(row);
+  selectedStartedPk.value = orders.length === 1 ? orders[0]!.pk : null;
+  voidConfirming.value = true;
+}
+function voidableOrders(row: ProductionMatrixRowProjection): WorkOrderCardProjection[] {
+  const started = row.started_orders.filter((order) => order.can_void);
+  return started.length ? started : row.planned_orders.filter((order) => order.can_void);
+}
+
+// Tablet deitado (toque, 1024 px ou mais): "Confirmar" abre o painel encaixado à
+// direita, sem cobrir a lista (v3 `depois-producao-dia-tablet`).
+// Só depois de montar: o SSR não conhece a tela, e a hidratação não corrige
+// classe divergente (o botão nasceria cheio e ficaria cheio).
+const dockedQuery = useMediaQuery("(pointer: coarse) and (min-width: 1024px)");
+const gridMounted = ref(false);
+onMounted(() => {
+  gridMounted.value = true;
+});
+const docked = computed(() => gridMounted.value && dockedQuery.value);
+// Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
+const openCols = computed(() =>
+  docked.value
+    ? "lg:grid-cols-[minmax(0,1fr)_118px_60px_72px_auto] lg:gap-x-3"
+    : "lg:grid-cols-[minmax(0,1fr)_140px_110px_110px_236px]",
+);
+const startPadFresh = ref(true);
+function startDigit(digit: string) {
+  const next = startPadFresh.value ? digit : `${startQty.value}${digit}`;
+  startQty.value = String(Math.min(99999, Number(next) || 0));
+  startPadFresh.value = false;
+}
+function startBackspace() {
+  startQty.value = startQty.value.length <= 1 ? "0" : startQty.value.slice(0, -1);
+  startPadFresh.value = false;
+}
+function startClear() {
+  startQty.value = "0";
+  startPadFresh.value = true;
+}
+watch(startRow, () => {
+  startPadFresh.value = true;
+});
+
 function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
   if (row.planned_orders.length) return openStart(row);
@@ -765,6 +853,14 @@ function inlineAllowed(row: ProductionMatrixRowProjection): boolean {
   return true;
 }
 
+/** Por que a linha não planeja agora, escrito no próprio botão ("" = pode). */
+function inlineBlock(row: ProductionMatrixRowProjection): string {
+  if (!actionEnabled(row)) return "Sem permissão";
+  if (qtyNumber(draftOf(row)) <= 0) return "Sem quantidade";
+  if (!inlineAllowed(row)) return "Só a sugestão";
+  return "";
+}
+
 async function planInline(row: ProductionMatrixRowProjection) {
   if (inlineSubmitting.value || !inlineAllowed(row)) return;
   inlineSubmitting.value = row.output_sku;
@@ -844,7 +940,36 @@ const signalClass = {
   warning: "bg-warning/15 text-warning",
 } as const;
 
+// "Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na conta)".
+const dayLine = computed(() => {
+  const sameWeekday = rows.value.some((row) => row.suggestion?.same_weekday);
+  const weekday = weekdayPlural(selectedDate.value);
+  return dayContextLine(
+    board.value?.day_context ?? null,
+    sameWeekday && weekday
+      ? ["sábados", "domingos"].includes(weekday)
+        ? `como os ${weekday} usados na conta`
+        : `como as ${weekday} usadas na conta`
+      : "",
+  );
+});
+function weekdayPlural(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return "";
+  const day = new Date(Date.UTC(+match[1]!, +match[2]! - 1, +match[3]!));
+  return ["domingos", "segundas", "terças", "quartas", "quintas", "sextas", "sábados"][
+    day.getUTCDay()
+  ] ?? "";
+}
 const plannedMenuSku = ref<string | null>(null);
+const plannedLineMenuOpen = ref(false);
+// "Planejado 15:12": a hora do plano mais recente do dia.
+const plannedTime = computed(() => latestPlanTime(planGroups.value.planned));
+const allPlannedAsSuggested = computed(
+  () =>
+    planGroups.value.planned.length > 0 &&
+    planGroups.value.planned.every(plannedAsSuggested),
+);
 function plannedMenu(row: ProductionMatrixRowProjection, open: boolean) {
   plannedMenuSku.value = open ? row.output_sku : null;
 }
@@ -875,6 +1000,7 @@ function fromPlannedMenu(action: () => void) {
       <template #actions>
         <OperatorPeriodPicker
           v-model="period"
+          class="[&_[data-period-today]]:hidden"
           :presets="['day']"
           :today="todayISO"
           label="Data"
@@ -959,10 +1085,20 @@ function fromPlannedMenu(action: () => void) {
             </select>
           </label>
         </template>
+        <!-- A ocasião e o clima do dia planejado, à direita dos recortes (v4 pino 8). -->
+        <p
+          v-if="stage === 'plan' && dayLine"
+          class="ml-auto inline-flex min-w-0 items-center gap-1.5 op-label text-muted-foreground max-md:hidden"
+          data-plan-day-context
+        >
+          <Icon name="lucide:sun" class="size-4 shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ dayLine }}</span>
+        </p>
       </template>
     </ProductionHeader>
 
-    <section class="min-h-0 flex-1 overflow-auto px-3 pt-3 pb-4 md:px-4">
+    <div class="flex min-h-0 flex-1">
+    <section class="min-h-0 min-w-0 flex-1 overflow-auto px-3 pt-3 pb-4 md:px-4">
       <p v-if="display === 'loading'" class="op-body text-muted-foreground">
         Carregando…
       </p>
@@ -1058,11 +1194,12 @@ function fromPlannedMenu(action: () => void) {
                 v-if="rowCommittedUnits(row) > 0"
                 type="button"
                 class="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-info/12 px-2 text-xs font-semibold tabular-nums text-info transition hover:bg-info/20"
-                :aria-label="`${rowCommittedUnits(row)} unidades de ${rowLabel(row)} comprometidas com pedidos`"
+                :aria-label="`${commitmentChipLabel(row)}: unidades de ${rowLabel(row)} comprometidas com encomendas`"
+                data-commitment-chip
                 @click="commitmentsRow = row"
               >
                 <Icon name="lucide:shopping-bag" class="size-3.5" />
-                {{ rowCommittedUnits(row) }} un.
+                {{ commitmentChipLabel(row) }}
               </button>
             </div>
 
@@ -1090,14 +1227,14 @@ function fromPlannedMenu(action: () => void) {
                             ? 'text-muted-foreground'
                             : ''
                         "
-                        >{{ row.suggestion.quantity }}</span
+                        >{{ formatQty(row.suggestion.quantity, row.output_unit) }}</span
                       >
                       <span
                         v-if="draftChanged(row)"
                         class="op-label leading-tight text-muted-foreground"
                         data-plan-changed
                       >
-                        você mudou de {{ row.suggestion.quantity }}<br />
+                        você mudou de {{ formatQty(row.suggestion.quantity, row.output_unit) }}<br />
                         <button
                           type="button"
                           class="font-semibold text-primary underline underline-offset-2"
@@ -1170,9 +1307,9 @@ function fromPlannedMenu(action: () => void) {
                 </UiPopover>
                 <span
                   v-else
-                  class="op-heading text-muted-foreground"
-                  title="Sem sugestão para este produto"
-                  >—</span
+                  class="op-label text-muted-foreground"
+                  data-plan-no-suggestion
+                  >sem sugestão para o dia</span
                 >
               </template>
             </div>
@@ -1216,11 +1353,21 @@ function fromPlannedMenu(action: () => void) {
                   <Icon name="lucide:plus" class="size-4" />
                 </button>
               </div>
+              <!-- Bloqueio antes do gesto (SPEC4 §3): sem quantidade ou sem permissão, o
+                   botão fica tracejado com cadeado e o motivo escrito nele. -->
+              <span
+                v-if="inlineBlock(row)"
+                class="inline-flex h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-md border border-dashed border-border px-4 op-label font-semibold text-muted-foreground max-sm:min-w-[8.5rem] max-sm:flex-1"
+                data-plan-inline-blocked
+              >
+                <Icon name="lucide:lock" class="size-4" />
+                {{ inlineBlock(row) }}
+              </span>
               <button
+                v-else
                 type="button"
                 class="inline-flex h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 max-sm:min-w-[8.5rem] max-sm:flex-1"
                 :disabled="
-                  !inlineAllowed(row) ||
                   isBusy(row.output_sku) ||
                   inlineSubmitting != null ||
                   bulkSubmitting
@@ -1233,7 +1380,7 @@ function fromPlannedMenu(action: () => void) {
                 {{
                   inlineSubmitting === row.output_sku
                     ? "Planejando…"
-                    : `Planejar ${draftOf(row)}`
+                    : `Planejar ${formatQty(draftOf(row), row.output_unit)}`
                 }}
               </button>
             </template>
@@ -1349,15 +1496,19 @@ function fromPlannedMenu(action: () => void) {
                 class="mr-2 inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-success/12 px-3 op-label font-semibold text-success"
               >
                 <Icon name="lucide:check" class="size-4" />
-                {{ planGroups.planned.length === 1 ? "Planejado" : "Planejados" }}
-              </span>
-              <template v-for="(row, index) in planGroups.planned" :key="row.output_sku">
-                <span
-                  v-if="index > 0"
-                  class="text-muted-foreground"
-                  aria-hidden="true"
-                  >·</span
+                Planejado<template v-if="plannedTime">
+                  <span class="tnum" data-planned-time>{{ plannedTime }}</span></template
                 >
+              </span>
+              <!-- O "·" anda colado ao fim do item: quando a linha quebra ele fica no fim
+                   da linha, nunca sozinho no começo dela; no celular, um item por vez,
+                   ele some (R07). -->
+              <span
+                v-for="(row, index) in planGroups.planned"
+                :key="row.output_sku"
+                class="inline-flex items-center"
+                data-planned-item
+              >
                 <UiPopover
                   :open="plannedMenuSku === row.output_sku"
                   @update:open="(open: boolean) => plannedMenu(row, open)"
@@ -1371,12 +1522,9 @@ function fromPlannedMenu(action: () => void) {
                       :data-sku="row.output_sku"
                     >
                       {{ rowLabel(row) }}
-                      <b class="tnum">{{ plannedQtyLabel(row) }}</b>
-                      <span
-                        v-if="plannedStateLabel(row) !== 'Planejado'"
-                        class="op-micro text-muted-foreground"
-                        >({{ plannedStateLabel(row).toLowerCase() }})</span
-                      >
+                      <b class="tnum whitespace-nowrap">{{
+                        formatQty(plannedQtyLabel(row), row.output_unit)
+                      }}</b>
                       <Icon
                         v-if="rowCommittedUnits(row) > 0"
                         name="lucide:shopping-bag"
@@ -1393,9 +1541,12 @@ function fromPlannedMenu(action: () => void) {
                       {{ rowLabel(row) }}
                     </p>
                     <p class="px-2.5 pb-1.5 op-micro text-muted-foreground">
-                      {{ plannedStateLabel(row) }} {{ plannedQtyLabel(row)
+                      {{ plannedStateLabel(row) }}
+                      {{ formatQty(plannedQtyLabel(row), row.output_unit)
                       }}<template v-if="plannedNote(row)">
                         · {{ plannedNote(row) }}</template
+                      ><template v-if="plannedAsSuggested(row)">
+                        · como sugerido</template
                       >
                     </p>
                     <button
@@ -1433,7 +1584,57 @@ function fromPlannedMenu(action: () => void) {
                     </button>
                   </UiPopoverContent>
                 </UiPopover>
-              </template>
+                <span
+                  v-if="index < planGroups.planned.length - 1"
+                  class="pl-0.5 text-muted-foreground max-sm:hidden"
+                  aria-hidden="true"
+                  data-planned-separator
+                  >·</span
+                >
+              </span>
+              <span
+                v-if="allPlannedAsSuggested"
+                class="ml-2 op-label text-muted-foreground"
+                data-planned-as-suggested
+                >como sugerido</span
+              >
+              <!-- ⋮ da linha (v4 pino 8): corrigir e ver encomendas, um produto por vez. -->
+              <UiPopover v-model:open="plannedLineMenuOpen">
+                <UiPopoverTrigger as-child>
+                  <button
+                    type="button"
+                    class="ml-auto grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    aria-label="Planejados: corrigir um produto"
+                    data-planned-line-menu
+                  >
+                    <Icon name="lucide:ellipsis-vertical" class="size-5" />
+                  </button>
+                </UiPopoverTrigger>
+                <UiPopoverContent
+                  align="end"
+                  :side-offset="4"
+                  class="max-h-80 w-72 overflow-y-auto p-1.5"
+                >
+                  <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">
+                    Corrigir um planejado
+                  </p>
+                  <button
+                    v-for="row in planGroups.planned"
+                    :key="`menu-${row.output_sku}`"
+                    type="button"
+                    class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50"
+                    :disabled="!actionEnabled(row) || isBusy(row.output_sku)"
+                    @click="
+                      plannedLineMenuOpen = false;
+                      onAction(row);
+                    "
+                  >
+                    <Icon name="lucide:pencil" class="size-4 text-muted-foreground" />
+                    <span class="min-w-0 flex-1 truncate">{{ rowLabel(row) }}</span>
+                    <b class="tnum">{{ formatQty(plannedQtyLabel(row), row.output_unit) }}</b>
+                  </button>
+                </UiPopoverContent>
+              </UiPopover>
             </div>
           </template>
           <p
@@ -1451,13 +1652,14 @@ function fromPlannedMenu(action: () => void) {
           data-open-table
         >
           <div
-            class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_150px_110px_110px_170px]"
+            class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid"
+            :class="openCols"
             aria-hidden="true"
           >
             <span>Produto</span>
             <span>Situação</span>
             <span class="text-right">{{
-              lens.read.visible ? lens.read.label : ""
+              lens.read.visible ? (docked ? "Planej." : lens.read.label) : ""
             }}</span>
             <span class="text-right">{{
               lens.action.visible ? lens.action.label : ""
@@ -1467,24 +1669,43 @@ function fromPlannedMenu(action: () => void) {
           <div
             v-for="row in openGroups.rows"
             :key="row.output_sku"
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:h-14 lg:grid-cols-[minmax(0,1fr)_150px_110px_110px_170px] lg:py-0"
-            :class="openRowPending(row) ? '' : 'bg-success/5'"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:h-14 lg:py-0"
+            :class="[
+              openCols,
+              openRowPending(row) ? '' : 'bg-success/5',
+              docked && startRow?.output_sku === row.output_sku
+                ? 'shadow-[inset_4px_0_0_var(--primary)] bg-primary/5'
+                : '',
+            ]"
             data-open-row
             :data-sku="row.output_sku"
+            @pointerdown="onRowPress($event, row)"
+            @pointerup="cancelRowPress"
+            @pointerleave="cancelRowPress"
+            @pointercancel="cancelRowPress"
+            @contextmenu="onRowContextMenu($event, row)"
           >
             <div class="min-w-0" data-row-product>
               <p class="truncate op-title">{{ rowLabel(row) }}</p>
               <p class="flex items-center gap-1.5 op-micro text-muted-foreground">
                 <span class="truncate font-mono">{{ row.output_sku }}</span>
+                <!-- Celular e tablet em pé: sem a coluna Planejado, o número vem aqui. -->
+                <span
+                  v-if="row.started_qty === '0' && row.planned_qty !== '0' && lens.read.visible"
+                  class="shrink-0 tabular-nums lg:hidden"
+                  data-open-planned-compact
+                  >· {{ formatQty(row.planned_qty, row.output_unit) }} planejadas</span
+                >
                 <button
                   v-if="rowCommittedUnits(row) > 0"
                   type="button"
                   class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-info/12 px-2 text-xs font-semibold tabular-nums text-info transition hover:bg-info/20"
-                  :aria-label="`${rowCommittedUnits(row)} unidades de ${rowLabel(row)} comprometidas com pedidos`"
+                  :aria-label="`${commitmentChipLabel(row)}: unidades de ${rowLabel(row)} comprometidas com encomendas`"
+                  data-commitment-chip
                   @click="commitmentsRow = row"
                 >
                   <Icon name="lucide:shopping-bag" class="size-3" />
-                  {{ rowCommittedUnits(row) }} un. encomendadas
+                  {{ commitmentChipLabel(row) }}
                 </button>
               </p>
             </div>
@@ -1503,60 +1724,145 @@ function fromPlannedMenu(action: () => void) {
               v-if="lens.read.visible"
               class="hidden text-right text-lg font-semibold tabular-nums lg:block"
               :class="row.planned_qty === '0' ? 'text-muted-foreground' : ''"
-              >{{ cellQty(row.planned_qty) }}</span
+              >{{ row.planned_qty === "0" ? "—" : formatQty(row.planned_qty, row.output_unit) }}</span
             >
             <span v-else class="hidden lg:block" />
             <!-- Previsto: o número abre a conferência e o cancelamento do lote aberto. -->
             <span v-if="lens.action.visible" class="hidden justify-end lg:flex">
-              <button
-                v-if="row.started_qty !== '0' && actionEnabled(row)"
-                type="button"
-                class="inline-flex h-10 items-center gap-1.5 rounded-md px-2 text-lg font-semibold tabular-nums transition hover:bg-accent disabled:opacity-50"
-                :disabled="isBusy(row.output_sku)"
-                :aria-label="`Previsto ${row.started_qty} de ${rowLabel(row)}`"
-                @click="openStarted(row)"
-              >
-                {{ row.started_qty }}
-                <Icon name="lucide:circle-check" class="size-4 text-success" />
-              </button>
+              <span
+                v-if="row.started_qty !== '0'"
+                class="inline-flex items-center gap-1.5 text-lg font-semibold tabular-nums"
+                >{{ formatQty(row.started_qty, row.output_unit) }}
+                <Icon name="lucide:circle-check" class="size-4 text-success"
+              /></span>
               <span
                 v-else
-                class="text-lg font-semibold tabular-nums"
-                :class="row.started_qty === '0' ? 'text-muted-foreground' : ''"
+                class="text-lg font-semibold tabular-nums text-muted-foreground"
                 >{{ cellQty(row.started_qty) }}</span
               >
             </span>
             <span v-else class="hidden lg:block" />
-            <div class="flex items-center justify-end gap-2">
-              <!-- No celular e no tablet em pé o previsto vem junto da ação. -->
-              <button
-                v-if="
-                  row.started_qty !== '0' &&
-                  actionEnabled(row) &&
-                  lens.action.visible
-                "
-                type="button"
-                class="inline-flex h-11 items-center gap-1.5 rounded-md border border-border px-3 text-base font-semibold tabular-nums transition hover:bg-accent lg:hidden"
-                :disabled="isBusy(row.output_sku)"
-                :aria-label="`Previsto ${row.started_qty} de ${rowLabel(row)}`"
-                data-open-started-compact
-                @click="openStarted(row)"
-              >
-                {{ row.started_qty }}
-                <Icon name="lucide:circle-check" class="size-4 text-success" />
-              </button>
-              <button
-                v-if="row.planned_orders.length && actionEnabled(row)"
-                type="button"
-                class="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-                :disabled="isBusy(row.output_sku)"
-                :aria-label="`Confirmar ${rowLabel(row)}`"
-                @click="openStart(row)"
-              >
-                <Icon name="lucide:check" class="size-4" />
-                Confirmar
-              </button>
-            </div>
+            <UiPopover
+              :open="rowMenuSku === row.output_sku"
+              @update:open="(open: boolean) => (rowMenuSku = open ? row.output_sku : null)"
+            >
+              <UiPopoverAnchor as-child>
+                <div class="flex items-center justify-end gap-1.5">
+                  <!-- No celular e no tablet em pé o previsto vem junto da ação. -->
+                  <span
+                    v-if="row.started_qty !== '0' && lens.action.visible"
+                    class="inline-flex h-11 items-center gap-1.5 px-1 text-base font-semibold tabular-nums lg:hidden"
+                    data-open-started-compact
+                    >{{ formatQty(row.started_qty, row.output_unit) }}
+                    <Icon name="lucide:circle-check" class="size-4 text-success"
+                  /></span>
+                  <!-- Confirmando: o painel encaixado está aberto nesta linha (tablet deitado). -->
+                  <button
+                    v-if="docked && startRow?.output_sku === row.output_sku"
+                    type="button"
+                    class="inline-flex h-12 items-center justify-center gap-1.5 rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground"
+                    data-open-confirming
+                    @click="startRow = null"
+                  >
+                    Confirmando
+                    <Icon name="lucide:chevron-right" class="size-4" />
+                  </button>
+                  <button
+                    v-else-if="row.planned_orders.length && actionEnabled(row)"
+                    type="button"
+                    class="inline-flex items-center justify-center gap-2 rounded-md px-4 op-label font-semibold transition disabled:opacity-50"
+                    :class="
+                      docked
+                        ? 'h-12 border border-primary text-primary hover:bg-primary/10'
+                        : 'h-11 bg-primary text-primary-foreground hover:bg-primary/90'
+                    "
+                    :disabled="isBusy(row.output_sku)"
+                    :aria-label="`Confirmar ${rowLabel(row)}`"
+                    data-open-confirm
+                    @click="openStart(row)"
+                  >
+                    <Icon name="lucide:check" class="size-4" />
+                    Confirmar
+                  </button>
+                  <!-- Lote aberto: o que foi lançado, a um toque (v3 "não mudaram"). -->
+                  <button
+                    v-else-if="row.started_orders.length"
+                    type="button"
+                    class="hidden items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent sm:inline-flex"
+                    :class="docked ? 'h-12' : 'h-11'"
+                    :aria-label="`Ver lançamento de ${rowLabel(row)}`"
+                    data-open-view-launch
+                    @click="openStarted(row)"
+                  >
+                    Ver lançamento
+                  </button>
+                  <!-- ⋯ da linha; no tablet deitado o mesmo menu abre ao segurar a linha. -->
+                  <UiPopoverTrigger as-child>
+                    <button
+                      type="button"
+                      class="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                      :class="docked ? 'lg:hidden' : ''"
+                      :aria-label="`Mais ações de ${rowLabel(row)}`"
+                      data-open-row-menu
+                    >
+                      <Icon name="lucide:ellipsis-vertical" class="size-5" />
+                    </button>
+                  </UiPopoverTrigger>
+                </div>
+              </UiPopoverAnchor>
+              <UiPopoverContent align="end" :side-offset="4" class="w-64 p-1.5">
+                <div role="menu" :data-open-row-menu-panel="row.output_sku">
+                  <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">
+                    {{ rowLabel(row) }}
+                  </p>
+                  <button
+                    v-if="row.started_orders.length"
+                    type="button"
+                    role="menuitem"
+                    :class="MENU_ITEM"
+                    @click="fromRowMenu(() => openStarted(row))"
+                  >
+                    <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
+                    Ver lançamento
+                  </button>
+                  <button
+                    v-if="row.planned_orders.length && actionEnabled(row)"
+                    type="button"
+                    role="menuitem"
+                    :class="MENU_ITEM"
+                    @click="fromRowMenu(() => openStart(row))"
+                  >
+                    <Icon name="lucide:check" class="size-4 text-muted-foreground" />
+                    Confirmar previsto
+                  </button>
+                  <button
+                    v-if="rowCommittedUnits(row) > 0"
+                    type="button"
+                    role="menuitem"
+                    :class="MENU_ITEM"
+                    @click="fromRowMenu(() => (commitmentsRow = row))"
+                  >
+                    <Icon name="lucide:shopping-bag" class="size-4 text-muted-foreground" />
+                    Ver encomendas ({{ rowCommittedUnits(row) }} un.)
+                  </button>
+                  <div
+                    v-if="rowVoidable(row)"
+                    class="mt-1.5 border-t border-border pt-1.5"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      :class="[MENU_ITEM, 'text-destructive hover:bg-destructive/10']"
+                      data-open-row-void
+                      @click="fromRowMenu(() => openVoid(row))"
+                    >
+                      <Icon name="lucide:undo-2" class="size-4" />
+                      Cancelar lote…
+                    </button>
+                  </div>
+                </div>
+              </UiPopoverContent>
+            </UiPopover>
           </div>
           <p
             v-if="!openGroups.rows.length"
@@ -1566,6 +1872,14 @@ function fromPlannedMenu(action: () => void) {
           </p>
         </div>
         <p
+          v-if="stage === 'open' && docked && openGroups.rows.length"
+          class="mt-2.5 flex items-center gap-2 op-micro text-muted-foreground"
+          data-open-press-hint
+        >
+          <Icon name="lucide:pointer" class="size-4" />
+          Pressione e segure uma linha: Ver lançamento · Ver encomendas · Cancelar lote.
+        </p>
+        <p
           v-if="query && !stageRows.length"
           class="mt-3 text-center op-body text-muted-foreground"
         >
@@ -1573,6 +1887,140 @@ function fromPlannedMenu(action: () => void) {
         </p>
       </template>
     </section>
+
+    <!-- Painel de confirmação encaixado (tablet deitado): lote em blocos, quantidade
+         com − / + de 56 px, numérico na tela e "Confirmar N un." no polegar. -->
+    <aside
+      v-if="docked && startRow"
+      class="flex w-[392px] shrink-0 flex-col border-l border-border bg-card"
+      aria-label="Confirmar o previsto"
+      data-open-confirm-panel
+    >
+      <header class="flex items-start gap-3 border-b border-border px-5 pt-4 pb-3.5">
+        <div class="min-w-0 flex-1">
+          <p class="op-eyebrow text-muted-foreground">Quanto está previsto?</p>
+          <h2 class="truncate op-heading leading-tight">
+            {{ rowLabel(startRow) }}
+          </h2>
+          <p class="op-micro text-muted-foreground">
+            {{ startRow.output_sku }} · esta quantidade segue para o Fechamento.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="grid size-12 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="Fechar"
+          @click="
+            startRow = null;
+            selectedStartPk = null;
+          "
+        >
+          <Icon name="lucide:x" class="size-5" />
+        </button>
+      </header>
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+        <template v-if="startRow.planned_orders.length > 1">
+          <p class="op-label text-muted-foreground">Lote que vai confirmar</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              v-for="workOrder in startRow.planned_orders"
+              :key="workOrder.pk"
+              type="button"
+              class="flex min-h-14 flex-col items-start justify-center rounded-lg border px-3 py-2 text-left transition"
+              :class="
+                selectedStartPk === workOrder.pk
+                  ? 'border-2 border-primary bg-primary/10'
+                  : 'border-border bg-muted/40 hover:bg-accent'
+              "
+              :aria-pressed="selectedStartPk === workOrder.pk"
+              @click="selectStartWorkOrder(workOrder)"
+            >
+              <span class="flex w-full items-center justify-between op-title">
+                #{{ workOrder.ref }}
+                <Icon
+                  v-if="selectedStartPk === workOrder.pk"
+                  name="lucide:circle-check"
+                  class="size-4 text-primary"
+                />
+              </span>
+              <span class="op-micro text-muted-foreground"
+                >planejado {{ workOrder.planned_qty }} un.</span
+              >
+            </button>
+          </div>
+        </template>
+        <p v-else-if="selectedStartOrder" class="op-label text-muted-foreground">
+          Lote #{{ selectedStartOrder.ref }} · planejado {{ selectedStartOrder.planned_qty }} un.
+        </p>
+        <template v-if="selectedStartOrder">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card op-figure font-bold transition hover:bg-accent"
+              aria-label="Diminuir"
+              @click="bump('start', -1)"
+            >
+              −
+            </button>
+            <input
+              ref="startQtyInput"
+              v-model="startQty"
+              type="text"
+              inputmode="none"
+              class="h-14 w-full rounded-lg border-2 border-primary bg-background text-center text-4xl font-bold tabular-nums outline-none"
+              aria-label="Quantidade prevista"
+              @keydown.enter.prevent="confirmStart()"
+            />
+            <button
+              type="button"
+              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card op-figure font-bold transition hover:bg-accent"
+              aria-label="Aumentar"
+              @click="bump('start', 1)"
+            >
+              +
+            </button>
+          </div>
+          <p v-if="startDiverges" class="op-label text-muted-foreground">
+            Diferente do planejado ({{ selectedStartOrder.planned_qty }}). É rendimento, não perda.
+          </p>
+          <OperatorNumpad
+            class="[&_button]:h-14! [&_button]:op-figure"
+            subject="quantidade prevista"
+            @digit="startDigit"
+            @backspace="startBackspace"
+            @clear="startClear"
+          />
+        </template>
+      </div>
+      <footer class="flex gap-2 border-t border-border px-5 py-4">
+        <UiButton
+          type="button"
+          variant="outline"
+          class="h-14 flex-1"
+          @click="
+            startRow = null;
+            selectedStartPk = null;
+          "
+        >
+          Cancelar
+        </UiButton>
+        <UiButton
+          type="button"
+          class="h-14 flex-[1.6] text-base"
+          :disabled="startSubmitting || !startReady"
+          data-open-confirm-submit
+          @click="confirmStart()"
+        >
+          <Icon name="lucide:check" class="size-5" />
+          {{
+            startSubmitting
+              ? "Confirmando…"
+              : `Confirmar ${formatQtyUnit(startQty || "0", startRow.output_unit)}`
+          }}
+        </UiButton>
+      </footer>
+    </aside>
+    </div>
 
     <!-- planejar -->
     <UiDialog
@@ -1710,7 +2158,7 @@ function fromPlannedMenu(action: () => void) {
 
     <!-- Confirmar: o previsto abre o lote e segue para o Fechamento (evento interno: start) -->
     <UiDialog
-      :open="startRow != null"
+      :open="startRow != null && !docked"
       @update:open="
         (v) => {
           if (!v) {
@@ -1831,14 +2279,20 @@ function fromPlannedMenu(action: () => void) {
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle
-            >Lote aberto ·
+            >{{ startedRow?.started_orders.length ? "Lote aberto" : "Lote planejado" }} ·
             {{ startedRow ? rowLabel(startedRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription>
-            <template v-if="selectedStartedOrder">
+            <template v-if="selectedStartedOrder && selectedStartedOrder.started_qty">
               #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
               {{ selectedStartedOrder.started_qty }} un. previstas seguem para o
-              Fechamento
+              Fechamento<template v-if="selectedStartedOrder.started_at_display">
+                · lançado {{ selectedStartedOrder.started_at_display }}</template
+              >
+            </template>
+            <template v-else-if="selectedStartedOrder">
+              #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
+              {{ selectedStartedOrder.planned_qty }} un. planejadas
             </template>
             <template v-else>Selecione o lote.</template>
           </UiDialogDescription>
@@ -1847,14 +2301,14 @@ function fromPlannedMenu(action: () => void) {
         <div
           v-if="
             startedRow &&
-            startedRow.started_orders.length > 1 &&
+            startedDialogOrders.length > 1 &&
             !selectedStartedOrder
           "
           class="grid gap-2"
         >
           <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
-            v-for="workOrder in startedRow.started_orders"
+            v-for="workOrder in startedDialogOrders"
             :key="workOrder.pk"
             type="button"
             class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
@@ -1862,7 +2316,7 @@ function fromPlannedMenu(action: () => void) {
           >
             <span class="font-medium">#{{ workOrder.ref }}</span>
             <span class="tabular-nums text-muted-foreground"
-              >{{ workOrder.started_qty }} un.</span
+              >{{ workOrder.started_qty || workOrder.planned_qty }} un.</span
             >
           </button>
         </div>
@@ -1872,9 +2326,11 @@ function fromPlannedMenu(action: () => void) {
             class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm text-warning"
           >
             <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-            <span
-              >O lote volta atrás e o vínculo com pedidos é desfeito.</span
-            >
+            <span>{{
+              startedRow?.started_orders.length
+                ? "O lote volta atrás e o vínculo com pedidos é desfeito."
+                : "O lote planejado sai do dia e o vínculo com pedidos é desfeito."
+            }}</span>
           </p>
           <UiTextarea
             v-model="voidReason"

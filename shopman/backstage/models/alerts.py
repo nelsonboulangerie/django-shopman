@@ -237,6 +237,10 @@ class OperatorAlert(models.Model):
         # a venda começa; a hora morta ficava descoberta — ninguém inicia venda,
         # ninguém vê a gaveta, e ela passa a tarde aberta.
         ("pos_drawer_left_open", "Gaveta ficou aberta sem ninguém vender"),
+        # O caixa fechou com diferença acima da tolerância da loja
+        # (services/cash_tolerance.py). Público ``finance``: o operador nunca vê
+        # o veredito, o fechamento continua cego para quem conta.
+        ("cash_out_of_tolerance", "Caixa fechou fora da tolerância"),
         # Fila de espera: a vaga que volta é decisão da loja (servir o próximo
         # ou pôr na gôndola), e por isso a liberação NUNCA é silenciosa — o
         # cliente recebe aviso e a loja recebe este alerta. O tipo existia no
@@ -322,6 +326,7 @@ class OperatorAlert(models.Model):
         "payment_after_cancel",
         "cash_shift_open_at_closing",
         "cash_sale_after_shift_close",
+        "cash_out_of_tolerance",
         "bi_cash_variance",
     }
     ORDER_TYPES = {

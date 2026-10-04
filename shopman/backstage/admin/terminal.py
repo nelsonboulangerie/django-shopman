@@ -10,12 +10,15 @@ hardware. Um Admin só para o terminal, e o hardware onde a superfície manda.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from shopman.cashman.models import Terminal
 from shopman.utils import unfold_badge, unfold_link
 from unfold.widgets import (
+    UnfoldAdminDecimalFieldWidget,
     UnfoldAdminIntegerFieldWidget,
     UnfoldAdminSelectWidget,
     UnfoldAdminURLInputWidget,
@@ -225,6 +228,35 @@ class TerminalForm(forms.ModelForm):
         ),
     )
 
+    cash_tolerance_percent = forms.DecimalField(
+        label="Tolerância do caixa (% do dinheiro do dia)",
+        required=False,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        max_digits=5,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Em branco = a da loja (Configurações da loja, Ponto de venda). Padrão: 0,5%.",
+    )
+    cash_tolerance_min = forms.DecimalField(
+        label="Tolerância mínima (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Em branco = a da loja. Padrão: R$ 2,00.",
+    )
+    cash_tolerance_max = forms.DecimalField(
+        label="Tolerância máxima (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Em branco = a da loja. Padrão: R$ 20,00.",
+    )
+
     class Meta:
         model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
@@ -264,6 +296,12 @@ class TerminalForm(forms.ModelForm):
         self.fields["printer_label_width_mm"].initial = int(printer.get("label_width_mm") or 60)
         self.fields["printer_label_height_mm"].initial = int(printer.get("label_height_mm") or 40)
         self.fields["printer_cut_mode"].initial = str(printer.get("label_cut_mode") or "none")
+        tolerance = metadata.get("cash_tolerance") if isinstance(metadata.get("cash_tolerance"), dict) else {}
+        if tolerance.get("percent") not in (None, ""):
+            self.fields["cash_tolerance_percent"].initial = Decimal(str(tolerance["percent"]))
+        for field_name, key in (("cash_tolerance_min", "min_q"), ("cash_tolerance_max", "max_q")):
+            if isinstance(tolerance.get(key), int):
+                self.fields[field_name].initial = Decimal(int(tolerance[key])) / 100
 
     def _station_config(self) -> dict:
         """O bloco ``station`` do terminal — de outro dono, e preservado inteiro.
@@ -356,6 +394,9 @@ class TerminalForm(forms.ModelForm):
                 "Este destino não aceita mais etiquetas de preparação (inativo ou sem "
                 "impressora). Escolha outro ou volte para o automático.",
             )
+        low, high = cleaned.get("cash_tolerance_min"), cleaned.get("cash_tolerance_max")
+        if low is not None and high is not None and high < low:
+            self.add_error("cash_tolerance_max", "A tolerância máxima não pode ficar abaixo da mínima.")
         if cleaned.get("drawer_adapter") == ADAPTER_AGENT or cleaned.get("printer_enabled"):
             if not (cleaned.get("counter_agent_url") or "").strip():
                 self.add_error("counter_agent_url", "Informe o endereço do agente.")
@@ -479,6 +520,20 @@ class TerminalForm(forms.ModelForm):
             metadata["station"] = station
         else:
             metadata.pop("station", None)
+        # A tolerância do caixa DESTE terminal, por cima da da loja, chave a
+        # chave (services/cash_tolerance.policy_for). Campo vazio = vale a loja.
+        tolerance = {}
+        percent = self.cleaned_data.get("cash_tolerance_percent")
+        if percent is not None:
+            tolerance["percent"] = format(percent.normalize(), "f")
+        for field_name, key in (("cash_tolerance_min", "min_q"), ("cash_tolerance_max", "max_q")):
+            value = self.cleaned_data.get(field_name)
+            if value is not None:
+                tolerance[key] = int((Decimal(value) * 100).to_integral_value())
+        if tolerance:
+            metadata["cash_tolerance"] = tolerance
+        else:
+            metadata.pop("cash_tolerance", None)
         instance.metadata = metadata
         if commit:
             instance.save()
@@ -527,6 +582,17 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
                 "description": "O teste da gaveta fica no próprio PDV (antesala do caixa): só o navegador do balcão alcança o agente local.",
+            },
+        ),
+        (
+            "Tolerância do caixa",
+            {
+                "fields": ("cash_tolerance_percent", ("cash_tolerance_min", "cash_tolerance_max")),
+                "description": (
+                    "Quanto de diferença no fechamento este caixa aceita sem alerta. Vale por cima "
+                    "da tolerância da loja; em branco, vale a da loja. O operador nunca vê o "
+                    "veredito: o fechamento continua cego, e o resultado sai no relatório do turno."
+                ),
             },
         ),
         (

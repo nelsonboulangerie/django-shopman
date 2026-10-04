@@ -209,6 +209,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // se decide ONDE ela morde — no `openTab` E no primeiro item de uma venda sem
   // comanda, que neste balcão é a venda comum (ver `addProduct`).
   const drawerLock = useDrawerLock({ drawer, actions, action });
+  // Abrir a gaveta com autoria, de qualquer posto: no Balcão pelo agente local,
+  // no tablet pelo relay do servidor. Toda abertura entra no livro-caixa.
+  const drawerOpening = useDrawerOpening({ pos, actions, action, drawer });
   // O olho da hora morta: a trava só age quando alguém tenta vender, e gaveta
   // aberta no balcão parado não seria vista por ninguém.
   useDrawerIdleWatch({
@@ -2975,8 +2978,16 @@ export function usePosSale(deps: PosSaleDeps) {
         // do snapshot congelado, não do cart, que a linha abaixo já zerou.
         // Sem await: a venda terminou, e a tela não espera o spooler.
         // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
-        if (cashLandedInDrawer(receipt.payments) && drawer.opensOnCashSale.value) {
-          void drawer.kick("cash_sale");
+        //
+        // No TABLET (o agente do Balcão não está nesta máquina) ela NUNCA abre
+        // sozinha: o atendente ainda está na mesa. A venda vira o cartão
+        // "Dinheiro da comanda · leve ao Balcão", e ele toca "Abrir gaveta do
+        // Balcão" na frente da gaveta (`useDrawerOpening`, pulso pelo relay).
+        if (cashLandedInDrawer(receipt.payments)) {
+          void drawerOpening.afterCashSale(
+            { orderRef, tabDisplay: receipt.tabDisplay || "", changeQ: Math.max(0, result.value?.changeQ ?? 0) },
+            drawer.opensOnCashSale.value,
+          );
         }
         resetCart();
         try {
@@ -3351,6 +3362,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabInput,
     busy,
     drawerLock,
+    drawerOpening,
     saving,
     pixStatus,
     unsaved,

@@ -29,6 +29,29 @@ CODE_PAGE = 3
 ENCODING = "cp860"
 COLUMNS = 48
 
+#: O pulso do solenoide da gaveta vai em unidades de 2 ms, uma por byte.
+_PULSE_UNIT_MS = 2
+_PULSE_MAX_UNITS = 255
+
+
+def drawer_kick(*, pin: int = 0, on_ms: int = 50, off_ms: int = 500) -> bytes:
+    """``ESC p m t1 t2``: os cinco bytes que abrem a gaveta pendurada na impressora.
+
+    O mesmo comando que o agente monta para o chute local
+    (``tools/pos-counter-agent/counter_agent.py::kick_bytes``), aqui composto
+    pelo servidor para o pulso pelo relay (``services/drawer_pulse.py``): o
+    agente recebe bytes prontos e não sabe que é gaveta. ``on_ms``/``off_ms``
+    são milissegundos de verdade (o default 50/500 é ``1B 70 00 19 FA``), e o
+    teto é o de um byte (510 ms), porque segurar o solenoide aquece a bobina.
+    """
+    if pin not in (0, 1):
+        raise ValueError("pino da gaveta deve ser 0 (pino 2) ou 1 (pino 5)")
+
+    def units(value_ms: int) -> int:
+        return max(1, min(_PULSE_MAX_UNITS, int(value_ms) // _PULSE_UNIT_MS))
+
+    return bytes([ESC, ord("p"), pin, units(on_ms), units(off_ms)])
+
 
 def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: bool = False) -> bytes:
     """Comprovante de movimento de gaveta (sangria, suprimento) a partir da linha do livro.
@@ -203,6 +226,14 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     )
 
 
+LOT_LABEL_PREFIX = "shopman-lote:"
+
+
+def lot_label_payload(output_sku: str) -> str:
+    """O conteúdo do QR da etiqueta de preparo (lido pelo Fechamento)."""
+    return f"{LOT_LABEL_PREFIX}{output_sku}"
+
+
 def production_label_run(
     document: dict,
     *,
@@ -269,6 +300,11 @@ def production_label_run(
             annotation = str(ingredient.get("annotation") or "")
             if annotation:
                 out += _line(f"  {annotation}")
+        if mode == "explicit" and ticket.get("output_sku"):
+            # O QR do lote: o Fechamento lê ("Ler etiqueta do lote") e abre o
+            # Finalizar deste produto. Só na etiqueta de preparo; a cega não pode
+            # carregar o SKU do que se pesa.
+            out += _qr(lot_label_payload(str(ticket["output_sku"])), module=4)
         out += bytes([ESC, ord("d"), 3])
         if cut_mode == "partial":
             out += bytes([GS, ord("V"), 1])

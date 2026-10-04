@@ -11,7 +11,7 @@ import type {
   ProductionShortageError,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
-import { isStale, isoForOffset } from "~/presentation/production";
+import { isStale, isoForOffset, matchLotCode } from "~/presentation/production";
 import {
   periodAnchor,
   periodOfDay,
@@ -113,17 +113,8 @@ function ovenFactAvailable(order: QCOrderCardProjection): boolean {
   );
 }
 
-// Posição/forno só quando as fornadas ABERTAS divergem: igual em tudo (ou só
-// nas fechadas, que nem mostram posição) é ruído puro.
-const showPosition = computed(
-  () =>
-    new Set(
-      (kiosk.value?.orders ?? [])
-        .filter((o) => !o.closed)
-        .map((o) => o.position_ref)
-        .filter(Boolean),
-    ).size > 1,
-);
+// O forno do lote aparece sempre, pelo nome (v3 celular a: "Forno 2 · …"): é
+// por ele que o forneiro acha a assadeira.
 
 async function openOrder(order: QCOrderCardProjection) {
   if (!finishAvailable(order) || ovenFacts.isPending(order.pk)) return;
@@ -147,6 +138,23 @@ function openOffPlan(recipe: RecipeOptionProjection) {
   recipePickerOpen.value = false;
   selectedRecipe.value = recipe;
   selectedOrder.value = null;
+}
+
+// ── Etiqueta do lote ────────────────────────────────────────────────────────
+const scannerOpen = ref(false);
+function onLotCode(code: string) {
+  const order = matchLotCode(code, openOrders.value);
+  if (!order) {
+    useSonner.error("Nenhum lote aberto com este código nesta data.");
+    return;
+  }
+  scannerOpen.value = false;
+  void openOrder(order);
+}
+function seenAtLabel(order: QCOrderCardProjection): string {
+  const seenAt = oven.get(ovenKey(order))?.seenAt;
+  if (!seenAt) return "";
+  return new Date(seenAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
 function backToBoard() {
@@ -220,10 +228,11 @@ const screenTitle = computed(
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
   if (!order) return selectedRecipe.value ? "Lote avulso" : "";
+  // "CRO · lote #WO-118 · Forno 2" (v3 celular b).
   const bits = [
     order.output_sku,
-    showPosition.value ? order.position_ref : "",
-    order.started_at_display,
+    `lote #${order.ref}`,
+    order.position_name || order.position_ref,
   ].filter(Boolean);
   return bits.join(" · ");
 });
@@ -400,7 +409,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       v-model:query="query"
       title="Fechamento"
       :count="openOrders.length"
-      count-label="lotes para finalizar"
+      count-label="para finalizar"
       :progress="
         kiosk && kiosk.total_count > 0
           ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
@@ -413,6 +422,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       <template v-if="!(selectedOrder || selectedRecipe)" #actions>
         <OperatorPeriodPicker
           v-model="period"
+          class="[&_[data-period-today]]:hidden"
           :presets="['day']"
           :today="todayISO"
           :max="todayISO"
@@ -545,15 +555,17 @@ function onTimerKeydown(event: KeyboardEvent) {
                 order.output_sku
               }}</span>
             </p>
-            <p class="op-label text-muted-foreground">
-              Lote {{ order.ref }}
-              <template v-if="showPosition && order.position_ref">
-                · {{ order.position_ref }}</template
+            <!-- "Forno 2 · aberto às 05:10 · 6 comprometidas" (R17/R18): o forno pelo
+                 nome, sem o código do lote quebrando a linha (ele fica no ⋯ do
+                 Finalizar e no leitor). -->
+            <p class="op-label text-muted-foreground" data-close-card-line>
+              <template v-if="order.position_name || order.position_ref"
+                >{{ order.position_name || order.position_ref }} ·
+              </template>
+              <template v-if="order.started_at_display"
+                >aberto às {{ order.started_at_display }}</template
               >
-              <template v-if="order.started_at_display">
-                · aberto às {{ order.started_at_display }}</template
-              >
-              <template v-else> · ainda não aberto</template>
+              <template v-else>ainda não aberto</template>
               <template
                 v-if="order.committed_qty && order.committed_qty !== '0'"
               >
@@ -565,35 +577,57 @@ function onTimerKeydown(event: KeyboardEvent) {
             </p>
             <p
               v-if="ovenFactAvailable(order)"
-              class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3 op-figure"
+              class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3"
               :class="
                 ovenMode(order) === 'ringing'
-                  ? 'text-destructive'
+                  ? 'op-figure text-destructive'
                   : ovenMode(order) === 'idle'
-                    ? 'text-muted-foreground'
-                    : 'text-foreground'
+                    ? 'op-title text-muted-foreground'
+                    : ovenMode(order) === 'seen'
+                      ? 'op-title border-solid border-success/40 bg-success/10 text-success'
+                      : 'op-figure text-foreground'
               "
             >
-              <Icon name="lucide:alarm-clock" class="size-5" />
+              <Icon
+                :name="ovenMode(order) === 'seen' ? 'lucide:alarm-clock-check' : 'lucide:alarm-clock'"
+                class="size-5"
+              />
               <template v-if="ovenMode(order) === 'ringing'"
                 >Tempo esgotado</template
               >
-              <template v-else-if="ovenMode(order) === 'seen'">Visto</template>
-              <template v-else-if="ovenMode(order) === 'running'">{{
-                oven.remainingLabel(ovenKey(order))
-              }}</template>
-              <template v-else>Iniciar</template>
+              <template v-else-if="ovenMode(order) === 'seen'"
+                >Visto<span
+                  v-if="seenAtLabel(order)"
+                  class="ml-2 op-micro font-normal text-muted-foreground"
+                  >às {{ seenAtLabel(order) }}</span
+                ></template
+              >
+              <template v-else-if="ovenMode(order) === 'running'"
+                ><span class="tnum">{{ oven.remainingLabel(ovenKey(order)) }}</span
+                ><span class="ml-1 op-micro font-normal text-muted-foreground"
+                  >restante</span
+                ></template
+              >
+              <template v-else>Iniciar timer</template>
             </p>
           </component>
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <!-- Tile de 80px mostra quantidade e encerra a fornada com mão ocupada. -->
+          <!-- O próximo lote tem o Finalizar cheio (a primária da tela); os outros,
+               contornado (v3 celular a). -->
           <button
             type="button"
-            class="group flex h-20 w-28 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-lg border border-primary/40 bg-primary/10 transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
-            :class="{
-              'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
-                !finishAvailable(order) || ovenFacts.isPending(order.pk),
-            }"
+            class="group flex h-20 w-28 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-lg border transition active:translate-y-px"
+            :class="[
+              order.pk === nextPk
+                ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'border-primary/40 bg-primary/10 hover:border-primary hover:bg-primary hover:text-primary-foreground',
+              {
+                'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
+                  !finishAvailable(order) || ovenFacts.isPending(order.pk),
+              },
+            ]"
+            :data-close-finish-next="order.pk === nextPk ? '' : undefined"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
             :aria-label="`Finalizar o lote de ${order.recipe_name}`"
@@ -603,7 +637,8 @@ function onTimerKeydown(event: KeyboardEvent) {
               >{{ cardAnchor(order) }} un.</span
             >
             <span
-              class="op-eyebrow text-foreground group-hover:text-primary-foreground"
+              class="op-eyebrow group-hover:text-primary-foreground"
+              :class="order.pk === nextPk ? 'text-primary-foreground' : 'text-foreground'"
               >{{
                 ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
               }}</span
@@ -612,6 +647,24 @@ function onTimerKeydown(event: KeyboardEvent) {
         </div>
       </div>
     </div>
+
+    <!-- "Ler etiqueta do lote" (R19): a câmera lê o QR da etiqueta de preparo e abre
+         o Finalizar daquele lote. -->
+    <div
+      v-if="!(selectedOrder || selectedRecipe) && openOrders.length"
+      class="mx-auto w-full max-w-4xl px-3 pb-4 md:px-4"
+    >
+      <button
+        type="button"
+        class="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-card op-title transition hover:bg-accent"
+        data-close-scan-label
+        @click="scannerOpen = true"
+      >
+        <Icon name="lucide:scan-qr-code" class="size-5" />
+        Ler etiqueta do lote
+      </button>
+    </div>
+    <LotLabelScanner v-model:open="scannerOpen" @code="onLotCode" />
 
     <!-- Lote avulso: lista de receitas, nasce sem previsto. -->
     <UiSheet

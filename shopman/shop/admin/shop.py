@@ -752,6 +752,37 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "Também depende do adapter fiscal estar pronto."
         ),
     )
+    fields["defaults_pos_cash_tolerance_percent"] = forms.DecimalField(
+        label="Tolerância do caixa (% do dinheiro do dia)",
+        required=False,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        max_digits=5,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text=(
+            "Diferença no fechamento que o gerente aceita sem alerta, em % do dinheiro que "
+            "entrou na gaveta no dia. Em branco = padrão (0,5%). Cada terminal pode ter a sua."
+        ),
+    )
+    fields["defaults_pos_cash_tolerance_min"] = forms.DecimalField(
+        label="Tolerância mínima do caixa (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Piso da tolerância, para dia de pouco dinheiro. Em branco = padrão (R$ 2,00).",
+    )
+    fields["defaults_pos_cash_tolerance_max"] = forms.DecimalField(
+        label="Tolerância máxima do caixa (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Teto da tolerância, para dia de muito dinheiro. Em branco = padrão (R$ 20,00).",
+    )
     fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
         label="Emissão avulsa de NFC-e: dias depois da venda",
         required=False,
@@ -1433,6 +1464,18 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
 
+        if self._has("defaults_pos_cash_tolerance_percent"):
+            pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
+            tolerance = pos_cfg.get("cash_tolerance") if isinstance(pos_cfg.get("cash_tolerance"), dict) else {}
+            if tolerance.get("percent") not in (None, ""):
+                self.fields["defaults_pos_cash_tolerance_percent"].initial = Decimal(str(tolerance["percent"]))
+            for field_name, key in (
+                ("defaults_pos_cash_tolerance_min", "min_q"),
+                ("defaults_pos_cash_tolerance_max", "max_q"),
+            ):
+                if isinstance(tolerance.get(key), int):
+                    self.fields[field_name].initial = Decimal(int(tolerance[key])) / 100
+
         if self._has("defaults_pos_late_fiscal_emission_days"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             # Mostra o GRAVADO; ausente fica em branco (= mesmo dia, dito na ajuda).
@@ -1974,9 +2017,28 @@ class ShopForm(forms.ModelForm):
             self._has("defaults_pos_discount_approval_threshold_q")
             or self._has("defaults_pos_fiscal_toggle")
             or self._has("defaults_pos_late_fiscal_emission_days")
+            or self._has("defaults_pos_cash_tolerance_percent")
         ):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             pos_cfg = dict(pos_cfg)
+            if self._has("defaults_pos_cash_tolerance_percent"):
+                # Campo vazio = vale o padrão do dono (0,5%, R$ 2, R$ 20), lido em
+                # ``backstage/services/cash_tolerance.py``. Só grava o que foi dito.
+                tolerance = {}
+                percent = self.cleaned_data.get("defaults_pos_cash_tolerance_percent")
+                if percent is not None:
+                    tolerance["percent"] = format(Decimal(percent).normalize(), "f")
+                for field_name, key in (
+                    ("defaults_pos_cash_tolerance_min", "min_q"),
+                    ("defaults_pos_cash_tolerance_max", "max_q"),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is not None:
+                        tolerance[key] = int((Decimal(value) * 100).to_integral_value())
+                if tolerance:
+                    pos_cfg["cash_tolerance"] = tolerance
+                else:
+                    pos_cfg.pop("cash_tolerance", None)
             if self._has("defaults_pos_discount_approval_threshold_q"):
                 threshold = self.cleaned_data.get("defaults_pos_discount_approval_threshold_q")
                 if threshold is None:
@@ -2515,12 +2577,16 @@ _POS_FIELDSETS = (
                 "defaults_pos_discount_approval_threshold_q",
                 "defaults_pos_fiscal_toggle",
                 "defaults_pos_late_fiscal_emission_days",
+                "defaults_pos_cash_tolerance_percent",
+                ("defaults_pos_cash_tolerance_min", "defaults_pos_cash_tolerance_max"),
             ),
             "description": (
                 "Políticas do balcão. O limite de aprovação vale para descontos "
                 "manuais aplicados no PDV: acima dele, é preciso o PIN do gerente. "
                 "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado. "
-                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente."
+                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente. "
+                "A tolerância do caixa decide o que vira alerta no fechamento; o operador nunca "
+                "vê o veredito (fechamento cego), só o relatório do turno."
             ),
         },
     ),
