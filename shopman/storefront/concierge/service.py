@@ -1057,6 +1057,10 @@ def run_turn(
                     ack_text = "" if reviewed_ack.held else reviewed_ack.texts[0]
             else:
                 meter.layer = metrics.LAYER_AGENT_HANDOFF
+                # Quem chamou a equipe pode ter montado o aviso com o motivo (a
+                # Concierge recusando o acréscimo numa encomenda): ele substitui o
+                # padrão e passa pelas regras da casa em ``_prepare_reply``.
+                ack_text = getattr(outcome, "handoff_ack", "") or ""
             mark_handoff(
                 conversation,
                 binding,
@@ -1474,9 +1478,11 @@ def mark_handoff(
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
 
-    ``ack_text`` substitui o aviso de atendimento humano da casa: intenções no plural,
-    em que o aviso leva as dúvidas já respondidas e a frase de que a equipe foi chamada
-    (já conferido pelas regras da casa por quem chama).
+    ``ack_text`` substitui o aviso de atendimento humano da casa
+    (``CONCIERGE_HANDOFF_ACK``): intenções no plural, em que o aviso leva as dúvidas
+    já respondidas e a frase de que a equipe foi chamada, e a Concierge recusando o
+    acréscimo numa encomenda (o motivo e "já chamei a equipe"). Passa pelas regras
+    da casa como qualquer aviso de handoff.
 
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
     ``house_rules_held`` é a resposta que as regras da casa seguraram
@@ -1553,7 +1559,7 @@ def mark_handoff(
             consumed,
             purpose="handoff_ack",
         )
-        ack = ack_text or copy_message("CONCIERGE_HANDOFF_ACK")
+        ack = (ack_text or "").strip() or copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:
             _dispatch_reply(
                 current,
