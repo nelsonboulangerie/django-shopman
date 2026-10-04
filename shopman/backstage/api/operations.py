@@ -754,6 +754,7 @@ class OperatorSessionView(APIView):
         lock_key = _surface_lock_key(required_perm)
         locked = bool(
             operador is None
+            or operator_session.is_device_locked(request)
             or (
                 lock_key
                 and operator_session.is_capability_locked(request, lock_key)
@@ -955,13 +956,21 @@ class OperatorUnlockView(APIView):
 
 
 class OperatorLockView(APIView):
-    """Trava só a superfície pedida; a sessão compartilhada continua viva."""
+    """Trava só a superfície pedida; a sessão compartilhada continua viva.
+
+    ``{"scope": "device"}`` (o Bloquear da Central, V6-KIT) trava o dispositivo
+    inteiro: toda superfície desta sessão passa a pedir PIN/crachá, até alguém
+    provar a identidade em qualquer uma delas.
+    """
 
     permission_classes = [IsBackstageOperator]
 
     def post(self, request):
         from shopman.backstage.services import operator_session
 
+        if (request.data or {}).get("scope") == "device":
+            operator_session.lock_device(request)
+            return Response({"ok": True})
         perm, valid = _validated_unlock_perm((request.data or {}).get("perm"))
         if not valid or perm is None:
             return Response({"detail": "Permissão de operador inválida."}, status=400)

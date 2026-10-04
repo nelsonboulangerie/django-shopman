@@ -64,6 +64,14 @@ export interface OperatorSection {
    * operação"). Na barra do polegar entra no fim, como as outras.
    */
   foot?: boolean;
+  /**
+   * Onde a seção aparece (V6-KIT). Omitido: no rail e na barra do polegar. `rail`: só no
+   * rail (ex.: a Tela do cliente do PDV, que abre no segundo monitor e não cabe no
+   * bolso). `bar`: só na barra de baixo (ex.: o Fim do dia do PDV no tablet em pé).
+   */
+  where?: "rail" | "bar";
+  /** Um traço acima desta seção no rail (v4 `salao-mesas4.html`: Caixa · traço · Ajustes). */
+  divider?: boolean;
 }
 
 /** `/pedidos/` e `/pedidos` são a mesma tela. Uma normalização só, com teste. */

@@ -60,9 +60,6 @@ const loading = computed(() => pending.value && !history.value);
       <template #search>
         <OperatorSuiteSearch v-model="search" screen-label="filtrando o histórico" placeholder="Pedido, nome ou telefone" aria-label="Buscar pedido no histórico" />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <OperatorPeriodPicker
           v-model="period"

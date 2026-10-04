@@ -2,11 +2,9 @@
 // O cabeçalho de toda tela do Marketing (camada visual da suíte, V4-MKT): o
 // `OperatorPageHeader` do kit com o que é comum às telas deste app.
 //
-// - celular (barra de 56px, prévia `marketing-decisoes4.html`): as ações de polegar da
-//   tela, o sino (que abre a fila de decisões) e o menu do operador (tema, giro e
-//   Bloquear, que do tablet para cima moram no rail). Montados por JS, não só
-//   escondidos por CSS: dois sinos no DOM seriam dois "Decisões" para quem procura
-//   pelo nome;
+// - celular e tablet em pé (barra de 56px, prévia `marketing-decisoes4.html`): as ações
+//   de polegar da tela; os Avisos (as decisões e a caixa pessoal) são do kit, e o menu
+//   do operador mora no "Mais" da barra do polegar (V6-KIT);
 // - em toda tela de Ajustes, a segunda linha com Campanhas, Modelos, Ofertas e cupons
 //   e Plataformas (`MarketingSettingsNav`), na linha de recortes do cabeçalho.
 //
@@ -33,7 +31,6 @@ onMounted(() => {
 const showActions = computed(
   () => !props.phoneHidesActions || (mounted.value && !isPhone.value),
 );
-const shell = useMarketingShell();
 const { activeSection } = useMarketingSections();
 const onSettings = computed(() => activeSection.value === "settings");
 </script>
@@ -44,20 +41,7 @@ const onSettings = computed(() => activeSection.value === "settings");
     <template v-if="$slots.status" #status><slot name="status" /></template>
     <template v-if="$slots.search" #search><slot name="search" /></template>
     <template v-if="$slots.actions && showActions" #actions><slot name="actions" /></template>
-    <template #phone-actions>
-      <slot name="phone-actions" />
-      <!-- Só no navegador: a largura não existe no SSR, e montar o sino pelo palpite
-           do servidor descasava a hidratação no celular. -->
-      <ClientOnly>
-        <template v-if="isPhone">
-          <MarketingNotificationsBell />
-          <OperatorPhoneMenu
-            :operator-name="shell?.operatorName.value"
-            @lock="shell?.lock()"
-          />
-        </template>
-      </ClientOnly>
-    </template>
+    <template v-if="$slots['phone-actions']" #phone-actions><slot name="phone-actions" /></template>
     <template v-if="onSettings || $slots.filters" #filters>
       <MarketingSettingsNav v-if="onSettings" />
       <slot name="filters" />

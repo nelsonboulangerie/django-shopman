@@ -1236,7 +1236,6 @@ function onPackageCode(code: string) {
             >
               <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
             </button>
-            <PurchasePhoneBell />
             <PurchaseMoreMenu v-if="view === 'base'" vertical :items="baseMenuItems" label="Mais: atualizar" @select="onMoreMenu" />
           </template>
         </template>

@@ -47,9 +47,10 @@ useOperatorWindowTitle();
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
     <OfflineBanner />
-    <!-- Rail da suíte (kit): o selo do app (Central), as seções do Gestor, alertas e
-         avisos, Bloquear e o menu do operador. Do tablet para cima; no celular as
-         seções vão para a barra do polegar, no fim da coluna de conteúdo. -->
+    <!-- Rail da suíte (kit): o selo do app (Central), as seções do Gestor, Avisos,
+         Atalhos, Bloquear e o menu do operador. No tablet deitado e no desktop; no
+         celular e no tablet em pé as seções vão para a barra do polegar (com o "Mais"),
+         no fim da coluna de conteúdo. -->
     <GestorNav
       v-if="canIdentify"
       place="rail"
@@ -61,7 +62,7 @@ useOperatorWindowTitle();
       <div v-show="canIdentify && !locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
         <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
       </div>
-      <GestorNav v-if="canIdentify && !locked && !mustChange" place="bar" />
+      <GestorNav v-if="canIdentify && !locked && !mustChange" place="bar" :operator-name="operator?.name" @lock="lock" />
     </div>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->

@@ -165,7 +165,6 @@ const stubs = {
   },
   UiPopoverTrigger: passthrough,
   ShortageDialog: true,
-  AlertsBell: true,
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
   // UiDialog renderiza o conteúdo inline quando aberto (sem teleport) → fácil de consultar.

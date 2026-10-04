@@ -3,12 +3,12 @@
 //
 // `place="rail"` (padrão, do tablet para cima): o `OperatorSuiteRail` do kit com as
 // seções do balcão dentro dele. Em cima a operação (Comandas F2, Encomendas, Caixa,
-// Tela do cliente); no pé, Terminal (a saúde e o Atualizar), Avisos, Atalhos,
-// Bloquear e o operador. O selo do app volta à Central; tema, giro e ocultar a barra
-// moram no menu das iniciais (kit).
+// Tela do cliente); no pé, Terminal (a saúde e o Atualizar) e, depois do traço, o pé
+// da suíte (kit, V6-KIT): Avisos, Atalhos, Bloquear e o operador. O selo do app volta à
+// Central; tema, giro, capacidade e ocultar a barra moram no menu das iniciais.
 //
-// `place="bar"` (celular): a barra do polegar (`OperatorSectionBar`) com as MESMAS
-// seções, no fim da coluna de conteúdo. Ela lê as seções que o rail publica: a
+// `place="bar"` (celular e tablet em pé): a barra do polegar (`OperatorSectionBar`) com
+// as MESMAS seções e o "Mais" do menu do operador, no fim da coluna de conteúdo. Ela lê as seções que o rail publica: a
 // leitura das Encomendas (com o tempo real dela) existe uma vez só por tela.
 import type { POSProjection } from "~/types/pos";
 import { posCurrentSection, posSections, type PosView } from "~/presentation/sections";
@@ -22,8 +22,6 @@ const props = withDefaults(defineProps<{
   pending?: boolean;
   /** qual tela de trabalho está ativa, para acender a seção correspondente. */
   view?: PosView;
-  /** A tela tem a ajuda de atalhos (a venda): mostra "Atalhos" no pé. */
-  shortcuts?: boolean;
 }>(), {
   place: "rail",
   pos: null,
@@ -31,7 +29,6 @@ const props = withDefaults(defineProps<{
   operatorName: "",
   pending: false,
   view: "board",
-  shortcuts: false,
 });
 
 const emit = defineEmits<{
@@ -40,7 +37,6 @@ const emit = defineEmits<{
   display: [];
   lock: [];
   refresh: [];
-  shortcuts: [];
 }>();
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
@@ -72,8 +68,6 @@ function onSelect(key: string) {
   else if (key === "cash") emit("cash");
   else if (key === "display") emit("display");
 }
-
-const isPhone = useMediaQuery("(max-width: 767.98px)");
 </script>
 
 <template>
@@ -85,11 +79,12 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
     print-shortcuts
     :hub-url="hubUrl"
     :operator-name="operatorName || undefined"
+    touch-label="none"
     data-pos-rail
     @select="onSelect"
     @lock="emit('lock')"
   >
-    <template v-if="!isPhone" #foot>
+    <template #foot>
       <!-- Terminal: a saúde da estação (impressora, gaveta, agente, fiscal) e o
            Atualizar, lado a lado no mesmo painel, como o Pablo pediu (17/09). -->
       <PosTerminalHealth
@@ -99,17 +94,6 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
         :refreshing="pending"
         @refresh="emit('refresh')"
       />
-      <div class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
-      <NotificationBell placement="rail" />
-      <RailSection
-        v-if="shortcuts"
-        icon="lucide:keyboard"
-        label="Atalhos"
-        aria-label="Atalhos do teclado"
-        shortcut="?"
-        data-pos-rail-shortcuts
-        @activate="emit('shortcuts')"
-      />
     </template>
   </OperatorSuiteRail>
   <OperatorSectionBar
@@ -117,6 +101,13 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
     :sections="shared.sections"
     :current="shared.current"
     label="Seções do PDV"
+    :operator-name="operatorName || undefined"
     @select="onSelect"
-  />
+    @lock="emit('lock')"
+  >
+    <!-- O Terminal no "Mais" (P27): a saúde da estação e o Atualizar. -->
+    <template v-if="pos" #more>
+      <PosTerminalHealth :pos="pos" variant="sheet" :refreshing="pending" @refresh="emit('refresh')" />
+    </template>
+  </OperatorSectionBar>
 </template>

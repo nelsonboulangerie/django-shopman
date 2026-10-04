@@ -3,8 +3,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// O pé do rail do PDV na camada da suíte (onda V4, `pos-sale4.html`): Terminal, o
-// traço, Avisos e Atalhos; Bloquear e o operador vêm do kit, depois do slot. A ordem
+// O pé do rail do PDV na camada da suíte (onda V4, `pos-sale4.html`): Terminal no
+// slot do app; o traço, Avisos, Atalhos, Bloquear e o operador vêm do kit (V6-KIT),
+// depois do slot. A ordem
 // que o Pablo pediu em 17/09 (Atualizar colado na saúde do terminal) continua de pé:
 // o Atualizar mora DENTRO do painel do Terminal, ao lado das linhas de saúde.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,14 +22,11 @@ function footSlot(source: string): string {
 }
 
 describe("pé do rail do PDV", () => {
-  it("Terminal primeiro, depois Avisos e Atalhos", () => {
+  it("o slot do PDV leva só o Terminal; Avisos e Atalhos são do kit", () => {
     const slot = footSlot(RAIL);
-    const terminal = slot.indexOf("<PosTerminalHealth");
-    const bell = slot.indexOf("<NotificationBell");
-    const shortcuts = slot.indexOf('label="Atalhos"');
-    expect(terminal).toBeGreaterThan(-1);
-    expect(bell).toBeGreaterThan(terminal);
-    expect(shortcuts).toBeGreaterThan(bell);
+    expect(slot).toContain("<PosTerminalHealth");
+    expect(slot).not.toContain("Inbox");
+    expect(slot).not.toContain('label="Atalhos"');
     expect(slot).toContain('variant="suite"');
     expect(slot).toContain('@refresh="emit(\'refresh\')"');
   });
@@ -41,12 +39,17 @@ describe("pé do rail do PDV", () => {
     expect(HEALTH).toContain("Atualizar a tela");
   });
 
-  it("no kit, a capacidade do servidor e Bloquear vêm depois do slot do app", () => {
+  it("no kit (v4): slot do app, traço, Avisos, Atalhos, Bloquear; sem medidor de capacidade", () => {
     const slot = KIT_RAIL.indexOf('<slot name="foot" />');
-    const capacity = KIT_RAIL.indexOf("<OperatorCapacityStatus");
+    const rule = KIT_RAIL.indexOf("data-rail-foot-rule");
+    const inbox = KIT_RAIL.indexOf('<OperatorInbox v-if="railShown" placement="rail" />', rule);
+    const shortcuts = KIT_RAIL.indexOf('label="Atalhos"');
     const lock = KIT_RAIL.indexOf('label="Bloquear"');
     expect(slot).toBeGreaterThan(-1);
-    expect(capacity).toBeGreaterThan(slot);
-    expect(lock).toBeGreaterThan(capacity);
+    expect(rule).toBeGreaterThan(slot);
+    expect(inbox).toBeGreaterThan(rule);
+    expect(shortcuts).toBeGreaterThan(inbox);
+    expect(lock).toBeGreaterThan(shortcuts);
+    expect(KIT_RAIL).not.toContain("<OperatorCapacityStatus");
   });
 });

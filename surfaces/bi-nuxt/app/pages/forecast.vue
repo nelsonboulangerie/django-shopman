@@ -71,7 +71,6 @@ const occasionTitle = (occasion: ForecastOccasion) =>
       </template>
       <template #phone-actions>
         <BiShareButton />
-        <BiPhoneBell />
       </template>
     </OperatorPageHeader>
 

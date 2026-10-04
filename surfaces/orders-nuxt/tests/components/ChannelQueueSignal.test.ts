@@ -23,6 +23,9 @@ vi.stubGlobal("useGestorAccess", () => ({ expeditesOnly: ref(false), canManageOr
 vi.stubGlobal("useMediaQuery", () => ref(false));
 vi.stubGlobal("useState", (_key: string, init: () => unknown) => ref(init()));
 vi.stubGlobal("useGestorSections", useGestorSections);
+// O rail registra os alertas de pedido na caixa de Avisos do kit (V6-KIT).
+vi.stubGlobal("useAlerts", () => ({ alerts: ref([]), activeCount: ref(0), ack: vi.fn() }));
+vi.stubGlobal("provideOperatorInboxAlerts", vi.fn());
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
@@ -89,7 +92,7 @@ describe("aviso de canal na fila de Pedidos", () => {
 describe("indicador de Canais no item Ajustes da navegação", () => {
   beforeEach(() => { attention.value = projection(); });
 
-  const navStubs = { ...stubs, OperatorSuiteRail: navStub, OperatorSectionBar: navStub, AlertsBell: true, NotificationBell: true };
+  const navStubs = { ...stubs, OperatorSuiteRail: navStub, OperatorSectionBar: navStub };
 
   it.each(["rail", "bar"] as const)("estado normal: nada ao lado de Ajustes (%s)", (place) => {
     expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).find("[data-channels-attention]").exists()).toBe(false);

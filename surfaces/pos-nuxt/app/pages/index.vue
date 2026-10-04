@@ -12,6 +12,7 @@ import type { PreorderRedoResponse } from "~/types/preorders";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
+import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -809,7 +810,11 @@ const paymentWorkspaceRef = ref<{
   pressReceiptKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => boolean;
 } | null>(null);
-const shortcutsHelpOpen = ref(false);
+// A ajuda de atalhos é a do kit (V6-KIT): "Atalhos" no pé do rail e "?"; o PDV entrega
+// o dicionário das teclas dele.
+const { open: shortcutsHelpOpen } = useOperatorShortcuts();
+provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
+const railShown = useSuiteRailShown();
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
 // marcadas. Pelo F10 (toda a venda) ele nasce vazio, como sempre.
 const movePreselected = ref<string[]>([]);
@@ -1077,7 +1082,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
+  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground norail:pb-16 max-md:overflow-x-clip md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
     <PosFunctionRail
       v-if="pos"
       :pos="pos"
@@ -1085,13 +1090,11 @@ onBeforeUnmount(() => {
       :operator-name="activeOperator?.name || ''"
       :pending="pending"
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
-      shortcuts
       @board="goToTabs"
       @cash="goToCashSession"
       @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
-      @shortcuts="shortcutsHelpOpen = true"
     />
 
     <!-- `max-md:basis-full`: no celular a coluna ocupa a linha inteira; com a base 0 ela
@@ -1108,7 +1111,7 @@ onBeforeUnmount(() => {
         <button
           v-if="railCollapsed"
           type="button"
-          class="hidden size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground md:grid"
+          class="hidden size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
           aria-label="Mostrar a barra"
           title="Mostrar a barra"
           data-page-header-show-rail
@@ -1116,6 +1119,8 @@ onBeforeUnmount(() => {
         >
           <Icon name="lucide:panel-left-open" class="size-5" />
         </button>
+        <!-- Celular e tablet em pé, fora da venda: o selo do app (volta à Central). -->
+        <OperatorAppSeal v-if="!inSaleView" />
         <button
           v-if="inSaleView && !editing"
           type="button"
@@ -1239,17 +1244,6 @@ onBeforeUnmount(() => {
             :detail="liveStatus.view.value.detail"
             class="px-1"
           />
-          <!-- No celular não há rail: a ajuda de atalhos fica aqui (no tablet e no
-               desktop ela mora no pé do rail, "Atalhos"). -->
-          <button
-            type="button"
-            class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent md:hidden"
-            aria-label="Atalhos do teclado"
-            title="Atalhos do teclado (?)"
-            @click="shortcutsHelpOpen = true"
-          >
-            <Icon name="lucide:keyboard" class="size-5" />
-          </button>
           <button
             type="button"
             class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
@@ -1322,6 +1316,11 @@ onBeforeUnmount(() => {
               </div>
             </UiPopoverContent>
           </UiPopover>
+          <!-- Onde o rail não existe (celular e tablet em pé): Avisos, a caixa do kit,
+               no fim da barra (V6-KIT, T-06). -->
+          <ClientOnly>
+            <OperatorInbox v-if="!railShown" placement="header" />
+          </ClientOnly>
         </div>
       </header>
 
@@ -1605,8 +1604,8 @@ onBeforeUnmount(() => {
          edge alongside the rail; on mobile it wraps below the product grid). -->
     <aside
       v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="flex shrink-0 flex-col max-lg:fixed max-lg:right-0 max-lg:left-0 max-lg:z-30 max-md:bottom-16 md:max-lg:bottom-0 lg:h-full lg:bg-card lg:w-[360px] lg:border-l lg:border-border xl:w-[400px]"
-      :class="railCollapsed ? '' : 'md:max-lg:left-[76px]'"
+      class="flex shrink-0 flex-col max-lg:fixed max-lg:right-0 max-lg:left-0 max-lg:z-30 max-lg:bottom-16 rail:max-lg:bottom-0 lg:h-full lg:bg-card lg:w-[360px] lg:border-l lg:border-border xl:w-[400px]"
+      :class="railCollapsed ? '' : 'rail:max-lg:left-[76px]'"
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
@@ -1648,8 +1647,9 @@ onBeforeUnmount(() => {
         </div>
     </aside>
 
-    <!-- Celular: as seções do rail na barra do polegar (kit), no fim da tela. -->
-    <PosFunctionRail place="bar" class="w-full" @board="goToTabs" @cash="goToCashSession" @display="openCustomerDisplay" />
+    <!-- Celular e tablet em pé: as seções na barra de baixo (kit), presa ao pé da tela
+         (P28): a página reserva o lugar dela com `norail:pb-16`. -->
+    <PosFunctionRail place="bar" class="w-full norail:fixed norail:inset-x-0 norail:bottom-0" :pos="pos" :pending="pending" :operator-name="activeOperator?.name || ''" @board="goToTabs" @cash="goToCashSession" @display="openCustomerDisplay" @lock="lock()" @refresh="refresh()" />
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no
@@ -1854,7 +1854,6 @@ onBeforeUnmount(() => {
       @authorize="(username: string, pin: string) => confirmOrderEdit({ username, pin })"
       @authorize-badge="(badge: string) => confirmOrderEdit({ badge })"
     />
-    <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
     <PosDisplayPublisher :sources="displaySources" />
   </main>
 </template>

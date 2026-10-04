@@ -34,7 +34,6 @@ async function run() {
       </template>
       <template #phone-actions>
         <BiShareButton />
-        <BiPhoneBell />
       </template>
     </OperatorPageHeader>
 

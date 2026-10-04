@@ -5,7 +5,9 @@
 // texto do rail. Altura ≥ 44px (alvo de toque da casa).
 //
 // Serve às seções do app (link, `to`) e às funções do pé (botão, emite `activate`):
-// Avisos, Bloquear. Quem tem painel próprio (o sino) monta o gatilho com o slot `icon`.
+// Avisos, Atalhos, Bloquear. O item inativo fica com o texto cheio, e não a 80% como
+// o `.rail-item` da v4: a 80% o rótulo de 10-11px dava 3,8:1 no rail da Produção
+// (axe, AA pede 4,5). O ativo acende.
 import { computed, resolveComponent } from "vue";
 
 const props = defineProps<{
@@ -30,6 +32,14 @@ const props = defineProps<{
   printShortcut?: boolean;
   /** Rótulo de 10px com tracking apertado (`.rail-item.sm` da v4): nomes longos, como "Planejamento". */
   dense?: boolean;
+  /**
+   * No toque (tablet deitado), o rail é compacto (K4): `shortLabel` no lugar do nome
+   * ("Plano" por "Planejamento", `producao-qualidade4.html`); `touchLabel="none"` deixa
+   * só o ícone (o PDV no tablet, v3 `depois-pdv-venda-tablet`). O nome cheio continua
+   * no nome acessível e no desktop.
+   */
+  shortLabel?: string;
+  touchLabel?: "short" | "none";
 }>();
 
 const emit = defineEmits<{ activate: [] }>();
@@ -65,7 +75,14 @@ const a11yLabel = computed(() => {
     </slot>
     <!-- Sem quebra no meio da palavra (prévia `.rail-item`): "Encomendas" passa 4px dos
          64px e fica centrada, em vez de virar "Encomenda / s". -->
-    <span :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    <template v-if="touchLabel === 'none'">
+      <span class="pointer-coarse:sr-only" :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    </template>
+    <template v-else-if="shortLabel && shortLabel !== label">
+      <span class="hidden pointer-coarse:inline" aria-hidden="true" data-rail-short>{{ shortLabel }}</span>
+      <span class="pointer-coarse:hidden" :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    </template>
+    <span v-else :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
     <kbd
       v-if="printedShortcut"
       class="hidden font-mono text-[9.5px] leading-none font-semibold tracking-normal pointer-fine:block"

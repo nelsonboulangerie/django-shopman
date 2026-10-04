@@ -8,14 +8,15 @@
 // barra do polegar (`ProductionNav`); este cabeçalho segura as TECLAS delas (Alt+1 a
 // Alt+5), que valem em toda tela da Produção, mais "/", R e "?".
 //
-// No celular (`OperatorPageHeader`): barra de 56px com o selo do app, o título, o ponto,
-// a lupa, Timers (contagem e anel quando toca) e o sino; os controles descem para uma
-// linha que rola. Receitas, Relatórios e o Letreiro, que no tablet moram no pé do rail,
-// entram no ⋯ do celular.
+// No celular e no tablet em pé (`OperatorPageHeader`, V6-KIT): barra de 56px com o selo
+// do app, o título, o ponto, a lupa e Avisos (do kit), como a v4; Timers, Qualidade e as
+// ferramentas moram no "Mais" da barra do polegar, e também no ⋯ desta tela.
 import { createReusableTemplate, useMediaQuery } from "@vueuse/core";
 import { useSlots } from "vue";
 import {
   isEditableKeyboardTarget,
+  PRODUCTION_SHORTCUT_GROUPS,
+  PRODUCTION_SHORTCUTS_DESCRIPTION,
   productionGlobalKeysBlocked,
   resolveProductionGlobalShortcut,
 } from "~/presentation/keyboard";
@@ -65,7 +66,10 @@ const menuInPhoneBar = computed(() => isPhone.value && !slots.actions);
 const query = defineModel<string>("query", { default: "" });
 
 const searchInput = ref<{ focus: () => void } | null>(null);
-const shortcutsHelpOpen = ref(false);
+// A ajuda de atalhos é a do kit (aberta pelo "Atalhos" do rail, por "?" e pelo ⋯); a
+// Produção entrega os grupos da tela dela.
+const { open: shortcutsHelpOpen } = useOperatorShortcuts();
+provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRIPTION);
 const menuOpen = ref(false);
 
 // Timers da bancada: o contador vem do localStorage — o servidor não o conhece —,
@@ -75,9 +79,6 @@ const floorTimers = useFloorTimers();
 const hydrated = ref(false);
 const timersCount = computed(() =>
   hydrated.value ? floorTimers.activeCount.value : 0,
-);
-const timersRinging = computed(() =>
-  hydrated.value ? floorTimers.ringingCount.value : 0,
 );
 
 // Receitas e Relatórios (só com o acesso) e o Letreiro: no celular, que não tem rail.
@@ -336,34 +337,8 @@ const ITEM =
         @focusout="closeTabletSearchIfEmpty"
       />
     </template>
-    <template #phone-actions>
-      <!-- Timers: contagem de ativos; o anel pulsa quando algum toca. LEVA à página. -->
-      <NuxtLink
-        to="/timers"
-        class="relative grid size-12 place-items-center rounded-md"
-        :class="timersRinging ? 'text-destructive' : 'text-foreground'"
-        :aria-label="`Timers (${timersCount} ativos)`"
-        title="Timers da bancada"
-        data-header-timers
-      >
-        <Icon
-          name="lucide:alarm-clock"
-          class="size-6"
-          :class="timersRinging ? 'animate-pulse motion-reduce:animate-none' : ''"
-        />
-        <span
-          v-if="timersCount"
-          class="absolute right-1 top-1 h-[18px] min-w-[18px] rounded-full px-[5px] text-xs font-bold leading-[18px] tabular-nums"
-          :class="
-            timersRinging
-              ? 'bg-destructive text-destructive-foreground'
-              : 'bg-suite-badge text-suite-badge-foreground'
-          "
-          >{{ timersCount }}</span
-        >
-      </NuxtLink>
-      <ReuseMenu v-if="menuInPhoneBar" />
-      <AlertsBell placement="phone" />
+    <template v-if="menuInPhoneBar" #phone-actions>
+      <ReuseMenu />
     </template>
     <template v-if="!menuInPhoneBar" #actions>
       <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
@@ -400,5 +375,4 @@ const ITEM =
     <template v-if="$slots.below" #below><slot name="below" /></template>
   </OperatorPageHeader>
 
-  <ProductionShortcutsHelp v-model:open="shortcutsHelpOpen" />
 </template>

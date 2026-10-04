@@ -575,9 +575,6 @@ useHead({ title: "Catálogo" });
       <template #search>
         <OperatorSuiteSearch v-model="query" screen-label="filtrando o catálogo" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
              logo depois da busca; a coleção continua nas pills, que também reordenam. No

@@ -44,9 +44,6 @@ const loading = computed(() => pending.value && !list.value);
       <template #search>
         <OperatorSuiteSearch v-model="search" screen-label="filtrando os clientes" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <NuxtLink
           to="/customers/merges"

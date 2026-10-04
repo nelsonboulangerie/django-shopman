@@ -36,17 +36,25 @@ test.describe("Produção — gate de operador", () => {
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
     // Tela de operador embrulhada pelo rail da suíte (kit, V4-PROD): o ciclo do lote
-    // no rail e o menu do operador (tema, giro e "Ocultar a barra") no pé. No celular
-    // as etapas vão para a barra do polegar.
+    // no rail e o menu do operador no pé (tablet deitado e desktop). No celular e no
+    // tablet em pé (V6-KIT) as etapas vão para a barra de baixo: quatro e o "Mais",
+    // que guarda Qualidade, Timers, Ajustes e o menu do operador.
     const rail = page.locator('aside[aria-label="Barra do app Produção"]');
     const thumbBar = page.locator('nav[data-operator-section-bar]');
-    const phone = (page.viewportSize()?.width ?? 1024) < 768;
-    const nav = phone ? thumbBar : rail;
-    await expect(nav).toBeVisible();
-    await expect(nav.locator('[data-section="plan"]')).toBeVisible();
-    await expect(nav.locator('[data-section="quality"]')).toBeVisible();
-    if (!phone) {
+    const size = page.viewportSize() ?? { width: 1024, height: 768 };
+    const railShown = (size.width >= 768 && size.width > size.height) || size.width >= 1024;
+    if (railShown) {
+      await expect(rail).toBeVisible();
+      await expect(rail.locator('[data-section="plan"]')).toBeVisible();
+      await expect(rail.locator('[data-section="quality"]')).toBeVisible();
       await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
+    } else {
+      await expect(thumbBar).toBeVisible();
+      await expect(thumbBar.locator('[data-section="plan"]')).toBeVisible();
+      await thumbBar.locator("[data-operator-phone-menu]").click();
+      await expect(
+        page.locator('[data-operator-phone-menu-panel] [data-section="quality"]'),
+      ).toBeVisible();
     }
   });
 

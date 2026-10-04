@@ -29,8 +29,9 @@ useOperatorWindowTitle();
     <OfflineBanner />
     <!-- Painel público de retirada: tela cheia, sem rail e sem auth. -->
     <NuxtPage v-if="isCustomerBoard" />
-    <!-- Telas de operador: rail da suíte (kit) do tablet para cima; no celular as
-         seções vão para a barra do polegar, no fim da coluna de conteúdo. -->
+    <!-- Telas de operador: rail da suíte (kit) no tablet deitado e no desktop; no
+         celular e no tablet em pé as seções vão para a barra do polegar, no fim da
+         coluna de conteúdo. -->
     <div v-else class="flex min-h-dvh">
       <KdsNav
         v-if="canIdentify"
@@ -41,7 +42,7 @@ useOperatorWindowTitle();
       />
       <div class="flex min-w-0 flex-1 flex-col">
         <NuxtPage />
-        <KdsNav v-if="canIdentify && !locked && !mustChange" place="bar" />
+        <KdsNav v-if="canIdentify && !locked && !mustChange" place="bar" :operator-name="operator?.name" @lock="lock" />
       </div>
       <KdsSettingsDialog v-if="canIdentify" />
     </div>

@@ -19,6 +19,23 @@
 
 @custom-variant suite (&:where([data-suite="v3"], [data-suite="v3"] *));
 
+/* Onde mora a navegação do app (V6-KIT, `depois-navegacao.jpg`, nível 1 "Seção"):
+   rail compacto no tablet DEITADO e no desktop; barra de seções embaixo no celular e
+   no tablet EM PÉ (820×1180). `rail:` casa onde o rail existe. A mesma régua em JS:
+   `SUITE_RAIL_MEDIA` (presentation/suiteChrome.ts), para o que é montado por script. */
+@custom-variant rail {
+  @media (min-width: 768px) and (orientation: landscape), (min-width: 1024px) {
+    @slot;
+  }
+}
+/* O contrário de `rail:` (celular e tablet em pé): para o layout que precisa reservar
+   o lugar da barra de baixo (o PDV prende a barra ao pé da tela). */
+@custom-variant norail {
+  @media (max-width: 767.98px), (max-width: 1023.98px) and (orientation: portrait) {
+    @slot;
+  }
+}
+
 :root {
   /* Selo de contagem do rail e da barra do polegar: o âmbar claro das prévias, com
      texto bronze (contraste 9:1). Não é cor de estado; é "tem coisa aqui". */

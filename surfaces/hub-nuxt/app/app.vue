@@ -110,8 +110,22 @@ const nowMs = computed(() => deviceNow.value.getTime() + clockOffset.value);
 const dateLine = computed(() => (import.meta.client ? hubDateLine(nowMs.value) : ""));
 const phoneTime = computed(() => dateLine.value.split(" · ")[0] || "");
 
-// Do tablet para cima o sino mora no pé do rail; no celular (sem rail), no cabeçalho.
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+// Onde o rail existe (tablet deitado e desktop), Avisos e o menu do operador moram no
+// pé dele; no celular e no tablet em pé, na barra de 56px do cabeçalho (V6-KIT).
+const railShown = useSuiteRailShown();
+
+// Bloquear (V6-KIT, T-04): a Central não é superfície com capacidade própria, então o
+// Bloquear daqui trava o DISPOSITIVO (toda superfície desta sessão pede PIN ou crachá),
+// e a Central mostra a trava do kit até alguém se identificar.
+const deviceLocked = computed(() => Boolean(stationSession.value?.operator && stationSession.value?.locked));
+const { run: lockDevice } = usePendingAction(async () => {
+  await $fetch("/api/v1/backstage/operator/lock/", {
+    method: "POST",
+    credentials: "same-origin",
+    body: { scope: "device" },
+  });
+  await refreshNuxtData("operator-session");
+});
 const { isCollapsed: railHidden, set: setRail } = useRailState();
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
@@ -214,23 +228,21 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
       </div>
     </div>
 
+    <!-- Dispositivo travado pelo Bloquear daqui: a trava do kit, sem a Central por baixo. -->
+    <OperatorLock v-else-if="deviceLocked" perm="" />
+
     <!-- Launcher -->
     <div v-else class="flex min-h-dvh">
-      <!-- Rail da suíte (kit), do tablet para cima: o selo da Central (sem caminho de
-           volta: já estamos nela), "Início" como única seção, Avisos e o menu do operador
-           (tema, giro, ocultar a barra) no pé. A Central não trava operador: cada app
-           trava o seu. -->
+      <!-- Rail da suíte (kit), tablet deitado e desktop: o selo da Central (sem caminho
+           de volta: já estamos nela), "Início" como única seção e o pé da v4 (`hub4.html`):
+           Avisos, Atalhos, Bloquear e o menu do operador. -->
       <OperatorSuiteRail
         :sections="HUB_SECTIONS"
         current="home"
         :label="`Seções ${HUB_NAMED_OF}`"
         :operator-name="operatorName || undefined"
-        :lockable="false"
-      >
-        <template v-if="!isPhone" #foot>
-          <NotificationBell placement="rail" />
-        </template>
-      </OperatorSuiteRail>
+        @lock="lockDevice"
+      />
 
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- Cabeçalho de uma linha (76px): a saudação e a linha fina com o ao vivo, a
@@ -258,7 +270,7 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
           <button
             v-if="railHidden"
             type="button"
-            class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground md:grid"
+            class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
             aria-label="Mostrar a barra"
             title="Mostrar a barra"
             data-hub-show-rail
@@ -266,6 +278,8 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
           >
             <Icon name="lucide:panel-left-open" class="size-5" />
           </button>
+          <!-- Celular e tablet em pé: o selo da Central (identidade, sem caminho de volta). -->
+          <OperatorAppSeal home />
           <div class="min-w-0 flex-1">
             <h1 class="truncate op-title md:op-heading">{{ hubGreeting(operatorName) }}</h1>
             <p class="mt-0.5 flex min-w-0 items-center gap-1.5 op-micro text-muted-foreground tnum md:mt-1.5" data-hub-brand>
@@ -277,13 +291,18 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
               </span>
             </p>
           </div>
-          <div v-if="isPhone" class="shrink-0">
-            <NotificationBell />
-          </div>
           <div class="order-last w-full pt-1 pb-3 md:order-none md:w-auto md:py-0" data-hub-search>
             <OperatorSuiteSearch variant="hero" placeholder="Buscar pedido, cliente, produto, insumo ou tela" />
           </div>
           <div class="hidden flex-1 xl:block" aria-hidden="true" />
+          <!-- Celular e tablet em pé (sem rail): Avisos e o menu do operador na barra de
+               56px (`depois-hub-celular`: selo, saudação, ao vivo, sino). -->
+          <ClientOnly>
+            <div v-if="!railShown" class="-mr-1 flex shrink-0 items-center" data-hub-phone-actions>
+              <OperatorInbox placement="header" />
+              <OperatorPhoneMenu variant="header" :operator-name="operatorName || undefined" @lock="lockDevice" />
+            </div>
+          </ClientOnly>
         </header>
 
         <div class="flex-1">
@@ -585,7 +604,7 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                 </ul>
               </section>
               <!-- Tem mais abaixo (kit): no celular a lista de apps passa da dobra. -->
-              <MoreBelow v-if="isPhone" />
+              <MoreBelow v-if="!railShown" />
             </template>
           </div>
         </div>

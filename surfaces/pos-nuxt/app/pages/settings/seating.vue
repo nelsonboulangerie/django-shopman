@@ -533,7 +533,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
         </footer>
       </template>
 
-      <PosFunctionRail place="bar" @board="navigateTo('/')" @cash="navigateTo('/session')" @display="openCustomerDisplay" />
+      <PosFunctionRail place="bar" :operator-name="activeOperator?.name || ''" @board="navigateTo('/')" @cash="navigateTo('/session')" @display="openCustomerDisplay" @lock="lock()" />
     </div>
 
     <PosSeatingHistory v-model:open="historyOpen" :entries="seating.data.value?.history ?? []" />

@@ -46,7 +46,6 @@ const weeklySeries = computed(() =>
       <template #phone-actions>
         <BiPeriodChip />
         <BiShareButton />
-        <BiPhoneBell />
       </template>
     </OperatorPageHeader>
 

@@ -47,9 +47,6 @@ const notFound = computed(() => httpError(error.value).status === 404);
         </NuxtLink>
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <a
           v-if="adminUrl && customer"

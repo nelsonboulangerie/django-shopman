@@ -108,10 +108,15 @@ test("a fila de decisões leva cada cartão ao lugar exato da decisão", async (
     cards.first().getByRole("link", { name: /^Revisar:/ }),
   ).toHaveAttribute("href", "/announcements/41#review");
 
-  // O sino não tem lista própria: ele é a mesma fila.
+  // O sino é a caixa de Avisos do kit (V6-KIT): as decisões entram nela como um
+  // resumo que leva à mesma fila, sem lista própria.
+  await page.locator("[data-operator-inbox-trigger]").first().click();
+  const inbox = page.locator("[data-operator-inbox-panel]");
+  await expect(inbox.getByText("2 decisões esperam você.")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Decisões: 2 esperando você" }),
+    inbox.getByRole("link", { name: /Abrir a fila de decisões/ }),
   ).toHaveAttribute("href", "/");
+  await page.keyboard.press("Escape");
 
   await page.getByRole("link", { name: /agendado hoje/ }).click();
   await expect(page).toHaveURL(/\/scheduled$/);

@@ -34,12 +34,6 @@ const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 useOperatorWindowTitle();
 const route = useRoute();
 
-// O menu do operador do celular (tema, giro, Bloquear) usa o MESMO `lock` daqui.
-provideMarketingShell({
-  operatorName: computed(() => operator.value?.name || undefined),
-  lock,
-});
-
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
   await nextTick();
@@ -85,7 +79,7 @@ watch(sessionState, async (next, previous) => {
                nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. A revisão do
                anúncio é tela cheia (v4: o polegar é de Recusar e Continuar), e a página
                declara isso em `definePageMeta({ fullscreen: true })`. -->
-          <MarketingNav v-if="!route.meta.fullscreen" place="bar" />
+          <MarketingNav v-if="!route.meta.fullscreen" place="bar" :operator-name="operator?.name" @lock="lock" />
         </div>
         <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
         <MarketingInboxLive />

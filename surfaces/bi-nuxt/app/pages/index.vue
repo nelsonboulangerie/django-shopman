@@ -262,7 +262,6 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
       </template>
       <template #phone-actions>
         <BiShareButton />
-        <BiPhoneBell />
       </template>
       <template v-if="day" #filters>
         <label

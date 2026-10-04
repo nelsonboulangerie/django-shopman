@@ -18,7 +18,7 @@ const props = defineProps<{
    * `suite`: o item "Terminal" do pé do rail da suíte (onda V4): ícone, nome e o ponto
    * de atenção, na gramática do `RailSection` do kit. O painel ganha o Atualizar.
    */
-  variant?: "suite";
+  variant?: "suite" | "sheet";
   /** Suite: a Projection está sendo relida (o Atualizar gira). */
   refreshing?: boolean;
 }>();
@@ -106,6 +106,21 @@ function meta(status: string): StatusMeta {
           data-terminal-health-attention
         />
       </button>
+      <!-- No "Mais" da barra do polegar (V6-KIT, P27): uma linha do menu, com o estado escrito. -->
+      <button
+        v-else-if="variant === 'sheet'"
+        type="button"
+        data-terminal-health-trigger
+        class="flex min-h-12 w-full items-center gap-3 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+        :aria-label="`Terminal ${pos.terminal_label}: ${overall.label}`"
+      >
+        <span class="relative grid size-5 shrink-0 place-items-center">
+          <Icon name="lucide:cpu" class="size-5 text-muted-foreground" aria-hidden="true" />
+          <span class="absolute -bottom-0.5 -right-1 size-2 rounded-full ring-2 ring-popover" :class="overall.dot" />
+        </span>
+        <span class="min-w-0 flex-1">Terminal</span>
+        <span class="op-micro text-muted-foreground">{{ overall.label }}</span>
+      </button>
       <button
         v-else-if="compact"
         type="button"
@@ -127,7 +142,7 @@ function meta(status: string): StatusMeta {
         <Icon name="lucide:chevron-down" class="size-3.5 opacity-60" />
       </UiButton>
     </UiPopoverTrigger>
-    <UiPopoverContent :align="variant === 'suite' ? 'end' : compact ? 'start' : 'end'" :side="compact || variant === 'suite' ? 'right' : 'bottom'" class="w-72 p-0">
+    <UiPopoverContent :align="variant === 'suite' ? 'end' : compact ? 'start' : 'end'" :side="variant === 'sheet' ? 'top' : compact || variant === 'suite' ? 'right' : 'bottom'" class="w-72 p-0">
       <div class="border-b p-3">
         <div class="flex items-center justify-between gap-2">
           <span class="text-sm font-semibold">Saúde do terminal</span>
@@ -175,7 +190,7 @@ function meta(status: string): StatusMeta {
       </div>
       <!-- Atualizar: relê a Projection do terminal (comandas, caixa, catálogo). O
            tempo real (SSE) e a reconexão já fazem isso sozinhos; aqui é a mão. -->
-      <div v-if="variant === 'suite'" class="border-t p-2">
+      <div v-if="variant === 'suite' || variant === 'sheet'" class="border-t p-2">
         <UiButton
           type="button"
           variant="ghost"

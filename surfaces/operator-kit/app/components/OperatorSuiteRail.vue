@@ -1,32 +1,34 @@
 <script setup lang="ts">
-// Rail da suíte (UX-KIT-V1): o rail das prévias v3/v4, com as SEÇÕES do app dentro dele.
+// Rail da suíte (UX-KIT-V1, pé refeito na V6-KIT): o rail das prévias v3/v4, com as
+// SEÇÕES do app dentro dele.
 //
-// O `OperatorRail` clássico segura só o comum e deixa as seções numa barra no topo do
-// conteúdo (`OperatorAppBar`). As prévias aprovadas (SUITE-UX §12, "a camada visual da
-// v3: tokens, rail, cabeçalho, busca") tiram essa barra: as seções sobem para o rail
-// (ícone + nome + contagem + ponto de atenção), e o topo do conteúdo fica com UMA linha
-// (título, ao vivo, busca, controles: `OperatorPageHeader`). Medidas de `_rail3top.html`,
-// `_rail3bottom.html` e `.rail-item` em `_shared.css`.
+// O topo do conteúdo fica com UMA linha (título, ao vivo, busca, controles:
+// `OperatorPageHeader`). Medidas de `_rail3top.html`, `_rail3bottom.html` e
+// `.rail-item` em `_shared.css`.
 //
-// Opt-in: o app que migra troca `OperatorRail` + barra de seções por este rail (e a
-// `OperatorSectionBar` no celular). Quem não migrou não muda nada.
+// Onde ele existe (V6-KIT, `depois-navegacao.jpg` nível 1): no tablet DEITADO e no
+// desktop (variante `rail:`). No celular e no tablet em pé a navegação é a barra de
+// baixo (`OperatorSectionBar`), e o selo e os Avisos sobem para a barra de 56px do
+// `OperatorPageHeader`.
 //
-// Do celular para cima:
-//   - abaixo de `md` o rail não aparece: o celular usa a barra de 56px do
-//     `OperatorPageHeader` em cima e a `OperatorSectionBar` (polegar) embaixo;
-//   - de `md` para cima (tablet em pé, tablet deitado, desktop) o rail tem 76px.
+// O pé é o da v4, igual em todo app (`_rail3bottom.html`):
+//   [seções do pé do app: Ajustes, Terminal…] · traço · Avisos · Atalhos · Bloquear · iniciais.
+// A Cozinha (`cozinha-estacao4.html`) diz Avisos · Ajustes · Bloquear, sem traço:
+// `footOrder="inbox-first"`. "Avisos" é UM item (`OperatorInbox`: alertas da operação e
+// caixa pessoal no mesmo painel). "Atalhos" só com ponteiro fino (no toque não há
+// teclado). A capacidade do serviço saiu do rail para o menu das iniciais, e o posto do
+// dispositivo também (a v4 o diz no cabeçalho e no menu, não num ícone no rail).
 //
-// Nada do rail clássico se perde: voltar à Central (o selo do app), capacidade do
-// serviço, posto do dispositivo, operador/travar, tema e trava de giro. Os três últimos
-// moram no menu do operador (as iniciais no pé), como nas prévias; "Ocultar a barra"
-// também, e quem traz a barra de volta é o botão que o cabeçalho mostra quando ela some.
-import { computed, ref } from "vue";
+// Teclas: Alt 1…9 levam às seções de cima, na ordem, em todo app, impressas sob o nome
+// com ponteiro fino (T-05). "?" abre a ajuda de atalhos.
+import { computed, onBeforeUnmount, onMounted, ref, useAttrs } from "vue";
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 
 import { operatorAppNamed } from "../../appIdentity";
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { workstationKindIcon } from "../presentation/workstation";
-import type { OperatorSession } from "../types/operator";
+import { isShortcutsHelpKey, sectionIndexFromKey, withSectionShortcuts } from "../presentation/suiteChrome";
+
+defineOptions({ inheritAttrs: false });
 
 const HUB_BACK = `Voltar ${operatorAppNamed("hub", "a")}`;
 /** "Gestor de pedidos: voltar à Central" (o verbo minúsculo depois dos dois-pontos). */
@@ -35,7 +37,7 @@ const HUB_BACK_INLINE = `${HUB_BACK.charAt(0).toLowerCase()}${HUB_BACK.slice(1)}
 interface SuiteRailIdentity { label: string; icon: string; iconSrc: string; color: string }
 
 const props = withDefaults(defineProps<{
-  /** Seções do app (as mesmas que iam para a barra do topo). */
+  /** Seções do app (as mesmas da barra do polegar). */
   sections: readonly OperatorSection[];
   /** Nome da navegação para leitor de tela ("Seções do Gestor"). */
   label: string;
@@ -45,25 +47,36 @@ const props = withDefaults(defineProps<{
   operatorName?: string;
   /** Seção ativa. Omitida, sai da rota. */
   current?: string;
-  /** Imprime a tecla de cada seção sob o nome, com ponteiro fino (v4 da Produção: "Alt1"). */
+  /**
+   * Imprime a tecla de cada seção sob o nome, com ponteiro fino ("Alt1"). Padrão: sim,
+   * em todo app (`depois-navegacao.jpg`: "Alt 1…9 em todo app", impresso no desktop).
+   */
   printShortcuts?: boolean;
   /** Rótulos de 10px para nomes longos (v4 da Produção: "Planejamento", "Preparação"). */
   denseLabels?: boolean;
   /**
-   * Mostra Bloquear quando há operador (padrão). `false`: o app não trava operador (a
-   * Central, que é a porta de entrada; cada app trava o seu), e as iniciais seguem no pé.
+   * Ordem do pé. `settings-first` (padrão, v4 do Gestor, do PDV, da Produção, do B.I.):
+   * seções do pé, traço, Avisos. `inbox-first` (v4 da Cozinha): Avisos, seções do pé,
+   * sem traço.
    */
-  lockable?: boolean;
+  footOrder?: "settings-first" | "inbox-first";
+  /** Mostra a caixa de Avisos (padrão). */
+  inbox?: boolean;
+  /** No toque, só o ícone (`none`, o PDV) ou o rótulo curto (`short`, padrão). */
+  touchLabel?: "short" | "none";
 }>(), {
   hubUrl: undefined,
   operatorName: undefined,
   current: undefined,
-  printShortcuts: false,
+  printShortcuts: true,
   denseLabels: false,
-  lockable: true,
+  footOrder: "settings-first",
+  inbox: true,
+  touchLabel: "short",
 });
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
+const attrs = useAttrs();
 
 const identity = (useRuntimeConfig().public?.operatorPwa as { identity?: SuiteRailIdentity } | undefined)?.identity;
 const appLabel = computed(() => identity?.label || "");
@@ -78,8 +91,9 @@ const showAppImage = computed(() => Boolean(identity?.iconSrc) && !appIconBroken
 const route = useRoute();
 const active = computed(() => props.current ?? activeSectionKey(route.path, props.sections));
 // v4: a operação em cima (com o rótulo do grupo); Ajustes no pé, longe da fila.
-const topSections = computed(() => props.sections.filter((section) => !section.foot));
-const footSections = computed(() => props.sections.filter((section) => section.foot));
+const railSections = computed(() => props.sections.filter((section) => section.where !== "bar"));
+const topSections = computed(() => withSectionShortcuts(railSections.value.filter((section) => !section.foot)));
+const footSections = computed(() => railSections.value.filter((section) => section.foot));
 function groupStarts(index: number): string {
   const group = topSections.value[index]?.group;
   return group && topSections.value[index - 1]?.group !== group ? group : "";
@@ -88,11 +102,9 @@ function groupStarts(index: number): string {
 const { attrsFor } = useOperatorAppLink();
 const hubLink = computed(() => attrsFor(props.hubUrl || ""));
 
-const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
-const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
-const workstationIcon = computed(() => workstationKindIcon(operatorSession.value?.workstation?.kind ?? ""));
-
 const { isCollapsed, set: setRail } = useRailState();
+const railShown = useSuiteRailShown();
+const shortcuts = useOperatorShortcuts();
 
 const initials = computed(() => {
   const words = (props.operatorName || "").trim().split(/\s+/).filter(Boolean);
@@ -102,31 +114,50 @@ const initials = computed(() => {
   return `${first}${last}`.toUpperCase();
 });
 
-const colorMode = useColorMode();
-const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
-function toggleTheme() {
-  colorMode.preference = colorMode.value === "dark" ? "light" : "dark";
-}
-
-const orientation = useOrientationLock();
-const orientationLabel = computed(() => (orientation.isLocked.value ? "Liberar giro" : "Travar giro"));
-const { run: toggleOrientation, pending: orientationPending } = usePendingAction(async () => {
-  const result = await orientation.toggle();
-  if (result.ok) useSonner.success(result.message);
-  else useSonner.warning(result.message);
-});
-
 const menuOpen = ref(false);
 function hideRail() {
   menuOpen.value = false;
   setRail("collapsed");
 }
+
+function go(section: OperatorSection) {
+  if (section.to) void navigateTo(section.to);
+  else emit("select", section.key);
+}
+
+function editing(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+}
+
+// Alt+N leva à seção N; "?" abre a ajuda. Quem já tratou a tecla (a venda do PDV, a
+// Produção) marca `defaultPrevented` e a peça não repete. Com diálogo aberto, nada.
+function onKeydown(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.repeat) return;
+  if (document.querySelector("[role='dialog'][data-state='open'], [role='alertdialog']")) return;
+  const index = sectionIndexFromKey(event);
+  if (index != null) {
+    const section = topSections.value[index];
+    if (!section) return;
+    event.preventDefault();
+    go(section);
+    return;
+  }
+  if (isShortcutsHelpKey(event) && !editing(event.target)) {
+    event.preventDefault();
+    shortcuts.open.value = true;
+  }
+}
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
   <aside
     v-if="!isCollapsed"
-    class="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar md:flex print:hidden"
+    v-bind="attrs"
+    class="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar rail:flex print:hidden"
     :aria-label="`Barra do app ${appLabel}`"
     data-suite-rail
   >
@@ -164,7 +195,40 @@ function hideRail() {
     <nav class="flex flex-col items-center gap-1" :aria-label="label">
       <template v-for="(section, index) in topSections" :key="section.key">
         <p v-if="groupStarts(index)" class="mt-0.5 mb-1 text-[9px] leading-none font-semibold tracking-[0.09em] uppercase opacity-[.62]" data-rail-group>{{ groupStarts(index) }}</p>
+        <div v-if="section.divider && index > 0" class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" data-rail-divider />
         <RailSection
+          :icon="section.icon"
+          :label="section.label"
+          :to="section.to"
+          :active="active === section.key"
+          :badge="section.badge"
+          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :attention="section.attention"
+          :shortcut="section.shortcut"
+          :print-shortcut="printShortcuts"
+          :dense="denseLabels"
+          :short-label="section.shortLabel"
+          :touch-label="touchLabel"
+          :data-section="section.key"
+          @activate="emit('select', section.key)"
+        />
+      </template>
+    </nav>
+
+    <div class="flex-1" />
+
+    <!-- O pé (v4). A caixa de Avisos só existe montada onde o rail aparece: no celular
+         e no tablet em pé ela mora na barra de 56px, e duas no DOM seriam duas leituras
+         e dois "Avisos" para quem procura pelo nome. -->
+    <div class="flex flex-col items-center gap-1" data-rail-foot :data-foot-order="footOrder">
+      <ClientOnly v-if="inbox && footOrder === 'inbox-first'">
+        <OperatorInbox v-if="railShown" placement="rail" />
+      </ClientOnly>
+
+      <nav v-if="footSections.length" class="flex flex-col items-center gap-1" :aria-label="`${label}: ajustes`">
+        <RailSection
+          v-for="section in footSections"
+          :key="section.key"
           :icon="section.icon"
           :label="section.label"
           :to="section.to"
@@ -178,51 +242,34 @@ function hideRail() {
           :data-section="section.key"
           @activate="emit('select', section.key)"
         />
-      </template>
-    </nav>
-
-    <div class="flex-1" />
-
-    <nav v-if="footSections.length" class="flex flex-col items-center gap-1" :aria-label="`${label}: ajustes`">
-      <RailSection
-        v-for="section in footSections"
-        :key="section.key"
-        :icon="section.icon"
-        :label="section.label"
-        :to="section.to"
-        :active="active === section.key"
-        :badge="section.badge"
-        :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
-        :attention="section.attention"
-        :shortcut="section.shortcut"
-        :print-shortcut="printShortcuts"
-        :dense="denseLabels"
-        :data-section="section.key"
-        @activate="emit('select', section.key)"
-      />
-      <div class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
-    </nav>
-
-    <div class="flex flex-col items-center gap-1">
-      <!-- O que é do app no pé (avisos, alertas). -->
+      </nav>
+      <!-- O que é do app no pé, antes do traço (o Terminal do PDV). -->
       <slot name="foot" />
+      <div
+        v-if="footOrder === 'settings-first' && (footSections.length || $slots.foot)"
+        class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20"
+        aria-hidden="true"
+        data-rail-foot-rule
+      />
 
-      <ClientOnly>
-        <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
+      <ClientOnly v-if="inbox && footOrder === 'settings-first'">
+        <OperatorInbox v-if="railShown" placement="rail" />
       </ClientOnly>
 
-      <div
-        v-if="workstationContext"
-        class="grid size-11 place-items-center rounded-md text-rail-foreground/90"
-        :title="workstationContext"
-        data-rail-workstation
-      >
-        <Icon :name="workstationIcon" class="size-5" aria-hidden="true" />
-        <span class="sr-only">{{ workstationContext }}</span>
+      <!-- Atalhos (?): só com ponteiro fino; no toque não há teclado. -->
+      <div class="hidden pointer-fine:block">
+        <RailSection
+          icon="lucide:keyboard"
+          label="Atalhos"
+          aria-label="Atalhos do teclado"
+          shortcut="?"
+          data-rail-shortcuts
+          @activate="shortcuts.open.value = true"
+        />
       </div>
 
       <RailSection
-        v-if="operatorName && lockable"
+        v-if="operatorName"
         icon="lucide:lock"
         label="Bloquear"
         :aria-label="`${operatorName}: travar ou trocar`"
@@ -230,12 +277,15 @@ function hideRail() {
         @activate="emit('lock')"
       />
 
-      <!-- Menu do operador: as iniciais. Tema, giro e ocultar a barra moram aqui. -->
+      <!-- Menu do operador: as iniciais. 44px (alvo de toque da casa; a v4 desenha 40,
+           e o gate de toque da Produção reprova) e fundo escuro, não o
+           `bg-rail-foreground/15` da prévia: no rail claro da Produção as iniciais
+           ficavam com contraste 3,7:1 (axe, AA pede 4,5). -->
       <PopoverRoot v-model:open="menuOpen">
         <PopoverTrigger as-child>
           <button
             type="button"
-            class="mt-1 grid size-11 place-items-center rounded-full bg-black/20 text-[13px] font-semibold text-rail-foreground transition hover:bg-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+            class="my-1.5 grid size-11 place-items-center rounded-full bg-black/25 text-[13px] font-semibold text-rail-foreground transition hover:bg-black/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
             :aria-label="operatorName ? `Menu de ${operatorName}` : 'Menu do dispositivo'"
             data-suite-rail-menu
           >
@@ -249,47 +299,14 @@ function hideRail() {
             align="end"
             :side-offset="8"
             :collision-padding="8"
-            class="z-50 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg outline-hidden"
+            class="z-50 w-72 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg outline-hidden"
             data-suite-rail-menu-panel
           >
-            <div v-if="operatorName || workstationContext" class="px-2.5 pt-1.5 pb-2">
-              <p v-if="operatorName" class="op-title truncate">{{ operatorName }}</p>
-              <p v-if="workstationContext" class="op-micro text-muted-foreground">{{ workstationContext }}</p>
-            </div>
-            <ClientOnly>
-              <button
-                type="button"
-                class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-                @click="toggleTheme"
-              >
-                <Icon name="lucide:moon" class="size-4 text-muted-foreground" aria-hidden="true" />
-                {{ themeLabel }}
-              </button>
-              <button
-                v-if="orientation.available.value"
-                type="button"
-                class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-                :aria-pressed="orientation.isLocked.value"
-                :disabled="orientationPending"
-                data-orientation-lock
-                @click="toggleOrientation"
-              >
-                <Icon :name="orientation.isLocked.value ? 'lucide:lock-keyhole' : 'lucide:rotate-cw-square'" class="size-4 text-muted-foreground" aria-hidden="true" />
-                {{ orientationLabel }}
-              </button>
-            </ClientOnly>
-            <button
-              type="button"
-              class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-              data-suite-rail-hide
-              @click="hideRail"
-            >
-              <Icon name="lucide:panel-left-close" class="size-4 text-muted-foreground" aria-hidden="true" />
-              Ocultar a barra
-            </button>
+            <OperatorMenuItems mode="rail" :operator-name="operatorName" @hide="hideRail" />
           </PopoverContent>
         </PopoverPortal>
       </PopoverRoot>
     </div>
   </aside>
+  <OperatorShortcutsHelp :sections="topSections" :app-label="appLabel" />
 </template>

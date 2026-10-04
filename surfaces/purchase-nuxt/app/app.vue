@@ -52,7 +52,7 @@ useOperatorWindowTitle();
       <div v-show="canIdentify" class="flex min-h-0 min-w-0 flex-1 flex-col">
         <NuxtPage />
       </div>
-      <PurchaseNav v-if="canIdentify && !locked && !mustChange" place="bar" />
+      <PurchaseNav v-if="canIdentify && !locked && !mustChange" place="bar" :operator-name="operator?.name" @lock="lock" />
     </div>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->

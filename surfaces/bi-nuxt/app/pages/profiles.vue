@@ -94,7 +94,6 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
       <template #phone-actions>
         <BiPeriodChip />
         <BiShareButton />
-        <BiPhoneBell />
       </template>
       <template #filters>
         <label class="inline-flex items-center gap-2 op-label text-muted-foreground">

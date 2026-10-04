@@ -11,9 +11,6 @@ useHead({ title: "Ajustes" });
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Ajustes">
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
     </OperatorPageHeader>
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">

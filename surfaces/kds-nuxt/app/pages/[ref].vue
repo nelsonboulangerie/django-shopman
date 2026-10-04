@@ -306,9 +306,6 @@ function warnLocked(pk: number) {
           aria-label="Buscar pedido por código, cliente ou item (atalho: /)"
         />
       </template>
-      <template #phone-actions>
-        <NotificationBell v-if="isPhone" />
-      </template>
       <!-- Celular (prévia v4 b): a barra de cima é só selo, título, ao vivo, busca e
            sino; som e reabrir vão para os Ajustes e para o toque longo. -->
       <template v-if="!isPhone" #actions>

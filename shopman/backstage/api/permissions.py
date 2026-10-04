@@ -118,10 +118,11 @@ def _recusa_se_capability_travada(request, capabilities) -> None:
         _recusa_travada()
 
 
-def _capabilities_travadas(request) -> frozenset[str]:
+def _capability_travada(request, code: str) -> bool:
+    """A superfície está travada, sozinha ou pelo Bloquear do dispositivo (V6-KIT)."""
     from shopman.backstage.services import operator_session
 
-    return operator_session.locked_capabilities(request)
+    return operator_session.is_capability_locked(request, code)
 
 
 def _operador(request):
@@ -230,7 +231,7 @@ class HasAnyBackstagePermission(BasePermission):
         permitted = tuple(code for code in perms if operador.has_perm(code))
         if not permitted:
             _recusa_sem_permissao()
-        if all(code in _capabilities_travadas(request) for code in permitted):
+        if all(_capability_travada(request, code) for code in permitted):
             _recusa_travada()
         return True
 

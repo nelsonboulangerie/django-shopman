@@ -21,8 +21,11 @@ export interface KdsSectionsInput {
 
 export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
   const sections: OperatorSection[] = [];
+  const stations: OperatorSection = { key: "stations", label: "Estações", icon: "lucide:layout-grid", to: "/" };
+  // Rail (v4 `cozinha-estacao4.html`): Estações, Preparo, Saída, Painel de retirada.
+  // Barra do polegar (v4 `cozinha-celular4.html`): Preparo, Saída, Estações e o "Mais".
   if (input.place === "bar" && input.stationRef) sections.push(prepSection(input));
-  sections.push({ key: "stations", label: "Estações", icon: "lucide:layout-grid", to: "/" });
+  if (input.place === "rail") sections.push(stations);
   if (input.place === "rail" && input.stationRef) sections.push(prepSection(input));
   if (input.exitUrl) {
     sections.push({
@@ -37,6 +40,7 @@ export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
           : undefined,
     });
   }
+  if (input.place === "bar") sections.push(stations);
   if (input.place === "rail") {
     sections.push({ key: "pickup", label: "Painel de retirada", icon: "lucide:monitor", to: "/pickup" });
   }

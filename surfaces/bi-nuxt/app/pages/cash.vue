@@ -97,7 +97,6 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
       <template #phone-actions>
         <BiPeriodChip />
         <BiShareButton />
-        <BiPhoneBell />
       </template>
     </OperatorPageHeader>
 

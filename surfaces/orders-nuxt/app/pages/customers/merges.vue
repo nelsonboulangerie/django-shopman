@@ -33,9 +33,6 @@ async function confirmUndo() {
         </NuxtLink>
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>

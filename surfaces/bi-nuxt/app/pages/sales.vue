@@ -136,7 +136,6 @@ function scrollToChannels() {
       <template #phone-actions>
         <BiPeriodChip />
         <BiShareButton />
-        <BiPhoneBell />
       </template>
       <template v-if="report" #filters>
         <label
