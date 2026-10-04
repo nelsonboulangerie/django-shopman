@@ -173,14 +173,9 @@ useHead({ title: "Enviados" });
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
     <MarketingPageHeader title="Enviados" phone-hides-actions>
+      <!-- Celular: o Atualizar mora no ⋯, nunca solto na barra de 56px (T-06). -->
       <template #phone-actions>
-        <UiIconButton
-          icon="lucide:refresh-cw"
-          label="Atualizar"
-          :spinning="loading"
-          :disabled="loading"
-          @click="refresh()"
-        />
+        <MarketingPageMenu heading="Enviados" :items="MENU" @select="refresh()" />
       </template>
       <template #status>
         <span class="flex min-w-0 shrink-[1000] overflow-hidden" data-marketing-live>

@@ -116,3 +116,16 @@ describe("C09/C10: a gaveta do item", () => {
     expect(sheet).toContain("data-sheet-reject-line");
   });
 });
+
+describe("T-06: Painel e Comprar no celular seguem a Base", () => {
+  const page = app("pages/index.vue");
+  const menu = app("components/PurchaseMoreMenu.vue");
+  it("o Atualizar mora no ⋮ da barra de 56px, com a tecla R", () => {
+    expect(page).toContain(`<PurchaseMoreMenu v-if="view === 'panel' || view === 'buy'" vertical :items="refreshMenuItems"`);
+    expect(page).toContain('const refreshMenuItems: MoreMenuItem[] = [{ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" }];');
+    expect(page).toContain('onKeyStroke(["r", "R"]');
+  });
+  it("a tecla aparece só onde há teclado", () => {
+    expect(menu).toContain("pointer-fine:inline");
+  });
+});

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// O ⋯ das telas do Compras (Base: Atualizar; Receber: Trocar NF, Sem NF, Ressalva
+// O ⋯ das telas do Compras (Painel, Comprar e Base: Atualizar; Receber: Trocar NF, Sem NF, Ressalva
 // geral, Registrar devolução). Popover do reka-ui, como o resto da layer em apps
 // sem `UiPopover`. `vertical` desenha o ⋮ da barra do celular.
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
@@ -12,6 +12,8 @@ export interface MoreMenuItem {
   disabled?: boolean;
   /** Linha fina antes do item (separa grupos). */
   divider?: boolean;
+  /** A tecla que faz o mesmo ("R"); só aparece onde há teclado. */
+  shortcut?: string;
 }
 
 const props = withDefaults(
@@ -61,7 +63,8 @@ function choose(key: string) {
               @click="choose(item.key)"
             >
               <Icon :name="item.icon" class="size-4" :class="item.danger ? '' : 'text-muted-foreground'" />
-              {{ item.label }}
+              <span class="flex-1">{{ item.label }}</span>
+              <kbd v-if="item.shortcut" class="hidden op-micro text-muted-foreground pointer-fine:inline">{{ item.shortcut }}</kbd>
             </button>
           </template>
         </div>
