@@ -74,6 +74,24 @@ def test_pix_block_is_written_with_the_charge_times():
     )
 
 
+def test_lapsed_pix_does_not_promise_to_advance():
+    from shopman.payman.models import PaymentIntent
+
+    order = _order("V6-PIX-OLD", "accepted", payment={"method": "pix", "amount_q": 1500, "intent_ref": "INT-V6-OLD"})
+    created = timezone.now() - timedelta(minutes=50)
+    intent = PaymentIntent.objects.create(
+        ref="INT-V6-OLD", order_ref=order.ref, method="pix", amount_q=1500, status="pending",
+        expires_at=created + timedelta(minutes=30),
+    )
+    PaymentIntent.objects.filter(pk=intent.pk).update(created_at=created)
+
+    card = build_order_card(Order.objects.get(pk=order.pk))
+
+    assert card.advance_block_label == "Pix expirado"
+    assert "expirou às" in card.advance_block_reason
+    assert "avança sozinho" not in card.advance_block_reason
+
+
 def test_ready_eta_uses_the_real_start_and_the_measured_time():
     now = timezone.now()
     started = now - timedelta(minutes=6)

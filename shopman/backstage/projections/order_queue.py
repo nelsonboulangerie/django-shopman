@@ -2235,11 +2235,16 @@ def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
         except ValueError:
             expires = None
     is_pix = method == "pix"
+    lapsed = bool(expires and expires <= timezone.now())
     parts = []
     if created:
         parts.append(f"{'gerado' if is_pix else 'link gerado'} às {timezone.localtime(created):%H:%M}")
     if expires:
-        parts.append(f"{'expira' if is_pix else 'vence'} às {timezone.localtime(expires):%H:%M}")
+        verb = ("expirou" if is_pix else "venceu") if lapsed else ("expira" if is_pix else "vence")
+        parts.append(f"{verb} às {timezone.localtime(expires):%H:%M}")
+    if lapsed:
+        # Cobrança vencida não "cai" mais: prometer o avanço sozinho seria mentir.
+        return ("Pix expirado" if is_pix else "Pagamento vencido"), " · ".join(parts)
     parts.append("avança sozinho quando cair" if is_pix else "avança sozinho quando o pagamento entrar")
     return ("Aguardando Pix" if is_pix else "Aguardando pagamento"), " · ".join(parts)
 
