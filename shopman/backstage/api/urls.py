@@ -273,6 +273,7 @@ from .recipe_book import (
     RecipeVersionRatingView,
     RecipeVersionView,
 )
+from .pos_settings import POSSettingsView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
@@ -335,6 +336,7 @@ urlpatterns = [
     path("pos/", POSView.as_view(), name="api-backstage-pos"),
     # PDV › Ajustes › Salão: a planta das mesas, com o registro de cada mudança.
     path("pos/seating/", POSSeatingView.as_view(), name="api-backstage-pos-seating"),
+    path("pos/settings/", POSSettingsView.as_view(), name="api-backstage-pos-settings"),
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)
     path("operator/login/", OperatorLoginView.as_view(), name="api-backstage-operator-login"),
     path("operator/session/", OperatorSessionView.as_view(), name="api-backstage-operator-session"),

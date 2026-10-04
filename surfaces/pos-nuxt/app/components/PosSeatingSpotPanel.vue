@@ -14,6 +14,8 @@ const props = defineProps<{
   maxSeats: number;
   /** Comandas em uso agora (a nota de que mover mesa não mexe em comanda). */
   openTabs: number;
+  /** A comanda aberta NESTA mesa (vínculo opcional comanda × mesa); "" = nenhuma. */
+  spotTab?: string;
 }>();
 
 const emit = defineEmits<{
@@ -79,7 +81,10 @@ function menu(action: "rotate" | "duplicate" | "remove") {
   else if (action === "duplicate") emit("duplicate");
   else emit("remove");
 }
+// "Mesa 4 tem comanda aberta agora. Mover mesas não mexe em comanda." (v4 pino 6):
+// com o vínculo, a nota fala DESTA mesa; sem ele, do salão.
 const tabsNote = computed(() => {
+  if (props.spotTab) return `${props.spot.label} tem comanda aberta agora (${props.spotTab}). Mover mesas não mexe em comanda.`;
   const lead = props.openTabs === 1 ? "1 comanda aberta agora." : props.openTabs > 1 ? `${props.openTabs} comandas abertas agora.` : "";
   return `${lead} Mover mesas não mexe em comanda.`.trim();
 });

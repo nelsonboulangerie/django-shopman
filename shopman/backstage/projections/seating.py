@@ -15,7 +15,7 @@ import json
 
 from django.utils import formats, timezone
 
-from shopman.backstage.models import SeatingSpot, SpotShape
+from shopman.backstage.models import FixtureKind, SeatingFixture, SeatingSpot, SpotShape
 from shopman.backstage.services import seating as seating_service
 
 HISTORY_LIMIT = 30
@@ -142,9 +142,46 @@ def history(limit: int = HISTORY_LIMIT) -> list[dict]:
     return rows
 
 
+def fixtures() -> list[dict]:
+    """A vitrine e caixa e a entrada, desenhadas na planta (sem lugar, sem B.I.)."""
+    return [
+        {"id": f.pk, "kind": f.kind, "label": f.label, "plan_x": f.plan_x, "plan_y": f.plan_y,
+         "width": f.width, "height": f.height}
+        for f in SeatingFixture.objects.order_by("kind", "pk")
+    ]
+
+
+def open_tabs_by_spot() -> dict[str, dict]:
+    """``{mesa: comanda aberta}`` pelo vínculo opcional comanda × mesa.
+
+    O vínculo mora em ``Session.data["seating_spot_ref"]`` (escrito ao dar nome à
+    comanda no PDV, ``services/pos.set_pos_tab_seating``). Mesa sem vínculo não
+    aparece: a comanda que ninguém vinculou não ocupa mesa nenhuma na planta.
+    """
+    from shopman.orderman.models import Session
+
+    rows: dict[str, dict] = {}
+    sessions = Session.objects.filter(state="open", data__has_key="seating_spot_ref").only("session_key", "handle_ref", "data")
+    for session in sessions:
+        data = session.data or {}
+        spot_ref = str(data.get("seating_spot_ref") or "")
+        if not spot_ref or spot_ref in rows:
+            continue
+        rows[spot_ref] = {
+            "session_key": session.session_key,
+            "tab_ref": str(data.get("tab_ref") or session.handle_ref or ""),
+            "tab_display": str(data.get("tab_display") or session.handle_ref or ""),
+        }
+    return rows
+
+
 def build_seating() -> dict:
     spots = seating_service.active_spots()
+    occupied = open_tabs_by_spot()
     return {
+        "open_tabs": {spot.ref: occupied[spot.ref] for spot in spots if spot.ref in occupied},
+        "fixtures": fixtures(),
+        "fixture_kinds": [{"value": value, "label": label} for value, label in FixtureKind.choices],
         "today": seating_service.today().isoformat(),
         "today_label": _date(seating_service.today()),
         "revision": seating_service.revision(spots),

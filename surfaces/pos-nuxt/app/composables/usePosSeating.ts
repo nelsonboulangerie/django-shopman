@@ -12,12 +12,18 @@ import {
   spotSize,
   toDraft,
 } from "~/presentation/seating";
-import type { SeatingResponse, SpotShape } from "~/types/seating";
+import type { SeatingFixtureKind, SeatingFixtureProjection, SeatingResponse, SpotShape } from "~/types/seating";
 
 const SEATING_KEY = "pos-seating";
 const HISTORY_LIMIT = 50;
 
-interface Snapshot { spots: DraftSpot[]; removed: DraftSpot[]; areas: string[] }
+interface Snapshot { spots: DraftSpot[]; removed: DraftSpot[]; areas: string[]; fixtures: SeatingFixtureProjection[] }
+
+/** Onde nasce cada elemento fixo, e o tamanho (v4: a vitrine é a faixa ao lado do balcão). */
+const FIXTURE_DEFAULTS: Record<SeatingFixtureKind, { width: number; height: number }> = {
+  showcase: { width: 40, height: 320 },
+  entrance: { width: 120, height: 16 },
+};
 
 /**
  * PDV › Ajustes › Salão: a leitura da planta e o rascunho que a tela edita.
@@ -40,6 +46,10 @@ export function usePosSeating() {
   const removed = ref<DraftSpot[]>([]);
   /** Áreas criadas na tela que ainda não têm mesa. */
   const areas = ref<string[]>([]);
+  // A vitrine e caixa e a entrada (desenho, sem lugar e sem B.I.): uma lista só,
+  // gravada inteira no mesmo Salvar.
+  const originalFixtures = ref<SeatingFixtureProjection[]>([]);
+  const fixtures = ref<SeatingFixtureProjection[]>([]);
   const selectedKey = ref<string | null>(null);
   const past = ref<Snapshot[]>([]);
   const future = ref<Snapshot[]>([]);
@@ -52,6 +62,8 @@ export function usePosSeating() {
     spots.value = original.value.map((spot) => ({ ...spot }));
     removed.value = [];
     areas.value = [];
+    originalFixtures.value = (response.fixtures || []).map((fixture) => ({ ...fixture }));
+    fixtures.value = originalFixtures.value.map((fixture) => ({ ...fixture }));
     past.value = [];
     future.value = [];
     if (selectedKey.value && !spots.value.some((spot) => spot.key === selectedKey.value)) selectedKey.value = null;
@@ -60,7 +72,11 @@ export function usePosSeating() {
 
   const selected = computed(() => spots.value.find((spot) => spot.key === selectedKey.value) ?? null);
   const selectedOriginal = computed(() => original.value.find((spot) => spot.key === selectedKey.value));
-  const changes = computed(() => changeList(original.value, spots.value, removed.value));
+  const fixturesChanged = computed(() => JSON.stringify(fixtures.value) !== JSON.stringify(originalFixtures.value));
+  const changes = computed(() => {
+    const list = changeList(original.value, spots.value, removed.value);
+    return fixturesChanged.value ? [...list, { key: "fixtures", text: "vitrine e entrada na planta" }] : list;
+  });
   const summary = computed(() => changesSummary(changes.value));
   const dirty = computed(() => changes.value.length > 0);
 
@@ -69,12 +85,14 @@ export function usePosSeating() {
       spots: spots.value.map((spot) => ({ ...spot })),
       removed: removed.value.map((spot) => ({ ...spot })),
       areas: [...areas.value],
+      fixtures: fixtures.value.map((fixture) => ({ ...fixture })),
     };
   }
   function restore(state: Snapshot) {
     spots.value = state.spots;
     removed.value = state.removed;
     areas.value = state.areas;
+    fixtures.value = state.fixtures;
     if (selectedKey.value && !spots.value.some((spot) => spot.key === selectedKey.value)) selectedKey.value = null;
   }
   /** Guarda o estado de agora para o Desfazer (antes de cada gesto). */
@@ -170,6 +188,25 @@ export function usePosSeating() {
     return true;
   }
 
+  /** Põe a vitrine e caixa ou a entrada na planta (uma de cada; a segunda move a primeira). */
+  function addFixture(kind: SeatingFixtureKind, label: string, at: { x: number; y: number }) {
+    checkpoint();
+    const size = FIXTURE_DEFAULTS[kind];
+    const fixture: SeatingFixtureProjection = { kind, label, plan_x: snap(Math.max(0, at.x - size.width / 2)), plan_y: snap(Math.max(0, at.y - size.height / 2)), ...size };
+    fixtures.value = [...fixtures.value.filter((item) => item.kind !== kind), fixture];
+  }
+  function moveFixture(kind: SeatingFixtureKind, x: number, y: number) {
+    fixtures.value = fixtures.value.map((item) => (item.kind === kind ? { ...item, plan_x: Math.max(0, x), plan_y: Math.max(0, y) } : item));
+  }
+  function rotateFixture(kind: SeatingFixtureKind) {
+    checkpoint();
+    fixtures.value = fixtures.value.map((item) => (item.kind === kind ? { ...item, width: item.height, height: item.width } : item));
+  }
+  function removeFixture(kind: SeatingFixtureKind) {
+    checkpoint();
+    fixtures.value = fixtures.value.filter((item) => item.kind !== kind);
+  }
+
   function discard() {
     load(data.value);
   }
@@ -180,7 +217,10 @@ export function usePosSeating() {
     try {
       const response = await action.call<SeatingResponse>("/api/v1/backstage/pos/seating/", {
         method: "POST",
-        body: savePayload(data.value.revision, original.value, spots.value, removed.value) as unknown as Record<string, unknown>,
+        body: {
+          ...(savePayload(data.value.revision, original.value, spots.value, removed.value) as unknown as Record<string, unknown>),
+          ...(fixturesChanged.value ? { fixtures: fixtures.value.map((f) => ({ kind: f.kind, label: f.label, plan_x: f.plan_x, plan_y: f.plan_y, width: f.width, height: f.height })) } : {}),
+        },
       });
       data.value = response;
       toast.success("Salão salvo.", { description: "Vale a partir de hoje; os dias de antes não mudam." });
@@ -202,11 +242,12 @@ export function usePosSeating() {
 
   return {
     data, pending, error, refresh,
-    original, spots, removed, areas, selectedKey, selected, selectedOriginal,
+    original, spots, removed, areas, selectedKey, selected, selectedOriginal, fixtures,
     changes, summary, dirty, saving,
     canUndo: computed(() => past.value.length > 0),
     canRedo: computed(() => future.value.length > 0),
     checkpoint, update, add, duplicate, rotate, remove, addArea, undo, redo, discard, save,
+    addFixture, moveFixture, rotateFixture, removeFixture,
   };
 }
 

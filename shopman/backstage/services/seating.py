@@ -215,7 +215,7 @@ def _diff(before: dict, after: dict) -> tuple[dict, dict]:
 
 
 @transaction.atomic
-def save_layout(*, actor, spots, removed, expected_revision) -> SaveResult:
+def save_layout(*, actor, spots, removed, expected_revision, fixtures=None) -> SaveResult:
     """Grava a planta: mesas mudadas ou novas (``spots``) e as que saem (``removed``).
 
     Cada item de ``spots`` com ``ref`` muda uma mesa de hoje; sem ``ref`` é mesa
@@ -312,4 +312,44 @@ def save_layout(*, actor, spots, removed, expected_revision) -> SaveResult:
                after={"active_until": yesterday.isoformat()})
         result.removed += 1
 
+    if fixtures is not None:
+        save_fixtures(fixtures)
     return result
+
+
+FIXTURE_MAX = 2000
+
+
+def save_fixtures(fixtures) -> None:
+    """A vitrine e caixa e a entrada da planta: troca a lista inteira de uma vez.
+
+    Desenho, não medida (o B.I. não lê): edita-se no lugar, sem versão, junto do
+    Salvar do salão. Cada item ``{kind, label?, plan_x, plan_y, width?, height?}``.
+    """
+    from shopman.backstage.models import FixtureKind, SeatingFixture
+
+    if not isinstance(fixtures, list):
+        raise SeatingError("Envie a lista de elementos fixos.", field="fixtures")
+    kinds = dict(FixtureKind.choices)
+    rows = []
+    for index, raw in enumerate(fixtures):
+        if not isinstance(raw, dict) or raw.get("kind") not in kinds:
+            raise SeatingError("Elemento fixo desconhecido.", field=f"fixtures[{index}].kind")
+
+        def number(key, default, low=0, high=FIXTURE_MAX):
+            try:
+                value = int(raw.get(key, default))
+            except (TypeError, ValueError):
+                raise SeatingError("Posição inválida.", field=f"fixtures[{index}].{key}") from None
+            return max(low, min(high, value))
+
+        rows.append(SeatingFixture(
+            kind=raw["kind"],
+            label=str(raw.get("label") or kinds[raw["kind"]])[:60],
+            plan_x=number("plan_x", 0),
+            plan_y=number("plan_y", 0),
+            width=number("width", 40, 16),
+            height=number("height", 320, 16),
+        ))
+    SeatingFixture.objects.all().delete()
+    SeatingFixture.objects.bulk_create(rows)

@@ -274,6 +274,51 @@ function dropClass(date: string): string {
   return canDropOn(date, dragging.value, storeToday.value) ? "border-dashed border-primary/50" : "opacity-60";
 }
 
+// ── CELULAR (v3 `depois-pdv-celular`): os chips Hoje · Amanhã · Retirada · Entrega
+//    no lugar do Período e das pílulas, e "Ler código da encomenda" no polegar. ──
+const tomorrow = computed(() => {
+  const base = new Date(`${storeToday.value}T12:00:00`);
+  base.setDate(base.getDate() + 1);
+  return isoDate(base);
+});
+const phoneChips = computed(() => {
+  const isDayView = view.value.mode === "day";
+  const cards = allCards.value;
+  return [
+    { key: "today", label: "Hoje", count: isDayView && view.value.date === storeToday.value ? cards.length : null, active: isDayView && view.value.date === storeToday.value, icon: "" },
+    { key: "tomorrow", label: "Amanhã", count: isDayView && view.value.date === tomorrow.value ? cards.length : null, active: isDayView && view.value.date === tomorrow.value, icon: "" },
+    { key: "pickup", label: "Retirada", count: cards.filter((c) => c.fulfillment_type !== "delivery").length, active: view.value.fulfillment === "pickup", icon: "lucide:store" },
+    { key: "delivery", label: "Entrega", count: cards.filter((c) => c.fulfillment_type === "delivery").length, active: view.value.fulfillment === "delivery", icon: "lucide:bike" },
+  ];
+});
+function pickPhoneChip(key: string) {
+  if (key === "today") update({ mode: "day", date: storeToday.value });
+  else if (key === "tomorrow") update({ mode: "day", date: tomorrow.value });
+  else {
+    const fulfillment = key as PreorderFilters["fulfillment"];
+    update({ fulfillment: view.value.fulfillment === fulfillment ? "all" : fulfillment });
+  }
+}
+const scannerOpen = ref(false);
+// O QR da mensagem que o cliente recebeu traz o número da encomenda: a leitura
+// vira a busca, e um resultado só abre o detalhe.
+function onScannedOrder(code: string) {
+  scannedPending.value = true;
+  const ref = code.trim().split(/[/?#=]/).filter(Boolean).pop() || code.trim();
+  typed.value = ref;
+  update({ q: ref });
+}
+watch(result, (value) => {
+  if (value && typed.value && singleResult(value)) {
+    // Leitura pelo QR: só abre sozinha quando a busca veio do leitor.
+    if (scannedPending.value) {
+      scannedPending.value = false;
+      openSingle();
+    }
+  }
+});
+const scannedPending = ref(false);
+
 function refreshAll() {
   void refreshPos();
   void period.refresh();
@@ -292,7 +337,7 @@ function refreshAll() {
     <template v-if="!searching" #period>
       <OperatorPeriodPicker
         v-model="periodSelection"
-        class="min-w-0"
+        class="min-w-0 max-md:hidden"
         :presets="PREORDERS_PERIOD_PRESETS"
         custom
         :max-span-days="PREORDERS_MAX_SPAN_DAYS"
@@ -304,7 +349,7 @@ function refreshAll() {
 
     <!-- À DIREITA DA BARRA: grade ou lista, e o lote das Vias Pedido do que se vê. -->
     <template #actions>
-      <div class="flex items-center gap-1" role="group" aria-label="Arrumação das encomendas" data-preorders-layout>
+      <div class="flex items-center gap-1 max-md:hidden" role="group" aria-label="Arrumação das encomendas" data-preorders-layout>
         <UiIconButton
           v-for="option in LAYOUT_OPTIONS"
           :key="option.value"
@@ -318,8 +363,10 @@ function refreshAll() {
       </div>
       <template v-if="!searching && list && list.count">
         <UiButton
-          :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
+          class="max-md:hidden"
+          :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value || !tickets.hasPrinter.value"
           :loading="tickets.printing.value"
+          :title="tickets.hasPrinter.value ? undefined : `${tickets.printerUnavailableReason.value} A Via Pedido sai no balcão que tem impressora.`"
           data-preorders-print
           @click="printMissing"
         >
@@ -337,7 +384,7 @@ function refreshAll() {
         aria-labelledby="preorders-search-title"
         data-preorders-search-block
       >
-        <h1 id="preorders-search-title" class="flex shrink-0 items-center gap-2 font-semibold leading-tight">
+        <h1 id="preorders-search-title" class="sr-only">
           <Icon name="lucide:package-search" class="size-5 text-primary" aria-hidden="true" />
           Cliente veio buscar?
         </h1>
@@ -364,12 +411,32 @@ function refreshAll() {
         variant="outline"
         size="lg"
         class="h-11 shrink-0 gap-2"
+        aria-label="Nova encomenda"
         data-preorders-new
         @click="navigateTo(NEW_ORDER_ROUTE)"
       >
         <Icon name="lucide:plus" class="size-5" aria-hidden="true" />
-        Nova encomenda
+        <span class="max-md:sr-only">Nova encomenda</span>
       </UiButton>
+    </div>
+
+    <!-- CELULAR: os recortes do dia em chips que rolam, numa linha só. -->
+    <div v-if="!searching" class="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar md:hidden" role="group" aria-label="Recortes das encomendas" data-preorders-phone-chips>
+      <button
+        v-for="chip in phoneChips"
+        :key="chip.key"
+        type="button"
+        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
+        :class="chip.active ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+        :aria-pressed="chip.active"
+        :data-preorders-phone-chip="chip.key"
+        @click="pickPhoneChip(chip.key)"
+      >
+        <Icon v-if="chip.active" name="lucide:check" class="size-4 text-primary" aria-hidden="true" />
+        <Icon v-else-if="chip.icon" :name="chip.icon" class="size-4 text-muted-foreground" aria-hidden="true" />
+        {{ chip.label }}
+        <span v-if="chip.count !== null" class="tnum">{{ chip.count }}</span>
+      </button>
     </div>
 
     <!-- ── O RESULTADO DA BUSCA toma o lugar do período. ── -->
@@ -477,17 +544,8 @@ function refreshAll() {
 
     <!-- ── O PERÍODO: o dia, ou a semana de segunda a domingo. ── -->
     <template v-else>
-      <!-- Sem impressora nesta estação, o lote da barra avisa aqui por que não sai. -->
-      <p
-        v-if="list && list.count && !tickets.hasPrinter.value"
-        class="flex items-start gap-1.5 px-1 text-xs text-muted-foreground"
-        data-preorders-no-printer
-      >
-        <Icon name="lucide:printer" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
-        <span>{{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.</span>
-      </p>
-
       <!-- AS PÍLULAS: os recortes de todo dia, em blocos, e o "Filtrar" para o resto. -->
+      <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 max-md:hidden" data-preorders-toolbar>
       <PosPreorderFilters
         v-if="list && list.count"
         v-model="filters"
@@ -501,7 +559,7 @@ function refreshAll() {
            diferentes, nunca somadas). -->
       <div
         v-if="todayLine.length || (list && list.count && showSummary)"
-        class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-1"
+        class="flex flex-wrap items-baseline justify-end gap-x-6 gap-y-1 px-1"
         aria-label="Hoje e o resumo do período"
         role="group"
       >
@@ -525,6 +583,7 @@ function refreshAll() {
           <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted-foreground" data-preorders-total>{{ summary }}</p>
         </div>
+      </div>
       </div>
 
       <section
@@ -687,12 +746,26 @@ function refreshAll() {
 
         <!-- A NOTA DE ESCOPO, como legenda: a ponte da divergência de vocabulário
              ("encomenda" aqui inclui a retirada de hoje). -->
-        <p class="flex items-start gap-1.5 px-1 text-xs text-muted-foreground" data-preorders-scope>
+        <p class="flex items-start gap-1.5 px-1 text-xs text-muted-foreground max-md:hidden" data-preorders-scope>
           <Icon name="lucide:info" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
           <span>{{ PREORDERS_SCOPE_NOTE }}</span>
         </p>
       </template>
     </template>
+
+    <!-- CELULAR: a ação principal no polegar (v3 celular 4), presa acima da barra. -->
+    <div class="sticky bottom-0 z-20 -mx-4 -mb-4 bg-gradient-to-t from-background via-background to-transparent px-4 pt-6 pb-3 md:hidden" data-preorders-scan-bar>
+      <button
+        type="button"
+        class="flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)]"
+        data-preorders-scan
+        @click="scannerOpen = true"
+      >
+        <Icon name="lucide:scan-qr-code" class="size-6" aria-hidden="true" />
+        Ler código da encomenda
+      </button>
+    </div>
+    <PosCodeScanner v-model:open="scannerOpen" title="Ler código da encomenda" @code="onScannedOrder" @type="searchField?.inputRef?.focus()" />
 
     <!-- O REAGENDAR completo, o mesmo do detalhe: "Outra data ou horário…" no menu
          do card, ou depois de o servidor recusar o dia em que o card foi solto. -->

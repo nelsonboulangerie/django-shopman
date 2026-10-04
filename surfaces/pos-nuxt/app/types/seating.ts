@@ -49,5 +49,22 @@ export interface SeatingResponse {
   shapes: { value: SpotShape; label: string }[];
   max_seats: number;
   history: SeatingHistoryEntry[];
+  /** A comanda aberta em cada mesa, pelo vínculo opcional comanda × mesa. */
+  open_tabs?: Record<string, { session_key: string; tab_ref: string; tab_display: string }>;
+  /** A vitrine e caixa e a entrada, desenhadas na planta. */
+  fixtures?: SeatingFixtureProjection[];
+  fixture_kinds?: { value: SeatingFixtureKind; label: string }[];
   saved?: { changed: number; created: number; versioned: number; removed: number };
+}
+
+export type SeatingFixtureKind = "showcase" | "entrance";
+
+export interface SeatingFixtureProjection {
+  id?: number;
+  kind: SeatingFixtureKind;
+  label: string;
+  plan_x: number;
+  plan_y: number;
+  width: number;
+  height: number;
 }

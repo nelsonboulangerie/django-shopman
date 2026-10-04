@@ -149,6 +149,13 @@ class DayClosingProjection:
     pending_episodes: tuple[PendingEpisodeProjection, ...] = ()
     episode_options: tuple[EpisodeOptionProjection, ...] = ()
     has_pending_episodes: bool = False
+    # A forma do movimento por hora, hoje × o mesmo dia da semana típico (v4
+    # "Explicar o dia estranho"): só a FORMA, valores relativos de 0 a 1, nunca
+    # reais nem contagem. ``{hours, today, typical, typical_label, drop_after}``;
+    # vazio quando não há histórico para comparar.
+    hourly_shape: dict | None = None
+    # Quem está fechando ("Admin · gerência"), para o chip do cabeçalho do corredor.
+    operator_display: str = ""
 
 
 # ── Builder ────────────────────────────────────────────────────────────
@@ -198,7 +205,74 @@ def build_day_closing() -> DayClosingProjection:
         pending_episodes=pending_episodes,
         episode_options=_episode_options() if pending_episodes else (),
         has_pending_episodes=bool(pending_episodes),
+        hourly_shape=_hourly_shape(today),
     )
+
+
+SHAPE_HOURS = tuple(range(7, 20))
+_WEEKDAY_TYPICAL = (
+    "segunda típica", "terça típica", "quarta típica", "quinta típica",
+    "sexta típica", "sábado típico", "domingo típico",
+)
+
+
+def _orders_by_hour(day) -> dict[int, int]:
+    from django.db.models import Count
+    from django.db.models.functions import ExtractHour
+
+    from shopman.orderman.models import Order
+
+    rows = (
+        Order.objects.filter(created_at__date=day)
+        .exclude(status="cancelled")
+        .annotate(hour=ExtractHour("created_at"))
+        .values("hour")
+        .annotate(n=Count("id"))
+    )
+    return {int(row["hour"]): int(row["n"]) for row in rows if row["hour"] is not None}
+
+
+def _hourly_shape(today) -> dict | None:
+    """Hoje × o mesmo dia da semana nas últimas 4 semanas, por hora, só a forma.
+
+    Às cegas (fim do dia não mostra dinheiro): as duas séries saem divididas pelo
+    maior valor do dia típico, então o que se lê é "a curva de hoje desceu
+    antes", nunca quanto. ``drop_after`` é a primeira hora a partir da qual hoje
+    fica abaixo de metade do típico até o fim (o "caiu depois das 14h").
+    """
+    from datetime import timedelta
+
+    try:
+        today_counts = _orders_by_hour(today)
+        past = [_orders_by_hour(today - timedelta(days=7 * week)) for week in range(1, 5)]
+    except Exception:
+        return None
+    past = [counts for counts in past if counts]
+    if not past:
+        return None
+    typical = [sum(c.get(h, 0) for c in past) / len(past) for h in SHAPE_HOURS]
+    peak = max(typical) or 0
+    if peak <= 0:
+        return None
+    now_hour = timezone.localtime().hour if today == timezone.localdate() else 24
+    today_series = [round(today_counts.get(h, 0) / peak, 3) if h <= now_hour else None for h in SHAPE_HOURS]
+    typical_series = [round(v / peak, 3) for v in typical]
+    drop_after = ""
+    for index, hour in enumerate(SHAPE_HOURS):
+        tail = [
+            (t, ty) for t, ty in zip(today_series[index:], typical_series[index:], strict=False)
+            if t is not None and ty >= 0.15
+        ]
+        if len(tail) >= 2 and all(t < ty * 0.5 for t, ty in tail) and index > 0:
+            drop_after = f"{hour}h"
+            break
+    return {
+        "hours": [f"{h}h" for h in SHAPE_HOURS],
+        "today": today_series,
+        "typical": typical_series,
+        "typical_label": _WEEKDAY_TYPICAL[today.weekday()],
+        "drop_after": drop_after,
+    }
 
 
 # ── Internals ──────────────────────────────────────────────────────────

@@ -92,6 +92,13 @@ class POSProductProjection:
     # público de ``catalog_context.option_groups``. Com grupo, tocar o tile abre
     # a escolha antes de lançar. Vazio = lança direto.
     option_groups: tuple[dict, ...] = ()
+    # Para que estação da cozinha o produto vai quando a linha é enviada (o
+    # roteamento real, ``services/kds.kitchen_routes_for_skus``). A linha nova
+    # diz "vai à cozinha" antes do envio (v4). Vazio = não vai à cozinha.
+    kitchen_station: str = ""
+    # A estação dele tem o envio automático ligado (opcional por estação,
+    # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
+    kitchen_auto_fire: bool = False
 
 
 @dataclass(frozen=True)
@@ -414,6 +421,11 @@ class POSTabProjection:
     # Session.data["fired_lines"] — no extra storage.
     fired: bool = False
     sales_mode: str = "counter"
+    # Hora em que a comanda abriu ("aberta 21:48", v4 tablet): é o relógio da
+    # mesa, diferente do último toque.
+    opened_at_display: str = ""
+    # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
+    seating_spot_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -466,6 +478,10 @@ class POSProjection:
     # de quem autoriza a própria sangria.
     managers: tuple[dict, ...] = ()
     auto_lock_seconds: int = 60
+    # As mesas do Salão de hoje, para o vínculo OPCIONAL comanda × mesa: ao dar
+    # nome à comanda, elas aparecem para escolher com um toque. Cada uma
+    # ``{ref, label, short_label, area, kind}``; vazio = casa sem salão cadastrado.
+    seating_spots: tuple[dict, ...] = ()
     # Geometria do rolo declarada pelo terminal (0 = não declarou, e aí o
     # default do CSS do PDV manda). A superfície escreve estes dois valores nas
     # custom properties que o `@page` do recibo lê — ver o print CSS em
@@ -639,7 +655,21 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
         device_agent=DeviceAgentConfig.from_terminal(terminal).surface_payload(),
         shop_name=_shop_name(),
+        seating_spots=_seating_spots(),
     )
+
+
+def _seating_spots() -> tuple[dict, ...]:
+    try:
+        from shopman.backstage.services import seating as seating_service
+
+        return tuple(
+            {"ref": spot.ref, "label": spot.label, "short_label": spot.short_label, "area": spot.area, "kind": spot.kind}
+            for spot in seating_service.active_spots()
+        )
+    except Exception:
+        logger.debug("pos_seating_spots_lookup_failed", exc_info=True)
+        return ()
 
 
 def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
@@ -1112,14 +1142,28 @@ def _load_products() -> list[POSProductProjection]:
     skus = [p.sku for p, _ in entries]
     sold_out = _sold_out_skus(skus)
     without_box = _kits_without_box(skus)
+    routes = _kitchen_routes(skus)
     return [
         _product_projection(
             p, price_q,
             sold_out=p.sku in sold_out or p.sku in without_box,
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
+            kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
+            kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
         )
         for p, price_q in entries
     ]
+
+
+def _kitchen_routes(skus: list[str]) -> dict[str, dict]:
+    """``{sku: {station, auto_fire}}`` pelo roteamento real da cozinha; silencioso se falhar."""
+    try:
+        from shopman.shop.services.kds import kitchen_routes_for_skus
+
+        return kitchen_routes_for_skus(skus)
+    except Exception:
+        logger.debug("pos_kitchen_stations_lookup_failed", exc_info=True)
+        return {}
 
 
 def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
@@ -1560,7 +1604,7 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="fire_tab",
             kind="mutation",
-            label="Enviar",
+            label="Enviar à cozinha",
             priority="normal",
             method="POST",
             href="/api/v1/backstage/pos/tabs/fire/",
@@ -2272,6 +2316,8 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
 
 def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
+    kitchen_station: str = "",
+    kitchen_auto_fire: bool = False,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
@@ -2308,6 +2354,8 @@ def _product_projection(
         choice_group=product_choice_group(product),
         choice_group_label=product_choice_group_label(product),
         option_groups=tuple(product_option_groups(product)),
+        kitchen_station=kitchen_station,
+        kitchen_auto_fire=kitchen_auto_fire,
     )
 
 
@@ -2446,6 +2494,8 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),
         sales_mode=sales_mode(data),
+        opened_at_display=_format_time(session.opened_at) if session.opened_at else "",
+        seating_spot_ref=str(data.get("seating_spot_ref") or ""),
     )
 
 
@@ -2814,6 +2864,12 @@ def build_open_tab(session: Session) -> dict:
         "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
+        # O número da comanda como o balcão fala ("1007"), para a barra mostrar
+        # "Mesa 6" grande e "#1007" pequeno quando a comanda foi renomeada.
+        "tab_number": str(data.get("tab_number") or "") or _display_ref(tab_ref),
+        "opened_at_display": _format_time(session.opened_at) if session.opened_at else "",
+        # A mesa do Salão vinculada (opcional; ``set_pos_tab_seating``).
+        "seating_spot_ref": str(data.get("seating_spot_ref") or ""),
         "edit_of": edit_of,
         "items": items,
         "customer_phone": customer.get("phone", ""),

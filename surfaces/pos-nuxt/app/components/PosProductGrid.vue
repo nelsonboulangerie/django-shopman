@@ -5,9 +5,12 @@
 // sealed in the Projection (price_display) and only rendered. Search and
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
-import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
+import type { POSCartItem, POSCollectionProjection, POSProductProjection, POSTabProjection } from "~/types/pos";
 import {
+  FAVORITES_COLLECTION,
   HIDE_UNAVAILABLE_STORAGE_KEY,
+  favoriteProducts,
+  matchOpenTabs,
   cartQtyForSku,
   collectionColorMap,
   enterTargetProduct,
@@ -25,9 +28,24 @@ const props = defineProps<{
   favoriteRefs: string[];
   cartItems: POSCartItem[];
   pending: boolean;
+  /** As comandas do quadro: a busca acha comanda pelo número, nome ou cliente. */
+  tabs?: POSTabProjection[];
+  /** A comanda aberta agora (fica fora do que a busca acha). */
+  currentTabRef?: string;
+  /** A busca oferece "Buscar cliente" (só na venda com a barra de cliente). */
+  customerSearch?: boolean;
 }>();
 
-const emit = defineEmits<{ add: [POSProductProjection] }>();
+const emit = defineEmits<{
+  add: [POSProductProjection];
+  openTab: [ref: string];
+  findCustomer: [query: string];
+}>();
+
+// Toque (tablet, celular): sem teclas impressas, chips de 48 px com "Favoritos"
+// primeiro, tile sem SKU, grade pela largura do dedo e "Ler código" pela câmera.
+const coarsePointer = useMediaQuery("(pointer: coarse)");
+const scannerOpen = ref(false);
 
 const search = ref("");
 const activeCollection = ref("");
@@ -45,9 +63,14 @@ const DENSITIES: { key: Density; label: string; icon: string; cols: string }[] =
   { key: "cozy", label: "Padrão", icon: "lucide:layout-grid", cols: "grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 @3xl:grid-cols-5 @5xl:grid-cols-6" },
   { key: "roomy", label: "Ampla", icon: "lucide:grid-2x2", cols: "grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4" },
 ];
+// No toque, a grade é pela largura do dedo (v3 tablet deitado: 3 colunas ao lado
+// da comanda; v4 tablet em pé: 4 colunas de 188 px), sem seletor de densidade.
+const TOUCH_COLS = "grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-4 @5xl:grid-cols-5";
 const DENSITY_STORAGE_KEY = "pos.productDensity";
 const density = ref<Density>("cozy");
-const densityCols = computed(() => DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
+const densityCols = computed(() => coarsePointer.value
+  ? TOUCH_COLS
+  : DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
 // O ponto colorido do chip de cada coleção (v4): a cor que os produtos dela já trazem.
 const collectionColors = computed(() => collectionColorMap(props.products));
 
@@ -56,6 +79,7 @@ const collectionColors = computed(() => collectionColorMap(props.products));
 const hideUnavailable = ref(false);
 
 onMounted(() => {
+  if (coarsePointer.value && props.favoriteRefs.length) activeCollection.value = FAVORITES_COLLECTION;
   const stored = localStorage.getItem(DENSITY_STORAGE_KEY);
   if (stored === "compact" || stored === "cozy" || stored === "roomy") density.value = stored;
   try {
@@ -81,9 +105,37 @@ function setDensity(value: Density) {
 }
 
 const orderedCollections = computed(() => orderCollections(props.collections, props.favoriteRefs));
-const matchedProducts = computed(() =>
-  filterProducts(props.products, { collectionRef: activeCollection.value, query: search.value }),
-);
+const matchedProducts = computed(() => {
+  // A busca procura em TUDO: o chip ligado é filtro de navegação, não de busca.
+  if (activeCollection.value === FAVORITES_COLLECTION && !search.value.trim()) {
+    return filterProducts(favoriteProducts(props.products, props.favoriteRefs), {});
+  }
+  const collectionRef = activeCollection.value === FAVORITES_COLLECTION ? "" : activeCollection.value;
+  return filterProducts(props.products, { collectionRef, query: search.value });
+});
+// "produto, código, comanda ou cliente" (v4): as comandas em uso que casam.
+const matchedTabs = computed(() => matchOpenTabs(props.tabs || [], search.value, props.currentTabRef || ""));
+function openMatchedTab(ref: string) {
+  search.value = "";
+  emit("openTab", ref);
+}
+function findCustomer() {
+  const query = search.value.trim();
+  if (!query) return;
+  search.value = "";
+  emit("findCustomer", query);
+}
+// "Ler código": o que a câmera lê entra na busca como se o leitor do balcão
+// tivesse digitado (o código de barras está no índice, `gtin`), e o Enter lança.
+function onScanned(code: string) {
+  search.value = code;
+  if (enterTargetProduct(filteredProducts.value, code)) {
+    onSearchEnter();
+    return;
+  }
+  const tab = matchedTabs.value[0];
+  if (tab) openMatchedTab(tab.ref);
+}
 // Com o olho fechado, o indisponível sai depois da busca/coleção: o que sobra é
 // a grade, e `hiddenCount` diz quantos casaram mas estão ocultos.
 const visibility = computed(() => hideUnavailableProducts(matchedProducts.value, hideUnavailable.value));
@@ -115,7 +167,12 @@ defineExpose({ focusSearch });
 // em sequência: digita, Enter, digita, Enter.
 function onSearchEnter() {
   const target = enterTargetProduct(filteredProducts.value, search.value);
-  if (!target) return;
+  if (!target) {
+    // Sem produto: a comanda que casou sozinha abre; senão, a busca vira cliente.
+    if (matchedTabs.value.length === 1) openMatchedTab(matchedTabs.value[0]!.ref);
+    else if (!matchedTabs.value.length && props.customerSearch) findCustomer();
+    return;
+  }
   emit("add", target);
   search.value = "";
   searchInputRef.value?.inputRef?.focus();
@@ -138,34 +195,30 @@ function onSearchEscape() {
   <section class="flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
-    <div class="flex shrink-0 flex-wrap items-center gap-2">
+    <div class="flex shrink-0 items-center gap-2">
       <PosSearchField
         ref="searchInputRef"
         v-model="search"
-        :kbd="['F3', '/']"
-        hint="Enter adiciona"
-        placeholder="Buscar produto por nome ou código"
-        autofocus
+        :kbd="coarsePointer ? undefined : ['F3', '/']"
+        :hint="coarsePointer ? undefined : 'Enter adiciona'"
+        :placeholder="coarsePointer ? 'Buscar produto ou comanda' : (customerSearch ? 'Buscar produto, código, comanda ou cliente' : 'Buscar produto, código ou comanda')"
+        :class="coarsePointer ? 'h-14' : ''"
+        :autofocus="!coarsePointer"
         @keydown.enter.prevent="onSearchEnter"
         @keydown.esc.prevent="onSearchEscape"
       />
       <button
+        v-if="coarsePointer"
         type="button"
-        class="relative grid size-11 shrink-0 place-items-center rounded-md border bg-card transition hover:bg-accent"
-        :class="hideUnavailable ? 'border-primary text-primary' : 'border-border text-muted-foreground'"
-        :aria-label="hideUnavailableActionLabel"
-        :title="hideUnavailableActionLabel"
-        data-pos-hide-unavailable
-        @click="setHideUnavailable(!hideUnavailable)"
+        class="inline-flex h-14 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent"
+        aria-label="Ler código pela câmera"
+        data-pos-scan-code
+        @click="scannerOpen = true"
       >
-        <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-5" />
-        <span
-          v-if="hideUnavailable && hiddenCount > 0"
-          class="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-primary px-1 text-xs font-semibold tabular-nums leading-5 text-primary-foreground"
-          aria-hidden="true"
-        >{{ hiddenCount }}</span>
+        <Icon name="lucide:scan-barcode" class="size-6" />
+        <span class="max-sm:sr-only">Ler código</span>
       </button>
-      <div class="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+      <div v-else class="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
         <button
           v-for="opt in DENSITIES"
           :key="opt.key"
@@ -185,12 +238,54 @@ function onSearchEscape() {
       </div>
     </div>
 
-    <!-- Coleções em chips de 32 px (v4), com o ponto na cor da coleção. -->
-    <div class="-mx-1 flex shrink-0 gap-1 overflow-x-auto px-1 pb-1 no-scrollbar">
+    <!-- O que a busca achou além de produto: comanda em uso e, sem comanda, o
+         cliente. Uma faixa só, acima da grade, e só enquanto há busca. -->
+    <div v-if="search.trim() && (matchedTabs.length || (customerSearch && !coarsePointer))" class="flex shrink-0 flex-wrap items-center gap-1.5" data-pos-search-more>
+      <button
+        v-for="tab in matchedTabs"
+        :key="tab.ref"
+        type="button"
+        class="inline-flex h-10 items-center gap-2 rounded-md border border-primary/50 bg-primary/5 px-3 op-label transition hover:bg-primary/10"
+        :data-pos-search-tab="tab.ref"
+        @click="openMatchedTab(tab.ref)"
+      >
+        <Icon name="lucide:receipt-text" class="size-4 text-primary" />
+        <span class="font-semibold">Comanda {{ tab.display_ref }}</span>
+        <span v-if="tab.customer_name" class="max-w-40 truncate text-muted-foreground">{{ tab.customer_name }}</span>
+        <span class="text-muted-foreground tnum">{{ tab.item_count }} {{ tab.item_count === 1 ? "item" : "itens" }}</span>
+      </button>
+      <button
+        v-if="customerSearch && !coarsePointer"
+        type="button"
+        class="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+        data-pos-search-customer
+        @click="findCustomer"
+      >
+        <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" />
+        Buscar cliente “<span class="max-w-40 truncate">{{ search.trim() }}</span>”
+      </button>
+    </div>
+
+    <!-- Coleções em chips (v4): 32 px no balcão, 48 px no toque com "Favoritos"
+         primeiro. Ocultar indisponíveis é preferência deste dispositivo e mora no fim
+         da fila (a v4 não tem o olho ao lado da busca). -->
+    <div class="-mx-1 flex shrink-0 overflow-x-auto px-1 pb-1 no-scrollbar" :class="coarsePointer ? 'gap-2' : 'gap-1'">
+      <button
+        v-if="coarsePointer && favoriteRefs.length"
+        type="button"
+        class="inline-flex h-12 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 op-label transition"
+        :class="activeCollection === FAVORITES_COLLECTION ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        :aria-pressed="activeCollection === FAVORITES_COLLECTION"
+        data-pos-chip-favorites
+        @click="activeCollection = FAVORITES_COLLECTION"
+      >
+        <Icon name="lucide:star" class="size-4 text-primary" aria-hidden="true" />
+        Favoritos
+      </button>
       <button
         type="button"
-        class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 op-label transition"
-        :class="activeCollection === '' ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition"
+        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', activeCollection === '' ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent']"
         :aria-pressed="activeCollection === ''"
         @click="activeCollection = ''"
       >
@@ -201,8 +296,8 @@ function onSearchEscape() {
         v-for="collection in orderedCollections"
         :key="collection.ref"
         type="button"
-        class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 op-label transition"
-        :class="activeCollection === collection.ref ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition"
+        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', activeCollection === collection.ref ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent']"
         :aria-pressed="activeCollection === collection.ref"
         @click="activeCollection = collection.ref"
       >
@@ -214,6 +309,19 @@ function onSearchEscape() {
           aria-hidden="true"
         />
         {{ collection.name }}
+      </button>
+      <button
+        type="button"
+        class="relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition hover:bg-accent"
+        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', hideUnavailable ? 'border-primary bg-primary/10 font-semibold text-primary' : 'border-dashed border-border bg-card text-muted-foreground']"
+        :aria-label="hideUnavailableActionLabel"
+        :aria-pressed="hideUnavailable"
+        :title="hideUnavailableActionLabel"
+        data-pos-hide-unavailable
+        @click="setHideUnavailable(!hideUnavailable)"
+      >
+        <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-3.5" />
+        {{ hideUnavailable ? `Indisponíveis ocultos${hiddenCount ? ` (${hiddenCount})` : ""}` : "Ocultar indisponíveis" }}
       </button>
     </div>
 
@@ -241,12 +349,14 @@ function onSearchEscape() {
         <template v-for="entry in entries" :key="entry.key">
           <PosProductGroupTile
             v-if="entry.kind === 'group'"
+            :touch="coarsePointer"
             :group="entry.group"
             :cart-items="cartItems"
             @add="emit('add', $event)"
           />
           <PosProductTile
             v-else
+            :touch="coarsePointer"
             :product="entry.product"
             :qty="productQty(entry.product.sku)"
             :disabled="entry.product.sold_out"
@@ -255,5 +365,6 @@ function onSearchEscape() {
         </template>
       </div>
     </div>
+    <PosCodeScanner v-model:open="scannerOpen" title="Ler código do produto ou da comanda" @code="onScanned" @type="focusSearch()" />
   </section>
 </template>

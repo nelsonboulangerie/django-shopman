@@ -67,6 +67,10 @@ export interface DayClosingProjection {
   pending_episodes?: ClosingPendingEpisode[];
   episode_options?: ClosingEpisodeOption[];
   has_pending_episodes?: boolean;
+  /** A forma do movimento por hora, hoje × o mesmo dia típico (0 a 1, sem valores). */
+  hourly_shape?: ClosingHourlyShape | null;
+  /** Quem fecha ("Admin · gerência"). */
+  operator_display?: string;
 }
 
 /** Algo estranho que o sistema notou no dia e ninguém explicou (`OperationEpisode`). */
@@ -86,4 +90,14 @@ export interface ClosingEpisodeOption {
 
 export interface DayClosingResponse {
   closing: DayClosingProjection;
+}
+
+export interface ClosingHourlyShape {
+  hours: string[];
+  /** `null` nas horas que ainda não chegaram. */
+  today: Array<number | null>;
+  typical: number[];
+  typical_label: string;
+  /** "14h" quando o movimento de hoje caiu abaixo da metade do típico dali em diante. */
+  drop_after: string;
 }

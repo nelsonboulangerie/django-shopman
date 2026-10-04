@@ -268,3 +268,39 @@ export function gridEntries(
   }
   return entries;
 }
+
+/** O chip "Favoritos" (v4 tablet): o primeiro da fila no toque, e o ligado ao abrir. */
+export const FAVORITES_COLLECTION = "__favoritos__";
+
+/** Os produtos das coleções favoritas do terminal, na ordem da grade. */
+export function favoriteProducts(
+  products: POSProductProjection[],
+  favoriteRefs: string[],
+): POSProductProjection[] {
+  const refs = new Set(favoriteRefs);
+  return products.filter((product) => refs.has(product.collection_ref));
+}
+
+export interface TabMatchSource {
+  ref: string;
+  display_ref: string;
+  customer_name: string;
+  state: string;
+}
+
+/**
+ * A busca da venda é "produto, código, comanda ou cliente" (v4): o que ela acha
+ * de COMANDA vem daqui. Só comanda em uso (a livre se abre pelo quadro), casando
+ * o número, o nome ("Mesa 6") ou o cliente dela. A comanda aberta agora fica de
+ * fora: ela já é a tela.
+ */
+export function matchOpenTabs<T extends TabMatchSource>(tabs: T[], query: string, currentRef = ""): T[] {
+  const normalized = normalizeSearchText((query || "").trim().replace(/^#/, ""));
+  if (!normalized) return [];
+  return tabs
+    .filter((tab) => tab.state === "in_use" && tab.ref !== currentRef)
+    .filter((tab) => [tab.ref, tab.display_ref, tab.customer_name]
+      .map((value) => normalizeSearchText(value || ""))
+      .some((value) => Boolean(value) && (value.startsWith(normalized) || matchesWordStart(value, normalized))))
+    .slice(0, 4);
+}

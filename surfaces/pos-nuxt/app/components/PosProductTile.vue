@@ -8,6 +8,8 @@ const props = defineProps<{
   product: POSProductProjection;
   qty: number;
   disabled?: boolean;
+  /** Toque (v4 tablet): tile sem SKU e faixa mais alta, o alvo é o dedo. */
+  touch?: boolean;
 }>();
 
 defineEmits<{
@@ -49,7 +51,7 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     data-pos-product
     @click="$emit('add', product)"
   >
-    <div class="relative h-[92px] w-full shrink-0 overflow-hidden" :class="inert ? 'opacity-55' : ''">
+    <div class="relative w-full shrink-0 overflow-hidden" :class="[touch ? 'h-[108px]' : 'h-[92px]', inert ? 'opacity-55' : '']">
       <img
         v-if="showImage"
         :src="product.image_url"
@@ -65,7 +67,7 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         aria-hidden="true"
       >
         <Icon :name="fallbackIcon" class="size-9" />
-        <span class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide">{{ product.sku }}</span>
+        <span v-if="!touch" class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide" data-pos-tile-sku>{{ product.sku }}</span>
       </div>
 
       <span

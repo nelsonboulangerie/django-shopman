@@ -38,7 +38,7 @@ from .pos import POSTab
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
 from .recipe_rating import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
-from .seating import SeatingSpot, SpotKind, SpotShape
+from .seating import FixtureKind, SeatingFixture, SeatingSpot, SpotKind, SpotShape
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
 from .timer_tag import TimerTag, TimerTagOrigin
@@ -95,6 +95,8 @@ __all__ = [
     "ProductConsumptionTag",
     "Reading",
     "SeatingSpot",
+    "SeatingFixture",
+    "FixtureKind",
     "SignInEvent",
     "SignInMethod",
     "SignInOutcome",

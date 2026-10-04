@@ -19,6 +19,8 @@ const emit = defineEmits<{
   grab: [shape: SpotShape, event: PointerEvent];
   selectArea: [name: string];
   addArea: [name: string];
+  /** Pôr na planta a vitrine e caixa ou a entrada (elementos fixos, sem lugar). */
+  addFixture: [kind: "showcase" | "entrance"];
 }>();
 
 const adding = ref(false);
@@ -84,8 +86,23 @@ function glyphClass(shape: SpotShape) {
         {{ shape.label }}
       </button>
     </div>
+    <div :class="isStrip ? 'flex items-center gap-2' : 'grid grid-cols-2 gap-2'" data-seating-fixtures>
+      <button
+        v-for="fixture in [{ kind: 'showcase', label: 'Vitrine e caixa', icon: 'lucide:store' }, { kind: 'entrance', label: 'Entrada', icon: 'lucide:door-open' }] as const"
+        :key="fixture.kind"
+        type="button"
+        class="flex items-center justify-center rounded-lg border border-dashed border-border bg-background op-micro font-semibold transition hover:border-primary/60 hover:bg-accent"
+        :class="isStrip ? 'h-control gap-2 px-3' : 'h-12 gap-1.5 px-2'"
+        :aria-label="`Pôr ${fixture.label.toLowerCase()} na planta`"
+        :data-seating-add-fixture="fixture.kind"
+        @click="emit('addFixture', fixture.kind)"
+      >
+        <Icon :name="fixture.icon" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span class="truncate">{{ fixture.label }}</span>
+      </button>
+    </div>
     <p v-if="!isStrip" class="op-micro leading-4 text-muted-foreground">
-      Arraste para a planta ou toque para pôr no meio. No tablet, arraste com o dedo.
+      Arraste para a planta ou toque para pôr no meio. No tablet: arrastar com o dedo, pinça para zoom.
     </p>
 
     <div :class="isStrip ? 'mx-1 h-8 w-px bg-border' : 'h-px bg-border'" aria-hidden="true" />
