@@ -1293,7 +1293,11 @@ onBeforeUnmount(() => {
                     <Icon :name="mode.icon" class="size-4" />{{ mode.label }}
                   </button>
                 </div>
-                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent lg:hidden" @click="contextMoreOpen = false; openScheduleHere()">
+                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent sm:hidden" @click="contextMoreOpen = false; openFulfillmentHere()">
+                  <Icon :name="cart.salesMode === 'order' ? 'lucide:store' : 'lucide:utensils'" class="size-4 text-muted-foreground" />
+                  {{ cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel}` : "Consumir aqui (entregar vira encomenda)" }}
+                </button>
+                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent xl:hidden" @click="contextMoreOpen = false; openScheduleHere()">
                   <Icon name="lucide:clock" class="size-4 text-muted-foreground" />
                   {{ cart.salesMode === "order" ? `Quando: ${scheduleChipLabel}` : "Agendar (vira encomenda)" }}
                 </button>

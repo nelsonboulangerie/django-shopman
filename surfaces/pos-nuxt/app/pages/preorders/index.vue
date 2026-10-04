@@ -300,6 +300,13 @@ function pickPhoneChip(key: string) {
   }
 }
 const scannerOpen = ref(false);
+// No celular a tela abre no DIA de hoje (v3 celular: "lista de hoje"), salvo quando
+// a URL já diz outro recorte (volta do detalhe, favorito).
+onMounted(() => {
+  if (window.matchMedia("(max-width: 767.98px)").matches && !route.query.mode && !route.query.date && !route.query.q) {
+    update({ mode: "day", date: storeToday.value });
+  }
+});
 // O QR da mensagem que o cliente recebeu traz o número da encomenda: a leitura
 // vira a busca, e um resultado só abre o detalhe.
 function onScannedOrder(code: string) {
@@ -364,9 +371,9 @@ function refreshAll() {
       <template v-if="!searching && list && list.count">
         <UiButton
           class="max-md:hidden"
-          :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value || !tickets.hasPrinter.value"
+          :disabled="!canPrintBatch(printCount, maxBatch) || tickets.printing.value"
           :loading="tickets.printing.value"
-          :title="tickets.hasPrinter.value ? undefined : `${tickets.printerUnavailableReason.value} A Via Pedido sai no balcão que tem impressora.`"
+          :title="!tickets.hasPrinter.value ? `${tickets.printerUnavailableReason.value} A Via Pedido sai no balcão que tem impressora.` : (notice ? notice.message : undefined)"
           data-preorders-print
           @click="printMissing"
         >
@@ -378,9 +385,9 @@ function refreshAll() {
 
     <!-- A LINHA DA BUSCA: quem veio buscar (a urgência, já focada) e, ao lado, a
          porta para anotar uma encomenda nova. -->
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex items-center gap-2 md:flex-wrap">
       <section
-        class="flex min-w-0 flex-[1_1_28rem] flex-wrap items-center gap-x-3 gap-y-2"
+        class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 md:flex-[1_1_28rem]"
         aria-labelledby="preorders-search-title"
         data-preorders-search-block
       >
@@ -623,16 +630,6 @@ function refreshAll() {
         </section>
 
         <template v-else>
-          <p
-            v-if="notice"
-            class="flex items-start gap-2 rounded-md border p-3 text-sm"
-            :class="notice.tone === 'danger' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning'"
-            data-preorders-print-notice
-          >
-            <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-            <span>{{ notice.message }}</span>
-          </p>
-
           <section
             v-if="!shownCount"
             class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
@@ -754,7 +751,7 @@ function refreshAll() {
     </template>
 
     <!-- CELULAR: a ação principal no polegar (v3 celular 4), presa acima da barra. -->
-    <div class="sticky bottom-0 z-20 -mx-4 -mb-4 bg-gradient-to-t from-background via-background to-transparent px-4 pt-6 pb-3 md:hidden" data-preorders-scan-bar>
+    <div class="sticky bottom-20 z-20 -mx-4 -mb-4 bg-gradient-to-t from-background via-background to-transparent px-4 pt-6 pb-3 md:hidden" data-preorders-scan-bar>
       <button
         type="button"
         class="flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)]"

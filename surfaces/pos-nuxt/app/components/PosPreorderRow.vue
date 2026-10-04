@@ -80,7 +80,8 @@ const pills = computed(() => phoneCardPills(props.card));
       <!-- CELULAR (v3 `depois-pdv-celular` 3): o cartão com a hora numa caixa, o
            cliente e o total, o recebimento com os itens, e as duas pílulas. -->
       <span class="grid size-16 shrink-0 place-items-center content-center rounded-md bg-secondary text-center md:hidden" data-preorder-phone-time>
-        <span class="text-lg leading-none font-semibold tnum">{{ card.window_start || "—" }}</span>
+        <span v-if="card.window_start" class="text-lg leading-none font-semibold tnum">{{ card.window_start }}</span>
+        <span v-else class="op-micro leading-tight font-semibold">a combinar</span>
         <span class="mt-1 op-micro text-muted-foreground">{{ card.commitment_date_display }}</span>
       </span>
       <span class="grid min-w-0 flex-1 gap-1 md:hidden" data-preorder-phone>

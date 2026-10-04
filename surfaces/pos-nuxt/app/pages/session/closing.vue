@@ -46,7 +46,7 @@ import {
 } from "~/presentation/closing";
 import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
 import type { ClosingPendingProduction } from "~/types/closing";
-import { changeDenominations, formatAmountInput } from "~/presentation/cash";
+import { DRAWER_DENOMINATIONS, formatAmountInput } from "~/presentation/cash";
 
 useHead({ title: "Fim do dia" });
 
@@ -155,7 +155,7 @@ const drawerTotal = ref(0);
 const drawerNote = ref("");
 const drawerNoteOpen = ref(false);
 const drawerConfirming = ref(false);
-const denominations = computed(() => changeDenominations(pos.value?.checkout?.capabilities?.cash_management));
+const denominations = DRAWER_DENOMINATIONS;
 const drawerDisplay = computed(() => `R$ ${formatAmountInput(drawerQ.value).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`);
 const drawerMissing = computed(() => Math.max(0, drawerTotal.value - drawerFilled.value));
 const drawerShift = computed(() => {

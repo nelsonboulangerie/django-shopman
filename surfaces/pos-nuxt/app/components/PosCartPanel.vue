@@ -1531,7 +1531,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </UiNativeSelect>
       </div>
 
-      <div v-if="touchEditor && activeItem" class="mt-2 grid grid-cols-4 gap-2" data-pos-line-numpad>
+      <div v-if="touchEditor && activeItem" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
         <template v-for="(row, rowIndex) in [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['decimal', 0, 'back']]" :key="rowIndex">
           <button
             v-for="key in row"
