@@ -532,7 +532,7 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     # "Devolver só este item" (recusa parcial): a devolução é de UMA linha e o
     # rascunho segue com as outras. A referência ganha o insumo, para duas
     # devoluções parciais da mesma NF não se confundirem.
-    partial = bool(payload.get("partial"))
+    partial = _as_flag(payload, "partial", field="partial")
     if partial:
         if len(raw_lines) != 1 or not isinstance(raw_lines[0], dict):
             raise PurchaseError(
