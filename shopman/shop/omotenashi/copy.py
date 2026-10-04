@@ -1275,6 +1275,34 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
         )},
     },
+    # Desconto da Concierge (dono, 03/10/2026; ``storefront/concierge/discount.py``):
+    # até o teto da casa, como cupom do site. Os valores vêm do sistema
+    # ({before}, {after}); acima do teto, quem decide é a equipe (R7).
+    "CONCIERGE_DISCOUNT_GRANTED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Consegui um arredondamento para você 💛 O total passa de {before} para {after}.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Mais do que isso quem decide é a equipe da casa. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Neste pedido eu já fiz o arredondamento que está ao meu alcance. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Seu pedido já tem um cupom aplicado, e vale um cupom por pedido. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_NO_CART": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quando o pedido estiver montado, posso arredondar o total para você, dentro do que a casa permite. O que você gostaria de pedir?",
+        )},
+    },
     "CONCIERGE_NO_PHONE": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Este contato não tem um número de telefone associado, e eu preciso dele para registrar o pedido. Para pedir, entre pelo site com o seu número.",

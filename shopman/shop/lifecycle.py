@@ -38,6 +38,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.services import (
@@ -413,6 +414,21 @@ def _record_coupon_use(order) -> None:
             data["coupon_use_recorded"] = code
             order.data = data
             order.save(update_fields=["data", "updated_at"])
+            if promotion_service.is_concierge_coupon(code):
+                # Transparência (dono, 03/10/2026): o desconto que a Concierge
+                # concedeu aparece no histórico do pedido, com valor e cupom.
+                order.emit_event(
+                    event_type="concierge_discount",
+                    actor="concierge",
+                    payload={
+                        "note": (
+                            f"Desconto concedido pela Concierge a pedido do cliente: "
+                            f"R$ {format_money(int(coupon.get('discount_q') or 0))} (cupom {code})"
+                        ),
+                        "coupon_code": code,
+                        "discount_q": int(coupon.get("discount_q") or 0),
+                    },
+                )
         else:
             # Cupom esgotou entre o carrinho e o commit (corrida): a venda
             # já saiu com o desconto. Contador fica no teto (não estoura),

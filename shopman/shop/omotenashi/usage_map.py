@@ -118,6 +118,26 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
     ),
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_GRANTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_NO_CART": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
     "CONCIERGE_GREETING": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
