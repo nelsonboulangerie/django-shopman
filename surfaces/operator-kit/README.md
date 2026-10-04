@@ -394,6 +394,12 @@ Como um app migra:
 | `OperatorPageHeader` | cabeçalho de uma linha; no celular, barra de 56px com selo, título, ponto ao vivo, lupa e as ações de polegar; controles e recortes descem para linhas que rolam | `orders-board3.html` |
 | `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
 
+Opções do rail e da barra (V4-PROD, todas opcionais): `OperatorSuiteRail` com
+`print-shortcuts` imprime a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino,
+e `dense-labels` usa rótulos de 10px para nomes longos ("Planejamento"); na barra do
+polegar, `OperatorSection.shortLabel` encurta o rótulo visível ("Plano") e o nome
+acessível segue o cheio. A Produção usa as três.
+
 Do celular para cima: abaixo de `md` não há rail (barra de 56px em cima, seções no pé);
 de `md` para cima o rail tem 76px. Alvos ≥ 44px em tudo (as prévias tinham chips de
 40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de

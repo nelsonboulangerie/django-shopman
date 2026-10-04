@@ -152,7 +152,18 @@ function installGlobals() {
 
 const passthrough = { template: "<div><slot /></div>" };
 const stubs = {
-  ProductionHeader: true,
+  // O cabeçalho é dele mesmo (testado à parte); aqui ele só repassa os recortes
+  // e os controles que a grade põe nele.
+  ProductionHeader: {
+    template: '<div><slot name="actions" /><slot name="filters" /></div>',
+  },
+  OperatorPeriodPicker: true,
+  UiFilterChip: {
+    props: ["active", "count"],
+    template:
+      '<button type="button" :data-active="active || undefined"><slot name="icon" /><slot /> {{ count }}</button>',
+  },
+  UiPopoverTrigger: passthrough,
   ShortageDialog: true,
   AlertsBell: true,
   Icon: true,
@@ -262,6 +273,9 @@ describe("ProductionStageGrid — planning authority", () => {
     expect(boardInitialDateSpy).toHaveBeenCalledWith("2026-07-05");
   });
 
+  // V4 (prévia `plano-porque4.html`): a linha decide. O stepper e "Planejar N" moram
+  // na linha; a mesma autoridade de antes vale lá (a persona que só segue a sugestão
+  // planeja o número exato, com origem "suggested"; quem planeja à mão, "manual").
   it("lets a suggestion-only persona submit only the exact suggestion", async () => {
     stubBoardAccess({
       ...FULL_ACCESS,
@@ -272,15 +286,13 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Confirmar")!.trigger("click");
-    const input = w.find('input[aria-label="Quantidade planejada"]');
+    const input = w.find('input[aria-label="Quantidade de Pão"]');
     expect(input.attributes("readonly")).toBeDefined();
     expect((input.element as HTMLInputElement).value).toBe("8");
-    await w
-      .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
-      .at(-1)!
-      .trigger("click");
+    expect(
+      w.find('button[aria-label="Aumentar Pão"]').attributes("disabled"),
+    ).toBeDefined();
+    await w.find("[data-plan-inline]").trigger("click");
 
     expect(planSpy).toHaveBeenCalledWith(
       "PAO-001",
@@ -302,12 +314,8 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Confirmar")!.trigger("click");
-    await w
-      .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
-      .at(-1)!
-      .trigger("click");
+    expect(w.find("[data-plan-inline]").text()).toBe("Planejar 8");
+    await w.find("[data-plan-inline]").trigger("click");
 
     expect(planSpy).toHaveBeenCalledWith(
       "PAO-001",
@@ -326,15 +334,10 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Confirmar")!.trigger("click");
-    const submit = w
-      .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
-      .at(-1)!;
-
+    const submit = w.find("[data-plan-inline]");
     await submit.trigger("click");
 
-    expect(submit.text()).toBe("Confirmando…");
+    expect(submit.text()).toBe("Planejando…");
     expect(submit.attributes("disabled")).toBeDefined();
     await submit.trigger("click");
     expect(planSpy).toHaveBeenCalledTimes(1);
@@ -347,16 +350,231 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Confirmar")!.trigger("click");
-    const input = w.find('input[aria-label="Quantidade planejada"]');
+    const input = w.find('input[aria-label="Quantidade de Pão"]');
     await input.setValue("12");
+    expect(w.find("[data-plan-inline]").text()).toBe("Planejar 12");
     await input.trigger("keydown", { key: "Enter" });
 
     expect(planSpy).toHaveBeenCalledTimes(1);
     expect(planSpy).toHaveBeenCalledWith(
       "PAO-001",
-      expect.objectContaining({ quantity: "12" }),
+      expect.objectContaining({ quantity: "12", source: "manual" }),
     );
+  });
+
+  it("mudou o número: a sugestão diz de onde veio, e voltar desfaz", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await w.find('button[aria-label="Aumentar Pão"]').trigger("click");
+    await w.find('button[aria-label="Aumentar Pão"]').trigger("click");
+    expect(w.find("[data-plan-changed]").text()).toContain("você mudou de 8");
+    expect(w.find("[data-plan-inline]").text()).toBe("Planejar 10");
+
+    await byText(w, "[data-plan-changed] button", "voltar")!.trigger("click");
+    expect(w.find("[data-plan-changed]").exists()).toBe(false);
+    expect(w.find("[data-plan-inline]").text()).toBe("Planejar 8");
+  });
+
+  it("zero não planeja: a linha não tem o que mandar", () => {
+    boardRows.value = [row({ suggestion: { ...suggestion, quantity: "0" } })];
+    const w = mountGrid("plan");
+
+    expect(w.find("[data-plan-inline]").attributes("disabled")).toBeDefined();
+  });
+
+  it("o planejado vira estado, e corrigir abre o ajuste do lote pelo menu", async () => {
+    boardRows.value = [
+      row({
+        suggestion,
+        planned_qty: "20",
+        planned_orders: [
+          wo({
+            pk: 9,
+            ref: "WO-009",
+            rev: 4,
+            status: "planned",
+            planned_qty: "20",
+          }),
+        ],
+      }),
+    ];
+    const w = mountGrid("plan");
+
+    expect(w.find("[data-plan-row]").exists()).toBe(false);
+    const planned = w.find("[data-planned-line]");
+    expect(planned.text()).toContain("Planejado");
+    expect(w.find("[data-planned-row]").text()).toContain("Pão 20");
+
+    await w.find("[data-planned-correct]").trigger("click");
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    expect((input.element as HTMLInputElement).value).toBe("20");
+    await input.setValue("24");
+    await input.trigger("keydown", { key: "Enter" });
+
+    expect(planSpy).toHaveBeenCalledWith(
+      "PAO-001",
+      expect.objectContaining({
+        quantity: "24",
+        work_order_id: 9,
+        expected_rev: 4,
+        source: "manual",
+      }),
+    );
+  });
+
+  it("com a produção já assumida, o menu soma um lote novo, nunca em silêncio", async () => {
+    boardRows.value = [
+      row({
+        suggestion,
+        started_qty: "30",
+        started_orders: [wo({ pk: 7, started_qty: "30" })],
+      }),
+    ];
+    const w = mountGrid("plan");
+
+    expect(w.find("[data-planned-row]").text()).toContain("(aberto)");
+    expect(w.find("[data-planned-correct]").text()).toBe("Planejar novo lote");
+    await w.find("[data-planned-correct]").trigger("click");
+    expect(w.text()).toContain("Soma ao dia");
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    expect((input.element as HTMLInputElement).value).toBe("0");
+  });
+});
+
+describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes", () => {
+  function cleanRow(sku: string, name: string, quantity: string) {
+    return row({
+      recipe_pk: sku.length,
+      output_sku: sku,
+      recipe_name: name,
+      suggestion: { ...suggestion, output_sku: sku, quantity },
+    });
+  }
+  const flagged = row({
+    output_sku: "CRO",
+    recipe_name: "Croissant",
+    suggestion: { ...suggestion, output_sku: "CRO", soldout_days: 7 },
+  });
+  const cleanRows = [
+    cleanRow("PC", "Pain de Campagne", "34"),
+    cleanRow("KP", "Kuro Pan", "12"),
+    cleanRow("BG", "Baguete", "30"),
+    cleanRow("FO", "Focaccia", "10"),
+    cleanRow("SH", "Shokupan", "18"),
+  ];
+  const skus = (w: ReturnType<typeof mountGrid>, sel: string) =>
+    w.findAll(sel).map((el) => el.attributes("data-sku"));
+
+  it("o que não tem ressalva vira conjunto; o resto fica na linha", () => {
+    boardRows.value = [flagged, ...cleanRows];
+    const w = mountGrid("plan");
+
+    expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
+    const set = w.find("[data-plan-clean]");
+    expect(set.text()).toContain("+5 produtos sem ressalva");
+    expect(set.text()).toContain(
+      "Pain de Campagne 34, Kuro Pan 12, Baguete 30, Focaccia 10 e mais 1",
+    );
+    expect(w.find("[data-plan-clean-all]").text()).toBe(
+      "Planejar os 5 como sugerido",
+    );
+  });
+
+  it("Ver um a um abre o conjunto em linhas", async () => {
+    boardRows.value = [flagged, ...cleanRows];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-clean-expand]").trigger("click");
+    expect(w.find("[data-plan-clean]").exists()).toBe(false);
+    expect(w.findAll("[data-plan-row]")).toHaveLength(6);
+  });
+
+  it("um sim para o conjunto planeja cada um como sugerido, um a um", async () => {
+    boardRows.value = [flagged, ...cleanRows];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-clean-all]").trigger("click");
+    await flushPromises();
+
+    expect(planSpy).toHaveBeenCalledTimes(5);
+    expect(
+      planSpy.mock.calls.map(([sku, payload]) => [sku, payload.quantity]),
+    ).toEqual([
+      ["PC", "34"],
+      ["KP", "12"],
+      ["BG", "30"],
+      ["FO", "10"],
+      ["SH", "18"],
+    ]);
+  });
+
+  it("o conjunto para na primeira recusa, e a recusa aparece", async () => {
+    const refusal = { code: "material_shortage" };
+    planSpy
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, shortage: refusal });
+    boardRows.value = [flagged, ...cleanRows];
+    const w = mount(ProductionStageGrid, {
+      props: { stage: "plan", title: "Planejamento" },
+      global: {
+        stubs: {
+          ...stubs,
+          ShortageDialog: {
+            props: ["shortage"],
+            template: '<div v-if="shortage" data-shortage>{{ shortage.code }}</div>',
+          },
+        },
+        components: { PlanReasonCard },
+      },
+    });
+
+    await w.find("[data-plan-clean-all]").trigger("click");
+    await flushPromises();
+
+    expect(planSpy).toHaveBeenCalledTimes(2);
+    expect(w.find("[data-shortage]").text()).toBe(refusal.code);
+  });
+
+  it("sem sugestão para o dia vira conjunto que se abre para planejar à mão", async () => {
+    const manual = ["MOLHO", "RECHEIO", "CREME", "BASE"].map((sku) =>
+      row({ recipe_pk: 9, output_sku: sku, recipe_name: sku }),
+    );
+    boardRows.value = [flagged, ...manual];
+    const w = mountGrid("plan");
+
+    expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
+    expect(w.find("[data-plan-manual]").text()).toContain(
+      "+4 produtos sem sugestão para o dia",
+    );
+    await w.find("[data-plan-manual-expand]").trigger("click");
+    expect(w.find("[data-plan-manual]").exists()).toBe(false);
+    expect(skus(w, "[data-plan-row]")).toEqual(["CRO", "MOLHO", "RECHEIO", "CREME", "BASE"]);
+  });
+
+  it("os recortes contam e filtram: A planejar, Com ressalva, Planejados", async () => {
+    const planned = row({
+      output_sku: "BRI",
+      recipe_name: "Brioche",
+      planned_qty: "20",
+      planned_orders: [wo({ status: "planned", planned_qty: "20" })],
+    });
+    boardRows.value = [flagged, ...cleanRows, planned];
+    const w = mountGrid("plan");
+
+    const chip = (key: string) => w.find(`[data-plan-filter="${key}"]`);
+    expect(chip("all").text()).toContain("7");
+    expect(chip("todo").text()).toContain("6");
+    expect(chip("flagged").text()).toContain("1");
+    expect(chip("done").text()).toContain("1");
+
+    await chip("flagged").trigger("click");
+    expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
+    expect(w.find("[data-planned-row]").exists()).toBe(false);
+
+    await chip("done").trigger("click");
+    expect(w.find("[data-plan-row]").exists()).toBe(false);
+    expect(skus(w, "[data-planned-row]")).toEqual(["BRI"]);
   });
 });
 
@@ -386,7 +604,7 @@ describe("ProductionStageGrid — Abertura", () => {
       }),
     ];
     const w = mountGrid();
-    const lines = w.findAll("tbody td")[0]!.findAll("p");
+    const lines = w.find("[data-row-product]").findAll("p");
     expect(lines[0]!.text()).toBe("Pão de fermentação natural");
     expect(lines[1]!.text()).toContain("PAO-001");
   });
@@ -400,7 +618,7 @@ describe("ProductionStageGrid — Abertura", () => {
       }),
     ];
     const w = mountGrid();
-    const lines = w.findAll("tbody td")[0]!.findAll("p");
+    const lines = w.find("[data-row-product]").findAll("p");
     expect(lines[0]!.text()).toBe("PAO-001");
   });
 
@@ -657,7 +875,7 @@ describe("ProductionStageGrid — Planejamento: o número na linha, o porquê po
 
     await trigger.trigger("click");
     expect(trigger.attributes("aria-expanded")).toBe("true");
-    expect(w.find("tbody tr").classes()).toContain("bg-primary/5");
+    expect(w.find("[data-plan-row]").classes()).toContain("bg-primary/5");
     expect(w.find('[data-testid="reason-math"]').text()).toContain("margem");
 
     await trigger.trigger("click");

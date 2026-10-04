@@ -19,9 +19,9 @@ import { OPERATOR_SURFACES as APPS } from "./support/surfaceRegistry";
 //
 // ## Por que a trava é por LISTA e não por proibição
 //
-// Três cabeçalhos ainda são legítimos como estão: o do PDV carrega a comanda editável,
-// o da Cozinha carrega relógio e dia operacional, o da Produção carrega progresso do
-// dia e timers. Eles não são deriva — são cabeçalhos ricos que ainda não foram
+// Dois cabeçalhos ainda são legítimos como estão: o do PDV carrega a comanda editável,
+// o da Cozinha carrega relógio e dia operacional (o da Produção, com progresso do dia e
+// timers, virou o `OperatorPageHeader` da suíte no V4-PROD). Eles não são deriva — são cabeçalhos ricos que ainda não foram
 // convertidos, e a conversão é WP próprio. A trava não os proíbe: ela impede que a
 // lista CRESÇA em silêncio, que é como os quatro convertidos aqui nasceram.
 //
@@ -41,9 +41,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // A Cozinha carrega relógio ao vivo e seletor de dia operacional no cabeçalho.
   "kds-nuxt/app/pages/[ref].vue",
   "kds-nuxt/app/pages/index.vue",
-  // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
-  "production-nuxt/app/components/ProductionHeader.vue",
-  "production-nuxt/app/components/RecipeHeader.vue",
   // O Hub é a home: o cabeçalho dele é a saudação, e não há seções para navegar.
   "hub-nuxt/app/app.vue",
 ].sort();
@@ -104,7 +101,11 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = ["orders-nuxt/app/components/GestorNav.vue"];
+    const migrados = [
+      "orders-nuxt/app/components/GestorNav.vue",
+      // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
+      "production-nuxt/app/components/ProductionNav.vue",
+    ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorSuiteRail");

@@ -164,7 +164,7 @@ function refreshAll() {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <div class="print:hidden">
       <ProductionHeader
         v-model:query="query"
@@ -173,32 +173,34 @@ function refreshAll() {
         :count-label="mode === 'insumos' ? 'insumos' : 'preparos'"
         :pending="isPending"
         @refresh="refreshAll()"
-      />
+      >
+        <template #actions>
+          <OperatorPeriodPicker
+            v-model="period"
+            :presets="['day']"
+            :today="todayISO"
+            label="Data da preparação"
+            align="end"
+          />
+        </template>
+      </ProductionHeader>
     </div>
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4 print:hidden">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <OperatorPeriodPicker
-          v-model="period"
-          :presets="['day']"
-          :today="todayISO"
-          label="Data da preparação"
-          align="start"
-        />
-
         <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
+          class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
           role="group"
           aria-label="Modo de visualização"
         >
           <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
           <button
             type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
             :class="
               mode === 'preparos'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             "
             :aria-pressed="mode === 'preparos'"
             @click="mode = 'preparos'"
@@ -207,11 +209,11 @@ function refreshAll() {
           </button>
           <button
             type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
             :class="
               mode === 'insumos'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             "
             :aria-pressed="mode === 'insumos'"
             @click="mode = 'insumos'"
@@ -235,7 +237,7 @@ function refreshAll() {
           Checklist local {{ stationRef ? "desta estação" : "deste dispositivo" }} · não é registro de auditoria
         </span>
 
-        <div class="ml-auto flex items-center gap-3">
+        <div class="ml-auto flex flex-wrap items-center gap-3">
           <label
             v-if="mode === 'insumos'"
             class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
@@ -579,7 +581,7 @@ function refreshAll() {
             <article
               v-for="ticket in visibleTickets"
               :key="ticketIdentity(ticket)"
-              class="flex flex-col gap-2.5 rounded-md border bg-card p-3 shadow-sm"
+              class="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-4"
             >
               <header class="flex items-start justify-between gap-2">
                 <div class="flex min-w-0 items-start gap-2">
@@ -589,7 +591,7 @@ function refreshAll() {
                     >{{ ticket.blind_code }}</span
                   >
                   <div class="min-w-0">
-                    <p class="text-base font-bold leading-tight">
+                    <p class="op-title leading-tight">
                       {{ ticket.name }}
                     </p>
                     <p class="text-xs text-muted-foreground">
