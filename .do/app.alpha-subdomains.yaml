@@ -674,16 +674,9 @@ envs:
   scope: RUN_AND_BUILD_TIME
   value: jev
   type: GENERAL
-# Intenções no plural (OBS0310-Q): liberação gradual, primeiro só a coorte do dono
-# (o mesmo subscriber de CONCIERGE_ALLOWED_SUBSCRIBERS). `off` desliga para todos.
-- key: CONCIERGE_INTENTS_PLURAL
-  scope: RUN_TIME
-  value: subjects
-  type: GENERAL
-- key: CONCIERGE_INTENTS_SUBSCRIBERS
-  scope: RUN_TIME
-  value: '4605528796186498'
-  type: GENERAL
+# Intenções no plural (OBS0310-Q/R): sem chave aqui de propósito. O padrão do código
+# (`cohort`) já liga para a coorte atendida (CONCIERGE_ALLOWED_SUBSCRIBERS) e só para
+# ela; o app vivo também não tem a chave. Emergência: CONCIERGE_INTENTS_PLURAL=off.
 - key: CONCIERGE_OBSERVATION_ENABLED
   scope: RUN_TIME
   value: 'true'

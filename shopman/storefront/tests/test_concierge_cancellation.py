@@ -200,3 +200,63 @@ def test_payment_line_says_only_what_the_system_did():
     )
     assert line(counter, had_intent=False, status_before="", captured_before=0, status_after="") == ""
 
+
+
+# ── Dentro de uma mensagem com várias partes (OBS0310-R) ──────────────
+
+
+def _plural_turn(conversation, text, reader, django_capture_on_commit_callbacks):  # noqa: F811
+    from django.test import override_settings
+
+    from shopman.storefront.tests.test_concierge_intents import PLURAL_SETTINGS
+
+    _receive(conversation, text, f"cancel-plural-{ConversationMessage.objects.count()}-{timezone.now().timestamp()}")
+    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+        return service.run_turn(
+            conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader
+        )
+
+
+def test_cancel_among_other_parts_is_asked_and_done_by_the_concierge(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
+    from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
+
+    reader = ReaderClient([
+        _act("cancel_order", "quero cancelar meu pedido"),
+        _act("product_question", "tem pão francês?", "pão francês"),
+    ])
+    asked = _plural_turn(
+        conversation, "quero cancelar meu pedido. e tem pão francês?", reader, django_capture_on_commit_callbacks
+    )
+
+    assert not asked.handoff
+    reply = outbox.sent[-1]
+    assert f"Cancelo o pedido {placed.ref}" in reply and "Pão Francês" in reply
+    assert reply.rstrip().endswith("Responda sim ou não.")  # a confirmação é a pergunta que fica
+    placed.refresh_from_db()
+    assert placed.status == "new"
+
+    done = _plural_turn(conversation, "sim", ReaderClient([]), django_capture_on_commit_callbacks)
+
+    assert not done.handoff
+    placed.refresh_from_db()
+    assert placed.status == "cancelled" and placed.data["cancelled_by"] == "concierge"
+
+
+def test_cancel_among_other_parts_out_of_the_window_goes_to_the_team(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
+    from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
+
+    placed.transition_status("accepted", actor="test")
+    placed.transition_status("preparing", actor="test")
+    reader = ReaderClient([
+        _act("cancel_order", "quero cancelar meu pedido"),
+        _act("product_question", "tem pão francês?", "pão francês"),
+    ])
+
+    result = _plural_turn(
+        conversation, "quero cancelar meu pedido. e tem pão francês?", reader, django_capture_on_commit_callbacks
+    )
+
+    assert result.handoff
+    assert "Pão Francês" in outbox.sent[-1] and "já chamei a equipe" in outbox.sent[-1]
+    placed.refresh_from_db()
+    assert placed.status == "preparing"

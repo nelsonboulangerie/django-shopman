@@ -494,6 +494,30 @@ equipe devolver. O cartão da equipe leva o resumo **de cada parte**, inclusive 
 Isso também ataca o "12 mandados à equipe sem precisar" da régua (1.5): a parte simples não arrasta
 a conversa inteira.
 
+Duas decisões da coordenação (03/10/2026, OBS0310-R), por serem o óbvio de omotenashi:
+
+- **Pergunta repetida não é reclamação.** "Você não respondeu", "e a minha pergunta?" são a
+  pergunta de novo: a Concierge pede desculpa e responde o que ficou pendente, pela memória
+  (`flags["dialogue"]["parts"]`, as partes da última mensagem e o que houve com cada uma; sem
+  partes guardadas, a última fala do cliente que perguntava algo; sem nada, pede para repetir).
+  A cobrança sai da leitura e da triagem: nem o modelo pequeno nem o Jev a transformam em
+  reclamação. Só é reclamação com queixa explícita na mesma fala ("absurdo", "demorou",
+  "descaso", ou a regra local de reclamação).
+- **Cancelamento numa mensagem com várias partes** segue a régua do cancelamento da Concierge
+  (#1445): o que o cliente poderia cancelar pelo site, ela pergunta e cancela no "sim"; fora
+  disso, a equipe (R4). O ponto de ligação é `intents._cancellation()`; sem o módulo no `main`,
+  o cancelamento segue com a equipe, como antes.
+
+### 5.4.1 Como liga
+
+As intenções no plural valem para quem a Concierge **já atende** (OBS0310-R, 03/10/2026). Em
+`assist`, a coorte atendida é a lista fechada da connection (`allowed_subjects`, hoje o dono), e
+quem está fora dela só é observado: ligar para a coorte é ligar para quem conversa com ela, sem
+tocar em env nem no spec do app. `CONCIERGE_INTENTS_PLURAL` virou interruptor: `cohort` (padrão,
+sem env), `off` (emergência, desliga para todos), `subjects` (estreita a coorte para
+`CONCIERGE_INTENTS_SUBSCRIBERS`) e `all` (também só dentro da coorte). Abrir para mais clientes é
+abrir a coorte da Concierge, não esta chave.
+
 ### 5.5 Prova no placar
 
 O conjunto da OBS0310-K ganha, por caso, a lista de atos esperada (rótulo novo, sem mexer nos

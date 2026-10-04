@@ -101,6 +101,10 @@ CONCIERGE_SETTINGS = {
     "max_turns_per_day": 80,
     "max_iterations": 6,
     "dispatch_delay_seconds": 1,
+    # Estes testes medem o agente (uma intenção por turno). As intenções no plural valem
+    # por padrão para a coorte atendida (OBS0310-R) e têm a suíte delas
+    # (``test_concierge_intents``), que liga a chave por conta própria.
+    "intents_plural": "off",
     "connections": {
         CONNECTION_KEY: {
             "active": True,

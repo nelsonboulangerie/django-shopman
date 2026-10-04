@@ -30,6 +30,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def isolated_runtime(settings, monkeypatch):
     settings.AI_ASSIST_API_KEY = "synthetic-key"
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",

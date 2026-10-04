@@ -355,7 +355,7 @@ def test_compose_puts_the_addition_confirmation_last_as_the_only_question():
 
     confirm = "Acrescento 2 Pão Francês ao pedido P7? Total novo R$ 3,60, saldo a pagar R$ 1,80. Responda sim ou não."
     run = Execution(replies=[
-        PartReply(Act("order"), text=confirm, closing=True),
+        PartReply(Act("order"), text=confirm, keeps_question=True),
         PartReply(Act("product_question"), text="“Croissant”: R$ 13,00.\n“Brioche”: R$ 9,00.\nQual deles você prefere?"),
         PartReply(Act("hours_delivery"), text="Abrimos de segunda a sábado, das 7h às 20h."),
     ])

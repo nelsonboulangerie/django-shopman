@@ -23,6 +23,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def conversation(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "account_id": "adversarial-account",

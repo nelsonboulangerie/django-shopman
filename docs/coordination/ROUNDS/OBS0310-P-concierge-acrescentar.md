@@ -33,14 +33,14 @@ acréscimo"), registradas abaixo como histórico.
   (`order_edit.money_for_customer`: total novo e destino da diferença) e o aviso não é enviado
   (`order_edit.edit(notify_customer=False)`). Edição vinda do PDV/Gestor segue avisando.
 
-## Junto com as frentes vizinhas (merge do main com #1444, #1445, #1449)
+## Junto com as frentes vizinhas (merge do main com #1444, #1445, #1449, #1452)
 - `mark_handoff(ack_text=...)` nasceu nas duas frentes; ficou um só, servindo às intenções no plural e
   à encomenda recusada.
 - Intenções no plural (`intents.py`): a resolução da memória delas também executa o "1" e o "sim" do
   acréscimo (`agent.addition_outcome`, o mesmo do agente). Uma parte "acrescenta X no meu pedido" vai
   pelo `order_addition` (produto pela busca pública, um item só; pedido citado ou o aberto), e a
-  confirmação vai no FIM da mensagem como a única pergunta (`PartReply.closing`), gravada por último na
-  memória. Recusa numa encomenda entra como parte de equipe, com o motivo no aviso.
+  confirmação vai no FIM da mensagem como a única pergunta (`PartReply.keeps_question`, o mesmo
+  mecanismo do cancelamento do #1452), gravada por último na memória. Recusa numa encomenda entra como parte de equipe, com o motivo no aviso.
 
 ## O que mudou
 - `shop/services/order_edit.py`: `plan`/`edit` aceitam `source` (`pos:edit` no balcão,

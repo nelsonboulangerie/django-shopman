@@ -29,6 +29,7 @@ pytestmark = pytest.mark.django_db
 def enabled(settings, monkeypatch):
     settings.AI_ASSIST_API_KEY = "test-only"
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",
