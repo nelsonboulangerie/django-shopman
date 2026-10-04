@@ -226,6 +226,8 @@ const openingCounter = ref(false);
 const route = useRoute();
 onMounted(() => {
   if (route.query.open === "1" && screen.value === "closed") openShiftDialogOpen.value = true;
+  // O passo 1 do Fim do dia (`?close=1`) cai direto na contagem cega da gaveta.
+  if (route.query.close === "1" && screen.value === "open") closingDialogOpen.value = true;
 });
 
 async function submitOpen() {

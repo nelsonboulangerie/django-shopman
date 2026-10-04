@@ -35,16 +35,19 @@ import {
   buildQuantitiesPayload,
   closingBadge,
   closingCountOrder,
+  closingCountSummary,
+  closingSteps,
   countedItems,
   firstUnfilledItemName,
   pendingStatusDisplay,
+  piecesLabel,
   productionRows,
   sanitizeQtyInput,
 } from "~/presentation/closing";
 import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
 import type { ClosingPendingProduction } from "~/types/closing";
 
-useHead({ title: "Fechamento do dia" });
+useHead({ title: "Fim do dia" });
 
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
@@ -63,7 +66,7 @@ function workOrderHref(row: ClosingPendingProduction): string {
 const { pos } = await usePosTerminal();
 const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === true);
 
-const { closing, pending, accessDenied, submitting, submit } = await useDayClosing({ action });
+const { closing, pending, accessDenied, submitting, submit, answering, answerEpisode } = await useDayClosing({ action });
 
 const dayProduction = computed(() => productionRows(closing.value?.production_summary));
 
@@ -130,6 +133,47 @@ async function goToCashReport() {
   await navigateTo("/session/report");
 }
 
+// ── O corredor da v4 (`fim-do-dia.jpg`): 1 Fechar caixa · 2 Contar a vitrine · 3 Fechar
+// o dia. O passo 1 é a contagem cega da gaveta, que mora na Sessão de caixa (o mesmo
+// contador por cédula); aqui ele aparece com o estado e a porta. Os passos 2 e 3 são
+// desta tela: contar, revisar o resumo (em peças, nunca em reais) e selar.
+const step = ref<"count" | "day">("count");
+const cashOpen = computed<boolean | null>(() => {
+  const runtime = pos.value?.cash_runtime;
+  return runtime ? Boolean(runtime.has_open_shift) : null;
+});
+const steps = computed(() =>
+  closingSteps({
+    cashOpen: cashOpen.value,
+    counted: countedTotal.value,
+    total: countItems.value.length,
+    step: step.value,
+    dayClosed: Boolean(closing.value?.already_closed),
+  }),
+);
+const summary = computed(() => closingCountSummary(countItems.value, quantities));
+function goToReview() {
+  if (!canSubmit.value) return;
+  step.value = "day";
+}
+function goToCloseCash() {
+  void navigateTo({ path: "/session", query: { close: "1" } });
+}
+
+// "Explicar o dia estranho": uma escolha por episódio, mais o detalhe se quiser.
+const episodeChoice = reactive<Record<number, string>>({});
+const episodeNote = reactive<Record<number, string>>({});
+async function sendEpisode(episodeId: number, kindRef: string) {
+  episodeChoice[episodeId] = kindRef;
+  await answerEpisode(episodeId, kindRef, (episodeNote[episodeId] || "").trim());
+}
+
+const liveStatus = usePosLiveStatus();
+// O selo do app no cabeçalho do corredor (a cor do PDV, como no rail).
+const appColor = String(
+  (runtimeConfig.public.operatorPwa as { identity?: { color?: string } } | undefined)?.identity?.color || "var(--primary)",
+);
+
 async function confirmSubmit() {
   if (!closing.value || !canSubmit.value) return;
   const ok = await submit(buildQuantitiesPayload(closing.value.items, quantities));
@@ -142,31 +186,77 @@ async function confirmSubmit() {
 </script>
 
 <template>
-  <main class="min-h-dvh bg-background text-foreground">
-    <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-      <UiButton
-        variant="ghost"
-        size="icon-sm"
+  <main class="flex min-h-dvh flex-col bg-background text-foreground" data-closing-corridor>
+    <!-- FIM DO DIA (v4, `fim-do-dia.jpg`): um corredor só, de quem fecha. Cabeçalho com
+         o título, o ao vivo e o terminal; os três passos no topo; a CONFERÊNCIA cega no
+         meio; o gesto de cada passo preso ao pé. -->
+    <header class="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2.5">
+      <span class="grid size-10 shrink-0 place-items-center rounded-lg text-white" :style="{ background: appColor }" aria-hidden="true">
+        <Icon name="lucide:shopping-basket" class="size-5" />
+      </span>
+      <div class="min-w-0">
+        <h1 class="op-heading">Fim do dia</h1>
+        <p class="mt-1 flex items-center gap-2 op-micro text-muted-foreground">
+          <OperatorLiveStatus
+            :tone="liveStatus.view.value.tone"
+            :time="liveStatus.time.value"
+            :label="liveStatus.view.value.label"
+            :detail="liveStatus.view.value.detail"
+          />
+          <span v-if="pos">{{ pos.terminal_label }}</span>
+          <span v-if="closing">· {{ closing.today_display }}</span>
+        </p>
+      </div>
+      <div class="flex-1" />
+      <button
+        type="button"
+        class="inline-flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
         aria-label="Voltar à sessão de caixa"
-        title="Sessão de caixa"
+        title="Sair: o que já foi contado fica na tela até você voltar"
         @click="goToCashSession"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
-      </UiButton>
-      <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Fechamento do dia</h1>
-      <span v-if="closing" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
-        {{ closing.today_display }} · contagem cega do que a casa produz
-      </span>
+        <Icon name="lucide:x" class="size-4" />
+        Sair
+      </button>
     </header>
 
-    <div class="mx-auto grid w-full max-w-2xl gap-4 p-4 md:py-8">
+    <!-- Os três passos: cada um diz a hora e o estado, nunca valor. -->
+    <ol
+      v-if="closing && !accessDenied"
+      class="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-card px-4 py-3 no-scrollbar"
+      aria-label="Passos do fim do dia"
+      data-closing-steps
+    >
+      <template v-for="(item, index) in steps" :key="item.key">
+        <li v-if="index" class="h-0.5 min-w-6 flex-1 rounded-full" :class="steps[index - 1]?.state === 'done' ? 'bg-success' : 'bg-border'" aria-hidden="true" />
+        <li class="flex shrink-0 items-center gap-2.5" :aria-current="item.state === 'current' ? 'step' : undefined" :data-closing-step="item.key" :data-state="item.state">
+          <span
+            class="grid size-10 shrink-0 place-items-center rounded-full op-title"
+            :class="item.state === 'done'
+              ? 'bg-success text-white'
+              : item.state === 'current'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-muted-foreground'"
+          >
+            <Icon v-if="item.state === 'done'" name="lucide:check" class="size-5" />
+            <template v-else>{{ index + 1 }}</template>
+          </span>
+          <span class="leading-tight">
+            <span class="block op-label font-semibold" :class="item.state === 'todo' ? 'text-muted-foreground' : ''">{{ item.label }}</span>
+            <span class="block op-micro text-muted-foreground tnum">{{ item.detail }}</span>
+          </span>
+        </li>
+      </template>
+    </ol>
+
+    <div class="mx-auto grid w-full max-w-3xl flex-1 content-start gap-4 p-4 md:py-6">
       <!-- Sem permissão: fechamento é ritual do gerente. -->
-      <section v-if="accessDenied" class="grid gap-2 rounded-md border bg-card p-4">
+      <section v-if="accessDenied" class="grid gap-2 rounded-xl border bg-card p-4">
         <div class="flex items-center gap-2">
           <Icon name="lucide:lock" class="size-4 text-muted-foreground" />
-          <h2 class="text-base font-semibold">Fechamento é do gerente</h2>
+          <h2 class="op-title">Fechamento é do gerente</h2>
         </div>
-        <p class="text-sm text-muted-foreground">
+        <p class="op-body text-muted-foreground">
           Sua conta não tem permissão para realizar o fechamento do dia. Chame quem cuida do encerramento.
         </p>
         <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
@@ -180,10 +270,10 @@ async function confirmSubmit() {
         </UiAlert>
 
         <!-- Fim de dia encadeado: registrado o fechamento, o próximo passo vem
-             até a mão. Relatório só para quem audita — porta que bateria na
+             até a mão. Relatório só para quem audita: porta que bateria na
              cara não é oferta. -->
-        <section v-if="justClosedDay && closing.already_closed" class="grid gap-2 rounded-md border bg-card p-4">
-          <p class="text-sm text-muted-foreground">
+        <section v-if="justClosedDay && closing.already_closed" class="grid gap-2 rounded-xl border bg-card p-4">
+          <p class="op-body text-muted-foreground">
             Fechamento registrado. O quadro do dia está logo abaixo.
           </p>
           <div class="grid gap-2 sm:grid-cols-2">
@@ -198,18 +288,36 @@ async function confirmSubmit() {
           </div>
         </section>
 
+        <!-- PASSO 1 pendente: a gaveta ainda está aberta. A contagem cega por cédula
+             mora na Sessão de caixa; aqui fica o estado e a porta. -->
+        <section
+          v-if="!closing.already_closed && cashOpen"
+          class="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4"
+          data-closing-cash-open
+        >
+          <Icon name="lucide:wallet" class="size-5 shrink-0 text-primary" />
+          <p class="min-w-0 flex-1 op-body">
+            <b class="font-semibold">O caixa ainda está aberto.</b>
+            <span class="text-muted-foreground"> A contagem da gaveta é cega: o esperado não aparece, nem depois.</span>
+          </p>
+          <UiButton variant="outline" @click="goToCloseCash">
+            <Icon name="lucide:lock" class="size-4" />
+            Fechar caixa
+          </UiButton>
+        </section>
+
         <!-- BLOQUEIO, antes da contagem. Diz QUANTAS ordens faltam e para onde
              ir; não diz SKU nem quantidade, que é o que entregaria a resposta.
              A tabela completa aparece depois que a contagem é registrada. -->
         <section
           v-if="!closing.already_closed && closing.has_pending_production"
-          class="grid gap-2 rounded-md border border-warning/40 bg-warning/10 p-4"
+          class="grid gap-2 rounded-xl border border-warning/40 bg-warning/10 p-4"
         >
           <div class="flex items-center gap-2">
             <Icon name="lucide:triangle-alert" class="size-4 text-warning" />
-            <h2 class="text-base font-semibold">Produção em aberto</h2>
+            <h2 class="op-title">Produção em aberto</h2>
           </div>
-          <p class="text-sm text-muted-foreground">
+          <p class="op-body text-muted-foreground">
             {{ closing.pending_production.length === 1
               ? "Uma ordem de produção ainda está aberta."
               : `${closing.pending_production.length} ordens de produção ainda estão abertas.` }}
@@ -220,7 +328,7 @@ async function confirmSubmit() {
                bloqueio mais velho, e o rótulo promete só isso. -->
           <a
             v-if="productionGrid"
-            class="text-sm font-medium underline underline-offset-4"
+            class="op-label font-semibold underline underline-offset-4"
             :href="productionGrid"
             v-bind="attrsFor(productionGrid)"
             data-production-link
@@ -230,9 +338,9 @@ async function confirmSubmit() {
         </section>
 
         <!-- Produção pendente -->
-        <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-md border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-xl border bg-card p-4">
           <div class="flex items-center gap-2">
-            <h2 class="text-base font-semibold">Produção pendente</h2>
+            <h2 class="op-title">Produção pendente</h2>
             <span class="inline-flex items-center rounded-md border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
               {{ closing.pending_production.length }}
             </span>
@@ -287,8 +395,8 @@ async function confirmSubmit() {
         </section>
 
         <!-- Produção do dia (pós-contagem: é a resposta da prova) -->
-        <section v-if="closing.already_closed" class="grid gap-2 rounded-md border bg-card p-4">
-          <h2 class="text-base font-semibold">Produção do dia</h2>
+        <section v-if="closing.already_closed" class="grid gap-2 rounded-xl border bg-card p-4">
+          <h2 class="op-title">Produção do dia</h2>
           <p v-if="!dayProduction.length" class="text-sm text-muted-foreground">Sem produção registrada hoje.</p>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -313,9 +421,9 @@ async function confirmSubmit() {
         </section>
 
         <!-- Encomendas dos próximos dias -->
-        <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2 rounded-md border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2 rounded-xl border bg-card p-4">
           <div class="flex items-center gap-2">
-            <h2 class="text-base font-semibold">Encomendas para os próximos dias</h2>
+            <h2 class="op-title">Encomendas para os próximos dias</h2>
             <span class="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               {{ closing.upcoming_preorders.length }}
             </span>
@@ -342,8 +450,8 @@ async function confirmSubmit() {
         </section>
 
         <!-- Discrepâncias -->
-        <section v-if="closing.already_closed && closing.reconciliation_errors.length" class="grid gap-2 rounded-md border border-destructive/40 bg-card p-4">
-          <h2 class="text-base font-semibold text-destructive">Discrepâncias detectadas</h2>
+        <section v-if="closing.already_closed && closing.reconciliation_errors.length" class="grid gap-2 rounded-xl border border-destructive/40 bg-card p-4">
+          <h2 class="op-title text-destructive">Discrepâncias detectadas</h2>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
@@ -366,33 +474,37 @@ async function confirmSubmit() {
           </div>
         </section>
 
-        <!-- Contagem final (cega) -->
-        <section class="grid gap-2 rounded-md border bg-card p-4">
+        <!-- PASSO 2: contar a vitrine (CONFERÊNCIA cega, por produto). -->
+        <section v-if="closing.already_closed || step === 'count'" class="grid gap-3 rounded-xl border bg-card p-4" data-closing-count>
           <div class="flex items-baseline justify-between gap-2">
-            <h2 class="text-base font-semibold">Contagem final</h2>
+            <div>
+              <p class="op-eyebrow text-muted-foreground">Contagem final</p>
+              <h2 class="op-heading">O que sobrou na vitrine?</h2>
+            </div>
             <span
               v-if="closing.has_items && !closing.already_closed"
-              class="text-sm tabular-nums text-muted-foreground"
+              class="op-label tnum text-muted-foreground"
               data-count-progress
             >{{ countedTotal }} de {{ countItems.length }} contados</span>
           </div>
-          <p class="text-sm text-muted-foreground">
-            Conte o que sobrou do que a casa produz (revenda não entra). Nada sobrou? Digite 0.
-            O sistema trata destino e perdas.
+          <p class="flex items-start gap-2 rounded-lg bg-secondary px-3 py-2 op-body text-muted-foreground">
+            <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
+            <span>Contagem cega: conte o que sobrou do que a casa produz (revenda não entra). Nada sobrou? Digite 0. O sistema trata destino e perdas.</span>
           </p>
-          <p v-if="!closing.has_items" class="text-sm text-muted-foreground">Nada produzido na casa em estoque para contar.</p>
+          <p v-if="!closing.has_items" class="op-body text-muted-foreground">Nada produzido na casa em estoque para contar.</p>
           <div v-else ref="countList" class="grid gap-1.5">
             <div
               v-for="(item, index) in countItems"
               :key="item.sku"
-              class="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+              class="flex items-center gap-3 rounded-lg border border-border px-3 py-2 transition"
+              :class="/^\d+$/.test((quantities[item.sku] ?? '').trim()) ? 'bg-card' : 'bg-background'"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium" :title="item.name">{{ item.name }}</p>
-                <p class="text-xs text-muted-foreground">{{ item.sku }}</p>
+                <p class="truncate op-title" :title="item.name">{{ item.name }}</p>
+                <p class="op-micro font-mono text-muted-foreground">{{ item.sku }}</p>
               </div>
               <span
-                class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-xs font-medium"
+                class="inline-flex h-6 shrink-0 items-center rounded-full border px-2 op-micro font-semibold"
                 :class="closingBadge(item.classification).css"
               >
                 {{ closingBadge(item.classification).label }}
@@ -405,7 +517,7 @@ async function confirmSubmit() {
                 :model-value="quantities[item.sku]"
                 inputmode="numeric"
                 enterkeyhint="next"
-                class="h-11 w-20 text-right text-base tabular-nums"
+                class="h-12 w-24 text-right op-title tabular-nums focus-visible:border-2 focus-visible:border-primary"
                 :disabled="closing.already_closed || submitting"
                 :aria-label="`Sobras de ${item.name}`"
                 data-count-input
@@ -415,25 +527,155 @@ async function confirmSubmit() {
             </div>
           </div>
 
-          <template v-if="closing.has_items && !closing.already_closed">
-            <!-- Preso ao pé da tela: o botão acompanha a lista. -->
-            <div
-              v-if="!confirming"
-              class="sticky bottom-0 -mx-4 -mb-4 mt-1 border-t bg-card/95 px-4 py-3 backdrop-blur"
+          <!-- Preso ao pé: o selo que aponta e ecoa (v4). Contar trinta itens não
+               termina numa rolagem à procura do botão. -->
+          <div
+            v-if="closing.has_items && !closing.already_closed"
+            class="sticky bottom-0 -mx-4 -mb-4 mt-1 border-t bg-card/95 px-4 py-3 backdrop-blur"
+          >
+            <UiButton
+              ref="registerButton"
+              size="lg"
+              class="h-14 w-full text-base"
+              :class="canSubmit ? '' : 'border-2 border-dashed border-primary/40 bg-transparent text-foreground'"
+              :disabled="!canSubmit || submitting"
+              data-closing-review
+              @click="goToReview"
             >
-              <UiButton ref="registerButton" size="lg" class="w-full" :disabled="!canSubmit || submitting" @click="confirming = true">
-                <Icon name="lucide:clipboard-check" class="size-5" />
-                Registrar contagem final
-              </UiButton>
-              <!-- A dica aponta o item, não "todos": procurar um campo vazio
-                   numa lista aparentemente preenchida era a parte difícil. -->
-              <p v-if="!canSubmit" class="mt-1.5 text-xs text-muted-foreground">
-                <template v-if="unfilledItemName">Falta a contagem de {{ unfilledItemName }}.</template>
-                <template v-else>Preencha a contagem de todos os itens para registrar.</template>
+              <Icon name="lucide:arrow-down" class="size-5" />
+              Contei {{ piecesLabel(summary.keep + summary.loss + summary.mixed) }} · Revisar e fechar o dia
+            </UiButton>
+            <!-- A dica aponta o item, não "todos": procurar um campo vazio
+                 numa lista aparentemente preenchida era a parte difícil. -->
+            <p v-if="!canSubmit" class="mt-1.5 text-center op-micro text-muted-foreground">
+              <template v-if="unfilledItemName">Falta a contagem de {{ unfilledItemName }}.</template>
+              <template v-else>Preencha a contagem de todos os itens para registrar.</template>
+            </p>
+          </div>
+        </section>
+
+        <!-- PASSO 3: o dia, depois de contado. Às cegas até o fim, para todos: peças,
+             estados e a pergunta do dia estranho; nunca reais. -->
+        <template v-if="!closing.already_closed && step === 'day'">
+          <h2 class="op-heading" data-closing-day>O dia, depois de contado</h2>
+          <div class="grid gap-3 md:grid-cols-2">
+            <section class="grid content-start gap-2 rounded-xl border bg-card p-4" data-closing-cash>
+              <p class="flex items-center gap-1.5 op-eyebrow text-muted-foreground"><Icon name="lucide:wallet" class="size-3.5" />Caixa</p>
+              <div class="flex items-center gap-3">
+                <span
+                  class="grid size-10 shrink-0 place-items-center rounded-full"
+                  :class="cashOpen === false ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'"
+                >
+                  <Icon :name="cashOpen === false ? 'lucide:circle-check' : 'lucide:clock'" class="size-5" />
+                </span>
+                <div>
+                  <p class="op-title" :class="cashOpen === false ? 'text-success' : ''">{{ cashOpen === false ? "Caixa fechado" : "Caixa ainda aberto" }}</p>
+                  <p class="op-micro text-muted-foreground">{{ cashOpen === false ? "contagem cega registrada no turno" : "feche antes ou depois: a contagem é a mesma" }}</p>
+                </div>
+              </div>
+              <p class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 op-micro text-muted-foreground">
+                <Icon name="lucide:eye-off" class="size-3.5 shrink-0" />
+                Fechamento às cegas: valores só na auditoria
               </p>
+              <UiButton v-if="cashOpen" variant="outline" size="sm" @click="goToCloseCash">Fechar caixa</UiButton>
+            </section>
+            <section class="grid content-start gap-2 rounded-xl border bg-card p-4" data-closing-showcase>
+              <p class="flex items-center gap-1.5 op-eyebrow text-muted-foreground"><Icon name="lucide:store" class="size-3.5" />Vitrine</p>
+              <dl class="grid gap-1.5 op-body">
+                <div class="flex justify-between gap-2"><dt class="text-muted-foreground">Ficam para amanhã</dt><dd class="op-title tnum">{{ piecesLabel(summary.keep) }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-muted-foreground">Viram perda</dt><dd class="op-title tnum">{{ piecesLabel(summary.loss) }}</dd></div>
+                <div v-if="summary.mixed" class="flex justify-between gap-2"><dt class="text-muted-foreground">Lote misto (parte vence)</dt><dd class="op-title tnum">{{ piecesLabel(summary.mixed) }}</dd></div>
+              </dl>
+              <button type="button" class="justify-self-start op-label font-semibold text-primary underline underline-offset-4" @click="step = 'count'">
+                Voltar à contagem
+              </button>
+            </section>
+          </div>
+
+          <section class="flex items-center gap-3 rounded-xl border bg-card p-4" data-closing-production>
+            <Icon
+              :name="closing.has_pending_production ? 'lucide:triangle-alert' : 'lucide:circle-check'"
+              class="size-5 shrink-0"
+              :class="closing.has_pending_production ? 'text-warning' : 'text-success'"
+            />
+            <p class="min-w-0 flex-1 op-body">
+              {{ closing.has_pending_production
+                ? (closing.pending_production.length === 1 ? "Produção: uma ordem ainda aberta" : `Produção: ${closing.pending_production.length} ordens ainda abertas`)
+                : "Produção: todos os lotes de hoje fechados" }}
+            </p>
+            <span class="inline-flex h-6 items-center gap-1 rounded-full bg-secondary px-2 op-micro font-semibold text-muted-foreground">
+              <Icon name="lucide:sparkles" class="size-3.5" />automático
+            </span>
+          </section>
+
+          <!-- EXPLICAR O DIA ESTRANHO: só aparece quando o sistema notou um sinal. A
+               resposta marca o dia (o plano e o B.I. não aprendem com ele). -->
+          <section
+            v-for="episode in closing.pending_episodes || []"
+            :key="episode.id"
+            class="grid gap-3 rounded-xl border-2 border-primary/60 bg-card p-4"
+            data-closing-episode
+          >
+            <div class="flex items-start gap-3">
+              <span class="grid size-10 shrink-0 place-items-center rounded-full bg-secondary text-primary">
+                <Icon name="lucide:trending-down" class="size-5" />
+              </span>
+              <div class="min-w-0">
+                <p class="op-eyebrow text-primary">Explicar o dia estranho</p>
+                <p class="op-title">{{ episode.signal }}. Aconteceu algo?</p>
+                <p class="op-micro text-muted-foreground tnum">{{ episode.window_display }}</p>
+              </div>
             </div>
-            <div v-else class="sticky bottom-0 mt-1 grid gap-2 rounded-md border border-destructive/40 bg-card p-3 shadow-lg">
-              <p class="text-sm font-medium">
+            <div class="flex flex-wrap gap-2" role="group" :aria-label="`O que houve: ${episode.signal}`">
+              <button
+                v-for="option in closing.episode_options || []"
+                :key="option.ref"
+                type="button"
+                class="inline-flex h-12 items-center gap-1.5 rounded-full border px-4 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+                :class="episodeChoice[episode.id] === option.ref ? 'border-primary bg-primary/10' : 'border-border bg-card'"
+                :aria-pressed="episodeChoice[episode.id] === option.ref"
+                :title="option.hint || undefined"
+                :disabled="answering !== null"
+                @click="sendEpisode(episode.id, option.ref)"
+              >
+                <Icon v-if="episodeChoice[episode.id] === option.ref" name="lucide:check" class="size-4" />
+                {{ option.label }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-12 items-center rounded-full border border-dashed border-border px-4 op-label text-muted-foreground transition hover:bg-accent disabled:opacity-50"
+                :disabled="answering !== null"
+                @click="sendEpisode(episode.id, '')"
+              >
+                Não houve nada
+              </button>
+            </div>
+            <UiInput
+              v-model="episodeNote[episode.id]"
+              class="h-12"
+              placeholder="Detalhe, se quiser (ex.: temporal às 14h, rua alagada)"
+              :aria-label="`Detalhe do que houve: ${episode.signal}`"
+            />
+            <p class="flex items-start gap-1.5 op-micro text-muted-foreground">
+              <Icon name="lucide:chart-no-axes-column" class="mt-0.5 size-3.5 shrink-0" />
+              A resposta marca o dia: a projeção e a sugestão do plano não aprendem com um dia assim como se fosse normal.
+            </p>
+          </section>
+
+          <!-- O selo irreversível, com a consequência escrita embaixo. -->
+          <div class="sticky bottom-0 -mx-4 mt-1 grid gap-1.5 border-t bg-background/95 px-4 py-3 backdrop-blur">
+            <div v-if="!confirming" class="flex gap-2">
+              <UiButton variant="outline" size="lg" class="h-14" @click="step = 'count'">
+                <Icon name="lucide:arrow-left" class="size-4" />
+                Vitrine
+              </UiButton>
+              <UiButton size="lg" class="h-14 flex-1 text-base" :disabled="!canSubmit || submitting" data-closing-seal @click="confirming = true">
+                <Icon name="lucide:lock" class="size-5" />
+                Fechar o dia {{ closing.today_display }}
+              </UiButton>
+            </div>
+            <div v-else class="grid gap-2 rounded-xl border border-destructive/40 bg-card p-3 shadow-lg">
+              <p class="op-body font-semibold">
                 Confirmar o fechamento do dia {{ closing.today_display }}? Sobras viram "Ontem" ou perda e a contagem é registrada.
               </p>
               <div class="grid grid-cols-2 gap-2">
@@ -443,11 +685,12 @@ async function confirmSubmit() {
                 </UiButton>
               </div>
             </div>
-          </template>
-        </section>
+            <p class="text-center op-micro text-muted-foreground">Não reabre: um fechamento por dia. Sobras entram como estoque de ontem, perdas saem pelo lote.</p>
+          </div>
+        </template>
       </template>
 
-      <section v-else-if="pending" class="grid place-items-center rounded-md border bg-card p-8">
+      <section v-else-if="pending" class="grid place-items-center rounded-xl border bg-card p-8">
         <Icon name="line-md:loading-loop" class="size-6 text-muted-foreground" />
       </section>
     </div>

@@ -105,3 +105,77 @@ export function countedItems(
 ): number {
   return items.filter((item) => /^\d+$/.test((inputs[item.sku] ?? "").trim())).length;
 }
+
+// ── Fim do dia em corredor (V4-PDV, `fim-do-dia.jpg`) ──────────────────────────
+
+/**
+ * O resumo da vitrine no passo 3, em PEÇAS e só com o que o operador contou: quanto
+ * fica para amanhã, quanto vira perda e quanto é de lote misto (parte vence; quanto
+ * exatamente, só o servidor sabe, e ele não diz antes do registro). Nunca dinheiro.
+ */
+export interface ClosingCountSummary {
+  keep: number;
+  loss: number;
+  mixed: number;
+}
+
+export function closingCountSummary(
+  items: ClosingItemProjection[],
+  inputs: Record<string, string>,
+): ClosingCountSummary {
+  const summary: ClosingCountSummary = { keep: 0, loss: 0, mixed: 0 };
+  for (const item of items) {
+    const raw = (inputs[item.sku] ?? "").trim();
+    if (!/^\d+$/.test(raw)) continue;
+    const qty = Number(raw);
+    if (item.classification === "expired") summary.loss += qty;
+    else if (item.classification === "mixed") summary.mixed += qty;
+    else summary.keep += qty;
+  }
+  return summary;
+}
+
+/** "1 peça" / "22 peças". */
+export function piecesLabel(count: number): string {
+  return count === 1 ? "1 peça" : `${count} peças`;
+}
+
+/** Os três passos do corredor, com o estado de cada um (nunca valor). */
+export interface ClosingStepView {
+  key: "cash" | "count" | "day";
+  label: string;
+  detail: string;
+  state: "done" | "current" | "todo";
+}
+
+export function closingSteps(input: {
+  /** Turno da gaveta aberto? `null` quando a leitura do terminal não respondeu. */
+  cashOpen: boolean | null;
+  counted: number;
+  total: number;
+  step: "count" | "day";
+  dayClosed: boolean;
+}): ClosingStepView[] {
+  const cash: ClosingStepView = input.cashOpen === false
+    ? { key: "cash", label: "Fechar caixa", detail: "contagem registrada", state: "done" }
+    : {
+        key: "cash",
+        label: "Fechar caixa",
+        detail: input.cashOpen ? "caixa aberto" : "contagem cega",
+        state: input.cashOpen ? "current" : "todo",
+      };
+  const countDone = input.dayClosed || (input.step === "day" && input.total > 0 && input.counted === input.total);
+  const count: ClosingStepView = {
+    key: "count",
+    label: "Contar a vitrine",
+    detail: input.dayClosed ? "conferido" : input.total ? `${input.counted} de ${input.total}` : "nada a contar",
+    state: countDone ? "done" : input.step === "count" ? "current" : "todo",
+  };
+  const day: ClosingStepView = {
+    key: "day",
+    label: "Fechar o dia",
+    detail: input.dayClosed ? "fechado" : "resumo e selo",
+    state: input.dayClosed ? "done" : input.step === "day" ? "current" : "todo",
+  };
+  return [cash, count, day];
+}

@@ -1,8 +1,8 @@
 # V4-PDV: o PDV igual à prévia v4 (último app da onda)
 
 - **id:** V4-PDV
-- **branch:** claude/v4-pdv (PR 1: casca + Venda)
-- **PR:** (preenchido na abertura)
+- **branch:** claude/v4-pdv (PR 1: casca + Venda), claude/v4-pdv-fim-do-dia (PR 2)
+- **PR:** #1462 (PR 1), PR 2 aberto em seguida (Fim do dia)
 - **estado:** PR aberto, auto-merge (onda V4, merge autorizado pelo dono)
 - **início (UTC):** 2026-10-04
 
@@ -45,6 +45,20 @@ para o diálogo, Desconto e Remover.
 **Kit (aditivo, só camada da suíte):** `RailSection` sem o `px-0.5` e sem quebrar palavra no
 meio (a prévia `.rail-item` tem 64px sem respiro: "Encomendas" virava "Encomenda / s").
 
+## O que entrou (PR 2: Fim do dia, `fim-do-dia.jpg`)
+`/session/closing` vira o corredor da v4: cabeçalho "Fim do dia" (selo, ao vivo, terminal,
+Sair), os três passos no topo com estado e nunca valor (1 Fechar caixa, 2 Contar a vitrine,
+3 Fechar o dia). Passo 1: estado da gaveta pela Projection do terminal e a porta "Fechar
+caixa", que abre direto a contagem cega da Sessão de caixa (`/session?close=1`). Passo 2: a
+CONFERÊNCIA cega por produto (vazia, Enter avança, dica do item que falta), com o selo preso
+ao pé que ecoa o contado ("Contei N peças · Revisar e fechar o dia"). Passo 3: caixa (estado,
+"Fechamento às cegas: valores só na auditoria"), vitrine em PEÇAS (ficam para amanhã, viram
+perda, lote misto) calculadas só do que se contou e da classificação do lote, produção
+(automático), **"Explicar o dia estranho"** para cada episódio que o sistema notou
+(`pending_episodes`, chips do catálogo `OperationEpisodeKind`, "Não houve nada", detalhe
+livre) gravado pela rota que já existia (`closing/episodes/<id>/`), e o selo "Fechar o dia"
+com a consequência escrita embaixo. Sem R$ em nenhum passo.
+
 ## Função (não regride)
 Todas as teclas seguem (F2 a F10, ?, Alt S, Esc, setas, Del, 0 a 9). O que mudou de lugar:
 Atalhos e Terminal foram para o pé do rail (no celular, Atalhos fica na barra de contexto);
@@ -65,6 +79,14 @@ cancelamento, tela do cliente e SSE intactos.
 - Atalho impresso no item do rail ("F2" sob Comandas): o `RailSection` anuncia a tecla, não a
   imprime (o rail é estreito).
 - Celular: a venda segue em pilha (grade e comanda embaixo); a folha da comanda é do PR 3.
+- Fim do dia, passo 1 dentro do corredor (contador de cédulas em tela cheia com o numérico):
+  a contagem cega da gaveta segue no diálogo da Sessão de caixa (mesmo contador por cédula);
+  o corredor leva até ele.
+- "Caixa conferido · dentro da tolerância": não existe veredito de tolerância no servidor
+  (o fechamento da gaveta não devolve nada ao operador, de propósito). O passo 3 diz só
+  "Caixa fechado · contagem cega registrada". Falta decidir a tolerância (decisão do dono).
+- Gráfico por hora "hoje × sábado típico" no dia estranho: o episódio traz só o sinal em
+  texto; não há série por hora projetada para o fechamento.
 
 ## Prova visual
 `scratchpad/ux/v4-pdv/index.html` da sessão coordenadora (+ `img/`).
