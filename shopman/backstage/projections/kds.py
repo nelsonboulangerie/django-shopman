@@ -93,6 +93,13 @@ class KDSTicketProjection:
     # antes desta trava, ou disparado por outro caminho. Vazio no pedido de
     # verdade — quem vê o crachá sabe que aquilo não se produz.
     test_order_label: str = ""
+    # A gêmea do gate no card da estação (prévia v4, cozinha-estacao4.html, K11):
+    # quando o servidor vai recusar o Finalizar (pedido sem confirmação, pagamento
+    # digital ainda não capturado), o card diz ANTES do toque. Era um toast 5 s
+    # depois de tocar, quando a janela de "Desfazer" fechava e o POST voltava
+    # recusado. Iniciar continua livre ("pode adiantar"). "" quando libera.
+    finish_block_label: str = ""
+    finish_block_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -1013,7 +1020,41 @@ def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) 
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
         test_order_label=_test_order_label(source) if source is not None else "",
+        **_finish_block(ticket, source, is_scheduled=is_scheduled),
     )
+
+
+def _finish_block(ticket, source, *, is_scheduled: bool) -> dict[str, str]:
+    """Por que o Finalizar deste ticket seria recusado agora, na voz da cozinha.
+
+    A mesma régua de ``kds.complete_ticket``: pedido NEW ainda não foi confirmado;
+    pedido ACCEPTED só entra em preparo quando o ``payment_gate`` deixa. Comanda
+    pré-commit (Session) e pedido já em preparo não têm bloqueio aqui.
+    """
+    empty = {"finish_block_label": "", "finish_block_reason": ""}
+    if is_scheduled or ticket.status not in ACTIVE_TICKET_STATUSES or not isinstance(source, Order):
+        return empty
+    if source.status == Order.Status.NEW:
+        return {
+            "finish_block_label": "Pedido não confirmado",
+            "finish_block_reason": "Pode adiantar; o Finalizar libera quando o pedido for confirmado.",
+        }
+    if source.status != Order.Status.ACCEPTED:
+        return empty
+    from shopman.shop.services import payment_gate
+
+    if not payment_gate.payment_blocks_transition(
+        source, current_status=Order.Status.ACCEPTED, target_status=Order.Status.PREPARING
+    ):
+        return empty
+    from shopman.backstage.presentation.status import payment_method_label
+
+    method = str(((source.data or {}).get("payment") or {}).get("method") or "")
+    name = payment_method_label(method) if method else "Pagamento"
+    return {
+        "finish_block_label": f"{name} não confirmado",
+        "finish_block_reason": "Pode adiantar; o Finalizar libera quando o pagamento entrar.",
+    }
 
 
 def _build_scheduled_ticket(order: Order, instance, *, raw_items: list[dict]) -> KDSTicketProjection:

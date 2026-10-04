@@ -14,12 +14,12 @@ test.describe("KDS — gate de operador", () => {
     await expect(page.getByLabel("Senha")).toBeVisible();
   });
 
-  test("sessão autenticada → seletor de estações + rail canônico (kit), sem login", async ({ page, context }) => {
+  test("sessão autenticada → estações + rail da suíte (kit), sem login", async ({ page, context }) => {
     await context.addCookies([authed]);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Escolha uma estação" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Estações" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
-    await expect(page.locator("aside[data-rail-state]")).toBeVisible();
+    await expect(page.locator("aside[data-suite-rail]")).toBeVisible();
   });
 });
 
@@ -29,7 +29,7 @@ test.describe("KDS — split operador vs público", () => {
     await page.goto("/pickup");
     await expect(page.getByRole("heading", { name: "Seu pedido" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
-    await expect(page.locator("aside[data-rail-state]")).toHaveCount(0);
+    await expect(page.locator("aside[data-suite-rail]")).toHaveCount(0);
   });
 });
 

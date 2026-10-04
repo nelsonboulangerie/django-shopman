@@ -34,6 +34,8 @@ export interface KDSTicketProjection {
   kitchen_note: string;
   customer_note: string;
   test_order_label: string;
+  finish_block_label: string;
+  finish_block_reason: string;
 }
 
 /** An order card in the Saída board (``expedition``: hand over / dispatch). */

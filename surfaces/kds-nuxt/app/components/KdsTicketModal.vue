@@ -41,6 +41,7 @@ const fill = computed(() =>
     <UiDialogContent
       v-if="ticket"
       class="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+      data-suite="v3"
     >
       <UiDialogTitle class="sr-only"
         >Pedido {{ ticket.order_ref }}</UiDialogTitle
