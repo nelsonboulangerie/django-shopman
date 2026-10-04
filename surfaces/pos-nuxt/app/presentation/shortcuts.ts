@@ -1,16 +1,14 @@
-<script setup lang="ts">
-// Descoberta de atalhos: um overlay calmo que LISTA o que o teclado físico faz
-// no PDV. Abre pela tecla "?" (o shell é o dono do atalho) e por um botão
-// discreto no cabeçalho. Só lista — quem executa é o handler global da página.
-defineProps<{ open: boolean }>();
-defineEmits<{ "update:open": [boolean] }>();
+// O dicionário das teclas do PDV, entregue à ajuda de atalhos da suíte (V6-KIT,
+// `OperatorShortcutsHelp` do kit, aberta pelo "Atalhos" do rail, por "?" e no PDV).
+//
+// O DICIONÁRIO É O CONTRATO das teclas: se uma tecla existe e não está aqui, ela não
+// existe para o operador. Os grupos seguem o fluxo da venda, e dentro do primeiro as
+// teclas seguem a ordem da TELA: navegação (F2 a F4), depois os três fatos do pedido
+// (F6 a F8), que são os três chips da barra do topo na mesma ordem em que aparecem:
+// quem compra, como recebe, quando quer. Só lista: quem executa é o handler da página.
+import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suiteChrome";
 
-// O DICIONÁRIO É O CONTRATO das teclas — se uma tecla existe e não está aqui,
-// ela não existe para o operador. Os grupos seguem o fluxo da venda, e dentro do
-// primeiro as teclas seguem a ordem da TELA: navegação (F2–F4), depois os três
-// fatos do pedido (F6–F8), que são os três chips da barra do topo na mesma
-// ordem em que aparecem — quem compra, como recebe, quando quer.
-const groups: Array<{ title: string; items: Array<{ keys: string[]; label: string }> }> = [
+export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Em toda a venda",
     items: [
@@ -75,37 +73,6 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
     ],
   },
 ];
-</script>
 
-<template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
-      <UiDialogHeader>
-        <UiDialogTitle>Atalhos do teclado</UiDialogTitle>
-        <UiDialogDescription>
-          O PDV inteiro opera sem mouse. Os atalhos pausam enquanto um diálogo está aberto.
-        </UiDialogDescription>
-      </UiDialogHeader>
-      <div class="grid gap-4">
-        <section v-for="group in groups" :key="group.title" class="grid gap-1.5">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ group.title }}</p>
-          <ul class="grid gap-1">
-            <li
-              v-for="item in group.items"
-              :key="item.label"
-              class="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm odd:bg-muted/40"
-            >
-              <span class="min-w-0">{{ item.label }}</span>
-              <span class="flex shrink-0 items-center gap-1">
-                <OperatorKbd
-                  v-for="key in item.keys"
-                  :key="key"
-                >{{ key }}</OperatorKbd>
-              </span>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </UiDialogContent>
-  </UiDialog>
-</template>
+export const POS_SHORTCUTS_DESCRIPTION =
+  "O PDV inteiro opera sem mouse. Os atalhos pausam enquanto um diálogo está aberto.";

@@ -73,7 +73,7 @@ function openCustomerDisplay() {
           <MoreBelow />
         </div>
       </div>
-      <PosFunctionRail place="bar" @board="navigateTo('/')" @cash="navigateTo('/session')" @display="openCustomerDisplay" />
+      <PosFunctionRail place="bar" :operator-name="activeOperator?.name || ''" @board="navigateTo('/')" @cash="navigateTo('/session')" @display="openCustomerDisplay" @lock="lock()" />
     </div>
   </main>
 </template>

@@ -11,7 +11,6 @@ const { data, pending } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
 });
 const instances = computed(() => data.value?.instances ?? []);
 const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
-const isPhone = useMediaQuery("(max-width: 767.98px)");
 const { station } = useKdsStation();
 
 function isExit(inst: { type: string }): boolean {
@@ -29,10 +28,7 @@ function typeIcon(type: string): string {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Estações" eyebrow="Cozinha">
-      <template #phone-actions>
-        <NotificationBell v-if="isPhone" />
-      </template>
+    <OperatorPageHeader title="Estações">
     </OperatorPageHeader>
 
     <section class="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 md:p-6">

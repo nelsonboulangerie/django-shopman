@@ -2,6 +2,44 @@
 // manter a resolução aqui faz botão, tecla, ajuda e testes falarem a mesma
 // língua sem espalhar `event.key` pelo app.
 
+import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suiteChrome";
+
+/**
+ * O que a ajuda de atalhos da suíte lista para a Produção, além de "Em todo o app" (as
+ * etapas, Alt+1 a Alt+5, e o "?", que o kit monta com as seções do rail).
+ */
+export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
+  {
+    title: "Em toda tela da Produção",
+    items: [
+      { keys: ["/"], label: "Buscar por produto, SKU ou receita" },
+      { keys: ["R"], label: "Atualizar os dados da tela" },
+    ],
+  },
+  {
+    title: "Listas e diálogos",
+    items: [
+      { keys: ["Tab", "Shift+Tab"], label: "Percorrer os comandos" },
+      { keys: ["Enter", "Espaço"], label: "Acionar o comando em foco" },
+      { keys: ["Esc"], label: "Fechar ou voltar sem confirmar" },
+      { keys: ["Enter"], label: "Confirmar uma quantidade digitada" },
+    ],
+  },
+  {
+    title: "QC e timer",
+    items: [
+      { keys: ["0–9"], label: "Digitar quantidade ou minutos" },
+      { keys: ["Backspace"], label: "Apagar o último dígito" },
+      { keys: ["C", "Delete"], label: "Limpar o número" },
+      { keys: ["Enter numérico"], label: "Confirmar pelo numpad físico" },
+      { keys: ["Enter"], label: "Iniciar o timer; quando tocar, marcar Visto" },
+    ],
+  },
+];
+
+export const PRODUCTION_SHORTCUTS_DESCRIPTION =
+  "Toque e teclado executam os mesmos comandos. Os atalhos pausam sob bloqueio, confirmação ou edição de texto.";
+
 export type ProductionGlobalShortcut =
   | "plan"
   | "mise-en-place"

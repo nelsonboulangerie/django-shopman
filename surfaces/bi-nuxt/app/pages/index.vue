@@ -222,9 +222,6 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           {{ planLabel(day?.plan_day ?? "") }}
         </a>
       </template>
-      <template #phone-actions>
-        <BiPhoneBell />
-      </template>
       <template v-if="day" #filters>
         <span class="inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label" data-bi-compare>
           <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />

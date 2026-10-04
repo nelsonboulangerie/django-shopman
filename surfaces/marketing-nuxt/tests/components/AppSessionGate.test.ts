@@ -40,8 +40,6 @@ beforeEach(() => {
     // ela fica fechada para o gate de sessão ser o único assunto.
     useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
-    // O menu do operador do celular recebe o `lock` do shell por injeção.
-    provideMarketingShell: vi.fn(),
   });
 });
 

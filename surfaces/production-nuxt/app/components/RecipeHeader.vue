@@ -46,9 +46,6 @@ const eyebrow = computed(() =>
         :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
       />
     </template>
-    <template #phone-actions>
-      <AlertsBell placement="phone" />
-    </template>
     <template #actions>
       <slot name="actions" />
       <UiIconButton

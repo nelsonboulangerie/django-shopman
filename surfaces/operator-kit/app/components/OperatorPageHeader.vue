@@ -7,9 +7,13 @@
 //
 // Por dispositivo:
 //   - celular (abaixo de `md`): barra de 56px com o selo do app (volta à Central), o
-//     título, o ponto ao vivo, a lupa (abre a busca numa linha própria) e as ações de
-//     polegar (`#phone-actions`, ex.: o sino). Os controles (`#actions`) e os recortes
-//     (`#filters`) descem cada um para uma linha que rola na horizontal;
+//     título, o ponto ao vivo, a lupa (abre a busca numa linha própria), as ações de
+//     polegar da tela (`#phone-actions`) e Avisos (a caixa do kit, V6-KIT). Os
+//     controles (`#actions`) e os recortes (`#filters`) descem cada um para uma linha
+//     que rola na horizontal. O selo e Avisos valem também no tablet em pé, onde o rail
+//     dá lugar à barra de seções embaixo;
+//   - a busca da tela é o `#search`; a busca da SUÍTE (frente BUSCA, peça
+//     `OperatorSuiteSearch`) entra pelo mesmo lugar quando existir;
 //   - tablet e desktop: a linha inteira. Os controles quebram para baixo antes de
 //     espremer a busca (`flex-wrap`), sem rolagem horizontal da página.
 //
@@ -17,35 +21,43 @@
 // ela só muda de linha.
 import { computed, nextTick, ref, useSlots } from "vue";
 
-import { operatorAppNamed } from "../../appIdentity";
+import type { OperatorSession } from "../types/operator";
 
-const HUB_BACK = `voltar ${operatorAppNamed("hub", "a")}`;
-
-interface HeaderIdentity { label: string; icon: string; iconSrc: string; color: string }
-
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   title: string;
-  /** Linha fina acima do título (ex.: "Posto Saída · este dispositivo"). */
+  /**
+   * Linha fina acima do título. Omitida num dispositivo que é posto, ela diz o posto
+   * ("Posto Saída · este dispositivo"), como na v4: o posto mora no cabeçalho, não num
+   * ícone no rail.
+   */
   eyebrow?: string;
   /**
    * A linha de recortes quebra em várias do tablet para cima (padrão). `false`: fica
    * numa linha só e rola na horizontal (ex.: as coleções do Catálogo).
    */
   filtersWrap?: boolean;
-}>(), { eyebrow: "", filtersWrap: true });
+  /**
+   * Mostra a caixa de Avisos na barra de 56px onde o rail não existe (celular e tablet
+   * em pé). Padrão: sim, em toda tela; do tablet deitado para cima ela mora no rail.
+   */
+  inbox?: boolean;
+}>(), { eyebrow: "", filtersWrap: true, inbox: true });
 
 const slots = useSlots();
 const hasSearch = computed(() => Boolean(slots.search));
 
-const config = useRuntimeConfig().public as { operatorHubUrl?: string; operatorPwa?: { identity?: HeaderIdentity } };
-const identity = config.operatorPwa?.identity;
+const config = useRuntimeConfig().public as { operatorHubUrl?: string };
 const hubUrl = config.operatorHubUrl || "";
-const appColor = identity?.color || "var(--primary)";
-const { attrsFor } = useOperatorAppLink();
-const hubLink = computed(() => attrsFor(hubUrl));
-const appIconBroken = ref(false);
 
 const { isCollapsed, set: setRail } = useRailState();
+const railShown = useSuiteRailShown();
+
+const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
+const eyebrowText = computed(() => {
+  if (props.eyebrow) return props.eyebrow;
+  const context = operatorSession.value?.workstation?.context_label ?? "";
+  return context ? `${context} · este dispositivo` : "";
+});
 
 const searchOpen = ref(false);
 const searchBox = ref<HTMLElement | null>(null);
@@ -62,39 +74,16 @@ function openSearch() {
     data-operator-page-header
   >
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pr-2 pl-4 md:px-4 md:pt-3 md:pb-2.5">
-      <!-- celular: o selo do app (o rail não existe abaixo de md) -->
+      <!-- celular e tablet em pé: o selo do app (o rail não existe ali) -->
       <!-- Tela com caminho de volta (`#lead`): no celular o voltar ocupa o lugar do selo. -->
       <!-- O alvo de toque é de 44px (a régua da casa); o selo desenhado segue com 36. -->
-      <a
-        v-if="hubUrl && !$slots.lead"
-        :href="hubUrl"
-        :target="hubLink.target"
-        :rel="hubLink.rel"
-        class="-mx-1 my-1.5 grid size-11 shrink-0 place-items-center rounded-lg md:hidden"
-        :aria-label="`${identity?.label || 'App'}: ${HUB_BACK}`"
-        data-page-header-app
-      >
-        <span
-          class="grid size-9 place-items-center overflow-hidden rounded-lg"
-          :style="{ background: appColor }"
-        >
-          <img
-            v-if="identity?.iconSrc && !appIconBroken"
-            :src="identity.iconSrc"
-            class="size-9"
-            alt=""
-            decoding="async"
-            @error="appIconBroken = true"
-          >
-          <Icon v-else :name="identity?.icon?.includes(':') ? identity.icon : `lucide:${identity?.icon || 'layout-grid'}`" class="size-5 text-white" aria-hidden="true" />
-        </span>
-      </a>
+      <OperatorAppSeal v-if="hubUrl && !$slots.lead" />
 
-      <!-- tablet/desktop com o rail oculto: o caminho de volta para ele -->
+      <!-- tablet deitado/desktop com o rail oculto: o caminho de volta para ele -->
       <button
         v-if="isCollapsed"
         type="button"
-        class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground md:grid"
+        class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
         aria-label="Mostrar a barra"
         title="Mostrar a barra"
         data-page-header-show-rail
@@ -107,7 +96,7 @@ function openSearch() {
 
       <div class="flex min-w-0 flex-1 basis-0 items-center gap-3 py-2.5 md:flex-none md:basis-auto md:py-0">
         <div class="min-w-0">
-          <p v-if="eyebrow" class="op-eyebrow truncate text-muted-foreground">{{ eyebrow }}</p>
+          <p v-if="eyebrowText" class="op-eyebrow truncate text-muted-foreground" data-page-header-eyebrow>{{ eyebrowText }}</p>
           <h1 class="truncate text-[20px] leading-none font-semibold tracking-[-0.01em] md:text-[22px]">{{ title }}</h1>
         </div>
         <slot name="status" />
@@ -151,6 +140,15 @@ function openSearch() {
       >
         <slot name="actions" />
       </div>
+
+      <!-- Onde o rail não existe (celular e tablet em pé): os Avisos na barra de 56px,
+           a mesma caixa do pé do rail (V6-KIT, T-06). Montada por script, não só
+           escondida: duas caixas no DOM seriam dois "Avisos". -->
+      <ClientOnly v-if="inbox">
+        <div v-if="!railShown" class="-mr-1 flex shrink-0 items-center" data-page-header-inbox>
+          <OperatorInbox placement="header" />
+        </div>
+      </ClientOnly>
     </div>
 
     <div

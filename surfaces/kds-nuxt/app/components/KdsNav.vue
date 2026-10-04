@@ -1,21 +1,20 @@
 <script setup lang="ts">
-// Navegação da Cozinha na camada visual da suíte (prévia v4, `cozinha-estacao4.html`).
-// Do tablet para cima, o rail da suíte (`OperatorSuiteRail`): Estações, Preparo,
-// Saída (atalho para a coluna Saída do Gestor), Painel de retirada; no pé, Ajustes,
-// Avisos, Bloquear e o operador. No celular as mesmas seções vão para a barra do
-// polegar (`OperatorSectionBar`). `place` diz qual das duas peças este ponto do shell
-// monta. Ajustes não é rota: abre o painel de Ajustes (densidade e data).
+// Navegação da Cozinha na camada visual da suíte (prévia v4, `cozinha-estacao4.html`,
+// pé da V6-KIT). No tablet deitado e no desktop, o rail da suíte (`OperatorSuiteRail`):
+// Estações, Preparo, Saída (atalho para a coluna Saída do Gestor), Painel de retirada;
+// no pé, na ordem da v4 da Cozinha, Avisos · Ajustes · Bloquear e o operador, sem traço
+// (`footOrder="inbox-first"`). No celular e no tablet em pé, a barra do polegar
+// (`OperatorSectionBar`): Preparo · Saída · Estações · Mais, como `cozinha-celular4.html`.
+// `place` diz qual das duas peças este ponto do shell monta. Ajustes não é rota: abre o
+// painel de Ajustes.
 const props = defineProps<{
   place: "rail" | "bar";
-  /** Rail: URL da Central e operador ativo (o menu e o Bloquear). */
+  /** Rail: URL da Central. Rail e barra: operador ativo (o menu e o Bloquear). */
   hubUrl?: string;
   operatorName?: string;
 }>();
 const emit = defineEmits<{ lock: [] }>();
 
-// No celular o rail não aparece e o sino vai para o cabeçalho de cada tela: aqui ele
-// só é montado do tablet para cima (um sino por tela, não dois no DOM).
-const isPhone = useMediaQuery("(max-width: 767.98px)");
 const { sections, current } = useKdsSections(props.place);
 const settingsOpen = useKdsSettingsOpen();
 
@@ -32,18 +31,18 @@ function onSelect(key: string) {
     label="Seções da Cozinha"
     :hub-url="hubUrl"
     :operator-name="operatorName"
+    foot-order="inbox-first"
     @select="onSelect"
     @lock="emit('lock')"
-  >
-    <template v-if="!isPhone" #foot>
-      <NotificationBell placement="rail" />
-    </template>
-  </OperatorSuiteRail>
+  />
   <OperatorSectionBar
     v-else
     :sections="sections"
     :current="current"
     label="Seções da Cozinha"
+    :operator-name="operatorName"
+    :max="3"
     @select="onSelect"
+    @lock="emit('lock')"
   />
 </template>

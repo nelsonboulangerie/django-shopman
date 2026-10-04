@@ -33,12 +33,6 @@ const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
 useOperatorWindowTitle();
 
-// O menu do operador do celular (tema, giro, Bloquear) usa o MESMO `lock` daqui.
-provideMarketingShell({
-  operatorName: computed(() => operator.value?.name || undefined),
-  lock,
-});
-
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
   await nextTick();
@@ -82,7 +76,7 @@ watch(sessionState, async (next, previous) => {
           <component :is="Component" />
           <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
                nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. -->
-          <MarketingNav place="bar" />
+          <MarketingNav place="bar" :operator-name="operator?.name" @lock="lock" />
         </div>
         <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
         <MarketingInboxLive />

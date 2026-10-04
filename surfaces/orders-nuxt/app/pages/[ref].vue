@@ -282,9 +282,6 @@ const { denied: stationLocked } = useStationLock();
         </span>
         <span class="hidden op-micro text-muted-foreground lg:inline">{{ code.prefix }}</span>
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>

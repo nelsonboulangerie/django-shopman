@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   phoneSections,
   productionSections,
+  stageSections,
 } from "../../app/presentation/productionSections";
 import { activeSectionKey } from "../../../operator-kit/app/presentation/appBar";
 
@@ -11,7 +12,7 @@ import { activeSectionKey } from "../../../operator-kit/app/presentation/appBar"
 // tecla) continua o mesmo, decidido no #1433.
 describe("seções da Produção no rail", () => {
   it("o ciclo do lote, de Planejamento a Qualidade, com Alt+1 a Alt+5", () => {
-    const stages = phoneSections().map((section) => [
+    const stages = stageSections().map((section) => [
       section.to,
       section.label,
       section.shortcut,
@@ -25,26 +26,19 @@ describe("seções da Produção no rail", () => {
     ]);
   });
 
-  it("Timers logo abaixo do ciclo; no pé, só as ferramentas que o operador pode abrir", () => {
-    const keys = (input: Parameters<typeof productionSections>[0]) =>
-      productionSections(input).map((section) => [section.key, !!section.foot]);
+  it("barra do polegar (V6-KIT): a mesma ordem do rail; a barra mostra 4 e o resto vai para o Mais", () => {
+    const input = { canViewRecipes: true, timersActive: 1 };
+    expect(phoneSections(input).map((s) => s.key)).toEqual(productionSections(input).map((s) => s.key));
+  });
 
-    expect(keys({})).toEqual([
-      ["plan", false],
-      ["mise-en-place", false],
-      ["open", false],
-      ["close", false],
-      ["quality", false],
-      ["timers", false],
-      ["board", true],
-    ]);
-    expect(
-      keys({ canViewRecipes: true, canViewReports: true }).slice(-3),
-    ).toEqual([
-      ["recipes", true],
-      ["reports", true],
-      ["board", true],
-    ]);
+  it("depois do ciclo, um traço, Timers e Ajustes (v4 plano-porque, R02); nada no pé", () => {
+    const sections = productionSections({ canViewRecipes: true, canViewReports: true });
+    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "settings"]);
+    expect(sections.some((section) => section.foot)).toBe(false);
+    expect(sections.find((s) => s.key === "timers")?.divider).toBe(true);
+    // Receitas, Relatórios e o Letreiro moram em Ajustes: a seção acende lá.
+    expect(activeSectionKey("/recipes/abc", sections)).toBe("settings");
+    expect(activeSectionKey("/board", sections)).toBe("settings");
   });
 
   it("o selo de Timers conta os ativos e o ponto avisa quando um toca", () => {
@@ -72,11 +66,11 @@ describe("seções da Produção no rail", () => {
     expect(quality.badgeLabel).toBe("8 lotes para confirmar");
   });
 
-  it("a rota acende a seção certa, inclusive dentro de Receitas", () => {
+  it("a rota acende a seção certa; Receitas acende Ajustes, onde ela mora", () => {
     const sections = productionSections({ canViewRecipes: true });
     expect(activeSectionKey("/", sections)).toBe("open");
     expect(activeSectionKey("/close", sections)).toBe("close");
-    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("recipes");
+    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("settings");
     expect(activeSectionKey("/timers/", sections)).toBe("timers");
   });
 });

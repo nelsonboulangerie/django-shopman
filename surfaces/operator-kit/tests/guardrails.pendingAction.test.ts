@@ -142,7 +142,6 @@ const KNOWN_INERT: Record<string, string[]> = {
   "marketing-nuxt/app/pages/announcements/[id].vue": ["refreshAll", "trackDeliveryUntilSettled"],
   "marketing-nuxt/app/pages/platforms.vue": ["onVerifyCatalog"],
   "marketing-nuxt/app/pages/templates.vue": ["confirmRemove"],
-  "operator-kit/app/components/NotificationBell.vue": ["showSignIns"],
   "operator-kit/app/components/OperatorPwaInstallInvite.vue": ["install"],
   "orders-nuxt/app/components/ChannelHealthChecklist.vue": ["copyAddress"],
   "orders-nuxt/app/pages/catalog.vue": ["openDetail", "saveOrderDraft"],

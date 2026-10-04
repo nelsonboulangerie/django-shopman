@@ -211,3 +211,46 @@ def test_travar_fecha_a_superficie_e_NAO_a_sessao_ou_estacao(client, balcao, bak
     assert body["locked"] is True
     assert body["operator"]["username"] == "bia"
     assert body["station"] == balcao
+
+
+# ── O Bloquear da Central: travar o dispositivo inteiro (V6-KIT) ─────────────
+
+
+@pytest.mark.django_db
+def test_bloquear_da_central_trava_o_dispositivo_e_qualquer_destrave_libera(
+    client, balcao, baker
+):
+    """A Central não é superfície com capacidade: o Bloquear dela trava o dispositivo.
+
+    Toda superfície passa a pedir PIN/crachá, a Central inclusive (a antessala sem
+    ``perm`` diz ``locked``). Quem prova a identidade em qualquer app vira a pessoa
+    do dispositivo, e a marca cai.
+    """
+    session_url = reverse("api-backstage-operator-session")
+    unlock_url = reverse("api-backstage-operator-unlock")
+    board = reverse("api-backstage-production")
+    client.post(
+        unlock_url,
+        {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
+    assert client.get(board).status_code == 200
+    assert client.get(session_url).json()["locked"] is False
+
+    response = client.post(
+        reverse("api-backstage-operator-lock"),
+        {"scope": "device"},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert client.get(session_url).json()["locked"] is True
+    assert client.get(session_url, {"perm": "backstage.operate_production"}).json()["locked"] is True
+    assert client.get(board).status_code == 403
+
+    client.post(
+        unlock_url,
+        {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
+    assert client.get(session_url).json()["locked"] is False
+    assert client.get(board).status_code == 200

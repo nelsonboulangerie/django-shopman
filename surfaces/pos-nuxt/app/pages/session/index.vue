@@ -672,7 +672,7 @@ async function confirmClose() {
           </section>
         </div>
       </div>
-      <PosFunctionRail place="bar" @board="goToSaleBoard" @display="openCustomerDisplay" />
+      <PosFunctionRail place="bar" :operator-name="activeOperator?.name || ''" @board="goToSaleBoard" @display="openCustomerDisplay" @lock="lock()" />
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────

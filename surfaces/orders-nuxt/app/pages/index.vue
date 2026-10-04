@@ -660,9 +660,6 @@ function printQueue() {
           @update:model-value="(v) => (query = v)"
         />
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template v-if="!isPhone" #actions>
         <!-- No posto Saída a faixa da Entrada pulsa e o Ciente fica no ⋯ (a linha da v4
              não tem lugar para ele ao lado da busca, no tablet). -->

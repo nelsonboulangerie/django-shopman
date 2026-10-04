@@ -523,9 +523,6 @@ useHead({ title: "Catálogo" });
           <FilterBar v-model="filters" :dimensions="dimensions" touch />
         </div>
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
              declarada no seletor). A escolha persiste por estação. -->

@@ -28,7 +28,7 @@ describe("navegação do Marketing", () => {
     const rail = shell.indexOf('<MarketingNav\n          place="rail"');
     const column = shell.indexOf('<div class="flex min-w-0 flex-1 flex-col">');
     const page = shell.indexOf('<component :is="Component" />');
-    const barAt = shell.indexOf('<MarketingNav place="bar" />');
+    const barAt = shell.indexOf('<MarketingNav place="bar"');
     expect(rail).toBeGreaterThan(-1);
     expect(column).toBeGreaterThan(rail);
     expect(page).toBeGreaterThan(column);
@@ -37,8 +37,14 @@ describe("navegação do Marketing", () => {
 
   it("a caixa pessoal tem um dono só, no shell, em qualquer largura", () => {
     expect(shell.match(/<MarketingInboxLive \/>/g)).toHaveLength(1);
-    expect(read("../app/components/MarketingNotificationsBell.vue")).not.toContain(
-      "useMarketingNotificationInbox",
-    );
+    expect(nav).not.toContain("useMarketingNotificationInbox");
+  });
+
+  // V6-KIT: o sino é a caixa de Avisos do kit (um item no rail, um na barra de 56px);
+  // as decisões entram nela como um resumo que leva à fila (decisão do dono de
+  // 03/10/2026: o sino não repete a lista).
+  it("Avisos é a caixa do kit, com as decisões como um resumo que leva à fila", () => {
+    expect(nav).toContain("provideOperatorInboxAlerts");
+    expect(read("../app/components/MarketingPageHeader.vue")).not.toContain("OperatorPhoneMenu");
   });
 });

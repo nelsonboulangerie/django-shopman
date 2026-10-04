@@ -294,9 +294,6 @@ function warnLocked(pk: number) {
           shortcut="/"
         />
       </template>
-      <template #phone-actions>
-        <NotificationBell v-if="isPhone" />
-      </template>
       <template #actions>
         <button
           v-if="consultLabel"

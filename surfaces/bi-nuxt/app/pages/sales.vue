@@ -76,9 +76,6 @@ const channelRows = computed(() =>
         <BiWindowPicker />
         <BiPageMenu />
       </template>
-      <template #phone-actions>
-        <BiPhoneBell />
-      </template>
     </OperatorPageHeader>
 
     <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">

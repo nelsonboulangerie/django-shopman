@@ -37,8 +37,8 @@ describe("seções da Cozinha", () => {
     expect(kdsSections({ ...base, stationRef: "", place: "rail" }).some((s) => s.key === "prep")).toBe(false);
   });
 
-  it("barra do polegar: começa pelo Preparo e não leva o Painel de retirada (é tela de TV)", () => {
+  it("barra do polegar (v4 cozinha-celular): Preparo, Saída, Estações; sem o Painel de retirada (é tela de TV)", () => {
     const keys = kdsSections({ ...base, place: "bar" }).map((s) => s.key);
-    expect(keys).toEqual(["prep", "stations", "exit", "settings"]);
+    expect(keys).toEqual(["prep", "exit", "stations", "settings"]);
   });
 });

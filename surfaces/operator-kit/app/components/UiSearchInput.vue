@@ -43,7 +43,7 @@ defineExpose({ focus: () => input.value?.focus() });
     />
     <kbd
       v-if="shortcut && !modelValue"
-      class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground md:block"
+      class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground pointer-fine:md:block"
       aria-hidden="true"
       data-search-shortcut
     >{{ shortcut }}</kbd>

@@ -5,7 +5,7 @@
 // texto do rail. Altura ≥ 44px (alvo de toque da casa).
 //
 // Serve às seções do app (link, `to`) e às funções do pé (botão, emite `activate`):
-// Avisos, Bloquear. Quem tem painel próprio (o sino) monta o gatilho com o slot `icon`.
+// Avisos, Atalhos, Bloquear. O item inativo fica a 80% (v4 `.rail-item`), o ativo acende.
 import { computed, resolveComponent } from "vue";
 
 const props = defineProps<{
@@ -30,6 +30,14 @@ const props = defineProps<{
   printShortcut?: boolean;
   /** Rótulo de 10px com tracking apertado (`.rail-item.sm` da v4): nomes longos, como "Planejamento". */
   dense?: boolean;
+  /**
+   * No toque (tablet deitado), o rail é compacto (K4): `shortLabel` no lugar do nome
+   * ("Plano" por "Planejamento", `producao-qualidade4.html`); `touchLabel="none"` deixa
+   * só o ícone (o PDV no tablet, v3 `depois-pdv-venda-tablet`). O nome cheio continua
+   * no nome acessível e no desktop.
+   */
+  shortLabel?: string;
+  touchLabel?: "short" | "none";
 }>();
 
 const emit = defineEmits<{ activate: [] }>();
@@ -57,7 +65,7 @@ const a11yLabel = computed(() => {
     class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
     :class="[dense ? 'px-0 text-[10px] tracking-[-0.3px]' : 'px-0 text-[11px]', active
       ? 'bg-rail-foreground text-rail shadow-[0_1px_2px_rgb(0_0_0/.18)] dark:text-background'
-      : 'text-rail-foreground hover:bg-rail-foreground/10']"
+      : 'text-rail-foreground/80 hover:bg-rail-foreground/10 hover:text-rail-foreground']"
     @click="to ? undefined : emit('activate')"
   >
     <slot name="icon">
@@ -65,7 +73,14 @@ const a11yLabel = computed(() => {
     </slot>
     <!-- Sem quebra no meio da palavra (prévia `.rail-item`): "Encomendas" passa 4px dos
          64px e fica centrada, em vez de virar "Encomenda / s". -->
-    <span :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    <template v-if="touchLabel === 'none'">
+      <span class="pointer-coarse:sr-only" :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    </template>
+    <template v-else-if="shortLabel && shortLabel !== label">
+      <span class="hidden pointer-coarse:inline" aria-hidden="true" data-rail-short>{{ shortLabel }}</span>
+      <span class="pointer-coarse:hidden" :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    </template>
+    <span v-else :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
     <kbd
       v-if="printedShortcut"
       class="hidden font-mono text-[9.5px] leading-none font-semibold tracking-normal pointer-fine:block"

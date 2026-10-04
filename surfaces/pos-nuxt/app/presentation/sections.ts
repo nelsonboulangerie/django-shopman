@@ -60,19 +60,31 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
       // Sem turno aberto, o ponto acende: a primeira venda do dia pede o fundo de troco.
       attention: input.hasOpenCashSession ? undefined : "caixa fechado, abrir",
     },
+    // A Tela do cliente abre no segundo monitor: mora no rail, não no bolso (P27).
     {
       key: "display",
       label: "Tela do cliente",
       icon: "lucide:monitor-smartphone",
+      where: "rail",
     },
-    // Ajustes não divide andar com a operação: mora no pé do rail (v4).
+    // Fim do dia (a contagem da vitrine e o fechamento, `pos-tablet4.html`): na barra de
+    // baixo do tablet em pé e do celular; no rail ele mora dentro do Caixa.
+    {
+      key: "closing",
+      label: "Fim do dia",
+      icon: "lucide:clipboard-check",
+      to: "/session/closing",
+      where: "bar",
+    },
+    // Ajustes no grupo de cima, depois de um traço, abaixo do Caixa (v4
+    // `salao-mesas4.html`); na barra de baixo, no "Mais".
     {
       key: "settings",
       label: "Ajustes",
       icon: "lucide:settings-2",
       to: POS_SETTINGS_HOME,
       match: POS_SETTINGS_ROUTES,
-      foot: true,
+      divider: true,
     },
   );
   return sections;

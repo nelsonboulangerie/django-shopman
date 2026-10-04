@@ -326,7 +326,7 @@ navegação de seções do app e um cluster de ações à direita.
 
 ```vue
 <OperatorAppBar :sections="sections" label="Seções do Gestor">
-  <template #end><NotificationBell /></template>
+  <template #end><UiIconButton icon="lucide:refresh-cw" label="Atualizar" /></template>
 </OperatorAppBar>
 ```
 
@@ -377,35 +377,41 @@ Como um app migra:
    atrás da variante `suite:` e só a vestem dentro desse atributo.
 2. Troca `OperatorRail` + `<OperatorAppBar>` por `<OperatorSuiteRail>` (as mesmas
    `OperatorSection`, agora dentro do rail, do tablet para cima) e monta
-   `<OperatorSectionBar>` no fim da coluna de conteúdo (as mesmas seções no pé, só no
-   celular). O que o app põe no pé do rail (sino, alertas) vai no slot `#foot`; os sinos
-   aceitam `placement="rail"`.
+   `<OperatorSectionBar>` no fim da coluna de conteúdo (as mesmas seções embaixo, no
+   celular e no tablet em pé, com o "Mais"; passe `operator-name` e `@lock`). O pé do
+   rail é do kit (Avisos, Atalhos, Bloquear, iniciais); o slot `#foot` é só para o que
+   é do app antes do traço (o Terminal do PDV). Alertas da operação entram na caixa de
+   Avisos por `provideOperatorInboxAlerts`; teclas da tela, na ajuda de atalhos, por
+   `provideOperatorShortcuts`.
 3. Cada tela abre com `<OperatorPageHeader title="…">`: `#status` (o
    `<OperatorLiveStatus>` e pílulas), `#search` (a busca, renderizada uma vez só),
    `#actions` (controles), `#filters` (recortes na segunda linha), `#lead` (o voltar),
-   `#phone-actions` (o que fica na barra de 56px do celular).
+   `#phone-actions` (ações de polegar da tela na barra de 56px; Avisos o kit já põe).
 
 | peça | o que é | medida da prévia |
 |---|---|---|
 | `operator-suite.css` | papéis tipográficos `op-display/op-heading/op-figure/op-title/op-body/op-label/op-micro/op-eyebrow`, `tnum`, `live-dot`, `pill-*`, o selo âmbar (`suite-badge`) e a variante `suite:` | `_shared.css` |
-| `OperatorSuiteRail` | rail de 76px: selo do app na cor dele (volta à Central), seções com ícone, nome, selo e ponto, pé com Bloquear e o menu do operador (tema, giro, ocultar a barra) | `_rail3top.html`, `_rail3bottom.html` |
-| `RailSection` | o item do rail (64px de largura, ≥ 44px de altura, ativo com fundo na cor do texto do rail) | `.rail-item` |
-| `OperatorSectionBar` | barra do polegar no celular (pílula de 56×30 no ativo, selo e ponto iguais aos do rail) | `orders-phone3.html` |
-| `OperatorPageHeader` | cabeçalho de uma linha; no celular, barra de 56px com selo, título, ponto ao vivo, lupa e as ações de polegar; controles e recortes descem para linhas que rolam | `orders-board3.html` |
+| `OperatorSuiteRail` | rail de 76px no tablet deitado e no desktop (variante `rail:`): selo do app na cor dele (volta à Central), seções com ícone, nome, tecla Alt 1…9, selo e ponto; pé da v4 (seções do pé, traço, Avisos, Atalhos, Bloquear, iniciais; `foot-order="inbox-first"` para a Cozinha); "?" e Alt+N | `_rail3top.html`, `_rail3bottom.html` |
+| `RailSection` | o item do rail (64px de largura, ≥ 44px de altura, inativo a 80%, ativo com fundo na cor do texto do rail; no toque, `shortLabel` ou só o ícone) | `.rail-item` |
+| `OperatorSectionBar` | barra de baixo no celular e no tablet em pé: até 4 seções + "Mais" (o resto, o slot `#more` e o menu do operador) | `orders-phone3.html`, `cozinha-celular4.html` |
+| `OperatorPageHeader` | cabeçalho de uma linha; sem rail, barra de 56px com selo, título, ponto ao vivo, lupa, ações de polegar e Avisos; o posto do dispositivo no eyebrow; controles e recortes descem para linhas que rolam | `orders-board3.html` |
 | `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
-| `OperatorPhoneMenu` | o menu do operador no celular (tema, giro, Bloquear), as iniciais em 44px na barra de 56px; sem ele o celular perdia o que o rail clássico mostrava em qualquer largura (V4-MKT) | menu de `_rail3bottom.html` |
+| `OperatorInbox` | "Avisos": UM item no rail e UM sino na barra de 56px; um painel (portal) com duas abas, a operação (alertas do app, capacidade acima do limite) e a caixa pessoal (avisos, Meus acessos); um selo somado | `_rail3bottom.html` |
+| `OperatorShortcutsHelp` | a ajuda de atalhos de todo app: "Em todo o app" (Alt 1…9, "?") e os grupos da tela | "Atalhos (?)" de `_rail3bottom.html` |
+| `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
+| `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
+| `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
 
-O `OperatorPhoneMenu` é opt-in como o resto: o Marketing (V4-MKT) o monta no
-`#phone-actions` de cada tela, depois do sino.
+Opções do rail e da barra (todas opcionais): `print-shortcuts` (padrão ligado) imprime
+a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino; `dense-labels` usa
+rótulos de 10px para nomes longos ("Planejamento"); `OperatorSection.shortLabel` encurta
+o rótulo na barra e no rail de toque ("Plano"); `where: "rail" | "bar"` põe a seção num
+lugar só; `divider` desenha um traço acima dela no rail.
 
-Opções do rail e da barra (V4-PROD, todas opcionais): `OperatorSuiteRail` com
-`print-shortcuts` imprime a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino,
-e `dense-labels` usa rótulos de 10px para nomes longos ("Planejamento"); na barra do
-polegar, `OperatorSection.shortLabel` encurta o rótulo visível ("Plano") e o nome
-acessível segue o cheio. A Produção usa as três.
-
-Do celular para cima: abaixo de `md` não há rail (barra de 56px em cima, seções no pé);
-de `md` para cima o rail tem 76px. Alvos ≥ 44px em tudo (as prévias tinham chips de
+Onde mora a navegação (V6-KIT, `depois-navegacao.jpg`): rail no tablet deitado e em
+qualquer tela de 1024px para cima; no celular e no tablet em pé, barra de 56px em cima e
+seções embaixo. A régua é uma só: a variante `rail:` no CSS e `useSuiteRailShown()` no
+script. Alvos ≥ 44px em tudo (as prévias tinham chips de
 40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.

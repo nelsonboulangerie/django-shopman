@@ -3,7 +3,9 @@
 // (`OperatorSuiteRail`, do tablet para cima) leva as quatro seções, como na prévia
 // `purchase-base3.html`: Painel, Comprar (ponto de atenção quando há reposição urgente),
 // Receber (selo com as pendências da entrada aberta) e Base. No celular as mesmas seções
-// vão para a barra do polegar (`OperatorSectionBar`, prévia `compras-validade4.html`).
+// vão para a barra do polegar (`OperatorSectionBar`, prévia `compras-validade4.html`),
+// com o "Mais" do menu do operador. O pé do rail é o da suíte (V6-KIT): Avisos, Atalhos,
+// Bloquear e o operador.
 //
 // As seções deste app NÃO são rotas: são estado (`useState("purchase-view")`), porque as
 // quatro vistas dividem o mesmo carregamento. Por isso as duas peças recebem a seção
@@ -13,13 +15,12 @@ import type { PurchaseView } from "~/types/purchase";
 
 defineProps<{
   place: "rail" | "bar";
-  /** Rail: URL da Central e operador ativo (o menu e o Bloquear). */
+  /** Rail: URL da Central. Rail e barra: operador ativo (o menu e o Bloquear). */
   hubUrl?: string;
   operatorName?: string;
 }>();
 const emit = defineEmits<{ lock: [] }>();
 
-const isPhone = useMediaQuery("(max-width: 767.98px)");
 const {
   view,
   metrics,
@@ -77,10 +78,14 @@ function select(key: string) {
     :operator-name="operatorName"
     @select="select"
     @lock="emit('lock')"
-  >
-    <template v-if="!isPhone" #foot>
-      <NotificationBell placement="rail" />
-    </template>
-  </OperatorSuiteRail>
-  <OperatorSectionBar v-else :sections="sections" :current="view" label="Seções de Compras" @select="select" />
+  />
+  <OperatorSectionBar
+    v-else
+    :sections="sections"
+    :current="view"
+    label="Seções de Compras"
+    :operator-name="operatorName"
+    @select="select"
+    @lock="emit('lock')"
+  />
 </template>

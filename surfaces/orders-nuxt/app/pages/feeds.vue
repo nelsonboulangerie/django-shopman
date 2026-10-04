@@ -159,9 +159,6 @@ useHead({ title: "Canais" });
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline">Venda e exibição do catálogo</span>
       </template>
-      <template #phone-actions>
-        <GestorPhoneBells />
-      </template>
       <template #actions>
         <p class="hidden op-micro text-muted-foreground lg:block">
           <span class="tabular-nums">{{ feeds.length + catalogChannels.length }}</span> canais

@@ -894,21 +894,11 @@ onBeforeUnmount(stopInvoiceScanner);
           />
         </template>
 
-        <template #phone-actions>
-          <button
-            type="button"
-            class="grid size-12 place-items-center rounded-md text-foreground"
-            aria-label="Atualizar"
-            @click="refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
-          </button>
-          <PurchasePhoneBell />
-        </template>
 
-        <!-- No celular só o Receber tem controles na linha de baixo (Com NF / Sem NF);
-             Atualizar sobe para a barra de 56px. -->
-        <template v-if="!isPhone || view === 'receive'" #actions>
+        <!-- No celular os controles descem para a linha de baixo (Com NF / Sem NF no
+             Receber, e o Atualizar): a barra de 56px é a da v4 (selo, título, ao vivo,
+             lupa, Avisos), igual em todo app (V6-KIT). -->
+        <template #actions>
           <!-- Receber: o selo da chave lida e o par Com NF / Sem NF. -->
           <template v-if="view === 'receive'">
             <span
@@ -932,7 +922,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <span v-if="view === 'buy'" class="inline-flex h-8 shrink-0 items-center rounded-full px-3 op-label pill-muted tnum">
             {{ purchaseSupplierCount }} {{ purchaseSupplierCount === 1 ? "fornecedor" : "fornecedores" }}
           </span>
-          <UiIconButton v-if="!isPhone" icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+          <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
         </template>
 
         <!-- Base: Atenção e as métricas de Compras hoje; cada uma leva ao recorte. -->

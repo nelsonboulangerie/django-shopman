@@ -17,8 +17,8 @@ import { toolSections } from "../../app/presentation/productionSections";
 // V4-PROD: o cabeçalho é o `OperatorPageHeader` da suíte (uma linha). As etapas saíram
 // daqui para o rail e a barra do polegar (`ProductionNav`, testado em
 // `ProductionNav.test.ts`); o cabeçalho continua dono das TECLAS (Alt+1 a Alt+5, "/",
-// R e "?"), do progresso do dia, do ⋯ (Atualizar, Timers, Atalhos) e, no celular, de
-// Timers e do sino na barra de 56px.
+// R e "?"), do progresso do dia e do ⋯ (Atualizar, Timers, Atalhos). A ajuda de atalhos
+// e os Avisos são do kit (V6-KIT): a barra de 56px não tem Timers nem sino próprios.
 
 const navigateSpy = vi.fn();
 let wrapper: VueWrapper | null = null;
@@ -67,7 +67,6 @@ const stubs = {
     template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
   UiSearchInput: UiSearchInputStub,
-  AlertsBell: { props: ["placement"], template: '<span data-bell :data-placement="placement" />' },
   Icon: true,
   NuxtLink: {
     props: ["to"],
@@ -81,13 +80,10 @@ const stubs = {
   },
   UiPopoverTrigger: { template: "<div><slot /></div>" },
   UiPopoverContent: { template: "<div data-menu><slot /></div>" },
-  ProductionShortcutsHelp: {
-    props: ["open"],
-    emits: ["update:open"],
-    template: '<div v-if="open" data-shortcuts-help />',
-  },
 };
 
+const shortcutsOpen = ref(false);
+const provideShortcuts = vi.fn();
 const timersActive = ref(0);
 const timersRinging = ref(0);
 
@@ -123,6 +119,8 @@ beforeEach(() => {
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useRoute", () => ({ path: "/plan" }));
   vi.stubGlobal("navigateTo", navigateSpy);
+  vi.stubGlobal("useOperatorShortcuts", () => ({ open: shortcutsOpen }));
+  vi.stubGlobal("provideOperatorShortcuts", provideShortcuts);
   vi.stubGlobal("useFloorTimers", () => ({
     activeCount: computed(() => timersActive.value),
     ringingCount: computed(() => timersRinging.value),
@@ -136,6 +134,8 @@ beforeEach(() => {
   timersActive.value = 0;
   timersRinging.value = 0;
   menuOpen.value = false;
+  shortcutsOpen.value = false;
+  provideShortcuts.mockClear();
   wrapper = mountHeader();
 });
 
@@ -187,7 +187,7 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     press("?");
     await nextTick();
 
-    expect(wrapper!.find("[data-shortcuts-help]").exists()).toBe(true);
+    expect(shortcutsOpen.value).toBe(true);
     expect(
       wrapper!.find('input[type="search"]').attributes("aria-keyshortcuts"),
     ).toBe("/");
@@ -217,7 +217,7 @@ describe("ProductionHeader — o ⋯ e o progresso do dia", () => {
     await wrapper!
       .find('button[aria-label="Ver atalhos do teclado"]')
       .trigger("click");
-    expect(wrapper!.find("[data-shortcuts-help]").exists()).toBe(true);
+    expect(shortcutsOpen.value).toBe(true);
   });
 
   it("no celular, o ⋯ leva às ferramentas que no tablet moram no rail", () => {
@@ -250,30 +250,17 @@ describe("ProductionHeader — o ⋯ e o progresso do dia", () => {
   });
 });
 
-// O botão de timers LEVA à página /timers (o diálogo morreu em 18/09/2026). No tablet
-// ele mora no rail; no celular, na barra de 56px do cabeçalho.
-describe("ProductionHeader — timers da bancada", () => {
-  it("o botão Timers mostra os ativos depois de montar e leva a /timers", async () => {
-    timersActive.value = 2;
-    wrapper?.unmount();
-    wrapper = mountHeader({ title: "Abertura" });
-    await nextTick();
-
-    const link = wrapper.find('a[aria-label="Timers (2 ativos)"]');
-    expect(link.exists()).toBe(true);
-    expect(link.attributes("href")).toBe("/timers");
-    expect(link.text()).toContain("2");
+// V6-KIT: a ajuda de atalhos é a do kit; a Produção entrega os grupos dela. A barra de
+// 56px é a da v4 (selo, título, ao vivo, lupa, Avisos): Timers mora no "Mais" e no ⋯.
+describe("ProductionHeader — peças do kit", () => {
+  it("entrega os grupos de teclas da tela à ajuda do kit", () => {
+    expect(provideShortcuts).toHaveBeenCalledOnce();
+    const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
+    expect(groups.map((group) => group.title)).toContain("QC e timer");
   });
 
-  it("sem timer ativo não há badge — e o link continua lá", () => {
-    const link = wrapper!.find('a[aria-label="Timers (0 ativos)"]');
-    expect(link.exists()).toBe(true);
-    expect(link.text()).not.toMatch(/\d/);
-  });
-
-  it("o sino do celular mora na barra de 56px", () => {
-    expect(
-      wrapper!.find("[data-phone] [data-bell]").attributes("data-placement"),
-    ).toBe("phone");
+  it("a barra de 56px não leva Timers nem sino próprio", () => {
+    expect(wrapper!.find("[data-phone]").text()).toBe("");
+    expect(wrapper!.find('a[aria-label^="Timers"]').exists()).toBe(false);
   });
 });

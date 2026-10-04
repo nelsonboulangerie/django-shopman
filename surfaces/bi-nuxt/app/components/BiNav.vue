@@ -1,24 +1,22 @@
 <script setup lang="ts">
-// Navegação do B.I. (V4-BI, desenho de `bi-sobra4.html`). O rail da suíte
-// (`OperatorSuiteRail`, do tablet para cima) leva as oito leituras do app com os
-// ícones da prévia; no pé, Avisos, Bloquear e o operador. No celular as mesmas seções
-// vão para a barra do polegar (`OperatorSectionBar`), que rola quando não cabem.
+// Navegação do B.I. (V4-BI, desenho de `bi-sobra4.html`, pé da V6-KIT). O rail da suíte
+// (`OperatorSuiteRail`, tablet deitado e desktop) leva as oito leituras do app com os
+// ícones da prévia; no pé, o da suíte: Avisos, Atalhos, Bloquear e o operador. No
+// celular e no tablet em pé, a barra do polegar (`OperatorSectionBar`): as quatro
+// primeiras leituras e o "Mais" com Perfis, Explorar, Projeção e Cenários (v3 b).
 //
 // Cada seção leva a janela de análise na query (`useBiSections`): trocar de seção não
 // troca de período, e o link colado abre a mesma leitura. A janela em si mora no
 // cabeçalho de cada tela (`BiWindowPicker`), como o período na prévia.
 defineProps<{
   place: "rail" | "bar";
-  /** Rail: URL da Central e operador ativo (o menu e o Bloquear). */
+  /** Rail: URL da Central. Rail e barra: operador ativo (o menu e o Bloquear). */
   hubUrl?: string;
   operatorName?: string;
 }>();
 const emit = defineEmits<{ lock: [] }>();
 
 const { sections } = useBiSections();
-// No celular o sino vai para o cabeçalho de cada tela (`BiPhoneBell`): aqui ele só é
-// montado do tablet para cima (um sino por tela, não dois no DOM).
-const isPhone = useMediaQuery("(max-width: 767.98px)");
 </script>
 
 <template>
@@ -29,10 +27,12 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
     :hub-url="hubUrl"
     :operator-name="operatorName"
     @lock="emit('lock')"
-  >
-    <template v-if="!isPhone" #foot>
-      <NotificationBell placement="rail" />
-    </template>
-  </OperatorSuiteRail>
-  <OperatorSectionBar v-else :sections="sections" label="Seções do B.I." />
+  />
+  <OperatorSectionBar
+    v-else
+    :sections="sections"
+    label="Seções do B.I."
+    :operator-name="operatorName"
+    @lock="emit('lock')"
+  />
 </template>

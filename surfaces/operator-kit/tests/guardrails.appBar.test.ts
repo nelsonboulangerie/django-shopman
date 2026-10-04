@@ -106,3 +106,109 @@ describe("guardrail do cabeçalho de seções", () => {
     }
   });
 });
+
+// V6-KIT (auditoria v4, 04/10/2026): o chrome da suíte é UM em todo app. Cada trava
+// abaixo nasceu de uma divergência medida que pode voltar.
+const NAVS = [
+  "orders-nuxt/app/components/GestorNav.vue",
+  "kds-nuxt/app/components/KdsNav.vue",
+  "marketing-nuxt/app/components/MarketingNav.vue",
+  "pos-nuxt/app/components/PosFunctionRail.vue",
+  "production-nuxt/app/components/ProductionNav.vue",
+  "bi-nuxt/app/components/BiNav.vue",
+  "purchase-nuxt/app/components/PurchaseNav.vue",
+];
+const KIT = (name: string) => readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");
+
+function sourcesOf(app: string): Array<[string, string]> {
+  return vueFiles(join(SURFACES, app, "app")).map((file) => [relative(SURFACES, file), readFileSync(file, "utf8")]);
+}
+
+describe("guardrail do chrome da suíte (V6-KIT)", () => {
+  // K01/T-01: a v4 tem UM "Avisos". O Gestor tinha Alertas + Avisos (dois ícones no
+  // rail, dois sinos no celular), a Produção só "Alertas", o Marketing nenhum.
+  it("um só item de Avisos: o sino é da caixa do kit, e app nenhum monta o seu", () => {
+    const proprios: string[] = [];
+    for (const app of APPS) {
+      for (const [file, source] of sourcesOf(app)) {
+        if (file.startsWith("operator-kit/")) continue;
+        if (/<(NotificationBell|AlertsBell|OperatorInbox)\b/.test(source) && !file.endsWith("hub-nuxt/app/app.vue") && !file.endsWith("pos-nuxt/app/pages/index.vue")) proprios.push(file);
+        if (/\s:?label="(Alertas|Avisos)"/.test(source)) proprios.push(file);
+        if (/["']lucide:bell["']/.test(source)) proprios.push(file);
+      }
+    }
+    expect(proprios).toEqual([]);
+    expect(KIT("OperatorSuiteRail.vue").match(/<OperatorInbox\b/g)).toHaveLength(2); // uma por ordem do pé, só uma renderiza
+    expect(KIT("OperatorPageHeader.vue").match(/<OperatorInbox\b/g)).toHaveLength(1);
+  });
+
+  // K02/T-03: o velocímetro com ponto vermelho saiu do rail para o menu das iniciais
+  // (e para a caixa de Avisos quando passa do limite).
+  it("sem medidor de capacidade no rail; ele mora no menu do operador", () => {
+    expect(KIT("OperatorSuiteRail.vue")).not.toContain("<OperatorCapacityStatus");
+    expect(KIT("OperatorMenuItems.vue")).toContain("data-operator-menu-capacity");
+    for (const file of NAVS) expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain("Capacity");
+  });
+
+  // K04/T-14: a ordem do pé é a da v4 (`_rail3bottom.html`): seções do pé e o slot do
+  // app, traço, Avisos, Atalhos, Bloquear, iniciais.
+  it("a ordem do pé do rail", () => {
+    const rail = KIT("OperatorSuiteRail.vue");
+    const at = (marker: string, from = 0) => rail.indexOf(marker, from);
+    const foot = at("data-rail-foot");
+    const sections = at('v-for="section in footSections"', foot);
+    const slot = at('<slot name="foot" />', foot);
+    const rule = at("data-rail-foot-rule", foot);
+    const inbox = at("<OperatorInbox", rule);
+    const shortcuts = at('label="Atalhos"', foot);
+    const lock = at('label="Bloquear"', foot);
+    const menu = at("data-suite-rail-menu", lock);
+    expect([sections, slot, rule, inbox, shortcuts, lock, menu].every((n) => n > foot)).toBe(true);
+    expect([sections, slot, rule, inbox, shortcuts, lock, menu]).toEqual([sections, slot, rule, inbox, shortcuts, lock, menu].sort((a, b) => a - b));
+  });
+
+  // K11/H02/T-04: Bloquear em todo app, a Central inclusive. A prop que o escondia morreu.
+  it("Bloquear em todo app: ninguém esconde o item", () => {
+    expect(KIT("OperatorSuiteRail.vue")).not.toContain("lockable");
+    for (const app of APPS) {
+      for (const [file, source] of sourcesOf(app)) expect(source, file).not.toContain("lockable");
+    }
+  });
+
+  // K06/T-07: sem o rail (celular, tablet em pé), Bloquear e trocar de operador ficam
+  // a um toque: o "Mais" da barra do polegar (ou as iniciais da Central).
+  it("o menu do operador existe no celular de todo app", () => {
+    expect(KIT("OperatorSectionBar.vue")).toContain("<OperatorPhoneMenu");
+    for (const file of NAVS) {
+      const source = readFileSync(join(SURFACES, file), "utf8");
+      const bar = source.slice(source.indexOf("<OperatorSectionBar"));
+      expect(bar, file).toContain(":operator-name=");
+      expect(bar, file).toContain('@lock="emit(\'lock\')"');
+    }
+    const hub = readFileSync(join(SURFACES, "hub-nuxt/app/app.vue"), "utf8");
+    expect(hub).toContain("<OperatorPhoneMenu");
+    expect(hub).toContain("<OperatorSuiteRail");
+  });
+
+  // K08/T-09: no tablet em pé a navegação é a barra de baixo. A régua é uma só (a
+  // variante `rail:`); `md:` para decidir rail × barra é a régua velha.
+  it("rail e barra decidem pela variante rail:, não por md:", () => {
+    expect(KIT("OperatorSuiteRail.vue")).toContain("rail:flex");
+    expect(KIT("OperatorSectionBar.vue")).toContain("rail:hidden");
+    expect(KIT("OperatorSectionBar.vue")).not.toContain("md:hidden");
+    for (const file of NAVS) {
+      expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain("767.98px");
+    }
+  });
+
+  // T-02: a ajuda de atalhos é peça do kit; cópia por app não volta.
+  it("a ajuda de atalhos é uma, do kit", () => {
+    for (const app of APPS) {
+      for (const [file] of sourcesOf(app)) {
+        if (file.startsWith("operator-kit/")) continue;
+        expect(file, file).not.toMatch(/ShortcutsHelp\.vue$/);
+      }
+    }
+    expect(KIT("OperatorSuiteRail.vue")).toContain("<OperatorShortcutsHelp");
+  });
+});
