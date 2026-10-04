@@ -5,7 +5,9 @@
 // texto do rail. Altura ≥ 44px (alvo de toque da casa).
 //
 // Serve às seções do app (link, `to`) e às funções do pé (botão, emite `activate`):
-// Avisos, Atalhos, Bloquear. O item inativo fica a 80% (v4 `.rail-item`), o ativo acende.
+// Avisos, Atalhos, Bloquear. O item inativo fica com o texto cheio, e não a 80% como
+// o `.rail-item` da v4: a 80% o rótulo de 10-11px dava 3,8:1 no rail da Produção
+// (axe, AA pede 4,5). O ativo acende.
 import { computed, resolveComponent } from "vue";
 
 const props = defineProps<{
@@ -65,7 +67,7 @@ const a11yLabel = computed(() => {
     class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
     :class="[dense ? 'px-0 text-[10px] tracking-[-0.3px]' : 'px-0 text-[11px]', active
       ? 'bg-rail-foreground text-rail shadow-[0_1px_2px_rgb(0_0_0/.18)] dark:text-background'
-      : 'text-rail-foreground/80 hover:bg-rail-foreground/10 hover:text-rail-foreground']"
+      : 'text-rail-foreground hover:bg-rail-foreground/10']"
     @click="to ? undefined : emit('activate')"
   >
     <slot name="icon">

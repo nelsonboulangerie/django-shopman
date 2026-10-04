@@ -240,11 +240,11 @@ describe("OperatorSuiteRail", () => {
     expect(wrapper.find("[data-inbox-stub]").exists()).toBe(false);
   });
 
-  it("as iniciais: size-10 e o fundo translúcido da v4", async () => {
+  it("as iniciais: size-10 da v4, com fundo escuro que passa AA em todo rail", async () => {
     const wrapper = await mountRail();
     const menu = wrapper.get("[data-suite-rail-menu]");
     expect(menu.classes()).toContain("size-10");
-    expect(menu.classes()).toContain("bg-rail-foreground/15");
+    expect(menu.classes()).toContain("bg-black/25");
   });
 });
 
