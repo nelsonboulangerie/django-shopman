@@ -61,7 +61,7 @@ const done = computed(() => drawerOpeningDone(props.state));
         Recebido na mesa
       </li>
       <li class="flex items-center gap-2">
-        <span class="grid size-4 place-items-center rounded-full bg-muted text-[10px] font-semibold">2</span>
+        <span class="grid size-4 place-items-center rounded-full bg-muted text-xs font-semibold">2</span>
         Na frente da gaveta, abra por aqui
       </li>
     </ol>

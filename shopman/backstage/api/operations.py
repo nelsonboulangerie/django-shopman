@@ -4766,6 +4766,7 @@ class POSCashDrawerPulseView(APIView):
         try:
             state = drawer_pulse.pulse_state(ref=ref, terminal_ref=_terminal_do_pedido(request))
         except Exception as exc:
+            logger.debug("pos_drawer_pulse_read_failed user=%s", _actor(request), exc_info=True)
             return _falha_do_caixa(exc, "Pulso não encontrado.")
         return Response({"pulse": {"ref": state.ref, "state": state.state, "message": state.message}})
 

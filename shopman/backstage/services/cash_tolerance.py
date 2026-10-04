@@ -182,8 +182,9 @@ def record_verdict(shift, *, operator=None):
 
 
 def _alert(shift, *, difference_q: int, tolerance_q: int) -> None:
-    from shopman.backstage.services.alerts import create_alert
     from shopman.utils.monetary import format_money
+
+    from shopman.backstage.services.alerts import create_alert
 
     label = str(shift.terminal.label or shift.terminal.ref)
     sign = "sobra" if difference_q > 0 else "falta"

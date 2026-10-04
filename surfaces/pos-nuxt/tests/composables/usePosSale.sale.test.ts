@@ -982,6 +982,11 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
       // A leitura da gaveta (`GET /drawer`) atravessa o mesmo agente desde que a
       // trava passou a morder no primeiro item da venda sem comanda. Ela não é
       // um chute: responder aqui mantém `kicks` sendo só o que ABRE a gaveta.
+      // A sonda de saúde diz "este dispositivo É o Balcão" (o agente responde
+      // aqui). Sem ela, a tela age como tablet e não abre sozinha.
+      if (String(url).endsWith("/health")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, queue: "balcao" }) });
+      }
       if (String(url).endsWith("/drawer")) {
         return Promise.resolve({
           ok: true,
@@ -1002,8 +1007,31 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
 
     await h.sale.submitSale(); // prepara
     await h.sale.submitSale(); // fecha
+    await flushDrawerRead();
 
     expect(kicks).toEqual(["cash_sale"]);
+    h.handles.dispose();
+  });
+
+  it("no TABLET (o agente não responde aqui) a venda em dinheiro NÃO abre a gaveta: vira o cartão", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).endsWith("/kick")) kicks.push("kick");
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }));
+    const h = await saleWithDrawer(saleRouter());
+    h.handles.posValue.value = {
+      ...h.handles.posValue.value!,
+      drawer_relay: { available: true, online: true, terminal_label: "Balcão", reason: "" },
+    };
+    h.sale.cart.paymentMethod = "cash";
+    h.sale.tenderAdd(1000);
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await flushDrawerRead();
+
+    expect(kicks).toEqual([]);
+    expect(h.sale.drawerOpening.pendingCash.value).toHaveLength(1);
     h.handles.dispose();
   });
 

@@ -320,8 +320,9 @@ def on_job_changed(job) -> None:
 
 def _close_in_ledger(job) -> None:
     """Uma nota filha da abertura com a resposta final do agente, uma vez só."""
-    from shopman.backstage.services.pos import _record
     from shopman.cashman.models import Entry
+
+    from shopman.backstage.services.pos import _record
 
     state = _state_of(job)
     if state.state == "sending":
