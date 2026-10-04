@@ -2530,6 +2530,7 @@ _EVENT_LABELS = {
     "handoff_undone": "Saída desfeita",
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
+    "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }
 

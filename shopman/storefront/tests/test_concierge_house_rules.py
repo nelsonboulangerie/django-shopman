@@ -222,7 +222,12 @@ def test_r8_identity_question_gets_the_fixed_reply_without_model(conversation, a
 
 
 @pytest.mark.django_db
-def test_r7_discount_request_gets_the_fixed_reply_without_model(conversation, alpha_menu):
+def test_r7_discount_request_gets_the_fixed_reply_without_model(conversation, alpha_menu, monkeypatch):
+    # Teto do desconto da Concierge desligado (0): sobra a frase fixa. Com teto, o
+    # desconto até ele é do sistema (``test_concierge_discount.py``).
+    from shopman.storefront.concierge import discount
+
+    monkeypatch.setattr(discount, "max_percent", lambda channel_ref: discount.Decimal(0))
     outcome, client = _turn(conversation, "Consegue fazer um preço melhor nos 10 croissants?", "nego-1")
     assert client.requests == []
     assert "não consigo negociar" in outcome.reply_text

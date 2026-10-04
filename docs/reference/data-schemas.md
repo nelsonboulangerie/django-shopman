@@ -122,13 +122,14 @@ guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversati
 (uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
 orçamento vigente `quote`, estado, contadores de turno e tokens) e
 `ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
-`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
-pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve estas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py` (e o desconto, por `discount.py`):
 
 | Chave | Valor | Para quê |
 |---|---|---|
 | `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
 | `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+| `concierge_discount` | `{coupon_code, discount_q, max_percent, conversation_id, at}` | o desconto que a Concierge concedeu nesta sacola (dono, 03/10/2026; `storefront/concierge/discount.py`). Presente = já concedido: é o "uma vez por pedido". `coupon_code` é o cupom `CONCIERGE-…` de uso único que entrou em `coupon_code` pelo caminho do cupom do site; `discount_q` é o que o modifier de fato aplicou; `max_percent` é o teto vigente na hora (texto decimal); `at` em ISO 8601. Não é copiada para o pedido: a origem do desconto no pedido é o cupom (`Order.snapshot.pricing.coupon`) e o evento `concierge_discount` |
 
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
@@ -1213,6 +1214,15 @@ Lido por: `setup.py` (registro), validators, modifiers.
 | `auto_sync_fulfillment` | `bool` | `False` | Sync automático fulfillment → order status |
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
+
+### Pricing — preço do canal e desconto da Concierge
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
+| `concierge_discount_max_percent` | `number` | `2.5` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola (aceita decimal); `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+
+Lido por: `storefront/concierge/discount.py`.
 
 ### 8. Display — como um canal `display` exibe
 
