@@ -656,6 +656,17 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[ALLERGY])))
             continue
         if act.act == NEGOTIATION:
+            if not team_in_turn:
+                # Desconto até o teto da casa, pelo cupom do site (OBS0310-O, ``discount``).
+                # Com a equipe chamada no turno, a sacola não muda: vale a frase de R7.
+                from . import discount
+
+                granted = discount.handle_request(
+                    conversation=conversation, channel_ref=channel_ref, customer_text=act.span or "desconto"
+                )
+                if granted.text:
+                    run.replies.append(PartReply(act, text=granted.text))
+                    continue
             _rule, fixed = house_rules.fixed_reply_for(act.span or "desconto", copy=copy)
             if not fixed:
                 _rule, fixed = house_rules.fixed_reply_for("desconto", copy=copy)
