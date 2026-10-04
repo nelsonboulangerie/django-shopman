@@ -30,11 +30,12 @@ describe("experiência canônica do Marketing V2", () => {
     expect(workspaceDialog).toContain("overflow-y-auto");
   });
 
-  it("faz Plataformas retornar sempre à área canônica da V2", () => {
-    expect(platforms).toContain('path: "/v2"');
-    expect(platforms).toContain('area: "platforms"');
+  it("faz Plataformas voltar sempre à própria rota (o panorama V2 saiu)", () => {
+    expect(platforms).toContain('path: "/platforms"');
     expect(platforms).toContain("closePlatformWorkspace");
-    expect(campaignForm).toContain("path: '/v2'");
-    expect(campaignForm).toContain("area: 'platforms'");
+    expect(platforms).toContain(':data-marketing-platform="platform.platform"');
+    expect(platforms).not.toContain("/v2");
+    expect(campaignForm).toContain("path: '/platforms'");
+    expect(campaignForm).not.toContain("'/v2'");
   });
 });

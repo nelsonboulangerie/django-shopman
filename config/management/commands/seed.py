@@ -8597,7 +8597,7 @@ class Command(BaseCommand):
         )
 
         Campaign.objects.update_or_create(
-            name="Fornada pronta",
+            name="Lote pronto",
             defaults={
                 "trigger": Trigger.PRODUCTION_FINISHED,
                 # Piso de 90%: fornada boa COM até 10% de unidades fora ainda

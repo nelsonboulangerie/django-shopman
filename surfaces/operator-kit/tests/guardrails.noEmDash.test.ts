@@ -60,13 +60,9 @@ const SKIP_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json"
 const EXCEPTIONS: Record<string, string> = {
   // Não é copy: é o parser que RECONHECE separadores no título da janela.
   "operator-kit/app/presentation/windowTitle.ts": "regex que reconhece separadores; não é texto",
-  // Dívida com nome, não decisão. O Marketing tem a matriz de retratos (`tests/visual`),
-  // aprovada no macOS da CI, e retrato só se regrava na sessão que tem o browser da CI
-  // (CLAUDE.md). Mexer na copy aqui reprova a matriz. Some quando os retratos forem
-  // regravados pela CI com a copy nova (frente UX-COPY1, seguimento).
-  "marketing-nuxt/": "retratos do Marketing só se regravam pela CI",
-  // Mesma dívida: o aviso de conexão aparece no retrato `global-error__offline` do
-  // Marketing. Sai junto com o seguimento acima.
+  // Dívida com nome: o aviso de conexão aparece no retrato `global-error__offline` do
+  // Marketing, e o componente é do kit. (O Marketing inteiro saiu da lista na V6-MKT,
+  // que regrava os retratos pela CI.)
   "operator-kit/app/components/OfflineBanner.vue": "aparece no retrato global-error__offline do Marketing",
 };
 

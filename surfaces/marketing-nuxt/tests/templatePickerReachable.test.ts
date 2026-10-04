@@ -35,8 +35,8 @@ describe("a configuração de plataforma tem casa", () => {
 
   it("o aviso do painel aponta a casa em vez de configurar", () => {
     const board = read("../app/components/MarketingBoard.vue");
-    expect(board).toContain("path: '/v2'");
-    expect(board).toContain("area: 'platforms'");
+    expect(board).toContain("path: '/platforms'");
+    expect(board).not.toContain("'/v2'");
   });
 
   it("o teste preserva idempotência no BFF e não serializa destinatário livre", () => {

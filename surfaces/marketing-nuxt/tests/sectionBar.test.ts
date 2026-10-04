@@ -28,11 +28,16 @@ describe("navegação do Marketing", () => {
     const rail = shell.indexOf('<MarketingNav\n          place="rail"');
     const column = shell.indexOf('<div class="flex min-w-0 flex-1 flex-col">');
     const page = shell.indexOf('<component :is="Component" />');
-    const barAt = shell.indexOf('<MarketingNav place="bar" />');
+    const barAt = shell.indexOf('<MarketingNav v-if="!route.meta.fullscreen" place="bar" />');
     expect(rail).toBeGreaterThan(-1);
     expect(column).toBeGreaterThan(rail);
     expect(page).toBeGreaterThan(column);
     expect(barAt).toBeGreaterThan(page);
+  });
+
+  it("a revisão do anúncio ocupa a tela inteira, sem a barra do polegar (v4)", () => {
+    const review = readFileSync(new URL("../app/pages/announcements/[id].vue", import.meta.url), "utf8");
+    expect(review).toContain("definePageMeta({ fullscreen: true })");
   });
 
   it("a caixa pessoal tem um dono só, no shell, em qualquer largura", () => {

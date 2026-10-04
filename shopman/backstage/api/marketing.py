@@ -771,6 +771,13 @@ class AnnouncementApproveView(_CampaignBase):
                 )
 
                 platform_content = with_review_options(platform_content, edits["google_business"])
+            if edits.get("image_url"):
+                # A foto tirada na revisão vale para toda plataforma que leva imagem: o
+                # mural que já tinha a foto do produto passa a levar a do lote.
+                platform_content = {
+                    key: ({**value, "image_url": edits["image_url"]} if isinstance(value, dict) and value.get("image_url") else value)
+                    for key, value in platform_content.items()
+                }
 
         try:
             result = marketing_approval.approve_command(

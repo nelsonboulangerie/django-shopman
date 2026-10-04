@@ -71,6 +71,9 @@ export interface Announcement {
   rejected_reason: string;
   /** Review-only AI suggestion opted in by the template. */
   ai_suggestion_enabled?: boolean;
+  /** O fato do lote que gerou o anúncio (quantas unidades e quando saiu do forno). */
+  lot_quantity?: string;
+  lot_finished_at?: string;
 }
 
 export interface CampaignStats {
@@ -496,6 +499,10 @@ export interface MarketingConfirmationChallenge {
   audience_count: number;
   platforms: string[];
   scheduled_for: string | null;
+  /** A digital deste operador já está cadastrada (o selo oferece "Confirmar com a digital"). */
+  device_available?: boolean;
+  /** A partir de quantas mensagens outra pessoa confirma. */
+  dual_control_threshold?: number;
 }
 
 /** Edições do card enviadas junto com a aprovação. */

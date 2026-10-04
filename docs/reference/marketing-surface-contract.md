@@ -148,39 +148,45 @@ a fila está na tela. O push continua abrindo `/announcements/:id#review`, que �
 "Revisar" do cartão daquele anúncio.
 
 Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`), **Enviados**
-(`/history`) e **Ajustes** (`/v2?area=campaigns`). Ajustes entra por um item só e tem
-as próprias seções numa segunda linha, na linha de recortes do cabeçalho de cada tela
-de Ajustes: Campanhas, Modelos (`/templates`), Ofertas e cupons e Plataformas. Desde o
-V4-MKT o Marketing veste a camada visual da suíte (`data-suite="v3"`): do tablet para
-cima as seções moram no rail da suíte (Decisões, Agendados e Enviados em cima, Ajustes
-no pé); no celular, na barra do polegar do kit. Cada tela abre com o cabeçalho de uma
-linha do kit (`MarketingPageHeader` sobre `OperatorPageHeader`), com o "ao vivo"
-discreto nas telas de fila; no celular a barra de 56px leva o sino e o menu do operador
-(tema, giro e Bloquear). Nenhuma rota saiu do ar: `/v2?area=today` (o panorama
-anterior) continua acessível pela URL, sem item de navegação.
+(`/history`) e **Ajustes** (`/campaigns`). Ajustes entra por um item só e tem as
+próprias seções numa segunda linha, na linha de recortes do cabeçalho de cada tela de
+Ajustes, cada uma com rota própria: Campanhas (`/campaigns`), Modelos (`/templates`),
+Ofertas e cupons (`/offers`) e Plataformas (`/platforms`). Desde o V4-MKT o Marketing
+veste a camada visual da suíte (`data-suite="v3"`): do tablet para cima as seções moram
+no rail da suíte (Decisões, Agendados e Enviados em cima, Ajustes no pé); no celular, na
+barra do polegar do kit. Cada tela abre com o cabeçalho de uma linha do kit
+(`MarketingPageHeader` sobre `OperatorPageHeader`), com o "ao vivo" discreto nas telas
+de fila; no celular a barra de 56px leva o sino e o menu do operador (tema, giro e
+Bloquear).
 
-### Workspace V2 (Ajustes)
+O workspace V2 (`/v2`, com o panorama em `area=today`) e a prévia estática
+`/marketing-v2-preview/` saíram na V6-MKT: pré-go-live é zero legado e sem
+redirecionamento. As capacidades que moravam nele vivem nas rotas de Ajustes acima.
+`/offers` cria oferta e cupom e leva "Criar campanha com esta oferta" para
+`/campaigns?new=1&offer=<ref>`.
 
-`/v2` hospeda o workspace Marketing V2, que hoje é o andar de Ajustes. Ele organiza
-Campanhas, Ofertas e Plataformas (e o panorama antigo em `area=today`) em uma
-experiência própria, mas não cria um segundo
-backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
-confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
-podem abrir uma campanha com oferta pré-selecionada e podem abrir a conexão de uma
-plataforma específica. Não existe uma terceira barra de abas dentro do
-workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
-somente referência de design, sem capacidade operacional.
+### A revisão e o selo (V6-MKT)
+
+A revisão do anúncio (`/announcements/:id`) ocupa a tela inteira (`fullscreen` na
+página: a barra do polegar some) e segue a v4: foto grande com "Tirar outra" (upload
+re-encodado pelo servidor em `marketing/announcements/<id>/photo/`, e a aprovação só
+aceita uma foto que veio dessa revisão), contador de caracteres contra o limite da
+plataforma, uma linha por plataforma com interruptor, "Quando" (agora ou agendar) e um
+pé fixo com Recusar e Continuar. O selo confirma com a **digital do dispositivo**
+(WebAuthn, `security/device/*`), que vale só para a confirmação para a qual foi pedida
+e dispensa a frase digitada e a senha; "Usar o meu código" mantém a frase e a senha ou
+o autenticador como alternativa. Acima do limiar de dupla confirmação, "Pedir a
+confirmação de outra pessoa" manda push a quem tem a capacidade de aprovar
+(`security/second-control/request/`); o aviso abre `/second-control/:ref`, onde a
+segunda pessoa confirma com a digital ou o autenticador dela. Quem pediu nunca
+confirma o próprio pedido.
 
 Os fluxos densos de campanha, disparo manual, modelo e configuração de plataforma
 abrem em um workspace modal. No desktop ele usa a largura disponível para etapas,
-composições e prévias; no mobile ocupa a tela. Fechar um deep link devolve o operador
-à área correspondente e restaura o foco no acionador. `/platforms` sem uma plataforma
-específica redireciona para `/v2?area=platforms`, evitando alternância entre o catálogo
-novo e a lista anterior. As rotas secundárias `/campaigns`, `/templates`, `/history`,
-`/platforms?platform=...` e `/announcements/:id` continuam hospedando as capacidades
-operacionais existentes sob a mesma barra de seções.
+composições e prévias; no mobile ocupa a tela. Fechar devolve o operador à lista da
+própria rota e restaura o foco no acionador (em Plataformas, a linha da plataforma).
 
-O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
+O inventário de destinos combina, sem fundir, a allow-list selecionável das
 opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma
 plataforma desconectada ou bloqueada permanece visível com o motivo real; somente a
 allow-list do servidor decide se ela entra no composer. Na fixture hermética, Google
@@ -205,10 +211,11 @@ e nenhuma plataforma recebe conteúdo no `fire`.
 - `/announcements/:id`
 - `/campaigns`
 - `/history`
+- `/offers`
 - `/platforms`
 - `/scheduled`
+- `/second-control/:ref`
 - `/templates`
-- `/v2`
 <!-- marketing-ui-routes:end -->
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
@@ -228,6 +235,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/announcements/:id/approve/`
 - `/api/v1/backstage/marketing/announcements/:id/cancel/`
 - `/api/v1/backstage/marketing/announcements/:id/delivery-actions/`
+- `/api/v1/backstage/marketing/announcements/:id/photo/`
 - `/api/v1/backstage/marketing/announcements/:id/reconcile-deliveries/`
 - `/api/v1/backstage/marketing/announcements/:id/reject/`
 - `/api/v1/backstage/marketing/announcements/:id/reschedule/`
@@ -244,8 +252,14 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/rules/`
 - `/api/v1/backstage/marketing/rules/:id/`
 - `/api/v1/backstage/marketing/rules/:id/fire/`
+- `/api/v1/backstage/marketing/security/device/`
+- `/api/v1/backstage/marketing/security/device/options/`
+- `/api/v1/backstage/marketing/security/device/register/`
+- `/api/v1/backstage/marketing/security/device/register/options/`
 - `/api/v1/backstage/marketing/security/dual-control/`
 - `/api/v1/backstage/marketing/security/freeze/`
+- `/api/v1/backstage/marketing/security/second-control/:ref/`
+- `/api/v1/backstage/marketing/security/second-control/request/`
 - `/api/v1/backstage/marketing/security/step-up/`
 - `/api/v1/backstage/marketing/security/unfreeze/`
 - `/api/v1/backstage/marketing/telemetry/vital/`

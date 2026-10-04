@@ -518,7 +518,7 @@ const simulatedScenes = computed(() =>
           <li v-if="artifact.image_url">
             O Google recorta a foto para caber no cartão, e o recorte muda entre
             a Busca e o Maps: o que estiver perto das bordas pode sumir. Não ponha
-            texto dentro da imagem — escreva no texto do post.
+            texto dentro da imagem. Escreva no texto do post.
           </li>
           <li v-if="!google.buttonLabel && artifact.link">
             Sem botão, o link não aparece no post.
