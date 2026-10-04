@@ -1023,7 +1023,9 @@ function receiptHistoryLine(entry: ReceiptHistoryEntry): string {
     .filter(Boolean)
     .join(" · ");
 }
+const sharingReceipt = ref(false);
 async function shareReceipt(entry: ReceiptHistoryEntry) {
+  if (sharingReceipt.value) return;
   const text = [
     `Entrada no estoque: ${entry.supplierName || entry.supplierRef}`,
     `${receiptVoucherDocument(entry)} · ${entry.receivedAtDisplay}`,
@@ -1032,6 +1034,7 @@ async function shareReceipt(entry: ReceiptHistoryEntry) {
   ]
     .filter(Boolean)
     .join("\n");
+  sharingReceipt.value = true;
   try {
     if (navigator.share) {
       await navigator.share({ title: "Comprovante de entrada", text });
@@ -1039,8 +1042,12 @@ async function shareReceipt(entry: ReceiptHistoryEntry) {
     }
     await navigator.clipboard.writeText(text);
     useSonner.success("Comprovante copiado. Cole onde quiser compartilhar.");
-  } catch {
-    // Compartilhar cancelado: nada a fazer.
+  } catch (error) {
+    // silêncio-deliberado: AbortError é o operador fechando a folha de compartilhar.
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    useSonner.error("Não consegui compartilhar nem copiar o comprovante. Tente de novo.");
+  } finally {
+    sharingReceipt.value = false;
   }
 }
 
@@ -2051,7 +2058,7 @@ function onPackageCode(code: string) {
               <div class="col-span-2"><dt class="op-micro text-muted-foreground">Recebido por</dt><dd class="op-title">{{ receiptSheetEntry.operator || "não registrado" }}</dd></div>
             </dl>
             <div class="border-t border-border p-4">
-              <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary op-title text-primary-foreground" data-receipt-share @click="shareReceipt(receiptSheetEntry)">
+              <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary op-title text-primary-foreground" data-receipt-share :disabled="sharingReceipt" @click="shareReceipt(receiptSheetEntry)">
                 <Icon name="lucide:share-2" class="size-5" />
                 Compartilhar
               </button>
