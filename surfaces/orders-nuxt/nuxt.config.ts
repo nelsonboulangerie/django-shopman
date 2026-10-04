@@ -26,6 +26,12 @@ export default defineNuxtConfig({
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     operatorSecurityHeaders: true,
+    // Exceção de Permissions-Policy (G18 da auditoria v4, prévia v3
+    // `depois-gestor-celular` (c), aprovada): "fora da loja, mostrando o que pede
+    // decisão". A posição só é lida com o sim de quem segura o dispositivo
+    // (`useOutsideStore`), é comparada ali mesmo com o ponto da loja e nunca sai
+    // do dispositivo. Só nesta origem.
+    operatorPermissionsAllow: { geolocation: "self" },
     // Exceções da CSP do kit, uma por função real (SEC-SURF-001, decisão do dono
     // em 29/09/2026):
     // - img-src https: a foto do produto no Catálogo vem de host externo, e o

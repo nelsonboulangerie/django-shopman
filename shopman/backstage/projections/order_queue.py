@@ -1450,7 +1450,7 @@ def board_rail_counts() -> dict[str, int]:
     orders = [
         order for order in Order.objects.filter(
             status__in=(Order.Status.NEW, Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED),
-        ).only("pk", "ref", "status", "channel_ref", "data")
+        )
         if not is_pos_counter_order(order)
     ]
     intake = sum(1 for order in orders if order.status == Order.Status.NEW and not _is_future_preorder(order))
