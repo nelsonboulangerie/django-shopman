@@ -7,6 +7,7 @@
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions, filtersFromQuery, vocationPendingFilters } from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
+import { realtimeIndicator } from "~/presentation/board";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -29,6 +30,11 @@ const {
 } = useCatalogMatrix(collectionRef);
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
+// Cabeçalho de uma linha (UX-KIT-V1): a hora da última leitura útil ao lado do título.
+const readClock = computed(() => {
+  const at = readMetadata.value?.generated_at;
+  return at ? new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+});
 // Collection navigation remains available while only the row resource changes.
 const collections = shallowRef<CollectionProjection[]>(matrix.value?.collections ?? []);
 watch(() => matrix.value?.collections, value => { if (value) collections.value = value; }, { flush: "sync" });
@@ -498,17 +504,38 @@ useHead({ title: "Catálogo" });
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- work toolbar: search · collection chips · counts/refresh -->
-    <UiToolbar>
-      <UiSearchInput v-model="query" placeholder="Buscar produto ou SKU…" aria-label="Buscar produto ou SKU" />
-      <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
-           ao lado da busca; a coleção continua nas pills, que também reordenam. -->
-      <FilterBar v-model="filters" :dimensions="dimensions" />
-      <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
-           declarada no seletor). A escolha persiste por estação. -->
-      <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
+    <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-catalog3.html`): título +
+         ao vivo + busca e filtro + colunas; as coleções na segunda linha. -->
+    <OperatorPageHeader title="Catálogo" :filters-wrap="false">
+      <template #status>
+        <OperatorLiveStatus
+          :tone="error ? 'off' : realtime === 'live' ? 'live' : realtime === 'connecting' ? 'late' : 'calm'"
+          :time="readClock"
+          :label="error ? 'Atualização falhou' : realtimeIndicator(realtime).label"
+          :detail="realtimeIndicator(realtime).title"
+        />
+      </template>
+      <template #search>
+        <div class="flex flex-wrap items-center gap-2">
+          <UiSearchInput v-model="query" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
+          <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
+               ao lado da busca; a coleção continua nas pills, que também reordenam. -->
+          <FilterBar v-model="filters" :dimensions="dimensions" touch />
+        </div>
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
+        <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
+             declarada no seletor). A escolha persiste por estação. -->
+        <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
+        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+      </template>
+      <template #filters>
+        <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
-      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex flex-wrap items-center gap-1.5">
+      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-1.5">
         <UiFilterChip key="__all" :active="collectionRef === ''" @click="selectCollection('')">Todas</UiFilterChip>
         <UiFilterChip
           v-for="c in orderedCollections"
@@ -525,26 +552,25 @@ useHead({ title: "Catálogo" });
           :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
         >
           <template v-if="c.is_smart" #icon>
-            <Icon name="lucide:sparkles" class="size-3.5 opacity-70" title="Coleção por regra" />
+            <Icon name="lucide:sparkles" class="size-4 opacity-70" title="Coleção por regra" />
           </template>
           {{ c.name }}
         </UiFilterChip>
       </TransitionGroup>
-
-      <template #end>
-        <p class="hidden text-xs text-muted-foreground sm:block">
-          <span class="tabular-nums">{{ rows.length }}</span> produto{{ rows.length === 1 ? "" : "s" }}
-          <span class="text-muted-foreground/50">·</span>
-          <span class="tabular-nums">{{ channelsCount }}</span> {{ channelsCount === 1 ? "canal" : "canais" }}
-          <template v-if="feedsCount">
+        <div class="ml-auto flex shrink-0 items-center gap-3 pl-3">
+        <p class="hidden shrink-0 op-micro text-muted-foreground lg:block">
+            <span class="tabular-nums">{{ rows.length }}</span> produto{{ rows.length === 1 ? "" : "s" }}
             <span class="text-muted-foreground/50">·</span>
-            <span class="tabular-nums">{{ feedsCount }}</span> feed{{ feedsCount === 1 ? "" : "s" }}
-          </template>
-        </p>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+            <span class="tabular-nums">{{ channelsCount }}</span> {{ channelsCount === 1 ? "canal" : "canais" }}
+            <template v-if="feedsCount">
+              <span class="text-muted-foreground/50">·</span>
+              <span class="tabular-nums">{{ feedsCount }}</span> feed{{ feedsCount === 1 ? "" : "s" }}
+            </template>
+          </p>
+          <ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" />
+        </div>
       </template>
-    </UiToolbar>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
+    </OperatorPageHeader>
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>

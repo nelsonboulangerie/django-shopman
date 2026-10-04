@@ -1,10 +1,22 @@
 <script setup lang="ts">
-// Cabeçalho de seção do Gestor — mora no topo do CONTEÚDO (não é o rail). O desenho da
-// barra, o alvo de toque, o `aria-current` e a revelação da aba ativa vêm do
-// `OperatorAppBar` (kit): eram quatro barras à mão, desenhadas de três jeitos. Aqui
-// fica só o que é do Gestor: quais são as seções.
-// As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
+// Navegação de seções do Gestor (UX-KIT-V1). As seções moram no rail da suíte
+// (`OperatorSuiteRail`, do tablet para cima) e na barra do polegar
+// (`OperatorSectionBar`, no celular), como nas prévias v3/v4: o topo do conteúdo fica
+// com o cabeçalho de uma linha de cada tela. O desenho é do kit; aqui fica só o que é
+// do Gestor: quais são as seções, e o que vai no pé do rail (alertas e avisos).
+// `place` diz qual das duas peças este ponto do shell monta.
 import { gestorSections } from "~/presentation/gestorSections";
+
+defineProps<{
+  place: "rail" | "bar";
+  /** Rail: URL da Central e operador ativo (o menu e o Bloquear). */
+  hubUrl?: string;
+  operatorName?: string;
+}>();
+const emit = defineEmits<{ lock: [] }>();
+// No celular o rail não aparece e o sino vai para o cabeçalho de cada tela: aqui ele
+// só é montado do tablet para cima (um sino por tela, não dois no DOM).
+const isPhone = useMediaQuery("(max-width: 767.98px)");
 
 // Canal ou feed desligado, pausado ou divergente: um ponto âmbar + "1 desligado" no
 // item Canais. Estado normal não mostra nada.
@@ -43,5 +55,18 @@ const sections = computed(() =>
 </script>
 
 <template>
-  <OperatorAppBar :sections="sections" label="Seções do Gestor" />
+  <OperatorSuiteRail
+    v-if="place === 'rail'"
+    :sections="sections"
+    label="Seções do Gestor"
+    :hub-url="hubUrl"
+    :operator-name="operatorName"
+    @lock="emit('lock')"
+  >
+    <template v-if="!isPhone" #foot>
+      <AlertsBell placement="rail" />
+      <NotificationBell placement="rail" />
+    </template>
+  </OperatorSuiteRail>
+  <OperatorSectionBar v-else :sections="sections" label="Seções do Gestor" />
 </template>

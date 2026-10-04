@@ -46,10 +46,13 @@ alpha, que eram do modelo.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 #: Versão da tabela, gravada no envelope de cada resposta (``data-schemas.md``).
 VERSION = 1
@@ -983,6 +986,7 @@ def house_contacts() -> tuple[str, ...]:
 
         shop = Shop.load() if hasattr(Shop, "load") else Shop.objects.first()
     except Exception:  # banco indisponível: nenhum contato liberado, a regra fica mais estrita
+        logger.warning("concierge.house_rules.house_contacts_failed", exc_info=True)
         return ()
     if shop is None:
         return ()

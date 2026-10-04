@@ -16,6 +16,14 @@ import {
   signInSummary,
 } from "../presentation/notifications";
 
+const props = withDefaults(defineProps<{
+  /**
+   * Onde o sino mora. `header` (padrão): botão quadrado no cabeçalho, painel abaixo.
+   * `rail`: item "Avisos" no pé do rail da suíte (UX-KIT-V1), painel à direita do rail.
+   */
+  placement?: "header" | "rail";
+}>(), { placement: "header" });
+
 const { items, unread, markRead, signIns, loadSignIns, error, signInError, refresh } = useNotifications();
 
 const open = ref(false);
@@ -39,7 +47,18 @@ async function showSignIns() {
 
 <template>
   <div class="relative">
+    <RailSection
+      v-if="props.placement === 'rail'"
+      icon="lucide:bell"
+      label="Avisos"
+      :badge="count ? String(count) : ''"
+      :aria-label="unread ? `Avisos (${unread} não lidos)` : 'Avisos'"
+      :aria-expanded="open"
+      data-notification-trigger
+      @activate="toggle"
+    />
     <button
+      v-else
       type="button"
       class="relative inline-flex size-control items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
       :aria-label="unread ? `Avisos (${unread} não lidos)` : 'Avisos'"
@@ -57,7 +76,8 @@ async function showSignIns() {
     <div
       v-if="open"
       data-notification-panel
-      class="absolute right-0 z-50 mt-2 w-80 rounded-xl border bg-card p-2 shadow-lg"
+      class="z-50 w-80 rounded-xl border bg-card p-2 shadow-lg"
+      :class="props.placement === 'rail' ? 'fixed bottom-3 left-[84px]' : 'absolute right-0 mt-2'"
     >
       <template v-if="view === 'inbox'">
         <div v-if="error" role="status" class="px-2 py-2 text-sm text-muted-foreground">
