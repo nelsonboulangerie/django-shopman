@@ -1899,7 +1899,7 @@ function fromPlannedMenu(action: () => void) {
       <header class="flex items-start gap-3 border-b border-border px-5 pt-4 pb-3.5">
         <div class="min-w-0 flex-1">
           <p class="op-eyebrow text-muted-foreground">Quanto está previsto?</p>
-          <h2 class="truncate text-[22px] font-semibold leading-tight">
+          <h2 class="truncate op-heading leading-tight">
             {{ rowLabel(startRow) }}
           </h2>
           <p class="op-micro text-muted-foreground">
@@ -1956,7 +1956,7 @@ function fromPlannedMenu(action: () => void) {
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card text-2xl font-bold transition hover:bg-accent"
+              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card op-figure font-bold transition hover:bg-accent"
               aria-label="Diminuir"
               @click="bump('start', -1)"
             >
@@ -1973,7 +1973,7 @@ function fromPlannedMenu(action: () => void) {
             />
             <button
               type="button"
-              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card text-2xl font-bold transition hover:bg-accent"
+              class="grid h-14 w-14 shrink-0 place-items-center rounded-lg border bg-card op-figure font-bold transition hover:bg-accent"
               aria-label="Aumentar"
               @click="bump('start', 1)"
             >
@@ -1984,7 +1984,7 @@ function fromPlannedMenu(action: () => void) {
             Diferente do planejado ({{ selectedStartOrder.planned_qty }}). É rendimento, não perda.
           </p>
           <OperatorNumpad
-            class="[&_button]:h-14! [&_button]:text-2xl"
+            class="[&_button]:h-14! [&_button]:op-figure"
             subject="quantidade prevista"
             @digit="startDigit"
             @backspace="startBackspace"
