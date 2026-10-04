@@ -62,7 +62,11 @@ export function autoOpensOnCashSale(opts: { localAgent: boolean; openOnCashSale:
 
 /** O título do cartão: "Dinheiro da comanda 6" ou "Dinheiro do pedido #1012". */
 export function pendingCashTitle(pending: PendingCashDrawer): string {
-  if (pending.tabDisplay) return `Dinheiro da comanda ${pending.tabDisplay}`;
+  // A comanda sem nome é a referência numérica, que o PDV escreve "#1007".
+  if (pending.tabDisplay) {
+    const tab = /^\d/.test(pending.tabDisplay) ? `#${pending.tabDisplay}` : pending.tabDisplay;
+    return `Dinheiro da comanda ${tab}`;
+  }
   return `Dinheiro do pedido ${pending.orderRef}`;
 }
 

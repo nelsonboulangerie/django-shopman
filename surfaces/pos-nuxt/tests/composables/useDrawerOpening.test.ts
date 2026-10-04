@@ -97,6 +97,9 @@ describe("useDrawerOpening — a gaveta aberta pelo tablet, com autoria", () => 
       body: { purpose: "sale", order_ref: "1012", via: "relay" },
     });
     expect(opening.state.value).toBe("sent");
+    // Mostra "aberta" por uns segundos e só então sai.
+    expect(opening.pendingCash.value).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(4500);
     expect(opening.pendingCash.value).toEqual([]);
   });
 

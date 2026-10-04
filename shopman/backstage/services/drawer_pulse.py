@@ -168,8 +168,6 @@ def open_drawer(
                 f"A venda {order_ref} não entrou em dinheiro nesta gaveta. "
                 "Para abrir sem venda, escolha o motivo."
             )
-        if not reason:
-            reason = f"Venda {order_ref}"
     elif not reason:
         raise POSError("Informe o motivo da abertura.")
 

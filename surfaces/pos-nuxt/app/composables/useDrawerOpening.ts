@@ -32,6 +32,8 @@ interface PulseBody {
 /** O agente busca trabalho a cada 2 s; o pulso vale 30 s e o lease 45 s. */
 const POLL_EVERY_MS = 1000;
 const POLL_LIMIT_MS = 50_000;
+/** Quanto o cartão mostra "aberta" antes de sair. */
+const CONFIRMATION_MS = 4000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -157,7 +159,13 @@ export function useDrawerOpening({ pos, actions, action, drawer }: DrawerOpening
     await followPulse(answer.pulse.ref);
     const opened = state.value === "sent";
     if (opened && opts.purpose === "sale") {
-      pendingCash.value = pendingCash.value.filter((item) => item.orderRef !== opts.orderRef);
+      // O cartão fica uns segundos dizendo "Gaveta do Balcão aberta" antes de
+      // sair: sumir no mesmo instante não deixava ver que deu certo.
+      const ref = opts.orderRef;
+      setTimeout(() => {
+        pendingCash.value = pendingCash.value.filter((item) => item.orderRef !== ref);
+        if (openingRef.value === ref) reset();
+      }, CONFIRMATION_MS);
     }
     return opened;
   }

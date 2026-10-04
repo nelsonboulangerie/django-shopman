@@ -129,7 +129,7 @@ def test_tablet_pede_e_o_relay_leva_o_pulso_com_autoria(shift, operator, credent
 
     assert entry.operator == operator
     assert entry.order_ref == "M6-1012"
-    assert entry.reason == "Venda M6-1012"
+    assert entry.reason == ""  # o porquê é o pedido; o relatório não repete
     assert entry.payload == {"purpose": "sale", "via": "relay", "pulse_job": str(job.ref)}
     assert job.kind == PrintJob.Kind.DRAWER_PULSE
     assert job.transport == PrintJob.Transport.RELAY

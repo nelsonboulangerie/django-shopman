@@ -14,7 +14,8 @@ import {
 describe("abrir a gaveta pelo tablet — as frases e a decisão", () => {
   it("o cartão diz de qual comanda é o dinheiro, o troco e para onde levar", () => {
     const pending = { orderRef: "1012", tabDisplay: "6", changeQ: 4500 };
-    expect(pendingCashTitle(pending)).toBe("Dinheiro da comanda 6");
+    expect(pendingCashTitle(pending)).toBe("Dinheiro da comanda #6");
+    expect(pendingCashTitle({ ...pending, tabDisplay: "Mesa 6" })).toBe("Dinheiro da comanda Mesa 6");
     // O Intl separa "R$" do número com espaço inseparável.
     expect(pendingCashLine(pending, "Balcão").replace(/\u00a0/g, " ")).toBe("troco R$ 45,00 · leve ao Balcão");
     expect(pendingCashTitle({ ...pending, tabDisplay: "" })).toBe("Dinheiro do pedido 1012");
