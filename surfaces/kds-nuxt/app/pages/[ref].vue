@@ -285,13 +285,13 @@ function warnLocked(pk: number) {
         </span>
       </template>
       <template #search>
-        <UiSearchInput
+        <OperatorSuiteSearch
           ref="searchInput"
           v-model="query"
           class="suite:md:w-[19rem]!"
+          screen-label="filtrando os tickets"
           placeholder="Código, cliente ou item"
           aria-label="Buscar pedido por código, cliente ou item (atalho: /)"
-          shortcut="/"
         />
       </template>
       <template #phone-actions>

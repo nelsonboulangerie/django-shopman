@@ -42,7 +42,7 @@ const loading = computed(() => pending.value && !list.value);
         <span class="hidden op-micro text-muted-foreground lg:inline">Buscar, comparar e unificar cadastros</span>
       </template>
       <template #search>
-        <UiSearchInput v-model="search" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
+        <OperatorSuiteSearch v-model="search" screen-label="filtrando os clientes" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
       </template>
       <template #phone-actions>
         <GestorPhoneBells />

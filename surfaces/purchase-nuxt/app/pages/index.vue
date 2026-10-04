@@ -885,12 +885,12 @@ onBeforeUnmount(stopInvoiceScanner);
         </template>
 
         <template v-if="view === 'base' && baseView !== 'suppliers'" #search>
-          <UiSearchInput
+          <OperatorSuiteSearch
             ref="searchInput"
             v-model="baseSearch"
+            screen-label="filtrando a base"
             :placeholder="baseSearchPlaceholder"
             :aria-label="baseSearchPlaceholder"
-            shortcut="/"
           />
         </template>
 

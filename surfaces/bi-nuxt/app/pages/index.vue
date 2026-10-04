@@ -192,7 +192,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader :title="title">
       <template #search>
-        <UiSearchInput ref="search" v-model="query" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" shortcut="/" />
+        <OperatorSuiteSearch ref="search" v-model="query" screen-label="filtrando a tabela" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
       </template>
       <template #actions>
         <BiDayStepper

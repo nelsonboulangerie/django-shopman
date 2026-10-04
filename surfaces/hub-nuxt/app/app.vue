@@ -92,6 +92,11 @@ const dateLine = computed(() => (import.meta.client ? hubDateLine(nowMs.value) :
 
 // Do tablet para cima o sino mora no pé do rail; no celular (sem rail), no cabeçalho.
 const isPhone = useMediaQuery("(max-width: 767.98px)");
+// O selo da Central na barra de 56px do celular (v3 `depois-hub-celular`): o mesmo ícone
+// do PWA que o rail mostra do tablet para cima.
+const hubIdentity = (useRuntimeConfig().public as { operatorPwa?: { identity?: { iconSrc?: string; color?: string; icon?: string } } })
+  .operatorPwa?.identity;
+const hubSealBroken = ref(false);
 const { isCollapsed: railHidden, set: setRail } = useRailState();
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
@@ -215,7 +220,10 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- Cabeçalho de uma linha (76px): a saudação e a linha fina com o ao vivo, a
              hora e a assinatura "Shopman · Nelson". -->
-        <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3 md:h-[76px] md:gap-6 md:px-8 md:py-0">
+        <!-- Celular: a barra de 56px com o selo, a saudação, o ao vivo e o sino; embaixo, o
+             campo "Buscar em toda a suíte" (com a câmera), que abre a busca em tela cheia.
+             Tablet e desktop: a saudação e, ao lado, a barra grande da busca (v4 `hub.jpg`). -->
+        <header class="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-card px-4 pt-2 md:h-[76px] md:flex-nowrap md:gap-6 md:px-8 md:py-0">
           <button
             v-if="railHidden"
             type="button"
@@ -227,7 +235,23 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
           >
             <Icon name="lucide:panel-left-open" class="size-5" />
           </button>
-          <div class="min-w-0 flex-1">
+          <span
+            class="grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg md:hidden"
+            :style="{ background: hubIdentity?.color || 'var(--foreground)' }"
+            aria-hidden="true"
+            data-hub-phone-seal
+          >
+            <img
+              v-if="hubIdentity?.iconSrc && !hubSealBroken"
+              :src="hubIdentity.iconSrc"
+              class="size-9"
+              alt=""
+              decoding="async"
+              @error="hubSealBroken = true"
+            >
+            <Icon v-else name="lucide:layout-grid" class="size-5 text-white" />
+          </span>
+          <div class="min-w-0 flex-1 py-1 md:py-0">
             <h1 class="truncate op-heading">{{ hubGreeting(operatorName) }}</h1>
             <p class="mt-1.5 flex min-w-0 items-start gap-1.5 op-micro md:items-center text-muted-foreground tnum" data-hub-brand>
               <span class="live-dot mt-1 md:mt-0" aria-hidden="true" />
@@ -239,6 +263,10 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
           <div v-if="isPhone" class="shrink-0">
             <NotificationBell />
           </div>
+          <div class="order-last w-full pt-1 pb-3 md:order-none md:w-auto md:py-0" data-hub-search>
+            <OperatorSuiteSearch variant="hero" placeholder="Buscar pedido, cliente, produto, insumo ou tela" />
+          </div>
+          <div class="hidden flex-1 xl:block" aria-hidden="true" />
         </header>
 
         <div class="flex-1">
@@ -279,8 +307,32 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                     v-for="item in queueItems"
                     :key="item.key"
                     data-hub-queue-item
-                    class="grid gap-y-2 px-4 py-3 md:flex md:min-h-14 md:items-center md:gap-3.5 md:py-1 md:pr-3"
                   >
+                    <!-- Celular (v3 `depois-hub-celular`): a linha fina, inteira é o toque, com o
+                         app › o lugar, o tempo, o ponto quando pede atenção e o chevron. -->
+                    <a
+                      :href="item.url"
+                      :target="itemLinkAttrs(item).target"
+                      :rel="itemLinkAttrs(item).rel"
+                      :aria-label="queueActionAriaLabel(item)"
+                      class="flex min-h-14 items-center gap-3 px-3 py-2 md:hidden"
+                      data-hub-queue-phone-row
+                    >
+                      <span
+                        class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
+                        :class="itemIconSrc(item) ? '' : 'bg-primary/10'"
+                      >
+                        <img v-if="itemIconSrc(item)" :src="itemIconSrc(item)!" class="size-8 rounded-lg" alt="" loading="lazy" decoding="async" @error="brokenTileIcons.add(item.app)">
+                        <Icon v-else :name="itemIcon(item)" class="size-4" />
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block op-label font-semibold">{{ item.title }}</span>
+                        <span class="block op-micro text-muted-foreground">{{ item.app_label }} · {{ queueTimeLabel(item, nowMs) }}</span>
+                      </span>
+                      <span v-if="item.attention" class="size-[7px] shrink-0 rounded-full bg-warning" aria-hidden="true" />
+                      <Icon name="lucide:chevron-right" class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    </a>
+                    <div class="hidden min-h-14 items-center gap-3.5 py-1 pr-3 pl-4 md:flex">
                     <!-- App: ícone e nome. No celular, divide a linha com o tempo. -->
                     <div class="flex min-w-0 items-center justify-between gap-3 md:contents">
                       <span class="flex min-w-0 items-center gap-2.5 md:contents">
@@ -332,6 +384,7 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                       <span class="line-clamp-2 text-center leading-tight" data-hub-queue-action-label>{{ item.action_label }}</span>
                       <Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />
                     </a>
+                    </div>
                   </li>
                 </ol>
 
@@ -349,29 +402,37 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                     <Icon name="lucide:info" class="size-3.5" aria-hidden="true" />{{ APPS_HINT_COPY }}
                   </p>
                 </div>
-                <ul class="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <!-- Celular (v3 `depois-hub-celular`): os apps como linhas grandes numa lista,
+                     ícone, nome, a linha de estado e o chevron; a linha inteira é o toque. -->
+                <ul class="grid auto-rows-fr grid-cols-1 overflow-hidden rounded-xl border border-border bg-card divide-y divide-border md:grid-cols-2 md:gap-3 md:divide-y-0 md:overflow-visible md:rounded-none md:border-0 md:bg-transparent lg:grid-cols-4" data-hub-apps>
                   <li v-for="tile in tiles" :key="tile.ref" class="h-full">
                     <a
                       :href="tile.url"
                       :target="tileLinkAttrs(tile, linkContext).target"
                       :rel="tileLinkAttrs(tile, linkContext).rel"
-                      class="relative flex h-full flex-col rounded-[14px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      class="relative grid h-full min-h-[62px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2 text-left transition hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex md:flex-col md:items-stretch md:rounded-[14px] md:border md:border-border md:bg-card md:px-4 md:py-3.5 md:hover:border-primary/40"
                     >
                       <Icon
                         v-if="tile.kind === 'external'"
                         name="lucide:external-link"
-                        class="absolute top-5 right-5 size-4 text-muted-foreground"
+                        class="col-start-3 row-span-2 row-start-1 size-4 text-muted-foreground md:absolute md:top-5 md:right-5"
+                        aria-hidden="true"
+                      />
+                      <Icon
+                        v-else
+                        name="lucide:chevron-right"
+                        class="col-start-3 row-span-2 row-start-1 size-5 text-muted-foreground md:hidden"
                         aria-hidden="true"
                       />
                       <!-- Altura ÚNICA: a grade tem linhas de mesma altura (`auto-rows-fr`) e cada
                            bloco ocupa a linha inteira. Nome e frase param em duas linhas; a linha
                            de estado desce para o pé do bloco, nunca se corta (quebra a linha), e
                            ocupa o lugar mesmo vazia, para nenhum bloco encolher. -->
-                      <span class="flex items-center gap-3" :class="tile.kind === 'external' ? 'pr-6' : ''">
+                      <span class="contents md:flex md:items-center md:gap-3" :class="tile.kind === 'external' ? 'md:pr-6' : ''">
                         <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
                              Lucide de fallback, senão vira moldura nos cantos do ícone. -->
                         <span
-                          class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-[10px] text-primary"
+                          class="row-span-2 grid size-10 shrink-0 place-items-center overflow-hidden rounded-[10px] text-primary"
                           :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
                         >
                           <img
@@ -386,12 +447,12 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                           >
                           <Icon v-else :name="tileIcon(tile.icon)" class="size-5" />
                         </span>
-                        <span class="grid min-w-0">
+                        <span class="grid min-w-0 self-end md:self-auto">
                           <span data-tile-title class="line-clamp-2 op-title leading-tight">{{ tile.label }}</span>
-                          <span data-tile-description class="line-clamp-2 op-label font-normal text-muted-foreground">{{ tile.description }}</span>
+                          <span data-tile-description class="hidden line-clamp-2 op-label font-normal text-muted-foreground md:block">{{ tile.description }}</span>
                         </span>
                       </span>
-                      <span data-tile-status class="mt-auto flex min-h-[26px] min-w-0 items-start gap-2 pt-2 op-label font-normal">
+                      <span data-tile-status class="col-start-2 flex min-w-0 items-start gap-2 self-start op-label font-normal md:mt-auto md:min-h-[26px] md:pt-2">
                         <template v-if="tileStatus(tile).hasStatus">
                           <!-- O ponto diz o tom (âmbar pede alguém, verde está bem, neutro no
                                resto); a frase sempre escrita ao lado, a cor nunca fala sozinha. -->
@@ -423,6 +484,8 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                 </ul>
               </section>
             </template>
+            <!-- "Mais N apps abaixo" no celular: o aviso de rolagem da casa (kit). -->
+            <MoreBelow />
           </div>
         </div>
 

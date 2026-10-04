@@ -161,13 +161,13 @@ const ITEM =
       />
     </template>
     <template v-if="searchable" #search>
-      <UiSearchInput
+      <OperatorSuiteSearch
         ref="searchInput"
         v-model="query"
         class="suite:md:w-[18rem]!"
+        screen-label="filtrando a lista"
         :placeholder="searchPlaceholder"
         aria-label="Buscar por código, SKU ou receita"
-        shortcut="/"
       />
     </template>
     <template #phone-actions>

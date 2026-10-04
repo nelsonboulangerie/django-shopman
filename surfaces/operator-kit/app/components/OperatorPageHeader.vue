@@ -7,15 +7,17 @@
 //
 // Por dispositivo:
 //   - celular (abaixo de `md`): barra de 56px com o selo do app (volta à Central), o
-//     título, o ponto ao vivo, a lupa (abre a busca numa linha própria) e as ações de
+//     título, o ponto ao vivo, a lupa (abre a busca da suíte em tela cheia) e as ações de
 //     polegar (`#phone-actions`, ex.: o sino). Os controles (`#actions`) e os recortes
 //     (`#filters`) descem cada um para uma linha que rola na horizontal;
 //   - tablet e desktop: a linha inteira. Os controles quebram para baixo antes de
 //     espremer a busca (`flex-wrap`), sem rolagem horizontal da página.
 //
-// A busca é renderizada UMA vez (o atalho "/" segura a referência dela): no celular
-// ela só muda de linha.
-import { computed, nextTick, ref, useSlots } from "vue";
+// A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
+// cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
+// o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
+// cheia.
+import { computed, ref, useSlots } from "vue";
 
 import { operatorAppNamed } from "../../appIdentity";
 
@@ -23,7 +25,7 @@ const HUB_BACK = `voltar ${operatorAppNamed("hub", "a")}`;
 
 interface HeaderIdentity { label: string; icon: string; iconSrc: string; color: string }
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   title: string;
   /** Linha fina acima do título (ex.: "Posto Saída · este dispositivo"). */
   eyebrow?: string;
@@ -32,10 +34,14 @@ withDefaults(defineProps<{
    * numa linha só e rola na horizontal (ex.: as coleções do Catálogo).
    */
   filtersWrap?: boolean;
-}>(), { eyebrow: "", filtersWrap: true });
+  /** `false` só onde a tela não é lugar de trabalho (não há hoje). */
+  search?: boolean;
+  /** O texto do campo da busca padrão (sem filtro próprio da tela). */
+  searchPlaceholder?: string;
+}>(), { eyebrow: "", filtersWrap: true, search: true, searchPlaceholder: "Buscar pedido, cliente, produto ou tela" });
 
 const slots = useSlots();
-const hasSearch = computed(() => Boolean(slots.search));
+const hasSearch = computed(() => Boolean(slots.search) || props.search);
 
 const config = useRuntimeConfig().public as { operatorHubUrl?: string; operatorPwa?: { identity?: HeaderIdentity } };
 const identity = config.operatorPwa?.identity;
@@ -47,13 +53,7 @@ const appIconBroken = ref(false);
 
 const { isCollapsed, set: setRail } = useRailState();
 
-const searchOpen = ref(false);
-const searchBox = ref<HTMLElement | null>(null);
-function openSearch() {
-  searchOpen.value = !searchOpen.value;
-  if (!searchOpen.value) return;
-  void nextTick(() => searchBox.value?.querySelector<HTMLInputElement>("input")?.focus());
-}
+const { request: openSearch } = useSuiteSearchRequest();
 </script>
 
 <template>
@@ -116,12 +116,10 @@ function openSearch() {
       <div v-if="hasSearch" class="hidden w-1 md:block" aria-hidden="true" />
       <div
         v-if="hasSearch"
-        ref="searchBox"
-        class="order-last w-full pb-2.5 md:order-none md:w-auto md:pb-0"
-        :class="searchOpen ? 'block pr-2' : 'hidden md:block'"
+        class="hidden md:block md:w-auto"
         data-page-header-search
       >
-        <slot name="search" />
+        <slot name="search"><OperatorSuiteSearch :placeholder="searchPlaceholder" /></slot>
       </div>
 
       <div class="hidden flex-1 md:block" />
@@ -132,12 +130,12 @@ function openSearch() {
           v-if="hasSearch"
           type="button"
           class="grid size-12 place-items-center rounded-md text-foreground"
-          :aria-label="searchOpen ? 'Fechar a busca' : 'Buscar'"
-          :aria-expanded="searchOpen"
+          aria-label="Buscar"
+          aria-haspopup="dialog"
           data-page-header-search-toggle
           @click="openSearch"
         >
-          <Icon :name="searchOpen ? 'lucide:x' : 'lucide:search'" class="size-6" />
+          <Icon name="lucide:search" class="size-6" />
         </button>
         <slot name="phone-actions" />
       </div>
