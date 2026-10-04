@@ -27,12 +27,18 @@ useHead({ title: "Agendados" });
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled>
     <MarketingPageHeader title="Agendados">
       <template #status>
-        <OperatorLiveStatus
-          :tone="live.tone"
-          :time="live.time"
-          :label="live.label"
-          :detail="live.detail"
-        />
+        <!-- Cede antes do título: fora do ao vivo o rótulo por extenso ("Atualiza a
+             cada 1 min") não cabe ao lado do título, do sino e do menu em 320px, e o
+             título sumia (medido na CI: SSE caído, 320px). Abaixo de 380px fica só o ponto
+             (o kit já esconde a hora ali); o nome acessível continua dizendo o estado. -->
+        <span class="flex min-w-0 shrink-[1000] overflow-hidden max-[379px]:[&_[data-operator-live-status]>span:not(.live-dot)]:hidden" data-marketing-live>
+          <OperatorLiveStatus
+            :tone="live.tone"
+            :time="live.time"
+            :label="live.label"
+            :detail="live.detail"
+          />
+        </span>
       </template>
     </MarketingPageHeader>
 
