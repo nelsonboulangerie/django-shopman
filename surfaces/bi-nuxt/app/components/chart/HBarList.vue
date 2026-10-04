@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Lista com barra horizontal — identidade + magnitude num relance (canais,
-// segmentos, tempo por receita). O texto veste tokens de texto; a barra é
-// tinta neutra. Valor sempre visível à direita (a barra sozinha não basta).
+// segmentos, tempo por receita). O texto veste tokens de texto; a barra é o
+// latão da prévia `bi-sobra4.html` sobre o trilho `muted`. Valor sempre visível à
+// direita (a barra sozinha não basta).
 import { computed } from "vue";
 
 const props = defineProps<{
@@ -15,16 +16,16 @@ const max = computed(() => Math.max(...props.rows.map((r) => r.value), 1));
   <ul class="flex flex-col gap-2">
     <li v-for="row in rows" :key="row.label" class="min-w-0">
       <div class="flex items-baseline justify-between gap-2">
-        <span class="truncate text-sm font-medium text-foreground">{{ row.label }}</span>
-        <span class="shrink-0 text-sm tabular-nums text-foreground">{{ row.display }}</span>
+        <span class="min-w-0 op-label text-foreground">{{ row.label }}</span>
+        <span class="shrink-0 op-label font-semibold tnum text-foreground">{{ row.display }}</span>
       </div>
       <div class="mt-1 h-2 rounded-full bg-muted">
         <div
-          class="h-2 rounded-full bg-foreground/60"
+          class="h-2 rounded-full bg-primary"
           :style="{ width: `${(row.value / max) * 100}%` }"
         ></div>
       </div>
-      <p v-if="row.hint" class="mt-0.5 text-xs text-muted-foreground">{{ row.hint }}</p>
+      <p v-if="row.hint" class="mt-0.5 op-micro text-muted-foreground">{{ row.hint }}</p>
     </li>
   </ul>
 </template>

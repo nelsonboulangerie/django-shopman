@@ -114,10 +114,20 @@ const rankingRows = computed(() => {
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="O que você quer cruzar?">
+      <template #actions>
+        <BiWindowPicker />
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+    </OperatorPageHeader>
+  <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
     <!-- O construtor: Cenário · Métrica · Dimensão · Cruzamento · ⋯ -->
-    <section class="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+    <section class="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
         Cenário
         <UiNativeSelect
           :value="selectedScenario"
@@ -137,8 +147,8 @@ const rankingRows = computed(() => {
           </optgroup>
         </UiNativeSelect>
       </label>
-      <div class="h-9 w-px self-end bg-border"></div>
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+      <div class="h-10 w-px self-end bg-border"></div>
+      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
         Métrica
         <UiNativeSelect
           :value="config.metric"
@@ -147,7 +157,7 @@ const rankingRows = computed(() => {
           <option v-for="m in report?.metrics ?? []" :key="m.key" :value="m.key">{{ m.label }}</option>
         </UiNativeSelect>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
         Dimensão
         <UiNativeSelect
           :value="config.by"
@@ -158,7 +168,7 @@ const rankingRows = computed(() => {
           </option>
         </UiNativeSelect>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
         Cruzamento
         <UiNativeSelect
           :value="config.by2"
@@ -174,7 +184,7 @@ const rankingRows = computed(() => {
       <div class="relative ml-auto self-end">
         <button
           type="button"
-          class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
+          class="inline-flex size-control items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
           aria-label="Ações do cenário"
           :aria-expanded="menuOpen"
           @click="menuOpen = !menuOpen"
@@ -183,21 +193,21 @@ const rankingRows = computed(() => {
         </button>
         <div
           v-if="menuOpen"
-          class="absolute right-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-card p-3 shadow-md"
+          class="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-border bg-card px-4 py-3 shadow-md"
         >
-          <p class="mb-2 text-xs font-medium text-muted-foreground">Salvar corte atual como cenário</p>
+          <p class="mb-2 op-eyebrow text-muted-foreground">Salvar corte atual como cenário</p>
           <div class="flex items-center gap-2">
             <input
               v-model="saveName"
               type="text"
               placeholder="Nome do cenário"
               maxlength="80"
-              class="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+              class="min-h-control min-w-0 flex-1 rounded-md border border-border bg-background px-2 op-label text-foreground"
               @keydown.enter="saveScenario"
             />
             <button
               type="button"
-              class="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              class="inline-flex min-h-control shrink-0 items-center rounded-md bg-primary px-3 op-label font-medium text-primary-foreground disabled:opacity-50"
               :disabled="!saveName.trim()"
               @click="saveScenario"
             >
@@ -208,7 +218,7 @@ const rankingRows = computed(() => {
             <div class="my-3 border-t border-border"></div>
             <button
               type="button"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground hover:bg-muted"
+              class="flex min-h-control w-full items-center gap-2 rounded-md px-2 op-label text-foreground hover:bg-muted"
               @click="toggleFavorite(loadedView)"
             >
               <Icon :name="loadedView.is_favorite ? 'lucide:star-off' : 'lucide:star'" class="size-4" />
@@ -216,7 +226,7 @@ const rankingRows = computed(() => {
             </button>
             <button
               type="button"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-destructive hover:bg-muted"
+              class="flex min-h-control w-full items-center gap-2 rounded-md px-2 op-label text-destructive hover:bg-muted"
               @click="removeLoaded"
             >
               <Icon name="lucide:trash-2" class="size-4" />
@@ -227,14 +237,14 @@ const rankingRows = computed(() => {
       </div>
     </section>
 
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <p v-else-if="errorDetail" class="text-sm text-destructive">{{ errorDetail }}</p>
+    <p v-if="pending" class="op-label text-muted-foreground">Carregando…</p>
+    <p v-else-if="errorDetail" class="op-label text-destructive">{{ errorDetail }}</p>
     <template v-else-if="report">
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">
+      <section class="rounded-lg border border-border bg-card px-4 py-3">
+        <h2 class="op-title text-foreground">
           {{ report.metric_label }} por {{ report.dimension_label.toLowerCase() }}<template v-if="report.dimension2"> × {{ report.dimension2_label.toLowerCase() }}</template>
         </h2>
-        <p class="mb-3 text-xs text-muted-foreground">
+        <p class="mb-3 op-micro text-muted-foreground">
           {{ shortDate(report.date_from) }} – {{ shortDate(report.date_to) }}
           <template v-if="report.truncated"> · Mostrando as {{ report.rows.length }} maiores; {{ report.truncated }} linhas ficaram fora</template>
         </p>
@@ -245,9 +255,9 @@ const rankingRows = computed(() => {
           :format="(v) => formatExploreValue(report!.unit, v)"
         />
         <ChartHBarList v-else-if="rankingRows.length" :rows="rankingRows" />
-        <table v-else-if="report.rows.length" class="w-full text-sm">
+        <table v-else-if="report.rows.length" class="w-full op-label">
           <thead>
-            <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
+            <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
               <th class="pb-2 font-medium">{{ report.dimension_label }}</th>
               <th class="pb-2 font-medium">{{ report.dimension2_label }}</th>
               <th class="pb-2 text-right font-medium">{{ report.metric_label }}</th>
@@ -261,14 +271,15 @@ const rankingRows = computed(() => {
             >
               <td class="py-2 pr-2 font-medium text-foreground">{{ row.label }}</td>
               <td class="py-2 pr-2 text-foreground">{{ row.label2 }}</td>
-              <td class="py-2 text-right tabular-nums text-foreground">
+              <td class="py-2 text-right tnum text-foreground">
                 {{ formatExploreValue(report.unit, row.value) }}
               </td>
             </tr>
           </tbody>
         </table>
-        <p v-else class="text-sm text-muted-foreground">Nada no período para esse cruzamento.</p>
+        <p v-else class="op-label text-muted-foreground">Nada no período para esse cruzamento.</p>
       </section>
     </template>
   </main>
+  </div>
 </template>
