@@ -2,6 +2,7 @@
 
 - **id:** V4-HUB
 - **branch:** claude/v4-hub
+- **PR:** #1454
 - **estado:** PR aberto, auto-merge (onda V4, merge autorizado pelo dono)
 - **início (UTC):** 2026-10-04
 
