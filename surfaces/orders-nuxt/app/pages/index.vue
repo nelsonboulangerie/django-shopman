@@ -228,6 +228,8 @@ function applyColumnsQuery() {
   if (wanted !== "expedition" && wanted !== "all") return;
   if (wanted === "expedition") boardLayout.showOnly("expedition");
   else boardLayout.showAll();
+  // No celular as colunas são abas: "Saída" abre a aba da Saída; "Pedidos", a da vez.
+  pickedZone.value = wanted === "expedition" ? "expedition" : null;
   const { [BOARD_COLUMNS_QUERY]: _applied, ...rest } = route.query;
   void router.replace({ path: route.path, query: rest });
 }
@@ -238,15 +240,19 @@ const touchCards = computed(() => viewMode.value === "board" && boardLayout.exit
 const exitPostView = computed(() => viewMode.value === "board" && boardLayout.exitPost.value && !isPhone.value);
 // Tablet em pé (e o posto Saída): a linha de cima fica com o essencial; ordenar e a
 // visão entram no ⋯, para o cabeçalho não quebrar em duas linhas.
+// Só depois de montar: o servidor não sabe a largura, e classe divergente na hidratação
+// não é corrigida pelo Vue (o campo ficaria com a largura do servidor).
 const isNarrow = useMediaQuery("(max-width: 1023.98px)");
-const compactHeader = computed(() => exitPostView.value || (isNarrow.value && !isPhone.value));
+const mounted = ref(false);
+onMounted(() => { mounted.value = true; });
+const compactHeader = computed(() => mounted.value && (exitPostView.value || (isNarrow.value && !isPhone.value)));
 
 // O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
 // acende "Saída" quando o posto está só com ela. Fora do quadro os selos somem.
 const rail = useGestorRail();
 watch(
   () => ({
-    exitPost: boardLayout.exitPost.value,
+    exitPost: isPhone.value ? phoneZone.value === "expedition" : boardLayout.exitPost.value,
     intake: zones.value.find((z) => z.key === "intake")?.count ?? 0,
     exit: zones.value.find((z) => z.key === "expedition")?.count ?? 0,
   }),
@@ -552,7 +558,7 @@ function printQueue() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" :class="exitPostView ? 'h-dvh' : ''">
+  <main class="flex min-h-0 flex-1 flex-col" :class="exitPostView ? 'h-dvh max-h-dvh' : ''">
     <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
          busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
          a seleção em lote e a última leitura útil moram no ⋯; Ciente aparece aqui só
@@ -805,11 +811,12 @@ function printQueue() {
         >
           <Icon name="lucide:x" class="size-4" />
         </button>
-        <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3) -->
+        <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
+             da linha para nunca ficar fora da tela -->
+        <span v-if="isPhone" class="order-first">
         <button
-          v-if="isPhone"
           type="button"
-          class="sticky right-0 ml-auto inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold shadow-[-12px_0_12px_-4px_var(--card)]"
+          class="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
           aria-haspopup="menu"
           :aria-expanded="moreOpen"
           aria-label="Mais ações da fila"
@@ -820,6 +827,7 @@ function printQueue() {
           Filtros
           <span v-if="attentionPending || (soundOn && soundBlocked)" class="size-2 rounded-full bg-warning" aria-hidden="true" />
         </button>
+        </span>
       </template>
       <template #below>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->

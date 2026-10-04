@@ -843,7 +843,10 @@ export function waitingStripText(cards: OrderCardProjection[]): string {
   if (!cards.length) return "";
   const codes = cards.slice(0, 4).map((card) => splitRef(card.ref).code);
   const more = cards.length > 4 ? ", …" : "";
-  return `${cards.length === 1 ? "pronto esperando" : "prontos esperando"} (${codes.join(", ")}${more})`;
+  // "prontos" só quando todos estão prontos (a Saída também guarda o que saiu para entrega).
+  const ready = cards.every((card) => card.status === "ready");
+  const noun = ready ? (cards.length === 1 ? "pronto esperando" : "prontos esperando") : "esperando";
+  return `${noun} (${codes.join(", ")}${more})`;
 }
 
 /** A frase curta da coluna recolhida: a urgência que sobrevive ao recolher.

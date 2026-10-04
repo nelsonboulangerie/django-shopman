@@ -121,6 +121,7 @@ describe("a Saída larga", () => {
     expect(waitingStripText([card({ ref: "W-K44" }), card({ ref: "W-T18" })])).toBe("prontos esperando (K44, T18)");
     expect(waitingStripText([card({ ref: "W-K44" })])).toBe("pronto esperando (K44)");
     expect(waitingStripText([])).toBe("");
+    expect(waitingStripText([card({ ref: "W-X59" }), card({ ref: "DLV-NARUA", status: "dispatched" })])).toBe("esperando (X59, NARUA)");
   });
 });
 
