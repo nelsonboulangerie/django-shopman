@@ -766,6 +766,8 @@ it("mantém o rodapé compacto durante seleção até Concluir, sem depender do 
   await wrapper.find('[aria-label="Iniciar seleção"]').trigger('click');
   await wrapper.vm.$nextTick();
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
+  // v4: o Desconto da faixa vale para as linhas marcadas; sem marca ele fica desligado.
+  await wrapper.find('[data-item-select="L-PAO"]').trigger('click');
   await openDiscount(wrapper);
   await wrapper.find('[aria-label="Dígito 5"]').trigger('focus');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
