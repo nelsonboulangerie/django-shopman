@@ -473,8 +473,9 @@ useHead({ title: "Campanhas" });
   <main class="flex min-h-0 flex-1 flex-col">
     <MarketingPageHeader title="Campanhas" phone-hides-actions>
       <template #search>
-        <UiSearchInput
+        <OperatorSuiteSearch
           :model-value="search"
+          screen-label="filtrando as campanhas"
           placeholder="Buscar campanha, gatilho, modelo"
           aria-label="Buscar campanha"
           @update:model-value="changeSearch"
