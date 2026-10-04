@@ -118,6 +118,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
     ),
+    "CONCIERGE_CANCEL_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_KEPT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
     "CONCIERGE_DISCOUNT_ABOVE_CAP": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),

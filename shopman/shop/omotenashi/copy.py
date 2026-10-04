@@ -1302,6 +1302,24 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
         )},
     },
+    # Cancelamento pela Concierge (dono, 03/10/2026; ``storefront/concierge/cancellation.py``):
+    # só quando o cliente poderia cancelar pelo site, e só depois do "sim". O que
+    # aconteceu com o pagamento é anexado pelo sistema, lido depois do cancelamento.
+    "CONCIERGE_CANCEL_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Cancelo o pedido {order_ref}, com {items}? Responda sim ou não.",
+        )},
+    },
+    "CONCIERGE_CANCEL_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Pronto, cancelei o pedido {order_ref}, como você pediu.",
+        )},
+    },
+    "CONCIERGE_CANCEL_KEPT": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Combinado, o pedido {order_ref} segue como está.",
+        )},
+    },
     # Desconto da Concierge (dono, 03/10/2026; ``storefront/concierge/discount.py``):
     # até o teto da casa, como cupom do site. Os valores vêm do sistema
     # ({before}, {after}); acima do teto, quem decide é a equipe (R7).
