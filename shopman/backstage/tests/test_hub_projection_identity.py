@@ -59,6 +59,14 @@ def test_tile_label_matches_surface_label(tile_ref: str, app: str) -> None:
 
 
 @pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
+def test_queue_label_matches_surface_short_label(tile_ref: str, app: str) -> None:
+    """O nome curto da fila ("Gestor") é o `shortLabel` da identidade; sem ele, o rótulo."""
+    spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)
+    identity = _identity()[app]
+    assert spec.queue_label == identity.get("shortLabel", identity["label"])
+
+
+@pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
 def test_tile_fallback_icon_matches_surface(tile_ref: str, app: str) -> None:
     """O Lucide de recurso do tile é o mesmo que o rail do app usa quando o PNG falha."""
     spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)

@@ -35,6 +35,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import { BOARD_COLUMNS_QUERY, BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
+import { queueGesture, queueItems } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
 const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, markStationReady, recallStation, declareVolumes, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
@@ -75,6 +76,9 @@ const { query, channel, fulfillment, sort, viewMode, selected } = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
 watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
+// A pessoa chega depois da primeira leitura (a sessão carrega no cliente): relê a URL
+// antes de o recorte reescrevê-la, para "/?view=board" abrir na Supervisão.
+watch(() => context.state.value.owner, (owner) => { if (owner && route.path === "/") context.readLocation(route.query); });
 watch(context.location, (location) => {
   if (route.path === "/" && JSON.stringify(route.query) !== JSON.stringify(location.query)) void router.replace(location);
 }, { deep: true });
@@ -218,6 +222,8 @@ function pickSort(key: SortKey) {
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const zoneTitles = computed<Record<string, string>>(() => Object.fromEntries(zones.value.map((z) => [z.key, z.title])));
 const boardLayout = useBoardLayout(() => zoneTitles.value);
+const mountedView = ref(false);
+onMounted(() => { mountedView.value = true; });
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
 // `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
@@ -236,8 +242,14 @@ function applyColumnsQuery() {
 onMounted(applyColumnsQuery);
 watch(() => route.query[BOARD_COLUMNS_QUERY], () => { if (route.path === "/") applyColumnsQuery(); });
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
-const touchCards = computed(() => viewMode.value === "board" && boardLayout.exitPost.value);
-const exitPostView = computed(() => viewMode.value === "board" && boardLayout.exitPost.value && !isPhone.value);
+// A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
+// o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
+// escolha "Fila" vira a Supervisão. Antes de montar (SSR), vale a escolha guardada.
+const isWide = useMediaQuery("(min-width: 1024px)");
+const queueAvailable = computed(() => !boardLayout.exitPost.value && (!mountedView.value || isWide.value));
+const view = computed(() => (viewMode.value === "queue" && !queueAvailable.value ? "board" : viewMode.value));
+const touchCards = computed(() => view.value === "board" && boardLayout.exitPost.value);
+const exitPostView = computed(() => view.value === "board" && boardLayout.exitPost.value && !isPhone.value);
 // Tablet em pé (e o posto Saída): a linha de cima fica com o essencial; ordenar e a
 // visão entram no ⋯, para o cabeçalho não quebrar em duas linhas.
 // Só depois de montar: o servidor não sabe a largura, e classe divergente na hidratação
@@ -321,6 +333,67 @@ function lateCount(zone: ZoneView): number {
 }
 const shortcutHint = (key: string) => String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
 
+// ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
+// Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
+// que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
+const queueCards = computed<OrderCardProjection[]>(() => [
+  ...tableRows.value.map((row) => row.card),
+  ...triagedPreorders.value.flatMap((group) => group.cards),
+]);
+const queueOrder = computed(() => queueItems(queueCards.value, nowMs.value).map((item) => item.card));
+const queueFocusPicked = ref("");
+const queueFocus = computed(() => {
+  const refs = queueOrder.value.map((card) => card.ref);
+  return refs.includes(queueFocusPicked.value) ? queueFocusPicked.value : (refs[0] ?? "");
+});
+function queueKey(e: KeyboardEvent): boolean {
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (key === "f" && queueAvailable.value) {
+    e.preventDefault();
+    viewMode.value = "queue";
+    return true;
+  }
+  if (key === "t") {
+    e.preventDefault();
+    viewMode.value = "board";
+    return true;
+  }
+  if (view.value !== "queue") return false;
+  const order = queueOrder.value;
+  const index = order.findIndex((card) => card.ref === queueFocus.value);
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    if (!order.length) return false;
+    e.preventDefault();
+    const next = key === "ArrowDown" ? Math.min(order.length - 1, index + 1) : Math.max(0, index - 1);
+    queueFocusPicked.value = order[next]!.ref;
+    document.querySelector(`[data-queue-ref="${CSS.escape(order[next]!.ref)}"]`)?.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  const card = order[index];
+  if (!card || isBusy(card.ref)) return false;
+  if (key === "Enter" && !(e.target as HTMLElement | null)?.closest("button, a, input, textarea, select")) {
+    const item = queueItems([card], nowMs.value)[0];
+    if (card.attention === "station") {
+      const station = card.kitchen?.stations.find((s) => s.can_mark_ready);
+      if (!station) return false;
+      e.preventDefault();
+      onStationReady(card, station.station_ref);
+      return true;
+    }
+    const primary = item ? queueGesture(item).primary : null;
+    if (!primary || primary.disabled) return false;
+    e.preventDefault();
+    onAction(card.ref, primary.ref);
+    return true;
+  }
+  if (key === "a" && card.attention === "confirm" && card.can_confirm) {
+    e.preventDefault();
+    onAction(card.ref, "confirm");
+    return true;
+  }
+  return false;
+}
+
 // keyboard shortcuts (Arc 3): / search · r refresh · v view · s sort · Esc clear ·
 // 1/2/3 recolhem ou abrem Entrada, Preparo e Saída.
 // Pure mapping in resolveShortcut; here we run the effects and skip while typing.
@@ -336,7 +409,7 @@ function onKeydown(e: KeyboardEvent) {
   }
   const el = e.target as HTMLElement | null;
   const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-  const column = viewMode.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
+  const column = view.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
   if (column) {
     // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
     if (typing || rejectRef.value || settleRef.value || dispatchRef.value || courierBackRef.value) return;
@@ -344,6 +417,9 @@ function onKeydown(e: KeyboardEvent) {
     boardLayout.toggle(column);
     return;
   }
+  // A Fila: F e T trocam a visão; na Fila, ↑/↓ andam, Enter faz o gesto do item em
+  // foco e A aceita o pedido novo em foco. O R continua sendo "atualizar".
+  if (!typing && !rejectRef.value && !settleRef.value && !dispatchRef.value && !courierBackRef.value && queueKey(e)) return;
   const shortcut = resolveShortcut(e.key);
   if (!shortcut) return;
   // While typing, only Escape (clear-filters / blur) is honoured.
@@ -357,7 +433,7 @@ function onKeydown(e: KeyboardEvent) {
       refresh();
       break;
     case "toggle-view":
-      viewMode.value = viewMode.value === "board" ? "table" : "board";
+      viewMode.value = view.value === "table" ? "board" : "table";
       break;
     case "cycle-sort":
       sort.value = nextSort(sort.value);
@@ -601,7 +677,7 @@ function printQueue() {
           Ciente
         </button>
         <!-- a visão deste posto e o caminho de volta às três colunas -->
-        <template v-if="viewMode === 'board' && !boardLayout.allOpen.value && !isPhone">
+        <template v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone">
           <span
             class="hidden h-control items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3.5 op-label lg:inline-flex"
             :title="boardLayout.memoryText.value"
@@ -639,8 +715,8 @@ function printQueue() {
         </button>
 
         <template v-if="!compactHeader && !isPhone">
-          <!-- ordenar -->
-          <div class="relative">
+          <!-- ordenar (a Fila tem ordem própria: tempo contra a meta) -->
+          <div v-if="view !== 'queue'" class="relative">
             <button
               type="button"
               class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
@@ -670,35 +746,46 @@ function printQueue() {
             </div>
           </div>
 
-          <!-- visão: quadro ou tabela (o alternador segmentado da v4, com a tecla) -->
-          <!-- os dois botões têm 44px cada (alvo da casa): o trilho não tem respiro
-               interno, e o ativo se destaca pelo cartão com contorno. -->
-          <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary">
+          <!-- visão (v4): Fila | Supervisão, com a tecla; a tabela densa no mesmo trilho.
+               Cada botão tem 44px (alvo da casa); o ativo se destaca pelo cartão. -->
+          <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary" data-view-switch>
             <button
+              v-if="queueAvailable"
               type="button"
               class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-              :class="viewMode === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-              aria-label="Ver em colunas"
-              title="Colunas (atalho: v)"
-              :aria-pressed="viewMode === 'board'"
-              @click="viewMode = 'board'"
+              :class="view === 'queue' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
+              aria-label="Fila: o que precisa de você"
+              title="Fila: o que precisa de você (atalho: f)"
+              :aria-pressed="view === 'queue'"
+              @click="viewMode = 'queue'"
             >
-              <Icon name="lucide:columns-3" class="size-4" />
-              <span class="hidden xl:inline" aria-hidden="true">Quadro</span>
-              <kbd v-if="viewMode !== 'board'" class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">V</kbd>
+              <Icon name="lucide:list-checks" class="size-4" />
+              <span aria-hidden="true">Fila</span>
+              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">F</kbd>
             </button>
             <button
               type="button"
               class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-              :class="viewMode === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
+              :class="view === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
+              aria-label="Supervisão: ver em colunas"
+              title="Supervisão: as três colunas (atalho: t)"
+              :aria-pressed="view === 'board'"
+              @click="viewMode = 'board'"
+            >
+              <Icon name="lucide:columns-3" class="size-4" />
+              <span aria-hidden="true">Supervisão</span>
+              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+              :class="view === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
               aria-label="Ver em tabela"
               title="Tabela (atalho: v)"
-              :aria-pressed="viewMode === 'table'"
+              :aria-pressed="view === 'table'"
               @click="viewMode = 'table'"
             >
               <Icon name="lucide:table-2" class="size-4" />
-              <span class="hidden xl:inline" aria-hidden="true">Tabela</span>
-              <kbd v-if="viewMode !== 'table'" class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">V</kbd>
             </button>
           </div>
         </template>
@@ -720,7 +807,8 @@ function printQueue() {
               :failed="Boolean(error)"
               :pending="pending"
               :sort="sort"
-              :view-mode="viewMode"
+              :view-mode="view"
+              :queue-available="queueAvailable"
               :sound-on="soundOn"
               :sound-blocked="soundBlocked"
               :attention-pending="attentionPending"
@@ -844,7 +932,8 @@ function printQueue() {
           :failed="Boolean(error)"
           :pending="pending"
           :sort="sort"
-          :view-mode="viewMode"
+          :view-mode="view"
+          :queue-available="queueAvailable"
           :sound-on="soundOn"
           :sound-blocked="soundBlocked"
           :attention-pending="attentionPending"
@@ -864,7 +953,7 @@ function printQueue() {
 
     <!-- celular: as colunas viram abas -->
     <div
-      v-if="isPhone && viewMode === 'board' && zones.length"
+      v-if="isPhone && view === 'board' && zones.length"
       class="flex shrink-0 border-b border-border bg-card px-2 print:hidden"
       role="tablist"
       aria-label="Colunas do quadro"
@@ -947,11 +1036,28 @@ function printQueue() {
           <button type="button" class="min-h-control min-w-control ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
         </p>
 
-        <!-- board view (clean, default) -->
+        <!-- a Fila "Precisa de você" (v4): só o fato humano é botão -->
+        <QueueView
+          v-else-if="view === 'queue'"
+          :cards="queueCards"
+          :awareness="queue.awareness"
+          :now-ms="nowMs"
+          :focus-ref="queueFocus"
+          :is-busy="isBusy"
+          :action-error="actionError"
+          :can-open="canManageOrders"
+          @action="onAction"
+          @station-ready="onStationReady"
+          @focus="(ref_) => (queueFocusPicked = ref_)"
+          @dismiss-error="clearActionError"
+          @show-all="viewMode = 'board'"
+        />
+
+        <!-- Supervisão: o quadro de três colunas -->
         <!-- colunas: a recolhida vira faixa (tocar devolve); a aberta tem alça para
              ajustar a largura com a vizinha. A arrumação é do posto (useBoardLayout). -->
         <div
-          v-else-if="viewMode === 'board'"
+          v-else-if="view === 'board'"
           class="grid gap-4 lg:[grid-template-columns:var(--board-columns)]"
           :class="exitPostView ? 'min-h-0 flex-1 lg:gap-2 lg:[grid-template-rows:minmax(0,1fr)]' : ''"
           :style="{ '--board-columns': boardLayout.gridTemplate.value }"

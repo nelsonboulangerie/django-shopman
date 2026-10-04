@@ -58,6 +58,21 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # Esgotado/pausa abriu ou fechou: a Fila do Gestor relê "Agora no
+        # cardápio" (o publish espera o commit, ADR-016).
+        from shopman.backstage.models import ShelfOutage
+        from shopman.shop.handlers._sse_emitters import emit_orders_menu_update
+
+        def _on_outage_saved(sender, instance, **kwargs):
+            emit_orders_menu_update()
+
+        post_save.connect(
+            _on_outage_saved,
+            sender=ShelfOutage,
+            dispatch_uid="backstage.shelf_outage.orders_menu_sse",
+            weak=False,
+        )
+
         # Os fatos de caixa que outra estação precisa ver (pedido de troco,
         # devolução entregue, turno aberto/fechado) são anunciados por quem OUVE
         # o livro, e não por quem grava: o `cashman` não sabe o que é SSE, e o

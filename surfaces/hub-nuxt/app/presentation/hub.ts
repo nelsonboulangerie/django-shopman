@@ -259,15 +259,34 @@ export function tileForItem(tiles: HubTileProjection[], item: Pick<HubQueueItemP
   return tiles.find((tile) => tile.ref === item.app) ?? null;
 }
 
-/** A linha de estado do bloco do app: a parte que pede alguém vem primeiro, em âmbar. */
-export function tileStatus(tile: Pick<HubTileProjection, "status_attention" | "status_summary">): {
+/**
+ * A linha de estado do bloco do app: a parte que pede alguém vem primeiro, em âmbar; depois
+ * o estado bom e sabido ("Caixa aberto"); depois o resto, calmo. O ponto diz o tom da linha:
+ * âmbar quando algo pede alguém, verde quando o app está bem e diz isso, neutro no resto.
+ * A cor nunca fala sozinha: a frase está sempre escrita ao lado.
+ */
+export type TileStatusTone = "attention" | "positive" | "neutral";
+
+export function tileStatus(
+  tile: Pick<HubTileProjection, "status_attention" | "status_summary"> & Partial<Pick<HubTileProjection, "status_positive">>,
+): {
   attention: string;
+  positive: string;
   summary: string;
+  parts: { text: string; role: TileStatusTone }[];
+  tone: TileStatusTone;
   hasStatus: boolean;
 } {
   const attention = (tile.status_attention || "").trim();
+  const positive = (tile.status_positive || "").trim();
   const summary = (tile.status_summary || "").trim();
-  return { attention, summary, hasStatus: Boolean(attention || summary) };
+  const parts = [
+    { text: attention, role: "attention" as const },
+    { text: positive, role: "positive" as const },
+    { text: summary, role: "neutral" as const },
+  ].filter((part) => part.text);
+  const tone: TileStatusTone = attention ? "attention" : positive ? "positive" : "neutral";
+  return { attention, positive, summary, parts, tone, hasStatus: parts.length > 0 };
 }
 
 /** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */

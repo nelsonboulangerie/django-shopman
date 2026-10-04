@@ -8,20 +8,24 @@ import type { ReceiptLineStatus } from "~/types/purchase";
  * pílula de estado precisam concordar. Dois ternários em dois templates é como
  * a mesma linha aparecia âmbar num canto e verde no outro.
  */
+// Cartão da linha (prévia v3 do Receber): o que trava tem a borda no tom e fundo de
+// cartão; o que está feito ganha o verde leve. A cor nunca fala sozinha: o estado
+// também está escrito na etiqueta e o próximo passo, na própria linha.
 export const RECEIPT_LINE_STATUS_ROW: Record<ReceiptLineStatus, string> = {
-  blocked: "border-destructive/30 bg-destructive/5",
-  attention: "border-warning/40 bg-warning/5",
-  ready: "border-info/30 bg-info/5",
+  blocked: "border-destructive/45 bg-card",
+  attention: "border-warning/45 bg-card",
+  ready: "border-border bg-card",
   matched: "border-success/30 bg-success/5",
-  checked: "border-success/40 bg-success/5",
+  checked: "border-success/30 bg-success/5",
 };
 
+// A etiqueta cheia da suíte (`pill-*` do kit): tinta de 12% e texto no tom.
 export const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, string> = {
-  blocked: "border-destructive/30 bg-destructive/10 text-destructive",
-  attention: "border-warning/30 bg-warning/10 text-warning",
-  ready: "border-info/30 bg-info/10 text-info",
-  matched: "border-success/25 bg-success/10 text-success",
-  checked: "border-success/25 bg-success/10 text-success",
+  blocked: "pill-destructive",
+  attention: "pill-warning",
+  ready: "pill-info",
+  matched: "pill-success",
+  checked: "pill-success",
 };
 
 /** Só a cor do texto/ícone — para o ícone da linha, que não leva fundo. */

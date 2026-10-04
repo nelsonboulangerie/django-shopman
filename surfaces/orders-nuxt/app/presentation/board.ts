@@ -458,7 +458,9 @@ export function triageCards(
   return sortCards(filtered, opts.sort);
 }
 
-export type ViewMode = "board" | "table";
+/** "queue": a Fila "Precisa de você" (v4, abre nela no desktop); "board": a Supervisão,
+ *  o quadro de três colunas; "table": a tabela densa. */
+export type ViewMode = "queue" | "board" | "table";
 
 export interface FlatRow {
   card: OrderCardProjection;

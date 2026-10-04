@@ -325,9 +325,11 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                       :rel="itemLinkAttrs(item).rel"
                       :aria-label="queueActionAriaLabel(item)"
                       data-hub-queue-action
-                      class="inline-flex h-12 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[164px] md:shrink-0 md:px-3"
+                      class="inline-flex h-12 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:w-[164px] md:shrink-0 md:px-3"
                     >
-                      <span class="whitespace-nowrap">{{ item.action_label }}</span>
+                      <!-- Largura fixa no tablet e no desktop (a coluna não serrilha): o gesto
+                           longo ("Resolver no contexto") quebra em duas linhas dentro do botão. -->
+                      <span class="line-clamp-2 text-center leading-tight" data-hub-queue-action-label>{{ item.action_label }}</span>
                       <Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />
                     </a>
                   </li>
@@ -391,15 +393,28 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                       </span>
                       <span data-tile-status class="mt-auto flex min-h-[26px] min-w-0 items-start gap-2 pt-2 op-label font-normal">
                         <template v-if="tileStatus(tile).hasStatus">
+                          <!-- O ponto diz o tom (âmbar pede alguém, verde está bem, neutro no
+                               resto); a frase sempre escrita ao lado, a cor nunca fala sozinha. -->
                           <span
                             class="mt-[5.5px] size-[7px] shrink-0 rounded-full"
-                            :class="tileStatus(tile).attention ? 'bg-warning' : 'bg-muted-foreground/50'"
+                            :class="{
+                              'bg-warning': tileStatus(tile).tone === 'attention',
+                              'bg-success': tileStatus(tile).tone === 'positive',
+                              'bg-muted-foreground/50': tileStatus(tile).tone === 'neutral',
+                            }"
+                            :data-tile-tone="tileStatus(tile).tone"
                             aria-hidden="true"
                           />
                           <span class="min-w-0">
-                            <span v-if="tileStatus(tile).attention" class="font-semibold text-warning">{{ tileStatus(tile).attention }}</span>
-                            <span v-if="tileStatus(tile).attention && tileStatus(tile).summary" class="text-muted-foreground"> · </span>
-                            <span v-if="tileStatus(tile).summary" :class="tileStatus(tile).attention ? 'text-muted-foreground' : ''">{{ tileStatus(tile).summary }}</span>
+                            <template v-for="(part, index) in tileStatus(tile).parts" :key="part.role">
+                              <span v-if="index" class="text-muted-foreground"> · </span>
+                              <span
+                                :class="{
+                                  'font-semibold text-warning': part.role === 'attention',
+                                  'text-muted-foreground': part.role === 'neutral' && tileStatus(tile).tone === 'attention',
+                                }"
+                              >{{ part.text }}</span>
+                            </template>
                           </span>
                         </template>
                       </span>

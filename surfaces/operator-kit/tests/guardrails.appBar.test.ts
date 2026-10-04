@@ -72,7 +72,6 @@ describe("guardrail do cabeçalho de seções", () => {
     // O B.I. saiu desta lista para a do rail da suíte (V4-BI).
     const convertidos = [
       "marketing-nuxt/app/components/CampaignTopBar.vue",
-      "purchase-nuxt/app/components/PurchaseTopBar.vue",
     ];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
     const navLocalDeclarada: Record<string, string> = {
@@ -103,6 +102,9 @@ describe("guardrail do cabeçalho de seções", () => {
       "orders-nuxt/app/components/GestorNav.vue",
       "kds-nuxt/app/components/KdsNav.vue",
       "bi-nuxt/app/components/BiNav.vue",
+      // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
+      // `current` e devolvem `select`.
+      "purchase-nuxt/app/components/PurchaseNav.vue",
     ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
