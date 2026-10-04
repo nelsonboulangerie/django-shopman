@@ -12,6 +12,27 @@ from dataclasses import asdict, dataclass, field
 
 QUALITY_OK_GRADE_REFS = ("excellent", "standard")
 
+#: Meta de tempo de cada etapa do pedido no Gestor, em minutos (decisão do dono,
+#: 04/10/2026). O canal pode mudar qualquer uma em
+#: ``fulfillment.stage_goal_minutes`` (``Channel.config`` ou ``Shop.defaults``); a
+#: chave ausente herda daqui. O prazo do pedido NOVO não mora aqui: é o da
+#: confirmação do canal (``confirmation``).
+#:
+#: - ``start``: iniciar o preparo, contado do aceite;
+#: - ``station``: a estação terminar, contado do início do preparo;
+#: - ``handoff``: o pronto esperar no balcão, contado do pronto;
+#: - ``dispatch``: a entrega sair, contado da CHEGADA do pedido;
+#: - ``courier_back``: o entregador voltar, contado da saída;
+#: - ``settle``: acertar o dinheiro da entrega, contado da entrega.
+STAGE_GOAL_DEFAULTS = {
+    "start": 5,
+    "station": 15,
+    "handoff": 10,
+    "dispatch": 30,
+    "courier_back": 45,
+    "settle": 15,
+}
+
 
 def quality_grade_refs_for_channel(
     channel_ref: str,
@@ -179,6 +200,11 @@ class ChannelConfig:
         # NÃO pode fazer é liberar dado do cliente para logística de terceiro:
         # ``order_helpers.courier_ticket_variant`` derruba "identified" para
         # "anonymous" quando o pedido diz que quem entrega é o marketplace.
+        stage_goal_minutes: dict = field(default_factory=lambda: dict(STAGE_GOAL_DEFAULTS))
+        # Meta de tempo de cada etapa no Gestor (o relógio do cartão e a Fila
+        # "Precisa de você"), em minutos inteiros > 0. Chaves em
+        # ``STAGE_GOAL_DEFAULTS``; o canal declara só as que mudam, ex.
+        # ``{"dispatch": 40}`` (a cascata é por chave).
 
     # ── 4. Estoque ──
 
@@ -510,6 +536,17 @@ class ChannelConfig:
             value = getattr(self.fulfillment, name)
             if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 300:
                 raise ValueError(f"fulfillment.{name} deve ser um inteiro entre 0 e 300")
+        goals = self.fulfillment.stage_goal_minutes
+        if not isinstance(goals, dict):
+            raise ValueError("fulfillment.stage_goal_minutes deve ser um objeto {etapa: minutos}")
+        for stage, minutes in goals.items():
+            if stage not in STAGE_GOAL_DEFAULTS:
+                raise ValueError(
+                    f"fulfillment.stage_goal_minutes: etapa desconhecida {stage!r} "
+                    f"(use {', '.join(STAGE_GOAL_DEFAULTS)})"
+                )
+            if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
+                raise ValueError(f"fulfillment.stage_goal_minutes.{stage} deve ser um inteiro > 0")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:

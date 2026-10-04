@@ -11,10 +11,12 @@ Duas leituras que o quadro de três colunas não tinha, na MESMA projeção do q
    ``operator_orders.operational_actions`` que decidem o botão): o que é botão
    primário é fato humano; nenhuma segunda régua de estado.
 
-2. **A meta de tempo por etapa** (``STAGE_GOAL_MINUTES``). O sistema só tinha um
-   prazo, o da confirmação (``ChannelConfig.confirmation``). As outras metas são
-   PROPOSTA desta frente, à espera do dono (estão no PR como pergunta): até lá
-   valem os números abaixo, iguais para todos os canais.
+2. **A meta de tempo por etapa** (``stage_goal``). O pedido novo usa o prazo da
+   confirmação do canal (``ChannelConfig.confirmation``); as outras etapas, a
+   meta do canal em ``ChannelConfig.fulfillment.stage_goal_minutes``, que herda
+   os padrões decididos pelo dono em 04/10/2026 (``config.STAGE_GOAL_DEFAULTS``:
+   iniciar 5, estação 15, balcão 10, despacho 30 da chegada, entregador 45,
+   acerto 15).
 
 3. **A consciência ao lado** (``build_queue_awareness``): o que o sistema fez nos
    últimos 15 minutos (pronto automático, aceite e recusa por prazo, aviso do
@@ -34,6 +36,8 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.shop.config import STAGE_GOAL_DEFAULTS
+
 logger = logging.getLogger(__name__)
 
 #: O fato humano que o pedido espera, ou ``""`` quando não espera ninguém.
@@ -49,18 +53,21 @@ ATTENTION_KINDS = (
     "settle",        # acertar o dinheiro da entrega
 )
 
-#: Meta de tempo por etapa, em minutos (proposta, ver o docstring). ``confirm`` e
-#: ``blocked`` do pedido novo usam o prazo do canal quando ele existe.
-STAGE_GOAL_MINUTES = {
-    "confirm": 5,
-    "blocked": 5,
-    "start": 5,
-    "station": 20,
-    "mark_ready": 20,
-    "handoff": 10,
-    "dispatch": 30,
-    "courier_back": 45,
-    "settle": 15,
+#: Meta padrão do pedido novo (e do bloqueado por pagamento), em minutos, quando o
+#: canal não tem prazo de confirmação próprio.
+CONFIRM_GOAL_MINUTES = 5
+
+#: Qual meta do canal (``fulfillment.stage_goal_minutes``) vale para cada fato.
+#: ``mark_ready`` é a mesma etapa da estação (o preparo terminar); ``blocked``
+#: fora do pedido novo espera o pagamento, com a meta do pedido novo.
+_GOAL_STAGE = {
+    "start": "start",
+    "station": "station",
+    "mark_ready": "station",
+    "handoff": "handoff",
+    "dispatch": "dispatch",
+    "courier_back": "courier_back",
+    "settle": "settle",
 }
 
 #: Janela de "O sistema fez".
@@ -75,9 +82,25 @@ def _action(card, ref: str):
     return next((action for action in card.actions if action.ref == ref), None)
 
 
+def stage_goal(kind: str, channel_config=None) -> int:
+    """A meta, em minutos, da etapa que o fato ``kind`` espera, no canal do pedido.
+
+    O canal manda (``fulfillment.stage_goal_minutes``, já com a cascata loja e
+    padrões); sem config, valem os padrões do dono.
+    """
+    stage = _GOAL_STAGE.get(kind)
+    if stage is None:
+        return CONFIRM_GOAL_MINUTES
+    goals = channel_config.fulfillment.stage_goal_minutes if channel_config is not None else {}
+    value = goals.get(stage) if isinstance(goals, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return STAGE_GOAL_DEFAULTS[stage]
+    return value
+
+
 def _confirmation_goal(channel_config) -> int:
     """O prazo do pedido novo: o do canal (confirmação automática ou o do marketplace)."""
-    goal = STAGE_GOAL_MINUTES["confirm"]
+    goal = CONFIRM_GOAL_MINUTES
     if channel_config is None:
         return goal
     confirmation = channel_config.confirmation
@@ -128,7 +151,7 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = _confirmation_goal(channel_config), order.created_at
     else:
-        goal = STAGE_GOAL_MINUTES[kind]
+        goal = stage_goal(kind, channel_config)
         since = {
             "blocked": order.accepted_at or order.created_at,
             "start": order.accepted_at or order.created_at,
@@ -382,7 +405,7 @@ def build_queue_awareness(*, user=None, now: datetime | None = None) -> QueueAwa
 
 __all__ = [
     "ATTENTION_KINDS",
-    "STAGE_GOAL_MINUTES",
+    "CONFIRM_GOAL_MINUTES",
     "SYSTEM_WINDOW_MINUTES",
     "MenuChannelProjection",
     "MenuOutageProjection",
@@ -391,4 +414,5 @@ __all__ = [
     "attention_kind",
     "build_queue_awareness",
     "card_attention",
+    "stage_goal",
 ]

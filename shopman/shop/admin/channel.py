@@ -47,7 +47,12 @@ class ChannelForm(forms.ModelForm):
         label="Preparo e entrega",
         widget=_aspect_widget(3),
         required=False,
-        help_text=f"Quando preparar/despachar. JSON: timing, auto_sync. {_INHERIT}",
+        help_text=(
+            "Quando preparar/despachar. JSON: timing, auto_sync, prep_start, auto_ready, courier_ticket e "
+            "stage_goal_minutes (metas do Gestor em minutos, só as que mudam: "
+            '{"start": 5, "station": 15, "handoff": 10, "dispatch": 30, "courier_back": 45, "settle": 15}). '
+            f"{_INHERIT}"
+        ),
     )
     stock = forms.CharField(
         label="Estoque",

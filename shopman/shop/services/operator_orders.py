@@ -1566,17 +1566,33 @@ def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None
 #: Teto dos volumes declarados de um pedido. Acima disso é engano de toque.
 MAX_VOLUMES = 99
 
+#: De onde a declaração de volumes veio (decisão do dono, 04/10/2026: quem embalou
+#: declara, onde estiver): o ⋯ do cartão do Gestor, o posto Saída do Gestor, ou a
+#: estação da Cozinha.
+VOLUME_SURFACES = ("orders", "exit", "kds")
+
 
 @transaction.atomic
-def save_volumes(order: Order, *, volumes: int, expected_revision: str | None = None, actor: str = "system") -> None:
+def save_volumes(
+    order: Order,
+    *,
+    volumes: int,
+    expected_revision: str | None = None,
+    actor: str = "system",
+    surface: str = "orders",
+) -> None:
     """Grava quantos volumes (sacolas, caixas) o pedido leva, como quem embalou contou.
 
-    Não existe volume deduzido: o número é declarado por quem embala, na Saída,
-    e fica em ``Order.data["volumes"]`` (inteiro). Zero apaga a declaração, e o
-    cartão volta a mostrar a contagem de itens. Ver ``docs/reference/data-schemas.md``.
+    Não existe volume deduzido: o número é declarado por quem embala, onde estiver
+    (Gestor, posto Saída ou estação da Cozinha), e fica em ``Order.data["volumes"]``
+    (inteiro). Zero apaga a declaração, e o cartão volta a mostrar a contagem de
+    itens. O evento ``volumes_declared`` registra quem (``actor``) e de qual
+    superfície (``surface``). Ver ``docs/reference/data-schemas.md``.
     """
     if isinstance(volumes, bool) or not isinstance(volumes, int) or not 0 <= volumes <= MAX_VOLUMES:
         raise ValueError(f"Volumes é um número inteiro de 0 a {MAX_VOLUMES}.")
+    if surface not in VOLUME_SURFACES:
+        raise ValueError(f"Superfície desconhecida para volumes: {surface!r}.")
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
     if expected_revision is not None and expected_revision != operational_revision(order, field="volumes"):
@@ -1589,7 +1605,11 @@ def save_volumes(order: Order, *, volumes: int, expected_revision: str | None = 
     order.data = data
     order.save(update_fields=["data", "updated_at"])
 
-    order.emit_event(event_type="volumes_declared", actor=actor, payload={"volumes": volumes})
+    order.emit_event(
+        event_type="volumes_declared",
+        actor=actor,
+        payload={"volumes": volumes, "actor": actor, "surface": surface},
+    )
 
 
 @transaction.atomic
@@ -1906,9 +1926,16 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "token": auto_ready["token"], "base_revision": operational_revision(order)},
         ))
+    # Volumes: quem embalou declara, onde estiver. Quem só expede (posto Saída,
+    # Cozinha) também embala, então o gesto é dele também.
+    actions.append(Action(
+        ref="volumes", kind="mutation", label="Declarar volumes",
+        enabled=authorized or expedite, reason="" if authorized or expedite else permission_reason,
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field="volumes")},
+    ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
-        ("volumes", "Declarar volumes", "volumes"),
         ("comment", "Adicionar comentário", "comment"),
         ("unassign", "Liberar atendimento", "assignment") if (order.data or {}).get("assignment") else ("assign", "Atender", "assignment"),
     ):

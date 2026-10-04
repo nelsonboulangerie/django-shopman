@@ -1198,6 +1198,18 @@ Lido por: `hooks._build_directive_payload`, `hooks._maybe_schedule_card_timeout`
 
 Lido por: `StockHoldHandler`, `confirmation.py` helpers, `apps._validate_hold_ttl`.
 
+### Fulfillment — preparo, saída e as metas do Gestor
+
+Campos completos no docstring de `ChannelConfig.Fulfillment` (`timing`, `auto_sync`,
+`prep_start`, `auto_ready`, `ready_undo_seconds`, `handoff_undo_seconds`, `courier`,
+`equipment`, `courier_ticket`). A chave das metas:
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `stage_goal_minutes` | `dict[str, int]` | `{"start": 5, "station": 15, "handoff": 10, "dispatch": 30, "courier_back": 45, "settle": 15}` | Meta de tempo de cada etapa do pedido no Gestor (o "meta N" do cartão e a Fila "Precisa de você"), em minutos inteiros > 0. `start` conta do aceite; `station` (estação terminar, inclusive o "Marcar pronto" à mão) do início do preparo; `handoff` do pronto (balcão); `dispatch` da CHEGADA do pedido; `courier_back` da saída; `settle` da entrega. O canal declara só as que mudam (`{"dispatch": 40}`): a cascata é por chave (`deep_merge`), e `Shop.defaults` também pode. Etapa desconhecida ou valor não inteiro recusa no `validate()`. O pedido novo não usa esta chave: o prazo dele é o de `confirmation` (`timeout_minutes`/`external_sla_minutes`), com 5 min sem prazo do canal. Padrões decididos pelo dono em 04/10/2026 (`shop/config.STAGE_GOAL_DEFAULTS`) |
+
+Lido por: `backstage/projections/order_attention.stage_goal` (via `card_attention`, na projeção do quadro).
+
 ### 4. Pipeline — o que acontece em cada fase?
 
 | Campo | Tipo | Default | Descrição |

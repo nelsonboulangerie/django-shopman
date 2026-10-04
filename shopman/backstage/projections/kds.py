@@ -100,6 +100,19 @@ class KDSTicketProjection:
     # recusado. Iniciar continua livre ("pode adiantar"). "" quando libera.
     finish_block_label: str = ""
     finish_block_reason: str = ""
+    # Volumes do pedido (sacolas, caixas), declarados por quem embalou: aqui na
+    # estação, no posto Saída ou no Gestor (``Order.data["volumes"]``, 0 = não
+    # declarado). ``volumes_order_ref`` é o ``Order.ref`` de verdade para o POST
+    # ``orders/<ref>/volumes/`` e ``volumes_revision`` a base da intenção; os dois
+    # vazios quando o ticket ainda é de comanda (sem pedido) ou é prévia agendada,
+    # e aí o gesto não aparece.
+    volumes: int = 0
+    volumes_order_ref: str = ""
+    volumes_revision: str = ""
+    # Quem iniciou este ticket e a que horas ("joyce", "14:05"), de
+    # ``Order.data["kds_started"]``. Vazio antes do início e no ticket de comanda.
+    started_by: str = ""
+    started_at_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -1021,7 +1034,39 @@ def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) 
         customer_note=str(source_data.get("order_notes", "") or ""),
         test_order_label=_test_order_label(source) if source is not None else "",
         **_finish_block(ticket, source, is_scheduled=is_scheduled),
+        **_volumes_fields(source, is_scheduled=is_scheduled),
+        **_start_fields(ticket, source_data),
     )
+
+
+def _volumes_fields(source, *, is_scheduled: bool) -> dict:
+    """Os volumes do pedido e a base para declará-los da estação (só pedido de verdade)."""
+    if is_scheduled or not isinstance(source, Order):
+        return {}
+    value = (source.data or {}).get("volumes")
+    return {
+        "volumes": value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0,
+        "volumes_order_ref": source.ref,
+        "volumes_revision": operator_orders.operational_revision(source, field="volumes"),
+    }
+
+
+def _start_fields(ticket, source_data: dict) -> dict:
+    """Quem iniciou o ticket e quando (``Order.data["kds_started"][str(pk)]``)."""
+    started = source_data.get("kds_started")
+    record = started.get(str(ticket.pk)) if isinstance(started, dict) else None
+    if not isinstance(record, dict):
+        return {}
+    try:
+        at = datetime.fromisoformat(str(record.get("at") or ""))
+    except ValueError:
+        at = None
+    if at is not None and timezone.is_naive(at):
+        at = timezone.make_aware(at)
+    return {
+        "started_by": str(record.get("by") or ""),
+        "started_at_display": _format_time(at) if at is not None else "",
+    }
 
 
 def _finish_block(ticket, source, *, is_scheduled: bool) -> dict[str, str]:

@@ -36,6 +36,11 @@ export interface KDSTicketProjection {
   test_order_label: string;
   finish_block_label: string;
   finish_block_reason: string;
+  volumes: number;
+  volumes_order_ref: string;
+  volumes_revision: string;
+  started_by: string;
+  started_at_display: string;
 }
 
 /** An order card in the Saída board (``expedition``: hand over / dispatch). */
