@@ -24,81 +24,91 @@ async function run() {
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <div v-else-if="error" class="flex items-center gap-3">
-      <p class="text-sm text-muted-foreground">Não deu para carregar os cenários.</p>
-      <button type="button" class="h-9 rounded-md border border-border px-3 text-sm font-medium" @click="refresh()">
-        Tentar de novo
-      </button>
-    </div>
-    <template v-else-if="page">
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Cenários propostos pela IA</h2>
-        <p class="mb-3 text-xs text-muted-foreground">
-          A IA lê só os agregados do B.I. (nunca pedido, cliente ou caixa) e propõe; quem decide é você.
-          Cada rodada fica registrada com o que ela viu.
-        </p>
-        <div v-if="page.configured" class="flex flex-wrap items-center gap-2">
-          <label class="text-sm text-muted-foreground" for="scenario-focus">Foco</label>
-          <UiNativeSelect
-            id="scenario-focus"
-            v-model="focus"
-          >
-            <option v-for="item in page.focuses" :key="item.key" :value="item.key">{{ item.label }}</option>
-          </UiNativeSelect>
-          <button
-            type="button"
-            class="h-9 rounded-md bg-foreground px-3 text-sm font-medium text-background disabled:opacity-50"
-            :disabled="generating"
-            @click="run"
-          >
-            {{ generating ? "Gerando… (leva alguns segundos)" : "Gerar cenários" }}
-          </button>
-        </div>
-        <p v-else class="text-sm text-muted-foreground">
-          Geração desligada neste ambiente: falta a credencial da IA (AI_ASSIST_API_KEY). Os relatórios já gerados seguem abaixo.
-        </p>
-      </section>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="Que cenários a IA propõe?">
+      <template #actions>
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+    </OperatorPageHeader>
 
-      <section v-if="page.reports.length" class="flex flex-col gap-3">
-        <article
-          v-for="report in page.reports"
-          :key="report.id"
-          class="rounded-md border border-border bg-card p-3"
+    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <BiPageState :pending="pending && !page" :error="error" what="os cenários" @retry="refresh()" />
+      <template v-if="page">
+        <BiSection
+          title="Pedir uma rodada"
+          caption="A IA lê só os agregados do B.I. (nunca pedido, cliente ou caixa) e propõe; quem decide é você. Cada rodada fica registrada com o que ela viu."
         >
-          <button type="button" class="flex w-full items-start justify-between gap-3 text-left" @click="toggle(report)">
-            <span>
-              <span class="block text-sm font-medium text-foreground">{{ scenarioReportHeadline(report) }}</span>
-              <span class="block text-xs text-muted-foreground">
-                {{ scenarioStatusLabel(report) }}
-                <template v-if="report.requested_by"> · pedido por {{ report.requested_by }}</template>
-              </span>
-            </span>
-            <span class="text-xs text-muted-foreground">{{ openId === report.id ? "fechar" : "abrir" }}</span>
-          </button>
-          <div v-if="openId === report.id" class="mt-3 flex flex-col gap-3">
-            <p v-if="report.status === 'failed'" class="text-sm text-muted-foreground">{{ report.error }}</p>
-            <div
-              v-for="(scenario, index) in report.scenarios"
-              :key="index"
-              class="rounded-md border border-border p-3"
+          <div v-if="page.configured" class="flex flex-wrap items-center gap-2">
+            <label class="op-label text-muted-foreground" for="scenario-focus">Foco</label>
+            <UiNativeSelect id="scenario-focus" v-model="focus">
+              <option v-for="item in page.focuses" :key="item.key" :value="item.key">{{ item.label }}</option>
+            </UiNativeSelect>
+            <button
+              type="button"
+              class="inline-flex min-h-control items-center gap-2 rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+              :disabled="generating"
+              @click="run"
             >
-              <h3 class="text-base font-semibold text-foreground">{{ scenario.title }}</h3>
-              <p class="mt-1 text-sm text-foreground">{{ scenario.proposal }}</p>
-              <p v-if="scenario.basis.length" class="mt-2 text-xs font-medium text-muted-foreground">O que sustenta</p>
-              <ul v-if="scenario.basis.length" class="list-disc pl-5 text-xs text-muted-foreground">
-                <li v-for="(line, i) in scenario.basis" :key="i">{{ line }}</li>
-              </ul>
-              <p v-if="scenario.unknowns.length" class="mt-2 text-xs font-medium text-muted-foreground">O que os dados não dizem</p>
-              <ul v-if="scenario.unknowns.length" class="list-disc pl-5 text-xs text-muted-foreground">
-                <li v-for="(line, i) in scenario.unknowns" :key="i">{{ line }}</li>
-              </ul>
-            </div>
+              <Icon name="lucide:sparkles" class="size-4" aria-hidden="true" />
+              {{ generating ? "Gerando… (leva alguns segundos)" : "Gerar cenários" }}
+            </button>
           </div>
-        </article>
-      </section>
-      <p v-else class="text-sm text-muted-foreground">Nenhum cenário gerado ainda.</p>
-    </template>
-  </main>
+          <p v-else class="op-body text-muted-foreground">
+            Geração desligada neste ambiente: falta a credencial da IA (AI_ASSIST_API_KEY). Os relatórios já gerados seguem abaixo.
+          </p>
+        </BiSection>
+
+        <section v-if="page.reports.length" class="overflow-hidden rounded-lg border border-border bg-card" aria-label="Rodadas registradas">
+          <article
+            v-for="report in page.reports"
+            :key="report.id"
+            class="border-b border-border last:border-0"
+          >
+            <button
+              type="button"
+              class="flex min-h-control w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition hover:bg-accent"
+              :class="openId === report.id ? 'bg-primary/5' : ''"
+              :aria-expanded="openId === report.id"
+              @click="toggle(report)"
+            >
+              <span class="min-w-0">
+                <span class="block op-body font-medium text-foreground">{{ scenarioReportHeadline(report) }}</span>
+                <span class="block op-micro text-muted-foreground">
+                  {{ scenarioStatusLabel(report) }}
+                  <template v-if="report.requested_by"> · pedido por {{ report.requested_by }}</template>
+                </span>
+              </span>
+              <span class="inline-flex shrink-0 items-center gap-1.5 op-label">
+                {{ openId === report.id ? "Fechar" : "Abrir" }}
+                <Icon :name="openId === report.id ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
+              </span>
+            </button>
+            <div v-if="openId === report.id" class="flex flex-col gap-3 bg-primary/5 px-4 pb-3">
+              <p v-if="report.status === 'failed'" class="op-body text-muted-foreground">{{ report.error }}</p>
+              <div
+                v-for="(scenario, index) in report.scenarios"
+                :key="index"
+                class="rounded-lg border border-border bg-card px-4 py-3"
+              >
+                <h3 class="op-title text-foreground">{{ scenario.title }}</h3>
+                <p class="mt-1 op-body text-foreground">{{ scenario.proposal }}</p>
+                <p v-if="scenario.basis.length" class="mt-2 op-eyebrow text-muted-foreground">O que sustenta</p>
+                <ul v-if="scenario.basis.length" class="list-disc pl-5 op-label text-muted-foreground">
+                  <li v-for="(line, i) in scenario.basis" :key="i">{{ line }}</li>
+                </ul>
+                <p v-if="scenario.unknowns.length" class="mt-2 op-eyebrow text-muted-foreground">O que os dados não dizem</p>
+                <ul v-if="scenario.unknowns.length" class="list-disc pl-5 op-label text-muted-foreground">
+                  <li v-for="(line, i) in scenario.unknowns" :key="i">{{ line }}</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+        </section>
+        <p v-else class="op-body text-muted-foreground">Nenhum cenário gerado ainda.</p>
+      </template>
+    </main>
+  </div>
 </template>

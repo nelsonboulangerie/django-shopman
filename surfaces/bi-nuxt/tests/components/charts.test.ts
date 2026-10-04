@@ -53,7 +53,7 @@ describe("chart/BarSeries", () => {
 });
 
 describe("chart/DivergingBars", () => {
-  it("separa positivo (tinta) de negativo (destructive)", () => {
+  it("separa positivo (latão da suíte) de negativo (destructive)", () => {
     const wrapper = mount(DivergingBars, {
       props: {
         points: [
@@ -62,8 +62,8 @@ describe("chart/DivergingBars", () => {
         ],
       },
     });
-    expect(wrapper.findAll(".bg-foreground\\/60")).toHaveLength(1);
-    expect(wrapper.findAll(".bg-destructive\\/70")).toHaveLength(1);
+    expect(wrapper.findAll(".bg-primary")).toHaveLength(1);
+    expect(wrapper.findAll(".bg-destructive")).toHaveLength(1);
   });
 });
 
@@ -79,7 +79,7 @@ describe("chart/HBarList", () => {
     });
     expect(wrapper.text()).toContain("R$ 40,00");
     expect(wrapper.text()).toContain("2 pedidos");
-    const fills = wrapper.findAll(".bg-foreground\\/60");
+    const fills = wrapper.findAll(".bg-primary");
     expect(fills[1]!.attributes("style")).toContain("width: 50%");
   });
 });
