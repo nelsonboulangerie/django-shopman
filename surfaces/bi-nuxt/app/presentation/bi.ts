@@ -659,3 +659,60 @@ export function scenarioStatusLabel(report: ScenarioReportLike): string {
   const count = report.scenarios.length;
   return `${count} cenário${count === 1 ? "" : "s"} · ${seconds} s${report.model ? ` · ${report.model}` : ""}`;
 }
+
+// ── A resposta de cada leitura (V4-BI, LEITURA da prévia `bi-sobra4.html`) ───────
+// O título da tela é a pergunta; a primeira coisa abaixo dele é a resposta em uma
+// frase, montada com os números da leitura e a comparação com o período anterior.
+
+/** "8% acima do período anterior", "estável", "" sem base. */
+function comparedToPrevious(current: number, previous: number): string {
+  if (!previous) return "";
+  const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
+  if (pct === 0) return "estável contra o período anterior";
+  return `${Math.abs(pct)}% ${pct > 0 ? "acima" : "abaixo"} do período anterior`;
+}
+
+const countOf = (count: number, one: string, many: string) => `${formatInt(count)} ${count === 1 ? one : many}`;
+
+export function salesAnswer(report: {
+  orders_total: number;
+  revenue_total_q: number;
+  previous: { revenue_total_q: number };
+}): string {
+  if (!report.orders_total) return "Nenhuma venda no período.";
+  const base = `${formatMoneyCompact(report.revenue_total_q)} em ${countOf(report.orders_total, "pedido", "pedidos")}`;
+  const versus = comparedToPrevious(report.revenue_total_q, report.previous.revenue_total_q);
+  return versus ? `${base}, ${versus}.` : `${base}.`;
+}
+
+/**
+ * Caixa: a tela é a auditoria do Dono (o endpoint exige `cashman.audit_shift`, que só
+ * o grupo Dono concede). É o único lugar em que o número do fechamento existe
+ * (SUITE-UX §15, fechamento às cegas: o número só existe na auditoria do Dono).
+ */
+export function cashAnswer(report: {
+  shifts_total: number;
+  closings_missing: number;
+  difference_total_q: number;
+}): string {
+  if (!report.shifts_total) return "Nenhum turno fechado no período.";
+  const shifts = countOf(report.shifts_total, "turno fechado", "turnos fechados");
+  const missing = report.closings_missing
+    ? `; ${countOf(report.closings_missing, "dia sem fechamento", "dias sem fechamento")}`
+    : "";
+  const diff = report.difference_total_q;
+  const verdict = diff === 0 ? "a contagem bateu" : diff < 0 ? `faltou ${formatMoney(-diff)}` : `sobrou ${formatMoney(diff)}`;
+  return `${shifts}${missing}; no acumulado, ${verdict}.`;
+}
+
+export function customersAnswer(report: {
+  at_risk: number;
+  with_insight: number;
+  new_by_week: readonly { new_customers: number }[];
+}): string {
+  const fresh = report.new_by_week.reduce((total, row) => total + row.new_customers, 0);
+  const risk = report.with_insight
+    ? `${countOf(report.at_risk, "cliente em risco", "clientes em risco")} de sumir, de ${formatInt(report.with_insight)} com histórico`
+    : "Ainda não há clientes com histórico analisado";
+  return `${risk}; ${countOf(fresh, "cliente novo", "clientes novos")} no período.`;
+}

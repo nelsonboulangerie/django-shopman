@@ -73,9 +73,9 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(proprios.sort()).toEqual(CABECALHOS_PROPRIOS_CONHECIDOS);
   });
 
-  it("os três convertidos consomem a peça da layer", () => {
+  it("os convertidos consomem a peça da layer", () => {
+    // O B.I. saiu desta lista para a do rail da suíte (V4-BI).
     const convertidos = [
-      "bi-nuxt/app/components/BiTopBar.vue",
       "marketing-nuxt/app/components/CampaignTopBar.vue",
       "purchase-nuxt/app/components/PurchaseTopBar.vue",
     ];
@@ -104,7 +104,7 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = ["orders-nuxt/app/components/GestorNav.vue"];
+    const migrados = ["orders-nuxt/app/components/GestorNav.vue", "bi-nuxt/app/components/BiNav.vue"];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorSuiteRail");

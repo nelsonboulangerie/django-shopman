@@ -55,6 +55,14 @@ from shopman.backstage.projections.bi_forecast import (
     ForecastOccasion,
     OccasionYear,
 )
+from shopman.backstage.projections.bi_over_short import (
+    BIOverShortHour,
+    BIOverShortLot,
+    BIOverShortReport,
+    BIOverShortRow,
+    BIOverShortSummary,
+    BIOverShortTypical,
+)
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
     BIProductionDay,
@@ -99,6 +107,12 @@ CONTRACT_DATACLASSES = (
     BIProductionDay,
     BIProductionPrevious,
     BIProductionReport,
+    BIOverShortLot,
+    BIOverShortHour,
+    BIOverShortRow,
+    BIOverShortSummary,
+    BIOverShortTypical,
+    BIOverShortReport,
     BISalesDay,
     BISalesChannelRow,
     BITopSkuRow,

@@ -27,6 +27,7 @@ from shopman.backstage.projections.bi_explore import (
     validate_config,
 )
 from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
+from shopman.backstage.projections.bi_over_short import build_bi_over_short
 from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_profiles import build_bi_consumption_profiles
 from shopman.backstage.projections.bi_sales import build_bi_sales
@@ -66,6 +67,21 @@ class BIProductionView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
+        return Response({"bi": projection_data(report)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. over/short: made vs sold per product for one day, against the typical weekday",
+        responses={200: OpenApiResponse(description="B.I. over/short report.")},
+    ),
+)
+class BIOverShortView(_BIBase):
+    """"Sobrou ou faltou?" de um dia (``?day=``; sem ele, o último dia aberto)."""
+
+    def get(self, request):
+        report = build_bi_over_short(day=_query_date(request, "day"))
         return Response({"bi": projection_data(report)})
 
 

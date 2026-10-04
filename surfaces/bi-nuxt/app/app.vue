@@ -17,20 +17,25 @@ useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <!-- `data-suite="v3"`: o B.I. veste a camada visual da suíte (V4-BI, prévia
+       `bi-sobra4.html`). Os primitivos do kit leem esse atributo. -->
+  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
     <OfflineBanner />
-    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
-      <OperatorRail
-        :hub-url="hubUrl"
-        :operator-name="operator?.name"
-        @lock="lock"
-      />
-    </div>
+    <!-- Rail da suíte (kit): o selo do app (Central), as oito leituras, Avisos,
+         Bloquear e o menu do operador. Do tablet para cima; no celular as seções vão
+         para a barra do polegar, no fim da coluna de conteúdo. -->
+    <BiNav
+      v-if="canIdentify"
+      place="rail"
+      :hub-url="hubUrl"
+      :operator-name="operator?.name"
+      @lock="lock"
+    />
     <div class="flex min-w-0 flex-1 flex-col">
-      <BiTopBar v-if="canIdentify" />
       <NuxtPage />
+      <BiNav v-if="canIdentify && !locked && !mustChange" place="bar" />
     </div>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->
