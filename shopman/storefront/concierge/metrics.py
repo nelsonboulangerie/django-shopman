@@ -41,6 +41,7 @@ LAYER_AGENT = "agent"  # C6: o laço com o modelo e as ferramentas (o de hoje)
 LAYER_ERROR = "error"  # o agente falhou; mensagem de indisponível
 LAYER_TEAM = "team"  # C7: a triagem mandou para a equipe ou outra mesa
 LAYER_AGENT_HANDOFF = "agent_handoff"  # o agente chamou a equipe
+LAYER_HOUSE_RULE = "house_rule"  # regra da casa: frase fixa (R7, R8) ou resposta segurada (equipe)
 
 
 def _int(value) -> int:

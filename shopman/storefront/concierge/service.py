@@ -1018,12 +1018,42 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 meter=meter,
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
+        from . import house_rules
         from .transport import semantic_blocks
 
-        primary = semantic_blocks(binding, outcome.reply_text) if outcome.reply_text else []
+        # Regras da casa (OBS0310-M): toda resposta do turno, inclusive a montada
+        # pelo sistema, passa pela tabela antes de ser gravada. O que ela segura
+        # não sai: a conversa vai para a equipe, e o aviso de handoff é verdade.
+        receipts = house_rules.receipts_for(outcome, team_notified=result.fallback == "error")
+        reviewed = house_rules.review(
+            [outcome.reply_text, *outcome.extra_replies],
+            house_rules.ReplyContext(
+                receipts=receipts,
+                customer_text=turn_text,
+                house_contacts=house_rules.house_contacts(),
+            ),
+        )
+        if reviewed.held:
+            logger.warning(
+                "concierge.house_rule_held conversation=%s rules=%s",
+                conversation.pk,
+                ",".join(sorted({v.rule for v in reviewed.held})),
+            )
+            meter.layer = metrics.LAYER_HOUSE_RULE
+            mark_handoff(
+                conversation,
+                binding,
+                reviewed.reason_line(),
+                consumed_ids=ids,
+                meter=meter,
+                house_rules_held=reviewed.as_envelope(),
+            )
+            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
+        reply_text, *extra_replies = reviewed.texts
+        primary = semantic_blocks(binding, reply_text) if reply_text else []
         extras = [
             block
-            for text in outcome.extra_replies
+            for text in extra_replies
             if text and text.strip()
             for block in semantic_blocks(binding, text)
         ]
@@ -1054,6 +1084,10 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                         window_evidence=window_evidence,
                         # Um registro por turno: o primeiro bloco leva a conta toda.
                         meter=meter if index == 0 else None,
+                        receipts=receipts,
+                        customer_text=turn_text,
+                        # O que a tabela já consertou no turno vai no primeiro bloco.
+                        house_rules_found=reviewed.violations if index == 0 else (),
                     )
                 )
             if not prepared:
@@ -1137,7 +1171,44 @@ def _prepare_reply(
     purpose="reply",
     window_evidence=None,
     meter=None,
+    receipts=frozenset(),
+    customer_text="",
+    house_rules_held=None,
+    house_rules_found=(),
 ):
+    """Grava a resposta para envio. Toda resposta passa aqui, e aqui passa pelas regras da casa.
+
+    Na última trava só o conserto vale (R2, R10, R12) e a forma é medida (R11): o
+    que precisa SEGURAR a resposta foi decidido antes, em ``run_turn``, onde a
+    conversa ainda pode ir para a equipe. O que escapar até aqui é gravado no
+    envelope e no log, para a régua contar.
+    """
+    from . import house_rules
+
+    if purpose == "handoff_ack":
+        receipts = frozenset(receipts) | {house_rules.HANDOFF, house_rules.TEAM_NOTIFIED}
+    reviewed = house_rules.review(
+        [text],
+        house_rules.ReplyContext(
+            receipts=frozenset(receipts),
+            customer_text=customer_text,
+            house_contacts=house_rules.house_contacts(),
+        ),
+    )
+    text = reviewed.texts[0] if reviewed.texts else text
+    if reviewed.held:
+        logger.error(
+            "concierge.house_rule_unenforced conversation=%s purpose=%s rules=%s",
+            conversation.pk,
+            purpose,
+            ",".join(sorted({v.rule for v in reviewed.held})),
+        )
+    rules_envelope = house_rules.Review(
+        violations=[*house_rules_found, *reviewed.violations]
+    ).as_envelope()
+    if house_rules_held:
+        # O aviso de handoff que substituiu uma resposta segurada guarda o porquê.
+        rules_envelope["replaced"] = house_rules_held
     return ConversationMessage.objects.create(
         conversation=conversation,
         binding=binding,
@@ -1157,6 +1228,7 @@ def _prepare_reply(
             "inbound_max_id": getattr(conversation, "_inbound_max_id", None),
             "window_evidence": window_evidence,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(),
+            "house_rules": rules_envelope,
         },
         usage=_turn_usage(meter),
     )
@@ -1350,10 +1422,13 @@ def mark_handoff(
     consumed_ids=(),
     triage=None,
     meter=None,
+    house_rules_held=None,
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
 
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
+    ``house_rules_held`` é a resposta que as regras da casa seguraram
+    (``house_rules.Review.as_envelope``), gravada no envelope do aviso.
     """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
@@ -1408,7 +1483,8 @@ def mark_handoff(
         _alert(
             current,
             "concierge_handoff",
-            "Atendimento solicitado; sincronização "
+            (f"{reason}. " if house_rules_held else "")
+            + "Atendimento solicitado; sincronização "
             + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
         )
     if consumed_ids:
@@ -1436,6 +1512,7 @@ def mark_handoff(
                     purpose="handoff_ack",
                     window_evidence=evidence,
                     meter=meter,
+                    house_rules_held=house_rules_held,
                 ),
             )
     conversation.refresh_from_db()

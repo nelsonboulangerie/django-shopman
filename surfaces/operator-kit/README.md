@@ -363,6 +363,43 @@ são deriva: são cabeçalhos ricos, e a conversão é WP próprio.
 silêncio — arquivo novo com `<header>` + `<RailToggle>` reprova até alguém adicioná-lo
 de propósito, escrevendo por quê.
 
+## Camada visual da suíte (UX-KIT-V1: rail, cabeçalho, busca, tokens)
+
+O rosto das prévias aprovadas (SUITE-UX-FUNCTION-PLAN §12: "a camada visual da v3,
+tokens, rail, cabeçalho, busca, é o rosto das peças"). **É opt-in, por app**: quem não
+migrou não muda um pixel. O Gestor é o piloto; os outros apps entram um a um, o PDV por
+último.
+
+Como um app migra:
+
+1. Põe `data-suite="v3"` no elemento raiz do `app.vue`. Os primitivos do kit
+   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`, `ColumnPicker`) trazem o visual novo
+   atrás da variante `suite:` e só a vestem dentro desse atributo.
+2. Troca `OperatorRail` + `<OperatorAppBar>` por `<OperatorSuiteRail>` (as mesmas
+   `OperatorSection`, agora dentro do rail, do tablet para cima) e monta
+   `<OperatorSectionBar>` no fim da coluna de conteúdo (as mesmas seções no pé, só no
+   celular). O que o app põe no pé do rail (sino, alertas) vai no slot `#foot`; os sinos
+   aceitam `placement="rail"`.
+3. Cada tela abre com `<OperatorPageHeader title="…">`: `#status` (o
+   `<OperatorLiveStatus>` e pílulas), `#search` (a busca, renderizada uma vez só),
+   `#actions` (controles), `#filters` (recortes na segunda linha), `#lead` (o voltar),
+   `#phone-actions` (o que fica na barra de 56px do celular).
+
+| peça | o que é | medida da prévia |
+|---|---|---|
+| `operator-suite.css` | papéis tipográficos `op-display/op-heading/op-figure/op-title/op-body/op-label/op-micro/op-eyebrow`, `tnum`, `live-dot`, `pill-*`, o selo âmbar (`suite-badge`) e a variante `suite:` | `_shared.css` |
+| `OperatorSuiteRail` | rail de 76px: selo do app na cor dele (volta à Central), seções com ícone, nome, selo e ponto, pé com Bloquear e o menu do operador (tema, giro, ocultar a barra) | `_rail3top.html`, `_rail3bottom.html` |
+| `RailSection` | o item do rail (64px de largura, ≥ 44px de altura, ativo com fundo na cor do texto do rail) | `.rail-item` |
+| `OperatorSectionBar` | barra do polegar no celular (pílula de 56×30 no ativo, selo e ponto iguais aos do rail) | `orders-phone3.html` |
+| `OperatorPageHeader` | cabeçalho de uma linha; no celular, barra de 56px com selo, título, ponto ao vivo, lupa e as ações de polegar; controles e recortes descem para linhas que rolam | `orders-board3.html` |
+| `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
+
+Do celular para cima: abaixo de `md` não há rail (barra de 56px em cima, seções no pé);
+de `md` para cima o rail tem 76px. Alvos ≥ 44px em tudo (as prévias tinham chips de
+40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de
+`data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
+`tests/guardrails.appBar.test.ts` lista quem migrou.
+
 ## Próximo foco (`useNextFocus`)
 
 Toda tela com sequência de blocos (etapas, campos, cartões que se abrem um após o

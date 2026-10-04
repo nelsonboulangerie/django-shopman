@@ -5,7 +5,7 @@ import { computed, ref } from "vue";
 import { mount } from "@vue/test-utils";
 
 import ChannelQueueSignal from "../../app/components/ChannelQueueSignal.vue";
-import GestorTopBar from "../../app/components/GestorTopBar.vue";
+import GestorNav from "../../app/components/GestorNav.vue";
 import type { ChannelAttentionProjection } from "../../app/types/channelAttention";
 
 vi.stubGlobal("computed", computed);
@@ -19,19 +19,21 @@ vi.stubGlobal("useNuxtData", () => ({ data: ref(null) }));
 vi.stubGlobal("useOperatorResourceKey", (resource: string) => `orders:test:${resource}`);
 vi.stubGlobal("useFetch", () => ({ data: ref({ authorized: false }) }));
 vi.stubGlobal("useGestorAccess", () => ({ expeditesOnly: ref(false), canManageOrders: ref(true) }));
+vi.stubGlobal("useMediaQuery", () => ref(false));
 
 const stubs = { Icon: true, RailToggle: true, NuxtLink: { props: ["to"], template: "<a :data-to='to'><slot /></a>" } };
 
-// O desenho da barra de seções é do kit (`OperatorAppBar`, com teste próprio do ponto
-// âmbar). O que cabe ao Gestor — e é o que este arquivo cobra — é ENTREGAR a atenção
-// do canal na seção certa. O duble abaixo só expõe o que foi entregue.
-const appBarStub = {
+// O desenho das seções é do kit (`OperatorSuiteRail` no tablet e no desktop,
+// `OperatorSectionBar` no celular, com testes próprios do ponto âmbar). O que cabe ao
+// Gestor (e é o que este arquivo cobra) é ENTREGAR a atenção do canal na seção certa,
+// às duas peças. O duble abaixo só expõe o que foi entregue.
+const navStub = {
   props: ["sections", "label", "current"],
   template: `<header><span
       v-for="section in sections"
       :key="section.key"
       :data-section="section.key"
-    ><span v-if="section.attention" :data-channels-attention="section.key">{{ section.attention }}</span></span><slot name="end" /></header>`,
+    ><span v-if="section.attention" :data-channels-attention="section.key">{{ section.attention }}</span></span><slot name="foot" /></header>`,
 };
 
 const item = (ref_: string, kind: "sale" | "display", state: "off" | "paused" | "diverges", line: string) =>
@@ -82,12 +84,14 @@ describe("aviso de canal na fila de Pedidos", () => {
 describe("indicador no item Canais da navegação", () => {
   beforeEach(() => { attention.value = projection(); });
 
-  it("estado normal: nada ao lado de Canais", () => {
-    expect(mount(GestorTopBar, { global: { stubs: { ...stubs, OperatorAppBar: appBarStub } } }).find("[data-channels-attention]").exists()).toBe(false);
+  const navStubs = { ...stubs, OperatorSuiteRail: navStub, OperatorSectionBar: navStub, AlertsBell: true, NotificationBell: true };
+
+  it.each(["rail", "bar"] as const)("estado normal: nada ao lado de Canais (%s)", (place) => {
+    expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).find("[data-channels-attention]").exists()).toBe(false);
   });
 
-  it("feed ou canal desligado: ponto âmbar + a contagem", () => {
+  it.each(["rail", "bar"] as const)("feed ou canal desligado: ponto âmbar + a contagem (%s)", (place) => {
     attention.value = projection({ count: 2, label: "2 desligados", items: [item("tv-1", "display", "off", "x"), item("web", "sale", "off", "y")] });
-    expect(mount(GestorTopBar, { global: { stubs: { ...stubs, OperatorAppBar: appBarStub } } }).get("[data-channels-attention]").text()).toBe("2 desligados");
+    expect(mount(GestorNav, { props: { place }, global: { stubs: navStubs } }).get("[data-channels-attention]").text()).toBe("2 desligados");
   });
 });

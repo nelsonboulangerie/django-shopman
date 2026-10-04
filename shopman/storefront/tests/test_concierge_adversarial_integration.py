@@ -85,6 +85,8 @@ def test_dependent_payment_block_waits_for_accepted_summary(conversation, monkey
         lambda **kwargs: agent.AgentOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-COPYABLE-BLOCK"],
+            # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
+            order_ref="ORD-TEST-1",
         ),
     )
     adapter_class().send_outcomes["adversarial"] = [SendOutcome(first_state, "injected")]

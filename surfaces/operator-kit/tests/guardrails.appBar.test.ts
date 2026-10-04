@@ -73,9 +73,8 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(proprios.sort()).toEqual(CABECALHOS_PROPRIOS_CONHECIDOS);
   });
 
-  it("os quatro convertidos consomem a peça da layer", () => {
+  it("os três convertidos consomem a peça da layer", () => {
     const convertidos = [
-      "orders-nuxt/app/components/GestorTopBar.vue",
       "bi-nuxt/app/components/BiTopBar.vue",
       "marketing-nuxt/app/components/CampaignTopBar.vue",
       "purchase-nuxt/app/components/PurchaseTopBar.vue",
@@ -98,6 +97,20 @@ describe("guardrail do cabeçalho de seções", () => {
       // E a navegação de seção não volta a ser markup local: quem precisar divergir
       // declara o arquivo em `navLocalDeclarada` e escreve o motivo.
       if (!navLocalDeclarada[file]) expect(source, file).not.toContain("<nav");
+    }
+  });
+
+  // UX-KIT-V1: o app que veste a camada visual da suíte tira a barra de seções do topo
+  // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
+  // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
+  it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
+    const migrados = ["orders-nuxt/app/components/GestorNav.vue"];
+    for (const file of migrados) {
+      const source = readFileSync(join(SURFACES, file), "utf8");
+      expect(source, file).toContain("<OperatorSuiteRail");
+      expect(source, file).toContain("<OperatorSectionBar");
+      expect(source, file).not.toContain("<nav");
+      expect(source, file).not.toContain("<OperatorAppBar");
     }
   });
 });
