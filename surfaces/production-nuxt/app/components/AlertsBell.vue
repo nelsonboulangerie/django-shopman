@@ -3,11 +3,20 @@
 // functional (severity); the bell itself is neutral chrome. Lives in the board header.
 // A ação contextual vem resolvida pelo backend; o sino não inventa rota nem
 // decide se reconhecer encerra o perigo.
+//
+// `placement="rail"` (V4-PROD, como no Gestor): item "Alertas" no pé do rail da suíte,
+// com o painel à direita do rail. `placement="phone"`: o sino da barra de 56px do
+// celular (sem borda, ícone de 24px). O padrão segue sendo o botão do cabeçalho.
 import type {
   AlertAckActionProjection,
   AlertContextActionProjection,
   AlertProjection,
 } from "~/types/production";
+
+const props = withDefaults(
+  defineProps<{ placement?: "header" | "rail" | "phone" }>(),
+  { placement: "header" },
+);
 
 const { alerts, activeCount, criticalCount, ack, isPending } = useAlerts();
 const open = ref(false);
@@ -49,7 +58,33 @@ function follow(alert: AlertProjection) {
 
 <template>
   <div class="relative">
+    <RailSection
+      v-if="props.placement === 'rail'"
+      icon="lucide:bell"
+      label="Alertas"
+      :badge="activeCount ? String(activeCount) : ''"
+      :aria-label="`Alertas (${activeCount})`"
+      data-alerts-trigger
+      @activate="open = !open"
+    />
+    <button
+      v-else-if="props.placement === 'phone'"
+      type="button"
+      class="relative grid size-12 place-items-center rounded-md text-foreground"
+      :aria-label="`Alertas (${activeCount})`"
+      title="Alertas"
+      data-alerts-trigger
+      @click="open = !open"
+    >
+      <Icon name="lucide:bell" class="size-6" />
+      <span
+        v-if="activeCount"
+        class="absolute right-1 top-1 h-[18px] min-w-[18px] rounded-full bg-suite-badge px-[5px] text-xs font-bold leading-[18px] tabular-nums text-suite-badge-foreground"
+        >{{ activeCount }}</span
+      >
+    </button>
     <UiButton
+      v-else
       type="button"
       class="relative"
       variant="outline"
@@ -76,7 +111,12 @@ function follow(alert: AlertProjection) {
 
     <div
       v-if="open"
-      class="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-md border bg-card shadow-lg"
+      class="z-50 flex max-h-[70vh] w-80 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border bg-card shadow-lg"
+      :class="
+        props.placement === 'rail'
+          ? 'fixed bottom-3 left-[84px]'
+          : 'absolute right-0 mt-2'
+      "
     >
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <h2 class="text-sm font-bold">Alertas</h2>

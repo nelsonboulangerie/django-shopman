@@ -35,11 +35,19 @@ test.describe("Produção — gate de operador", () => {
     await expect(
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
-    // Tela de operador embrulhada pelo OperatorRail compartilhado + RailToggle no cabeçalho.
-    await expect(
-      page.locator('aside[aria-label="Barra do app Produção"]'),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: /barra/i })).toBeVisible();
+    // Tela de operador embrulhada pelo rail da suíte (kit, V4-PROD): o ciclo do lote
+    // no rail e o menu do operador (tema, giro e "Ocultar a barra") no pé. No celular
+    // as etapas vão para a barra do polegar.
+    const rail = page.locator('aside[aria-label="Barra do app Produção"]');
+    const thumbBar = page.locator('nav[data-operator-section-bar]');
+    const phone = (page.viewportSize()?.width ?? 1024) < 768;
+    const nav = phone ? thumbBar : rail;
+    await expect(nav).toBeVisible();
+    await expect(nav.locator('[data-section="plan"]')).toBeVisible();
+    await expect(nav.locator('[data-section="quality"]')).toBeVisible();
+    if (!phone) {
+      await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
+    }
   });
 
   test("lock bloqueia atalhos da superfície subjacente", async ({

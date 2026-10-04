@@ -184,7 +184,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader title="Nova receita" back="/recipes" hide-refresh />
 
     <section v-if="!accessPending && !canEdit" class="grid flex-1 place-items-center p-6 text-center">

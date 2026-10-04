@@ -33,6 +33,8 @@ const props = defineProps<{
   submitting: boolean;
   reviewAvailable: (order: QCOrderCardProjection) => boolean;
   correctionAvailable: (order: QCOrderCardProjection) => boolean;
+  /** A troca de vista mora no cabeçalho da página. */
+  hideTabs?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,7 +45,10 @@ const emit = defineEmits<{
 }>();
 
 type View = "pending" | "reviewed";
-const view = ref<View>("pending");
+// A troca "Para confirmar | Confirmados" pode morar no cabeçalho da tela (V4-PROD, a
+// prévia `producao-qualidade4.html` a põe na linha do título): a página segura o
+// estado e passa `hide-tabs`. Sem isso, o painel mostra a troca dele.
+const view = defineModel<View>("view", { default: "pending" });
 const showAllClean = ref(false);
 
 const gate = computed(() => qualityGate(props.orders));
@@ -95,8 +100,9 @@ function closedLine(order: QCOrderCardProjection): string {
 </script>
 
 <template>
-  <div class="grid gap-4" data-quality-gate>
+  <div class="grid grid-cols-1 gap-4" data-quality-gate>
     <div
+      v-if="!hideTabs"
       class="grid w-full grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1 sm:w-auto sm:justify-self-end"
       role="tablist"
       aria-label="Lotes da Qualidade"
@@ -135,13 +141,13 @@ function closedLine(order: QCOrderCardProjection): string {
 
     <div
       v-if="view === 'pending'"
-      class="grid items-start gap-6 lg:grid-cols-2"
+      class="grid grid-cols-1 items-start gap-6 lg:grid-cols-2"
     >
       <!-- Coluna 1: o conjunto sem exceção (um ato) e os lotes fora do portão. -->
-      <section class="grid gap-3" aria-labelledby="quality-clean-heading">
+      <section class="grid grid-cols-1 gap-3" aria-labelledby="quality-clean-heading">
         <h2
           id="quality-clean-heading"
-          class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          class="op-eyebrow text-muted-foreground"
         >
           Sem exceção
           <span class="tabular-nums">{{ gate.clean.length }}</span>
@@ -149,7 +155,7 @@ function closedLine(order: QCOrderCardProjection): string {
 
         <div
           v-if="gate.clean.length"
-          class="grid gap-4 rounded-lg border-2 border-primary/60 bg-card p-5"
+          class="grid min-w-0 grid-cols-1 gap-4 rounded-xl border-2 border-primary bg-card p-5"
           data-quality-clean
         >
           <div class="flex items-start gap-3">
@@ -159,22 +165,22 @@ function closedLine(order: QCOrderCardProjection): string {
               <Icon name="lucide:check-check" class="size-6" />
             </span>
             <div class="min-w-0">
-              <p class="text-xl font-semibold leading-tight">
+              <p class="op-display leading-tight">
                 {{ plural(gate.clean.length, "lote", "lotes") }}
                 {{ isToday ? "de hoje " : "" }}sem exceção
               </p>
-              <p class="mt-1 text-sm text-muted-foreground">
+              <p class="mt-1 op-body text-muted-foreground">
                 {{ summary }}
               </p>
             </div>
           </div>
 
-          <div class="grid gap-2 rounded-md bg-muted/40 p-3">
+          <div class="grid gap-2 rounded-lg bg-muted/50 p-3">
             <ul class="flex flex-wrap gap-2" aria-label="Lotes sem exceção">
               <li
                 v-for="order in cleanChips"
                 :key="order.pk"
-                class="inline-flex min-h-10 items-center gap-2 rounded-full border bg-background px-3 text-sm font-medium"
+                class="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card px-3.5 op-label font-semibold"
               >
                 {{ order.recipe_name }}
                 <span class="tabular-nums text-muted-foreground">{{
@@ -183,7 +189,7 @@ function closedLine(order: QCOrderCardProjection): string {
               </li>
               <li
                 v-if="hiddenClean"
-                class="inline-flex min-h-10 items-center rounded-full border bg-background px-3 text-sm tabular-nums text-muted-foreground"
+                class="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3.5 op-label tabular-nums text-muted-foreground"
               >
                 +{{ hiddenClean }}
               </li>
@@ -212,7 +218,7 @@ function closedLine(order: QCOrderCardProjection): string {
           <div class="grid gap-3 sm:grid-cols-2">
             <div
               v-if="closers.names"
-              class="rounded-md border p-3"
+              class="rounded-lg border border-border p-3"
               data-quality-closers
             >
               <p class="text-xs text-muted-foreground">Fechados por</p>
@@ -223,7 +229,7 @@ function closedLine(order: QCOrderCardProjection): string {
             </div>
             <div
               v-if="released"
-              class="rounded-md border p-3"
+              class="rounded-lg border border-border p-3"
               data-quality-released
             >
               <p class="text-xs text-muted-foreground">Ao confirmar</p>
@@ -247,7 +253,7 @@ function closedLine(order: QCOrderCardProjection): string {
             <UiButton
               type="button"
               size="lg"
-              class="h-auto min-h-14 whitespace-normal text-base"
+              class="h-auto min-h-14 whitespace-normal rounded-lg text-lg font-semibold shadow-sm"
               :disabled="!batchAvailable || submitting"
               :aria-busy="submitting"
               data-quality-confirm-batch
@@ -275,7 +281,7 @@ function closedLine(order: QCOrderCardProjection): string {
         <!-- Lote não fechado não entra no portão; o atalho leva aonde se fecha. -->
         <div
           v-if="gate.openCount"
-          class="flex items-center justify-between gap-3 rounded-lg border border-dashed p-4"
+          class="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border p-4"
           data-quality-open
         >
           <p class="flex items-start gap-2 text-sm text-muted-foreground">
@@ -304,10 +310,10 @@ function closedLine(order: QCOrderCardProjection): string {
       </section>
 
       <!-- Coluna 2: exceções, uma a uma. -->
-      <section class="grid gap-3" aria-labelledby="quality-exceptions-heading">
+      <section class="grid grid-cols-1 gap-3" aria-labelledby="quality-exceptions-heading">
         <h2
           id="quality-exceptions-heading"
-          class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          class="op-eyebrow text-muted-foreground"
         >
           Exceções para olhar
           <span class="tabular-nums">{{ gate.exceptions.length }}</span>
@@ -316,12 +322,12 @@ function closedLine(order: QCOrderCardProjection): string {
         <article
           v-for="order in gate.exceptions"
           :key="order.pk"
-          class="grid gap-3 rounded-lg border bg-card p-4"
+          class="grid min-w-0 grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4"
           data-quality-exception
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate text-lg font-semibold">
+              <p class="truncate text-lg font-semibold tracking-[-0.01em]">
                 {{ order.recipe_name }}
               </p>
               <p class="truncate text-sm text-muted-foreground">
@@ -329,14 +335,15 @@ function closedLine(order: QCOrderCardProjection): string {
               </p>
             </div>
             <span
-              class="inline-flex shrink-0 items-center rounded-full bg-warning/15 px-3 py-1 text-xs font-semibold text-warning"
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-semibold text-warning"
             >
+              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
               {{ exceptionBadge(order) }}
             </span>
           </div>
 
           <div
-            class="flex h-3 w-full overflow-hidden rounded-full bg-muted"
+            class="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
             role="img"
             :aria-label="segments(order).map((segment) => segment.label).join(', ')"
           >
@@ -376,7 +383,7 @@ function closedLine(order: QCOrderCardProjection): string {
             <UiButton
               type="button"
               variant="outline"
-              class="min-h-12 px-5"
+              class="min-h-12 rounded-lg px-5 text-base"
               :disabled="!correctionAvailable(order)"
               :aria-label="`Corrigir a qualidade do lote de ${order.recipe_name}`"
               @click="emit('correct', order)"
@@ -386,7 +393,7 @@ function closedLine(order: QCOrderCardProjection): string {
             </UiButton>
             <UiButton
               type="button"
-              class="min-h-12"
+              class="min-h-12 rounded-lg text-base font-semibold"
               :disabled="!reviewAvailable(order) || submitting"
               :aria-busy="submitting"
               :aria-label="`Confirmar a qualidade do lote de ${order.recipe_name} assim`"

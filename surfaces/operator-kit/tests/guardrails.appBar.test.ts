@@ -19,10 +19,10 @@ import { OPERATOR_SURFACES as APPS } from "./support/surfaceRegistry";
 //
 // ## Por que a trava é por LISTA e não por proibição
 //
-// Três cabeçalhos ainda são legítimos como estão: o do PDV carrega a comanda editável,
-// o da Cozinha carrega relógio e dia operacional, o da Produção carrega progresso do
-// dia e timers. Eles não são deriva — são cabeçalhos ricos que ainda não foram
-// convertidos, e a conversão é WP próprio. A trava não os proíbe: ela impede que a
+// Um cabeçalho ainda é legítimo como está: o do PDV carrega a comanda editável (o da
+// Cozinha e o da Produção viraram o `OperatorPageHeader` da suíte na onda V4). Não é
+// deriva — é cabeçalho rico que ainda não foi convertido, e a conversão é WP próprio.
+// A trava não o proíbe: ela impede que a
 // lista CRESÇA em silêncio, que é como os quatro convertidos aqui nasceram.
 //
 // Um arquivo novo com `<header>` + `<RailToggle>` reprova até ser adicionado a esta
@@ -38,9 +38,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // saiu da lista com elas.
   "pos-nuxt/app/pages/index.vue",
   "pos-nuxt/app/pages/session/index.vue",
-  // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
-  "production-nuxt/app/components/ProductionHeader.vue",
-  "production-nuxt/app/components/RecipeHeader.vue",
 ].sort();
 
 
@@ -101,6 +98,8 @@ describe("guardrail do cabeçalho de seções", () => {
     const migrados = [
       "orders-nuxt/app/components/GestorNav.vue",
       "kds-nuxt/app/components/KdsNav.vue",
+      // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
+      "production-nuxt/app/components/ProductionNav.vue",
       "bi-nuxt/app/components/BiNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.

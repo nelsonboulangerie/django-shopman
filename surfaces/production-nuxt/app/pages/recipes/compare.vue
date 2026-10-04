@@ -63,7 +63,7 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader title="Comparar" :back="sideA ? `/recipes/${sideA.ref}` : '/recipes'" :pending="pending" @refresh="refresh()" />
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">

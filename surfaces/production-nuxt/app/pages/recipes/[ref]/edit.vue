@@ -278,7 +278,7 @@ async function startDraft() {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader
       :title="entry ? `Editar · ${entry.name}` : 'Editar receita'"
       :subtitle="draft ? `Rascunho · Versão ${draft.number}` : ''"
