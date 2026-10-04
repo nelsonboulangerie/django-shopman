@@ -72,7 +72,6 @@ describe("guardrail do cabeçalho de seções", () => {
     const convertidos = [
       "bi-nuxt/app/components/BiTopBar.vue",
       "marketing-nuxt/app/components/CampaignTopBar.vue",
-      "purchase-nuxt/app/components/PurchaseTopBar.vue",
     ];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
     const navLocalDeclarada: Record<string, string> = {
@@ -99,7 +98,13 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = ["orders-nuxt/app/components/GestorNav.vue", "kds-nuxt/app/components/KdsNav.vue"];
+    const migrados = [
+      "orders-nuxt/app/components/GestorNav.vue",
+      "kds-nuxt/app/components/KdsNav.vue",
+      // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
+      // `current` e devolvem `select`.
+      "purchase-nuxt/app/components/PurchaseNav.vue",
+    ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorSuiteRail");
