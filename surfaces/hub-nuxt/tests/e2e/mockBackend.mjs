@@ -10,7 +10,7 @@ const HUB = {
   hub: {
     operator_name: "Ana",
     tiles: [
-      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch", status_attention: "", status_summary: "2 encomendas para retirar hoje" },
+      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch", status_attention: "", status_summary: "2 encomendas para retirar hoje", status_positive: "Caixa aberto" },
       { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch", status_attention: "1 para aceitar", status_summary: "11 ativos" },
       // Os dois tiles com o texto MAIS LONGO do registro real
       // (`shopman/backstage/projections/hub.py`): é neles que a grade de duas colunas do
@@ -42,8 +42,26 @@ const HUB = {
           url: "http://127.0.0.1:3004/WEB-20261003-K7Q2",
           slack_seconds: 120,
         },
+        {
+          key: "production:alert:9",
+          app: "production",
+          app_label: "Produção",
+          kind: "alert",
+          title: "Produção sem insumo suficiente",
+          detail: "WO-2026-00022 falhou por estoque insuficiente",
+          waiting_since: new Date(Date.now() - 240_000).toISOString(),
+          due_at: "",
+          due_label: "",
+          due_style: "",
+          due_clock: "",
+          time_mode: "since",
+          attention: false,
+          action_label: "Resolver no contexto",
+          url: "http://127.0.0.1:3005/close?q=WO-2026-00022",
+          slack_seconds: 900,
+        },
       ],
-      total_count: 3,
+      total_count: 4,
       more_count: 2,
       server_now: new Date().toISOString(),
     },

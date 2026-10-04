@@ -165,7 +165,8 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
     assert "Ana Ferreira" in order["detail"] and "R$ 58,40" in order["detail"]
     assert order["url"] == "https://gestor.example.test/WEB-20261003-K7Q2"
     assert order["action_label"] == "Abrir pedido"
-    assert order["app"] == "gestor" and order["app_label"] == "Gestor de pedidos"
+    # A coluna do app na fila usa o nome curto da identidade (V4-HUB2).
+    assert order["app"] == "gestor" and order["app_label"] == "Gestor"
 
     ticket = by_kind["ticket_late"]
     assert ticket["title"] == "Pedido F15 atrasado: 2x Croissant"

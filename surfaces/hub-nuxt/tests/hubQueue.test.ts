@@ -52,6 +52,7 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   kind: "launch",
   status_attention: "",
   status_summary: "",
+  status_positive: "",
   ...over,
 });
 
@@ -140,15 +141,31 @@ describe("Precisa de você: a seção", () => {
 });
 
 describe("a linha de estado do bloco do app", () => {
-  it("a parte que pede alguém vem separada do resto", () => {
-    expect(tileStatus(tile({ status_attention: "1 para aceitar", status_summary: "11 ativos" }))).toEqual({
-      attention: "1 para aceitar",
-      summary: "11 ativos",
-      hasStatus: true,
-    });
+  it("a parte que pede alguém vem separada do resto, e o ponto fica âmbar", () => {
+    const status = tileStatus(tile({ status_attention: "1 para aceitar", status_summary: "11 ativos" }));
+    expect(status.attention).toBe("1 para aceitar");
+    expect(status.summary).toBe("11 ativos");
+    expect(status.tone).toBe("attention");
+    expect(status.parts.map((part) => part.role)).toEqual(["attention", "neutral"]);
+    expect(status.hasStatus).toBe(true);
+  });
+
+  it("o estado bom e sabido acende o ponto verde quando nada pede alguém", () => {
+    const status = tileStatus(tile({ status_positive: "Caixa aberto", status_summary: "8 encomendas para retirar hoje" }));
+    expect(status.tone).toBe("positive");
+    expect(status.parts.map((part) => part.text)).toEqual(["Caixa aberto", "8 encomendas para retirar hoje"]);
+  });
+
+  it("o que pede alguém vence o verde: o ponto é âmbar e o positivo segue escrito", () => {
+    const status = tileStatus(tile({ status_attention: "1 para retirar na próxima hora", status_positive: "Caixa aberto" }));
+    expect(status.tone).toBe("attention");
+    expect(status.parts.map((part) => part.text)).toEqual(["1 para retirar na próxima hora", "Caixa aberto"]);
   });
 
   it("app sem fonte de estado fica sem linha, nunca com um número inventado", () => {
-    expect(tileStatus(tile())).toEqual({ attention: "", summary: "", hasStatus: false });
+    const status = tileStatus(tile());
+    expect(status.hasStatus).toBe(false);
+    expect(status.parts).toEqual([]);
+    expect(status.tone).toBe("neutral");
   });
 });

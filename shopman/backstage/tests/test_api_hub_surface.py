@@ -91,6 +91,7 @@ def test_hub_superuser_sees_all_tiles(client, db):
     for tile in hub["tiles"]:
         assert set(tile) == {
             "ref", "label", "description", "icon", "url", "kind", "status_attention", "status_summary",
+            "status_positive",
         }
         assert tile["label"] and tile["url"]
 
