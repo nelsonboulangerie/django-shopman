@@ -45,7 +45,7 @@ const a11yLabel = computed(() => {
     :title="attention ? `${label}: ${attention}` : undefined"
     :data-active="active || undefined"
     data-rail-section
-    class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] px-0.5 pt-[7px] pb-1.5 text-center text-[11px] leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+    class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] px-0 pt-[7px] pb-1.5 text-center text-[11px] leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
     :class="active
       ? 'bg-rail-foreground text-rail shadow-[0_1px_2px_rgb(0_0_0/.18)] dark:text-background'
       : 'text-rail-foreground hover:bg-rail-foreground/10'"
@@ -54,7 +54,9 @@ const a11yLabel = computed(() => {
     <slot name="icon">
       <Icon :name="iconName" class="size-[22px]" aria-hidden="true" />
     </slot>
-    <span class="max-w-full break-words">{{ label }}</span>
+    <!-- Sem quebra no meio da palavra (prévia `.rail-item`): "Encomendas" passa 4px dos
+         64px e fica centrada, em vez de virar "Encomenda / s". -->
+    <span>{{ label }}</span>
     <span
       v-if="badge"
       aria-hidden="true"

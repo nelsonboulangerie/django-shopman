@@ -79,7 +79,7 @@ export function manualDiscountWasOverridden(item: POSCartItem): boolean {
 }
 
 /** A etiqueta por UNIDADE. Cai no cobrado quando o servidor não disse. */
-function lineListUnitQ(item: POSCartItem): number {
+export function lineListUnitQ(item: POSCartItem): number {
   return typeof item.list_price_q === "number" ? item.list_price_q : unitChargedQ(item);
 }
 

@@ -42,6 +42,8 @@ import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
 useHead({ title: "Sessão de caixa" });
+// O ao vivo discreto do cabeçalho: estado do push e hora da última leitura.
+const liveStatus = usePosLiveStatus();
 
 const action = usePosAction();
 const { pos, shift, actions, pending, refresh } = await usePosTerminal();
@@ -542,7 +544,7 @@ async function confirmClose() {
 </script>
 
 <template>
-  <main class="flex flex-wrap content-start min-h-dvh bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
+  <main class="flex min-h-dvh flex-col bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-row md:overflow-hidden">
     <PosFunctionRail
       v-if="pos"
       :pos="pos"
@@ -558,14 +560,24 @@ async function confirmClose() {
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-        <RailToggle />
-        <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Sessão de caixa</h1>
-        <span v-if="pos" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
-          {{ pos.terminal_label || "Terminal" }}
-          <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
-        </span>
-      </header>
+      <!-- Cabeçalho de uma linha da suíte (kit): título, ao vivo, e o terminal e quem
+           opera à direita. -->
+      <OperatorPageHeader title="Sessão de caixa">
+        <template #status>
+          <OperatorLiveStatus
+            :tone="liveStatus.view.value.tone"
+            :time="liveStatus.time.value"
+            :label="liveStatus.view.value.label"
+            :detail="liveStatus.view.value.detail"
+          />
+        </template>
+        <template v-if="pos" #actions>
+          <span class="min-w-0 op-label text-muted-foreground" data-session-terminal>
+            {{ pos.terminal_label || "Terminal" }}
+            <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
+          </span>
+        </template>
+      </OperatorPageHeader>
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">
         <!-- TUDO É CARD: quatro seções, cada uma uma grade de cards que abrem.
@@ -658,6 +670,7 @@ async function confirmClose() {
           </section>
         </div>
       </div>
+      <PosFunctionRail place="bar" @board="goToSaleBoard" @display="openCustomerDisplay" />
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────

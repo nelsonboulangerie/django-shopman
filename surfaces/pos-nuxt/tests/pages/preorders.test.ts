@@ -635,20 +635,22 @@ describe("Encomendas — a semana no centro", () => {
 });
 
 describe("Encomendas — um controle por estado, uma porta por destino", () => {
-  it("R1: Dia | Semana mora só no Período; a barra do topo não tem abas", async () => {
+  it("R1: Dia | Semana mora só no Período; o cabeçalho do topo não tem abas", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
+    const bar = wrapper.find("[data-operator-page-header]");
     expect(bar.exists()).toBe(true);
     expect(bar.find("nav").exists()).toBe(false);
     expect(bar.findAll("[data-section]")).toHaveLength(0);
     expect(wrapper.find("[data-period-next]").exists()).toBe(true);
   });
 
-  it("R2: a barra diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
+  it("R2: o cabeçalho diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
-    expect(bar.find("[data-preorders-title]").text()).toBe("Encomendas");
-    expect(bar.findAll("a")).toHaveLength(0);
+    const bar = wrapper.find("[data-operator-page-header]");
+    expect(bar.find("h1").text()).toBe("Encomendas");
+    // O único link possível ali é o selo do app no celular, que volta à Central.
+    expect(bar.findAll("a").filter((a) => a.attributes("data-page-header-app") === undefined)).toHaveLength(0);
+    expect(bar.find('a[href="/preorders"]').exists()).toBe(false);
   });
 
   it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período, no dia e na encomenda", async () => {
@@ -712,7 +714,7 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
     const wrapper = await mount(PreordersPage);
     // OBS0310-D: as pílulas têm a linha delas; o lote mora à direita da barra da seção.
     expect(wrapper.find("[data-preorders-filters] [data-preorders-print]").exists()).toBe(false);
-    expect(wrapper.find("[data-operator-app-bar] [data-preorders-print]").exists()).toBe(true);
+    expect(wrapper.find("[data-operator-page-header] [data-preorders-print]").exists()).toBe(true);
     // O "Filtrar" fica para o resto: o que tem botão de um toque não se repete nele.
     await pickFilter(wrapper, "pay");
     expect(wrapper.findAll("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
@@ -801,7 +803,7 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
 describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
   it("o Período mora na barra da seção, e sai durante a busca", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
+    const bar = wrapper.find("[data-operator-page-header]");
     expect(bar.find("[data-period-picker]").exists()).toBe(true);
     expect(wrapper.findAll("[data-period-picker]")).toHaveLength(1);
     await typeSearch(wrapper, "Ana");
@@ -979,12 +981,12 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
 
   it("de cima para baixo: a barra (período, grade/lista, lote), a busca, as pílulas e os cards", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
+    const bar = wrapper.find("[data-operator-page-header]");
     expect(bar.find("[data-period-picker]").exists()).toBe(true);
     expect(bar.findAll("[data-preorders-layout-option]").map((b) => b.attributes("aria-label"))).toEqual(["Ver em grade", "Ver em lista"]);
     expect(bar.find("[data-preorders-print]").exists()).toBe(true);
     const html = wrapper.html();
-    const order = ["data-operator-app-bar", "data-preorders-search-block", "data-preorders-filters", "data-preorders-today", "data-week-board"]
+    const order = ["data-operator-page-header", "data-preorders-search-block", "data-preorders-filters", "data-preorders-today", "data-week-board"]
       .map((marker) => html.indexOf(marker));
     expect(order).toEqual([...order].sort((a, b) => a - b));
     // A busca é a do balcão: a mesma peça da grade de produtos, com a lupa.

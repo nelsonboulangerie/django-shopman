@@ -14,7 +14,16 @@ const props = defineProps<{
   pos: POSProjection;
   /** Rail mode: render a dot-only vertical trigger instead of the header pill. */
   compact?: boolean;
+  /**
+   * `suite`: o item "Terminal" do pé do rail da suíte (onda V4): ícone, nome e o ponto
+   * de atenção, na gramática do `RailSection` do kit. O painel ganha o Atualizar.
+   */
+  variant?: "suite";
+  /** Suite: a Projection está sendo relida (o Atualizar gira). */
+  refreshing?: boolean;
 }>();
+
+const emit = defineEmits<{ refresh: [] }>();
 
 const posRef = computed(() => props.pos);
 const { probe, checking, check, agentConfigured } = useAgentHealth(posRef);
@@ -32,7 +41,8 @@ const rows = computed(() =>
     probe.value,
   ),
 );
-const overall = computed(() => meta(terminalOverallStatus(rows.value)));
+const overallStatus = computed(() => terminalOverallStatus(rows.value));
+const overall = computed(() => meta(overallStatus.value));
 const agentDown = computed(() => probe.value?.ok === false);
 
 // A tela de configuração do terminal no Admin: é lá que mora o download do
@@ -78,7 +88,26 @@ function meta(status: string): StatusMeta {
            tokens coincidem (branco), no escuro `primary-foreground` vira o tom
            escuro do texto sobre a ação dourada — e o ícone sumia no bronze. -->
       <button
-        v-if="compact"
+        v-if="variant === 'suite'"
+        type="button"
+        data-terminal-health-trigger
+        data-rail-section
+        class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] px-0 pt-[7px] pb-1.5 text-center op-eyebrow leading-[13px] tracking-normal normal-case text-rail-foreground transition hover:bg-rail-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+        :aria-label="`Terminal ${pos.terminal_label}: ${overall.label}`"
+        :title="`${pos.terminal_label}: ${overall.label}`"
+      >
+        <Icon name="lucide:cpu" class="size-[22px]" aria-hidden="true" />
+        <span>Terminal</span>
+        <span
+          v-if="overallStatus !== 'ready'"
+          aria-hidden="true"
+          class="absolute top-1.5 right-[17px] size-[9px] rounded-full ring-2 ring-rail"
+          :class="overallStatus === 'error' ? 'bg-destructive' : 'bg-suite-badge'"
+          data-terminal-health-attention
+        />
+      </button>
+      <button
+        v-else-if="compact"
         type="button"
         data-terminal-health-trigger
         class="flex min-h-11 items-center rounded-md py-1 text-left text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
@@ -98,7 +127,7 @@ function meta(status: string): StatusMeta {
         <Icon name="lucide:chevron-down" class="size-3.5 opacity-60" />
       </UiButton>
     </UiPopoverTrigger>
-    <UiPopoverContent :align="compact ? 'start' : 'end'" :side="compact ? 'right' : 'bottom'" class="w-72 p-0">
+    <UiPopoverContent :align="variant === 'suite' ? 'end' : compact ? 'start' : 'end'" :side="compact || variant === 'suite' ? 'right' : 'bottom'" class="w-72 p-0">
       <div class="border-b p-3">
         <div class="flex items-center justify-between gap-2">
           <span class="text-sm font-semibold">Saúde do terminal</span>
@@ -143,6 +172,22 @@ function meta(status: string): StatusMeta {
             Configuração do terminal
           </a>
         </div>
+      </div>
+      <!-- Atualizar: relê a Projection do terminal (comandas, caixa, catálogo). O
+           tempo real (SSE) e a reconexão já fazem isso sozinhos; aqui é a mão. -->
+      <div v-if="variant === 'suite'" class="border-t p-2">
+        <UiButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          class="w-full justify-start gap-2"
+          :disabled="refreshing"
+          data-terminal-refresh
+          @click="emit('refresh')"
+        >
+          <Icon name="lucide:refresh-cw" class="size-4" :class="refreshing ? 'animate-spin motion-reduce:animate-none' : ''" />
+          Atualizar a tela
+        </UiButton>
       </div>
     </UiPopoverContent>
   </UiPopover>

@@ -154,6 +154,21 @@ export function productFallbackStyle(product: POSProductProjection): Record<stri
 }
 
 /**
+ * A cor de cada coleção, para o ponto do chip na grade (v4). A coleção não traz cor
+ * na Projection; os produtos dela trazem (`collection_color`, a mesma do tile), e a
+ * primeira configurada vale. Coleção sem cor fica fora do mapa (o chip cai no neutro).
+ */
+export function collectionColorMap(products: POSProductProjection[]): Map<string, string> {
+  const colors = new Map<string, string>();
+  for (const product of products) {
+    const ref = product.collection_ref || "";
+    const color = (product.collection_color || "").trim();
+    if (ref && color && !colors.has(ref)) colors.set(ref, color);
+  }
+  return colors;
+}
+
+/**
  * Ícone Lucide genérico da coleção primária (`collection_icon`, de
  * `Collection.metadata`). Sem ícone configurado, um pacote neutro — calmo,
  * sem fingir saber o que o produto é.

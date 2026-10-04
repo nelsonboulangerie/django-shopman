@@ -24,3 +24,24 @@ export function shouldPollTick(state: PosRealtimeState): boolean {
 export function shouldConnectSse(enabled: boolean | undefined): boolean {
   return enabled !== false;
 }
+
+/** O "ao vivo" discreto do cabeçalho (kit `OperatorLiveStatus`), lido do estado real. */
+export interface PosLiveStatusView {
+  tone: "live" | "calm" | "off";
+  label: string;
+  detail: string;
+}
+
+/**
+ * Sem rede: vermelho, por extenso. Com o push vivo: só o ponto e a hora. Enquanto o
+ * push não conecta, a tela segue certa pelo poll calmo de 60 s, e é isso que se diz.
+ */
+export function posLiveStatus(input: { online: boolean; realtime: PosRealtimeState }): PosLiveStatusView {
+  if (!input.online) {
+    return { tone: "off", label: "Sem conexão", detail: "A tela mostra a última leitura e volta sozinha quando a rede voltar" };
+  }
+  if (input.realtime === "live") {
+    return { tone: "live", label: "Ao vivo", detail: "Mudanças de outras estações chegam na hora" };
+  }
+  return { tone: "calm", label: "Atualiza a cada 60 s", detail: "O tempo real ainda não conectou; a tela relê sozinha" };
+}

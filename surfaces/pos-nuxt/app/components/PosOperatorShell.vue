@@ -38,7 +38,12 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
-usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
+const { realtime } = usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
+// O "ao vivo" dos cabeçalhos (camada da suíte) lê daqui: o estado do push e a hora
+// da última leitura da Projection.
+const live = usePosLiveState();
+watch(realtime, (value) => { live.value.realtime = value; }, { immediate: true });
+watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediate: true });
 
 // Leitor de código da bancada (HID, modo teclado): lê o QR da Via Cozinha em
 // qualquer tela do PDV e dá o pronto do ticket da estação sem tela (decisão do
@@ -81,7 +86,9 @@ const needsLogin = computed(
 </script>
 
 <template>
-  <div class="min-h-dvh bg-background text-foreground" data-pos-shell="operator">
+  <!-- `data-suite="v3"`: o PDV veste a camada visual da suíte (onda V4). Os primitivos
+       do kit leem esse atributo para vestir o visual das prévias. -->
+  <div class="min-h-dvh bg-background text-foreground" data-pos-shell="operator" data-suite="v3">
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit): fixed no topo, só aparece offline. -->
     <OfflineBanner />

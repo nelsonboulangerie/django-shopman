@@ -21,6 +21,10 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Mantém a divisória do carrinho alinhada ao contexto, inclusive quando as pills quebram linha.
 const contextHeader = ref<HTMLElement | null>(null);
 const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
+// Rail da suíte oculto pelo menu das iniciais: a barra de contexto mostra o caminho de volta.
+const { isCollapsed: railCollapsed, set: setRail } = useRailState();
+// O ao vivo discreto da barra de contexto: estado do push e hora da última leitura.
+const liveStatus = usePosLiveStatus();
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -593,7 +597,7 @@ const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
 function focusOrderEntry() {
   if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
 }
-const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
+const tabHeaderRef = ref<{ openCustomer: () => void; askRelease: () => void } | null>(null);
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
 // comanda), não só no checkout. O estado mora aqui porque as duas superfícies
@@ -722,6 +726,13 @@ const paymentWorkspaceRef = ref<{
   toggleCpfOnInvoice: () => boolean;
 } | null>(null);
 const shortcutsHelpOpen = ref(false);
+// Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
+// marcadas. Pelo F10 (toda a venda) ele nasce vazio, como sempre.
+const movePreselected = ref<string[]>([]);
+function openMoveWith(lineIds?: string[]) {
+  movePreselected.value = lineIds ?? [];
+  void openMoveDialog();
+}
 
 async function gotoTabInput() {
   checkoutMode.value = false;
@@ -939,7 +950,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length && !editing.value) openMoveDialog();
+      else if (inSaleView.value && cart.items.length && !editing.value) openMoveWith();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -990,29 +1001,44 @@ onBeforeUnmount(() => {
       :operator-name="activeOperator?.name || ''"
       :pending="pending"
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
+      shortcuts
       @board="goToTabs"
       @cash="goToCashSession"
       @display="openCustomerDisplay"
       @lock="lock()"
       @refresh="refresh()"
+      @shortcuts="shortcutsHelpOpen = true"
     />
 
-    <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <header v-if="pos" ref="contextHeader" class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-        <!-- Controle do rail (kit): cicla colapsado/compacto/estendido; mora no cabeçalho
-             para que o rail suma por inteiro quando colapsado. -->
-        <RailToggle />
-        <UiButton
+    <!-- `max-md:basis-full`: no celular a coluna ocupa a linha inteira; com a base 0 ela
+         dividia a primeira linha com a comanda e ficava com 24px. -->
+    <div class="flex min-w-0 flex-1 flex-col max-md:basis-full md:min-h-0 md:overflow-hidden">
+      <!-- Barra de contexto da v4 (`pos-sale4.html`): 56px, voltar, modo, a comanda,
+           os três fatos do pedido (F6 · F7 · F8), o ao vivo, Últimas vendas e Liberar.
+           Atalhos e Terminal foram para o pé do rail. -->
+      <header v-if="pos" ref="contextHeader" class="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2" data-pos-context-header>
+        <!-- Rail oculto (menu das iniciais): o caminho de volta para ele. -->
+        <button
+          v-if="railCollapsed"
+          type="button"
+          class="hidden size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground md:grid"
+          aria-label="Mostrar a barra"
+          title="Mostrar a barra"
+          data-page-header-show-rail
+          @click="setRail('compact')"
+        >
+          <Icon name="lucide:panel-left-open" class="size-5" />
+        </button>
+        <button
           v-if="inSaleView && !editing"
-          variant="ghost"
-          size="icon-sm"
-          class="-ml-1 shrink-0"
+          type="button"
+          class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
           :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
           :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
           @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
         >
           <Icon name="lucide:arrow-left" class="size-5" />
-        </UiButton>
+        </button>
         <span
           v-if="inSaleView && !checkoutMode && unsaved"
           class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
@@ -1101,7 +1127,7 @@ onBeforeUnmount(() => {
           @open-schedule="openScheduleHere"
           @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
-        <h1 v-else class="min-w-0 truncate text-lg font-semibold">{{ screenTitle }}</h1>
+        <h1 v-else class="min-w-0 truncate pl-1 op-heading">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
              polling seguindo por baixo até resolver/expirar (aí vira toast). -->
         <span
@@ -1113,26 +1139,48 @@ onBeforeUnmount(() => {
           <Icon name="lucide:loader-circle" class="size-3.5 animate-spin motion-reduce:animate-none" />
           PIX aguardando · <span class="font-mono">{{ pendingPixOrderRef }}</span>
         </span>
-        <UiButton
-          variant="ghost"
-          size="icon-sm"
-          class="ml-auto shrink-0"
-          aria-label="Atalhos do teclado"
-          title="Atalhos do teclado (?)"
-          @click="shortcutsHelpOpen = true"
-        >
-          <Icon name="lucide:keyboard" class="size-5" />
-        </UiButton>
-        <UiButton
-          variant="ghost"
-          size="icon-sm"
-          class="shrink-0"
-          aria-label="Últimas vendas"
-          title="Últimas vendas (status fiscal, DANFE, reenvio)"
-          @click="recentSalesOpen = true"
-        >
-          <Icon name="lucide:history" class="size-5" />
-        </UiButton>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+          <OperatorLiveStatus
+            :tone="liveStatus.view.value.tone"
+            :time="liveStatus.time.value"
+            :label="liveStatus.view.value.label"
+            :detail="liveStatus.view.value.detail"
+            class="px-1"
+          />
+          <!-- No celular não há rail: a ajuda de atalhos fica aqui (no tablet e no
+               desktop ela mora no pé do rail, "Atalhos"). -->
+          <button
+            type="button"
+            class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent md:hidden"
+            aria-label="Atalhos do teclado"
+            title="Atalhos do teclado (?)"
+            @click="shortcutsHelpOpen = true"
+          >
+            <Icon name="lucide:keyboard" class="size-5" />
+          </button>
+          <button
+            type="button"
+            class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
+            aria-label="Últimas vendas"
+            title="Últimas vendas (status fiscal, DANFE, reenvio)"
+            @click="recentSalesOpen = true"
+          >
+            <Icon name="lucide:history" class="size-5" />
+          </button>
+          <!-- Liberar comanda: o gesto mora no `PosTabHeader` (com a confirmação dele);
+               aqui fica a porta, no fim da barra, como na v4. -->
+          <button
+            v-if="inSaleView && hasOpenTab && !checkoutMode"
+            type="button"
+            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            title="Liberar comanda (pede confirmação)"
+            data-pos-release-tab
+            @click="tabHeaderRef?.askRelease()"
+          >
+            <Icon name="lucide:x" class="size-4" />
+            <span class="max-lg:sr-only">Liberar comanda</span>
+          </button>
+        </div>
       </header>
 
       <UiAlert
@@ -1167,7 +1215,7 @@ onBeforeUnmount(() => {
         </UiAlertDescription>
       </UiAlert>
 
-      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-4 py-3 md:min-h-0 md:overflow-hidden">
+      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 md:min-h-0 md:overflow-hidden">
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
@@ -1377,7 +1425,7 @@ onBeforeUnmount(() => {
          edge alongside the rail; on mobile it wraps below the product grid). -->
     <aside
       v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="flex w-full shrink-0 flex-col border-t border-border bg-card md:order-none md:h-full md:w-[360px] md:border-l md:border-t-0"
+      class="flex w-full shrink-0 flex-col border-t border-border bg-card md:order-none md:h-full md:w-[360px] xl:w-[400px] md:border-l md:border-t-0"
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
@@ -1402,7 +1450,7 @@ onBeforeUnmount(() => {
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @prepare="editing ? saveOrderEdit() : prepareCheckout()"
-            @move="openMoveDialog"
+            @move="openMoveWith"
             @fire="fireTab"
             @unfire="unfireTab"
             @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
@@ -1411,6 +1459,9 @@ onBeforeUnmount(() => {
           />
         </div>
     </aside>
+
+    <!-- Celular: as seções do rail na barra do polegar (kit), no fim da tela. -->
+    <PosFunctionRail place="bar" class="w-full" @board="goToTabs" @cash="goToCashSession" @display="openCustomerDisplay" />
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no
@@ -1563,6 +1614,7 @@ onBeforeUnmount(() => {
       :tab-display="cart.tabDisplay"
       :items="cart.items"
       :suggested-split-ref="suggestedSplitRef"
+      :preselected="movePreselected"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"

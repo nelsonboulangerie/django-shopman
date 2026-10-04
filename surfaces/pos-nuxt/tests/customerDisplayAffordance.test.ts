@@ -13,12 +13,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => resolve(here, "..", "app", ...parts);
 
 const RAIL = readFileSync(app("components", "PosFunctionRail.vue"), "utf8");
+// Camada da suíte (V4-PDV): as seções do rail saem de `presentation/sections`.
+const SECTIONS = readFileSync(app("presentation", "sections.ts"), "utf8");
 const SCREENS = ["pages/index.vue", "pages/session/index.vue"] as const;
 
 describe("tela do cliente no rail do PDV", () => {
   it("o rail oferece o item e emite o evento próprio", () => {
-    expect(RAIL).toContain('label="Tela do cliente"');
-    expect(RAIL).toContain("emit('display')");
+    expect(SECTIONS).toContain('label: "Tela do cliente"');
+    expect(SECTIONS).toContain('key: "display"');
+    expect(RAIL).toMatch(/emit\(["']display["']\)/);
     expect(RAIL).toMatch(/display:\s*\[\];/);
   });
 

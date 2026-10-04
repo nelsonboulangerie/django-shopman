@@ -54,6 +54,13 @@ function props(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** v4: um botão "Desconto" abre o painel (formato, valor e motivo) no editor ou na seleção. */
+async function openDiscount(wrapper: Awaited<ReturnType<typeof mountSuspended>>) {
+  const button = wrapper.findAll("button").find((b) => b.text().trim().startsWith("Desconto"));
+  expect(button, "botão Desconto").toBeTruthy();
+  await button!.trigger("click");
+}
+
 describe("PosCartPanel — render", () => {
   it("lista as linhas do carrinho com nome e total", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
@@ -281,10 +288,8 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
     });
     // Seleciona a PRIMEIRA linha (a que já foi à cozinha) e digita 10% nela.
     await wrapper.findAll('[aria-label="Editar Chá"]')[0]!.trigger("click");
-    const desc = wrapper
-      .findAll("button")
-      .find((b) => b.text().trim() === "Desc %");
-    await desc!.trigger("click");
+    // v4: "Desconto" no editor da linha abre o painel, em % por padrão.
+    await openDiscount(wrapper);
     const um = wrapper.find('[aria-label="Dígito 1"]');
     await um!.trigger("click");
     const emitted = wrapper.emitted("setDiscount") as unknown[][] | undefined;
@@ -346,9 +351,11 @@ describe("PosCartPanel — a linha do carrinho", () => {
         items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })],
       }),
     });
-    const modos = wrapper.findAll("button").map((b) => b.text());
-    expect(modos).toContain("Desc %");
-    expect(modos).toContain("Desc R$");
+    // v4: o formato mora dentro do painel do Desconto, aberto sob demanda.
+    await openDiscount(wrapper);
+    const modos = wrapper.findAll("button").map((b) => b.text().trim());
+    expect(modos).toContain("Em %");
+    expect(modos).toContain("Em R$");
     expect(modos).not.toContain("Preço");
   });
 
@@ -691,9 +698,9 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     );
     expect(wrapper.emitted("increment")).toBeUndefined();
     expect(wrapper.emitted("setQty")).toBeUndefined();
-    expect(
-      wrapper.find('[aria-label="Dígito 5"]').attributes("disabled"),
-    ).toBeDefined();
+    // O botão Desconto também respeita a gravação: nada abre, nada se digita.
+    const desconto = wrapper.findAll("button").find((b) => b.text().trim().startsWith("Desconto"));
+    expect(desconto?.attributes("disabled")).toBeDefined();
   });
 
   it("mantém desconto em reais disponível para todos os itens marcados", async () => {
@@ -704,9 +711,11 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     await wrapper
       .find('[data-item-select="L-CAFE"]')
       .trigger("keydown", { key: " " });
+    // v4: "Desconto" no cabeçalho da seleção abre o painel; o formato vai em "Em R$".
+    await openDiscount(wrapper);
     const mode = wrapper
       .findAll("button")
-      .find((b) => b.text().trim() === "Desc R$")!;
+      .find((b) => b.text().trim() === "Em R$")!;
     await mode.trigger("click");
     await wrapper.find('[aria-label="Dígito 2"]').trigger("click");
     expect(wrapper.emitted("setDiscount")).toEqual([
@@ -745,9 +754,15 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
     await wrapper.find('[data-item-select="L-PAO"]').trigger("click");
     expect(payment()).toHaveLength(0);
     expect(wrapper.findAll("button").some(b => b.text().includes("Enviar à cozinha"))).toBe(true);
+    // v4: Transferir só existe no modo seleção, onde as linhas já estão escolhidas,
+    // e leva as marcadas para o diálogo (F10 segue valendo em toda a venda).
+    const transfer = wrapper.findAll("button").find(b => b.text().includes("Transferir"));
+    expect(transfer).toBeTruthy();
+    await transfer!.trigger("click");
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO"]]);
     await wrapper.find('[aria-label="Concluir seleção"]').trigger("click");
     expect(payment()).toHaveLength(1);
-    expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(true);
+    expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(false);
   });
 });
 
@@ -756,6 +771,7 @@ it("mantém o rodapé compacto durante seleção até Concluir, sem depender do 
   await wrapper.find('[aria-label="Iniciar seleção"]').trigger('click');
   await wrapper.vm.$nextTick();
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
+  await openDiscount(wrapper);
   await wrapper.find('[aria-label="Dígito 5"]').trigger('focus');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
   await wrapper.find('[aria-label="Concluir seleção"]').trigger('click');
@@ -806,11 +822,12 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ lineAdjustmentsBlockedReason: REASON }),
     });
+    // v4: o editor da linha fica só com a quantidade (− n +), sem Desconto nem
+    // Observação, e a frase diz por quê.
     const modos = wrapper.findAll("button").map((b) => b.text().trim());
-    expect(modos).toContain("Qtd");
-    expect(modos).not.toContain("Desc %");
-    expect(modos).not.toContain("Desc R$");
-    expect(modos).not.toContain("Obs.");
+    expect(wrapper.find('[aria-label="Quantidade de Café"]').exists()).toBe(true);
+    expect(modos.some((m) => m.startsWith("Desconto"))).toBe(false);
+    expect(modos).not.toContain("Observação");
     expect(wrapper.find("[data-line-adjustments-blocked]").text()).toContain(REASON);
   });
 
@@ -828,15 +845,21 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     });
     await wrapper.find('[data-item-select="L-PAO"]').trigger("keydown", { key: " " });
     await wrapper.find('[data-item-select="L-CAFE"]').trigger("keydown", { key: " " });
-    await wrapper.find('[aria-label="Dígito 2"]').trigger("click");
+    // Sem desconto de item: a seleção não oferece Desconto, e o teclado físico não
+    // vira desconto em lote.
+    expect(wrapper.findAll("button").some((b) => b.text().trim() === "Desconto")).toBe(false);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("setDiscount")).toBeUndefined();
-    expect(wrapper.find('[aria-label="Dígito 2"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[aria-label="Dígito 2"]').exists()).toBe(false);
   });
 
   it("sem o motivo, a venda segue com os modos de sempre", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     const modos = wrapper.findAll("button").map((b) => b.text().trim());
-    expect(modos).toEqual(expect.arrayContaining(["Qtd", "Desc %", "Desc R$", "Obs."]));
+    expect(modos).toEqual(expect.arrayContaining(["Desconto", "Observação"]));
+    await openDiscount(wrapper);
+    expect(wrapper.findAll("button").map((b) => b.text().trim())).toEqual(expect.arrayContaining(["Em %", "Em R$"]));
     expect(wrapper.find("[data-line-adjustments-blocked]").exists()).toBe(false);
   });
 });

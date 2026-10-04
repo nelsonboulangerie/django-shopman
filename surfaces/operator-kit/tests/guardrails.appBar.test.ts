@@ -32,12 +32,6 @@ const SURFACES = resolve(here, "../..");
 
 /** Cabeçalhos ricos ainda não convertidos. Cada linha é uma dívida com endereço. */
 const CABECALHOS_PROPRIOS_CONHECIDOS = [
-  // O PDV monta o cabeçalho por página porque cada uma carrega um contexto diferente
-  // (comanda aberta, caixa) — e o `PosTabHeader` é editável. As Encomendas já
-  // nasceram no `OperatorAppBar` (`PosPreordersShell`), e a antiga tela de fichas
-  // saiu da lista com elas.
-  "pos-nuxt/app/pages/index.vue",
-  "pos-nuxt/app/pages/session/index.vue",
   // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
   "production-nuxt/app/components/ProductionHeader.vue",
   "production-nuxt/app/components/RecipeHeader.vue",
@@ -99,7 +93,12 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = ["orders-nuxt/app/components/GestorNav.vue", "kds-nuxt/app/components/KdsNav.vue"];
+    const migrados = [
+      "orders-nuxt/app/components/GestorNav.vue",
+      "kds-nuxt/app/components/KdsNav.vue",
+      // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
+      "pos-nuxt/app/components/PosFunctionRail.vue",
+    ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorSuiteRail");
