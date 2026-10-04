@@ -4712,34 +4712,75 @@ class POSCashReceiptView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Register a no-sale cash drawer opening",
-        responses={200: OpenApiResponse(description="Opening recorded.")},
+        summary="Open the cash drawer (sale or no-sale), locally or through the counter relay",
+        responses={200: OpenApiResponse(description="Opening recorded; relay pulse queued when asked.")},
     ),
 )
 class POSCashDrawerOpenView(APIView):
-    """Abertura de gaveta sem venda — o único momento que não deixa rastro só.
+    """Toda abertura de gaveta pedida por um operador, com autoria.
 
-    O chute físico é do navegador (o agente vive na loopback do balcão, fora do
-    alcance do servidor). O papel deste endpoint é o registro: quem abriu,
-    quando e por quê. A tela só chuta depois do ``ok`` daqui, para não existir
-    gaveta aberta sem linha na trilha.
+    Dois caminhos, um registro (``services/drawer_pulse.open_drawer``):
+
+    * ``via=local`` — o navegador do Balcão chuta pelo agente da própria máquina,
+      e só depois do ``ok`` daqui, para não existir gaveta aberta sem linha;
+    * ``via=relay`` — o tablet (ou qualquer posto que não alcança o agente) pede,
+      e o servidor põe o pulso na fila do relay do terminal. A resposta traz o
+      ``pulse`` para a tela acompanhar em ``drawer-pulse/<ref>/``.
+
+    ``purpose=sale`` exige o pedido cujo dinheiro entrou nesta gaveta;
+    ``purpose=no_sale`` exige o motivo. A permissão é a dos movimentos de caixa.
     """
 
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        reason = (request.data.get("reason") or "").strip()
+        from shopman.backstage.services import drawer_pulse
+
+        data = request.data
         try:
-            pos_service.register_drawer_opening(
-                operator=request.user, reason=reason, terminal_ref=_terminal_do_pedido(request)
+            entry, job = drawer_pulse.open_drawer(
+                operator=request.user,
+                terminal_ref=_terminal_do_pedido(request),
+                purpose=str(data.get("purpose") or drawer_pulse.PURPOSE_NO_SALE),
+                order_ref=str(data.get("order_ref") or ""),
+                reason=str(data.get("reason") or ""),
+                via=str(data.get("via") or drawer_pulse.VIA_LOCAL),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_open_failed user=%s", _actor(request), exc_info=True)
             return _falha_do_caixa(exc, "Falha ao registrar abertura.")
-        return Response({"ok": True})
+        body = {"ok": True, "entry_id": entry.pk, "pulse": None}
+        if job is not None:
+            state = drawer_pulse._state_of(job)
+            body["pulse"] = {"ref": state.ref, "state": state.state, "message": state.message}
+        return Response(body)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Read where a relay drawer pulse is (sending, sent, failed, expired, uncertain)",
+        responses={200: OpenApiResponse(description="Pulse state.")},
+    ),
+)
+class POSCashDrawerPulseView(APIView):
+    """O tablet acompanha o pulso que pediu até o agente responder ou o prazo vencer."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request, ref):
+        from shopman.backstage.services import drawer_pulse
+
+        try:
+            state = drawer_pulse.pulse_state(ref=ref, terminal_ref=_terminal_do_pedido(request))
+        except Exception as exc:
+            logger.debug("pos_drawer_pulse_read_failed user=%s", _actor(request), exc_info=True)
+            return _falha_do_caixa(exc, "Pulso não encontrado.")
+        return Response({"pulse": {"ref": state.ref, "state": state.state, "message": state.message}})
 
 
 @extend_schema_view(

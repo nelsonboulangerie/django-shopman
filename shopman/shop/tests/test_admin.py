@@ -1607,6 +1607,48 @@ class TestPosLateFiscalEmissionPolicy:
         assert "defaults_pos_late_fiscal_emission_days" in fields
 
 
+class TestCashTolerancePolicy:
+    """Tolerância do caixa (decisão do dono, 04/10/2026): % do dinheiro do dia, piso e teto."""
+
+    def test_form_saves_tolerance_to_pos_defaults(self, shop):
+        from shopman.backstage.services import cash_tolerance
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_cash_tolerance_percent"] = "1"
+        data["defaults_pos_cash_tolerance_min"] = "3.00"
+        data["defaults_pos_cash_tolerance_max"] = "15"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["pos"]["cash_tolerance"] == {"percent": "1", "min_q": 300, "max_q": 1500}
+        assert cash_tolerance.shop_policy().tolerance_q(100_000) == 1000
+
+    def test_blank_means_owner_default(self, shop):
+        from shopman.backstage.services import cash_tolerance
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"pos": {"cash_tolerance": {"percent": "2"}}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        for key in ("percent", "min", "max"):
+            data[f"defaults_pos_cash_tolerance_{key}"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "cash_tolerance" not in (saved.defaults.get("pos") or {})
+        assert cash_tolerance.shop_policy() == cash_tolerance.TolerancePolicy()
+
+    def test_fields_live_on_the_pos_page(self):
+        from django.contrib.admin.utils import flatten_fieldsets
+
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = flatten_fieldsets(_POS_FIELDSETS)
+        for name in ("percent", "min", "max"):
+            assert f"defaults_pos_cash_tolerance_{name}" in fields
+
+
 class TestStockAlertCooldownPolicy:
     """WP-5b — cooldown de alerta de estoque vira política da loja."""
 
