@@ -55,7 +55,6 @@ from .feeds import (
     FeedSwitchView,
 )
 from .hub import HubView
-from .search import SuiteSearchView
 from .ifood_store import IFoodStoreView
 from .kds import (
     KDSBoardView,
@@ -287,6 +286,7 @@ from .recipe_book import (
     RecipeVersionRatingView,
     RecipeVersionView,
 )
+from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
