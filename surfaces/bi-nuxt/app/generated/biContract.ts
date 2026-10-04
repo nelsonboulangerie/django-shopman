@@ -50,6 +50,75 @@ export interface BIProductionReport {
   previous: BIProductionPrevious;
 }
 
+/** Um lote fechado do produto no dia: o registro de onde o "fez" saiu. */
+export interface BIOverShortLot {
+  ref: string;
+  finished_at: string;
+  qty: string;
+}
+
+/** BIOverShortHour(hour: 'int', sold: 'str', estimated_lost: 'str') */
+export interface BIOverShortHour {
+  hour: number;
+  sold: string;
+  estimated_lost: string;
+}
+
+/** BIOverShortRow(sku: 'str', name: 'str', collection_ref: 'str', collection: 'str', verdict: 'str', made: 'str', sold: 'str', leftover: 'str', soldout_at: 'str', lost_estimate: 'str', typical_sold: 'str', typical_made: 'str', history: 'tuple[str, ...]', leftover_cost_q: 'int | None', lots: 'tuple[BIOverShortLot, ...]', sales_by_hour: 'tuple[BIOverShortHour, ...]') */
+export interface BIOverShortRow {
+  sku: string;
+  name: string;
+  collection_ref: string;
+  collection: string;
+  verdict: string;
+  made: string;
+  sold: string;
+  leftover: string;
+  soldout_at: string;
+  lost_estimate: string;
+  typical_sold: string;
+  typical_made: string;
+  history: string[];
+  leftover_cost_q: number | null;
+  lots: BIOverShortLot[];
+  sales_by_hour: BIOverShortHour[];
+}
+
+/** BIOverShortSummary(short: 'int', over: 'int', right: 'int', lost_estimate: 'str', leftover_units: 'str', leftover_cost_q: 'int', cost_complete: 'bool') */
+export interface BIOverShortSummary {
+  short: number;
+  over: number;
+  right: number;
+  lost_estimate: string;
+  leftover_units: string;
+  leftover_cost_q: number;
+  cost_complete: boolean;
+}
+
+/** O mesmo resumo, em média, nos dias de comparação. */
+export interface BIOverShortTypical {
+  days: number;
+  short: string;
+  over: string;
+  leftover_units: string;
+  leftover_cost_q: number;
+}
+
+/** BIOverShortReport(day: 'str', weekday_label: 'str', opens_at: 'str', closes_at: 'str', compare_days: 'tuple[str, ...]', previous_day: 'str', next_day: 'str', plan_day: 'str', rows: 'tuple[BIOverShortRow, ...]', summary: 'BIOverShortSummary', typical: 'BIOverShortTypical') */
+export interface BIOverShortReport {
+  day: string;
+  weekday_label: string;
+  opens_at: string;
+  closes_at: string;
+  compare_days: string[];
+  previous_day: string;
+  next_day: string;
+  plan_day: string;
+  rows: BIOverShortRow[];
+  summary: BIOverShortSummary;
+  typical: BIOverShortTypical;
+}
+
 /** BISalesDay(date: 'str', orders: 'int', revenue_q: 'int', average_ticket_q: 'int', source: 'str') */
 export interface BISalesDay {
   date: string;
