@@ -14,6 +14,7 @@ from shopman.backstage.projections.kds import (
     build_kds_index,
     build_kds_ticket,
 )
+from shopman.backstage.services.exceptions import KDSInstanceNotFound
 from shopman.shop.models import Shop
 
 
@@ -55,7 +56,7 @@ def test_build_kds_board_returns_ticket_projection(kds_setup):
 
 
 @pytest.mark.django_db
-def test_kds_defaults_to_today_and_future_order_only_appears_on_its_date(kds_setup):
+def test_kds_is_today_and_future_order_is_not_on_the_board(kds_setup):
     _, _, _, _ = kds_setup
     picking = KDSInstance.objects.create(
         ref="picking-proj",
@@ -82,20 +83,15 @@ def test_kds_defaults_to_today_and_future_order_only_appears_on_its_date(kds_set
         line_total_q=1200,
     )
 
+    # O quadro é o de hoje: a prévia de outra data mora na Produção/Encomendas
+    # (SUITE-UX §9), e a encomenda de amanhã não é trabalho do turno.
     today_board = build_kds_board(picking.ref)
     assert today_board.tickets == ()
-    assert tomorrow.isoformat() in today_board.available_dates
-    assert today_board.service_date == timezone.localdate().isoformat()
-
-    future_board = build_kds_board(picking.ref, service_date=tomorrow)
-    assert [ticket.order_ref for ticket in future_board.tickets] == ["KDS-AMANHA"]
-    assert future_board.tickets[0].is_scheduled is True
     assert KDSTicket.objects.filter(session_key=future.session_key).exists() is False
-    assert future_board.service_date_display == "Amanhã"
 
 
 @pytest.mark.django_db
-def test_future_materialized_ticket_is_still_read_only(kds_setup):
+def test_future_materialized_ticket_waits_for_its_day(kds_setup):
     prep, _, _, _ = kds_setup
     tomorrow = timezone.localdate() + timedelta(days=1)
     future = Order.objects.create(
@@ -112,37 +108,18 @@ def test_future_materialized_ticket_is_still_read_only(kds_setup):
         items=[{"sku": "F", "name": "Legado", "qty": 1}],
     )
 
-    board = build_kds_board(prep.ref, service_date=tomorrow)
+    board = build_kds_board(prep.ref)
 
-    projected = next(ticket for ticket in board.tickets if ticket.pk == legacy.pk)
-    assert projected.is_scheduled is True
+    assert legacy.pk not in [ticket.pk for ticket in board.tickets]
 
 
 @pytest.mark.django_db
-def test_future_expedition_card_is_read_only(kds_setup):
+def test_the_exit_station_has_no_board_in_the_kitchen(kds_setup):
+    """A Saída é uma só, no Gestor (SUITE-UX §15 e §16): a Cozinha não tem quadro dela."""
     _, expedition, _, _ = kds_setup
-    tomorrow = timezone.localdate() + timedelta(days=1)
-    future = Order.objects.create(
-        ref="KDS-EXP-AMANHA",
-        channel_ref="web",
-        status=Order.Status.READY,
-        total_q=1200,
-        data={"delivery_date": tomorrow.isoformat(), "fulfillment_type": "pickup"},
-    )
-    OrderItem.objects.create(
-        order=future,
-        line_id="exp-future",
-        sku="F",
-        name="Encomenda",
-        qty=1,
-        unit_price_q=1200,
-        line_total_q=1200,
-    )
 
-    board = build_kds_board(expedition.ref, service_date=tomorrow)
-
-    assert [card.order_ref for card in board.tickets] == ["KDS-EXP-AMANHA"]
-    assert board.tickets[0].is_scheduled is True
+    with pytest.raises(KDSInstanceNotFound):
+        build_kds_board(expedition.ref)
 
 
 @pytest.mark.django_db
@@ -298,38 +275,6 @@ def test_build_kds_ticket_reflects_ticket_status(kds_setup):
 
     assert projection.status == "in_progress"
     assert projection.status_label == "Em preparo"
-
-
-@pytest.mark.django_db
-def test_build_expedition_board_uses_ready_orders(kds_setup):
-    _, expedition, _, ready = kds_setup
-
-    board = build_kds_board(expedition.ref)
-
-    assert board.is_expedition is True
-    assert board.tickets[0].order_ref == ready.ref
-    assert board.tickets[0].is_delivery is True
-    assert board.tickets[0].units_count == "2"
-    assert board.tickets[0].line_count == 1
-
-
-@pytest.mark.django_db
-def test_expedition_card_shows_the_item_note(kds_setup):
-    """A Saída lê a observação do item em ``meta["notes"]``, como a cozinha.
-
-    O card lia ``item.notes``, atributo que o item composto do pedido
-    (``order_composition.EffectiveItem``) não tem: a observação ficava sempre
-    vazia na conferência de despacho.
-    """
-    _, expedition, _, ready = kds_setup
-    OrderItem.objects.filter(order=ready).update(meta={"notes": "sem gergelim"})
-
-    board = build_kds_board(expedition.ref)
-
-    assert board.tickets[0].items[0].notes == "sem gergelim"
-
-
-# ── Customer pickup board (public) ─────────────────────────────────────────
 
 
 @pytest.mark.django_db

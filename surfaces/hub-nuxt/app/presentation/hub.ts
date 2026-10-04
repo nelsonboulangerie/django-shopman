@@ -232,6 +232,15 @@ export function queueDetailLine(item: HubQueueItemProjection, nowMs: number): st
   return [item.detail, queueDueText(item, nowMs)].filter(Boolean).join(" · ");
 }
 
+/** Quantas linhas "Precisa de você" mostra no celular antes do "Ver mais" (v3 nota 3). */
+export const PHONE_QUEUE_ROWS = 3;
+
+/** A linha de baixo do item no celular (v3 `depois-hub-celular`: "Cozinha · 14 min"):
+ *  de que app é e há quanto tempo espera, numa linha que cabe. */
+export function queuePhoneLine(item: HubQueueItemProjection, nowMs: number): string {
+  return [item.app_label, queueTimeLabel(item, nowMs)].filter(Boolean).join(" · ");
+}
+
 /** O nome acessível do gesto: o verbo sozinho ("Revisar") não diz o quê. */
 export function queueActionAriaLabel(item: HubQueueItemProjection): string {
   return `${item.action_label}: ${item.title}`;

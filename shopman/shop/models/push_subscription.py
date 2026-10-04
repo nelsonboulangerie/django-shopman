@@ -15,6 +15,7 @@ class PushSurface(models.TextChoices):
     MARKETING = "marketing", "Marketing"
     PURCHASE = "purchase", "Compras"
     BI = "bi", "BI"
+    KDS = "kds", "Cozinha"
 
 
 PUSH_CATEGORIES = frozenset({
@@ -23,6 +24,7 @@ PUSH_CATEGORIES = frozenset({
     "order",
     "purchase",
     "report",
+    "kitchen",
     "sign_in",
     "system",
 })
@@ -35,6 +37,9 @@ PUSH_SURFACE_CATEGORIES = {
     PushSurface.MARKETING: frozenset({"campaign"}),
     PushSurface.PURCHASE: frozenset({"purchase"}),
     PushSurface.BI: frozenset({"report"}),
+    # A Cozinha no celular: pedido novo na estação que a pessoa leva no bolso e
+    # o atraso que estoura a meta (SUITE-UX §10.3, prévia v4 `cozinha-celular`).
+    PushSurface.KDS: frozenset({"kitchen"}),
 }
 
 

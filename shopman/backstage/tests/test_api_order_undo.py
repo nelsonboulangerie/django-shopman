@@ -18,7 +18,6 @@ from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.backstage.models import KDSInstance, KDSTicket
-from shopman.backstage.projections.kds import build_kds_board
 from shopman.backstage.tests._order_intent import advance_payload, context_payload
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds as kds_core
@@ -126,30 +125,6 @@ def test_board_card_carries_the_same_undo_block(client, operator):
     card = next(c for c in cards if c["ref"] == order.ref)
     assert card["undo"]["kind"] == "handoff"
     assert card["can_advance"] is False
-
-
-def test_saida_handoff_and_undo(client, operator):
-    client.force_login(operator)
-    expedition = KDSInstance.objects.create(ref="saida-undo", name="Saída", type="expedition")
-    order = _order("UNDO-API-5")
-
-    response = client.post(reverse("api-backstage-kds-expedition", args=[order.pk]), {"action": "complete"}, content_type="application/json")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["handoff_label"].startswith("Entregue às ")
-    assert body["handoff_token"]
-
-    card = next(c for c in build_kds_board(expedition.ref).tickets if getattr(c, "order_ref", "") == order.ref)
-    assert card.handoff_token == body["handoff_token"]
-    assert card.handoff_undo_until_iso
-
-    stale = client.post(reverse("api-backstage-kds-expedition-undo", args=[order.pk]), {"token": "outro"}, content_type="application/json")
-    assert stale.status_code == 409
-    undo = client.post(reverse("api-backstage-kds-expedition-undo", args=[order.pk]), {"token": body["handoff_token"]}, content_type="application/json")
-    assert undo.status_code == 200
-    order.refresh_from_db()
-    assert order.status == Order.Status.READY
-    assert "pending_handoff" not in order.data
 
 
 def _cash_delivery(ref: str) -> Order:
