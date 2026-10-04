@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// Central: a home do Shopman e o launcher pós-login. Lê a projection do hub e mostra,
+// Central: a home do Shopman e o launcher pós-login. Veste a camada visual da suíte
+// (`data-suite="v3"`, prévia v4 `hub4.html`, "a fila das filas"): o rail de 76px com
+// "Início" como única seção, a saudação de uma linha, a fila e os blocos dos apps, e o
+// rodapé calmo com os avisos deste dispositivo e a versão. Lê a projection do hub e mostra,
 // no topo, "Precisa de você" (a fila das filas: o item exato de cada app, com o gesto que
 // abre o lugar exato) e, embaixo, os blocos dos apps com a linha de estado de cada um.
 // Tudo já vem filtrado por permissão.
@@ -11,12 +14,15 @@ import type { HubFailure } from "~/presentation/hub";
 import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
 import type { OperatorSession } from "../../operator-kit/app/types/operator";
 import {
+  APPS_HINT_COPY,
   HUB_NAMED_OF,
+  HUB_SECTIONS,
   QUEUE_EMPTY_COPY,
   QUEUE_HINT_COPY,
   hubBrandLine,
   hubFailure,
   hubFailureCopy,
+  hubDateLine,
   hubGreeting,
   hubIsEmpty,
   queueActionAriaLabel,
@@ -80,6 +86,13 @@ watch(
 );
 const deviceNow = useNow({ interval: 1000 });
 const nowMs = computed(() => deviceNow.value.getTime() + clockOffset.value);
+// "10:03 · Sábado, 3 de outubro": só no cliente (o fuso é o do dispositivo, o da loja; no
+// servidor seria o da máquina).
+const dateLine = computed(() => (import.meta.client ? hubDateLine(nowMs.value) : ""));
+
+// Do tablet para cima o sino mora no pé do rail; no celular (sem rail), no cabeçalho.
+const isPhone = useMediaQuery("(max-width: 767.98px)");
+const { isCollapsed: railHidden, set: setRail } = useRailState();
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
 const { onReconnect } = useConnectivity();
@@ -113,6 +126,14 @@ const brokenTileIcons = reactive(new Set<string>());
 function tileImageSrc(tile: HubTileProjection): string | null {
   return brokenTileIcons.has(tile.ref) ? null : tileIconUrl(tile);
 }
+// A imagem que falha ANTES da hidratação (renderizada no servidor) não dispara o `@error`
+// que o Vue ainda não ligou, e ficava o ícone quebrado do navegador. Na montagem, a que já
+// terminou sem pixels também cai no Lucide.
+onMounted(() => {
+  for (const img of document.querySelectorAll<HTMLImageElement>("img[data-app-icon]")) {
+    if (img.complete && img.naturalWidth === 0 && img.dataset.appIcon) brokenTileIcons.add(img.dataset.appIcon);
+  }
+});
 
 // A linha da fila usa o ícone do app de destino (o mesmo do bloco) e abre do mesmo jeito
 // que o bloco abriria: na janela própria do app quando a Central está instalada.
@@ -129,7 +150,9 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
 </script>
 
 <template>
-  <main class="min-h-dvh bg-background text-foreground">
+  <!-- `data-suite="v3"`: a Central veste a camada visual da suíte (UX-KIT-V1). Os
+       primitivos do kit (e a oferta de posto) leem esse atributo. -->
+  <main class="min-h-dvh bg-background text-foreground" data-suite="v3">
     <OfflineBanner />
 
     <!-- Gate de login (sessão ausente/expirada) -->
@@ -146,24 +169,24 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
     />
 
     <!-- Falha que NÃO se resolve com senha: estação travada, sem permissão, ou a
-         home fora do ar. Cada uma tem a sua saída — e "tentar de novo" só aparece
+         home fora do ar. Cada uma tem a sua saída, e "tentar de novo" só aparece
          onde tentar de novo faz sentido. -->
     <div v-else-if="hasBlockingFailure" class="grid min-h-dvh place-items-center p-4">
-      <div class="grid w-full max-w-sm gap-4 text-center">
-        <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
+      <div class="grid w-full max-w-md gap-5 rounded-[14px] border border-border bg-card p-6 text-center shadow-sm sm:p-8">
+        <div class="mx-auto grid size-12 place-items-center rounded-xl bg-secondary">
           <Icon
             :name="failure === 'station' ? 'lucide:lock' : failure === 'forbidden' ? 'lucide:shield-alert' : 'lucide:cloud-off'"
-            class="size-7 text-muted-foreground"
+            class="size-6 text-foreground"
           />
         </div>
         <div class="grid gap-1.5">
-          <h1 class="text-lg font-semibold">{{ failureCopy.title }}</h1>
-          <p class="text-sm text-muted-foreground">{{ failureCopy.hint }}</p>
+          <h1 class="op-heading">{{ failureCopy.title }}</h1>
+          <p class="op-body text-muted-foreground">{{ failureCopy.hint }}</p>
         </div>
         <button
           v-if="failureCopy.retry"
           type="button"
-          class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+          class="inline-flex h-12 items-center justify-center rounded-lg bg-primary px-4 op-title text-primary-foreground"
           @click="refresh()"
         >
           Tentar de novo
@@ -172,30 +195,59 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
     </div>
 
     <!-- Launcher -->
-    <template v-else>
-      <div class="flex min-h-dvh">
-        <!-- Rail canônico (kit). Esta é a home: sem o atalho de volta (já estamos nela) e
-             sem travar-operador. Só identidade + tema — a mesma espinha das outras. -->
-        <div class="sticky top-0 flex h-dvh shrink-0">
-          <OperatorRail />
-        </div>
+    <div v-else class="flex min-h-dvh">
+      <!-- Rail da suíte (kit), do tablet para cima: o selo da Central (sem caminho de
+           volta: já estamos nela), "Início" como única seção, Avisos e o menu do operador
+           (tema, giro, ocultar a barra) no pé. A Central não trava operador: cada app
+           trava o seu. -->
+      <OperatorSuiteRail
+        :sections="HUB_SECTIONS"
+        current="home"
+        :label="`Seções ${HUB_NAMED_OF}`"
+        :operator-name="operatorName || undefined"
+        :lockable="false"
+      >
+        <template v-if="!isPhone" #foot>
+          <NotificationBell placement="rail" />
+        </template>
+      </OperatorSuiteRail>
 
-        <div class="flex min-w-0 flex-1 flex-col">
-          <!-- Cabeçalho: controle do rail + a saudação (identidade da home). -->
-          <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3">
-            <RailToggle />
-            <div class="min-w-0">
-              <h1 class="truncate text-base font-semibold leading-tight">{{ hubGreeting(operatorName) }}</h1>
-              <p class="text-xs text-muted-foreground">{{ brandLine }}</p>
-            </div>
-          </header>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <!-- Cabeçalho de uma linha (76px): a saudação e a linha fina com o ao vivo, a
+             hora e a assinatura "Shopman · Nelson". -->
+        <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3 md:h-[76px] md:gap-6 md:px-8 md:py-0">
+          <button
+            v-if="railHidden"
+            type="button"
+            class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground md:grid"
+            aria-label="Mostrar a barra"
+            title="Mostrar a barra"
+            data-hub-show-rail
+            @click="setRail('compact')"
+          >
+            <Icon name="lucide:panel-left-open" class="size-5" />
+          </button>
+          <div class="min-w-0 flex-1">
+            <h1 class="truncate op-heading">{{ hubGreeting(operatorName) }}</h1>
+            <p class="mt-1.5 flex min-w-0 items-start gap-1.5 op-micro md:items-center text-muted-foreground tnum" data-hub-brand>
+              <span class="live-dot mt-1 md:mt-0" aria-hidden="true" />
+              <span class="min-w-0 md:truncate">
+                <template v-if="dateLine">{{ dateLine }} · </template>{{ brandLine }}
+              </span>
+            </p>
+          </div>
+          <div v-if="isPhone" class="shrink-0">
+            <NotificationBell />
+          </div>
+        </header>
 
-          <div class="mx-auto grid w-full max-w-6xl gap-8 p-4 sm:p-6">
-            <div v-if="isEmpty" class="grid place-items-center gap-3 rounded-md border border-dashed p-10 text-center">
+        <div class="flex-1">
+          <div class="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 pt-5 pb-8 md:px-8 md:pt-6">
+            <div v-if="isEmpty" class="grid place-items-center gap-3 rounded-[14px] border border-dashed border-border bg-card p-10 text-center">
               <Icon name="lucide:inbox" class="size-8 text-muted-foreground" />
               <div class="grid gap-1">
-                <p class="text-base font-semibold">Nenhum app liberado</p>
-                <p class="text-sm text-muted-foreground">
+                <p class="op-title">Nenhum app liberado</p>
+                <p class="op-body text-muted-foreground">
                   Sua conta ainda não tem acesso a nenhuma superfície. Fale com o gerente.
                 </p>
               </div>
@@ -205,41 +257,42 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
               <!-- Precisa de você: a fila das filas (UX-H1). O item exato primeiro, ordenado
                    por urgência entre apps; cada linha com um gesto que abre o lugar exato no
                    app certo. O fato em si é declarado lá, na forma única do trabalho. -->
-              <section aria-labelledby="hub-queue-title" data-hub-queue class="grid gap-3">
-                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <h2 id="hub-queue-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <section aria-labelledby="hub-queue-title" data-hub-queue>
+                <div class="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <h2 id="hub-queue-title" class="op-eyebrow">
                     Precisa de você
-                    <span v-if="queueTotal" class="ml-1.5 tabular-nums text-foreground">{{ queueTotal }}</span>
+                    <span v-if="queueTotal" class="ml-1.5 op-label tracking-normal text-muted-foreground normal-case tnum">{{ queueTotal }}</span>
                   </h2>
-                  <p class="hidden text-xs text-muted-foreground sm:block">{{ QUEUE_HINT_COPY }}</p>
+                  <p class="ml-auto hidden op-micro text-muted-foreground md:block">{{ QUEUE_HINT_COPY }}</p>
                 </div>
 
                 <p
                   v-if="!queueItems.length"
                   data-hub-queue-empty
-                  class="rounded-md border border-border bg-card px-4 py-5 text-sm text-muted-foreground"
+                  class="rounded-xl border border-border bg-card px-4 py-5 op-body text-muted-foreground"
                 >
                   {{ QUEUE_EMPTY_COPY }}
                 </p>
 
-                <ol v-else class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
+                <ol v-else class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
                   <li
                     v-for="item in queueItems"
                     :key="item.key"
                     data-hub-queue-item
-                    class="grid gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[9rem_minmax(0,1fr)_auto_auto] sm:items-center"
+                    class="grid gap-y-2 px-4 py-3 md:flex md:min-h-14 md:items-center md:gap-3.5 md:py-1 md:pr-3"
                   >
-                    <!-- App: ícone ao lado do nome. No celular, divide a linha com o tempo. -->
-                    <div class="flex min-w-0 items-center justify-between gap-3 sm:contents">
-                      <span class="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                    <!-- App: ícone e nome. No celular, divide a linha com o tempo. -->
+                    <div class="flex min-w-0 items-center justify-between gap-3 md:contents">
+                      <span class="flex min-w-0 items-center gap-2.5 md:contents">
                         <span
-                          class="grid size-7 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
+                          class="grid size-7 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
                           :class="itemIconSrc(item) ? '' : 'bg-primary/10'"
                         >
                           <img
                             v-if="itemIconSrc(item)"
                             :src="itemIconSrc(item)!"
-                            class="size-7 rounded-md"
+                            :data-app-icon="item.app"
+                            class="size-7 rounded-lg"
                             alt=""
                             loading="lazy"
                             decoding="async"
@@ -247,23 +300,23 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                           >
                           <Icon v-else :name="itemIcon(item)" class="size-4" />
                         </span>
-                        <span>{{ item.app_label }}</span>
+                        <span class="op-label font-normal text-muted-foreground md:line-clamp-2 md:w-[76px] md:shrink-0 md:leading-tight">{{ item.app_label }}</span>
                       </span>
                       <span
-                        class="shrink-0 text-sm tabular-nums sm:hidden"
-                        :class="item.attention ? 'font-semibold text-warning' : 'text-muted-foreground'"
+                        class="shrink-0 op-label tnum md:hidden"
+                        :class="item.attention ? 'font-semibold text-warning' : 'font-normal text-muted-foreground'"
                       >{{ queueTimeLabel(item, nowMs) }}</span>
                     </div>
 
-                    <div class="min-w-0">
-                      <p class="text-sm font-semibold leading-snug">{{ item.title }}</p>
-                      <p class="text-xs text-muted-foreground">{{ queueDetailLine(item, nowMs) }}</p>
+                    <div class="min-w-0 md:flex-1">
+                      <p class="op-body font-semibold lg:truncate">{{ item.title }}</p>
+                      <p class="op-micro text-muted-foreground lg:truncate">{{ queueDetailLine(item, nowMs) }}</p>
                     </div>
 
                     <span
                       data-hub-queue-time
-                      class="hidden text-right text-sm tabular-nums sm:block"
-                      :class="item.attention ? 'font-semibold text-warning' : 'text-muted-foreground'"
+                      class="hidden w-[108px] shrink-0 text-right op-label tnum md:block"
+                      :class="item.attention ? 'font-semibold text-warning' : 'font-normal text-muted-foreground'"
                     >{{ queueTimeLabel(item, nowMs) }}</span>
 
                     <a
@@ -272,92 +325,109 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                       :rel="itemLinkAttrs(item).rel"
                       :aria-label="queueActionAriaLabel(item)"
                       data-hub-queue-action
-                      class="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-w-36"
+                      class="inline-flex h-12 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[164px] md:shrink-0 md:px-3"
                     >
-                      {{ item.action_label }}
+                      <span class="whitespace-nowrap">{{ item.action_label }}</span>
                       <Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />
                     </a>
                   </li>
                 </ol>
 
-                <p v-if="queueMore" class="text-xs text-muted-foreground" data-hub-queue-more>{{ queueMore }}</p>
+                <p v-if="queueMore" class="mt-2 op-micro text-muted-foreground" data-hub-queue-more>{{ queueMore }}</p>
               </section>
 
-              <!-- Os apps: a aparência calma aprovada, mais compacta, com o ícone ao lado do
-                   nome e a linha de estado que concorda com a fila acima. -->
-              <section aria-labelledby="hub-apps-title" class="grid gap-3">
-                <h2 id="hub-apps-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Apps <span class="ml-1.5 tabular-nums text-foreground">{{ tiles.length }}</span>
-                </h2>
+              <!-- Os apps: blocos calmos (aparência aprovada na v3), o bloco inteiro é o link,
+                   com a linha de estado que concorda com a fila acima. -->
+              <section aria-labelledby="hub-apps-title">
+                <div class="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <h2 id="hub-apps-title" class="op-eyebrow">
+                    Apps <span class="ml-1.5 op-label tracking-normal text-muted-foreground normal-case tnum">{{ tiles.length }}</span>
+                  </h2>
+                  <p class="ml-auto hidden items-center gap-1.5 op-micro text-muted-foreground md:inline-flex">
+                    <Icon name="lucide:info" class="size-3.5" aria-hidden="true" />{{ APPS_HINT_COPY }}
+                  </p>
+                </div>
                 <ul class="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <li v-for="tile in tiles" :key="tile.ref" class="h-full">
                     <a
                       :href="tile.url"
                       :target="tileLinkAttrs(tile, linkContext).target"
                       :rel="tileLinkAttrs(tile, linkContext).rel"
-                      class="flex h-full min-h-28 gap-3 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      class="relative flex h-full flex-col rounded-[14px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
-                           Lucide de fallback, senão vira moldura nos cantos do ícone. -->
-                      <span
-                        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
-                        :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
-                      >
-                        <img
-                          v-if="tileImageSrc(tile)"
-                          :src="tileImageSrc(tile)!"
-                          class="size-11 rounded-md"
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          @error="brokenTileIcons.add(tile.ref)"
-                        >
-                        <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
-                      </span>
+                      <Icon
+                        v-if="tile.kind === 'external'"
+                        name="lucide:external-link"
+                        class="absolute top-5 right-5 size-4 text-muted-foreground"
+                        aria-hidden="true"
+                      />
                       <!-- Altura ÚNICA: a grade tem linhas de mesma altura (`auto-rows-fr`) e cada
-                           bloco ocupa a linha inteira. Sem isso a grade ficava serrilhada (cada
-                           bloco parava numa altura) e o olho perdia a coluna. Nome e frase param em
-                           duas linhas; a linha de estado é aviso e nunca se corta (quebra a linha),
-                           e ocupa o lugar mesmo vazia, para nenhum bloco encolher. -->
-                      <span class="grid min-w-0 content-start gap-0.5">
-                        <span data-tile-title class="line-clamp-2 text-base font-semibold leading-tight">{{ tile.label }}</span>
-                        <span data-tile-description class="line-clamp-2 text-sm text-muted-foreground">{{ tile.description }}</span>
-                        <span data-tile-status class="mt-2 flex min-h-4 min-w-0 items-start gap-2 text-xs leading-4">
-                          <template v-if="tileStatus(tile).hasStatus">
-                            <span
-                              class="mt-1 size-2 shrink-0 rounded-full"
-                              :class="tileStatus(tile).attention ? 'bg-warning' : 'bg-muted-foreground/40'"
-                              aria-hidden="true"
-                            />
-                            <span class="min-w-0">
-                              <span v-if="tileStatus(tile).attention" class="font-semibold text-warning">{{ tileStatus(tile).attention }}</span>
-                              <span v-if="tileStatus(tile).attention && tileStatus(tile).summary" class="text-muted-foreground"> · </span>
-                              <span v-if="tileStatus(tile).summary" class="text-muted-foreground">{{ tileStatus(tile).summary }}</span>
-                            </span>
-                          </template>
+                           bloco ocupa a linha inteira. Nome e frase param em duas linhas; a linha
+                           de estado desce para o pé do bloco, nunca se corta (quebra a linha), e
+                           ocupa o lugar mesmo vazia, para nenhum bloco encolher. -->
+                      <span class="flex items-center gap-3" :class="tile.kind === 'external' ? 'pr-6' : ''">
+                        <!-- O PNG tem cantos arredondados e transparentes: o fundo tingido é só do
+                             Lucide de fallback, senão vira moldura nos cantos do ícone. -->
+                        <span
+                          class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-[10px] text-primary"
+                          :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
+                        >
+                          <img
+                            v-if="tileImageSrc(tile)"
+                            :src="tileImageSrc(tile)!"
+                            :data-app-icon="tile.ref"
+                            class="size-10 rounded-[10px]"
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            @error="brokenTileIcons.add(tile.ref)"
+                          >
+                          <Icon v-else :name="tileIcon(tile.icon)" class="size-5" />
                         </span>
+                        <span class="grid min-w-0">
+                          <span data-tile-title class="line-clamp-2 op-title leading-tight">{{ tile.label }}</span>
+                          <span data-tile-description class="line-clamp-2 op-label font-normal text-muted-foreground">{{ tile.description }}</span>
+                        </span>
+                      </span>
+                      <span data-tile-status class="mt-auto flex min-h-[26px] min-w-0 items-start gap-2 pt-2 op-label font-normal">
+                        <template v-if="tileStatus(tile).hasStatus">
+                          <span
+                            class="mt-[5.5px] size-[7px] shrink-0 rounded-full"
+                            :class="tileStatus(tile).attention ? 'bg-warning' : 'bg-muted-foreground/50'"
+                            aria-hidden="true"
+                          />
+                          <span class="min-w-0">
+                            <span v-if="tileStatus(tile).attention" class="font-semibold text-warning">{{ tileStatus(tile).attention }}</span>
+                            <span v-if="tileStatus(tile).attention && tileStatus(tile).summary" class="text-muted-foreground"> · </span>
+                            <span v-if="tileStatus(tile).summary" :class="tileStatus(tile).attention ? 'text-muted-foreground' : ''">{{ tileStatus(tile).summary }}</span>
+                          </span>
+                        </template>
                       </span>
                     </a>
                   </li>
                 </ul>
               </section>
             </template>
-
-            <div class="grid gap-4">
-              <OperatorPushSettings />
-
-              <!-- Carimbo da versão publicada. Ele morava colado no título dos avisos e se
-                   lia como se fosse propriedade do aviso ("local"); é a versão do build que
-                   está no ar, e é assim que ele se apresenta agora. -->
-              <p class="border-t border-border pt-4 text-xs text-muted-foreground">
-                Versão {{ HUB_NAMED_OF }}: <span class="font-medium text-foreground">{{ appVersion }}</span>
-              </p>
-            </div>
           </div>
         </div>
+
+        <!-- Rodapé calmo: avisos neste dispositivo (o gesto que cabe ao estado; o que chega
+             e os dispositivos a um toque) e a versão publicada deste build, que é o que o
+             operador lê para o suporte ao relatar algo. -->
+        <footer class="border-t border-border">
+          <div class="mx-auto w-full max-w-[1120px] px-4 py-3 md:px-8 md:py-2">
+            <OperatorPushSettings variant="line">
+              <template #end>
+                <span class="ml-auto inline-flex min-h-control items-center tnum" data-hub-version>
+                  Versão {{ HUB_NAMED_OF }}:&nbsp;<span class="font-mono text-foreground">{{ appVersion }}</span>
+                </span>
+              </template>
+            </OperatorPushSettings>
+          </div>
+        </footer>
       </div>
-    </template>
-    <!-- Avisos do rail (ex.: "este dispositivo não deixa travar o giro"). -->
+    </div>
+
     <OperatorStationSetup
       v-if="stationSetup.offer.value && !hasBlockingFailure"
       @done="stationSetup.done()"

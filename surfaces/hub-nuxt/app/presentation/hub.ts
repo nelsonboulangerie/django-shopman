@@ -272,3 +272,27 @@ export function tileStatus(tile: Pick<HubTileProjection, "status_attention" | "s
 
 /** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */
 export const QUEUE_POLL_MS = 30_000;
+
+// ── Camada visual da suíte (prévia v4, `hub4.html`) ─────────────────────────
+
+/**
+ * A única seção da Central no rail da suíte: "Início". O selo troca de app; Avisos e o
+ * menu do operador moram no pé (prévia v4, nota 1).
+ */
+export const HUB_SECTIONS = [{ key: "home", label: "Início", icon: "lucide:house", to: "/" }];
+
+/** A frase ao lado do título de Apps: quem tem um app só entra direto nele. */
+export const APPS_HINT_COPY = "Quem tem um app só não passa por aqui: entra direto na fila do app.";
+
+/**
+ * A linha fina sob a saudação: "10:03 · Sábado, 3 de outubro". A hora é a do servidor
+ * (`nowMs` já corrigido pelo `serverClockOffset`), mostrada no fuso do dispositivo (o da
+ * loja). `timeZone` existe para o teste fixar o fuso.
+ */
+export function hubDateLine(nowMs: number, timeZone?: string): string {
+  if (!Number.isFinite(nowMs)) return "";
+  const date = new Date(nowMs);
+  const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(date);
+  const day = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone }).format(date);
+  return `${time} · ${day.charAt(0).toUpperCase()}${day.slice(1)}`;
+}

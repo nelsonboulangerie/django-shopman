@@ -45,8 +45,8 @@ export default defineNuxtConfig({
       // URL da Central (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",
-      // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto; a própria
-      // home sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
+      // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto em todos,
+      // a Central inclusive desde a camada da suíte (o rail dela tem "Início" e Avisos).
       railDefaultState: process.env.NUXT_PUBLIC_RAIL_DEFAULT_STATE || "compact",
       // URL do Gestor de Pedidos (orders-nuxt) — links cross-app "abrir no gestor"
       // apontam pra cá. Dev: orders-nuxt em :3004; prod: gestor.<zona> via env.

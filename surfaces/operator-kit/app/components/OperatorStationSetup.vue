@@ -58,20 +58,22 @@ async function confirmar() {
     aria-labelledby="station-setup-title"
     data-station-setup
   >
-    <div class="grid w-full max-w-sm gap-4 text-center">
-      <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-        <Icon name="lucide:map-pin" class="size-7 text-muted-foreground" />
+    <!-- Na camada da suíte (`data-suite="v3"`): o cartão calmo das prévias (borda, raio de
+         14px, papéis tipográficos `op-*`, gestos de 48px com rótulo seminegrito). -->
+    <div class="grid w-full max-w-sm gap-4 text-center suite:max-w-md suite:gap-5 suite:rounded-[14px] suite:border suite:border-border suite:bg-card suite:p-6 suite:shadow-sm sm:suite:p-8">
+      <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted suite:size-12 suite:rounded-xl suite:border-0 suite:bg-secondary">
+        <Icon name="lucide:map-pin" class="size-7 text-muted-foreground suite:size-6 suite:text-foreground" />
       </div>
       <div class="grid gap-1.5">
-        <h2 id="station-setup-title" class="text-lg font-semibold">{{ copy.setup_title }}</h2>
-        <p class="text-sm text-muted-foreground">{{ copy.setup_lead }}</p>
+        <h2 id="station-setup-title" class="text-lg font-semibold suite:op-heading">{{ copy.setup_title }}</h2>
+        <p class="text-sm text-muted-foreground suite:op-body">{{ copy.setup_lead }}</p>
       </div>
 
       <div v-if="options.length" class="grid gap-2 text-left">
         <!-- "Posto:" num seletor (decisão do dono, 03/10): com um posto só, já vem
              marcado. A segunda linha do escolhido diz o tipo e quem já está nele. -->
-        <label class="grid gap-1.5 text-sm">
-          <span class="font-medium">{{ copy.setup_choice_label }}</span>
+        <label class="grid gap-1.5 text-sm suite:op-label">
+          <span class="font-medium suite:op-eyebrow suite:text-muted-foreground">{{ copy.setup_choice_label }}</span>
           <UiNativeSelect
             v-model="escolhido"
             class="h-12 w-full"
@@ -82,7 +84,7 @@ async function confirmar() {
             <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
           </UiNativeSelect>
         </label>
-        <p v-if="escolhidoHint" class="text-xs text-muted-foreground" data-station-setup-hint>{{ escolhidoHint }}</p>
+        <p v-if="escolhidoHint" class="text-xs text-muted-foreground suite:op-micro" data-station-setup-hint>{{ escolhidoHint }}</p>
         <p
           v-if="error"
           class="text-sm"
@@ -90,7 +92,7 @@ async function confirmar() {
           role="alert"
         >{{ error }}</p>
       </div>
-      <p v-else class="text-sm text-muted-foreground" data-station-setup-empty>{{ copy.setup_empty }}</p>
+      <p v-else class="text-sm text-muted-foreground suite:op-body" data-station-setup-empty>{{ copy.setup_empty }}</p>
 
       <!-- `<button>` cru e não `UiButton`: o kit não alcança a biblioteca Ui de cada
            app, e esta tela sobe nos oito (ver OperatorSessionUnavailable). -->
@@ -98,7 +100,7 @@ async function confirmar() {
         <button
           v-if="options.length"
           type="button"
-          class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 suite:rounded-lg suite:op-title"
           :disabled="busy || !escolhido"
           :aria-busy="busy"
           data-station-setup-confirm
@@ -109,7 +111,7 @@ async function confirmar() {
         </button>
         <button
           type="button"
-          class="inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition hover:bg-foreground/8 disabled:opacity-50"
+          class="inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition hover:bg-foreground/8 disabled:opacity-50 suite:rounded-lg suite:border suite:border-border suite:op-label suite:font-semibold"
           :disabled="busy"
           data-station-setup-dismiss
           @click="emit('dismiss')"
