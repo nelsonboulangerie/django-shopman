@@ -216,6 +216,9 @@ def _connect() -> None:
             signal.connect(_on_catalog_saved, sender=model, weak=False,
                 dispatch_uid=f"shopman.catalog_sse.{model._meta.label_lower}.{signal is post_save}")
 
+    # Canal ligado/desligado: a Fila do Gestor mostra o estado dos canais de venda.
+    post_save.connect(_on_channel_saved_for_orders, sender=Channel, weak=False,
+                      dispatch_uid="shopman.orders_sse.channel_menu")
     post_save.connect(_on_hold_saved, sender=Hold, weak=False)
     post_save.connect(_on_move_saved, sender=Move, weak=False)
     pre_save.connect(_track_product_sellable, sender=Product, weak=False)
@@ -537,6 +540,15 @@ def _active_kds_count(kds_instance_id) -> int:
     except Exception:
         logger.debug("kds_active_count_failed", exc_info=True)
         return 0
+
+
+def emit_orders_menu_update() -> None:
+    """O cardápio ou um canal de venda mudou: a Fila do Gestor relê "Agora no cardápio"."""
+    _emit_backstage("orders", "backstage-orders-update", {"kind": "menu"})
+
+
+def _on_channel_saved_for_orders(sender, instance, **kwargs):
+    emit_orders_menu_update()
 
 
 def emit_delivery_device_update() -> None:
