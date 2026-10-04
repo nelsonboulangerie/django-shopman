@@ -83,6 +83,9 @@ class AgentOutcome:
     usage: dict = field(default_factory=dict)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff quando quem chamou a equipe tem o que dizer (o motivo
+    #: verdadeiro e "já chamei a equipe"); vazio = o aviso padrão da casa.
+    handoff_ack: str = ""
     extra_replies: list[str] = field(default_factory=list)
     tool_events: list[dict] = field(default_factory=list)
     order_ref: str = ""
@@ -307,6 +310,39 @@ def _allergy_outcome(conversation: Conversation, customer_text: str, *, channel_
 # ── O turno ───────────────────────────────────────────────────────────
 
 
+def addition_outcome(conversation, resolution, *, memory, memos) -> AgentOutcome | None:
+    """Acrescentar a pedido já feito, pelo mesmo serviço do PDV (dono, 03/10/2026).
+
+    A memória resolveu o "1" (``add_preview``: a pergunta de uma linha) ou o "sim" a
+    ela (``add_apply``). Sem modelo. Recusa numa encomenda chama a equipe com o
+    motivo no aviso. ``None`` quando a fala é outra coisa. Usado pelo agente e
+    pelas intenções no plural.
+    """
+    if resolution.outcome not in {"add_preview", "add_apply"}:
+        return None
+    from . import order_addition
+
+    request = resolution.request
+    if resolution.outcome == "add_preview":
+        addition = order_addition.propose(
+            conversation, order_ref=request.get("order_ref", ""), additions=request.get("add")
+        )
+    else:
+        addition = order_addition.apply(conversation, request)
+    if addition.handoff:
+        return AgentOutcome(
+            reply_text="", handoff=True, handoff_reason=addition.handoff_reason,
+            handoff_ack=addition.text, layer=LAYER_CONTEXT, memory=memory, memory_memos=memos,
+        )
+    return AgentOutcome(
+        reply_text=addition.text,
+        order_ref=addition.order_ref if addition.code == "added" else "",
+        layer=LAYER_CONTEXT,
+        memory=memory,
+        memory_memos=[*memos, addition.memo],
+    )
+
+
 def run_agent(*, conversation: Conversation, history: list[dict], client=None) -> AgentOutcome:
     """Roda um turno completo. ``history`` já contém a(s) mensagem(ns) do cliente."""
     from .prompt import build_system
@@ -354,6 +390,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
+    addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
+    if addition is not None:
+        return addition
     if resolution.answers_without_model:
         return AgentOutcome(
             reply_text=resolution.reply,
@@ -590,6 +629,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome.usage = usage
     outcome.handoff = ctx.handoff
     outcome.handoff_reason = ctx.handoff_reason
+    outcome.handoff_ack = ctx.handoff_ack
     outcome.extra_replies = list(ctx.extra_replies)
     outcome.order_ref = ctx.order_ref
     return outcome

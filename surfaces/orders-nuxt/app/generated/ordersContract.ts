@@ -490,6 +490,9 @@ export interface OrderCardProjection {
   danfe_problem: string;
   undo: UndoProjection | null;
   kitchen: KitchenProgressProjection | null;
+  volumes: number;
+  ready_at_iso: string;
+  dispatched_at_iso: string;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */

@@ -388,6 +388,15 @@ def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="syste
     return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision, actor=actor)
 
 
+def save_volumes(order, *, volumes, expected_revision=None, actor="system"):
+    try:
+        return operator_orders.save_volumes(order, volumes=volumes, expected_revision=expected_revision, actor=actor)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc)) from exc
+
+
 def assign_order(order, *, operator_id: int, operator_name: str, actor: str, expected_revision=None):
     return operator_orders.assign_order(
         order, operator_id=operator_id, operator_name=operator_name, actor=actor, expected_revision=expected_revision

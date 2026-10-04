@@ -45,10 +45,16 @@ const props = withDefaults(defineProps<{
   operatorName?: string;
   /** Seção ativa. Omitida, sai da rota. */
   current?: string;
+  /**
+   * Mostra Bloquear quando há operador (padrão). `false`: o app não trava operador (a
+   * Central, que é a porta de entrada; cada app trava o seu), e as iniciais seguem no pé.
+   */
+  lockable?: boolean;
 }>(), {
   hubUrl: undefined,
   operatorName: undefined,
   current: undefined,
+  lockable: true,
 });
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -206,7 +212,7 @@ function hideRail() {
       </div>
 
       <RailSection
-        v-if="operatorName"
+        v-if="operatorName && lockable"
         icon="lucide:lock"
         label="Bloquear"
         :aria-label="`${operatorName}: travar ou trocar`"
