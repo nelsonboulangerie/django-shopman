@@ -35,12 +35,15 @@ Nenhum número de fechamento de caixa passa por aqui (SUITE-UX §15, fechamento
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 #: Quantos dias do mesmo dia da semana formam o "típico".
 COMPARE_DAYS = 4
@@ -491,7 +494,11 @@ def _catalog(skus: list[str]) -> tuple[dict[str, str], dict[str, tuple[str, str]
         names[product.sku] = product.name
         try:
             cost = product.reference_cost_q
-        except Exception:  # custo é opcional: sem backend, a sobra fica sem R$
+        except Exception:
+            # Custo é opcional (sem CostBackend a propriedade já devolve None). Um
+            # backend configurado que falha não derruba a leitura: a sobra fica sem
+            # R$, o resumo diz "custo parcial", e a falha fica no log.
+            logger.warning("bi_over_short: custo de referência indisponível para %s", product.sku, exc_info=True)
             cost = None
         if cost:
             costs[product.sku] = int(cost)
