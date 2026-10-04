@@ -225,7 +225,7 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
       </p>
 
       <!-- Contagem que não fecha: a lista do que bate vira a lista de onde procurar. -->
-      <ul v-if="countMismatch && view.matched.length" class="mt-3 grid gap-2">
+      <ul v-if="countMismatch && view.matched.length" class="mt-3 grid grid-cols-1 gap-2">
         <li v-for="preview in view.matched" :key="`count-${preview.line.id}`">
           <button
             type="button"
@@ -265,7 +265,7 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
             <p class="op-label font-normal text-muted-foreground tnum">{{ receiptSettledSummary(currentExpiry) }} · vence em quando?</p>
           </div>
         </div>
-        <div class="mt-3 grid gap-2">
+        <div class="mt-3 grid grid-cols-1 gap-2">
           <button
             v-for="(shortcut, index) in currentShortcuts"
             :key="shortcut.key"
@@ -293,7 +293,7 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
         <p class="mt-2 op-label font-normal text-muted-foreground">Um toque grava e passa para o próximo.</p>
       </div>
 
-      <ul v-if="expiryDoneList.length" class="mt-2 grid gap-2">
+      <ul v-if="expiryDoneList.length" class="mt-2 grid grid-cols-1 gap-2">
         <li
           v-for="preview in expiryDoneList"
           :key="`expiry-${preview.line.id}`"
@@ -324,7 +324,7 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
         <h3 class="text-[18px] leading-snug font-semibold">Para resolver</h3>
       </div>
       <p class="mt-0.5 op-label font-normal text-muted-foreground">Estes itens não batem com a nota: cada um pede a sua conferência.</p>
-      <ul class="mt-3 grid gap-2">
+      <ul class="mt-3 grid grid-cols-1 gap-2">
         <li v-for="preview in view.exceptions" :key="`exception-${preview.line.id}`">
           <button
             type="button"

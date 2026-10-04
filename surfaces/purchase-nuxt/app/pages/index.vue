@@ -738,7 +738,34 @@ function stockAfterReceipt(sku: string): number {
 // ── Cabeçalho de uma linha (camada visual da suíte) ─────────────────────────
 const isPhone = useMediaQuery("(max-width: 767.98px)");
 const VIEW_TITLES = { panel: "Painel", buy: "Comprar", receive: "Receber", base: "Base" } as const;
-const pageTitle = computed(() => VIEW_TITLES[view.value]);
+// Celular com uma entrada aberta: a barra de 56px fala do documento, como a prévia v4
+// ("Alto Alegre" e, acima, "NF 12.884 · R$ 2.416,80"). Sem entrada, o nome da seção.
+const phoneReceiptHeader = computed(() => isPhone.value && view.value === "receive" && !receiptIsBlank.value && Boolean(receiptSupplier.value));
+const pageTitle = computed(() =>
+  phoneReceiptHeader.value ? receiptSupplier.value?.displayName || receiptSupplier.value?.name || VIEW_TITLES.receive : VIEW_TITLES[view.value],
+);
+const pageEyebrow = computed(() => {
+  if (!phoneReceiptHeader.value) return "";
+  return [receiptMode.value === "invoice" ? invoiceNumber.value : "Sem NF", formatMoney(receiptTotalCostQ.value)].filter(Boolean).join(" · ");
+});
+
+// Com a NF lida e o fornecedor certo, o bloco de leitura recolhe numa linha (prévias
+// v3/v4: a conferência é a tela; o documento vira cabeçalho). "Trocar NF" reabre.
+const docExpanded = ref(false);
+const docCompact = computed(
+  () =>
+    receiptMode.value === "invoice" &&
+    invoiceStatus.value.valid &&
+    receiptLinePreviews.value.length > 0 &&
+    Boolean(receiptSupplierRef.value) &&
+    !docExpanded.value,
+);
+watch(
+  () => invoiceStatus.value.accessKey,
+  () => {
+    docExpanded.value = false;
+  },
+);
 
 // A hora da última leitura útil da base. O Compras não tem SSE: a leitura acontece ao
 // abrir e em Atualizar, e o ponto diz isso sem fingir ao vivo quando a leitura falha.
@@ -813,7 +840,7 @@ onBeforeUnmount(stopInvoiceScanner);
          recortes na segunda linha. No celular, a barra de 56px com o selo, a lupa e o
          sino. Fica preso no topo enquanto a tela rola. -->
     <div class="sticky top-0 z-30">
-      <OperatorPageHeader :title="pageTitle" :eyebrow="view === 'receive' && isPhone ? receiptDocumentTitle : ''">
+      <OperatorPageHeader :title="pageTitle" :eyebrow="pageEyebrow">
         <template #status>
           <OperatorLiveStatus
             :tone="liveTone"
@@ -868,14 +895,24 @@ onBeforeUnmount(stopInvoiceScanner);
         </template>
 
         <template #phone-actions>
+          <button
+            type="button"
+            class="grid size-12 place-items-center rounded-md text-foreground"
+            aria-label="Atualizar"
+            @click="refresh()"
+          >
+            <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
+          </button>
           <PurchasePhoneBell />
         </template>
 
-        <template #actions>
+        <!-- No celular só o Receber tem controles na linha de baixo (Com NF / Sem NF);
+             Atualizar sobe para a barra de 56px. -->
+        <template v-if="!isPhone || view === 'receive'" #actions>
           <!-- Receber: o selo da chave lida e o par Com NF / Sem NF. -->
           <template v-if="view === 'receive'">
             <span
-              v-if="receiptMode === 'invoice' && invoiceStatus.valid"
+              v-if="receiptMode === 'invoice' && invoiceStatus.valid && !isPhone"
               class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 op-label font-semibold pill-success tnum"
             >
               <Icon name="lucide:check" class="size-4" />
@@ -895,7 +932,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <span v-if="view === 'buy'" class="inline-flex h-8 shrink-0 items-center rounded-full px-3 op-label pill-muted tnum">
             {{ purchaseSupplierCount }} {{ purchaseSupplierCount === 1 ? "fornecedor" : "fornecedores" }}
           </span>
-          <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+          <UiIconButton v-if="!isPhone" icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
         </template>
 
         <!-- Base: Atenção e as métricas de Compras hoje; cada uma leva ao recorte. -->
@@ -986,9 +1023,9 @@ onBeforeUnmount(stopInvoiceScanner);
       </section>
 
       <!-- ══ PAINEL ══════════════════════════════════════════════════════════ -->
-      <section v-if="view === 'panel'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <section v-if="view === 'panel'" class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="min-w-0 space-y-4">
-          <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Painel de compras">
+          <section class="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Painel de compras">
             <button type="button" class="rounded-xl border border-border bg-card p-4 text-left transition hover:bg-accent" @click="view = 'buy'">
               <p class="flex items-center gap-2 op-eyebrow text-muted-foreground">
                 <Icon name="lucide:shopping-cart" class="size-4 text-warning" />
@@ -1135,7 +1172,7 @@ onBeforeUnmount(stopInvoiceScanner);
       </section>
 
       <!-- ══ COMPRAR ═════════════════════════════════════════════════════════ -->
-      <section v-else-if="view === 'buy'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <section v-else-if="view === 'buy'" class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <section class="min-w-0">
           <p class="mb-3 op-body text-muted-foreground">Solicitações consolidadas por estoque, produção e operação.</p>
 
@@ -1219,7 +1256,7 @@ onBeforeUnmount(stopInvoiceScanner);
       </section>
 
       <!-- ══ RECEBER ═════════════════════════════════════════════════════════ -->
-      <section v-else-if="view === 'receive'" class="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <section v-else-if="view === 'receive'" class="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div class="min-w-0 space-y-4">
           <!-- Deu certo, e a tela diz isso onde o olho está: no topo, do tamanho
                do que aconteceu, com o que entrou escrito por extenso. O gesto
@@ -1259,7 +1296,23 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
           </section>
 
-          <section class="rounded-xl border border-border bg-card p-4">
+          <section v-if="docCompact" class="flex items-center gap-3 rounded-xl border border-success/30 bg-card px-4 py-3" data-receipt-document-compact>
+            <span class="grid size-10 shrink-0 place-items-center rounded-full pill-success">
+              <Icon name="lucide:file-check-2" class="size-5" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <p class="truncate op-title">{{ receiptDocumentTitle }}</p>
+              <p class="truncate op-micro text-muted-foreground tnum">
+                <template v-if="receiptSupplier?.document">{{ receiptSupplier.document }} · </template>{{ invoiceKeyLabel }} · {{ receiptSupplier?.paymentTerm || "prazo a combinar" }}
+              </p>
+            </div>
+            <button type="button" class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 op-label font-semibold hover:bg-accent" @click="docExpanded = true">
+              <Icon name="lucide:scan-line" class="size-4" />
+              Trocar NF
+            </button>
+          </section>
+
+          <section v-else class="rounded-xl border border-border bg-card p-4">
             <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
               <div class="space-y-3">
                 <!-- Prévia v3 (celular): começar pela câmera. O que se faz é grande e
@@ -1369,7 +1422,7 @@ onBeforeUnmount(stopInvoiceScanner);
 
                  `min-w-0` no item da lista: sem ele a coluna é dimensionada pelo
                  min-content do nome mais comprido e passa da largura do telefone. -->
-            <ul v-if="receiptRows.length" class="grid min-w-0 gap-2 p-3">
+            <ul v-if="receiptRows.length" class="grid min-w-0 grid-cols-1 gap-2 p-3">
               <li
                 v-for="row in receiptRows"
                 :key="row.id"
@@ -1581,15 +1634,73 @@ onBeforeUnmount(stopInvoiceScanner);
         <!-- Insumos: tabela e painel docado do item (prévia `purchase-base3.html`). -->
         <section v-if="baseView === 'materials'" class="flex min-w-0 flex-1 flex-col xl:flex-row">
           <div class="flex min-w-0 flex-1 flex-col xl:px-4 xl:pt-3">
-            <div class="overflow-hidden rounded-lg border border-border bg-card">
+            <!-- Celular: um cartão por insumo (a tabela de seis colunas não cabe em 390 px). -->
+            <ul v-if="isPhone" class="grid grid-cols-1 gap-2" data-material-cards>
+              <li
+                v-for="material in filteredMaterials"
+                :key="`card-${material.sku}`"
+                class="rounded-xl border bg-card p-3"
+                :class="selectedMaterial?.sku === material.sku ? 'border-primary/50 bg-primary/8' : 'border-border'"
+              >
+                <button type="button" class="block w-full min-w-0 text-left" @click="selectMaterial(material.sku)">
+                  <span class="block truncate op-title">{{ material.name }}</span>
+                  <span class="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+                    <span class="shrink-0 font-mono op-micro text-muted-foreground">{{ material.sku }}</span>
+                    <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="inline-flex h-5 items-center rounded border border-border px-1.5 op-micro text-muted-foreground">{{ badge }}</span>
+                  </span>
+                </button>
+                <div class="mt-2 flex items-end justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="op-micro text-muted-foreground">Estoque · {{ coverageLabel(material.coverageDays) }}</p>
+                    <p class="op-title tnum">{{ formatStockOnHand(material) }}</p>
+                  </div>
+                  <label
+                    class="inline-flex h-11 w-32 shrink-0 items-center gap-1.5 rounded-md bg-card px-2.5"
+                    :class="minStockLineErrors[material.sku] ? 'border-2 border-destructive' : minStockInputs[material.sku] ? 'border-2 border-primary' : 'border border-input'"
+                  >
+                    <input
+                      inputmode="decimal"
+                      :placeholder="material.minStockDeclared ? material.minStock.toLocaleString('pt-BR') : 'sem mínimo'"
+                      class="w-full min-w-0 border-0 bg-transparent p-0 text-right font-semibold tnum outline-none placeholder:op-micro placeholder:font-normal placeholder:text-muted-foreground focus:ring-0"
+                      :aria-label="`Mínimo de ${material.name}`"
+                      :value="minStockInputs[material.sku] ?? ''"
+                      @input="setMinStockInput(material.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span class="op-micro text-muted-foreground">{{ material.unit }}</span>
+                  </label>
+                </div>
+                <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <span class="inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold" :class="tonePills[material.tone]">
+                    <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+                    {{ toneLabels[material.tone] }}
+                  </span>
+                  <span class="op-micro text-muted-foreground tnum">
+                    {{ material.preferredBaseCostQ ? `${formatMoney(material.preferredBaseCostQ)} / ${material.unit}` : "sem custo" }}
+                  </span>
+                </div>
+                <p v-if="!material.minStockDeclared && material.minStock" class="mt-1 op-micro text-muted-foreground">
+                  pelo consumo: {{ formatQty(material.minStock, material.unit) }}
+                </p>
+                <p v-if="minStockLineErrors[material.sku]" class="mt-1 op-micro font-semibold text-destructive">
+                  {{ minStockLineErrors[material.sku] }}
+                </p>
+              </li>
+              <li v-if="!filteredMaterials.length" class="rounded-xl border border-dashed border-border p-6 text-center op-body text-muted-foreground">
+                <template v-if="!materials.length">Base de insumos ainda não carregada.</template>
+                <template v-else-if="query.trim()">Nenhum insumo encontrado para “{{ query }}”.</template>
+                <template v-else>Nenhum insumo pede atenção.</template>
+              </li>
+            </ul>
+            <div v-else class="overflow-hidden rounded-lg border border-border bg-card">
               <div class="overflow-x-auto">
-                <table class="w-full min-w-[56rem] op-body">
+                <table class="w-full min-w-[56rem] table-fixed op-body">
+                  <colgroup><col><col class="w-28"><col class="w-32"><col class="w-48"><col class="w-32"><col class="w-32"></colgroup>
                   <thead class="bg-muted/60 text-left text-muted-foreground">
                     <tr class="h-10">
                       <th class="pr-2 pl-4 op-eyebrow">Insumo</th>
                       <th class="px-3 text-right op-eyebrow">Estoque</th>
                       <th class="px-3 op-eyebrow">Cobertura</th>
-                      <th class="w-44 px-3 op-eyebrow">Mínimo</th>
+                      <th class="px-3 op-eyebrow">Mínimo</th>
                       <th class="px-3 text-right op-eyebrow whitespace-nowrap">Custo-base</th>
                       <th class="px-3 op-eyebrow">Situação</th>
                     </tr>
@@ -1637,14 +1748,8 @@ onBeforeUnmount(stopInvoiceScanner);
                              campo: pré-preenchido, ele convida a "confirmar"
                              digitando o mesmo número — e isso congela um mínimo que
                              era para acompanhar o consumo. -->
-                        <p class="mt-0.5 op-micro text-muted-foreground">
-                          <template v-if="material.minStockDeclared">
-                            definido: {{ formatQty(material.minStock, material.unit) }}
-                          </template>
-                          <template v-else-if="material.minStock">
-                            pelo consumo: {{ formatQty(material.minStock, material.unit) }}
-                          </template>
-                          <template v-else>sem mínimo</template>
+                        <p v-if="!material.minStockDeclared && material.minStock" class="mt-0.5 op-micro text-muted-foreground">
+                          pelo consumo: {{ formatQty(material.minStock, material.unit) }}
                         </p>
                         <p v-if="minStockLineErrors[material.sku]" class="mt-0.5 op-micro font-semibold text-destructive">
                           {{ minStockLineErrors[material.sku] }}
@@ -1709,7 +1814,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <!-- Painel docado do item (prévia v3: 372 px, borda à esquerda). -->
           <aside
             v-if="selectedMaterial"
-            class="mt-4 shrink-0 rounded-lg border border-border bg-card xl:mt-0 xl:w-[372px] xl:self-start xl:rounded-none xl:border-y-0 xl:border-r-0"
+            class="mt-4 shrink-0 rounded-lg border border-border bg-card xl:mt-0 xl:w-[372px] xl:self-stretch xl:rounded-none xl:border-y-0 xl:border-r-0"
             data-material-panel
           >
             <div class="flex items-start gap-3 border-b border-border px-5 pt-4 pb-3">
@@ -1844,7 +1949,7 @@ onBeforeUnmount(stopInvoiceScanner);
         </section>
 
         <!-- Fornecedores -->
-        <section v-else-if="baseView === 'suppliers'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <section v-else-if="baseView === 'suppliers'" class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div class="grid content-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
             <button v-for="summary in supplierSummaries" :key="summary.supplier.ref" type="button" class="rounded-xl border p-4 text-left transition" :class="summary.supplier.ref === selectedSupplierRef ? 'border-primary bg-primary/8 shadow-[inset_3px_0_0_var(--primary)]' : 'border-border bg-card hover:bg-accent'" @click="selectSupplier(summary.supplier.ref)">
               <div class="flex items-start justify-between gap-3">
@@ -2064,7 +2169,7 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
           </section>
 
-          <div class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+          <div class="grid grid-cols-1 gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
             <aside class="h-fit rounded-xl border border-border bg-card p-4">
               <h2 class="op-title">Lançar custo</h2>
               <div class="mt-3 space-y-3">
