@@ -95,7 +95,7 @@ def test_order_by_customer_name_links_to_the_order_in_the_gestor(client, maria_o
     assert order["title"] == "X36 · Maria Santos"
     assert order["place"] == "Gestor › Pedidos"
     assert order["url"] == "https://gestor.example.test/WEB-20261003-X36"
-    assert "R$ 13,00" in order["detail"]
+    assert "R$\u00a013,00" in order["detail"]
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -139,7 +139,7 @@ def test_product_by_name_and_sku_opens_the_catalog(client):
     assert by_name == by_sku
     [product] = by_name
     assert product["url"] == "https://gestor.example.test/catalog?sku=MADELEINE"
-    assert "R$ 6,50" in product["detail"]
+    assert "R$\u00a06,50" in product["detail"]
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -188,6 +188,7 @@ def test_screens_by_name_without_accent(client):
     search = _search(client, _admin(), "relatorios")
     [screen] = _group(search, "screens")
     assert screen["title"] == "Produção › Relatórios"
+    assert screen["place"] == "tela"
     assert screen["url"] == "https://prod.example.test/reports"
 
 
@@ -306,3 +307,17 @@ def test_a_broken_source_does_not_break_the_search(client, monkeypatch, maria_or
     with override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS):
         search = _search(client, _admin(), "maria")
     assert [g["type"] for g in search["groups"]] == ["preorders"]
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_work_orders_nearest_day_first(client):
+    recipe = Recipe.objects.create(ref="baguete", name="Baguete", output_sku="BAG", batch_size=Decimal("10"))
+    today = timezone.localdate()
+    for offset in (30, -1, 0, 1):
+        WorkOrder.objects.create(
+            recipe=recipe, output_sku="BAG", quantity=Decimal("10"), target_date=today + timedelta(days=offset),
+        )
+    lots = _group(_search(client, _admin(), "baguete"), "work_orders")
+    days = [lot["url"].split("date=")[1] for lot in lots]
+    expected = [today + timedelta(days=d) for d in (0, 1, -1, 30)]
+    assert days == [d.isoformat() for d in expected]

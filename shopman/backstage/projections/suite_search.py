@@ -238,7 +238,8 @@ def _has(user, perm: str) -> bool:
 
 
 def _money(value_q) -> str:
-    return f"R$ {format_money(int(value_q or 0))}"
+    # Espaço inquebrável: "R$" nunca fica numa linha e o valor na outra.
+    return f"R$\u00a0{format_money(int(value_q or 0))}"
 
 
 def _fold(value: str) -> str:
@@ -396,7 +397,14 @@ def _work_orders(user, query, app, app_label, base):
         .select_related("recipe")
         .order_by("-target_date", "-created_at")
     )
-    for wo in work_orders[:PER_TYPE_LIMIT]:
+    # O lote de hoje primeiro, depois o mais perto (amanhã antes do mês que vem; ontem
+    # antes da semana passada): quem busca "croissant" quer o da bancada.
+    today = timezone.localdate()
+    nearest = sorted(
+        work_orders[: PER_TYPE_LIMIT * 6],
+        key=lambda wo: (abs((wo.target_date - today).days) if wo.target_date else 9999, wo.target_date and wo.target_date < today),
+    )
+    for wo in nearest[:PER_TYPE_LIMIT]:
         day = wo.target_date.strftime("%d/%m") if wo.target_date else ""
         query_params = {"q": wo.ref}
         if wo.target_date:
@@ -473,9 +481,9 @@ def _screens(user, query, surfaces) -> list[SuiteSearchResultProjection]:
                 type="screens",
                 app=screen.app,
                 app_label=app_label,
-                place=f"{app_label} › {screen.label}",
+                place="tela",
                 title=f"{app_label} › {screen.label}",
-                detail="tela",
+                detail="",
                 url=_join_url(base, screen.path) if screen.path != "/" else base,
                 icon=screen.icon,
             )

@@ -20,7 +20,9 @@
 //
 // Teclas impressas só com ponteiro fino (SPEC4 §7: tablet sem teclas impressas).
 import { onClickOutside, useMediaQuery } from "@vueuse/core";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+
+import { OPERATOR_APPS, type OperatorAppRef } from "../../appIdentity";
 
 import {
   SUITE_SEARCH_COPY as COPY,
@@ -94,8 +96,9 @@ watch(scopes, (next) => {
 const typeFilter = ref("");
 
 const { groups, apps, status, retry } = useSuiteSearchResults(text, searching);
+const kitIdentity = OPERATOR_APPS[config.operatorPwa?.app as OperatorAppRef];
 const appLabel = computed(
-  () => apps.value.find((app) => app.ref === appRef)?.label || config.operatorPwa?.identity?.label || "App",
+  () => apps.value.find((app) => app.ref === appRef)?.label || kitIdentity?.shortLabel || kitIdentity?.label || "App",
 );
 const ready = computed(() => suiteQueryReady(text.value));
 const scopedGroups = computed(() => groupsForScope(groups.value, scope.value, appRef));
@@ -103,8 +106,9 @@ const visibleGroups = computed(() => groupsForType(scopedGroups.value, typeFilte
 const flat = computed(() => flattenGroups(visibleGroups.value));
 const counts = computed<Record<SuiteSearchScope, number | null>>(() => ({
   screen: props.screenCount,
-  app: ready.value ? appCount(apps.value, appRef) : null,
-  suite: ready.value ? suiteTotal(groups.value) : null,
+  // O número só aparece quando a leitura respondeu: "0" enquanto busca seria mentira.
+  app: ready.value && status.value === "ready" ? appCount(apps.value, appRef) : null,
+  suite: ready.value && status.value === "ready" ? suiteTotal(groups.value) : null,
 }));
 function scopeLabel(value: SuiteSearchScope): string {
   if (value === "screen") return COPY.screenScope;
@@ -117,7 +121,8 @@ watch([flat, scope, typeFilter], () => {
   active.value = -1;
 });
 
-const uid = `suite-search-${Math.random().toString(36).slice(2, 9)}`;
+// `useId`: o mesmo id no servidor e no navegador (um aleatório descasava a hidratação).
+const uid = `suite-search-${useId()}`;
 const listId = `${uid}-list`;
 const optionId = (index: number) => `${uid}-opt-${index}`;
 const activeId = computed(() => (active.value >= 0 ? optionId(active.value) : undefined));
@@ -466,13 +471,8 @@ defineExpose({ focus: () => openSearch(), open: openSearch });
                   <Icon :name="`lucide:${result.icon}`" class="size-4" />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block op-label font-semibold">
-                    <template v-for="(part, i) in highlightParts(result.title, text)" :key="i">
-                      <mark v-if="part.match" class="rounded bg-primary/20 px-0.5 text-foreground">{{ part.text }}</mark>
-                      <template v-else>{{ part.text }}</template>
-                    </template>
-                  </span>
-                  <span class="block op-micro text-muted-foreground">{{ result.place }}<template v-if="result.detail"> · {{ result.detail }}</template></span>
+                  <span class="block op-label font-semibold"><!-- numa linha só: espaço entre os trechos partiria a palavra marcada --><template v-for="(part, i) in highlightParts(result.title, text)" :key="i"><mark v-if="part.match" class="rounded-sm bg-primary/20 text-foreground">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
+                  <span class="block op-micro text-muted-foreground">{{ [result.place, result.detail].filter(Boolean).join(" · ") }}</span>
                 </span>
                 <kbd v-if="active === flat.indexOf(result)" class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline" aria-hidden="true">Enter</kbd>
               </a>
@@ -637,13 +637,8 @@ defineExpose({ focus: () => openSearch(), open: openSearch });
                     <Icon :name="`lucide:${result.icon}`" class="size-5" />
                   </span>
                   <span class="min-w-0 flex-1">
-                    <span class="block op-label font-semibold">
-                      <template v-for="(part, i) in highlightParts(result.title, text)" :key="i">
-                        <mark v-if="part.match" class="rounded bg-primary/20 px-0.5 text-foreground">{{ part.text }}</mark>
-                        <template v-else>{{ part.text }}</template>
-                      </template>
-                    </span>
-                    <span class="block op-micro text-muted-foreground">{{ result.place }}<template v-if="result.detail"> · {{ result.detail }}</template></span>
+                    <span class="block op-label font-semibold"><!-- numa linha só: espaço entre os trechos partiria a palavra marcada --><template v-for="(part, i) in highlightParts(result.title, text)" :key="i"><mark v-if="part.match" class="rounded-sm bg-primary/20 text-foreground">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
+                    <span class="block op-micro text-muted-foreground">{{ [result.place, result.detail].filter(Boolean).join(" · ") }}</span>
                   </span>
                   <Icon name="lucide:chevron-right" class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 </a>
