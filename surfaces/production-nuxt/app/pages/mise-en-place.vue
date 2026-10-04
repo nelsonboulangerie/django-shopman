@@ -176,7 +176,8 @@ function refreshAll() {
       >
         <template #actions>
           <OperatorPeriodPicker
-            v-model="period"
+          v-model="period"
+            class="[&_[data-period-today]]:hidden"
             :presets="['day']"
             :today="todayISO"
             label="Data da preparação"

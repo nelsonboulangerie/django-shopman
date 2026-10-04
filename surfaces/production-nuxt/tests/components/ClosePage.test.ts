@@ -170,7 +170,7 @@ describe("Fechamento", () => {
 
     expect(header.props("title")).toBe("Fechamento");
     expect(header.props("count")).toBe(1);
-    expect(header.props("countLabel")).toBe("lotes para finalizar");
+    expect(header.props("countLabel")).toBe("para finalizar");
   });
 
   it("o lote ainda não aberto diz isso, sem chamar de produzido", () => {

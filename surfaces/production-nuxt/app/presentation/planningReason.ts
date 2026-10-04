@@ -177,6 +177,20 @@ export function suggestionMath(
 
 // ── O histórico curto ──────────────────────────────────────────────────────
 
+/** A hora do meio entre as horas em que acabou ("10:40"). */
+function medianTime(times: string[]): string {
+  if (!times.length) return "";
+  const sorted = [...times].sort();
+  return sorted[Math.floor((sorted.length - 1) / 2)]!;
+}
+
+/** O ponto de cada dia recente: vermelho acabou cedo, âmbar sobrou, verde ok. */
+export const DAY_DOT_TONE: Record<string, string> = {
+  soldout: "bg-destructive",
+  leftover: "bg-warning",
+  ok: "bg-success",
+};
+
 export interface ReasonHistoryLine {
   kind: "soldout" | "leftover" | "season" | "bi";
   text: string;
@@ -190,7 +204,21 @@ export function suggestionHistory(
 ): ReasonHistoryLine[] {
   const days = sampleDaysWord(s, isoDate);
   const lines: ReasonHistoryLine[] = [];
-  if (s.soldout_days > 0 && s.sample_size > 0) {
+  const recent = s.recent_days ?? [];
+  const recentSoldout = recent.filter((day) => day.outcome === "soldout");
+  if (recentSoldout.length > 0) {
+    // "acabou às 10:40 em 3 dos últimos 4 sábados" (v4 pino 3), com um ponto por dia.
+    const time = medianTime(recentSoldout.map((day) => day.soldout_at).filter(Boolean));
+    const when = time ? ` às ${time}` : " antes de fechar";
+    lines.push({
+      kind: "soldout",
+      text:
+        recent.length === 1
+          ? `Acabou${when} no último ${days.one}`
+          : `Acabou${when} em ${recentSoldout.length} dos últimos ${recent.length} ${days.many}`,
+      note: "a projeção já soma o que deixou de vender",
+    });
+  } else if (s.soldout_days > 0 && s.sample_size > 0) {
     lines.push({
       kind: "soldout",
       text: `Acabou antes de fechar em ${s.soldout_days} dos ${s.sample_size} ${days.many} usados na conta`,

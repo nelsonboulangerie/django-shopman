@@ -378,11 +378,22 @@ describe("ProductionStageGrid — planning authority", () => {
     expect(w.find("[data-plan-inline]").text()).toBe("Planejar 8");
   });
 
-  it("zero não planeja: a linha não tem o que mandar", () => {
+  it("zero não planeja: o botão fica tracejado com cadeado e o motivo (SPEC4 §3)", () => {
     boardRows.value = [row({ suggestion: { ...suggestion, quantity: "0" } })];
     const w = mountGrid("plan");
 
-    expect(w.find("[data-plan-inline]").attributes("disabled")).toBeDefined();
+    expect(w.find("[data-plan-inline]").exists()).toBe(false);
+    const blocked = w.find("[data-plan-inline-blocked]");
+    expect(blocked.text()).toContain("Sem quantidade");
+    expect(blocked.classes()).toContain("border-dashed");
+  });
+
+  it("linha sem sugestão diz isso em texto, nunca um traço solto (R08)", () => {
+    boardRows.value = [row({ suggestion: null })];
+    const w = mountGrid("plan");
+    // Uma linha só não vira conjunto: fica em foco e diz por que não há número.
+    expect(w.find("[data-plan-no-suggestion]").text()).toBe("sem sugestão para o dia");
+    expect(w.find("[data-plan-inline-blocked]").text()).toContain("Sem quantidade");
   });
 
   it("o planejado vira estado, e corrigir abre o ajuste do lote pelo menu", async () => {
@@ -435,7 +446,8 @@ describe("ProductionStageGrid — planning authority", () => {
     ];
     const w = mountGrid("plan");
 
-    expect(w.find("[data-planned-row]").text()).toContain("(aberto)");
+    // O estado (aberto/fechado) mora no menu do item, não na linha (v4 pino 8).
+    expect(w.find("[data-planned-row]").text()).not.toContain("(aberto)");
     expect(w.find("[data-planned-correct]").text()).toBe("Planejar novo lote");
     await w.find("[data-planned-correct]").trigger("click");
     expect(w.text()).toContain("Soma ao dia");
@@ -777,10 +789,24 @@ describe("ProductionStageGrid — Abertura", () => {
       }),
     ];
     const w = mountGrid();
-    expect(byText(w, "button", "30")).toBeTruthy();
+    expect(w.find("[data-open-started-compact]").text()).toContain("30");
     expect(w.find('button[aria-label="Confirmar Pão"]').text().trim()).toBe(
       "Confirmar",
     );
+  });
+
+  it("linha aberta tem Ver lançamento e o ⋯ com Cancelar lote… (R12)", async () => {
+    boardRows.value = [
+      row({
+        started_qty: "30",
+        started_orders: [
+          wo({ pk: 7, ref: "WO-007", started_qty: "30", can_void: true }),
+        ],
+      }),
+    ];
+    const w = mountGrid();
+    expect(w.find("[data-open-view-launch]").text()).toBe("Ver lançamento");
+    expect(w.find("[data-open-row-menu]").exists()).toBe(true);
   });
 });
 
@@ -794,8 +820,8 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     ];
     const w = mountGrid();
 
-    // Sem planejado restante a célula mostra só o previsto (30), que abre a conferência.
-    await byText(w, "button", "30")!.trigger("click");
+    // A linha aberta mostra "Ver lançamento", que abre a conferência (R12).
+    await w.find("[data-open-view-launch]").trigger("click");
     expect(w.text()).toContain("previstas seguem para o");
     expect(w.text()).toContain("Fechamento");
     expect(w.text()).not.toContain("Avançar");
