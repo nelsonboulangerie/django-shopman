@@ -330,18 +330,13 @@ test.describe("fila de decisões", () => {
   });
 });
 
-test.describe("workspace Marketing V2", () => {
-  test("campanhas mostram Google e formatos no mobile", async ({ page }) => {
+test.describe("Ajustes, uma rota por lugar", () => {
+  test("campanhas em lista no mobile", async ({ page }) => {
     await openScenario(page, "board-normal", "/campaigns", V390);
     await expect(
-      page.getByRole("heading", {
-        level: 2,
-        name: "Planeje uma vez, adapte por destino",
-      }),
+      page.getByRole("heading", { level: 1, name: "Campanhas" }),
     ).toBeVisible();
-    await expect(page.getByText("Google", { exact: true })).toBeVisible();
-    await expect(page.getByText("Atualização · Evento · Oferta")).toBeVisible();
-    await expectStableScreenshot(page, "v2__campaigns", V390);
+    await expectStableScreenshot(page, "settings__campaigns", V390);
   });
 
   test("plataformas distinguem prontidão e catálogo no desktop", async ({
@@ -349,22 +344,18 @@ test.describe("workspace Marketing V2", () => {
   }) => {
     await openScenario(page, "board-normal", "/platforms", V1280);
     await expect(
-      page.getByRole("heading", {
-        level: 2,
-        name: "Plataformas possíveis e situação real",
-      }),
+      page.getByRole("heading", { level: 1, name: "Plataformas" }),
     ).toBeVisible();
-    await expect(page.getByText("TikTok via Relay")).toBeVisible();
-    await expectStableScreenshot(page, "v2__platforms", V1280);
+    await expectStableScreenshot(page, "settings__platforms", V1280);
   });
 
   test("ofertas e cupons ficam legíveis no desktop", async ({ page }) => {
     await openScenario(page, "board-normal", "/offers", V1280);
     await expect(
-      page.getByRole("heading", { level: 2, name: "Ofertas e cupons" }),
+      page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
     ).toBeVisible();
     await expect(page.getByText("Hibisco Primavera")).toBeVisible();
-    await expectStableScreenshot(page, "v2__offers", V1280);
+    await expectStableScreenshot(page, "settings__offers", V1280);
   });
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
@@ -372,7 +363,7 @@ test.describe("workspace Marketing V2", () => {
     await page.getByRole("button", { name: "Criar cupom" }).click();
     await expect(page.getByRole("dialog", { name: "Novo cupom" })).toBeVisible();
     await expect(page.getByLabel("Código do cupom")).toBeVisible();
-    await expectStableScreenshot(page, "v2__coupon-form", V390, "light", {
+    await expectStableScreenshot(page, "settings__coupon-form", V390, "light", {
       fullPage: false,
     });
   });
@@ -424,7 +415,7 @@ test.describe("cartão de anúncio", () => {
     await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
-    await expect(page.getByRole("dialog")).toContainText("Disparar agora");
+    await expect(page.getByRole("dialog")).toContainText("Publicar e enviar");
     // A caixa mostra o texto que vai sair, não só para quem e onde.
     await expect(page.getByRole("dialog")).toContainText(
       "Pães de fermentação natural",
@@ -439,6 +430,22 @@ test.describe("cartão de anúncio", () => {
       "light",
       { fullPage: false },
     );
+  });
+
+  // V6-MKT (§15): acima do limiar o selo pede a segunda pessoa por push, e a frase
+  // e a senha seguem como caminho quando o dispositivo não tem digital cadastrada.
+  test("selo acima do limiar pede a segunda pessoa", async ({ page }) => {
+    await openScenario(page, "seal-dual", "/__visual_board", V390);
+    await waitForFaithfulPreview(page);
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Acima de 500 clientes, outra pessoa confirma");
+    await expect(
+      dialog.getByRole("button", { name: "Pedir a confirmação de outra pessoa" }),
+    ).toBeVisible();
+    await expectStableScreenshot(page, "announcement-card__seal-dual", V390, "light", {
+      fullPage: false,
+    });
   });
 
   test("conflito de rascunho compara as duas versões", async ({ page }) => {
@@ -818,10 +825,7 @@ test.describe("listas operacionais", () => {
 
   test("plataforma bloqueada explica reparo no mobile", async ({ page }) => {
     await openScenario(page, "platforms-blocked", "/platforms", V320);
-    await page
-      .getByRole("link", { name: "Ver conexão e configuração" })
-      .first()
-      .click();
+    await page.locator("[data-marketing-platform]").first().click();
     await expect(page.getByRole("dialog").last()).toBeVisible();
     await expectStableScreenshot(page, "platforms__blocked", V320, "light", {
       fullPage: false,
@@ -830,11 +834,7 @@ test.describe("listas operacionais", () => {
 
   test("teste sandbox preserva comprovante", async ({ page }) => {
     await openScenario(page, "platforms-ready", "/platforms", V768);
-    await page
-      .locator("li")
-      .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
-      .click();
+    await page.locator('[data-marketing-platform="whatsapp"]').click();
     await page.getByRole("button", { name: "Enviar teste" }).click();
     await expect(
       page.getByText(/Comprovante visual-test-receipt/),
@@ -852,11 +852,7 @@ test.describe("listas operacionais", () => {
     page,
   }) => {
     await openScenario(page, "platforms-conflict", "/platforms", V1440);
-    await page
-      .locator("li")
-      .filter({ hasText: "WhatsApp" })
-      .getByRole("link", { name: /Configurar WhatsApp|Ver conexão/ })
-      .click();
+    await page.locator('[data-marketing-platform="whatsapp"]').click();
     // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
     // em vez de um cartão por modelo.
     await page.getByRole("button", { name: /Modelo aprovado/ }).click();

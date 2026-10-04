@@ -434,7 +434,12 @@ useHead({ title: "Anúncio" });
         </NuxtLink>
       </template>
       <template v-if="deadline" #status>
-        <span class="op-micro tnum" :class="deadline.tone" data-review-deadline>{{ deadline.text }}</span>
+        <span class="hidden op-micro tnum md:inline" :class="deadline.tone" data-review-deadline>{{ deadline.text }}</span>
+      </template>
+      <!-- No celular o prazo desce para a linha de baixo (v4): o título inteiro cabe em
+           cima ("Lote pronto: Croissant") e o prazo fica logo abaixo, no mesmo âmbar. -->
+      <template v-if="deadline" #below>
+        <p class="-mt-1 px-4 pb-2.5 pl-[3.25rem] op-label tnum md:hidden" :class="deadline.tone" data-review-deadline-phone>{{ deadline.text }}</p>
       </template>
       <template v-if="announcement?.status === 'pending_review'" #actions>
         <MarketingPageMenu heading="Revisão" :items="REVIEW_MENU" @select="onReviewMenu" />
