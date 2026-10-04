@@ -259,7 +259,7 @@ function secondaryClass(priority: string): string {
           class="op-micro tnum"
           :class="clock.tone === 'late' ? 'font-semibold text-destructive' : clock.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted-foreground'"
           data-card-clock
-        ><template v-if="seal.label !== card.status_label">{{ card.status_label }} · </template>{{ clock.text }}</span>
+        ><template v-if="seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso">{{ card.status_label }} · </template>{{ clock.text }}</span>
       </div>
       <span v-else class="shrink-0 pt-1 op-micro text-muted-foreground">{{ card.fulfillment_label }}<template v-if="pack"> · {{ pack }}</template></span>
     </div>

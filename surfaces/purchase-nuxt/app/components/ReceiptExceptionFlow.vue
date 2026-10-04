@@ -131,27 +131,32 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
 </script>
 
 <template>
+  <!-- Desenho da prévia v4 (`compras-validade4.html`): o veredito do sistema num cartão
+       verde (ou âmbar), o ato da vez com borda cheia na cor do app, atalhos de 48px,
+       stepper de 56px e as linhas resolvidas em verde leve com "Trocar". -->
   <section class="space-y-3" aria-label="Conferência por exceção">
     <!-- 1. O que o sistema já sabe: a nota e quanto dela bate. -->
     <div
-      class="rounded-md border p-4"
-      :class="view.exceptions.length === 0 ? 'border-success/30 bg-success/5' : 'border-warning/30 bg-warning/5'"
+      class="rounded-2xl border p-4"
+      :class="view.exceptions.length === 0 ? 'border-success/35 bg-success/8' : 'border-warning/40 bg-warning/8'"
+      data-exception-verdict
     >
       <div class="flex items-start gap-3">
         <span
-          class="grid size-11 shrink-0 place-items-center rounded-full"
-          :class="view.exceptions.length === 0 ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'"
+          class="grid size-11 shrink-0 place-items-center rounded-full text-white"
+          :class="view.exceptions.length === 0 ? 'bg-success' : 'bg-warning'"
         >
-          <Icon :name="view.exceptions.length === 0 ? 'lucide:check-check' : 'lucide:triangle-alert'" class="size-5" />
+          <Icon :name="view.exceptions.length === 0 ? 'lucide:check-check' : 'lucide:triangle-alert'" class="size-6" />
         </span>
         <div class="min-w-0 flex-1">
-          <h2 class="text-lg font-semibold">{{ headline }}</h2>
-          <p class="text-sm text-muted-foreground">
+          <h2 class="text-[19px] leading-snug font-semibold">{{ headline }}</h2>
+          <p class="mt-0.5 op-body tnum">
             {{ lineCount }} {{ lineCount === 1 ? "item" : "itens" }}<template v-if="totalCostQ > 0"> · {{ formatMoney(totalCostQ) }}</template>
           </p>
         </div>
       </div>
-      <p v-if="view.matched.length" class="mt-3 text-xs text-muted-foreground">
+      <p v-if="view.matched.length" class="mt-3 flex items-start gap-2 text-[14px] leading-[22px] text-foreground/85">
+        <Icon name="lucide:sparkles" class="mt-1 size-4 shrink-0 text-muted-foreground" />
         Bate com a nota quando o item é o do de-para, a embalagem confere com o cadastro e a quantidade e o valor são os da nota.
       </p>
     </div>
@@ -160,75 +165,75 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
     <div
       v-if="view.available"
       data-receipt-anchor="volumes"
-      class="scroll-mt-4 rounded-md border bg-card p-4 transition-shadow"
-      :class="[countMismatch ? 'border-destructive/40' : view.countOk ? 'border-success/40' : 'border-primary/40', volumesRing]"
+      class="scroll-mt-4 rounded-2xl bg-card p-4 transition-shadow"
+      :class="[countMismatch ? 'border-2 border-destructive' : view.countOk ? 'border border-success/40' : 'border-2 border-primary', volumesRing]"
     >
-      <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">O que só você vê</p>
-      <h3 class="mt-1 text-base font-semibold">Contei os volumes</h3>
-      <p class="text-sm text-muted-foreground">{{ volumesSource }}</p>
+      <p class="op-eyebrow" :class="countMismatch ? 'text-destructive' : view.countOk ? 'text-success' : 'text-primary'">O que só você vê</p>
+      <h3 class="mt-1 text-[18px] leading-snug font-semibold">Contei os volumes</h3>
+      <p class="op-label font-normal text-muted-foreground">{{ volumesSource }}</p>
 
-      <div class="mt-3 flex items-stretch gap-2">
+      <div class="mt-3 flex items-center gap-3">
         <button
           type="button"
-          class="inline-flex size-12 shrink-0 items-center justify-center rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+          class="grid size-14 shrink-0 place-items-center rounded-[14px] border border-border bg-card hover:bg-accent disabled:opacity-50"
           aria-label="Um volume a menos"
           :disabled="pending || draftCount <= 0"
           @click="stepCount(-1)"
         >
-          <Icon name="lucide:minus" class="size-5" />
+          <Icon name="lucide:minus" class="size-6" />
         </button>
         <div
-          class="flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border tabular-nums"
-          :class="countMatches ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'"
+          class="flex h-16 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border tnum"
+          :class="countMatches ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'"
           aria-live="polite"
         >
-          <span class="text-2xl font-bold">{{ draftCount }}</span>
-          <span class="text-sm text-muted-foreground">de {{ view.expectedVolumes }}</span>
-          <Icon v-if="countMatches" name="lucide:circle-check" class="size-4 text-success" />
+          <span class="text-[34px] leading-none font-semibold">{{ draftCount }}</span>
+          <span class="text-[17px] font-medium text-muted-foreground">de {{ view.expectedVolumes }}</span>
+          <Icon v-if="countMatches" name="lucide:circle-check" class="ml-1 size-5 text-success" />
         </div>
         <button
           type="button"
-          class="inline-flex size-12 shrink-0 items-center justify-center rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+          class="grid size-14 shrink-0 place-items-center rounded-[14px] border border-border bg-card hover:bg-accent disabled:opacity-50"
           aria-label="Um volume a mais"
           :disabled="pending"
           @click="stepCount(1)"
         >
-          <Icon name="lucide:plus" class="size-5" />
+          <Icon name="lucide:plus" class="size-6" />
         </button>
       </div>
 
       <button
         v-if="!countDeclared"
         type="button"
-        class="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        class="mt-3 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 op-action text-primary-foreground disabled:opacity-50"
         :disabled="pending || draftCount <= 0"
         @click="emit('count', draftCount)"
       >
-        <Icon name="lucide:check" class="size-4" />
+        <Icon name="lucide:check" class="size-5" />
         Contei {{ draftCount }} {{ draftCount === 1 ? "volume" : "volumes" }}
       </button>
       <p
         v-else-if="view.countOk"
-        class="mt-3 flex items-center gap-1.5 rounded-md bg-success/10 px-3 py-2 text-sm font-medium text-success"
+        class="mt-3 flex items-center gap-2 rounded-xl bg-success/10 px-3 py-2.5 op-label text-success"
       >
-        <Icon name="lucide:circle-check-big" class="size-4 shrink-0" />
+        <Icon name="lucide:circle-check-big" class="size-5 shrink-0" />
         {{ view.countedVolumes }} de {{ view.expectedVolumes }} volumes contados. Os itens que batem entram sem conferir um a um.
       </p>
-      <p v-else class="mt-3 flex items-start gap-1.5 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-        <Icon name="lucide:circle-alert" class="mt-0.5 size-4 shrink-0" />
+      <p v-else class="mt-3 flex items-start gap-2 rounded-xl bg-destructive/10 px-3 py-2.5 op-label text-destructive">
+        <Icon name="lucide:circle-alert" class="mt-0.5 size-5 shrink-0" />
         Contou {{ view.countedVolumes }} de {{ view.expectedVolumes }}. Abra o item que chegou diferente e corrija a quantidade que chegou.
       </p>
 
       <!-- Contagem que não fecha: a lista do que bate vira a lista de onde procurar. -->
-      <ul v-if="countMismatch && view.matched.length" class="mt-3 grid gap-2">
+      <ul v-if="countMismatch && view.matched.length" class="mt-3 grid grid-cols-1 gap-2">
         <li v-for="preview in view.matched" :key="`count-${preview.line.id}`">
           <button
             type="button"
-            class="flex h-12 w-full min-w-0 items-center gap-2 rounded-md border border-border px-3 text-left text-sm hover:bg-accent"
+            class="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-left hover:bg-accent"
             @click="emit('open', preview.line.id)"
           >
-            <span class="min-w-0 flex-1 truncate font-medium">{{ receiptLineLabel(preview) }}</span>
-            <span class="shrink-0 text-xs text-muted-foreground">{{ receiptSettledSummary(preview) }}</span>
+            <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ receiptLineLabel(preview) }}</span>
+            <span class="shrink-0 op-micro text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
             <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
           </button>
         </li>
@@ -236,68 +241,74 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
     </div>
 
     <!-- 3. A validade é incontornável: uma linha perecível por vez. -->
-    <div v-if="view.perishables.length" class="rounded-md border border-border bg-card p-4">
+    <div v-if="view.perishables.length" class="rounded-2xl border border-border bg-card p-4">
       <div class="flex items-baseline justify-between gap-2">
-        <h3 class="text-base font-semibold">{{ view.nextExpiry ? "Falta só a validade" : "Validades" }}</h3>
-        <span class="text-sm tabular-nums text-muted-foreground">{{ view.expiryDone }} de {{ view.perishables.length }}</span>
+        <h3 class="text-[19px] leading-snug font-semibold">{{ view.nextExpiry ? "Falta só a validade" : "Validades" }}</h3>
+        <span class="op-body font-semibold tnum">{{ view.expiryDone }} de {{ view.perishables.length }}</span>
       </div>
-      <div class="mt-2 flex gap-1" aria-hidden="true">
+      <div class="mt-2 flex gap-1.5" aria-hidden="true">
         <span
           v-for="preview in view.perishables"
           :key="`bar-${preview.line.id}`"
-          class="h-1.5 flex-1 rounded-full"
-          :class="preview.line.expiryDate ? 'bg-success' : 'bg-muted'"
+          class="h-2 flex-1 rounded-full"
+          :class="preview.line.expiryDate ? 'bg-success' : 'bg-primary/25'"
         />
       </div>
 
-      <div v-if="currentExpiry" class="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3" :data-receipt-expiry="currentExpiry.line.id">
-        <p class="font-semibold">{{ receiptLineLabel(currentExpiry) }}</p>
-        <p class="text-xs text-muted-foreground">{{ receiptSettledSummary(currentExpiry) }} · vence em quando?</p>
-        <div class="mt-3 grid gap-2">
+      <div v-if="currentExpiry" class="mt-3 rounded-2xl border-2 border-primary bg-card p-3" :data-receipt-expiry="currentExpiry.line.id">
+        <div class="flex items-center gap-2.5">
+          <span class="grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 text-primary">
+            <Icon name="lucide:calendar-clock" class="size-5" />
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate op-title">{{ receiptLineLabel(currentExpiry) }}</p>
+            <p class="op-label font-normal text-muted-foreground tnum">{{ receiptSettledSummary(currentExpiry) }} · vence em quando?</p>
+          </div>
+        </div>
+        <div class="mt-3 grid grid-cols-1 gap-2">
           <button
-            v-for="shortcut in currentShortcuts"
+            v-for="(shortcut, index) in currentShortcuts"
             :key="shortcut.key"
             type="button"
-            class="flex h-12 w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 text-sm hover:bg-accent disabled:opacity-50"
+            class="flex min-h-12 w-full items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left hover:bg-accent disabled:opacity-50"
+            :class="index === 0 ? 'border-primary/50 bg-primary/6' : 'border-border bg-card'"
             :disabled="pending"
             @click="chooseExpiry(currentExpiry.line.id, shortcut.date)"
           >
-            <span class="flex items-center gap-2 font-medium">
-              <Icon :name="shortcut.key === 'last' ? 'lucide:history' : 'lucide:calendar-plus'" class="size-4 shrink-0" />
-              {{ shortcut.label }}
-            </span>
-            <span class="tabular-nums text-muted-foreground">{{ shortcut.caption }}</span>
+            <Icon :name="shortcut.key === 'last' ? 'lucide:history' : 'lucide:calendar-plus'" class="size-5 shrink-0" :class="index === 0 ? 'text-primary' : 'text-muted-foreground'" />
+            <span class="flex-1 text-[14px] leading-[17px] font-semibold">{{ shortcut.label }}</span>
+            <span class="text-[13px] leading-4 text-muted-foreground tnum">{{ shortcut.caption }}</span>
           </button>
           <button
             v-if="!otherDateOpen"
             type="button"
-            class="flex h-12 w-full items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
+            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-left text-[14px] font-semibold hover:bg-accent"
             @click="otherDateOpen = true"
           >
-            <Icon name="lucide:calendar" class="size-4 shrink-0" />
+            <Icon name="lucide:calendar" class="size-5 shrink-0 text-muted-foreground" />
             Outra data
           </button>
           <OperatorDayPicker v-else v-model="otherDate" :today="todayIso" label="Validade" />
         </div>
-        <p class="mt-2 text-xs text-muted-foreground">Um toque grava e passa para o próximo.</p>
+        <p class="mt-2 op-label font-normal text-muted-foreground">Um toque grava e passa para o próximo.</p>
       </div>
 
-      <ul v-if="expiryDoneList.length" class="mt-3 grid gap-2">
+      <ul v-if="expiryDoneList.length" class="mt-2 grid grid-cols-1 gap-2">
         <li
           v-for="preview in expiryDoneList"
           :key="`expiry-${preview.line.id}`"
-          class="flex min-h-12 items-center gap-2 rounded-md border border-success/30 bg-success/5 px-3 py-1.5 text-sm"
+          class="flex min-h-12 items-center gap-3 rounded-xl border border-success/30 bg-success/5 px-3 py-1.5"
         >
-          <Icon name="lucide:circle-check" class="size-4 shrink-0 text-success" />
+          <Icon name="lucide:circle-check-big" class="size-6 shrink-0 text-success" />
           <span class="min-w-0 flex-1">
-            <span class="block truncate font-medium">{{ receiptLineLabel(preview) }}</span>
-            <span class="block text-xs text-muted-foreground">
+            <span class="block truncate text-[15px] font-semibold">{{ receiptLineLabel(preview) }}</span>
+            <span class="block op-label font-normal text-muted-foreground tnum">
               Vence {{ formatShortDate(preview.line.expiryDate) }}<template v-if="preview.line.expiryFromInvoice"> · veio na nota</template>
             </span>
           </span>
           <button
             type="button"
-            class="inline-flex h-12 shrink-0 items-center rounded-md px-3 text-sm font-semibold text-primary hover:bg-accent"
+            class="inline-flex h-11 shrink-0 items-center rounded-full px-3 text-[14px] font-semibold text-primary hover:bg-accent"
             @click="swapExpiry(preview.line.id)"
           >
             Trocar
@@ -307,25 +318,28 @@ function exceptionDigest(preview: ReceiptLinePreview): string {
     </div>
 
     <!-- 4. Só o que não bate pede atenção, item a item. -->
-    <div v-if="view.exceptions.length" class="rounded-md border border-warning/40 bg-card p-4">
-      <h3 class="text-base font-semibold">Para resolver</h3>
-      <p class="text-sm text-muted-foreground">Estes itens não batem com a nota: cada um pede a sua conferência.</p>
-      <ul class="mt-3 grid gap-2">
+    <div v-if="view.exceptions.length" class="rounded-2xl border-2 border-warning/60 bg-card p-4">
+      <div class="flex items-center gap-2.5">
+        <Icon name="lucide:triangle-alert" class="size-6 shrink-0 text-warning" />
+        <h3 class="text-[18px] leading-snug font-semibold">Para resolver</h3>
+      </div>
+      <p class="mt-0.5 op-label font-normal text-muted-foreground">Estes itens não batem com a nota: cada um pede a sua conferência.</p>
+      <ul class="mt-3 grid grid-cols-1 gap-2">
         <li v-for="preview in view.exceptions" :key="`exception-${preview.line.id}`">
           <button
             type="button"
-            class="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent"
-            :class="preview.line.checked && !preview.nextStep ? 'border-success/30 bg-success/5' : 'border-warning/40 bg-warning/5'"
+            class="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-xl border px-3 py-2 text-left hover:bg-accent"
+            :class="preview.line.checked && !preview.nextStep ? 'border-success/30 bg-success/5' : 'border-warning/45 bg-card'"
             @click="emit('open', preview.line.id)"
           >
             <Icon
               :name="preview.line.checked && !preview.nextStep ? 'lucide:circle-check-big' : 'lucide:triangle-alert'"
-              class="size-4 shrink-0"
+              class="size-5 shrink-0"
               :class="preview.line.checked && !preview.nextStep ? 'text-success' : 'text-warning'"
             />
             <span class="min-w-0 flex-1">
-              <span class="block truncate font-medium">{{ receiptLineLabel(preview) }}</span>
-              <span class="block truncate text-xs text-muted-foreground">{{ exceptionDigest(preview) }}</span>
+              <span class="block truncate op-title">{{ receiptLineLabel(preview) }}</span>
+              <span class="block truncate op-label font-normal text-muted-foreground tnum">{{ exceptionDigest(preview) }}</span>
             </span>
             <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
           </button>
