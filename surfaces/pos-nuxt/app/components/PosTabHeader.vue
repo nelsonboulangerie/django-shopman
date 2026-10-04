@@ -205,7 +205,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         @click="$emit('salesModeChange', mode.ref)"
       >
         <Icon :name="mode.icon" class="size-4 shrink-0" />
-        <span class="max-xl:sr-only">{{ mode.label }}</span>
+        <span class="max-2xl:sr-only">{{ mode.label }}</span>
       </button>
     </div>
     <!-- tab number (renameable) -->
@@ -257,7 +257,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
     <button
       v-else-if="hasOpenTab && canRename && !readOnly"
       type="button"
-      class="group inline-flex h-10 min-w-0 max-w-full shrink-0 items-center gap-1.5 rounded-md px-2 transition hover:bg-accent"
+      class="group inline-flex h-10 min-w-0 max-w-full shrink items-center gap-1.5 rounded-md px-2 transition hover:bg-accent"
       aria-label="Renomear comanda"
       title="Renomear comanda"
       data-pos-tab-title
@@ -299,7 +299,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       ref="customerChipRef"
       data-context-entry="customer"
       type="button"
-      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent"
+      class="inline-flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent"
       :class="customerRequired
         ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : (customerName || customerLookup?.ref ? 'border-border' : 'border-dashed border-border')"
@@ -313,7 +313,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
       <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-semibold max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
-      <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="max-xl:hidden">Identificar cliente</span><span class="xl:hidden">Cliente</span></span>
+      <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="max-2xl:hidden">Identificar cliente</span><span class="2xl:hidden">Cliente</span></span>
       <OperatorKbd
         v-if="!coarsePointer"
         class="max-lg:hidden"
@@ -331,7 +331,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
     <button
       v-if="hasOpenTab"
       type="button"
-      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent max-sm:hidden"
+      class="inline-flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent max-sm:hidden"
       :class="!isCounter && fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
       aria-haspopup="dialog"
       :title="isCounter ? 'Recebimento (F7): entregar vira encomenda' : 'Recebimento (F7)'"
@@ -355,7 +355,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
     <button
       v-if="hasOpenTab"
       type="button"
-      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent max-xl:hidden"
+      class="inline-flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent max-xl:hidden"
       data-context-entry="schedule"
       :class="scheduleConflict
         ? 'border-destructive bg-destructive/10 text-destructive'

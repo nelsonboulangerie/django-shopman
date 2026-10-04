@@ -1261,7 +1261,7 @@ onBeforeUnmount(() => {
             @click="tabHeaderRef?.askRelease()"
           >
             <Icon name="lucide:x" class="size-4" />
-            Liberar comanda
+            <span class="max-2xl:sr-only">Liberar comanda</span>
           </button>
           <!-- Abaixo do desktop a barra é de UMA linha (v3 tablet 2, v4 tablet): o que
                não cabe mora no ⋯. No tablet deitado, Últimas vendas e Liberar; no
