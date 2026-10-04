@@ -165,7 +165,7 @@ def follow_station(*, station_ref: str, user) -> None:
     """Este operador leva a estação no bolso: o pedido novo chega por push.
 
     O celular da estação pequena (barista, lanches) apaga a tela; o aviso precisa
-    sair do aparelho do quadro e ir ao bolso (SUITE-UX §10.3). Um operador segue
+    sair do dispositivo do quadro e ir ao bolso (SUITE-UX §10.3). Um operador segue
     uma estação por vez; seguir outra deixa a anterior. Vale por um turno
     (``kds_alerts.FOLLOW_TTL``).
     """
