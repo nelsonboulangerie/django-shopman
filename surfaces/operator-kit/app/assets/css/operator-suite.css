@@ -1,0 +1,132 @@
+/* ============================================================================
+   CAMADA VISUAL DA SUÍTE (UX-KIT-V1) — o rosto das prévias v3/v4
+
+   Fonte: `docs/plans/suite-ux-v2/fontes/src/_shared.css` e os partials
+   `_rail3top.html`, `_rail3bottom.html`, `_search3.html`, `_ocard.html` (CSS real das
+   prévias aprovadas). As prévias foram compiladas com os MESMOS tokens de cor do
+   operator-theme.css; o que faltava ao sistema real eram os papéis tipográficos, o
+   rail com as seções do app, o cabeçalho de uma linha e a busca com tecla.
+
+   ⚠️ OPT-IN, POR APP. Nada aqui muda a tela de quem não migrou:
+     - os utilitários `op-*`, `tnum`, `live-dot` e `pill-*` só existem onde alguém os
+       usa (o Tailwind gera sob demanda);
+     - a variante `suite:` só casa dentro de um elemento com `data-suite="v3"`. Os
+       primitivos do kit (UiFilterChip, UiSearchInput, UiIconButton) trazem o visual
+       novo atrás dela: o app que põe `data-suite="v3"` no próprio shell veste tudo de
+       uma vez, e quem não pôs continua idêntico.
+   O Gestor é o piloto. Os outros apps migram um a um, o PDV por último.
+   ============================================================================ */
+
+@custom-variant suite (&:where([data-suite="v3"], [data-suite="v3"] *));
+
+:root {
+  /* Selo de contagem do rail e da barra do polegar: o âmbar claro das prévias, com
+     texto bronze (contraste 9:1). Não é cor de estado; é "tem coisa aqui". */
+  --suite-badge: #f2c46b;
+  --suite-badge-foreground: #3b2a1e;
+}
+
+@theme inline {
+  --color-suite-badge: var(--suite-badge);
+  --color-suite-badge-foreground: var(--suite-badge-foreground);
+}
+
+/* Papéis tipográficos (eram só comentário na ESCALA DE DESIGN do operator-base.css).
+   Medidas das prévias: corpo 15px, título 16px, rótulo 13px, micro 12px. */
+@utility op-display {
+  font-size: 1.75rem;
+  line-height: 2.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+@utility op-heading {
+  /* Título da tela no cabeçalho de uma linha ("Pedidos", "Catálogo"). */
+  font-size: 1.375rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+@utility op-figure {
+  font-size: 1.5rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+@utility op-title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+}
+@utility op-body {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+}
+@utility op-label {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+}
+@utility op-micro {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.02em;
+}
+@utility op-eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Ao vivo": um ponto com halo. Os outros estados mudam a cor; o texto ao lado diz o
+   que aconteceu (a cor nunca fala sozinha). */
+@utility live-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 22%, transparent);
+}
+
+/* Pílulas de estado: tinta de 12% e texto no tom. Contraste AA nos dois temas (os
+   tons de status do operator-theme.css já foram escolhidos para isso). */
+@utility pill-info {
+  background: color-mix(in oklab, var(--info) 12%, transparent);
+  color: var(--info);
+}
+@utility pill-success {
+  background: color-mix(in oklab, var(--success) 12%, transparent);
+  color: var(--success);
+}
+@utility pill-warning {
+  background: color-mix(in oklab, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+@utility pill-destructive {
+  background: color-mix(in oklab, var(--destructive) 12%, transparent);
+  color: var(--destructive);
+}
+@utility pill-primary {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+@utility pill-muted {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-suite="v3"] *,
+  [data-suite="v3"] *::before,
+  [data-suite="v3"] *::after {
+    /* Só a transição some: o giro de "carregando" continua, porque ele É a
+       informação de que algo está em andamento. */
+    transition-duration: 0.01ms !important;
+  }
+}

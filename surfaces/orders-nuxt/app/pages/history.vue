@@ -53,14 +53,17 @@ const loading = computed(() => pending.value && !history.value);
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:history" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">Histórico</h1>
-        <span class="hidden text-xs text-muted-foreground sm:inline">Pedidos concluídos e cancelados</span>
-      </div>
-      <template #end>
+    <OperatorPageHeader title="Histórico">
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline">Pedidos concluídos e cancelados</span>
+      </template>
+      <template #search>
         <UiSearchInput v-model="search" placeholder="Pedido, nome ou telefone" aria-label="Buscar pedido no histórico" />
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
         <OperatorPeriodPicker
           v-model="period"
           :presets="HISTORY_PRESETS"
@@ -71,7 +74,7 @@ const loading = computed(() => pending.value && !history.value);
         />
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
+    </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">

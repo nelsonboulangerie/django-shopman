@@ -176,7 +176,7 @@ inclusive o aviso de handoff `purpose=handoff_ack`) grava em `ConversationMessag
 cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...}, unpriced_models?}`.
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
 `layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
-laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
+laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa),
 `agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
 `envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
@@ -202,6 +202,26 @@ repaired, recorded, violations, replaced?}`. `version` é a versão da tabela (i
 `replaced` só existe no aviso de handoff que substituiu uma resposta segurada em `run_turn`: é o
 mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Conversation.handoff_reason`
 começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
+Memória da conversa (OBS0310-N, bloco 2 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/dialogue.py`): `Conversation.flags["dialogue"]` = `{v: 1, fence, at,
+valid_until, pending?, listed?, focus?, order?, last_change?}`. `fence` é o `turn_fence` do turno que
+gravou (gravação na mesma transação da resposta; turno revogado não grava); `at` e `valid_until` são ISO
+8601. `valid_until` é o fim do PRÓXIMO dia de funcionamento depois do dia de `at`, pelo calendário da
+casa (`business_calendar`): vale para `listed`, `focus` e `last_change`. `pending` é a pergunta que a
+casa deixou no ar, `{kind, options?, token?, order_ref?, item?, day?}`, com `kind` em `offer_team`
+(busca sem resultado: "Posso chamar a equipe."), `choose` (lista com mais de um item), `confirm_order`
+(resumo pronto; `token` = `quote_token`, vale enquanto for o de `Conversation.quote`), `ask_address`,
+`ask_slot` (horários mostrados; `day` = a data deles), `choose_order` ("acrescentar ao pedido aberto ou
+pedido novo?"; vale enquanto `order_ref` estiver aberto) e `confirm_new` ("o último pedido já foi
+entregue; quer um novo?"); `options` = `[{n, ref, name}]`, `day` = ISO date: passado o dia, a pergunta
+vence. `listed` = a última lista numerada (até 5) `[{n, ref, name, kind?}]` (`kind=collection` na visão
+por coleção); `focus` = `{ref, name, qty?}` (o SKU em foco); `order` = `{ref, open}` (o pedido em foco
+e se estava aberto quando foi gravado; entregue ou cancelado depois disso, `listed`/`focus`/`pending`
+deixam de valer); `last_change` = `{ref, qty}` (o último `set_item`, para "não, era o outro"). Pedido
+recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]` dias, 7 por padrão, e
+sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
+devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou
+preço mora aqui.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.

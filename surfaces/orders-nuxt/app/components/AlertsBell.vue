@@ -3,6 +3,10 @@
 // functional (severity); the bell itself is neutral chrome. Lives in the board header.
 import type { AlertProjection } from "~/types/orders";
 
+// `placement="rail"` (UX-KIT-V1): item "Alertas" no pé do rail da suíte, com o painel à
+// direita do rail; o padrão segue sendo o botão do cabeçalho.
+const props = withDefaults(defineProps<{ placement?: "header" | "rail" }>(), { placement: "header" });
+
 const { alerts, activeCount, criticalCount, ack, ackAction } = useAlerts();
 const open = ref(false);
 
@@ -19,9 +23,21 @@ function sevChip(sev: AlertProjection["severity"]): string {
 
 <template>
   <div class="relative">
+    <RailSection
+      v-if="props.placement === 'rail'"
+      icon="lucide:triangle-alert"
+      label="Alertas"
+      :badge="activeCount ? String(activeCount) : ''"
+      :aria-label="`Alertas (${activeCount})`"
+      :aria-expanded="open"
+      title="Alertas"
+      data-alerts-trigger
+      @activate="open = !open"
+    />
     <button
+      v-else
       type="button"
-      class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground max-md:border-transparent max-md:text-foreground"
       :aria-label="`Alertas (${activeCount})`"
       title="Alertas"
       @click="open = !open"
@@ -39,7 +55,8 @@ function sevChip(sev: AlertProjection["severity"]): string {
 
     <div
       v-if="open"
-      class="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-lg border bg-card shadow-lg"
+      class="z-50 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-lg border bg-card shadow-lg"
+      :class="props.placement === 'rail' ? 'fixed bottom-3 left-[84px]' : 'absolute right-0 mt-2'"
     >
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <h2 class="text-sm font-bold">Alertas</h2>

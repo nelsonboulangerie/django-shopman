@@ -41,25 +41,27 @@ useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <!-- `data-suite="v3"`: o Gestor é o piloto da camada visual da suíte (UX-KIT-V1). Os
+       primitivos do kit leem esse atributo para vestir o visual das prévias. -->
+  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
     <OfflineBanner />
-    <!-- Rail de operador canônico (kit): funções comuns (Central, operador, tema). Fica
-         fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
-    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
-      <OperatorRail
-        :hub-url="hubUrl"
-        :operator-name="operator?.name"
-        @lock="lock"
-      />
-    </div>
+    <!-- Rail da suíte (kit): o selo do app (Central), as seções do Gestor, alertas e
+         avisos, Bloquear e o menu do operador. Do tablet para cima; no celular as
+         seções vão para a barra do polegar, no fim da coluna de conteúdo. -->
+    <GestorNav
+      v-if="canIdentify"
+      place="rail"
+      :hub-url="hubUrl"
+      :operator-name="operator?.name"
+      @lock="lock"
+    />
     <div class="flex min-w-0 flex-1 flex-col">
-      <!-- Cabeçalho de seção: controle do rail + nav do Gestor. -->
-      <GestorTopBar v-if="canIdentify" />
       <div v-show="canIdentify && !locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
         <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
       </div>
+      <GestorNav v-if="canIdentify && !locked && !mustChange" place="bar" />
     </div>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->

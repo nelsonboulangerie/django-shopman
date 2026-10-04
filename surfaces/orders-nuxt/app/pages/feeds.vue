@@ -155,14 +155,15 @@ useHead({ title: "Canais" });
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:monitor-play" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">Canais</h1>
-        <span class="text-xs text-muted-foreground">Venda e exibição do catálogo</span>
-      </div>
-      <template #end>
-        <p class="hidden text-xs text-muted-foreground sm:block">
+    <OperatorPageHeader title="Canais">
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline">Venda e exibição do catálogo</span>
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
+        <p class="hidden op-micro text-muted-foreground lg:block">
           <span class="tabular-nums">{{ feeds.length + catalogChannels.length }}</span> canais
         </p>
         <!-- criar/configurar a fundo (novo canal de exibição, opções) é no Admin -->
@@ -177,7 +178,7 @@ useHead({ title: "Canais" });
         </a>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
+    </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">

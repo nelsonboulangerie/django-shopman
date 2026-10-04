@@ -1062,6 +1062,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
             _persist_outcome(conversation, outcome)
+            _save_memory(conversation, outcome)
             prepared = []
             for index, text in enumerate(texts):
                 prepared.append(
@@ -1124,6 +1125,20 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
         ).update(claim_until=None)
     result.pending_more = bool(unanswered_inbound(conversation, binding))
     return result
+
+
+def _save_memory(conversation: Conversation, outcome) -> None:
+    """Memória da conversa (``dialogue``), na mesma transação e com o mesmo fence da resposta."""
+    memory = getattr(outcome, "memory", None)
+    if memory is None:
+        return
+    from . import dialogue
+
+    memos = [memo for memo in getattr(outcome, "memory_memos", []) if memo]
+    open_refs = [
+        ref for ref, status in memory.facts.order_status.items() if status in dialogue.OPEN_ORDER_STATUSES
+    ]
+    dialogue.save_turn(conversation, memos, previous=memory.state, open_order_refs=open_refs)
 
 
 def _persist_outcome(conversation: Conversation, outcome) -> None:
@@ -1555,6 +1570,11 @@ def return_to_concierge(conversation: Conversation) -> bool:
                 handoff_sync_state="routing_mismatch"
             )
         if synced:
+            # A equipe falou coisas que o sistema não viu: a memória da conversa zera.
+            from . import dialogue
+
+            dialogue.forget(current.pk)
+            current.refresh_from_db(fields=["flags"])
             current.state = Conversation.State.ACTIVE
             current.turn_fence += 1
             current.handoff_reason = ""

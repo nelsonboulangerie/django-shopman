@@ -63,12 +63,26 @@ useHead({ title: "Revisão de vínculos" });
 </script>
 
 <template>
-  <main class="min-w-0 flex-1 space-y-4 p-4">
-    <div class="flex flex-wrap items-center gap-3">
-      <NuxtLink to="/feeds" class="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 text-sm"><Icon name="lucide:arrow-left" />Canais</NuxtLink>
-      <h1 class="text-lg font-semibold">{{ board?.channel_name || channel }} · Revisão de vínculos</h1>
-      <UiIconButton icon="lucide:refresh-cw" label="Atualizar revisão" :spinning="pending" @click="refresh()" />
-    </div>
+  <main class="flex min-w-0 flex-1 flex-col">
+    <OperatorPageHeader :title="`${board?.channel_name || channel} · Revisão de vínculos`">
+      <template #lead>
+        <NuxtLink
+          to="/feeds"
+          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        >
+          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
+          <span class="max-md:sr-only">Canais</span>
+        </NuxtLink>
+        <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
+      </template>
+      <template #phone-actions>
+        <GestorPhoneBells />
+      </template>
+      <template #actions>
+        <UiIconButton icon="lucide:refresh-cw" label="Atualizar revisão" :spinning="pending" @click="refresh()" />
+      </template>
+    </OperatorPageHeader>
+    <div class="min-w-0 flex-1 space-y-4 p-4">
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
     <p class="max-w-4xl text-sm text-muted-foreground">Confira a identidade dos anúncios antes de associá-los ao cadastro. Os dados locais ainda precisam de revisão. Este fluxo não envia alterações à plataforma.</p>
     <p v-if="message" role="status" class="rounded-lg border p-3 text-sm">{{ message }}</p>
@@ -106,5 +120,6 @@ useHead({ title: "Revisão de vínculos" });
       </details>
       <CatalogBindingReview v-if="board.selected_snapshot" :key="board.selected_snapshot.id" :board="board" :busy="busy" :stale="stale" :confirm="bind" @dirty-change="dirty = $event" />
     </template>
+    </div>
   </main>
 </template>
