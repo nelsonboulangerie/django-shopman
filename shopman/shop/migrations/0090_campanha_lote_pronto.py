@@ -34,7 +34,7 @@ def backward(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("shop", "0088_avisos_de_producao_por_lote"),
+        ("shop", "0089_avisos_da_cozinha"),
     ]
 
     operations = [migrations.RunPython(forward, backward)]

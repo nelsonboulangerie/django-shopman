@@ -64,6 +64,8 @@ export interface OperatorHubProjection {
   operator_name: string;
   tiles: HubTileProjection[];
   queue: HubQueueProjection;
+  /** O nome inteiro da casa (`Shop.name`), para "Shopman · Nelson Boulangerie". */
+  shop_name: string;
 }
 
 export interface HubResponse {

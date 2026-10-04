@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("shop", "0089_campanha_lote_pronto"),
+        ("shop", "0090_campanha_lote_pronto"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

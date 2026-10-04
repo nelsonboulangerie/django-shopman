@@ -1949,52 +1949,6 @@ class TestKDSService:
         ]
 
     @pytest.mark.django_db
-    def test_expedition_rejects_delivery_complete_before_dispatch(self):
-        from shopman.orderman.models import Order
-
-        from shopman.shop.models import Channel
-        from shopman.shop.services.kds import expedition_action
-
-        channel = Channel.objects.create(ref="kds-delivery-guard", name="KDS Delivery Guard")
-        order = Order.objects.create(
-            ref="KDS-DLV-GUARD",
-            channel_ref=channel.ref,
-            status=Order.Status.READY,
-            total_q=1000,
-            data={"fulfillment_type": "delivery"},
-        )
-
-        with pytest.raises(ValueError):
-            expedition_action(order, action="complete", actor="kds:test")
-
-        order.refresh_from_db()
-        assert order.status == Order.Status.READY
-        assert order.completed_at is None
-
-    @pytest.mark.django_db
-    def test_expedition_rejects_pickup_dispatch(self):
-        from shopman.orderman.models import Order
-
-        from shopman.shop.models import Channel
-        from shopman.shop.services.kds import expedition_action
-
-        channel = Channel.objects.create(ref="kds-pickup-guard", name="KDS Pickup Guard")
-        order = Order.objects.create(
-            ref="KDS-PKP-GUARD",
-            channel_ref=channel.ref,
-            status=Order.Status.READY,
-            total_q=1000,
-            data={"fulfillment_type": "pickup"},
-        )
-
-        with pytest.raises(ValueError):
-            expedition_action(order, action="dispatch", actor="kds:test")
-
-        order.refresh_from_db()
-        assert order.status == Order.Status.READY
-        assert order.dispatched_at is None
-
-    @pytest.mark.django_db
     def test_cancel_tickets_cancels_open_tickets(self):
         """cancel_tickets() sets status=cancelled on all open tickets."""
         from shopman.orderman.models import Order

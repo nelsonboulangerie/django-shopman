@@ -81,8 +81,46 @@ class BIOverShortView(_BIBase):
     """"Sobrou ou faltou?" de um dia (``?day=``; sem ele, o último dia aberto)."""
 
     def get(self, request):
-        report = build_bi_over_short(day=_query_date(request, "day"))
+        report = build_bi_over_short(
+            day=_query_date(request, "day"),
+            compare=(request.GET.get("compare") or "").strip(),
+        )
         return Response({"bi": projection_data(report)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="B.I. over/short: carry the day's shortages and leftovers to the next same-weekday plan",
+        responses={200: OpenApiResponse(description="Plan day and how many notes were carried.")},
+    ),
+)
+class BIOverShortCarryView(_BIBase):
+    """"Levar ao plano do próximo sábado" (prévia ``bi-sobra4``, pino 3).
+
+    O único gesto que escreve a partir do B.I., e ele não escreve fato de ledger:
+    grava a nota do porquê ao lado da sugestão do Planejamento, que segue sendo
+    da fórmula e do padeiro. Por isso pede, além da leitura, a permissão de quem
+    planeja a produção.
+    """
+
+    def post(self, request):
+        from shopman.backstage.projections.production import resolve_production_access
+        from shopman.backstage.services.bi_plan_carry import carry_to_plan
+
+        if not resolve_production_access(request.user).can_edit_plan:
+            return Response(
+                {"detail": "Levar ao plano é de quem planeja a produção.", "field": None, "errors": {}},
+                status=403,
+            )
+        payload = request.data if isinstance(request.data, dict) else {}
+        raw_day = str(payload.get("day") or "").strip()
+        try:
+            day = date.fromisoformat(raw_day) if raw_day else None
+        except ValueError:
+            return Response({"detail": "Dia inválido.", "field": "day", "errors": {"day": ["Use AAAA-MM-DD."]}}, status=400)
+        result = carry_to_plan(day=day, actor=request.user, compare=str(payload.get("compare") or ""))
+        return Response({"plan_day": result.plan_day, "carried": result.carried})
 
 
 @extend_schema_view(
@@ -97,6 +135,8 @@ class BISalesView(_BIBase):
         report = build_bi_sales(
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
+            channel=(request.GET.get("channel") or "").strip(),
+            compare=(request.GET.get("compare") or "").strip(),
         )
         return Response({"bi": projection_data(report)})
 

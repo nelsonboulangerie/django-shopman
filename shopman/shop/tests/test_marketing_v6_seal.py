@@ -323,7 +323,7 @@ def test_campaign_rename_migration_only_touches_the_seed_name():
 
     from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
 
-    migration = import_module("shopman.shop.migrations.0089_campanha_lote_pronto")
+    migration = import_module("shopman.shop.migrations.0090_campanha_lote_pronto")
     template = AnnouncementTemplate.objects.create(name="Saída do forno", body="{{product_name}} saiu")
     Campaign.objects.create(name="Fornada pronta", trigger=Trigger.PRODUCTION_FINISHED, template=template)
     Campaign.objects.create(name="Fornada da tarde", trigger=Trigger.PRODUCTION_FINISHED, template=template)

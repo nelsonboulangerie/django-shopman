@@ -40,11 +40,13 @@ vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
-vi.stubGlobal("useOrderEvents", () => {});
+vi.stubGlobal("useOrderEvents", () => ({ realtime: ref("polling") }));
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
+vi.stubGlobal("useMediaQuery", () => ref(false));
+vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   pending: ref(false),
@@ -161,6 +163,11 @@ function profile(over: Partial<CustomerProfileProjection> = {}): CustomerProfile
 
 const stubs = {
   Icon: true,
+  // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
+  OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
+  OperatorLiveStatus: true,
+  ReadFreshness: true,
+  UiIconButton: { inheritAttrs: false, template: "<button type='button' v-bind='$attrs'><slot /></button>" },
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
   OrderReasonDialog: true,
@@ -312,6 +319,7 @@ describe("detalhe do pedido — link de pagamento", () => {
     }));
 
     expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 14h32");
+    await w.get('[data-action="menu"]').trigger("click");
     const botao = w.find('[data-action="resend-payment-link"]');
     expect(botao.exists()).toBe(true);
     expect(botao.text()).toContain("Reenviar link de pagamento");
@@ -571,6 +579,7 @@ it.each([
     ref: refName, kind: "mutation", label, enabled: false, reason, priority: "secondary",
     href: "", method: "POST", idempotency: "required", payload_schema: {}, confirmation: {},
   }] }));
+  await w.get('[data-action="menu"]').trigger("click");
   const button = w.findAll("button").find((candidate) => candidate.text().includes(label))!;
   expect(button.attributes("disabled")).toBeDefined();
   expect(button.attributes("title")).toBe(reason);
@@ -584,7 +593,7 @@ it("keeps a confirmed note when the following useful read fails", async () => {
   const w = abrir(order({ can_confirm: false, kitchen_note: "Nota anterior", revisions: { kitchen_note: "old-base" } }));
   try {
     saveNotes.mockImplementationOnce(async () => { readError.value = new Error("synthetic read unavailable"); return true; });
-    const note = w.find('textarea[placeholder="Instruções de preparo para a cozinha…"]');
+    const note = w.find("#order-notes");
     await note.setValue("Nota nova confirmada");
     await w.findAll("button").find((button) => button.text() === "Salvar nota")!.trigger("click");
     await flushPromises();
@@ -647,5 +656,18 @@ describe("contato de pedido do iFood", () => {
     }));
     expect(w.find("[data-contact-phone]").exists()).toBe(false);
     expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
+  });
+});
+
+describe("G14: o detalhe em duas colunas com a ação primária no cabeçalho", () => {
+  it("cabeçalho de uma linha leva Aceitar e Recusar; Cancelar mora no ⋯", async () => {
+    const w = abrir(order({ can_cancel: true }));
+    expect(w.get("[data-order-detail]").attributes("data-order-layout")).toBe("split");
+    expect(w.get("header [data-action='confirm']").text()).toContain("Aceitar");
+    expect(w.find("header [data-action='reject']").exists()).toBe(true);
+    expect(w.find("[data-action='cancel']").exists()).toBe(false);
+    await w.get("[data-action='menu']").trigger("click");
+    expect(w.get("[data-detail-menu] [data-action='cancel']").text()).toContain("Cancelar pedido");
+    w.unmount();
   });
 });

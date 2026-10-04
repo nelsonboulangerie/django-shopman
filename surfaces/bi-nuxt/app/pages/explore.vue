@@ -116,11 +116,16 @@ const rankingRows = computed(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="O que você quer cruzar?">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="errorDetail" />
+      </template>
       <template #actions>
-        <BiWindowPicker />
+        <BiWindowPicker class="max-md:hidden" />
         <BiPageMenu />
       </template>
       <template #phone-actions>
+        <BiPeriodChip />
+        <BiShareButton />
         <BiPhoneBell />
       </template>
     </OperatorPageHeader>
@@ -134,7 +139,7 @@ const rankingRows = computed(() => {
           class="min-w-44"
           @change="onScenarioChange(($event.target as HTMLSelectElement).value)"
         >
-          <option value="">—</option>
+          <option value="">Nenhum (livre)</option>
           <optgroup v-if="views.length" label="Meus cenários">
             <option v-for="view in views" :key="view.id" :value="`view:${view.id}`">
               {{ view.is_favorite ? "★ " : "" }}{{ view.name }}
@@ -174,7 +179,7 @@ const rankingRows = computed(() => {
           :value="config.by2"
           @change="applyFree({ by2: ($event.target as HTMLSelectElement).value })"
         >
-          <option value="">—</option>
+          <option value="">Sem cruzamento</option>
           <option v-for="d in by2Options" :key="d" :value="d">
             {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
           </option>
@@ -245,7 +250,7 @@ const rankingRows = computed(() => {
           {{ report.metric_label }} por {{ report.dimension_label.toLowerCase() }}<template v-if="report.dimension2"> × {{ report.dimension2_label.toLowerCase() }}</template>
         </h2>
         <p class="mb-3 op-micro text-muted-foreground">
-          {{ shortDate(report.date_from) }} – {{ shortDate(report.date_to) }}
+          {{ shortDate(report.date_from) }} a {{ shortDate(report.date_to) }}
           <template v-if="report.truncated"> · Mostrando as {{ report.rows.length }} maiores; {{ report.truncated }} linhas ficaram fora</template>
         </p>
 
@@ -280,6 +285,7 @@ const rankingRows = computed(() => {
         <p v-else class="op-label text-muted-foreground">Nada no período para esse cruzamento.</p>
       </section>
     </template>
+    <BiSwipeHint />
   </main>
   </div>
 </template>

@@ -34,9 +34,12 @@ from shopman.backstage.projections.notification_receipts import (
     build_notification_receipts,
 )
 from shopman.backstage.projections.order_attention import (
+    PrepExpectation,
     QueueAwarenessProjection,
     build_queue_awareness,
     card_attention,
+    prep_expectation,
+    ready_eta,
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
@@ -456,6 +459,9 @@ class OrderCardProjection:
     attention_since_iso: str = ""
     goal_minutes: int = 0
     goal_label: str = ""
+    # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
+    # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
+    ready_eta_iso: str = ""
 
 
 @dataclass(frozen=True)
@@ -674,6 +680,17 @@ class OperatorOrderProjection:
     # os gestos do balcão com a régua de cada um (entregar, editar, reagendar,
     # cancelar). ``None`` no Gestor.
     counter: CounterOrderProjection | None = None
+    # O cabeçalho do detalhe (G14): o nome do canal ("Loja online", não "web") e a
+    # linha de abertura ("aberto às 21:47"), lidos uma vez no servidor.
+    channel_name: str = ""
+    opened_line: str = ""
+    # O prazo do pedido novo, o MESMO do cartão ("Confirma sozinho em 4:32", G15).
+    confirmation_deadline_iso: str = ""
+    confirmation_action: str = ""
+    # Onde fica a loja (G18, "fora da loja: mostrando o que pede decisão"): o celular
+    # que consentiu compara a própria posição com esta, no dispositivo; a posição de
+    # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
+    store_location: dict[str, float] | None = None
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -927,6 +944,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         customer_profile=_customer_profile(order),
         schedule_label=_schedule_label(order),
         context=context,
+        channel_name=_channel_name(order.channel_ref or ""),
+        opened_line=f"aberto às {timezone.localtime(order.created_at):%H:%M}" if order.created_at else "",
     )
 
     if context == "pos":
@@ -949,6 +968,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
 
     bloqueio = operator_orders.gestor_advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
+    block_label, block_reason = _advance_block_copy(order, bloqueio, method)
 
     cancel_capability = _cancel_capability(order, user)
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
@@ -1006,8 +1026,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **cancel_capability,
         next_action_label=_next_label(order),
         undo=_undo_projection(order),
-        advance_block_label=advance_block_label(bloqueio),
-        advance_block_reason=operator_orders.advance_block_message(bloqueio),
+        advance_block_label=block_label,
+        advance_block_reason=block_reason,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
@@ -1015,7 +1035,40 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
+        **_detail_deadline(order),
+        store_location=_store_location(),
     )
+
+
+def _channel_name(ref: str) -> str:
+    """O nome do canal como a loja o chama ("Loja online"); o ref cru só sem cadastro."""
+    if not ref:
+        return ""
+    from shopman.shop.models import Channel
+
+    return Channel.objects.filter(ref=ref).values_list("name", flat=True).first() or ref
+
+
+#: Até onde ainda é "na loja" (metros do ponto cadastrado): o pátio e a calçada.
+STORE_RADIUS_METERS = 300
+
+
+def _store_location() -> dict[str, float] | None:
+    """As coordenadas do ``Shop`` e o raio de "na loja"; ``None`` sem cadastro."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None or shop.latitude is None or shop.longitude is None:
+        return None
+    return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
+
+
+def _detail_deadline(order: Order) -> dict[str, str]:
+    """O prazo da confirmação do pedido novo, pela mesma régua do cartão."""
+    if order.status != Order.Status.NEW:
+        return {}
+    deadline = _confirmation_deadlines([order.ref]).get(order.ref) or _external_deadline(order)
+    return {"confirmation_deadline_iso": deadline[0], "confirmation_action": deadline[1]} if deadline else {}
 
 
 def _schedule_label(order: Order) -> str:
@@ -1385,6 +1438,26 @@ def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
     return _build_card(order, user=user)
 
 
+def board_rail_counts() -> dict[str, int]:
+    """Os selos do rail do Gestor fora do quadro (G26): pedidos novos e o que está na Saída.
+
+    As MESMAS réguas do quadro (``build_two_zone_queue``): balcão do PDV fica de
+    fora, encomenda de data futura não é pedido novo do dia, e a Saída soma o
+    pronto e o que saiu para entrega. Só contagem, sem montar cartão nenhum.
+    """
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    orders = [
+        order for order in Order.objects.filter(
+            status__in=(Order.Status.NEW, Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED),
+        )
+        if not is_pos_counter_order(order)
+    ]
+    intake = sum(1 for order in orders if order.status == Order.Status.NEW and not _is_future_preorder(order))
+    exit_ = sum(1 for order in orders if order.status != Order.Status.NEW)
+    return {"intake": intake, "exit": exit_}
+
+
 def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
@@ -1459,7 +1532,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
     ready_moments = ready_moments_for(ready_orders)
-    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen) for o in prep_orders if not _is_future_preorder(o))
+    expectation = prep_expectation(now=timezone.now())
+    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1511,7 +1585,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         service_day_ends_at=service_day_ends_at.isoformat(),
         preorders=preorders,
         preorders_count=len(preorders),
-        awareness=build_queue_awareness(user=user),
+        awareness=build_queue_awareness(user=user, expectation=expectation),
     )
 
 
@@ -1691,6 +1765,7 @@ def _build_card(
     danfe_reads=None,
     kitchen_chips=None,
     ready_moments=None,
+    expectation: PrepExpectation | None = None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1726,6 +1801,7 @@ def _build_card(
     method = payment_data.get("method", "")
     payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
     payment_method_label = _payment_method_label(method, payment_data, labels=method_labels, order=order)
+    block_label, block_reason = _advance_block_copy(order, bloqueio, method)
     fiscal_status, fiscal_status_label, fiscal_state, _fiscal_links = _fiscal_status(
         order,
         directive_status=fiscal_states.directive_status.get(order.ref, "") if fiscal_states is not None else None,
@@ -1789,8 +1865,8 @@ def _build_card(
         payment_status_label=_order_payment_status_label(order, payment_status),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
-        advance_block_label=advance_block_label(bloqueio),
-        advance_block_reason=operator_orders.advance_block_message(bloqueio),
+        advance_block_label=block_label,
+        advance_block_reason=block_reason,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -1823,6 +1899,10 @@ def _build_card(
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
     )
     attention = card_attention(order, card, channel_config)
+    if expectation is not None:
+        eta = ready_eta(order, expectation, channel_config, now=now)
+        if eta is not None:
+            attention = {**attention, "ready_eta_iso": eta.isoformat()}
     return replace(card, **attention) if attention else card
 
 
@@ -2129,6 +2209,58 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
     operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando o lote…",
 }
+
+
+def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
+    """O bloqueio do pagamento escrito como na v4 (G06): o rótulo e a frase do item.
+
+    "Aguardando Pix" + "gerado às 21:55 · expira às 22:25 · avança sozinho quando
+    cair". As horas são as do intent no Payman (``created_at``/``expires_at``), com o
+    vencimento de ``Order.data["payment"]["expires_at"]`` quando o intent não diz.
+    Só é lido para o pedido barrado pelo pagamento (poucos por leitura).
+    """
+    payment = (order.data or {}).get("payment") or {}
+    created = expires = None
+    intent_ref = str(payment.get("intent_ref") or "")
+    if intent_ref:
+        from shopman.payman.models import PaymentIntent
+
+        row = PaymentIntent.objects.filter(ref=intent_ref).values("created_at", "expires_at").first()
+        if row:
+            created, expires = row["created_at"], row["expires_at"]
+    if expires is None and payment.get("expires_at"):
+        try:
+            parsed = datetime.fromisoformat(str(payment["expires_at"]))
+            expires = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+        except ValueError:
+            expires = None
+    is_pix = method == "pix"
+    lapsed = bool(expires and expires <= timezone.now())
+    parts = []
+    if created:
+        parts.append(f"{'gerado' if is_pix else 'link gerado'} às {timezone.localtime(created):%H:%M}")
+    if expires:
+        verb = ("expirou" if is_pix else "venceu") if lapsed else ("expira" if is_pix else "vence")
+        parts.append(f"{verb} às {timezone.localtime(expires):%H:%M}")
+    if lapsed:
+        # Cobrança vencida não "cai" mais: prometer o avanço sozinho seria mentir.
+        return ("Pix expirado" if is_pix else "Pagamento vencido"), " · ".join(parts)
+    parts.append("avança sozinho quando cair" if is_pix else "avança sozinho quando o pagamento entrar")
+    return ("Aguardando Pix" if is_pix else "Aguardando pagamento"), " · ".join(parts)
+
+
+def _advance_block_copy(order: Order, bloqueio, method: str) -> tuple[str, str]:
+    """O rótulo curto e a frase do bloqueio do avanço, na voz do operador.
+
+    ``NO_NEXT_STEP`` não é bloqueio que se mostra (o pedido novo espera o aceite,
+    não um fato de fora): sem frase, para o cartão não escrever "Pedido não possui
+    próxima etapa" (G24). O pagamento ganha as horas da cobrança (G06).
+    """
+    if not bloqueio or bloqueio == operator_orders.AdvanceBlock.NO_NEXT_STEP:
+        return "", ""
+    if bloqueio == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
+        return _payment_wait_copy(order, method)
+    return advance_block_label(bloqueio), operator_orders.advance_block_message(bloqueio)
 
 
 def advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:

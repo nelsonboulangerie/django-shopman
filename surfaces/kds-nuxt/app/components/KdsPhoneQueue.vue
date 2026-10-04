@@ -2,10 +2,12 @@
 // A estação no celular (prévia v4, `cozinha-celular4.html` (b)): UM ticket inteiro em
 // foco ("Agora"), os seguintes em linhas compactas ("Próximo", "Depois"), e o resto da
 // fila vira número e agregado ("+2 na fila · A fazer: 6× Cappuccino"). O botão do
-// ticket em foco desce para a barra do polegar (`#kds-thumb`, na página).
+// ticket em foco desce para a barra do polegar (`#kds-thumb`, na página), com o código
+// no rótulo ("Pronto W07").
 //
 // Tocar uma linha traz aquele ticket para o foco (com o botão dele no polegar): todo
-// ato continua a um toque de distância, sem cards minúsculos.
+// ato continua a um toque de distância, sem cards minúsculos. O toque LONGO (no ticket
+// em foco ou numa linha) abre o menu do pedido: desfazer, reabrir, ver o pedido (nota 7).
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
@@ -21,8 +23,6 @@ const props = defineProps<{
   blockedRefs: ReadonlySet<string>;
   additionPks: ReadonlySet<number>;
   finishingPks: ReadonlySet<number>;
-  serviceDate: string;
-  today: string;
   allDay: KDSAllDayCount[];
   density: KDSDensity;
 }>();
@@ -33,6 +33,7 @@ const emit = defineEmits<{
   undo: [pk: number];
   blocked: [];
   locked: [pk: number];
+  hold: [pk: number];
 }>();
 
 const ROWS = 3;
@@ -59,10 +60,20 @@ function rowLabel(index: number): string {
 function rowLocked(card: KDSTicketProjection): boolean {
   return props.blockedRefs.has(card.order_ref) || Boolean(card.finish_block_label);
 }
+
+// Um manipulador de toque longo por linha (a linha guarda qual pedido segurou).
+const heldPk = ref<number | null>(null);
+const rowLongPress = useLongPress(() => {
+  if (heldPk.value != null) emit("hold", heldPk.value);
+});
+function onRowPointerdown(pk: number, event: PointerEvent) {
+  heldPk.value = pk;
+  rowLongPress.onPointerdown(event);
+}
 </script>
 
 <template>
-  <div class="flex flex-col gap-2" data-kds-phone-queue>
+  <div class="flex flex-col gap-2 pb-6" data-kds-phone-queue>
     <KdsTicketCard
       v-if="focus"
       :key="focus.pk"
@@ -70,27 +81,34 @@ function rowLocked(card: KDSTicketProjection): boolean {
       :density="density"
       eyebrow="Agora"
       action-target="#kds-thumb"
-      :next="serviceDate === today && focus.pk === nextPk"
+      :next="focus.pk === nextPk"
       :blocked="blockedRefs.has(focus.order_ref)"
       :addition="additionPks.has(focus.pk)"
       :finishing="finishingPks.has(focus.pk)"
-      :service-date="serviceDate"
       @open="emit('open', focus.pk)"
       @start="emit('start', focus.pk)"
       @finish="emit('finish', focus.pk)"
       @undo="emit('undo', focus.pk)"
       @blocked="emit('blocked')"
       @locked="emit('locked', focus.pk)"
+      @hold="emit('hold', focus.pk)"
     />
 
     <button
       v-for="(card, index) in rows"
       :key="card.pk"
       type="button"
-      class="flex min-h-16 w-full items-center gap-3 rounded-xl border bg-card px-3.5 text-left transition hover:bg-accent active:bg-accent/70"
+      class="flex min-h-16 w-full touch-manipulation select-none items-center gap-3 rounded-xl border bg-card px-3.5 text-left transition hover:bg-accent active:bg-accent/70"
       :class="rowLocked(card) ? 'border-destructive/40' : 'border-border'"
-      :aria-label="`Trazer o pedido ${splitRef(card.order_ref).code} para o foco`"
+      :aria-label="`Trazer o pedido ${splitRef(card.order_ref).code} para o foco. Toque longo: desfazer, reabrir, ver o pedido`"
       data-kds-queue-row
+      @pointerdown="onRowPointerdown(card.pk, $event)"
+      @pointermove="rowLongPress.onPointermove"
+      @pointerup="rowLongPress.onPointerup"
+      @pointercancel="rowLongPress.onPointercancel"
+      @pointerleave="rowLongPress.onPointerleave"
+      @click.capture="rowLongPress.onClickCapture"
+      @contextmenu="rowLongPress.onContextmenu"
       @click="chosenPk = card.pk"
     >
       <span class="w-16 shrink-0 op-micro text-muted-foreground">{{ rowLabel(index) }}</span>
@@ -102,7 +120,7 @@ function rowLocked(card: KDSTicketProjection): boolean {
       >
         <Icon name="lucide:lock" class="size-3.5" />Bloqueado
       </span>
-      <span v-else-if="!card.is_scheduled" class="shrink-0 text-base font-bold tabular-nums text-muted-foreground">
+      <span v-else class="shrink-0 text-base font-bold tabular-nums text-muted-foreground">
         {{ elapsedLabel(card.elapsed_seconds) }}
       </span>
     </button>
@@ -119,5 +137,8 @@ function rowLocked(card: KDSTicketProjection): boolean {
       <template v-if="allDayLine"> · A fazer: {{ allDayLine }}</template>
     </button>
     <p v-else-if="allDayLine" class="text-center op-label text-muted-foreground">A fazer: {{ allDayLine }}</p>
+    <p class="text-center op-micro text-muted-foreground" data-kds-hold-hint>
+      Toque longo: desfazer, reabrir, ver o pedido
+    </p>
   </div>
 </template>

@@ -211,6 +211,11 @@ export interface ProductDetailProjection {
   readonly vocation_choices: VocationChoice[];
   /** Onde dá para comprar agora (V4-G4): do registro de faltas, somente leitura. */
   readonly channel_availability?: ChannelAvailability[];
+  /** "10:40" e "lote de 42 no forno": o próximo lote do SKU hoje (G23). */
+  readonly back_at?: string;
+  readonly back_reason?: string;
+  /** O histórico de alterações do produto no Admin (⋯ do painel). */
+  readonly admin_history_path?: string;
 }
 
 /** Um canal no painel do produto: vende agora, esgotado ou pausado, e desde quando. */
@@ -223,6 +228,12 @@ export interface ChannelAvailability {
   readonly since: string;
   /** O canal recebe a indisponibilidade sozinho (iFood, Meta, Google). */
   readonly automatic: boolean;
+  /** "10:40": o esgotado volta com o próximo lote (G23); vazio sem lote ou na pausa. */
+  readonly back_at?: string;
+  /** "lote no forno" · "lote programado". */
+  readonly back_hint?: string;
+  /** A segunda linha: o que o cliente vê ali ("'Me avise' ligado, 3 esperando"). */
+  readonly note?: string;
 }
 
 /**

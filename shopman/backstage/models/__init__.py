@@ -34,6 +34,7 @@ from .operation_episode import (
     OperationEpisodeKind,
 )
 from .oven_run import OvenRun
+from .plan_carry import PlanCarryNote
 from .pos import POSTab
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
@@ -46,6 +47,7 @@ from .workstation import Workstation
 
 __all__ = [
     "Workstation",
+    "PlanCarryNote",
     "AdminTwoFactorEnrollment",
     "OperatorAlert",
     "AliasBenchmarkReport",

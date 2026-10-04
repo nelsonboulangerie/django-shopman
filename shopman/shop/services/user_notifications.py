@@ -22,6 +22,7 @@ from shopman.shop.models import (
     UserNotificationEvent,
 )
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
+from shopman.shop.services import kds_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,9 @@ def reconcile_user_notifications(*, user) -> int:
             continue
         if row["source_condition"] == MARKETING_SECOND_CONTROL:
             changed += reconcile_marketing_second_control(row["source_ref"])
+            continue
+        if row["source_condition"] in kds_alerts.CONDITIONS:
+            changed += kds_alerts.reconcile(row["source_condition"], row["source_ref"])
             continue
         if row["source_condition"] != ANNOUNCEMENT_REVIEW:
             changed += reconcile_condition(
@@ -824,6 +828,8 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
         head, separator, raw = str(source_ref or "").partition(":")
         if head == "marketing_confirmation" and separator and raw:
             return f"/second-control/{raw}"
+    if source_condition in kds_alerts.CONDITIONS:
+        return kds_alerts.deep_link(source_ref)
     return ""
 
 

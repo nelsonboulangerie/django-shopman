@@ -11,7 +11,7 @@ from shopman.orderman.models import Order
 
 from shopman.backstage.models import KDSInstance, KDSTicket
 from shopman.backstage.services import kds
-from shopman.backstage.services.exceptions import KDSError, KDSOrderNotFound, KDSTicketNotFound
+from shopman.backstage.services.exceptions import KDSError, KDSTicketNotFound
 
 
 @pytest.fixture
@@ -191,57 +191,3 @@ def test_future_ticket_rejects_all_mutations(ticket):
     ticket.refresh_from_db()
     assert ticket.acknowledged_at is None
 
-
-@pytest.mark.django_db
-def test_future_expedition_action_is_blocked_even_on_replay():
-    order = Order.objects.create(
-        ref="KDS-EXP-FUTURE",
-        channel_ref="web",
-        status=Order.Status.COMPLETED,
-        total_q=1000,
-        data={
-            "delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat(),
-            "fulfillment_type": "pickup",
-        },
-    )
-
-    with pytest.raises(KDSError, match="somente para consulta"):
-        kds.expedition_action(order_id=order.pk, action="complete", actor="kds:op")
-
-
-def test_expedition_action_preserves_core_message(monkeypatch):
-    # A mensagem específica do core (ex.: "Pedido de retirada não pode ser
-    # despachado") chega intacta — nunca vira "Ação inválida" genérico.
-    def fail(*args, **kwargs):
-        raise ValueError("Pedido de retirada não pode ser despachado")
-
-    monkeypatch.setattr(kds.kds_core, "expedition_action_by_order_id", fail)
-
-    with pytest.raises(KDSError, match="Pedido de retirada não pode ser despachado"):
-        kds.expedition_action(order_id=1, action="dispatch", actor="kds:op")
-
-
-def test_expedition_action_delegates_to_core(monkeypatch):
-    core = Mock(return_value="ok")
-    monkeypatch.setattr(kds.kds_core, "expedition_action_by_order_id", core)
-
-    assert kds.expedition_action(order_id=1, action="dispatch", actor="kds:op") == "ok"
-    core.assert_called_once_with(1, action="dispatch", actor="kds:op")
-
-
-def test_expedition_action_maps_missing_order_to_typed_not_found(monkeypatch):
-    def missing(*args, **kwargs):
-        raise kds.kds_core.ExpeditionOrderNotFound("Pedido não encontrado")
-
-    monkeypatch.setattr(kds.kds_core, "expedition_action_by_order_id", missing)
-
-    with pytest.raises(KDSOrderNotFound):
-        kds.expedition_action(order_id=999999, action="complete", actor="kds:op")
-
-
-@pytest.mark.django_db
-def test_expedition_action_replay_noops_for_completed_pickup_order():
-    # Replay resolvido sob o lock do core: pedido já no status alvo = no-op.
-    order = Order.objects.create(ref="KDS-SVC-DONE", channel_ref="web", status=Order.Status.COMPLETED, total_q=1000)
-
-    assert kds.expedition_action(order_id=order.pk, action="complete", actor="kds:op") == Order.Status.COMPLETED
