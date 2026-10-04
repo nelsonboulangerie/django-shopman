@@ -102,6 +102,22 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
+    "CONCIERGE_ADD_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_REFUSED_NEW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_REFUSED_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
     "CONCIERGE_ALLERGY_ASK_WHICH": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
