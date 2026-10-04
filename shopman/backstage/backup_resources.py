@@ -48,6 +48,10 @@ class ProductConsumptionTagResource(resources.ModelResource):
 
 
 class SeatingSpotResource(resources.ModelResource):
+    # A versão anterior da mesa (mudou lugares ou capacidade) viaja pela ref: a
+    # anterior vem antes na planilha, porque a ref da nova estende a dela.
+    replaces = _fk(SeatingSpot, "ref", "replaces")
+
     class Meta(NaturalKeyMeta):
         model = SeatingSpot
         import_id_fields = ("ref",)

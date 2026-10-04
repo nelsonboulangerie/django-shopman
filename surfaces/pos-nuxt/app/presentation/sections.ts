@@ -1,8 +1,9 @@
 // Presentation — as seções do PDV na camada visual da suíte (onda V4, prévia
 // `pos-sale4.html`). O rail da suíte (tablet e desktop) e a barra do polegar
 // (celular) mostram as MESMAS seções, nesta ordem: Comandas (F2), Encomendas,
-// Caixa e Tela do cliente. Terminal, Avisos, Atalhos, Bloquear e o operador moram no
-// pé do rail, montados pelo `PosFunctionRail`.
+// Caixa e Tela do cliente. No pé, Ajustes (V5-SALAO, prévia `salao-mesas4.html`: o
+// andar do cadastro, separado da operação; hoje com o Salão). Terminal, Avisos,
+// Atalhos, Bloquear e o operador moram no pé do rail, montados pelo `PosFunctionRail`.
 //
 // Puro: quem decide a contagem e a permissão é a Projection (comandas em uso, caixa
 // aberto) e a leitura das Encomendas (`usePosPreordersRail`).
@@ -11,7 +12,11 @@ import type { OperatorSection } from "../../../operator-kit/app/presentation/app
 import type { POSTabProjection } from "~/types/pos";
 
 /** A tela de trabalho em que se está, para acender a seção certa. */
-export type PosView = "board" | "sale" | "checkout" | "session" | "preorders";
+export type PosView = "board" | "sale" | "checkout" | "session" | "preorders" | "settings";
+
+/** O andar Ajustes do PDV: a porta (o item do pé do rail) e as rotas que moram nele. */
+export const POS_SETTINGS_HOME = "/settings/seating";
+export const POS_SETTINGS_ROUTES = ["/settings"];
 
 export interface PosSectionsInput {
   tabs: readonly Pick<POSTabProjection, "state">[];
@@ -60,6 +65,15 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
       label: "Tela do cliente",
       icon: "lucide:monitor-smartphone",
     },
+    // Ajustes não divide andar com a operação: mora no pé do rail (v4).
+    {
+      key: "settings",
+      label: "Ajustes",
+      icon: "lucide:settings-2",
+      to: POS_SETTINGS_HOME,
+      match: POS_SETTINGS_ROUTES,
+      foot: true,
+    },
   );
   return sections;
 }
@@ -68,5 +82,6 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
 export function posCurrentSection(view: PosView): string {
   if (view === "session") return "cash";
   if (view === "preorders") return "preorders";
+  if (view === "settings") return "settings";
   return "board";
 }

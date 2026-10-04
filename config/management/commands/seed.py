@@ -9964,32 +9964,45 @@ class Command(BaseCommand):
         a leitura precisa enxergar. Pelo mesmo motivo o sofá das mesas internas,
         que permite apertar mais gente com menos conforto, não vira lugar novo.
         """
-        from shopman.backstage.models import SeatingSpot, SpotKind
+        from shopman.backstage.models import SeatingSpot, SpotKind, SpotShape
 
+        # (ref, rótulo, sigla, tipo, forma, área, lugares, conta, x, y): a planta
+        # que o PDV › Ajustes › Salão desenha. Posição só entra em mesa ainda sem
+        # posição: rodar o seed de novo não desfaz o desenho do operador.
         spots = []
         for index in range(1, 5):
-            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}",
-                            SpotKind.TABLE, "Salão interno", 2, True))
+            column, row = (index - 1) % 2, (index - 1) // 2
+            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}", f"M{index}",
+                          SpotKind.TABLE, SpotShape.ROUND, "Salão interno", 2, True,
+                          70 + column * 130, 80 + row * 130))
         for index in range(1, 5):
-            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}",
-                            SpotKind.TABLE, "Calçada", 2, True))
+            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}", f"E{index}",
+                          SpotKind.TABLE, SpotShape.SQUARE, "Calçada", 2, True,
+                          70 + (index - 1) * 130, 490))
         for index in range(1, 7):
-            spots.append((f"balcao-{index}", f"Balcão {index}",
-                            SpotKind.COUNTER, "Balcão", 1, True))
+            spots.append((f"balcao-{index}", f"Balcão {index}", f"B{index}",
+                          SpotKind.COUNTER, SpotShape.STOOL, "Balcão", 1, True,
+                          520, 60 + (index - 1) * 58))
         for index in range(1, 3):
-            spots.append((f"bistro-{index}", f"Mesinha alta {index}",
-                            SpotKind.TABLE, "Salão interno", 2, False))
-        spots.append(("bancao-externo", "Bancão externo",
-                        SpotKind.COUNTER, "Calçada", 4, False))
+            spots.append((f"bistro-{index}", f"Mesinha alta {index}", f"A{index}",
+                          SpotKind.TABLE, SpotShape.ROUND, "Salão interno", 2, False,
+                          340, 80 + (index - 1) * 130))
+        spots.append(("bancao-externo", "Bancão externo", "BX",
+                      SpotKind.COUNTER, SpotShape.LONG, "Calçada", 4, False, 600, 495))
 
-        for ref, label, kind, area, seats, counts in spots:
-            SeatingSpot.objects.update_or_create(
+        for ref, label, short_label, kind, shape, area, seats, counts, plan_x, plan_y in spots:
+            spot, _ = SeatingSpot.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "kind": kind, "area": area,
                     "seats": seats, "counts_in_capacity": counts,
                 },
             )
+            if spot.plan_x is None or spot.plan_y is None:
+                spot.short_label = spot.short_label or short_label
+                spot.shape = shape
+                spot.plan_x, spot.plan_y = plan_x, plan_y
+                spot.save(update_fields=["short_label", "shape", "plan_x", "plan_y"])
 
     def _seed_business_days(self, *, days: int) -> None:
         """Expediente congelado por dia — o denominador das métricas de tempo."""
