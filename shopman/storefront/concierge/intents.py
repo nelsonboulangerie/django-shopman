@@ -35,9 +35,13 @@ O caminho de um turno:
 5. **Composição** (``compose``): uma mensagem, as partes na ordem do cliente, uma pergunta
    só no fim. As regras da casa (``house_rules``) passam sobre o resultado em ``service``.
 
-Liberação gradual: ``SHOPMAN_CONCIERGE["intents_plural"]`` (``CONCIERGE_INTENTS_PLURAL``):
-``off`` (padrão), ``subjects`` (só quem está em ``intents_subjects``, a coorte do dono) ou
-``all``.
+Liberação (OBS0310-R, 03/10/2026): valem para quem a Concierge JÁ atende. Em ``assist``,
+a coorte atendida é a lista fechada da connection (``allowed_subjects``, hoje o dono), e
+quem está fora dela só é observado; então ligar as intenções para a coorte é ligar para
+quem conversa com ela, sem tocar em env nem no spec do app. A chave
+``SHOPMAN_CONCIERGE["intents_plural"]`` (``CONCIERGE_INTENTS_PLURAL``) fica como
+interruptor: ``cohort`` (padrão: a coorte atendida), ``off`` (emergência: desliga para
+todos), ``subjects`` (só quem está em ``intents_subjects``, dentro da coorte) ou ``all``.
 """
 
 from __future__ import annotations
@@ -111,7 +115,12 @@ ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 OFFER_TEAM_COPY_KEY = "CONCIERGE_PARTS_OFFER_TEAM"
-COPY_KEYS = (TEAM_COPY_KEY, ORDER_WITH_TEAM_COPY_KEY, NOT_FOUND_COPY_KEY, UNCLEAR_COPY_KEY, OFFER_TEAM_COPY_KEY)
+#: Pergunta repetida (OBS0310-R): a abertura da resposta de novo, e o pedido de repetir
+#: quando a casa não acha o que ficou sem resposta.
+REPEAT_LEAD_COPY_KEY = "CONCIERGE_PARTS_REPEAT_LEAD"
+REPEAT_ASK_COPY_KEY = "CONCIERGE_PARTS_REPEAT_ASK"
+COPY_KEYS = (TEAM_COPY_KEY, ORDER_WITH_TEAM_COPY_KEY, NOT_FOUND_COPY_KEY, UNCLEAR_COPY_KEY, OFFER_TEAM_COPY_KEY,
+             REPEAT_LEAD_COPY_KEY, REPEAT_ASK_COPY_KEY)
 
 #: Jev: a partir de quanto ele "tem certeza" de uma intenção sozinha, e a pergunta extra.
 JEV_CERTAIN = 0.8
@@ -143,19 +152,38 @@ def _config() -> dict:
     return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
 
 
+#: Os valores da chave. ``cohort`` é o padrão: sem env nenhuma, vale para a coorte atendida.
+OFF, COHORT, SUBJECTS, ALL = "off", "cohort", "subjects", "all"
+MODES = (OFF, COHORT, SUBJECTS, ALL)
+
+
 def mode() -> str:
-    return str(_config().get("intents_plural") or "off").strip().casefold()
+    """O valor da chave; valor desconhecido desliga (falha fechada, com aviso no log)."""
+    current = str(_config().get("intents_plural") or COHORT).strip().casefold()
+    if current not in MODES:
+        logger.warning("concierge.intents.unknown_mode value=%s", current[:20])
+        return OFF
+    return current
 
 
-def enabled_for(subject: str) -> bool:
-    """Intenções no plural para este cliente? ``subjects`` = só a coorte declarada."""
+def enabled_for(binding) -> bool:
+    """Intenções no plural para esta conversa?
+
+    Só para quem a Concierge atende agora: modo ``assist`` e o cliente na coorte da
+    connection (``service.is_allowed``). Fora dela nada muda, qualquer que seja a chave.
+    ``off`` desliga para todos; ``subjects`` estreita a coorte para ``intents_subjects``.
+    """
+    from . import service
+
     current = mode()
-    if current == "all":
-        return True
-    if current == "subjects":
+    if current == OFF or binding is None:
+        return False
+    if service.operation_mode() != "assist" or not service.is_allowed(binding):
+        return False
+    if current == SUBJECTS:
         allowed = {str(value).strip() for value in _config().get("intents_subjects") or () if str(value).strip()}
-        return bool(subject) and str(subject).strip() in allowed
-    return False
+        return str(binding.subject or "").strip() in allowed
+    return True
 
 
 # ── Atos ──────────────────────────────────────────────────────────────
@@ -487,7 +515,13 @@ def plan(
     client=None,
     use_model: bool = True,
 ) -> Plan:
-    """A lista de partes do turno: o porteiro decide; a leitura entra quando ele hesita."""
+    """A lista de partes do turno: o porteiro decide; a leitura entra quando ele hesita.
+
+    A cobrança ("você não respondeu: ...") não é parte: sai antes, e o que sobra é a
+    pergunta repetida (decisão da coordenação, 03/10/2026). Reclamação só com queixa
+    explícita (``dialogue.asks_again``).
+    """
+    text = _without_nudge(text)
     decided = gate(text, rules_intent=rules_intent, rules_source=rules_source, jev_scores=jev_scores)
     if decided.direct:
         # Uma parte, com certeza: a intenção do porteiro sobre a fala inteira (sem a cortesia).
@@ -502,6 +536,8 @@ def plan(
     if use_model:
         acts, elapsed, error = read_with_model(text, memory_note=memory_note, client=client)
     source = "model"
+    # A leitura que chama a cobrança de reclamação não vale: sem queixa explícita, é pergunta repetida.
+    acts = [act for act in acts if not (act.act == COMPLAINT and _is_nudge(act.span))]
     if error or not acts:
         acts, source = local_acts(text), "local"
     result = Plan(acts=_with_rules(acts, text, rules_intent), source=source, reason=decided.reason,
@@ -509,6 +545,23 @@ def plan(
     if not result.acts:
         result.acts = [Act(UNKNOWN, span=text.strip()[:300])]
     return result
+
+
+def _is_nudge(text: str) -> bool:
+    from . import dialogue
+
+    return dialogue.asks_again(text)
+
+
+def _without_nudge(text: str) -> str:
+    """A fala sem a cobrança, quando sobra pergunta; senão a fala como veio."""
+    from . import dialogue
+    from .small_talk import small_talk_kind
+
+    if not dialogue.asks_again(text):
+        return text
+    rest = dialogue.without_nudge(text)
+    return rest if rest and not small_talk_kind(rest) else text
 
 
 # ── Execução e composição ─────────────────────────────────────────────
@@ -520,6 +573,10 @@ class PartReply:
     text: str = ""
     #: A parte foi suspensa porque a equipe vai conduzir (pedido com reclamação junto).
     suspended: bool = False
+    #: Parte sensível que a própria Concierge conduz (cancelamento pela régua do site).
+    self_served: bool = False
+    #: A pergunta desta parte é a que fica no fim da resposta (a confirmação do cancelamento).
+    keeps_question: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
 
@@ -569,6 +626,36 @@ def _search_text(act: Act) -> str:
     return act.product or strip_small_talk(act.span) or act.span
 
 
+def _cancellation():
+    """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``), quando existe.
+
+    Ponto de ligação da decisão da coordenação (03/10/2026): cancelamento dentro de uma
+    mensagem com várias partes segue a mesma régua da Concierge (o que o cliente poderia
+    cancelar pelo site, ela pergunta e cancela no "sim"; fora disso, a equipe, R4). Sem o
+    módulo no ``main``, o cancelamento segue com a equipe, como antes.
+    """
+    try:
+        from . import cancellation
+    except ImportError:
+        return None
+    return cancellation
+
+
+def _self_cancel(conversation, act: Act) -> str:
+    """A pergunta de confirmação quando a Concierge pode cancelar; vazio = equipe (R4)."""
+    module = _cancellation()
+    if module is None or conversation is None:
+        return ""
+    try:
+        order = module.self_cancellable(conversation, act.span)
+        if order is None:
+            return ""
+        return (module.ask(conversation, order, act.span).text or "").strip()
+    except Exception:  # régua indisponível: a equipe decide, nunca a Concierge no escuro
+        logger.warning("concierge.intents.self_cancel_failed", exc_info=True)
+        return ""
+
+
 def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=None) -> Execution:
     """Cada ato pelo executor determinístico que já existe. Sem modelo, sem laço."""
     from . import allergens, house_rules
@@ -579,7 +666,12 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     if copy is None:
         from .service import copy_message as copy
     catalog_ref = tools_module._catalog_channel_ref(channel_ref)
-    run = Execution(team=list(plan_.team_acts))
+    # Cancelamento que o cliente poderia fazer pelo site: a Concierge pergunta (não é equipe).
+    self_cancel = {
+        id(act): text for act in plan_.acts if act.act == CANCEL
+        for text in (_self_cancel(conversation, act),) if text
+    }
+    run = Execution(team=[act for act in plan_.team_acts if id(act) not in self_cancel])
     offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
     team_in_turn = bool(run.team)
@@ -616,6 +708,9 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
 
     for act in plan_.acts:
         if act.act in COURTESY:
+            continue
+        if id(act) in self_cancel:
+            run.replies.append(PartReply(act, text=self_cancel[id(act)], self_served=True, keeps_question=True))
             continue
         if act.act in TEAM_ACTS or act.act in OTHER_DESK_ACTS:
             topic = TEAM_TOPICS.get(act.act, "isso")
@@ -686,6 +781,7 @@ def compose(run: Execution) -> str:
     chamada no turno, a oferta "posso chamar a equipe" das outras frases sai.
     """
     blocks: list[str] = []
+    kept = -1
     for reply in run.replies:
         text = (reply.text or "").strip()
         if run.to_team:
@@ -693,7 +789,11 @@ def compose(run: Execution) -> str:
                 text = text.replace(offer, "").strip()
         if text and text not in blocks:
             blocks.append(text)
-    last_question = max((i for i, block in enumerate(blocks) if block.rstrip().endswith("?")), default=-1)
+            if reply.keeps_question and text.rstrip().endswith("?"):
+                kept = len(blocks) - 1
+    last_question = kept if kept >= 0 else max(
+        (i for i, block in enumerate(blocks) if block.rstrip().endswith("?")), default=-1
+    )
     cleaned: list[str] = []
     for index, block in enumerate(blocks):
         if index != last_question:
@@ -740,7 +840,9 @@ def team_summary(run: Execution) -> str:
         act = reply.act
         label = PART_LABELS.get(act.act, act.act)
         said = _clip(act.span or act.product, 90)
-        if act.is_team or (act.act == ALLERGY and run.allergy_team):
+        if reply.self_served:
+            state = "a Concierge pediu a confirmação"
+        elif act.is_team or (act.act == ALLERGY and run.allergy_team):
             state = "com a equipe"
         elif reply.suspended:
             state = "suspenso, a equipe fecha"
@@ -779,11 +881,33 @@ def run(conversation, *, binding, decision, client=None):
     from . import dialogue, small_talk, triage
     from .agent import AgentOutcome, _current_customer_text
     from .agent import _config as agent_config
-    from .metrics import LAYER_CONTEXT, LAYER_COURTESY, LAYER_INTENTS, LAYER_TEAM
+    from .metrics import LAYER_CONTEXT, LAYER_COURTESY
 
     channel_ref = str(conversation.channel_ref or agent_config().get("channel_ref") or "")
     customer_text = _current_customer_text(conversation)
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
+
+    # O "sim"/"não" à pergunta de cancelamento (#1445), quando ele existe: antes de tudo,
+    # como no agente. Qualquer outra fala desfaz a pergunta.
+    cancel_module = _cancellation()
+    if cancel_module is not None and hasattr(cancel_module, "resolve_pending"):
+        cancel_turn = cancel_module.resolve_pending(conversation, customer_text)
+        if cancel_turn is not None:
+            from . import agent as agent_module
+            from .metrics import LAYER_HOUSE_RULE
+
+            if cancel_turn.code == "refused":
+                reason = getattr(agent_module, "CANCEL_HANDOFF_REASON", "") or PART_LABELS[CANCEL]
+                return AgentOutcome(reply_text="", handoff=True, handoff_reason=reason, memory=memory)
+            return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+
+    # Pergunta repetida (decisão da coordenação, 03/10/2026): "você não respondeu",
+    # "e a minha pergunta?" sem outra pergunta junto. A Concierge responde as partes
+    # que ficaram pendentes, pela memória; reclamação só com queixa explícita.
+    if dialogue.asks_again(customer_text) and _without_nudge(customer_text) == customer_text:
+        return _answer_again(conversation, binding=binding, decision=decision, memory=memory,
+                             channel_ref=channel_ref, client=client)
+
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
     if resolution.answers_without_model:
@@ -837,12 +961,41 @@ def run(conversation, *, binding, decision, client=None):
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
+    return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+
+
+def _parts_memo(run_: Execution) -> dict:
+    """O que a memória guarda das partes do turno: o ato, o trecho (redigido) e o que houve."""
+    rows = []
+    for reply in run_.replies:
+        act = reply.act
+        if reply.self_served:
+            state = "answered"
+        elif act.is_team or (act.act == ALLERGY and run_.allergy_team):
+            state = "team"
+        elif reply.suspended:
+            state = "suspended"
+        elif act.act == UNKNOWN or reply.memo.get("found") is False:
+            state = "unanswered"
+        else:
+            state = "answered"
+        rows.append({"act": act.act, "span": _clip(act.span, 120), "product": act.product[:80],
+                     "qty": act.qty, "state": state})
+    return {"parts": rows}
+
+
+def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text: str, lead: str = ""):
+    """O ``AgentOutcome`` de um turno lido em partes (normal ou pergunta repetida)."""
+    from . import triage
+    from .agent import AgentOutcome
+    from .metrics import LAYER_INTENTS, LAYER_TEAM
+
     outcome = AgentOutcome(
         reply_text="",
         layer=LAYER_INTENTS,
         tool_events=executed.tool_events,
         memory=memory,
-        memory_memos=[*memos, *executed.memos],
+        memory_memos=[*memos, *executed.memos, _parts_memo(executed)],
         intents=found.as_dict(),
     )
     if executed.allergy_answered_by and not executed.to_team:
@@ -858,7 +1011,7 @@ def run(conversation, *, binding, decision, client=None):
         outcome.handoff_reason = outcome.team_triage.reason_line()
         answered = [
             reply for reply in executed.replies
-            if not reply.act.is_team and not reply.suspended
+            if (reply.self_served or not reply.act.is_team) and not reply.suspended
             and not (reply.act.act == ALLERGY and executed.allergy_team)
         ]
         if not answered:
@@ -869,5 +1022,70 @@ def run(conversation, *, binding, decision, client=None):
                 outcome.team_triage = decision
                 outcome.handoff_reason = decision.reason_line()
             return outcome
-    outcome.reply_text = compose(executed)
+    body = compose(executed)
+    outcome.reply_text = f"{lead}\n{body}" if lead and body else body
     return outcome
+
+
+def _pending_parts(memory) -> list[Act]:
+    """As partes da última mensagem que ficaram sem resposta; todas, se nenhuma ficou.
+
+    Parte de equipe não volta: a conversa foi para a equipe, e a memória zera quando ela
+    devolve. Sem partes na memória (a última resposta não foi pelas partes), vazio.
+    """
+    rows = [row for row in (memory.state.get("parts") or []) if isinstance(row, dict)
+            and row.get("act") in ACT_NAMES and row.get("state") != "team" and row.get("act") not in COURTESY]
+    pending = [row for row in rows if row.get("state") != "answered"] or rows
+    return [Act(row["act"], span=str(row.get("span") or ""), product=str(row.get("product") or ""),
+                qty=int(row.get("qty") or 0)) for row in pending]
+
+
+def _earlier_question(conversation) -> str:
+    """A última fala do cliente antes deste turno que pergunta algo (nem cobrança nem cortesia)."""
+    from shopman.shop.models import ConversationMessage
+
+    from . import dialogue
+    from .small_talk import small_talk_kind
+
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    earlier = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(pk__in=inbound_ids)
+        .exclude(text="")
+        .order_by("-pk")
+        .values_list("text", flat=True)[:5]
+    )
+    for text in earlier:
+        if dialogue.asks_again(text) and _without_nudge(text) == text:
+            continue
+        if small_talk_kind(text):
+            continue
+        return _without_nudge(text)
+    return ""
+
+
+def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, client=None):
+    """A pergunta repetida: responde de novo o que ficou pendente, com um pedido de desculpa."""
+    from . import triage
+    from .agent import AgentOutcome
+    from .metrics import LAYER_INTENTS
+    from .service import copy_message as copy
+
+    acts = _pending_parts(memory)
+    text = ""
+    if acts:
+        found = Plan(acts=acts, source="memory", reason="asked_again")
+    else:
+        text = _earlier_question(conversation)
+        if not text:
+            return AgentOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
+                                intents={"acts": [], "source": "memory", "reason": "asked_again_nothing"})
+        rules_intent, rules_source = triage.classify_rules(text)
+        has_key = bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+        found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=memory.prompt_lines(),
+                     client=client, use_model=client is not None or has_key)
+        found.reason = f"asked_again:{found.reason}"
+    executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
+    lead = (copy(REPEAT_LEAD_COPY_KEY) or "").strip()
+    return _outcome(found, executed, decision=decision, memory=memory, memos=[],
+                    text=text or " ".join(act.span for act in acts), lead=lead)

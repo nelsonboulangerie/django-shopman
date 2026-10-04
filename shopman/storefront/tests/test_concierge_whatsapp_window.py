@@ -32,6 +32,7 @@ WINDOW = {
 }
 CONFIG = {
     "contract_version": 3,
+    "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
     "enabled": True,
     "channel_ref": "web",
     "connections": {

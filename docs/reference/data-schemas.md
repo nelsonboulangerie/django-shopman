@@ -163,8 +163,12 @@ parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model
 `jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), sempre com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
-Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`, atrás de
-`CONCIERGE_INTENTS_PLURAL`): a triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
+Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`). Ligadas
+para a coorte que a Concierge já atende em `assist` (OBS0310-R: `allowed_subjects` da connection;
+fora dela nada muda); `SHOPMAN_CONCIERGE["intents_plural"]` (`CONCIERGE_INTENTS_PLURAL`) é
+`cohort` (padrão, sem env), `off` (emergência, desliga para todos), `subjects` (só
+`CONCIERGE_INTENTS_SUBSCRIBERS`, dentro da coorte) ou `all` (dentro da coorte); valor desconhecido
+desliga. A triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
 neste turno (as 12 intenções e `multiple_parts`, a pergunta "a mensagem traz mais de uma coisa?",
 feita só com a chave ligada; vazio sem Jev). Com parte sensível no turno, a triagem gravada é a do
 turno inteiro: `source=intents`, `intent` a primeira parte de equipe (cancelamento grava
@@ -202,7 +206,11 @@ casa, uma resposta), a etapa `intents` aparece em `latency_ms` (porteiro, leitur
 `calls` (`stage: intents`, a leitura com o modelo pequeno, quando houve), e `usage.intents` =
 `{acts: [{act, span, product, qty}], source: gate|model|local, reason, read_ms, read_error?}`: as
 partes na ordem do cliente (`act` da lista fechada `intents.ACT_NAMES`), quem as decidiu (o porteiro
-sozinho, a leitura com o modelo, ou a divisão local quando a leitura falhou) e por quê.
+sozinho, a leitura com o modelo, ou a divisão local quando a leitura falhou) e por quê. Na pergunta
+repetida (OBS0310-R), `reason` começa com `asked_again`: `source=memory, reason=asked_again` (as
+partes vieram de `flags["dialogue"]["parts"]`), `reason=asked_again:<motivo do porteiro>` com o
+`source` da leitura (a última fala do cliente que perguntava algo) ou `source=memory,
+reason=asked_again_nothing` (nada achado, a Concierge pediu para repetir).
 Registros anteriores a 03/10/2026 têm `usage = {}`.
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
@@ -218,7 +226,7 @@ mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Convers
 começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
 Memória da conversa (OBS0310-N, bloco 2 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/dialogue.py`): `Conversation.flags["dialogue"]` = `{v: 1, fence, at,
-valid_until, pending?, listed?, focus?, order?, last_change?}`. `fence` é o `turn_fence` do turno que
+valid_until, pending?, listed?, focus?, order?, last_change?, parts?}`. `fence` é o `turn_fence` do turno que
 gravou (gravação na mesma transação da resposta; turno revogado não grava); `at` e `valid_until` são ISO
 8601. `valid_until` é o fim do PRÓXIMO dia de funcionamento depois do dia de `at`, pelo calendário da
 casa (`business_calendar`): vale para `listed`, `focus` e `last_change`. `pending` é a pergunta que a
@@ -231,7 +239,13 @@ entregue; quer um novo?"); `options` = `[{n, ref, name}]`, `day` = ISO date: pas
 vence. `listed` = a última lista numerada (até 5) `[{n, ref, name, kind?}]` (`kind=collection` na visão
 por coleção); `focus` = `{ref, name, qty?}` (o SKU em foco); `order` = `{ref, open}` (o pedido em foco
 e se estava aberto quando foi gravado; entregue ou cancelado depois disso, `listed`/`focus`/`pending`
-deixam de valer); `last_change` = `{ref, qty}` (o último `set_item`, para "não, era o outro"). Pedido
+deixam de valer); `last_change` = `{ref, qty}` (o último `set_item`, para "não, era o outro");
+`parts` (OBS0310-R) = `[{act, span, product, qty, state}]`, as partes da última mensagem lida pelas
+intenções no plural, com `act` em `intents.ACT_NAMES`, `span` o trecho redigido (até 120
+caracteres) e `state` em `answered`, `unanswered` (sem fato na busca, ou parte não entendida),
+`team` ou `suspended`; vale como `listed` e `focus`, e é o que a pergunta repetida ("você não
+respondeu", "e a minha pergunta?") responde de novo (as `unanswered`; se nenhuma, todas menos as de
+equipe). Pedido
 recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]` dias, 7 por padrão, e
 sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
 devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou

@@ -8,7 +8,9 @@ e explícito, e o código resolve a referência contra ele, sem rede e sem model
 - ``listed``: a última lista numerada que a casa mostrou ("o segundo", "essas opções");
 - ``focus``: o produto em foco ("mais 2", "ele tem quantas fatias?");
 - ``order``: o pedido em foco (o pedido em si, e o histórico, vêm do sistema);
-- ``last_change``: a última mudança na sacola, para "não, era o outro".
+- ``last_change``: a última mudança na sacola, para "não, era o outro";
+- ``parts``: as partes da última mensagem lida pelas intenções no plural e o que houve
+  com cada uma, para "você não respondeu" / "e a minha pergunta?" (``asks_again``).
 
 Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo relógio.**
 
@@ -183,7 +185,7 @@ def effective(state: dict | None, facts: Facts) -> dict:
         out["order"] = order
 
     if alive and not order_closed_since:
-        for key in ("listed", "focus", "last_change"):
+        for key in ("listed", "focus", "last_change", "parts"):
             if state.get(key):
                 out[key] = state[key]
 
@@ -382,6 +384,70 @@ def courtesy_event(tokens: list[str]) -> str:
     if not all(t in allowed for t in tokens):
         return ""
     return "arrived" if _ARRIVED & set(tokens) else "thanks"
+
+
+# ── Pergunta repetida ─────────────────────────────────────────────────
+#
+# Decisão da coordenação (03/10/2026, óbvio de omotenashi): "você não respondeu",
+# "e a minha pergunta?" é a pergunta repetida, não reclamação. A Concierge responde
+# o que ficou pendente (``parts`` da memória) em vez de mandar para a equipe. Só é
+# reclamação quando há queixa explícita na mesma fala.
+
+_NUDGE_RE = re.compile(
+    r"(?:\b(?:voce|vc|voces|vcs|ninguem)\s+(?:ainda\s+)?)?\bnao\s+(?:me\s+|nos\s+)?respond\w*"
+    r"|\brespond\w*\s+(?:nao|nada)\b"
+    r"|\b(?:e|cade|e\s+ai)\s+(?:a\s+)?(?:minha|a)\s+(?:pergunta|duvida|resposta)\b"
+    r"|\b(?:minha|minhas)\s+(?:pergunta|perguntas|duvida|duvidas)\b(?:\s+(?:ficou|ficaram|sem)\b[\w\s]{0,20})?"
+    r"|\b(?:ficou|ficaram|fiquei|continuo|to|estou)\s+sem\s+resposta\b"
+    r"|\bcade\s+(?:a\s+)?resposta\b"
+    r"|\besqueceu\s+(?:de\s+)?(?:responder|me\s+responder|da\s+minha\s+pergunta)\b"
+    r"|\bficou\s+faltando\b"
+)
+#: Queixa explícita: com ela, a fala é reclamação mesmo trazendo "não respondeu".
+_EXPLICIT_COMPLAINT_RE = re.compile(
+    r"\b(?:absurd\w*|descaso|pessim\w*|horrivel|ridicul\w*|vergonh\w*|desrespeit\w*|falta\s+de\s+respeito|"
+    r"decepcion\w*|irritad\w*|indignad\w*|inaceitavel|palhacada|ofendid\w*|demor\w*|reclam\w*|"
+    r"lamentavel|que\s+raiva|pouco\s+caso)\b"
+)
+#: O que sobra de um trecho de cobrança sem conteúdo próprio ("você ainda não me respondeu, ok?").
+_NUDGE_FILLER = {
+    "voce", "vc", "voces", "vcs", "ainda", "me", "ok", "oi", "ola", "ei", "e", "ai", "entao", "moca",
+    "moco", "nada", "por", "favor", "pf", "pfv", "a", "o", "isso", "aqui", "ate", "agora", "hein", "ne", "ta", "gente",
+}
+
+
+def asks_again(text: str) -> bool:
+    """A fala cobra uma resposta que não veio, sem queixa explícita."""
+    from .handoff import classify_handoff_request
+
+    folded = _fold(text)
+    if not _NUDGE_RE.search(folded):
+        return False
+    return not (_EXPLICIT_COMPLAINT_RE.search(folded) or classify_handoff_request(text) == "complaint")
+
+
+def without_nudge(text: str) -> str:
+    """A fala sem o trecho de cobrança: o que sobra é pergunta nova (pode ser vazio).
+
+    Divide por frase; a frase de cobrança sai inteira quando só tem a cobrança, e
+    perde só a cobrança quando traz conteúdo ("você não respondeu se tem croissant").
+    O que sobra volta dobrado (sem acento): a leitura e a busca dobram de qualquer jeito.
+    """
+    pieces = re.split(r"([?!.:;\n]+)", str(text or ""))
+    out: list[str] = []
+    for index in range(0, len(pieces), 2):
+        sentence = pieces[index]
+        delimiter = pieces[index + 1] if index + 1 < len(pieces) else ""
+        folded = _fold(sentence)
+        if _NUDGE_RE.search(folded):
+            rest = _NUDGE_RE.sub(" ", folded)
+            rest = re.sub(r"^\W*(?:se|sobre|de|do|da)\b", " ", rest.strip())
+            if not [word for word in words(rest) if word not in _NUDGE_FILLER]:
+                continue
+            sentence = rest
+        if sentence.strip():
+            out.append(sentence.strip() + (delimiter.strip()[:1] if delimiter.strip()[:1] in {"?", "!", "."} else ""))
+    return " ".join(out).strip()
 
 
 # ── Resolução ─────────────────────────────────────────────────────────
@@ -702,7 +768,9 @@ def next_state(
     Toda resposta substitui a pergunta pendente (a última pergunta da casa é a que
     está no ar); o resumo pendente sobrevive enquanto o orçamento for o mesmo.
     """
-    state = {key: value for key, value in (previous or {}).items() if key in {"listed", "focus", "order", "last_change"}}
+    state = {
+        key: value for key, value in (previous or {}).items() if key in {"listed", "focus", "order", "last_change", "parts"}
+    }
     old_pending = (previous or {}).get("pending") or {}
     pending = old_pending if old_pending.get("kind") == CONFIRM_ORDER else None
     today = timezone.localtime(now).date().isoformat()
@@ -712,6 +780,10 @@ def next_state(
             pending = memo["pending"]
         if memo.get("focus"):
             state["focus"] = memo["focus"]
+        if "parts" in memo:
+            # As partes do último turno pelas intenções no plural e o que houve com cada
+            # uma: a pergunta repetida ("e a minha pergunta?") responde a partir daqui.
+            state["parts"] = memo["parts"]
         if tool == "search_storefront":
             if memo.get("found") is False:
                 pending = {"kind": OFFER_TEAM, "day": today}
@@ -742,7 +814,7 @@ def next_state(
             pending = None
     if pending:
         state["pending"] = pending
-    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending")):
+    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending", "parts")):
         return {}
     return {
         "v": VERSION,

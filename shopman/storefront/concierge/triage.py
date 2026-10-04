@@ -484,6 +484,12 @@ def decide(
         intent, source = proposal["intent"], ("jev" if with_jev else "model")
     else:
         intent, source = rules_intent, rules_source
+    if intent == "complaint" and source in {"jev", "model"} and asks_again(text):
+        # "Você não respondeu", "e a minha pergunta?": pergunta repetida, não reclamação
+        # (decisão da coordenação, 03/10/2026). Sem queixa explícita (a regra local não
+        # viu reclamação), vale a regra, e a Concierge responde o que ficou pendente.
+        intent, source = rules_intent, rules_source
+        proposal = {**proposal, "summary": ""}  # o resumo do modelo dizia reclamação
 
     destination, urgency = ROUTES[intent]
     if proposal is not None and proposal["urgency"] and destination != OTHER_DESK and intent not in SENSITIVE:
@@ -507,6 +513,12 @@ def decide(
 
     summary = (proposal or {}).get("summary") or rules_summary(intent, text)
     return Triage(intent, urgency, destination, summary, source, escalated_by, jev_scores=scores)
+
+
+def asks_again(text: str) -> bool:
+    from .dialogue import asks_again as nudge
+
+    return nudge(text)
 
 
 def after_failures(previous: dict | None, text: str) -> Triage:

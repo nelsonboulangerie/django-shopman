@@ -29,6 +29,7 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401 (fixt
     SUBJECT,
     ScriptedClient,
     _binding,
+    _create_inbound,
     _receive,
     alpha_menu,
     conversation,
@@ -238,14 +239,42 @@ def test_default_copy_of_the_parts_obeys_the_house_rules():
 # ── 4. A chave e o Jev ────────────────────────────────────────────────
 
 
-def test_the_switch_is_off_by_default_and_opens_only_for_the_cohort():
-    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
-        assert not intents.enabled_for(SUBJECT)
+COHORT_SETTINGS = {key: value for key, value in CONCIERGE_SETTINGS.items() if key != "intents_plural"}
+
+
+@pytest.mark.django_db
+def test_without_env_the_plural_serves_the_attended_cohort_and_nobody_else(conversation):  # noqa: F811 (fixtures)
+    """OBS0310-R: sem env nenhuma, vale para quem a Concierge já atende em ``assist``."""
+    binding = _binding(conversation)
+    stranger = SimpleNamespace(**{f: getattr(binding, f) for f in (
+        "provider", "account", "transport_channel", "connection_key", "status")}, subject="outro-cliente")
+    with override_settings(SHOPMAN_CONCIERGE=COHORT_SETTINGS):
+        assert intents.mode() == "cohort"
+        assert intents.enabled_for(binding)
+        assert not intents.enabled_for(stranger)
+        assert not intents.enabled_for(None)
+    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "operation_mode": "observe"}):
+        assert not intents.enabled_for(binding)  # observação: ninguém é atendido
+
+
+@pytest.mark.django_db
+def test_off_is_the_emergency_switch_and_subjects_only_narrows_the_cohort(conversation):  # noqa: F811 (fixtures)
+    binding = _binding(conversation)
+    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "intents_plural": "off"}):
+        assert not intents.enabled_for(binding)
     with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
-        assert intents.enabled_for(SUBJECT)
-        assert not intents.enabled_for("outro-cliente")
-    with override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "intents_plural": "all"}):
-        assert intents.enabled_for("outro-cliente")
+        assert intents.enabled_for(binding)
+    with override_settings(SHOPMAN_CONCIERGE={**PLURAL_SETTINGS, "intents_subjects": ["outro-cliente"]}):
+        assert not intents.enabled_for(binding)
+    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "intents_plural": "talvez"}):
+        assert intents.mode() == "off"  # valor desconhecido desliga
+
+
+def test_the_default_of_the_setting_is_the_cohort():
+    import config.settings as project_settings
+
+    source = open(project_settings.__file__, encoding="utf-8").read()
+    assert 'os.environ.get("CONCIERGE_INTENTS_PLURAL", "cohort")' in source
 
 
 @pytest.mark.django_db
@@ -339,3 +368,163 @@ def test_switch_off_keeps_today_path(conversation, outbox):  # noqa: F811 (fixtu
         result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader)
 
     assert result.handoff and reader.requests == []
+
+
+# ── 6. Pergunta repetida (OBS0310-R) ──────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "again", "rest"),
+    [
+        ("e a minha pergunta?", True, ""),
+        ("Ainda não responderam minha pergunta", True, ""),
+        ("você não respondeu: até que horas vocês abrem?", True, "até que horas vocês abrem?"),
+        ("vc nao respondeu se tem croissant", True, "tem croissant"),
+        # Queixa explícita: é reclamação, mesmo cobrando a resposta.
+        ("que absurdo, vocês não respondem", False, None),
+        ("porque demorou tanto pra responder?", False, None),
+        ("tem croissant?", False, None),
+    ],
+)
+def test_asking_again_is_a_repeated_question_unless_there_is_an_explicit_complaint(text, again, rest):
+    from shopman.storefront.concierge import dialogue
+
+    assert dialogue.asks_again(text) is again
+    if rest is not None:
+        assert dialogue.without_nudge(text) == rest
+
+
+def test_the_reading_never_turns_the_nudge_into_a_complaint():
+    reader = ReaderClient([
+        _act("complaint", "você não respondeu"),
+        _act("hours_delivery", "até que horas vocês abrem?"),
+        _act("allergy", "o croissant tem castanha?", "croissant"),
+    ])
+    text = "você não respondeu: até que horas vocês abrem? e o croissant tem castanha?"
+    rules_intent, rules_source = triage.classify_rules(text)
+
+    found = intents.plan(text, rules_intent=rules_intent, rules_source=rules_source, client=reader)
+
+    assert [a.act for a in found.acts] == ["hours_delivery", "allergy"]
+    assert "respondeu" not in reader.requests[0]["messages"][0]["content"]  # a cobrança nem vai à leitura
+
+
+@pytest.mark.django_db
+def test_triage_does_not_call_the_nudge_a_complaint_but_keeps_the_explicit_one():
+    from shopman.storefront.tests.test_concierge_triage_jev import FakeJev
+
+    jev = FakeJev({"complaint": 0.92})
+    settings_ = {**PLURAL_SETTINGS, "triage_with_model": True, "triage_classifier": "jev"}
+    with override_settings(SHOPMAN_CONCIERGE=settings_):
+        nudge = triage.decide("e a minha pergunta?", client=jev)
+        complaint = triage.decide("que absurdo, vocês não respondem", client=jev)
+
+    assert (nudge.intent, nudge.destination) != ("complaint", "team")
+    assert not nudge.escalates
+    assert (complaint.intent, complaint.destination) == ("complaint", "team")
+
+
+@pytest.mark.django_db
+def test_my_question_answers_again_what_was_left_without_answer(conversation, outbox):  # noqa: F811 (fixtures)
+    reader = ReaderClient([
+        _act("product_question", "tem pão francês?", "pão francês"),
+        _act("house_info", "vocês aceitam vale refeição?"),
+    ])
+    _turn(conversation, "tem pão francês? e vocês aceitam vale refeição?", "again-1", reader)
+    conversation.refresh_from_db()
+    parts = conversation.flags["dialogue"]["parts"]
+    assert [(p["act"], p["state"]) for p in parts] == [("product_question", "answered"), ("house_info", "unanswered")]
+
+    result = _turn(conversation, "e a minha pergunta?", "again-2", reader)
+
+    assert not result.handoff
+    reply = outbox.sent[-1]
+    assert reply.startswith("Desculpe, ficou faltando a resposta.")
+    assert "vale refeição" in reply and "Pão Francês" not in reply  # só o que ficou pendente
+    assert len(reader.requests) == 1  # a segunda vez sai da memória, sem leitura
+    stamp = ConversationMessage.objects.filter(conversation=conversation, kind="reply").order_by("-pk").first()
+    assert stamp.usage["intents"]["source"] == "memory"
+    conversation.refresh_from_db()
+    assert conversation.state == Conversation.State.ACTIVE
+
+
+@pytest.mark.django_db
+def test_my_question_with_nothing_to_find_asks_to_repeat(conversation, outbox):  # noqa: F811 (fixtures)
+    result = _turn(conversation, "você não respondeu", "again-3", ReaderClient([]))
+
+    assert not result.handoff
+    assert outbox.sent[-1] == "Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?"
+
+
+@pytest.mark.django_db
+def test_without_parts_in_memory_the_earlier_question_is_the_pending_one(conversation):  # noqa: F811 (fixtures)
+    earlier = _create_inbound(conversation, "até que horas vocês abrem?", "again-4")
+    _create_inbound(conversation, "bom dia", "again-5")
+    current = _create_inbound(conversation, "e a minha pergunta?", "again-6")
+    conversation._inbound_ids = (current.pk,)
+
+    assert intents._earlier_question(conversation) == earlier.text
+
+
+# ── 7. Cancelamento dentro de várias partes (ponto de ligação do #1445) ─
+
+
+class FakeCancellation:
+    """O módulo do #1445 de mentira: a régua diz se o cliente cancelaria pelo site."""
+
+    def __init__(self, order=None):
+        self.order = order
+        self.asked = []
+
+    def self_cancellable(self, convo, text="", *, order_ref=""):
+        return self.order
+
+    def ask(self, convo, order, customer_text):
+        self.asked.append(customer_text)
+        return SimpleNamespace(code="asked", text=f"Cancelo o pedido {order.ref}? Responda sim ou não.", order_ref=order.ref)
+
+    def resolve_pending(self, convo, customer_text):
+        return None
+
+
+def test_cancel_the_customer_could_do_on_the_site_is_asked_by_the_concierge(monkeypatch):
+    module = FakeCancellation(order=SimpleNamespace(ref="NB-261003-M63"))
+    monkeypatch.setattr(intents, "_cancellation", lambda: module)
+    found = intents.Plan(acts=[Act("cancel_order", span="cancela meu pedido")])
+
+    run = intents.execute(found, conversation=SimpleNamespace(), channel_ref="whatsapp", copy=lambda key: "")
+
+    assert not run.to_team
+    assert run.replies[0].self_served and "Cancelo o pedido NB-261003-M63?" in run.replies[0].text
+    assert module.asked == ["cancela meu pedido"]
+
+
+def test_cancel_outside_the_rule_stays_with_the_team(monkeypatch):
+    monkeypatch.setattr(intents, "_cancellation", lambda: FakeCancellation(order=None))
+    found = intents.Plan(acts=[Act("cancel_order", span="cancela meu pedido")])
+
+    run = intents.execute(found, conversation=SimpleNamespace(), channel_ref="whatsapp",
+                          copy=lambda key: "Sobre {topic}, já chamei a equipe." if key == intents.TEAM_COPY_KEY else "")
+
+    assert run.to_team and run.team[0].act == "cancel_order"
+
+
+def test_without_the_cancellation_module_the_team_cancels_as_before(monkeypatch):
+    monkeypatch.setattr(intents, "_cancellation", lambda: None)
+    found = intents.Plan(acts=[Act("cancel_order", span="cancela meu pedido")])
+
+    run = intents.execute(found, conversation=SimpleNamespace(), channel_ref="whatsapp", copy=lambda key: "")
+
+    assert run.to_team
+
+
+def test_the_cancel_confirmation_is_the_one_question_left_in_the_reply():
+    run = Execution(replies=[
+        PartReply(Act("cancel_order"), text="Cancelo o pedido NB-1? Responda sim ou não?", self_served=True, keeps_question=True),
+        PartReply(Act("product_question"), text="Temos croissant.\nQuer reservar?"),
+    ])
+
+    text = intents.compose(run)
+
+    assert text.endswith("Temos croissant.")
+    assert "Cancelo o pedido NB-1?" in text
