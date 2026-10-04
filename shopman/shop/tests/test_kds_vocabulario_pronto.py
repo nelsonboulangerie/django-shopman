@@ -41,9 +41,7 @@ def _string_literals(path: Path) -> list[tuple[int, str]]:
 
 
 def test_service_strings_do_not_use_another_apps_verb():
-    offenders = [
-        f"kds.py:{n}: {s.strip()[:90]}" for n, s in _string_literals(KDS_SERVICE) if BANNED.search(s)
-    ]
+    offenders = [f"kds.py:{n}: {s.strip()[:90]}" for n, s in _string_literals(KDS_SERVICE) if BANNED.search(s)]
     assert offenders == [], 'use "Pronto" e o rótulo real do botão ("Recebi o cancelamento")'
 
 

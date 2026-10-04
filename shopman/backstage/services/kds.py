@@ -200,7 +200,7 @@ def _require_printed_station(station) -> None:
 def _acknowledge_printed_cancellations(ticket, *, actor: str) -> None:
     """O CANCELADO já saiu em papel na bancada: é a ciência da estação sem tela.
 
-    Na estação de tela, o ticket com item cancelado só se finaliza depois do
+    Na estação de tela, o ticket com item cancelado só recebe o Pronto depois do
     "Recebi o cancelamento" do cozinheiro (``_complete_ticket_locked``). A
     estação sem tela não tem esse botão — o aviso dela é o papel CANCELADO que
     saiu na impressora. Sem isto, qualquer pedido com item retirado travaria o

@@ -3,7 +3,7 @@
 Dois contratos achados na auditoria de 21/09/2026 (a Saída, que era o terceiro,
 mora no Gestor desde SUITE-UX §15 e tem os testes dela lá):
 
-2. "Desfazer finalização" não reabre ticket de pedido que já saiu da cozinha
+2. "Desfazer o Pronto" não reabre ticket de pedido que já saiu da cozinha
    (despachado, concluído, cancelado), e a lista de concluídos não o oferece.
 3. O painel público de retirada é do DIA: pedido esquecido de dias atrás e
    encomenda de amanhã não aparecem.
@@ -26,7 +26,7 @@ from shopman.shop.services import kds as kds_core
 
 pytestmark = pytest.mark.django_db
 
-# ── Desfazer finalização só enquanto a cozinha responde pelo pedido ──────
+# ── Desfazer o Pronto só enquanto a cozinha responde pelo pedido ──────
 
 
 @pytest.fixture
