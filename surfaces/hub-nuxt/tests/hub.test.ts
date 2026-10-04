@@ -7,7 +7,9 @@ import { OPERATOR_APPS } from "../../operator-kit/appIdentity";
 import {
   HUB_NAME,
   HUB_NAMED_OF,
+  HUB_SECTIONS,
   hubBrandLine,
+  hubDateLine,
   hubFailure,
   hubFailureCopy,
   hubGreeting,
@@ -200,6 +202,18 @@ function sourceFiles(dir: string): string[] {
     return /\.(vue|ts)$/.test(entry) ? [path] : [];
   });
 }
+
+describe("camada da suíte (prévia v4)", () => {
+  it("hubDateLine: hora e dia por extenso, com o dia da semana em maiúscula", () => {
+    const nowMs = Date.parse("2026-10-03T13:03:00Z");
+    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10:03 · Sábado, 3 de outubro");
+    expect(hubDateLine(Number.NaN)).toBe("");
+  });
+
+  it("Início é a única seção da Central no rail", () => {
+    expect(HUB_SECTIONS.map(section => section.label)).toEqual(["Início"]);
+  });
+});
 
 describe("um app, um nome", () => {
   const name = OPERATOR_APPS.hub.label;

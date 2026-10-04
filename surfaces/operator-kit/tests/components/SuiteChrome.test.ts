@@ -95,6 +95,12 @@ describe("OperatorSuiteRail", () => {
     expect(wrapper.emitted("lock")).toHaveLength(1);
   });
 
+  it("lockable=false (a Central): sem Bloquear, e as iniciais seguem no pé", async () => {
+    const wrapper = await mountRail({ lockable: false });
+    expect(wrapper.find("[data-rail-lock]").exists()).toBe(false);
+    expect(wrapper.get("[data-suite-rail-menu]").text()).toBe("AF");
+  });
+
   it("o menu do operador mostra as iniciais", async () => {
     const wrapper = await mountRail();
     expect(wrapper.get("[data-suite-rail-menu]").text()).toBe("AF");

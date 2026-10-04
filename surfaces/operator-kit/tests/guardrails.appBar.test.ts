@@ -44,8 +44,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
   "production-nuxt/app/components/ProductionHeader.vue",
   "production-nuxt/app/components/RecipeHeader.vue",
-  // O Hub é a home: o cabeçalho dele é a saudação, e não há seções para navegar.
-  "hub-nuxt/app/app.vue",
 ].sort();
 
 

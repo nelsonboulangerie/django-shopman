@@ -26,8 +26,8 @@ function normalize(value: unknown): RailState {
 }
 
 export function useRailState() {
-  // Default por app (só vale quando ainda não há cookie): a Central começa com o rail colapsado;
-  // as demais, compactas. Vem do runtimeConfig (kit define; cada app pode sobrescrever).
+  // Default por app (só vale quando ainda não há cookie): compacto. Vem do runtimeConfig
+  // (kit define; cada app pode sobrescrever).
   const appDefault = normalize(useRuntimeConfig().public.railDefaultState);
 
   // Fonte persistida (por dispositivo). Um ano; sameSite lax (navegação normal do operador).
