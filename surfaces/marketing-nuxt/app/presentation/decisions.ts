@@ -279,6 +279,20 @@ export function scheduledHeadline(count: number): string {
   return `${formatCount(count)} anúncios aprovados esperam a hora marcada, o mais próximo primeiro.`;
 }
 
+/**
+ * A mesma linha em duas partes, para o desenho da v4 (`marketing-decisoes4.html`): o
+ * número forte ("+2") e o resto em tom calmo. Sem agendado hoje não há número forte.
+ */
+export function scheduledSummaryParts(
+  scheduledToday: number,
+  activeCampaigns: number,
+): { lead: string; rest: string } {
+  const full = scheduledSummary(scheduledToday, activeCampaigns);
+  if (scheduledToday === 0) return { lead: "", rest: full };
+  const lead = `+${formatCount(scheduledToday)}`;
+  return { lead, rest: full.slice(lead.length + 1) };
+}
+
 /** A linha do rodapé da fila: "+2 agendados hoje · 3 campanhas ligadas". */
 export function scheduledSummary(scheduledToday: number, activeCampaigns: number): string {
   const scheduled =

@@ -76,21 +76,10 @@ describe("guardrail do cabeçalho de seções", () => {
   it("os três convertidos consomem a peça da layer", () => {
     const convertidos = [
       "bi-nuxt/app/components/BiTopBar.vue",
-      "marketing-nuxt/app/components/CampaignTopBar.vue",
       "purchase-nuxt/app/components/PurchaseTopBar.vue",
     ];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
-    const navLocalDeclarada: Record<string, string> = {
-      // UX-M1 (decisão do dono, 03/10/2026, SUITE-UX §6): no celular as quatro
-      // seções do Marketing (Decisões, Agendados, Enviados, Ajustes) vão para a
-      // barra do polegar, no pé da tela, e Ajustes entra por um item só, com as
-      // próprias seções numa segunda linha. A barra do topo continua sendo a do
-      // kit. A barra do pé mora em `MarketingSectionBar.vue`, no fim da coluna de
-      // conteúdo (fixa na janela ela cobria o rail). Quando outro app pedir a barra
-      // do pé, ela vira peça da layer e esta linha sai.
-      "marketing-nuxt/app/components/CampaignTopBar.vue":
-        "segunda linha de Ajustes (a barra do pé é MarketingSectionBar.vue)",
-    };
+    const navLocalDeclarada: Record<string, string> = {};
     for (const file of convertidos) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorAppBar");
@@ -104,7 +93,13 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = ["orders-nuxt/app/components/GestorNav.vue"];
+    const migrados = [
+      "orders-nuxt/app/components/GestorNav.vue",
+      // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
+      // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
+      // do `OperatorPageHeader`; ela não é barra de seções do app.
+      "marketing-nuxt/app/components/MarketingNav.vue",
+    ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorSuiteRail");

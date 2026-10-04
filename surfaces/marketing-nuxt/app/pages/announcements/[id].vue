@@ -361,11 +361,39 @@ async function resumeServerDecision() {
   }
 }
 
+// O título da tela é o nome da campanha (o mesmo do cartão); sem campanha, o anúncio
+// é avulso. Enquanto carrega, "Anúncio".
+const headerTitle = computed(() =>
+  announcement.value
+    ? announcement.value.rule_name || "Anúncio avulso"
+    : "Anúncio",
+);
+
 useHead({ title: "Anúncio" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+  <main class="flex min-h-0 flex-1 flex-col">
+    <!-- Cabeçalho de uma linha (v4, a revisão aberta): o voltar no lugar do selo, o
+         nome da campanha e, do tablet para cima, a ocasião ao lado. -->
+    <MarketingPageHeader :title="headerTitle">
+      <template #lead>
+        <NuxtLink
+          to="/"
+          class="-ml-3 grid size-12 shrink-0 place-items-center rounded-md text-foreground hover:bg-muted md:ml-0 md:size-control md:border md:border-border"
+          aria-label="Voltar às decisões"
+          title="Voltar às decisões"
+          data-announcement-back
+        >
+          <Icon name="lucide:arrow-left" class="size-6 md:size-5" aria-hidden="true" />
+        </NuxtLink>
+      </template>
+      <template v-if="announcement?.trigger_label" #status>
+        <span class="hidden op-micro text-muted-foreground sm:inline">{{ announcement.trigger_label }}</span>
+      </template>
+    </MarketingPageHeader>
+
+    <div class="mx-auto w-full max-w-2xl px-4 py-6">
     <section
       v-if="pendingReauthentication"
       class="mb-4 rounded-md border border-warning/40 bg-warning/5 p-4"
@@ -400,14 +428,6 @@ useHead({ title: "Anúncio" });
         {{ decisionError }}
       </p>
     </section>
-
-    <NuxtLink
-      to="/"
-      class="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-    >
-      <Icon name="lucide:arrow-left" class="size-4" />
-      Voltar às decisões
-    </NuxtLink>
 
     <!-- O que a decisão causou, em estado. Fica na tela; o toast só acompanha. -->
     <section
@@ -683,5 +703,6 @@ useHead({ title: "Anúncio" });
       @confirm="confirmServerDecision"
       @cancel="cancelServerDecision"
     />
+    </div>
   </main>
 </template>

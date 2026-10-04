@@ -1,9 +1,35 @@
-// As seções do Marketing, numa fonte só: a barra do topo (`CampaignTopBar`) e a
-// barra do polegar no celular (`MarketingSectionBar`) leem as mesmas quatro.
+// As seções do Marketing, numa fonte só: o rail da suíte (tablet e desktop), a barra
+// do polegar (celular) e a segunda linha de Ajustes leem daqui.
+//
+// Decisão do dono (03/10/2026, SUITE-UX §6): o andar de OPERAÇÃO tem quatro seções,
+// Decisões, Agendados, Enviados e Ajustes, e o andar de AJUSTES entra por um item só,
+// com as próprias seções numa segunda linha (Campanhas, Modelos, Ofertas e cupons,
+// Plataformas). Na camada visual da suíte (V4-MKT), Ajustes mora no pé do rail, longe
+// da operação, como no Gestor.
+//
+// Nenhuma rota foi removida: `/v2?area=…`, `/campaigns`, `/templates`, `/platforms` e
+// `/history` continuam onde estavam. Só mudou por onde se chega a elas.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export type MarketingSectionKey = "decisions" | "scheduled" | "sent" | "settings";
 export type MarketingSettingsKey = "campaigns" | "templates" | "offers" | "platforms";
+
+export const MARKETING_SETTINGS_SECTIONS: ReadonlyArray<{
+  key: MarketingSettingsKey;
+  label: string;
+  icon: string;
+  to: string;
+}> = [
+  { key: "campaigns", label: "Campanhas", icon: "lucide:megaphone", to: "/v2?area=campaigns" },
+  { key: "templates", label: "Modelos", icon: "lucide:file-text", to: "/templates" },
+  { key: "offers", label: "Ofertas e cupons", icon: "lucide:ticket-percent", to: "/v2?area=offers" },
+  { key: "platforms", label: "Plataformas", icon: "lucide:radio-tower", to: "/v2?area=platforms" },
+];
+
+/** "3 esperando você": o que o selo de Decisões conta, por extenso. */
+export function decisionBadgeLabel(count: number): string {
+  return count === 1 ? "1 esperando você" : `${count} esperando você`;
+}
 
 export function useMarketingSections() {
   const route = useRoute();
@@ -38,28 +64,33 @@ export function useMarketingSections() {
       label: "Decisões",
       icon: "lucide:inbox",
       to: "/",
-      attention: decisionCount.value ? String(decisionCount.value) : undefined,
+      group: "Operação",
+      badge: decisionCount.value ? String(decisionCount.value) : undefined,
+      badgeLabel: decisionCount.value ? decisionBadgeLabel(decisionCount.value) : undefined,
     },
     {
       key: "scheduled",
       label: "Agendados",
       icon: "lucide:calendar-clock",
       to: "/scheduled",
+      group: "Operação",
     },
     {
       key: "sent",
       label: "Enviados",
       icon: "lucide:send",
       to: "/history",
+      group: "Operação",
     },
     {
       key: "settings",
       label: "Ajustes",
-      icon: "lucide:sliders-horizontal",
+      icon: "lucide:settings-2",
       to: "/v2?area=campaigns",
       match: ["/campaigns", "/templates", "/platforms"],
+      foot: true,
     },
   ]);
 
-  return { activeSection, activeSettings, sections };
+  return { activeSection, activeSettings, sections, settingsSections: MARKETING_SETTINGS_SECTIONS };
 }

@@ -19,11 +19,25 @@ const {
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
-const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const publicConfig = useRuntimeConfig().public;
+const hubUrl = publicConfig.operatorHubUrl as string;
+// A cor do app (a mesma do selo no rail) vira `--app-color` no `<html>`: as miniaturas
+// da fila de decisões e o carimbo do selo usam o tom dela, como na prévia v4. No
+// `<html>`, e não no shell, porque o selo é diálogo teleportado para fora dele.
+const appColor = (
+  publicConfig.operatorPwa as { identity?: { color?: string } } | undefined
+)?.identity?.color;
+if (appColor) useHead({ htmlAttrs: { style: `--app-color: ${appColor}` } });
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
 const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
 useOperatorWindowTitle();
+
+// O menu do operador do celular (tema, giro, Bloquear) usa o MESMO `lock` daqui.
+provideMarketingShell({
+  operatorName: computed(() => operator.value?.name || undefined),
+  lock,
+});
 
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
@@ -41,9 +55,13 @@ watch(sessionState, async (next, previous) => {
        instanciada depois do gate. Isso evita tanto fetch anônimo quanto o falso
        warning do Nuxt causado por remover condicionalmente o próprio outlet. -->
   <NuxtPage v-slot="{ Component }">
+    <!-- `data-suite="v3"`: o Marketing veste a camada visual da suíte (V4-MKT, modelo:
+         o Gestor). Os primitivos do kit leem esse atributo para vestir o visual das
+         prévias. -->
     <div
       data-marketing-app-root
-      class="flex min-h-screen bg-background text-foreground"
+      data-suite="v3"
+      class="flex min-h-dvh bg-background text-foreground"
     >
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
@@ -51,20 +69,23 @@ watch(sessionState, async (next, previous) => {
       <!-- O app protegido só existe depois de sessão + capability confirmadas. O
          login deixou de ser uma cortina sobre fetches e timers já montados. -->
       <template v-if="sessionState === 'authenticated'">
-        <div class="sticky top-0 flex h-screen shrink-0 print:hidden">
-          <OperatorRail
-            :hub-url="hubUrl"
-            :operator-name="operator?.name"
-            @lock="lock"
-          />
-        </div>
+        <!-- Rail da suíte (kit): o selo do app (Central), as seções do Marketing,
+             Bloquear e o menu do operador. Do tablet para cima; no celular as seções
+             vão para a barra do polegar, no fim da coluna de conteúdo. -->
+        <MarketingNav
+          place="rail"
+          :hub-url="hubUrl"
+          :operator-name="operator?.name"
+          @lock="lock"
+        />
         <div class="flex min-w-0 flex-1 flex-col">
-          <CampaignTopBar />
           <component :is="Component" />
           <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
-               nunca cobrir o rail à esquerda. Ver MarketingSectionBar.vue. -->
-          <MarketingSectionBar />
+               nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. -->
+          <MarketingNav place="bar" />
         </div>
+        <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
+        <MarketingInboxLive />
       </template>
 
       <main

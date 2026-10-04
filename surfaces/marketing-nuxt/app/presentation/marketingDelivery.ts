@@ -90,3 +90,55 @@ export function reachLines(input: {
   }
   return lines;
 }
+
+/** Uma linha do selo (v4, `marketing-decisoes4.html`): a plataforma, o que ela é e a
+ *  grandeza dela. A mesma regra de `reachLines`, em colunas: mensagem conta pessoas,
+ *  postagem conta a si mesma, e nada se soma. */
+export interface SealRow {
+  platform: string;
+  label: string;
+  /** "mensagem direta" no WhatsApp; vazio nos murais. */
+  kind: string;
+  amount: string;
+  /** A grandeza que pesa (pessoas) vai em negrito. */
+  strong: boolean;
+}
+
+export function sealRows(input: {
+  platforms: readonly string[];
+  audienceCount: number;
+}): SealRow[] {
+  const platforms = (input.platforms ?? []).filter(Boolean);
+  const rows: SealRow[] = platforms
+    .filter((platform) => !DIRECT_MESSAGE_PLATFORMS.has(platform))
+    .map((platform) => ({
+      platform,
+      label: platformResultLabel(platform),
+      kind: "",
+      amount: "1 postagem",
+      strong: false,
+    }));
+  for (const platform of platforms.filter((p) => DIRECT_MESSAGE_PLATFORMS.has(p))) {
+    const count = Math.max(0, Math.trunc(input.audienceCount || 0));
+    rows.push({
+      platform,
+      label: platformResultLabel(platform),
+      kind: "mensagem direta",
+      amount: `${formatCount(count)} ${count === 1 ? "pessoa" : "pessoas"}`,
+      strong: true,
+    });
+  }
+  return rows;
+}
+
+/** A frase de consequência do selo: separa o que volta (postagem, que se apaga na
+ *  plataforma) do que não volta (mensagem). */
+export function sealConsequence(platforms: readonly string[]): string {
+  const message = includesDirectMessage(platforms);
+  const post = includesPublicPost(platforms);
+  if (message && post)
+    return "Mensagem enviada não volta. Postagem pode ser apagada depois, na plataforma.";
+  if (message) return "Mensagem enviada não volta.";
+  if (post) return "Postagem pode ser apagada depois, na plataforma.";
+  return "";
+}

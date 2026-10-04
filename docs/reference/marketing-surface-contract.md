@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-10-03
+- **Última verificação:** 2026-10-04
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -139,18 +139,25 @@ alimentam `/scheduled`), `scheduled_today_count` e `active_campaign_count`, que 
 a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a revisão
 do anúncio revalida as Actions do operador.
 
-O sino deixou de ter lista própria: é um link para `/` com o número de decisões.
-Ele continua dono da caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que só
-invalidam; a fila refaz o fetch) e registra os avisos como vistos quando a fila está
-na tela. O push continua abrindo `/announcements/:id#review`, que é o "Revisar" do
-cartão daquele anúncio.
+O sino deixou de ter lista própria: é um link para `/` que diz quantas decisões
+esperam. Ele mora na barra de 56px do celular; do tablet para cima o selo de Decisões
+no rail faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
+só invalidam; a fila refaz o fetch) tem um dono só, o `MarketingInboxLive`, montado
+uma vez no shell em qualquer largura, que também registra os avisos como vistos quando
+a fila está na tela. O push continua abrindo `/announcements/:id#review`, que é o
+"Revisar" do cartão daquele anúncio.
 
 Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`), **Enviados**
 (`/history`) e **Ajustes** (`/v2?area=campaigns`). Ajustes entra por um item só e tem
-as próprias seções numa segunda linha: Campanhas, Modelos (`/templates`), Ofertas e
-cupons e Plataformas. No celular as quatro seções ficam numa barra no pé da tela; no
-desktop, na barra superior do kit. Nenhuma rota saiu do ar: `/v2?area=today` (o
-panorama anterior) continua acessível pela URL, sem item de navegação.
+as próprias seções numa segunda linha, na linha de recortes do cabeçalho de cada tela
+de Ajustes: Campanhas, Modelos (`/templates`), Ofertas e cupons e Plataformas. Desde o
+V4-MKT o Marketing veste a camada visual da suíte (`data-suite="v3"`): do tablet para
+cima as seções moram no rail da suíte (Decisões, Agendados e Enviados em cima, Ajustes
+no pé); no celular, na barra do polegar do kit. Cada tela abre com o cabeçalho de uma
+linha do kit (`MarketingPageHeader` sobre `OperatorPageHeader`), com o "ao vivo"
+discreto nas telas de fila; no celular a barra de 56px leva o sino e o menu do operador
+(tema, giro e Bloquear). Nenhuma rota saiu do ar: `/v2?area=today` (o panorama
+anterior) continua acessível pela URL, sem item de navegação.
 
 ### Workspace V2 (Ajustes)
 
@@ -321,6 +328,16 @@ continuam somando mensagens + postagens, porque ali a pergunta é volume, não r
 [ADR-031](../decisions/adr-031-marketing-ceremony-proportional-to-consequence.md) e
 [ADR-032](../decisions/adr-032-marketing-ceremony-threshold-is-proportional.md) e
 [ADR-033](../decisions/adr-033-marketing-typed-phrase-follows-the-irreversible.md).
+
+**O selo** (V4-MKT, prévia `marketing-decisoes4.html`): a caixa de confirmação da
+aprovação é a mesma de antes (mesmo desafio, mesma frase, mesma senha/TOTP, mesmo
+duplo controle) com o desenho da v4. No celular ela sobe do pé como folha; o carimbo
+marca o que faz algo sair; os destinos vêm um por linha, cada um na sua grandeza
+(`sealRows`: "1 postagem" por mural, "N pessoas" na mensagem direta, nunca somados), e
+a frase de consequência separa o que volta do que não volta (`sealConsequence`:
+"Mensagem enviada não volta. Postagem pode ser apagada depois, na plataforma."). A
+confirmação pela digital do dispositivo e o pedido à segunda pessoa por push (ROUNDS
+UX-M1) são função nova e não estão no cockpit.
 
 O desafio de confirmação diz por que pediu: `ceremony_reason` vale `direct_message`
 quando a frase veio da mensagem e `""` quando não houve frase; `direct_message_count`,

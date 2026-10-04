@@ -211,7 +211,11 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expectTouchTargets(page, "plataformas em equivalente a zoom 200%");
 
   await page.setViewportSize({ width: 320, height: 568 });
+  // No celular o rail não existe: tema, giro e Bloquear moram no menu do operador,
+  // na barra de 56px (camada visual da suíte, V4-MKT).
+  await page.getByRole("button", { name: /^Menu d/ }).click();
   await page.getByRole("button", { name: "Tema escuro" }).click();
+  await page.keyboard.press("Escape");
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectNoAxeViolations(page, "plataformas 320×568 em tema escuro");
   await expectNoHorizontalOverflow(page, "plataformas 320×568 em tema escuro");

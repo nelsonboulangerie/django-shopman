@@ -42,6 +42,8 @@ beforeAll(() => {
       error,
       refresh,
     }),
+    useMarketingLiveStatus: () =>
+      computed(() => ({ tone: "live", label: "Ao vivo", time: "10:03", detail: "" })),
   });
 });
 
@@ -98,6 +100,12 @@ function render() {
         Icon: true,
         NuxtLink: RouterLinkStub,
         UiIconButton: true,
+        OperatorLiveStatus: true,
+        // O cabeçalho da suíte tem teste próprio no kit; aqui só o conteúdo dele.
+        MarketingPageHeader: {
+          props: ["title"],
+          template: '<header><h1>{{ title }}</h1><slot name="status" /></header>',
+        },
         UiButton: {
           props: ["to", "variant"],
           template:
@@ -122,8 +130,12 @@ describe("MarketingDecisionQueue", () => {
     expect(cards[0]!.text()).toContain("Instagram, Facebook e WhatsApp (86 pessoas)");
     expect(cards[0]!.text()).toContain("Decide até 10:15");
     expect(cards[0]!.text()).toContain("faltam 12 min");
-    expect(cards[0]!.classes()).toContain("border-primary/70");
-    expect(cards[1]!.classes()).not.toContain("border-primary/70");
+    // O mais urgente tem destaque (v4: a borda na cor da ação).
+    expect(cards[0]!.attributes("data-decision-focus")).toBe("true");
+    expect(cards[0]!.classes()).toContain("ring-primary");
+    expect(cards[1]!.attributes("data-decision-focus")).toBeUndefined();
+    expect(cards[1]!.classes()).not.toContain("ring-primary");
+    expect(wrapper.get("h1").text()).toBe("Decisões");
   });
 
   it("tem um gesto só por cartão, que abre o lugar onde a decisão já é tomada", () => {
