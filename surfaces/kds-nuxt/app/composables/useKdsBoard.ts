@@ -129,6 +129,17 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
   let pendingAttentionIds = new Set<string>();
+  // O que está tocando, para a faixa de avisos dizer QUAL pedido é novo ("Pedido novo
+  // U13") em vez de um "Visto" solto no cabeçalho.
+  const attentionKeys = ref<string[]>([]);
+  function setPendingAttention(ids: Set<string>) {
+    pendingAttentionIds = ids;
+    attentionKeys.value = [...ids];
+    attentionPending.value = ids.size > 0;
+  }
+  // Tempo real honesto (o mesmo padrão do painel de retirada): "ao vivo" só com o SSE
+  // de fato aberto; senão o quadro segue no poll de 15 s, e o cabeçalho diz isso.
+  const realtime = ref<"connecting" | "live" | "polling">("polling");
 
   const attentionStorageKey = (date: string) => `kds_seen_${stationRef}_${date}`;
 
@@ -165,8 +176,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       // Sem storage, a atenção continua válida apenas nesta montagem.
     }
     lastAttentionSignature = attentionIds(current).sort().join("|");
-    pendingAttentionIds = new Set();
-    attentionPending.value = false;
+    setPendingAttention(new Set());
     stopAlert();
   }
 
@@ -184,13 +194,11 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     const decision = kdsAttentionDecision(current, seen, lastAttentionSignature);
     lastAttentionSignature = decision.signature;
     if (decision.shouldStop) {
-      pendingAttentionIds = new Set();
-      attentionPending.value = false;
+      setPendingAttention(new Set());
       stopAlert();
     }
     if (decision.shouldAlert) {
-      pendingAttentionIds = new Set(attentionIds(current).filter((id) => !seen.has(id)));
-      attentionPending.value = pendingAttentionIds.size > 0;
+      setPendingAttention(new Set(attentionIds(current).filter((id) => !seen.has(id))));
       startAlert();
     }
   }
@@ -212,6 +220,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
 
   function connectSse() {
     if (source) return;
+    realtime.value = "connecting";
     // Same-origin sempre: o BFF (server/routes/sse/kds/[ref].ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
     // django-eventstream pushes named events; any of them means "refetch".
@@ -222,7 +231,11 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       url: ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL),
       events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
       onEvent: () => { refresh(); },
-      onOpen: (reconnected) => { if (reconnected) refresh(); },
+      onOpen: (reconnected) => {
+        realtime.value = "live";
+        if (reconnected) refresh();
+      },
+      onDown: () => { realtime.value = "polling"; },
     });
   }
 
@@ -404,6 +417,8 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     soundOn,
     soundBlocked,
     attentionPending,
+    attentionKeys,
+    realtime,
     toggleSound,
     activateAttentionSound,
     acknowledgeAttention,
