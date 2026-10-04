@@ -445,16 +445,23 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 <template>
   <UiSheet :open="open" @update:open="requestClose">
     <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg" :title="undefined">
-      <div class="border-b border-border px-5 py-4">
-        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Editar produto</p>
-        <h2 class="truncate text-lg font-semibold text-foreground">{{ detail?.name || "Produto" }}</h2>
-        <p class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span class="font-mono">{{ sku }}</span>
-          <template v-if="detail?.primary_collection_name">
-            <span class="text-muted-foreground/40">·</span>
-            <span class="rounded bg-muted px-1.5 py-0.5">{{ detail.primary_collection_name }}</span>
-          </template>
-        </p>
+      <!-- Cabeçalho do painel (prévia v4 `catalogo-produto4.html`): a inicial do
+           produto num quadrado, o nome e a linha do que ele é. -->
+      <div class="flex items-center gap-3 border-b border-border px-5 py-4 pr-14">
+        <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground" aria-hidden="true">
+          {{ (detail?.name || sku || "?").charAt(0).toUpperCase() }}
+        </span>
+        <div class="min-w-0">
+          <p class="sr-only">Editar produto</p>
+          <h2 class="truncate text-xl leading-tight font-semibold text-foreground">{{ detail?.name || "Produto" }}</h2>
+          <p class="flex items-center gap-1.5 op-label font-normal text-muted-foreground">
+            <span class="font-mono">{{ sku }}</span>
+            <template v-if="detail?.primary_collection_name">
+              <span aria-hidden="true">·</span>
+              <span>{{ detail.primary_collection_name }}</span>
+            </template>
+          </p>
+        </div>
       </div>
 
       <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
@@ -480,9 +487,9 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           v-for="t in TABS"
           :key="t.id"
           type="button"
-          class="min-h-control shrink-0 rounded-t-md px-3 py-2 text-sm font-medium transition"
+          class="min-h-control shrink-0 rounded-t-md px-3 py-2 op-body transition"
           :class="tab === t.id
-            ? 'border-b-2 border-primary text-foreground'
+            ? 'border-b-2 border-primary font-semibold text-foreground'
             : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'"
           @click="tab = t.id"
         >{{ t.label }}</button>

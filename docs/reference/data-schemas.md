@@ -183,7 +183,7 @@ inclusive o aviso de handoff `purpose=handoff_ack`) grava em `ConversationMessag
 cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...}, unpriced_models?}`.
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
 `layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
-laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa) ou
+laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa),
 `agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
 `envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,

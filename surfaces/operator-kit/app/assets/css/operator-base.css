@@ -16,6 +16,7 @@
    ============================================================================ */
 
 @import "./operator-theme.css";
+@import "./operator-suite.css";
 
 /* O Tailwind v4 auto-detecta fontes só a partir da raiz do app; o `operator-kit`
    (Nuxt layer irmão, via `extends`) fica fora dela. Sem este `@source`, classes

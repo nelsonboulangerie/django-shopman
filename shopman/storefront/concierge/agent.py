@@ -371,7 +371,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     if fixed:
         # Regras da casa R7 (nunca negociar preço) e R8 (diz que é a assistente
         # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.
-        return AgentOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE)
+        return AgentOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory)
 
     allergy = _allergy_outcome(conversation, customer_text, channel_ref=channel_ref)
     if allergy is not None:
