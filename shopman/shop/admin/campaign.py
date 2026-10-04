@@ -40,6 +40,7 @@ _SECURITY_EVENT_LABELS = {
     "confirmation_consumed": "confirmação utilizada",
     "confirmation_issued": "confirmação preparada",
     "dual_control_approved": "dupla aprovação concluída",
+    "dual_control_requested": "segunda pessoa chamada",
     "freeze_activated": "Marketing congelado",
     "freeze_deactivated": "Marketing descongelado",
     "step_up_succeeded": "verificação adicional concluída",

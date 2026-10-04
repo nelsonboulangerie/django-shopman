@@ -32,6 +32,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -96,6 +97,15 @@ class DecisionItemProjection:
     campaign_name: str
     trigger: str
     product_name: str
+    #: A foto que o anúncio leva, ou a do produto (a miniatura do cartão, v4 pino 2).
+    image_url: str
+    #: O fato do lote, quando o anúncio nasceu de um: "24 un saíram às 10:01".
+    lot_quantity: str
+    lot_finished_at: datetime | None
+    #: Falha: o que JÁ foi entregue nas outras plataformas ("Facebook e WhatsApp
+    #: entregues (52)").
+    delivered_platform_refs: tuple[str, ...]
+    delivered_people: int
     platform_refs: tuple[str, ...]
     reach: DecisionReachProjection
     deadline_at: datetime | None
@@ -125,6 +135,7 @@ class ScheduledItemProjection:
     campaign_name: str
     trigger: str
     product_name: str
+    image_url: str
     platform_refs: tuple[str, ...]
     reach: DecisionReachProjection
     scheduled_for: datetime
@@ -192,12 +203,13 @@ def build_decision_queue(*, now: datetime | None = None) -> MarketingDecisionQue
         .select_related("target", "target__announcement", "target__announcement__rule")
         .order_by("target__announcement_id", "target__platform", "pk")
     )
-    product_names = _product_names(
+    product_names, product_images = _products(
         (*pending, *scheduled, *(target.announcement for target in open_targets))
     )
+    delivered = _delivered_by_announcement({target.announcement_id for target in open_targets})
 
     items: list[DecisionItemProjection] = [
-        _review_item(announcement, product_names=product_names, zone=zone)
+        _review_item(announcement, product_names=product_names, product_images=product_images, zone=zone)
         for announcement in pending
     ]
     unknown_needs_operator, unknown_waiting_lookup = _split_unknown(
@@ -212,6 +224,8 @@ def build_decision_queue(*, now: datetime | None = None) -> MarketingDecisionQue
             ],
             kind="retry_failed",
             product_names=product_names,
+            product_images=product_images,
+            delivered=delivered,
             zone=zone,
         )
     )
@@ -220,6 +234,8 @@ def build_decision_queue(*, now: datetime | None = None) -> MarketingDecisionQue
             unknown_needs_operator,
             kind="reconcile_unknown",
             product_names=product_names,
+            product_images=product_images,
+            delivered=delivered,
             zone=zone,
         )
     )
@@ -237,7 +253,7 @@ def build_decision_queue(*, now: datetime | None = None) -> MarketingDecisionQue
             zone=zone,
         ),
         scheduled=tuple(
-            _scheduled_item(announcement, product_names=product_names, zone=zone)
+            _scheduled_item(announcement, product_names=product_names, product_images=product_images, zone=zone)
             for announcement in scheduled
         ),
         scheduled_today_count=sum(
@@ -251,9 +267,11 @@ def _review_item(
     announcement: Announcement,
     *,
     product_names: dict[str, str],
+    product_images: dict[str, str],
     zone: ZoneInfo,
 ) -> DecisionItemProjection:
     platform_refs = _platform_refs(announcement)
+    lot_quantity, lot_finished_at = _lot_fact(announcement, zone)
     return DecisionItemProjection(
         ref=f"review:announcement:{announcement.pk}",
         kind="review",
@@ -262,6 +280,11 @@ def _review_item(
         campaign_name=_campaign_name(announcement),
         trigger=_trigger(announcement),
         product_name=product_names.get(_sku(announcement), ""),
+        image_url=_image(announcement, product_images),
+        lot_quantity=lot_quantity,
+        lot_finished_at=lot_finished_at,
+        delivered_platform_refs=(),
+        delivered_people=0,
         platform_refs=platform_refs,
         reach=_planned_reach(announcement, platform_refs),
         deadline_at=_local(announcement.expires_at, zone),
@@ -276,6 +299,7 @@ def _scheduled_item(
     announcement: Announcement,
     *,
     product_names: dict[str, str],
+    product_images: dict[str, str],
     zone: ZoneInfo,
 ) -> ScheduledItemProjection:
     platform_refs = _platform_refs(announcement)
@@ -285,6 +309,7 @@ def _scheduled_item(
         campaign_name=_campaign_name(announcement),
         trigger=_trigger(announcement),
         product_name=product_names.get(_sku(announcement), ""),
+        image_url=_image(announcement, product_images),
         platform_refs=platform_refs,
         reach=_planned_reach(announcement, platform_refs),
         scheduled_for=timezone.localtime(announcement.publish_at, zone),
@@ -297,6 +322,8 @@ def _failure_items(
     *,
     kind: DecisionKind,
     product_names: dict[str, str],
+    product_images: dict[str, str],
+    delivered: dict[int, tuple[tuple[str, ...], int]],
     zone: ZoneInfo,
 ) -> list[DecisionItemProjection]:
     by_announcement: dict[int, list[DeliveryTarget]] = defaultdict(list)
@@ -306,6 +333,9 @@ def _failure_items(
     for announcement_id, rows in by_announcement.items():
         announcement = rows[0].announcement
         failures = _failures(rows)
+        lot_quantity, lot_finished_at = _lot_fact(announcement, zone)
+        delivered_refs, delivered_people = delivered.get(announcement_id, ((), 0))
+        failed_refs = {failure.platform_ref for failure in failures}
         items.append(
             DecisionItemProjection(
                 ref=f"{kind}:announcement:{announcement_id}",
@@ -315,6 +345,11 @@ def _failure_items(
                 campaign_name=_campaign_name(announcement),
                 trigger=_trigger(announcement),
                 product_name=product_names.get(_sku(announcement), ""),
+                image_url=_image(announcement, product_images),
+                lot_quantity=lot_quantity,
+                lot_finished_at=lot_finished_at,
+                delivered_platform_refs=tuple(ref for ref in delivered_refs if ref not in failed_refs),
+                delivered_people=delivered_people,
                 platform_refs=tuple(failure.platform_ref for failure in failures),
                 reach=DecisionReachProjection(
                     posts=sum(
@@ -516,13 +551,78 @@ def _urgency_key(item: DecisionItemProjection) -> tuple:
     )
 
 
-def _product_names(announcements) -> dict[str, str]:
+def _products(announcements) -> tuple[dict[str, str], dict[str, str]]:
+    """Nome e foto de cada produto citado pelos anúncios (uma consulta)."""
     skus = {sku for sku in (_sku(item) for item in announcements) if sku}
     if not skus:
-        return {}
+        return {}, {}
     from shopman.offerman.models import Product
 
-    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "name"))
+    names: dict[str, str] = {}
+    images: dict[str, str] = {}
+    for sku, name, image_url in Product.objects.filter(sku__in=skus).values_list("sku", "name", "image_url"):
+        names[sku] = name
+        if image_url:
+            images[sku] = str(image_url)
+    return names, images
+
+
+def _image(announcement: Announcement, product_images: dict[str, str]) -> str:
+    """A foto que o anúncio leva (a dele primeiro, depois a de uma plataforma), ou a do produto.
+
+    A mesma ordem do ``outgoingImageUrl`` da tela: a imagem de verdade costuma morar
+    no conteúdo por plataforma, não no topo.
+    """
+    content = announcement.content if isinstance(announcement.content, dict) else {}
+    if content.get("image_url"):
+        return str(content["image_url"])
+    per_platform = announcement.platform_content if isinstance(announcement.platform_content, dict) else {}
+    for platform in per_platform.values():
+        if isinstance(platform, dict) and platform.get("image_url"):
+            return str(platform["image_url"])
+    return product_images.get(_sku(announcement), "")
+
+
+def _lot_fact(announcement: Announcement, zone: ZoneInfo) -> tuple[str, datetime | None]:
+    """Quantas unidades o lote fez e quando saiu (o contexto do gatilho de produção)."""
+    if _trigger(announcement) != "production_finished":
+        return "", None
+    context = announcement.trigger_context if isinstance(announcement.trigger_context, dict) else {}
+    quantity = ""
+    raw_quantity = str(context.get("quantity") or "").strip()
+    if raw_quantity:
+        try:
+            quantity = format(Decimal(raw_quantity).normalize(), "f")
+        except (InvalidOperation, ValueError):
+            quantity = ""
+    finished_at = None
+    raw_at = context.get("finished_at")
+    if raw_at:
+        try:
+            parsed = datetime.fromisoformat(str(raw_at))
+        except ValueError:
+            parsed = None
+        if parsed is not None and timezone.is_aware(parsed):
+            finished_at = timezone.localtime(parsed, zone)
+    return quantity, finished_at
+
+
+def _delivered_by_announcement(announcement_ids: set[int]) -> dict[int, tuple[tuple[str, ...], int]]:
+    """O que já foi entregue de cada anúncio: as plataformas (em ordem) e as pessoas."""
+    if not announcement_ids:
+        return {}
+    refs: dict[int, list[str]] = defaultdict(list)
+    people: Counter = Counter()
+    for target in DeliveryTarget.objects.filter(
+        announcement_id__in=announcement_ids,
+        state__in=(DeliveryTarget.State.CONFIRMED, DeliveryTarget.State.ACCEPTED),
+    ).order_by("announcement_id", "platform", "pk"):
+        platform_ref = _domain_code(target.platform)
+        if platform_ref and platform_ref not in refs[target.announcement_id]:
+            refs[target.announcement_id].append(platform_ref)
+        if _delivery_kind(target) == DIRECT_MESSAGE_KIND:
+            people[target.announcement_id] += 1
+    return {key: (tuple(value), people[key]) for key, value in refs.items()}
 
 
 def _sku(announcement: Announcement) -> str:

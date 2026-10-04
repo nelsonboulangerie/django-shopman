@@ -1,5 +1,5 @@
 import { mount, flushPromises } from "@vue/test-utils";
-import { computed, defineComponent, ref } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementResultPanel from "~/components/AnnouncementResultPanel.vue";
 import VerificationCodeInput from "~/components/Ui/VerificationCodeInput.vue";
@@ -19,6 +19,9 @@ beforeAll(() => {
   Object.assign(globalThis, {
     computed,
     ref,
+    watch,
+    // `?action=` do Agendados abre a recuperação uma vez (V6-MKT); aqui sem query.
+    useRoute: () => ({ query: {}, hash: "" }),
     httpErrorMessage: (_error: unknown, fallback: string) => fallback,
     useSonner: { success: vi.fn(), error: vi.fn() },
     useNuxtData: () => ({
@@ -497,7 +500,7 @@ describe("AnnouncementResultPanel", () => {
     await actionButton.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Somente consulta — nada será reenviado");
+    expect(wrapper.text()).toContain("Somente consulta: nada será reenviado");
     expect(wrapper.text()).toContain("O sistema apenas pergunta ao provedor");
     expect(wrapper.text()).toContain("O que isto alcança");
     expect(wrapper.text()).toContain("WhatsApp");

@@ -94,7 +94,7 @@ function step(delta: number) {
         <UiDialogHeader class="px-4 pt-4 pr-14 pb-3 text-left">
           <UiDialogTitle>Prévia em tamanho real</UiDialogTitle>
           <UiDialogDescription>
-            {{ scene?.label }} — do jeito que a pessoa vai ver.
+            {{ scene?.label }}, do jeito que a pessoa vai ver.
           </UiDialogDescription>
         </UiDialogHeader>
 

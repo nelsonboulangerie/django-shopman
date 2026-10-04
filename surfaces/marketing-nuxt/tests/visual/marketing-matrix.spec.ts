@@ -332,7 +332,7 @@ test.describe("fila de decisões", () => {
 
 test.describe("workspace Marketing V2", () => {
   test("campanhas mostram Google e formatos no mobile", async ({ page }) => {
-    await openScenario(page, "board-normal", "/v2?area=campaigns", V390);
+    await openScenario(page, "board-normal", "/campaigns", V390);
     await expect(
       page.getByRole("heading", {
         level: 2,
@@ -347,7 +347,7 @@ test.describe("workspace Marketing V2", () => {
   test("plataformas distinguem prontidão e catálogo no desktop", async ({
     page,
   }) => {
-    await openScenario(page, "board-normal", "/v2?area=platforms", V1280);
+    await openScenario(page, "board-normal", "/platforms", V1280);
     await expect(
       page.getByRole("heading", {
         level: 2,
@@ -359,7 +359,7 @@ test.describe("workspace Marketing V2", () => {
   });
 
   test("ofertas e cupons ficam legíveis no desktop", async ({ page }) => {
-    await openScenario(page, "board-normal", "/v2?area=offers", V1280);
+    await openScenario(page, "board-normal", "/offers", V1280);
     await expect(
       page.getByRole("heading", { level: 2, name: "Ofertas e cupons" }),
     ).toBeVisible();
@@ -368,7 +368,7 @@ test.describe("workspace Marketing V2", () => {
   });
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
-    await openScenario(page, "board-normal", "/v2?area=offers", V390);
+    await openScenario(page, "board-normal", "/offers", V390);
     await page.getByRole("button", { name: "Criar cupom" }).click();
     await expect(page.getByRole("dialog", { name: "Novo cupom" })).toBeVisible();
     await expect(page.getByLabel("Código do cupom")).toBeVisible();
@@ -804,7 +804,7 @@ test.describe("listas operacionais", () => {
   test("falha de plataformas não parece ausência de configuração", async ({
     page,
   }) => {
-    await openScenario(page, "platforms-outage", "/v2?area=platforms", V390);
+    await openScenario(page, "platforms-outage", "/platforms", V390);
     await expect(page.getByRole("alert")).toContainText(
       "situação das conexões não pôde ser verificada",
     );
@@ -812,12 +812,12 @@ test.describe("listas operacionais", () => {
   });
 
   test("plataforma pronta em desktop", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/v2?area=platforms", V1280);
+    await openScenario(page, "platforms-ready", "/platforms", V1280);
     await expectStableScreenshot(page, "platforms__ready", V1280);
   });
 
   test("plataforma bloqueada explica reparo no mobile", async ({ page }) => {
-    await openScenario(page, "platforms-blocked", "/v2?area=platforms", V320);
+    await openScenario(page, "platforms-blocked", "/platforms", V320);
     await page
       .getByRole("link", { name: "Ver conexão e configuração" })
       .first()
@@ -829,7 +829,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("teste sandbox preserva comprovante", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/v2?area=platforms", V768);
+    await openScenario(page, "platforms-ready", "/platforms", V768);
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
@@ -851,7 +851,7 @@ test.describe("listas operacionais", () => {
   test("conflito de configuração mantém consequência visível", async ({
     page,
   }) => {
-    await openScenario(page, "platforms-conflict", "/v2?area=platforms", V1440);
+    await openScenario(page, "platforms-conflict", "/platforms", V1440);
     await page
       .locator("li")
       .filter({ hasText: "WhatsApp" })
@@ -1156,7 +1156,7 @@ test.describe("modos transversais", () => {
 
   test("equivalente a zoom 200% sem perder ação", async ({ page }) => {
     const zoom = { width: 640, height: 800, label: "zoom-200" };
-    await openScenario(page, "platforms-blocked", "/v2?area=platforms", zoom);
+    await openScenario(page, "platforms-blocked", "/platforms", zoom);
     await expectStableScreenshot(page, "platforms__blocked", zoom, "light", {
       fullPage: false,
       // Chromium rasteriza texto ampliado com uma pequena variação entre

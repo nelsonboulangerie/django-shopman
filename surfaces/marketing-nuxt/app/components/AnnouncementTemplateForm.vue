@@ -456,7 +456,7 @@ function submit() {
           class="resize-y"
         />
         <p class="mt-1 text-xs text-muted-foreground">
-          Não escreva preço, validade, estoque nem link — o sistema põe os
+          Não escreva preço, validade, estoque nem link: o sistema põe os
           atuais.
         </p>
       </div>

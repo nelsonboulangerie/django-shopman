@@ -32,6 +32,7 @@ const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
 const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
 useOperatorWindowTitle();
+const route = useRoute();
 
 // O menu do operador do celular (tema, giro, Bloquear) usa o MESMO `lock` daqui.
 provideMarketingShell({
@@ -81,8 +82,10 @@ watch(sessionState, async (next, previous) => {
         <div class="flex min-w-0 flex-1 flex-col">
           <component :is="Component" />
           <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
-               nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. -->
-          <MarketingNav place="bar" />
+               nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. A revisão do
+               anúncio é tela cheia (v4: o polegar é de Recusar e Continuar), e a página
+               declara isso em `definePageMeta({ fullscreen: true })`. -->
+          <MarketingNav v-if="!route.meta.fullscreen" place="bar" />
         </div>
         <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
         <MarketingInboxLive />

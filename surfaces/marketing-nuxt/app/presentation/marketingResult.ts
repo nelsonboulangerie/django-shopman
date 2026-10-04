@@ -99,14 +99,14 @@ export function deliveryStatePresentation(
       icon: "lucide:check-circle-2",
     },
     completed_with_failures: {
-      label: "Entrega parcial — precisa de atenção",
+      label: "Entrega parcial: precisa de atenção",
       detail:
         "Parte foi disparada e parte falhou. O sucesso de uma plataforma não esconde as outras.",
       tone: "danger",
       icon: "lucide:triangle-alert",
     },
     unknown: {
-      label: "Há resultados incertos — não reenvie",
+      label: "Há resultados incertos: não reenvie",
       detail:
         "A plataforma pode ter produzido efeito sem devolver resposta. Consultar só verifica o resultado; não envia outra vez.",
       tone: "attention",
@@ -613,5 +613,5 @@ export function acceptedAwaitingConfirmationNote(count: number): string {
     total === 1
       ? "Uma entrega foi aceita pelo provedor"
       : `${formatCount(total)} entregas foram aceitas pelo provedor`;
-  return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo — quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
+  return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo. Quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
 }

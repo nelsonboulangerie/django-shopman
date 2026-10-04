@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// A casa do Marketing é a fila de decisões (decisão do dono, 03/10/2026). O
-// panorama antigo continua em `/v2?area=today`, e as áreas de ajuste em `/v2`.
+// A casa do Marketing é a fila de decisões (decisão do dono, 03/10/2026). Os ajustes
+// moram em `/campaigns`, `/templates`, `/offers` e `/platforms`.
 useHead({ title: "Decisões" });
 </script>
 

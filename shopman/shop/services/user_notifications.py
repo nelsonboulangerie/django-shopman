@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 ANNOUNCEMENT_REVIEW = "announcement_review"
 PRODUCTION_QUALITY_REVIEW = "production_quality_review"
 STOCK_ALERT_DELIVERY_INCIDENT = "stock_alert_delivery_incident"
+#: O selo do Marketing pede a segunda pessoa (SUITE-UX §15, MKT-19): o aviso vale
+#: enquanto o resumo está aberto e sem a segunda confirmação.
+MARKETING_SECOND_CONTROL = "marketing_second_control"
 OWNER_PRODUCT = "product"
 OWNER_PRODUCTION = "production"
 OWNER_ORDERS = "orders"
@@ -333,6 +336,9 @@ def reconcile_user_notifications(*, user) -> int:
         if row["source_condition"] == STOCK_ALERT_DELIVERY_INCIDENT:
             changed += reconcile_stock_alert_delivery_incident(row["source_ref"])
             continue
+        if row["source_condition"] == MARKETING_SECOND_CONTROL:
+            changed += reconcile_marketing_second_control(row["source_ref"])
+            continue
         if row["source_condition"] != ANNOUNCEMENT_REVIEW:
             changed += reconcile_condition(
                 source_condition=row["source_condition"],
@@ -352,6 +358,42 @@ def reconcile_user_notifications(*, user) -> int:
             continue
         changed += reconcile_announcement_review(announcement)
     return changed
+
+
+def reconcile_marketing_second_control(source_ref: str) -> int:
+    """Fecha o pedido de segunda pessoa quando o resumo deixa de esperar por ela."""
+    import uuid
+
+    from shopman.shop.models import MarketingConfirmation
+
+    _head, _sep, raw = str(source_ref or "").partition(":")
+    try:
+        ref = uuid.UUID(raw)
+    except ValueError:
+        ref = None
+    confirmation = MarketingConfirmation.objects.filter(ref=ref).first() if ref else None
+    if confirmation is None:
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="source_missing",
+        )
+    if confirmation.second_approved_at is not None or confirmation.consumed_at is not None:
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.RESOLVED,
+            outcome_code="second_control_done",
+        )
+    if confirmation.expires_at <= timezone.now():
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="confirmation_expired",
+        )
+    return 0
 
 
 def reconcile_production_quality_review(source_ref: str) -> int:
@@ -778,6 +820,10 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
         resource_id = _resource_id(source_ref, "stock_alert_delivery")
         if resource_id is not None:
             return "/"
+    if source_condition == MARKETING_SECOND_CONTROL:
+        head, separator, raw = str(source_ref or "").partition(":")
+        if head == "marketing_confirmation" and separator and raw:
+            return f"/second-control/{raw}"
     return ""
 
 

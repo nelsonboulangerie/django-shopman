@@ -42,6 +42,8 @@ beforeEach(() => {
     watch,
     // O menu do operador do celular recebe o `lock` do shell por injeção.
     provideMarketingShell: vi.fn(),
+    // A revisão em tela cheia esconde a barra do polegar pelo `meta` da rota.
+    useRoute: () => ({ meta: {}, path: "/" }),
   });
 });
 

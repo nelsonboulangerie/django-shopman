@@ -33,6 +33,21 @@ const TRIGGER_TITLES: Record<string, string> = {
   schedule: "Campanha agendada",
 };
 
+// A miniatura sem foto: o ícone do TIPO de campanha (v4: o raio do Relâmpago, que é a
+// campanha que o relógio dispara), o mesmo na fila e nos Agendados.
+const TRIGGER_ICONS: Record<string, string> = {
+  production_finished: "lucide:croissant",
+  low_stock: "lucide:package-minus",
+  stock_back: "lucide:package-check",
+  product_created: "lucide:sparkles",
+  manual: "lucide:megaphone",
+  schedule: "lucide:zap",
+};
+
+export function decisionIcon(trigger: string): string {
+  return TRIGGER_ICONS[trigger] ?? "lucide:megaphone";
+}
+
 export type DeadlineTone = "urgent" | "soon" | "calm" | "none";
 
 export interface DeadlinePresentation {
@@ -59,6 +74,16 @@ export function peopleCount(value: number): string {
   return `${formatCount(value)} ${value === 1 ? "pessoa" : "pessoas"}`;
 }
 
+/** Quem recebe mensagem direta, na palavra da v4: "86 clientes". */
+export function clientCount(value: number): string {
+  return `${formatCount(value)} ${value === 1 ? "cliente" : "clientes"}`;
+}
+
+/** O que falhou, na grandeza do cartão de falha da v4: "1 envio", "3 envios". */
+export function sendCount(value: number): string {
+  return `${formatCount(value)} ${value === 1 ? "envio" : "envios"}`;
+}
+
 export function postCount(value: number): string {
   return `${formatCount(value)} ${value === 1 ? "postagem" : "postagens"}`;
 }
@@ -71,9 +96,9 @@ export function joinPlatforms(refs: readonly string[]): string {
 }
 
 /**
- * Para onde vai, na grandeza certa: "Instagram, Facebook e WhatsApp (86 pessoas)".
+ * Para onde vai, na grandeza certa: "Instagram, Facebook e WhatsApp (86 clientes)".
  * O número entre parênteses só aparece quando há mensagem direta, e só fala de
- * pessoas: as postagens já estão contadas pelos nomes das plataformas (uma cada).
+ * clientes: as postagens já estão contadas pelos nomes das plataformas (uma cada).
  */
 export function destinationsLine(
   refs: readonly string[],
@@ -82,8 +107,51 @@ export function destinationsLine(
   const platforms = joinPlatforms(refs);
   if (!platforms) return "Sem plataforma escolhida";
   return reach.people > 0
-    ? `${platforms} (${peopleCount(reach.people)})`
+    ? `${platforms} (${clientCount(reach.people)})`
     : platforms;
+}
+
+/**
+ * O fato do lote (v4, cartão do lote): "24 un saíram às 10:01". É a voz do forno, não
+ * a do sistema: o pão sai do forno, o anúncio é que se publica ou se envia.
+ */
+export function lotLine(
+  item: Pick<DecisionItem, "lot_quantity" | "lot_finished_at">,
+  timeZone: string,
+  nowMs = Date.now(),
+): string {
+  if (!item.lot_quantity) return "";
+  const quantity = item.lot_quantity.replace(".", ",");
+  const at = item.lot_finished_at ? ` ${pastAtLabel(item.lot_finished_at, timeZone, nowMs)}` : "";
+  return `${quantity} un saíram${at}`;
+}
+
+/** A linha de baixo do cartão de revisão: o fato do lote e para onde vai. */
+export function reviewSubtitle(item: DecisionItem, timeZone: string, nowMs = Date.now()): string {
+  const where = destinationsLine(item.platform_refs, item.reach);
+  const lot = lotLine(item, timeZone, nowMs);
+  if (lot) return `${lot} · ${where}`;
+  const occasion = decisionTitle(item);
+  // O nome da campanha só entra quando o título não é ele mesmo.
+  return item.campaign_name && occasion !== item.campaign_name
+    ? `${item.campaign_name} · ${where}`
+    : where;
+}
+
+/**
+ * A linha de baixo do cartão de falha (v4): de qual anúncio ("Pain au Chocolat das
+ * 09:40") e o que já foi entregue ("Facebook e WhatsApp entregues (52)").
+ */
+export function failureSubtitle(item: DecisionItem, timeZone: string): string {
+  const instant = item.lot_finished_at || item.created_at;
+  const clock = instant ? zonedParts(Date.parse(instant), timeZone).time : "";
+  const subject = item.product_name || item.campaign_name || "Anúncio avulso";
+  const head = clock ? `${subject} das ${clock}` : subject;
+  const delivered = joinPlatforms(item.delivered_platform_refs ?? []);
+  if (!delivered) return head;
+  const verb = (item.delivered_platform_refs ?? []).length === 1 ? "entregue" : "entregues";
+  const people = item.delivered_people > 0 ? ` (${formatCount(item.delivered_people)})` : "";
+  return `${head} · ${delivered} ${verb}${people}`;
 }
 
 /** "2 postagens · 86 pessoas": as duas grandezas lado a lado, nunca somadas. */
@@ -103,7 +171,8 @@ export function decisionTitle(item: DecisionItem | ScheduledItem): string {
 /** O que o cartão de falha diz no título: onde falhou e quanto, na grandeza dela. */
 export function failureHeadline(item: DecisionItem): string {
   const where = joinPlatforms(item.failures.map((failure) => failure.platform_ref));
-  const amount = reachLine(item.reach);
+  const failed = item.failures.reduce((sum, failure) => sum + failure.count, 0);
+  const amount = failed > 0 ? sendCount(failed) : "";
   const head =
     item.kind === "reconcile_unknown"
       ? `Resultado incerto no ${where}`

@@ -105,6 +105,14 @@ class StepUpEvidence:
     auth_hash: str = ""
     permission_fingerprint: str = ""
     safety_generation: int = 0
+    #: A digital do dispositivo assina UMA confirmação: é a ``ref`` dela (vazia nos outros níveis).
+    confirmation_ref: str = ""
+
+
+#: A digital do dispositivo (WebAuthn com verificação de usuário, SUITE-UX §15) vale
+#: tanto quanto o autenticador: posse do dispositivo cadastrado E a pessoa reconhecida
+#: por ele. Senha (1) < autenticador = digital (2).
+STEP_UP_LEVELS = {"password": 1, "totp": 2, "device": 2}
 
 
 class MarketingAuthorizationError(MarketingContractError):
@@ -372,7 +380,11 @@ def authorize_command(
             status_code=403,
         )
     _require_step_up(actor_row, requirement.step_up_level, step_up, state=state, now=clock)
-    if requirement.typed_phrase and not hmac.compare_digest(
+    # A frase digitada segue como ALTERNATIVA (decisão do dono, §15): a digital do
+    # dispositivo, assinada para ESTA confirmação, a dispensa. Só esta: uma digital de
+    # outro resumo, ou velha, não dispensa nada.
+    device_sealed = _device_sealed(actor_row, step_up, confirmation=confirmation, state=state, now=clock)
+    if requirement.typed_phrase and not device_sealed and not hmac.compare_digest(
         str(typed_confirmation or "").strip(), requirement.typed_phrase
     ):
         raise MarketingAuthorizationError(
@@ -483,6 +495,12 @@ def issue_confirmation(
             "public_post_count": public_post_count(required.context),
             "ceremony_reason": _ceremony_reason(required),
             "ceremony_threshold": _ceremony_threshold_for_challenge(),
+            # A digital deste operador já está cadastrada em algum dispositivo? A tela
+            # oferece "Confirmar com a digital" (ou o cadastro) a partir daqui.
+            "device_available": _has_device(actor_row),
+            # A partir de quantas mensagens outra pessoa confirma (o aviso do selo:
+            # "Acima de 200 clientes, outra pessoa confirma no celular dela").
+            "dual_control_threshold": _dual_control_threshold(),
             "platforms": list(required.context.platforms),
             "scheduled_for": (
                 required.context.scheduled_for.isoformat()
@@ -494,21 +512,29 @@ def issue_confirmation(
 
 
 def approve_second_actor(
-    raw_token: str,
+    raw_token: str = "",
     *,
     actor,
     step_up: StepUpEvidence | None,
+    confirmation_ref: str = "",
     now: datetime | None = None,
 ) -> MarketingConfirmation:
+    """A segunda pessoa confirma o MESMO resumo.
+
+    Pelo token (quem tem o token na mão) ou pela ``ref`` (quem recebeu o pedido por
+    push no celular dela, MKT-19). A ``ref`` não autoriza nada sozinha: a pessoa
+    precisa ser outra, ter a capacidade de aprovar e publicar, e passar pela digital
+    do dispositivo ou pelo autenticador, como sempre.
+    """
     clock = _aware_now(now)
     with transaction.atomic():
         second = _fresh_actor(actor, for_update=True)
         state = safety_state(for_update=True)
-        confirmation = (
-            MarketingConfirmation.objects.select_for_update()
-            .filter(token_hash=_token_hash(str(raw_token or "").strip()))
-            .first()
-        )
+        query = MarketingConfirmation.objects.select_for_update()
+        if confirmation_ref:
+            confirmation = query.filter(ref=_uuid_or_none(confirmation_ref)).first() if _uuid_or_none(confirmation_ref) else None
+        else:
+            confirmation = query.filter(token_hash=_token_hash(str(raw_token or "").strip())).first()
         if confirmation is None or not confirmation.dual_control:
             raise MarketingAuthorizationError(
                 code="dual_control_unavailable",
@@ -534,7 +560,8 @@ def approve_second_actor(
                 status_code=403,
             )
         _require_any_capability(second, _second_actor_capabilities(confirmation.action))
-        _require_step_up(second, "totp", step_up, state=state, now=clock)
+        if not _device_sealed(second, step_up, confirmation=confirmation, state=state, now=clock):
+            _require_step_up(second, "totp", step_up, state=state, now=clock)
         confirmation.second_actor = second
         confirmation.second_approved_at = clock
         confirmation.second_permission_fingerprint = permission_fingerprint(
@@ -781,6 +808,151 @@ def permission_fingerprint(actor, *, state: MarketingSafetyState | None = None) 
     return _keyed_hash("permission", canonical)
 
 
+def _device_sealed(
+    actor,
+    evidence: StepUpEvidence | None,
+    *,
+    confirmation: MarketingConfirmation,
+    state: MarketingSafetyState,
+    now: datetime,
+) -> bool:
+    """A digital do dispositivo desta pessoa, fresca, assinada para esta confirmação."""
+    if evidence is None or evidence.level != "device" or not evidence.confirmation_ref:
+        return False
+    return (
+        evidence.actor_id == actor.pk
+        and evidence.confirmation_ref == str(confirmation.ref)
+        and evidence.verified_at is not None
+        and evidence.verified_at >= now - STEP_UP_TTL
+        and hmac.compare_digest(evidence.auth_hash, actor.get_session_auth_hash())
+        and evidence.safety_generation == state.generation
+        and hmac.compare_digest(evidence.permission_fingerprint, permission_fingerprint(actor, state=state))
+    )
+
+
+def _uuid_or_none(value: str):
+    import uuid
+
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def second_control_summary(confirmation_ref: str, *, actor) -> dict[str, Any]:
+    """O que a segunda pessoa vê no celular antes de confirmar (MKT-19).
+
+    Só para quem pode ser a segunda pessoa: outra, com a capacidade de aprovar e
+    publicar. O resumo é o mesmo selo (destinos, público, quando) e o estado do
+    pedido; nada do conteúdo que o primeiro ainda pode mudar entra aqui.
+    """
+    clock = _aware_now(None)
+    reader = _fresh_actor(actor)
+    ref = _uuid_or_none(confirmation_ref)
+    confirmation = MarketingConfirmation.objects.select_related("actor").filter(ref=ref).first() if ref else None
+    if confirmation is None or not confirmation.dual_control:
+        raise MarketingAuthorizationError(
+            code="dual_control_unavailable",
+            detail="Este pedido de confirmação não existe mais.",
+            status_code=404,
+        )
+    is_requester = confirmation.actor_id == reader.pk
+    if not is_requester:
+        _require_any_capability(reader, _second_actor_capabilities(confirmation.action))
+    if confirmation.consumed_at is not None:
+        state = "used"
+    elif confirmation.second_approved_at is not None:
+        state = "approved"
+    elif confirmation.expires_at <= clock:
+        state = "expired"
+    else:
+        state = "open"
+    requester = confirmation.actor
+    return {
+        "ref": str(confirmation.ref),
+        "state": state,
+        "is_requester": is_requester,
+        "requested_by": (requester.get_full_name() or requester.get_username()) if requester else "",
+        "resource_ref": confirmation.resource_ref,
+        "platforms": list(confirmation.platforms or []),
+        "audience_count": confirmation.audience_count,
+        "scheduled_for": confirmation.scheduled_for.isoformat() if confirmation.scheduled_for else "",
+        "expires_at": confirmation.expires_at.isoformat(),
+    }
+
+
+def request_second_control(raw_token: str, *, actor) -> int:
+    """O primeiro pede a segunda pessoa: um aviso acionável (com push) para cada uma
+    que pode confirmar, menos ele mesmo. Devolve quantas foram chamadas."""
+    from django.contrib.auth.models import Permission
+    from django.db.models import Q
+
+    from shopman.shop.models import NotificationCategory, NotificationSeverity
+    from shopman.shop.services.user_notifications import (
+        ESCALATION_OPS,
+        MARKETING_SECOND_CONTROL,
+        OWNER_PRODUCT,
+        create_condition_alert,
+    )
+
+    clock = _aware_now(None)
+    requester = _fresh_actor(actor)
+    confirmation = (
+        MarketingConfirmation.objects.filter(token_hash=_token_hash(str(raw_token or "").strip())).first()
+    )
+    if (
+        confirmation is None
+        or not confirmation.dual_control
+        or confirmation.actor_id != requester.pk
+        or confirmation.consumed_at is not None
+        or confirmation.expires_at <= clock
+    ):
+        raise MarketingAuthorizationError(
+            code="dual_control_unavailable",
+            detail="Este resumo não está mais aberto. Gere um novo.",
+            status_code=422,
+        )
+    codenames = [value.split(".", 1)[1] for value in _second_actor_capabilities(confirmation.action)]
+    permissions = Permission.objects.filter(content_type__app_label="shop", codename__in=codenames)
+    candidates = (
+        get_user_model()
+        .objects.filter(is_active=True)
+        .filter(Q(is_superuser=True) | Q(user_permissions__in=permissions) | Q(groups__permissions__in=permissions))
+        .exclude(pk=requester.pk)
+        .distinct()
+    )
+    who = requester.get_full_name() or requester.get_username()
+    people = confirmation.audience_count
+    called = 0
+    for user in candidates:
+        if not any(user.has_perm(capability) for capability in _second_actor_capabilities(confirmation.action)):
+            continue
+        result = create_condition_alert(
+            user=user,
+            category=NotificationCategory.CAMPAIGN,
+            title=f"{who} pede a sua confirmação",
+            message=f"Envio para {people} {'cliente' if people == 1 else 'clientes'} no Marketing. Confira e confirme no seu celular.",
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=f"marketing_confirmation:{confirmation.ref}",
+            source_version=1,
+            action_data={"confirmation_ref": str(confirmation.ref)},
+            severity=NotificationSeverity.ACTION_REQUIRED,
+            owner_role=OWNER_PRODUCT,
+            escalation_role=ESCALATION_OPS,
+            expires_at=confirmation.expires_at,
+        )
+        called += 1 if result.created else 0
+    _event(
+        "dual_control_requested",
+        actor=requester,
+        confirmation=confirmation,
+        context=_context_from_confirmation(confirmation),
+        facts={"called": called},
+        now=clock,
+    )
+    return called
+
+
 def step_up_evidence_from_session(request) -> StepUpEvidence:
     raw = request.session.get("marketing_step_up") or {}
     verified_at = None
@@ -797,16 +969,21 @@ def step_up_evidence_from_session(request) -> StepUpEvidence:
         auth_hash=str(raw.get("auth_hash") or ""),
         permission_fingerprint=str(raw.get("permission_fingerprint") or ""),
         safety_generation=int(raw.get("safety_generation") or 0),
+        confirmation_ref=str(raw.get("confirmation_ref") or ""),
     )
 
 
-def record_step_up(request, *, level: str, now: datetime | None = None) -> dict[str, str]:
+def record_step_up(
+    request, *, level: str, confirmation_ref: str = "", now: datetime | None = None
+) -> dict[str, str]:
     clock = _aware_now(now)
     actor = _fresh_actor(request.user)
     state = safety_state()
     safe_level = str(level or "")
-    if safe_level not in {"password", "totp"}:
+    if safe_level not in STEP_UP_LEVELS:
         raise ValueError("invalid step-up level")
+    if safe_level == "device" and not confirmation_ref:
+        raise ValueError("device step-up is bound to one confirmation")
     request.session["marketing_step_up"] = {
         "actor_id": actor.pk,
         "level": safe_level,
@@ -814,6 +991,7 @@ def record_step_up(request, *, level: str, now: datetime | None = None) -> dict[
         "auth_hash": actor.get_session_auth_hash(),
         "permission_fingerprint": permission_fingerprint(actor, state=state),
         "safety_generation": state.generation,
+        "confirmation_ref": str(confirmation_ref or "") if safe_level == "device" else "",
     }
     request.session.modified = True
     _event(
@@ -873,7 +1051,7 @@ def _require_step_up(
     if required == "none":
         return
     evidence = evidence or StepUpEvidence()
-    levels = {"password": 1, "totp": 2}
+    levels = STEP_UP_LEVELS
     valid = (
         evidence.actor_id == actor.pk
         and evidence.verified_at is not None
@@ -891,9 +1069,9 @@ def _require_step_up(
         raise MarketingAuthorizationError(
             code="step_up_required",
             detail=(
-                "Confirme com o aplicativo autenticador."
+                "Confirme com a digital do dispositivo ou com o aplicativo autenticador."
                 if required == "totp"
-                else "Confirme novamente com sua senha."
+                else "Confirme com a digital do dispositivo ou com a sua senha."
             ),
             status_code=403,
             field_errors={"step_up": (required,)},
@@ -960,6 +1138,21 @@ def _ceremony_reason(required: MarketingAuthorizationRequired) -> str:
     if direct_message_recipient_count(required.context) > 0:
         return "direct_message"
     return "volume"
+
+
+def _dual_control_threshold() -> int:
+    from shopman.shop.services.marketing_ceremony import ceremony_threshold
+
+    return ceremony_threshold().dual_control
+
+
+def _has_device(actor) -> bool:
+    try:
+        from shopman.shop.services.operator_passkey import has_passkey
+
+        return has_passkey(actor)
+    except Exception:
+        return False
 
 
 def _ceremony_threshold_for_challenge() -> int:

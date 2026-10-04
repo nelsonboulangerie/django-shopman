@@ -877,7 +877,7 @@ function submit() {
         >Anunciar a oferta</label
       >
       <UiNativeSelect id="rule-offer" v-model="promotionRef" class="w-full">
-        <option value="">Nenhuma — só contar a novidade</option>
+        <option value="">Nenhuma (só contar a novidade)</option>
         <option v-for="offer in offers" :key="offer.value" :value="offer.value">
           {{ offer.label }}
         </option>
@@ -1133,7 +1133,7 @@ function submit() {
           <template v-if="note.tone !== 'limited'">
             A campanha pode ser salva assim mesmo.
             <NuxtLink
-              :to="{ path: '/v2', query: { area: 'platforms' } }"
+              :to="{ path: '/platforms' }"
               class="font-semibold underline"
             >
               Ver em Plataformas
@@ -1165,7 +1165,7 @@ function submit() {
         <UiCheckbox
           v-model="alerts"
           label='Quem pediu "me avise" deste produto'
-          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+          description="A fila do sino da loja: lote para pão, reposição para o resto."
         />
         <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
              soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
