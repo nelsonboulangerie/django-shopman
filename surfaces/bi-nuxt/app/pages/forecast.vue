@@ -60,39 +60,36 @@ const occasionTitle = (occasion: ForecastOccasion) =>
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
-    <section class="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-3">
-      <span class="text-xs font-medium text-muted-foreground">Período que você está planejando</span>
-      <OperatorPeriodPicker v-model="period" :presets="presets" label="Período da projeção" align="start" />
-      <p class="ml-auto max-w-md text-xs text-muted-foreground">
-        A projeção compara com dias parecidos do passado. Ela não usa o período da barra acima, que
-        serve para olhar o que já aconteceu.
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="O que esperar?">
+      <template #actions>
+        <OperatorPeriodPicker v-model="period" :presets="presets" label="Período que você está planejando" />
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+    </OperatorPageHeader>
+
+    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <p class="op-micro text-muted-foreground">
+        A projeção compara com dias parecidos do passado. O período do cabeçalho, aqui, é o que você está
+        planejando; as outras telas do B.I. olham o que já aconteceu.
       </p>
-    </section>
 
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <div v-else-if="error" class="flex items-center gap-3">
-      <p class="text-sm text-muted-foreground">Não deu para carregar os números.</p>
-      <button
-        type="button"
-        class="h-9 rounded-md border border-border px-3 text-sm font-medium"
-        @click="refresh()"
-      >
-        Tentar de novo
-      </button>
-    </div>
+      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
 
-    <template v-else-if="report">
+      <template v-if="report">
       <!-- Um dia: a pergunta da fornada -->
       <template v-if="single">
         <section
           v-if="single.closed"
-          class="rounded-md border border-border bg-card p-4"
+          class="rounded-lg border border-border bg-card px-4 py-3"
         >
-          <h2 class="text-lg font-semibold text-foreground">
+          <h2 class="op-title text-foreground">
             {{ single.weekday_label }}, {{ shortDate(single.date) }}
           </h2>
-          <p class="mt-1 text-sm text-muted-foreground">
+          <p class="mt-1 op-label text-muted-foreground">
             A casa não abre neste dia{{ single.closed_reason ? ` (${single.closed_reason})` : "" }}.
           </p>
         </section>
@@ -104,11 +101,11 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           médio. O número genérico continua logo abaixo, porque é o contraponto
           que dá escala à ocasião: sem ele, "3,2× um dia normal" não diz nada.
         -->
-        <section v-else-if="single.occasion" class="rounded-md border border-border bg-card p-4">
-          <h2 class="text-lg font-semibold text-foreground">
+        <section v-else-if="single.occasion" class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">
             {{ occasionTitle(single.occasion) }}
           </h2>
-          <p class="text-sm text-muted-foreground">
+          <p class="op-label text-muted-foreground">
             {{ single.weekday_label }}, {{ shortDate(single.date) }}
           </p>
 
@@ -130,35 +127,35 @@ const occasionTitle = (occasion: ForecastOccasion) =>
             <li
               v-for="year in single.occasion.years"
               :key="year.date"
-              class="flex items-baseline justify-between gap-3 text-sm"
+              class="flex items-baseline justify-between gap-3 op-label"
             >
               <span class="text-muted-foreground">{{ shortDateWithYear(year.date) }}</span>
-              <span class="font-medium tabular-nums text-foreground">
+              <span class="font-medium tnum text-foreground">
                 {{ formatMoney(year.revenue_q) }}
               </span>
-              <span class="tabular-nums text-muted-foreground">
+              <span class="tnum text-muted-foreground">
                 {{ year.ratio.toFixed(1).replace(".", ",") }}× um dia normal
               </span>
             </li>
           </ul>
-          <p class="mt-2 text-xs text-muted-foreground">
+          <p class="mt-2 op-micro text-muted-foreground">
             Cada ocorrência medida contra o movimento típico da época dela.
             {{ formatInt(single.occasion.years.length) }}
             {{ single.occasion.years.length === 1 ? "ocorrência" : "ocorrências" }}: poucas para
             prever, o bastante para saber o que esperar.
           </p>
 
-          <p v-if="single.basis" class="mt-3 text-sm text-foreground">{{ headline(single) }}</p>
-          <ul v-if="single.basis" class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+          <p v-if="single.basis" class="mt-3 op-label text-foreground">{{ headline(single) }}</p>
+          <ul v-if="single.basis" class="mt-1 space-y-0.5 op-micro text-muted-foreground">
             <li v-for="note in basisNotes(single.basis)" :key="note">{{ note }}</li>
           </ul>
-          <p v-else class="mt-2 text-sm text-muted-foreground">
+          <p v-else class="mt-2 op-label text-muted-foreground">
             {{ missingLabel(single.missing_reason) }}
           </p>
         </section>
 
-        <section v-else class="rounded-md border border-border bg-card p-4">
-          <h2 class="text-lg font-semibold text-foreground">
+        <section v-else class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">
             {{ single.weekday_label }}, {{ shortDate(single.date) }}
           </h2>
 
@@ -176,23 +173,23 @@ const occasionTitle = (occasion: ForecastOccasion) =>
               />
             </div>
 
-            <p class="mt-3 text-sm text-foreground">{{ headline(single) }}</p>
-            <ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            <p class="mt-3 op-label text-foreground">{{ headline(single) }}</p>
+            <ul class="mt-1 space-y-0.5 op-micro text-muted-foreground">
               <li v-for="note in basisNotes(single.basis!)" :key="note">{{ note }}</li>
             </ul>
           </template>
 
-          <p v-else class="mt-2 text-sm text-muted-foreground">
+          <p v-else class="mt-2 op-label text-muted-foreground">
             {{ missingLabel(single.missing_reason) }}
           </p>
         </section>
 
         <section
           v-if="single.branches.length"
-          class="rounded-md border border-border bg-card p-3"
+          class="rounded-lg border border-border bg-card px-4 py-3"
         >
-          <h2 class="text-lg font-semibold text-foreground">E se o dia for diferente?</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+          <h2 class="op-title text-foreground">E se o dia for diferente?</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             Os mesmos dias parecidos, separados pelo que o tempo fez. Olhe pela janela e escolha o
             lado.
           </p>
@@ -202,11 +199,11 @@ const occasionTitle = (occasion: ForecastOccasion) =>
               :key="branch.key"
               class="rounded-md border border-border p-3"
             >
-              <p class="text-sm font-medium text-foreground">{{ branch.label }}</p>
-              <p class="mt-1 text-xl font-semibold tabular-nums text-foreground">
+              <p class="op-label font-medium text-foreground">{{ branch.label }}</p>
+              <p class="mt-1 text-xl font-semibold tnum text-foreground">
                 {{ formatMoneyCompact(Math.round(branch.revenue_q.expected)) }}
               </p>
-              <p class="text-xs text-muted-foreground">
+              <p class="op-micro text-muted-foreground">
                 {{ formatInt(Math.round(branch.orders.expected)) }} pedidos ·
                 {{ formatInt(branch.sample_size) }} dias
               </p>
@@ -222,10 +219,10 @@ const occasionTitle = (occasion: ForecastOccasion) =>
         -->
         <section
           v-if="singleChange && !singleChange.closed"
-          class="rounded-md border border-border bg-card p-4"
+          class="rounded-lg border border-border bg-card px-4 py-3"
         >
-          <h2 class="text-lg font-semibold text-foreground">Troco para separar</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+          <h2 class="op-title text-foreground">Troco para separar</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             Para abastecer na véspera, no seu tempo, em vez de resolver no meio do movimento.
           </p>
 
@@ -244,11 +241,11 @@ const occasionTitle = (occasion: ForecastOccasion) =>
               />
             </div>
 
-            <p v-if="change.mix" class="mt-2 text-xs text-muted-foreground">
+            <p v-if="change.mix" class="mt-2 op-micro text-muted-foreground">
               {{ changeMixCaveat(change.mix) }}
             </p>
 
-            <p class="mt-3 text-sm text-foreground">
+            <p class="mt-3 op-label text-foreground">
               {{
                 cashOrdersNote(
                   singleChange.cash_orders.expected,
@@ -257,12 +254,12 @@ const occasionTitle = (occasion: ForecastOccasion) =>
                 )
               }}
             </p>
-            <ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            <ul class="mt-1 space-y-0.5 op-micro text-muted-foreground">
               <li v-for="note in changeHabitNotes(change.habit)" :key="note">{{ note }}</li>
             </ul>
           </template>
 
-          <p v-else class="text-sm text-muted-foreground">
+          <p v-else class="op-label text-muted-foreground">
             {{ missingLabel(singleChange.missing_reason) }}
           </p>
         </section>
@@ -300,16 +297,16 @@ const occasionTitle = (occasion: ForecastOccasion) =>
 
         <p
           v-if="report.total_missing_days.length"
-          class="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground"
+          class="rounded-lg border border-border bg-card px-4 py-3 op-label text-muted-foreground"
         >
           Sem total do período: não temos base para
           {{ report.total_missing_days.map(shortDate).join(", ") }}. Somar só os outros dias daria um
           número plausível e errado.
         </p>
 
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Dia a dia</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+        <section class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">Dia a dia</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             Faturamento provável de cada dia; o tooltip traz a faixa e os pedidos
           </p>
           <ChartBarSeries
@@ -318,6 +315,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           />
         </section>
       </template>
-    </template>
-  </main>
+      </template>
+    </main>
+  </div>
 </template>

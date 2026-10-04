@@ -13,6 +13,7 @@ from .bi import (
     BICustomersView,
     BIExploreView,
     BIForecastView,
+    BIOverShortView,
     BIProductionView,
     BISalesView,
     BIScenariosView,
@@ -524,6 +525,7 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
     path("bi/cash/", BICashView.as_view(), name="api-backstage-bi-cash"),
     path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
