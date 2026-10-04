@@ -329,7 +329,11 @@ test("copy longa e números grandes passam reflow equivalente a 200%", async ({
   await expect(
     page.getByText("Pão de fermentação natural com castanhas brasileiras"),
   ).toBeVisible();
-  await expect(page.getByText("12.345,75", { exact: false }).first()).toBeVisible();
+  // O número aparece duas vezes na linha aberta: na coluna Planejado (tablet deitado
+  // e desktop) e na linha do produto (celular e tablet em pé). Vale o visível.
+  await expect(
+    page.getByText("12.345,75", { exact: false }).filter({ visible: true }).first(),
+  ).toBeVisible();
   // Isso cobre a geometria/reflow equivalente, não prova zoom real nem revisão
   // visual: Playwright não expõe uma API de zoom interoperável entre engines.
   await page.setViewportSize({ width: 512, height: 384 });
