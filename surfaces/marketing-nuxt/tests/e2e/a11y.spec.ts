@@ -220,6 +220,9 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await page.getByRole("button", { name: /^Mais: / }).click();
   await page.getByRole("button", { name: "Tema escuro" }).click();
   await page.keyboard.press("Escape");
+  // A folha do "Mais" fecha de verdade (o véu escuro não pode ficar por cima da
+  // página quando o axe mede o contraste).
+  await expect(page.locator("[data-operator-phone-menu-panel]")).toHaveCount(0);
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectNoAxeViolations(page, "plataformas 320×568 em tema escuro");
   await expectNoHorizontalOverflow(page, "plataformas 320×568 em tema escuro");
