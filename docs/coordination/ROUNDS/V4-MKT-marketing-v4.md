@@ -2,7 +2,7 @@
 
 - **id:** V4-MKT
 - **branch:** claude/v4-mkt
-- **PR:** (preenchido no PR)
+- **PR:** #1457
 - **estado:** PR aberto, auto-merge ligado
 - **início (UTC):** 2026-10-04
 
