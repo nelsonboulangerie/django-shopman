@@ -82,6 +82,7 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
     :sections="shared.sections"
     :current="shared.current"
     label="Seções do PDV"
+    print-shortcuts
     :hub-url="hubUrl"
     :operator-name="operatorName || undefined"
     data-pos-rail

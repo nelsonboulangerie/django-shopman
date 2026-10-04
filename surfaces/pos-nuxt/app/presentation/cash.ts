@@ -577,3 +577,25 @@ export function stationDevicesNotice(runtime: POSCashRuntimeProjection | null | 
     ? `${shared} Caixa já aberto: o que for vendido aqui entra no mesmo turno.`
     : shared;
 }
+
+/**
+ * As cédulas e moedas do Real, para CONTAR A GAVETA (Fim do dia, v4 passo 1).
+ *
+ * Não é a lista do pedido de troco (`change_denominations`, que a casa configura
+ * com o que se pede ao cofre e por isso não tem R$ 200 nem R$ 100): na gaveta pode
+ * haver qualquer cédula, e uma que falte na lista vira dinheiro que não se conta.
+ */
+export const DRAWER_DENOMINATIONS: readonly POSChangeDenomination[] = [
+  { q: 20000, label: "200", shape: "note" },
+  { q: 10000, label: "100", shape: "note" },
+  { q: 5000, label: "50", shape: "note" },
+  { q: 2000, label: "20", shape: "note" },
+  { q: 1000, label: "10", shape: "note" },
+  { q: 500, label: "5", shape: "note" },
+  { q: 200, label: "2", shape: "note" },
+  { q: 100, label: "1", shape: "coin" },
+  { q: 50, label: "0,50", shape: "coin" },
+  { q: 25, label: "0,25", shape: "coin" },
+  { q: 10, label: "0,10", shape: "coin" },
+  { q: 5, label: "0,05", shape: "coin" },
+];

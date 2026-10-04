@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { tabTitleView } from "~/presentation/tabTitle";
 // Tab Board (spec §2.3) — the map of open/free comandas. Odoo-style first
 // screen: pick or open a comanda before ringing. It renders the tabs Projection
 // through `presentation/tabBoard` (ordering, in-use/all filter, per-card shape)
@@ -92,10 +93,12 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
 
 <template>
   <section class="flex h-full min-h-0 flex-col gap-3">
-    <form class="flex shrink-0 gap-2" @submit.prevent="submitInput">
+    <!-- No celular a busca ocupa a linha inteira e os dois botões dividem a de baixo:
+         nada colapsa num quadrado vazio nem sai da tela (régua da v4). -->
+    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput">
       <!-- Autofocus: o board remonta a cada volta (inclusive pós-venda) e a
            primeira ação do operador é digitar a comanda — o foco já espera lá. -->
-      <div class="relative max-w-xs flex-1">
+      <div class="relative min-w-0 max-sm:basis-full sm:max-w-xs sm:flex-1">
         <UiInput
           ref="inputRef"
           :model-value="modelValue"
@@ -105,9 +108,9 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
           autofocus
           @update:model-value="updateInput"
         />
-        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">F2</OperatorKbd>
+        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-md:hidden" aria-hidden="true">F2</OperatorKbd>
       </div>
-      <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2" :disabled="busy || !modelValue.trim()">
+      <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />
         Abrir comanda
       </UiButton>
@@ -115,13 +118,13 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         type="button"
         size="lg"
         variant="outline"
-        class="h-11 shrink-0 gap-2"
+        class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
         :disabled="busy"
         :title="`Abrir a comanda ${nextFreeDisplay}`"
         @click="openNextFree"
       >
         <Icon name="lucide:arrow-right-circle" class="size-5" />
-        Próxima livre · #{{ nextFreeDisplay }}
+        <span class="truncate"><span class="max-sm:hidden">Próxima livre · </span><span class="sm:hidden">Próxima </span>#{{ nextFreeDisplay }}</span>
       </UiButton>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
@@ -191,7 +194,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
-          <span class="truncate font-semibold tabular-nums" :title="`#${view.displayRef}`">#{{ view.displayRef }}</span>
+          <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
           <span
             v-if="view.isUnpaid"
             class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"

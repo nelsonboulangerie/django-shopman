@@ -627,6 +627,9 @@ export function usePosSale(deps: PosSaleDeps) {
   const cart = reactive({
     tabRef: "",
     tabDisplay: "",
+    tabNumber: "",
+    tabOpenedAt: "",
+    tabSeatingSpot: "",
     tabSessionKey: "",
     expectedRevision: "",
     items: [] as POSCartItem[],
@@ -1431,6 +1434,9 @@ export function usePosSale(deps: PosSaleDeps) {
     pendingCustomerPrefs.value = {};
     cart.tabRef = "";
     cart.tabDisplay = "";
+    cart.tabNumber = "";
+    cart.tabOpenedAt = "";
+    cart.tabSeatingSpot = "";
     cart.tabSessionKey = "";
     cart.expectedRevision = "";
     cart.items = [];
@@ -1489,6 +1495,9 @@ export function usePosSale(deps: PosSaleDeps) {
   function assignTabIdentityFromPayload(payload: POSTabPayload) {
     cart.tabRef = payload.tab_ref;
     cart.tabDisplay = payload.tab_display;
+    cart.tabNumber = payload.tab_number || "";
+    cart.tabOpenedAt = payload.opened_at_display || "";
+    cart.tabSeatingSpot = payload.seating_spot_ref || "";
     cart.tabSessionKey = payload.tab_session_key || payload.session_key;
     cart.expectedRevision = payload.revision || "";
     showTabs.value = false;
@@ -3266,14 +3275,23 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  async function renameTab(newTabRef: string) {
+  /** `seatingSpotRef`: a mesa do Salão tocada no renomear (vínculo opcional);
+   *  "" desfaz o vínculo; ausente não mexe nele. */
+  async function renameTab(newTabRef: string, seatingSpotRef?: string) {
     if (!cart.tabSessionKey || !newTabRef) return;
     serverError.value = "";
     renamingTab.value = true;
     try {
       const response = await action.call<{ tab: POSTabPayload | null }>(
         actionHref(actions.value, "rename_tab", "/api/v1/backstage/pos/tabs/rename/"),
-        { body: { session_key: cart.tabSessionKey, expected_revision: cart.expectedRevision, new_tab_ref: newTabRef } },
+        {
+          body: {
+            session_key: cart.tabSessionKey,
+            expected_revision: cart.expectedRevision,
+            new_tab_ref: newTabRef,
+            ...(seatingSpotRef === undefined ? {} : { seating_spot_ref: seatingSpotRef }),
+          },
+        },
       );
       if (response.tab) await setFromTabPayload(response.tab);
       await refresh();

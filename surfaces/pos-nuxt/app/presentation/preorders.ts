@@ -910,3 +910,26 @@ export function moveDescription(windowLabel: string): string {
 export function moveConfirmLabel(dayLabel: string): string {
   return `Mudar para ${dayInSentence(dayLabel)}`;
 }
+
+export interface PhonePill {
+  label: string;
+  tone: SituationTone;
+}
+
+/**
+ * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
+ * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
+ * ("Paga", "Pagar na retirada", "Pagar na entrega").
+ */
+export function phoneCardPills(
+  card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
+): PhonePill[] {
+  const pills: PhonePill[] = [];
+  if (rowShowsSituation(card.situation)) pills.push({ label: card.situation_label, tone: situationTone(card.situation) });
+  if (card.balance_q === null) pills.push({ label: "Conferir pagamento", tone: "warning" });
+  else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
+  else if (card.balance_q > 0) {
+    pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
+  } else pills.push({ label: "Paga", tone: "success" });
+  return pills;
+}

@@ -151,7 +151,12 @@ function reset() {
 function focus() {
   inputRef.value?.inputRef?.focus();
 }
-defineExpose({ reset, focus });
+/** A busca da venda ("produto, código, comanda ou cliente") chega aqui com o que
+ *  o operador já digitou: o campo nasce preenchido e a procura já começa. */
+function seed(value: string) {
+  query.value = value;
+}
+defineExpose({ reset, focus, seed });
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
 });

@@ -196,8 +196,8 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
     await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
-    // A barra de seleção aparece com o atalho de limpar seleção.
-    expect(wrapper.find('[aria-label="Limpar seleção"]').exists()).toBe(true);
+    // v4: a barra do lote é uma faixa só, e diz quantas linhas estão marcadas.
+    expect(wrapper.find("[data-pos-selection-bar]").text()).toContain("1 selecionada");
   });
 });
 
@@ -275,10 +275,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
     // Duas linhas com o mesmo nome: o segundo checkbox é o da segunda linha.
     await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
     await wrapper.findAll('[aria-label="Selecionar Chá"]')[1]!.trigger("click");
-    const fire = wrapper
-      .findAll("button")
-      .find((b) => b.text().includes("Enviar à cozinha"));
-    await fire!.trigger("click");
+    await wrapper.find("[data-pos-batch-fire]").trigger("click");
     expect(wrapper.emitted("fireLines")?.[0]?.[0]).toEqual(["L-cha-2"]);
   });
 
@@ -399,9 +396,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         ],
       }),
     });
-    await wrapper
-      .find('button[aria-label="Detalhes de Tabatière"]')
-      .trigger("click");
+    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("keydown", { key: "ArrowRight" });
     const struck = wrapper.find("span.line-through");
     expect(struck.exists()).toBe(true);
     expect(struck.text()).toBe(formatBRL(1200));
@@ -454,9 +449,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
       }),
     });
     expect(wrapper.findAll("span[title^='Desconto aplicado']")).toHaveLength(0);
-    await wrapper
-      .find('button[aria-label="Detalhes de Tabatière"]')
-      .trigger("click");
+    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("keydown", { key: "ArrowRight" });
     const struck = wrapper.find("span.line-through");
     expect(struck.text()).toBe(formatBRL(1200));
     expect(struck.attributes("title")).toContain("Semana do Pão −15%");
@@ -478,7 +471,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         ],
       }),
     });
-    await wrapper.find('button[aria-label="Detalhes de Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.find("span.line-through").attributes("title")).toContain(
       "Cortesia −10%",
     );
@@ -541,7 +534,7 @@ describe("PosCartPanel — autoria discreta", () => {
     expect(wrapper.text()).not.toContain("Editado por Bruno");
     expect(wrapper.text()).not.toContain("Lançado por Ana");
     expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
-    await wrapper.find('button[aria-label="Detalhes de Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.text()).toContain("Lançado por Ana");
     expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
   });
@@ -550,15 +543,16 @@ describe("PosCartPanel — autoria discreta", () => {
 describe("PosCartPanel — acordeão", () => {
   it("abre só uma linha e recolhe sem perder o alvo do teclado", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    const bread = wrapper.find('button[aria-label="Detalhes de Pão"]');
-    const coffee = wrapper.find('button[aria-label="Detalhes de Café"]');
+    // Sem chevron na linha (v4): o detalhe abre pelo teclado (Enter, →).
+    const bread = wrapper.find('[aria-label="Editar Pão"]');
+    const coffee = wrapper.find('[aria-label="Editar Café"]');
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
-    await bread.trigger("click");
+    await bread.trigger("keydown", { key: "Enter" });
     expect(bread.attributes("aria-expanded")).toBe("true");
-    await coffee.trigger("click");
+    await coffee.trigger("keydown", { key: "Enter" });
     expect(bread.attributes("aria-expanded")).toBe("false");
     expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
-    await coffee.trigger("click");
+    await coffee.trigger("keydown", { key: "Enter" });
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
     expect(
       wrapper.find('[aria-label="Editar Café"]').attributes("aria-pressed"),
@@ -583,7 +577,7 @@ describe("PosCartPanel — acordeão", () => {
     expect(wrapper.text()).toContain("Sem leite");
     expect(wrapper.text()).toContain("Pronto");
     expect(wrapper.find('[role="region"]').exists()).toBe(false);
-    await wrapper.find('[aria-label="Detalhes de Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.text()).toContain("Editado por ana");
     expect(wrapper.find('[title="Cortesia −10%"]').exists()).toBe(true);
   });
@@ -602,7 +596,7 @@ describe("PosCartPanel — quantidade acessível sem expandir", () => {
     ).toBe("true");
     expect(
       wrapper
-        .find('button[aria-label="Detalhes de Pão"]')
+        .find('[aria-label="Editar Pão"]')
         .attributes("aria-expanded"),
     ).toBe("false");
     await wrapper
@@ -626,7 +620,8 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
       wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed"),
     ).toBe("true");
     expect(wrapper.find('[aria-label="Aumentar"]').exists()).toBe(false);
-    expect(wrapper.find('[aria-label="Detalhes de Pão"]').exists()).toBe(true);
+    // v4: a linha não carrega enfeite à direita.
+    expect(wrapper.find('[aria-label="Detalhes de Pão"]').exists()).toBe(false);
     await bread.trigger("click");
     expect(
       wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed"),
@@ -666,7 +661,7 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
     await coffee.trigger("keydown", { key: "ArrowLeft" });
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
-    await wrapper.find('button[aria-label="Detalhes de Café"]').trigger("click");
+    await coffee.trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed")).toBe("true");
     expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
   });
@@ -733,7 +728,7 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
       .trigger("keydown", { key: " " });
     const buttons = wrapper
       .findAll("button")
-      .filter((b) => b.text().includes("Enviar à cozinha"));
+      .filter((b) => b.text().includes("Enviar à cozinha") || (b.attributes("aria-label") || "").includes("Enviar à cozinha"));
     for (const button of buttons) await button.trigger("click");
     expect(wrapper.emitted("fireLines")).toBeUndefined();
     expect(wrapper.emitted("fire")).toBeUndefined();
@@ -753,7 +748,7 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
     expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(false);
     await wrapper.find('[data-item-select="L-PAO"]').trigger("click");
     expect(payment()).toHaveLength(0);
-    expect(wrapper.findAll("button").some(b => b.text().includes("Enviar à cozinha"))).toBe(true);
+    expect(wrapper.find("[data-pos-batch-fire]").exists()).toBe(true);
     // v4: Transferir só existe no modo seleção, onde as linhas já estão escolhidas,
     // e leva as marcadas para o diálogo (F10 segue valendo em toda a venda).
     const transfer = wrapper.findAll("button").find(b => b.text().includes("Transferir"));
@@ -771,6 +766,8 @@ it("mantém o rodapé compacto durante seleção até Concluir, sem depender do 
   await wrapper.find('[aria-label="Iniciar seleção"]').trigger('click');
   await wrapper.vm.$nextTick();
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
+  // v4: o Desconto da faixa vale para as linhas marcadas; sem marca ele fica desligado.
+  await wrapper.find('[data-item-select="L-PAO"]').trigger('click');
   await openDiscount(wrapper);
   await wrapper.find('[aria-label="Dígito 5"]').trigger('focus');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
@@ -786,9 +783,10 @@ describe("PosCartPanel — conclusão da ação em lote", () => {
         items: [item({ sku: "PAO", name: "Pão", fired: kind === "unfireLines" })],
       }) });
       await wrapper.find('[data-item-select="L-PAO"]').trigger("keydown", { key: " " });
-      const action = () => wrapper.findAll("button").find(b => b.text().includes(
-        kind === "fireLines" ? "Enviar à cozinha" : "Cancelar envio",
-      ))!;
+      const action = () => wrapper.findAll("button").find(b => {
+        const label = kind === "fireLines" ? "Enviar à cozinha" : "Cancelar envio";
+        return b.text().includes(label) || (b.attributes("aria-label") || "").includes(label);
+      })!;
       const payment = () => wrapper.findAll("button").some(b => b.text().includes("Pagamento"));
       await action().trigger("click");
       expect(payment()).toBe(false);

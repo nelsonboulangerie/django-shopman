@@ -287,6 +287,73 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     return tickets
 
 
+def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
+    """Para onde cada SKU iria na cozinha se fosse enviado agora.
+
+    ``{sku: {"station": nome, "auto_fire": bool}}``. ``auto_fire`` é o envio
+    automático da estação (``KDSInstance.config["auto_fire"]``, opcional por
+    estação e desligado por padrão; PDV › Ajustes › Envio à cozinha).
+
+    Leitura pura, sem ticket: a MESMA precedência do ``fire_lines`` (receita
+    decide prep × picking, coleção decide a estação, catch-all por último) e a
+    mesma expansão de combo (o combo vai à cozinha se algum componente vai). O
+    PDV usa para dizer "vai à cozinha" na linha nova antes do envio. SKU sem
+    estação fica de fora (é mercadoria que o cliente já leva).
+    """
+    from shopman.offerman.models import ProductComponent
+
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.adapters import kds as kds_adapter
+
+    skus = [str(sku) for sku in dict.fromkeys(skus or []) if sku]
+    if not skus:
+        return {}
+    instances = kds_adapter.get_active_prep_instances()
+    if not instances:
+        return {}
+
+    components: dict[str, list[str]] = defaultdict(list)
+    for pc in ProductComponent.objects.filter(parent__sku__in=skus).select_related("component", "parent"):
+        components[pc.parent.sku].append(pc.component.sku)
+    concrete = sorted({c for sku in skus for c in (components.get(sku) or [sku])})
+
+    catalog = get_adapter("catalog")
+    sku_to_collection = catalog.bulk_sku_to_collection_id(concrete)
+    production = get_adapter("production")
+    prep_skus = production.get_prep_skus(concrete) if production else set()
+
+    type_col_map = defaultdict(list)
+    catchall_map = defaultdict(list)
+    for inst in instances:
+        col_ids = set(inst.collections.values_list("id", flat=True))
+        if not col_ids:
+            catchall_map[inst.type].append(inst)
+        else:
+            for col_id in col_ids:
+                type_col_map[(inst.type, col_id)].append(inst)
+
+    def station(concrete_sku: str):
+        item_type = "prep" if concrete_sku in prep_skus else "picking"
+        matched = _match_instances(
+            item_type=item_type,
+            collection_id=sku_to_collection.get(concrete_sku),
+            type_col_map=type_col_map,
+            catchall_map=catchall_map,
+        )
+        return matched[0] if matched else None
+
+    out: dict[str, dict] = {}
+    for sku in skus:
+        found = [inst for inst in (station(c) for c in (components.get(sku) or [sku])) if inst is not None]
+        if found:
+            out[sku] = {
+                "station": str(found[0].name),
+                # Combo: vai sozinho só se TODAS as estações dele forem automáticas.
+                "auto_fire": all(bool((inst.config or {}).get("auto_fire")) for inst in found),
+            }
+    return out
+
+
 def fired_line_ids(session_key: str) -> set:
     """Line ids already on a live (non-cancelled) ticket for this session_key."""
     from shopman.shop.adapters import kds as kds_adapter

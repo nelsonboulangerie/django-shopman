@@ -1710,7 +1710,15 @@ class DayClosingView(APIView):
     required_permission = "backstage.perform_closing"
 
     def get(self, request):
+        from dataclasses import replace
+
         closing = build_day_closing()
+        # "Admin · gerência" (v4): quem fecha, no chip do cabeçalho do corredor. O
+        # fechamento é ritual da gerência (esta mesma permissão).
+        user = request.user
+        name = (user.get_full_name().strip() or user.get_username()) if user.is_authenticated else ""
+        if name:
+            closing = replace(closing, operator_display=f"{name} · gerência")
         return Response({"closing": _blind_closing_data(closing)})
 
     def post(self, request):
@@ -5515,13 +5523,26 @@ class POSTabRenameView(APIView):
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
+            session_key = str(body.get("session_key") or "").strip()
             session = pos_tabs_service.rename_pos_tab(
                 channel_ref=POS_CHANNEL_REF,
-                session_key=str(body.get("session_key") or "").strip(),
+                session_key=session_key,
                 new_tab_ref=str(body.get("new_tab_ref") or "").strip(),
                 actor=_actor_pos(request),
                 operator_username=_username(request),
             )
+            # Vínculo OPCIONAL com a mesa do Salão: só quando o corpo traz a chave
+            # (a mesa tocada no renomear, ou "" para "sem mesa"). Sem a chave, o
+            # renomear não mexe no vínculo.
+            if "seating_spot_ref" in body:
+                from shopman.backstage.services.pos_seating import link_tab_to_spot
+
+                session = link_tab_to_spot(
+                    channel_ref=POS_CHANNEL_REF,
+                    session_key=session.session_key,
+                    seating_spot_ref=str(body.get("seating_spot_ref") or "").strip(),
+                    operator_username=_username(request),
+                )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:

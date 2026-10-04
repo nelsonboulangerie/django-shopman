@@ -243,6 +243,7 @@ from .operations import (
 )
 from .operator_capacity import OperatorCapacityView
 from .order_history import OrderHistoryView
+from .pos_settings import POSSettingsView
 from .print_jobs import (
     PrintAgentAckView,
     PrintAgentClaimView,
@@ -346,6 +347,7 @@ urlpatterns = [
     path("pos/", POSView.as_view(), name="api-backstage-pos"),
     # PDV › Ajustes › Salão: a planta das mesas, com o registro de cada mudança.
     path("pos/seating/", POSSeatingView.as_view(), name="api-backstage-pos-seating"),
+    path("pos/settings/", POSSettingsView.as_view(), name="api-backstage-pos-settings"),
     # Operador (PIN/crachá) — genérico, compartilhado por todas as surfaces (inclui POS)
     path("operator/login/", OperatorLoginView.as_view(), name="api-backstage-operator-login"),
     path("operator/session/", OperatorSessionView.as_view(), name="api-backstage-operator-session"),

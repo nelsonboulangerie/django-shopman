@@ -60,6 +60,7 @@ class POSSeatingView(APIView):
                 spots=body.get("spots", []),
                 removed=body.get("removed", []),
                 expected_revision=expected,
+                fixtures=body.get("fixtures"),
             )
         except seating_service.SeatingConflict as exc:
             return _error(exc, 409)
