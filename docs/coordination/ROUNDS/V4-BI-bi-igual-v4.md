@@ -2,7 +2,7 @@
 
 - **id:** V4-BI
 - **branch:** claude/v4-bi
-- **PR:** (preenchido no PR)
+- **PR:** #1456
 - **estado:** PR aberto, auto-merge ligado (o dono autorizou merge direto nesta onda)
 - **início (UTC):** 2026-10-04
 
