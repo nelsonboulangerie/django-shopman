@@ -23,6 +23,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.module_loading import import_string
+from django.utils.text import slugify
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
@@ -85,6 +86,9 @@ class ResolvedReceiptLine:
     #: (``shop.services.product_enrichment``).
     invoice_ean: str = ""
     invoice_package_ean: str = ""
+    #: O código de barras que o recebedor leu na embalagem ("Ler EAN"). Vira EAN
+    #: do cadastro de compra do insumo ao confirmar (``_learn_material_eans``).
+    scanned_ean: str = ""
     invoice_ncm: str = ""
     invoice_cest: str = ""
     invoice_unit: str = ""
@@ -167,6 +171,7 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
         "note": note,
         "lines": draft.get("lines") or (),
         "invoiceVolumes": draft.get("invoiceVolumes") or 0,
+        "volumesCounted": counted_receipt_volumes(access_key),
     }
     if draft.get("lines"):
         message = (
@@ -351,9 +356,95 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                     make_preferred=False,
                     prefer_if_missing=True,
                 )
+        _learn_material_eans(lines)
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
             _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
+        if invoice_key:
+            forget_receipt_volumes(invoice_key)
+
+
+def _valid_gtin(code: str) -> bool:
+    """GTIN-8/12/13/14 com o dígito verificador certo (o que a câmera lê da caixa)."""
+    digits = str(code or "").strip()
+    if not digits.isdigit() or len(digits) not in {8, 12, 13, 14}:
+        return False
+    body, check = digits[:-1], int(digits[-1])
+    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
+    return (10 - total % 10) % 10 == check
+
+
+def _learn_material_eans(lines: list[ResolvedReceiptLine]) -> None:
+    """Guarda no cadastro de compra o EAN que chegou com o insumo.
+
+    O recebedor confirma o item; o código de barras daquela embalagem passa a
+    identificar o insumo no próximo "Ler EAN" (``Material.metadata.purchase.eans``,
+    ver docs/reference/data-schemas.md). Lido pela câmera ou declarado na nota,
+    tanto faz: o que a pessoa conferiu é a verdade mais fresca.
+    """
+    by_sku: dict[str, tuple[Any, set[str]]] = {}
+    for line in lines:
+        codes = {code for code in (line.scanned_ean, line.invoice_ean, line.invoice_package_ean) if _valid_gtin(code)}
+        if not codes:
+            continue
+        material, known = by_sku.setdefault(line.sku, (line.material, set()))
+        known.update(codes)
+    for material, codes in by_sku.values():
+        metadata = dict(material.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        current = [str(code) for code in purchase.get("eans") or () if str(code)]
+        merged = current + sorted(code for code in codes if code not in current)
+        if merged == current:
+            continue
+        purchase["eans"] = merged
+        metadata["purchase"] = purchase
+        material.metadata = metadata
+        material.save(update_fields=["metadata"])
+
+
+def save_receipt_volumes(payload: dict[str, Any], *, user) -> dict[str, Any]:
+    """Grava a contagem de volumes da NF em conferência ("Contei N volumes").
+
+    O rascunho da conferência é do cliente, mas a contagem é o único ato físico
+    da doca: abrir a mesma NF em outro dispositivo não pode voltar a pedir que
+    alguém conte as caixas de novo (L7). ``counted`` nulo desfaz a contagem.
+    """
+    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
+    invoice_key = parse_invoice_access_key(str(payload.get("invoiceAccessKey") or payload.get("invoiceInput") or ""))
+    if not invoice_key:
+        raise PurchaseError("Leia a NF antes de contar os volumes.", code="invoice_key_required", field="invoiceAccessKey")
+    raw = payload.get("counted")
+    if raw in (None, ""):
+        forget_receipt_volumes(invoice_key)
+        return build_purchase()
+    try:
+        counted = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise PurchaseError("Contagem de volumes inválida.", code="volumes_invalid", field="counted") from exc
+    if not 1 <= counted <= 999:
+        raise PurchaseError("Conte entre 1 e 999 volumes.", code="volumes_invalid", field="counted")
+    ReceiptVolumeCount.objects.update_or_create(
+        invoice_key=invoice_key,
+        defaults={
+            "counted": counted,
+            "counted_by": (getattr(user, "get_username", lambda: "")() if user else "") or "",
+        },
+    )
+    return build_purchase()
+
+
+def counted_receipt_volumes(invoice_key: str) -> int | None:
+    """A contagem já feita desta NF (em qualquer dispositivo), ou ``None``."""
+    if not invoice_key:
+        return None
+    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
+    row = ReceiptVolumeCount.objects.filter(invoice_key=invoice_key).only("counted").first()
+    return row.counted if row else None
+
+
+def forget_receipt_volumes(invoice_key: str) -> None:
+    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
+    ReceiptVolumeCount.objects.filter(invoice_key=invoice_key).delete()
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
@@ -393,6 +484,17 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
 
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=reason)
     receipt_ref = _receipt_rejection_ref(source_ref=source_ref, supplier_ref=supplier.ref)
+    # "Devolver só este item" (recusa parcial): a devolução é de UMA linha e o
+    # rascunho segue com as outras. A referência ganha o insumo, para duas
+    # devoluções parciais da mesma NF não se confundirem.
+    partial = bool(payload.get("partial"))
+    if partial:
+        if len(raw_lines) != 1 or not isinstance(raw_lines[0], dict):
+            raise PurchaseError(
+                "Devolução parcial é de um item só.", code="receipt_partial_invalid", field="lines"
+            )
+        item_sku = str(raw_lines[0].get("materialSku") or raw_lines[0].get("material_sku") or "item").strip()
+        receipt_ref = f"{receipt_ref}-{slugify(item_sku)[:24]}"
     context = {
         "receipt_ref": receipt_ref,
         "supplier_ref": supplier.ref,
@@ -421,6 +523,8 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     from shopman.shop.directives import NOTIFICATION_SEND, create_deduped
 
     create_deduped(topic=NOTIFICATION_SEND, payload=notification_payload, dedupe_key=dedupe_key)
+    if partial:
+        return build_purchase(), f"Devolução do item registrada ({receipt_ref}). A entrada segue com os outros."
     return build_purchase(), f"Devolução registrada ({receipt_ref})."
 
 
@@ -1378,6 +1482,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
         checked=bool(raw.get("checked")),
         invoice_ean=_raw_text(raw, "invoiceEan", "invoice_ean"),
+        scanned_ean=_raw_text(raw, "scannedEan", "scanned_ean"),
         invoice_package_ean=_raw_text(raw, "invoicePackageEan", "invoice_package_ean"),
         invoice_ncm=_raw_text(raw, "invoiceNcm", "invoice_ncm"),
         invoice_cest=_raw_text(raw, "invoiceCest", "invoice_cest"),

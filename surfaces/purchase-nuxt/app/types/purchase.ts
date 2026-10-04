@@ -61,6 +61,8 @@ export interface Material {
    * não venceu. É o atalho "Mesma da última entrega" do recebimento.
    */
   lastDeliveryExpiry?: string;
+  /** Códigos de barras conferidos deste insumo: o "Ler EAN" acha o item da caixa. */
+  eans?: string[];
 }
 
 export interface OpensInto {
@@ -159,6 +161,19 @@ export interface SupplierMaterialCost {
   updatedAt: string;
 }
 
+export interface ReceiptHistoryEntry {
+  sourceRef: string;
+  mode: string;
+  supplierRef: string;
+  supplierName: string;
+  lines: number;
+  totalCostQ: number;
+  operator: string;
+  receivedAtDisplay: string;
+  receivedAtTime?: string;
+  receivedToday?: boolean;
+}
+
 export interface PurchaseProjection {
   materials: Material[];
   suppliers: Supplier[];
@@ -173,7 +188,11 @@ export interface PurchaseProjection {
     lines: ReceiptLine[];
     /** Volumes que a nota declara no transporte; 0 quando não declara. */
     invoiceVolumes?: number;
+    /** Volumes já contados desta NF, em qualquer dispositivo; `null` sem contagem. */
+    volumesCounted?: number | null;
   };
+  /** Entradas já registradas, a mais recente primeiro ("essa nota já entrou?"). */
+  receiptHistory?: ReceiptHistoryEntry[];
 }
 
 export interface PurchaseResponse {
@@ -295,6 +314,8 @@ export interface ReceiptLine {
   // de catalogo do produto de revenda no recebimento.
   invoiceEan?: string;
   invoicePackageEan?: string;
+  /** O EAN que o recebedor leu na embalagem ("Ler EAN"); vira EAN do cadastro ao confirmar. */
+  scannedEan?: string;
   invoiceNcm?: string;
   invoiceCest?: string;
   // Grupo ICMS do item na nota (CST ou CSOSN) e o valor de ST em centavos.
@@ -509,7 +530,10 @@ export interface PurchaseReceiptConfirmPayload {
   volumes?: { counted: number };
 }
 
-export type PurchaseReceiptRejectPayload = PurchaseReceiptConfirmPayload;
+export type PurchaseReceiptRejectPayload = PurchaseReceiptConfirmPayload & {
+  /** "Devolver só este item": devolução de UMA linha, o rascunho segue com as outras. */
+  partial?: boolean;
+};
 
 export interface PurchaseRequestActionPayload {
   materialSku: string;

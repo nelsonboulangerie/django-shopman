@@ -103,6 +103,10 @@ class MaterialProjection:
     #: não venceu; vazio sem entrega com validade. É o atalho "Mesma da última
     #: entrega" do recebimento: fornecedor costuma mandar o mesmo lote seguido.
     lastDeliveryExpiry: str = ""
+    #: Códigos de barras (EAN/GTIN) que já chegaram com este insumo e foram
+    #: conferidos (``Material.metadata.purchase.eans``): o "Ler EAN" do receber
+    #: acha o item da caixa pela câmera.
+    eans: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -242,6 +246,9 @@ class ActiveReceiptProjection:
     lines: tuple[ReceiptLineProjection, ...]
     #: Volumes que a nota declara no transporte (``qVol``); 0 quando não declara.
     invoiceVolumes: int = 0
+    #: Volumes já contados desta NF ("Contei N volumes"), em qualquer dispositivo;
+    #: ``None`` enquanto ninguém contou (ver ``ReceiptVolumeCount``).
+    volumesCounted: int | None = None
 
 
 @dataclass(frozen=True)
@@ -262,6 +269,9 @@ class ReceiptHistoryProjection:
     totalCostQ: int
     operator: str
     receivedAtDisplay: str
+    #: "07:40" e se foi hoje: a lista "Entradas de hoje" do começo do Receber (C13).
+    receivedAtTime: str = ""
+    receivedToday: bool = False
 
 
 @dataclass(frozen=True)
@@ -414,6 +424,8 @@ def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
                 totalCostQ=int(corpo.get("total_cost_q") or 0),
                 operator=str(corpo.get("operator") or ""),
                 receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
+                receivedAtTime=timezone.localtime(linha.created_at).strftime("%H:%M"),
+                receivedToday=timezone.localtime(linha.created_at).date() == timezone.localdate(),
             )
         )
     return tuple(historico)
@@ -496,6 +508,7 @@ def _material_projection(
         opensInto=opens_into,
         netContentKg=net_content_kg,
         lastDeliveryExpiry=last_delivery_expiry,
+        eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
     )
 
 
@@ -685,6 +698,9 @@ def _active_receipt(active_receipt: dict[str, Any] | None, *, default_supplier_r
         note=str(data.get("note") or ""),
         lines=tuple(_receipt_line_projection(line) for line in data.get("lines") or ()),
         invoiceVolumes=max(int(_decimal(data.get("invoiceVolumes") or 0)), 0),
+        volumesCounted=(
+            int(data["volumesCounted"]) if str(data.get("volumesCounted") or "").strip().isdigit() else None
+        ),
     )
 
 

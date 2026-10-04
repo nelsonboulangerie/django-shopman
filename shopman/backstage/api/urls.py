@@ -251,6 +251,7 @@ from .purchase import (
     PurchaseCountView,
     PurchaseMinStockView,
     PurchaseOpeningView,
+    PurchaseReceiptVolumesView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
@@ -477,6 +478,11 @@ urlpatterns = [
         "purchase/receipts/confirm/",
         PurchaseConfirmReceiptView.as_view(),
         name="api-backstage-purchase-confirm-receipt",
+    ),
+    path(
+        "purchase/receipts/volumes/",
+        PurchaseReceiptVolumesView.as_view(),
+        name="api-backstage-purchase-receipt-volumes",
     ),
     path(
         "purchase/receipts/reject/",
