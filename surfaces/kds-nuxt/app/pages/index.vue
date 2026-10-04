@@ -4,7 +4,7 @@
 // A estação de Saída do cadastro leva direto à coluna Saída do Gestor (UX-G3,
 // SUITE-UX §15); as estações de preparo abrem aqui.
 import type { KDSIndexResponse } from "~/types/kds";
-import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
+import { EXIT_STATION_TYPE, gestorExitUrl, stationCountWord } from "~/presentation/exitStation";
 
 const { data, pending } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
   key: "kds-index",
@@ -19,6 +19,9 @@ function isExit(inst: { type: string }): boolean {
 }
 function stationLink(inst: { ref: string; type: string }): string {
   return isExit(inst) && exitUrl ? exitUrl : `/${inst.ref}`;
+}
+function activeLabel(inst: { type: string; active_count: number }): string {
+  return stationCountWord(inst.type, inst.active_count);
 }
 function typeIcon(type: string): string {
   if (type === EXIT_STATION_TYPE) return "lucide:package-check";
@@ -68,7 +71,7 @@ function typeIcon(type: string): string {
               class="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-sm font-bold tabular-nums pill-primary"
             >
               {{ inst.active_count }}
-              <span class="text-xs font-medium">{{ isExit(inst) ? "prontos" : "ativos" }}</span>
+              <span class="text-xs font-medium">{{ activeLabel(inst) }}</span>
             </span>
             <Icon
               :name="isExit(inst) && exitUrl ? 'lucide:arrow-up-right' : 'lucide:chevron-right'"

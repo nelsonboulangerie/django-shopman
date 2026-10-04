@@ -77,6 +77,11 @@ PAYMENT_REFUND = "payment.refund"  # retry assíncrono de estorno com backoff
 # esquecidas, criando OperatorAlerts sem depender de tela aberta.
 PRODUCTION_LATE_CHECK = "production.late_check"
 
+# Cozinha
+# Despertador de um ticket: quando ele estoura a meta da estação e ainda está
+# nela, a gerente recebe o atraso no bolso (``services/kds_alerts.py``).
+KDS_TICKET_LATE = "kds.ticket_late"
+
 # Preorder (encomenda com data futura)
 # O trabalho físico (KDS/baixa) de um pedido para data futura só dispara NA
 # data — esta directive é o despertador (available_at = meia-noite da data).

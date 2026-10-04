@@ -27,8 +27,6 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     previous_tab_ref: "",
-    is_scheduled: false,
-    is_expedition: false,
     status_label: "Em preparo",
     is_cancelled: false,
     cancelled_at_display: "",
@@ -81,9 +79,8 @@ describe("KdsTicketModal: quem embalou declara os volumes na estação", () => {
     expect(w.emitted("volumes")?.[0]).toEqual([0]);
   });
 
-  it("ticket de comanda (sem pedido) e quadro de outra data não oferecem o gesto", () => {
+  it("ticket de comanda (sem pedido) não oferece o gesto", () => {
     expect(mountModal({ ticket: ticket({ volumes_order_ref: "" }) }).find("[data-kds-volumes]").exists()).toBe(false);
-    expect(mountModal({ ticket: ticket(), readOnly: true }).find("[data-kds-volumes]").exists()).toBe(false);
   });
 });
 

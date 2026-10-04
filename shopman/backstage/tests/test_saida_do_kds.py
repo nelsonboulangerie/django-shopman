@@ -1,9 +1,9 @@
-"""A Saída do KDS em duas colunas, e o "Pronto" da estação sem tela.
+"""As estações de cada pedido na Saída, e o "Pronto" da estação sem tela.
 
-Decisões do dono (26/09/2026):
+A Saída é uma só, no Gestor (SUITE-UX §15 e §16). Decisões do dono (26/09/2026):
 
 - a Saída vê, além dos prontos para sair, os pedidos que ainda esperam alguma
-  estação ("Em preparo"), com um chip por estação;
+  estação ("Em preparo"), com um chip por estação (``kitchen_station_chips``);
 - a estação de tela dá baixa sozinha — o chip só mostra o estado;
 - a estação SEM tela recebe o papel (Via Cozinha) e imprimir não dá baixa:
   quem conclui é a Saída ("Pronto" no chip), o PDV (card do ticket) ou o
@@ -21,7 +21,7 @@ from shopman.cashman.models import Terminal
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import KDSInstance, KDSTicket, PrintAgentCredential, PrintJob
-from shopman.backstage.projections.kds import build_kds_board
+from shopman.backstage.projections.kds import kitchen_station_chips
 from shopman.backstage.services import kitchen_ticket_print
 from shopman.shop.models import Channel
 
@@ -80,19 +80,16 @@ def _operator(username: str, *perms: tuple[str, str]) -> User:
 # ── A coluna "Em preparo" ──────────────────────────────────────────────────
 
 
+def _chips(order: Order):
+    return kitchen_station_chips([order]).get(order.ref, ())
+
+
 def test_pedido_que_espera_estacao_aparece_em_preparo_com_um_chip_por_estacao(saida, lanches, cafes):
     order = _order("WEB-20260926-1234")
     _ticket(order, cafes, status="in_progress")
     _ticket(order, lanches)
 
-    board = build_kds_board(saida.ref)
-
-    assert board.tickets == ()  # nenhum pronto para sair
-    assert board.counts["preparing"] == 1
-    card = board.preparing[0]
-    assert card.order_ref == order.ref
-    assert card.customer_name == "Ana"
-    chips = {chip.station_name: chip for chip in card.stations}
+    chips = {chip.station_name: chip for chip in _chips(order)}
     assert chips["Cafés"].prints is False
     assert chips["Cafés"].state_label == "em preparo"
     assert chips["Cafés"].can_mark_ready is False  # a estação de tela dá baixa sozinha
@@ -106,13 +103,13 @@ def test_estacao_de_tela_que_terminou_fica_no_card_como_pronta(saida, lanches, c
     _ticket(order, cafes, status="done")
     _ticket(order, lanches)
 
-    card = build_kds_board(saida.ref).preparing[0]
+    stations = _chips(order)
 
-    chips = {chip.station_name: chip for chip in card.stations}
+    chips = {chip.station_name: chip for chip in stations}
     assert chips["Cafés"].state == "done"
     assert chips["Cafés"].state_label == "pronto"
     # Quem ainda falta vem primeiro.
-    assert card.stations[0].station_name == "Lanches"
+    assert stations[0].station_name == "Lanches"
 
 
 def test_o_chip_da_estacao_sem_tela_diz_quando_o_papel_saiu(saida, lanches, django_capture_on_commit_callbacks):
@@ -121,30 +118,18 @@ def test_o_chip_da_estacao_sem_tela_diz_quando_o_papel_saiu(saida, lanches, djan
         ticket = _ticket(order, lanches)
     job = PrintJob.objects.get(kind=PrintJob.Kind.KITCHEN_TICKET)
 
-    chip = build_kds_board(saida.ref).preparing[0].stations[0]
+    chip = _chips(order)[0]
     assert chip.paper_label == "na fila da impressora"
 
     PrintJob.objects.filter(pk=job.pk).update(status=PrintJob.Status.SPOOLED)
-    chip = build_kds_board(saida.ref).preparing[0].stations[0]
+    chip = _chips(order)[0]
     assert chip.paper_label.startswith("impresso às ")
     assert chip.paper_failed is False
 
     PrintJob.objects.filter(pk=job.pk).update(status=PrintJob.Status.EXPIRED)
-    chip = build_kds_board(saida.ref).preparing[0].stations[0]
+    chip = _chips(order)[0]
     assert (chip.paper_label, chip.paper_failed) == ("não imprimiu", True)
     assert kitchen_ticket_print.paper_states([ticket.pk])[ticket.pk].failed is True
-
-
-def test_pedido_sem_ticket_aberto_e_pedido_pronto_nao_estao_em_preparo(saida, lanches):
-    todo_pronto = _order("WEB-20260926-1237")
-    _ticket(todo_pronto, lanches, status="done")
-    pronto = _order("WEB-20260926-1238", status=Order.Status.READY)
-    _ticket(pronto, lanches)  # ticket órfão de pedido que já saiu da cozinha
-
-    board = build_kds_board(saida.ref)
-
-    assert board.preparing == ()
-    assert [card.order_ref for card in board.tickets] == [pronto.ref]
 
 
 def test_estacao_so_com_item_retirado_nao_vira_chip(saida, lanches, cafes):
@@ -152,9 +137,7 @@ def test_estacao_so_com_item_retirado_nao_vira_chip(saida, lanches, cafes):
     _ticket(order, cafes)
     _ticket(order, lanches, status="cancelled")
 
-    card = build_kds_board(saida.ref).preparing[0]
-
-    assert [chip.station_name for chip in card.stations] == ["Cafés"]
+    assert [chip.station_name for chip in _chips(order)] == ["Cafés"]
 
 
 # ── O "Pronto" da Saída ────────────────────────────────────────────────────
@@ -181,9 +164,7 @@ def test_pronto_da_saida_conclui_a_estacao_e_o_pedido_passa_para_prontos(client,
     assert (ticket.status, ticket.completed_by, ticket.completed_via) == ("done", "saida-op", "exit")
     order.refresh_from_db()
     assert order.status == Order.Status.READY
-    board = build_kds_board(saida.ref)
-    assert board.preparing == ()
-    assert [card.order_ref for card in board.tickets] == [order.ref]
+    assert all(chip.state == "done" for chip in _chips(order))
 
 
 def test_pronto_da_saida_so_toca_a_estacao_e_o_pedido_do_card(client, saida, lanches):

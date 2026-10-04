@@ -18,6 +18,7 @@ import type {
   SkuRoles,
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
+import { useIntersectionObserver } from "@vueuse/core";
 
 const props = defineProps<{
   open: boolean;
@@ -37,6 +38,13 @@ const props = defineProps<{
   // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
   roles?: SkuRoles | null;
   purchaseBusy?: boolean;
+  // O interruptor de cada canal na tabela (G22): pausado à mão, gesto liberado e
+  // ocupado. O "Pausar" da linha é o MESMO gesto da célula da matriz.
+  channelCells?: Record<string, { paused: boolean; enabled: boolean; busy: boolean }>;
+  // A disponibilidade relida depois de um Pausar (sem recarregar o rascunho).
+  liveAvailability?: ProductDetailProjection["channel_availability"] | null;
+  // Endereço do Admin: o "Histórico" do ⋯ abre o histórico de alterações de lá.
+  adminBaseUrl?: string;
 }>();
 
 const emit = defineEmits<{
@@ -45,7 +53,33 @@ const emit = defineEmits<{
   "review-conflict": [keepDraft: boolean];
   "dirty-change": [dirty: boolean];
   "set-purchasable": [enabled: boolean];
+  "pause-channel": [ref: string, pause: boolean];
 }>();
+
+// ⋯ do cabeçalho (v4): Ocultar/Exibir (entra no rascunho), Permitir compra (vale na
+// hora) e o Histórico de alterações.
+const headerMenuOpen = ref(false);
+const historyHref = computed(() => {
+  const path = props.detail?.admin_history_path || "";
+  return path && props.adminBaseUrl ? `${props.adminBaseUrl.replace(/\/+$/, "").replace(/\/admin$/, "")}${path}` : "";
+});
+function toggleHidden() {
+  headerMenuOpen.value = false;
+  draft.is_published = !draft.is_published;
+}
+function togglePurchaseFromMenu() {
+  headerMenuOpen.value = false;
+  emit("set-purchasable", !props.roles?.purchasable);
+}
+// "Descrição e foto seguem abaixo ⌄": o rodapé aponta o que a Geral ainda guarda
+// abaixo da dobra e leva até lá; some quando o bloco aparece.
+const bodyEl = ref<HTMLElement | null>(null);
+const belowEl = ref<HTMLElement | null>(null);
+const belowVisible = ref(true);
+useIntersectionObserver(belowEl, ([entry]) => { belowVisible.value = Boolean(entry?.isIntersecting); }, { root: bodyEl });
+function showBelow() {
+  belowEl.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 // Vendido por peso = unidade de venda kg (contrato do PDV). Desligar volta a
 // vender por unidade; outra unidade (lt, dz) se escreve no campo Unidade.
@@ -65,7 +99,7 @@ function onPurchaseChange(event: Event) {
 }
 
 // Disponibilidade nos canais (V4-G4): o que o servidor leu do registro de faltas.
-const availability = computed(() => props.detail?.channel_availability ?? []);
+const availability = computed(() => props.liveAvailability ?? props.detail?.channel_availability ?? []);
 const unavailableCount = computed(() => availability.value.filter((row) => row.state !== "available").length);
 const availabilityHeadline = computed(() => {
   const off = availability.value.filter((row) => row.state !== "available");
@@ -77,7 +111,7 @@ const availabilityHeadline = computed(() => {
 });
 function channelIcon(row: { ref: string; kind: string }): string {
   if (row.ref === "ifood") return "lucide:bike";
-  if (row.ref === "pos" || row.ref === "balcao") return "lucide:store";
+  if (row.ref === "pdv" || row.ref === "pos" || row.ref === "balcao") return "lucide:store";
   if (row.ref === "whatsapp") return "lucide:message-circle";
   if (row.kind === "display") return "lucide:rss";
   return "lucide:globe";
@@ -463,10 +497,12 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
 <template>
   <UiSheet :open="open" @update:open="requestClose">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-[520px]" :title="undefined">
+    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-[520px]" :title="undefined" @open-auto-focus.prevent>
+      <!-- o ✕ é do cabeçalho do painel, ao lado do ⋯ (v4), não o canto padrão da folha -->
+      <template #close><span class="hidden" /></template>
       <!-- Cabeçalho do painel (prévia v4 `catalogo-produto4.html`): a inicial do
-           produto num quadrado, o nome e a linha do que ele é. -->
-      <div class="flex items-center gap-3 border-b border-border px-5 py-4 pr-14">
+           produto num quadrado, o nome e a linha do que ele é; ⋯ e ✕ à direita. -->
+      <div class="flex items-center gap-3 border-b border-border px-5 py-4">
         <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground" aria-hidden="true">
           {{ (detail?.name || sku || "?").charAt(0).toUpperCase() }}
         </span>
@@ -489,6 +525,40 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </template>
           </p>
         </div>
+        <div class="relative ml-auto shrink-0">
+          <button
+            type="button"
+            class="grid size-control place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
+            aria-label="Mais ações do produto"
+            aria-haspopup="menu"
+            :aria-expanded="headerMenuOpen"
+            data-panel-more
+            @click="headerMenuOpen = !headerMenuOpen"
+          >
+            <Icon name="lucide:ellipsis" class="size-5" />
+          </button>
+          <div v-if="headerMenuOpen" class="fixed inset-0 z-40" @click="headerMenuOpen = false" />
+          <div v-if="headerMenuOpen" class="absolute right-0 z-50 mt-1 w-60 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg" role="menu" data-panel-menu>
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" :disabled="!detail" @click="toggleHidden">
+              <Icon :name="draft.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />{{ draft.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
+            </button>
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50" :disabled="purchaseBusy || !roles" @click="togglePurchaseFromMenu">
+              <Icon name="lucide:shopping-basket" class="size-4 text-muted-foreground" />{{ roles?.purchasable ? "Tirar a permissão de compra" : "Permitir compra" }}
+            </button>
+            <a v-if="historyHref" :href="historyHref" target="_blank" rel="noopener" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 op-body transition hover:bg-accent" data-panel-history>
+              <Icon name="lucide:history" class="size-4 text-muted-foreground" />Histórico
+            </a>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          aria-label="Fechar o painel"
+          data-panel-close
+          @click="requestClose(false)"
+        >
+          <Icon name="lucide:x" class="size-5" />
+        </button>
       </div>
 
       <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
@@ -509,14 +579,15 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
       <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
-      <div class="flex gap-0 overflow-x-auto border-b border-border px-3" role="tablist" aria-label="Partes do produto">
+      <!-- as cinco abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
+      <div class="flex justify-between gap-0 overflow-x-auto border-b border-border px-3 no-scrollbar" role="tablist" aria-label="Partes do produto" data-panel-tabs>
         <button
           v-for="t in TABS"
           :key="t.id"
           type="button"
           role="tab"
           :aria-selected="tab === t.id"
-          class="min-h-12 shrink-0 px-3 op-body whitespace-nowrap transition"
+          class="min-h-12 shrink-0 px-2 op-label whitespace-nowrap transition focus-visible:outline-none focus-visible:bg-accent"
           :class="tab === t.id
             ? 'font-semibold text-foreground shadow-[inset_0_-2px_0_var(--primary)]'
             : 'text-muted-foreground hover:text-foreground'"
@@ -524,7 +595,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         >{{ t.label }}</button>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-5 py-4">
+      <div ref="bodyEl" class="flex-1 overflow-y-auto px-5 py-4">
         <div v-if="loading" class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
           <Icon name="line-md:loading-loop" class="size-4" /> Carregando produto…
         </div>
@@ -536,44 +607,68 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <template v-else>
           <!-- Geral -->
           <div v-show="tab === 'geral'" class="space-y-4">
-            <!-- Disponibilidade nos canais (v4): um estado só e o porquê, por canal.
-                 Somente leitura (registro de faltas); pausar segue no interruptor do
-                 canal, na tabela do Catálogo. -->
+            <!-- A Geral começa pelo nome no cardápio (v4); a disponibilidade vem logo abaixo. -->
+            <label class="block">
+              <span :class="labelClass">Nome no cardápio</span>
+              <input v-model="draft.name" :class="fieldClass" type="text" placeholder="Ex.: Pão francês" />
+            </label>
+
+            <!-- Disponibilidade nos canais (v4): um estado só, a hora provável de volta e o
+                 porquê; por canal, o que o cliente vê ali e o Pausar (o mesmo gesto da
+                 célula da tabela). O motivo da pausa não é gravado (decisão do dono). -->
             <section
               v-if="availability.length"
               class="overflow-hidden rounded-lg border"
               :class="unavailableCount ? 'border-destructive/30' : 'border-border'"
               data-panel-availability
             >
-              <div class="flex flex-wrap items-center gap-2 px-3.5 py-3" :class="unavailableCount ? 'bg-destructive/6' : 'bg-muted/40'">
-                <h3 class="op-label font-semibold">Disponibilidade nos canais</h3>
-                <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold">
-                  <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ availabilityHeadline }}
-                </span>
-                <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold">À venda em todos</span>
-                <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
+              <div class="px-3.5 py-3" :class="unavailableCount ? 'bg-destructive/6' : 'bg-muted/40'">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="op-label font-semibold">Disponibilidade nos canais</h3>
+                  <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold">
+                    <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ availabilityHeadline }}
+                  </span>
+                  <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold">À venda em todos</span>
+                  <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
+                </div>
+                <p v-if="unavailableCount && detail?.back_at" class="mt-1 op-micro text-muted-foreground" data-panel-back>
+                  Volta <b class="text-foreground">~{{ detail.back_at }}</b>: {{ detail.back_reason }}. Segue o estoque em todos os canais.
+                </p>
               </div>
               <div v-for="row in availability" :key="row.ref" class="flex min-h-12 items-center gap-3 border-t border-border px-3.5 py-2" data-panel-channel>
                 <Icon :name="channelIcon(row)" class="size-4 shrink-0 text-muted-foreground" />
-                <span class="w-32 shrink-0 truncate op-body" :title="row.name">{{ row.name }}</span>
+                <span class="w-28 shrink-0 op-body">{{ row.name }}</span>
                 <span class="min-w-0 flex-1 op-micro">
-                  <b v-if="row.state !== 'available'" class="font-semibold text-destructive">{{ row.state === "paused" ? "Pausado" : row.kind === "display" ? "Fora de estoque" : "Esgotado" }}</b>
-                  <span v-else class="text-muted-foreground">À venda</span>
-                  <span v-if="row.since" class="text-muted-foreground"> desde {{ row.since }}</span>
-                  <span v-if="row.automatic && row.state !== 'available'" class="ml-1 inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 font-semibold text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />automático</span>
+                  <span class="block">
+                    <b v-if="row.state !== 'available'" class="font-semibold text-destructive">{{ row.state === "paused" ? "Pausado" : row.kind === "display" ? "Fora de estoque" : "Esgotado" }}</b>
+                    <span v-else class="text-muted-foreground">À venda</span>
+                    <span v-if="row.back_at" class="text-muted-foreground"> · volta ~{{ row.back_at }}<template v-if="row.back_hint"> ({{ row.back_hint }})</template></span>
+                    <span v-else-if="row.since" class="text-muted-foreground"> desde {{ row.since }}</span>
+                  </span>
+                  <span v-if="row.note || (row.automatic && row.state !== 'available')" class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground" data-panel-channel-note>
+                    <span v-if="row.automatic && row.state !== 'available'" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 font-semibold"><Icon name="lucide:sparkles" class="size-3" />automático</span>
+                    <span v-if="row.note">{{ row.note }}</span>
+                  </span>
                 </span>
+                <button
+                  v-if="channelCells?.[row.ref]"
+                  type="button"
+                  class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+                  :disabled="!channelCells[row.ref]!.enabled || channelCells[row.ref]!.busy"
+                  :aria-label="channelCells[row.ref]!.paused ? `Retomar ${row.name}` : `Pausar ${row.name}`"
+                  data-panel-pause
+                  @click="emit('pause-channel', row.ref, !channelCells[row.ref]!.paused)"
+                >
+                  <Icon :name="channelCells[row.ref]!.paused ? 'lucide:play' : 'lucide:pause'" class="size-4" />{{ channelCells[row.ref]!.paused ? "Retomar" : "Pausar" }}
+                </button>
               </div>
               <p class="flex items-start gap-1.5 border-t border-border px-3.5 py-2 op-micro text-muted-foreground">
                 <Icon name="lucide:sparkles" class="mt-0.5 size-3 shrink-0" />
-                O sistema avisa o iFood, a Meta e o Google sozinho quando o estoque zera e quando volta. Pausar fica no interruptor de cada canal, na tabela.
+                O sistema avisa o iFood, a Meta e o Google sozinho quando o estoque zera e quando volta. Pausar é para o que não é falta de estoque.
               </p>
             </section>
 
-            <label class="block">
-              <span :class="labelClass">Nome</span>
-              <input v-model="draft.name" :class="fieldClass" type="text" placeholder="Ex.: Pão francês" />
-            </label>
-
+            <div ref="belowEl" class="scroll-mt-4" />
             <CatalogAiSuggest
               :sku="sku"
               field="short_description"
@@ -1005,21 +1100,31 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         </template>
       </div>
 
+      <!-- Rodapé (v4): o que ainda está abaixo na Geral, Descartar e "N campo alterado · Salvar". -->
       <div class="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-        <span class="mr-auto op-micro text-muted-foreground" data-panel-changes>{{ patchSize ? `${patchSize} ${patchSize === 1 ? "campo alterado" : "campos alterados"}` : "" }}</span>
+        <button
+          v-if="tab === 'geral' && detail && !belowVisible"
+          type="button"
+          class="mr-auto inline-flex min-h-control items-center gap-1 text-left op-micro text-muted-foreground transition hover:text-foreground"
+          data-panel-below
+          @click="showBelow"
+        >Descrição e foto seguem abaixo <Icon name="lucide:chevron-down" class="size-4 shrink-0" /></button>
+        <span v-else class="mr-auto" />
         <button
           type="button"
-          class="min-h-control rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          class="min-h-control rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          data-panel-discard
           @click="requestClose(false)"
-        >Cancelar</button>
+        >Descartar</button>
         <button
           type="button"
           :disabled="!canSave"
           class="inline-flex min-h-action items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          data-panel-save
           @click="onSave"
         >
           <Icon v-if="busy" name="line-md:loading-loop" class="size-4" />
-          Salvar
+          <span data-panel-changes>{{ patchSize ? `${patchSize} ${patchSize === 1 ? "campo alterado" : "campos alterados"} · Salvar` : "Salvar" }}</span>
         </button>
       </div>
     </UiSheetContent>

@@ -40,6 +40,7 @@ function suggestion(
     waste_discounted: false,
     material_shortages: [],
     fits_quantity: "",
+    bi_notes: [],
     ...over,
   };
 }
@@ -220,5 +221,25 @@ describe("falta de insumo e a alternativa que cabe", () => {
       ),
     ).toBeNull();
     expect(fittingAlternative(suggestion({ fits_quantity: "40" }))).toBeNull();
+  });
+});
+
+
+describe("o porquê que o B.I. levou ao plano", () => {
+  it("vira uma linha do histórico, com o dia lido e o fato", () => {
+    const lines = suggestionHistory(
+      suggestion({
+        bi_notes: [
+          { source_day: "2026-10-03", verdict: "short", made: "44", sold: "44", leftover: "0", soldout_at: "10:40", lost_estimate: "14" },
+          { source_day: "2026-09-29", verdict: "over", made: "60", sold: "48", leftover: "12", soldout_at: "", lost_estimate: "" },
+        ],
+      }),
+      SATURDAY,
+    ).filter((line) => line.kind === "bi");
+    expect(lines.map((line) => line.text)).toEqual([
+      "No sábado 03/10 acabou às 10:40, ~14 vendas perdidas",
+      "Na terça 29/09 sobraram 12 de 60 feitas",
+    ]);
+    expect(lines[0]!.note).toBe("levado do B.I.");
   });
 });

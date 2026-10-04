@@ -27,6 +27,8 @@ export const HISTORY_FIELDS: readonly { id: string; label: string }[] = [
 export interface HistoryQuery {
   period: PeriodSelection;
   q: string;
+  /** Só os pedidos com este produto (o "Abrir os N pedidos" do B.I.). */
+  sku: string;
   page: number;
   filters: ActiveFilters;
 }
@@ -62,6 +64,7 @@ export function historyQueryFromRoute(query: Record<string, RouteQueryValue>): H
   return {
     period,
     q: first(query.q),
+    sku: first(query.sku),
     page: Number.isFinite(page) && page > 1 ? page : 1,
     filters: filtersFromQuery(historyDimensions(), query),
   };
@@ -75,6 +78,7 @@ export function routeQueryFromHistory(history: HistoryQuery): Record<string, str
   if (from) out.from = from;
   if (to) out.to = to;
   if (history.q) out.q = history.q;
+  if (history.sku) out.sku = history.sku;
   if (history.page > 1) out.page = String(history.page);
   return { ...out, ...filtersToQuery(historyDimensions(), history.filters) };
 }
@@ -89,6 +93,7 @@ export function historyApiQuery(history: HistoryQuery, today: string): Record<st
     date_from: range.date_from,
     date_to: range.date_to,
     ...(history.q ? { q: history.q } : {}),
+    ...(history.sku ? { sku: history.sku } : {}),
     ...(history.page > 1 ? { page: history.page } : {}),
     ...filtersToQuery(historyDimensions(), history.filters),
   };
