@@ -385,6 +385,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/marketing_decisions.py",
             ROOT / "shopman/backstage/projections/marketing_actions.py",
             ROOT / "shopman/backstage/projections/bi_production.py",
+            ROOT / "shopman/backstage/projections/bi_over_short.py",
             ROOT / "shopman/backstage/projections/bi_sales.py",
             ROOT / "shopman/backstage/projections/bi_cash.py",
             ROOT / "shopman/backstage/projections/bi_customers.py",

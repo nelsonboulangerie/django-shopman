@@ -2,11 +2,17 @@
 // Caixa — quebra por dia e por operador, sangrias/suprimentos e o mix de
 // pagamento consolidado pelo fechamento. `closings_missing` fica à vista:
 // buraco declarado, nunca silenciado.
+//
+// Esta tela é a AUDITORIA DO DONO: o endpoint exige `cashman.audit_shift`, que só o
+// grupo Dono concede. A decisão do fechamento às cegas (SUITE-UX §15: "o número só
+// existe na auditoria do Dono") é o que permite o valor aqui e em nenhum outro lugar;
+// o cabeçalho diz isso em vez de deixar o leitor adivinhar por que vê R$.
 import type { BICashReport } from "~/types/bi";
 import {
   BUCKET_SPAN_LABELS,
   bucketLabel,
   bucketRows,
+  cashAnswer,
   delta,
   formatInt,
   formatMoney,
@@ -79,192 +85,190 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <div v-else-if="error" class="flex items-center gap-3">
-      <p class="text-sm text-muted-foreground">Não deu para carregar os números.</p>
-      <button type="button" class="h-9 rounded-md border border-border px-3 text-sm font-medium" @click="refresh()">
-        Tentar de novo
-      </button>
-    </div>
-    <template v-else-if="report">
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          label="Turnos fechados"
-          :value="formatInt(report.shifts_total)"
-          :delta="delta(report.shifts_total, report.previous.shifts_total)"
-        />
-        <StatTile
-          label="Quebra acumulada"
-          :value="formatMoney(report.difference_total_q)"
-          :delta="{ text: `Anterior ${formatMoney(report.previous.difference_total_q)}`, tone: 'neutral' }"
-          hint="Contado − esperado; negativo = faltou"
-        />
-        <StatTile
-          label="Dias sem fechamento"
-          :value="formatInt(report.closings_missing)"
-          hint="Na janela; o mix de pagamento só cobre dias fechados"
-        />
-        <StatTile
-          label="Sangrias"
-          :value="formatMoney(sangriaTotal)"
-          hint="Retiradas do caixa no período"
-        />
-      </div>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono">
+      <template #actions>
+        <BiWindowPicker />
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+    </OperatorPageHeader>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Quebra de caixa por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">Acima do zero sobrou; abaixo faltou</p>
-        <ChartDivergingBars :points="differenceSeries" :format="formatMoney" />
-      </section>
-
-      <!-- Conta do cliente: só quando existe (dado opcional faz a tela crescer).
-           Dívida nova e acerto na janela; saldo em aberto é de HOJE, derivado. -->
-      <section
-        v-if="report.accounts.sales_q || report.accounts.settled_q || report.accounts.open_q"
-        class="rounded-md border border-border bg-card p-3"
-        data-house-accounts
-      >
-        <h2 class="text-lg font-semibold text-foreground">Contas na casa</h2>
-        <p class="mb-3 text-xs text-muted-foreground">Vendas em conta e acertos no período; saldo em aberto é o de hoje</p>
-        <div class="grid gap-3 sm:grid-cols-3">
-          <StatTile label="Vendido em conta" :value="formatMoney(report.accounts.sales_q)" hint="Virou dívida no período" />
+    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
+      <template v-if="report">
+        <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
+          <BiAnswer :text="cashAnswer(report)" class="col-span-2 xl:col-span-1" />
           <StatTile
-            label="Acertado"
-            :value="formatMoney(report.accounts.settled_q)"
-            :hint="`Em dinheiro ${formatMoney(report.accounts.settled_cash_q)}`"
+            label="Turnos fechados"
+            :value="formatInt(report.shifts_total)"
+            :delta="delta(report.shifts_total, report.previous.shifts_total)"
           />
           <StatTile
-            label="Em aberto hoje"
-            :value="formatMoney(report.accounts.open_q)"
-            :hint="`${formatInt(report.accounts.open_customers)} ${report.accounts.open_customers === 1 ? 'cliente' : 'clientes'}`"
+            label="Quebra acumulada"
+            :value="formatMoney(report.difference_total_q)"
+            :tone="report.difference_total_q < 0 ? 'destructive' : undefined"
+            :delta="{ text: `Anterior ${formatMoney(report.previous.difference_total_q)}`, tone: 'neutral' }"
+            hint="Contado − esperado; negativo = faltou"
           />
+          <StatTile
+            label="Dias sem fechamento"
+            :value="formatInt(report.closings_missing)"
+            :tone="report.closings_missing ? 'warning' : undefined"
+            hint="Na janela; o mix de pagamento só cobre dias fechados"
+          />
+          <StatTile label="Sangrias" :value="formatMoney(sangriaTotal)" hint="Retiradas do caixa no período" />
         </div>
-        <ul v-if="report.accounts.top_open.length" class="mt-3 grid gap-1 text-sm">
-          <li
-            v-for="row in report.accounts.top_open"
-            :key="row.customer_name"
-            class="flex items-baseline justify-between border-b border-border py-1 last:border-0"
-          >
-            <span class="text-foreground">{{ row.customer_name }}</span>
-            <span class="tabular-nums text-foreground">{{ formatMoney(row.balance_q) }}</span>
-          </li>
-        </ul>
-      </section>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Por operador</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período</p>
-          <table v-if="report.by_operator.length" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
-                <th class="pb-2 font-medium">Operador</th>
-                <th class="pb-2 text-right font-medium">Turnos</th>
-                <th class="pb-2 text-right font-medium">Quebra</th>
-                <th class="pb-2 text-right font-medium">Gaveta</th>
-                <th class="pb-2 text-right font-medium">Destraves</th>
-                <th class="pb-2 text-right font-medium">Troco</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in report.by_operator" :key="row.operator" class="border-b border-border last:border-0">
-                <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.shifts) }}</td>
-                <td
-                  class="py-2 text-right tabular-nums"
-                  :class="row.difference_q < 0 ? 'font-semibold text-destructive' : 'text-foreground'"
-                >
-                  {{ formatMoney(row.difference_q) }}
-                </td>
-                <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.drawer_openings) }}</td>
-                <td
-                  class="py-2 text-right tabular-nums"
-                  :class="row.drawer_unlocks ? 'font-semibold text-foreground' : 'text-muted-foreground'"
-                >
-                  {{ formatInt(row.drawer_unlocks) }}
-                </td>
-                <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.change_requests) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="text-sm text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
-        </section>
-        <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
-             dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
-             sensor que não estava falando com o PDV. -->
-        <section v-if="anomalies.length" class="rounded-md border border-warning/40 bg-warning/5 p-3">
-          <h2 class="text-lg font-semibold text-foreground">Gaveta · o que pede explicação</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
-            Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
-          </p>
-          <ul class="flex flex-col gap-2">
-            <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="flex gap-2 text-sm">
-              <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-              <span class="text-foreground">
-                <span class="font-medium">{{ item.operator }}</span>
-                <span class="text-muted-foreground"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
-              </span>
+        <BiSection title="Quebra de caixa por dia" caption="Acima do zero sobrou; abaixo faltou">
+          <ChartDivergingBars :points="differenceSeries" :format="formatMoney" />
+        </BiSection>
+
+        <!-- Conta do cliente: só quando existe (dado opcional faz a tela crescer).
+             Dívida nova e acerto na janela; saldo em aberto é de HOJE, derivado. -->
+        <BiSection
+          v-if="report.accounts.sales_q || report.accounts.settled_q || report.accounts.open_q"
+          title="Contas na casa"
+          caption="Vendas em conta e acertos no período; saldo em aberto é o de hoje"
+          data-house-accounts
+        >
+          <div class="grid gap-3 sm:grid-cols-3">
+            <StatTile label="Vendido em conta" :value="formatMoney(report.accounts.sales_q)" hint="Virou dívida no período" />
+            <StatTile
+              label="Acertado"
+              :value="formatMoney(report.accounts.settled_q)"
+              :hint="`Em dinheiro ${formatMoney(report.accounts.settled_cash_q)}`"
+            />
+            <StatTile
+              label="Em aberto hoje"
+              :value="formatMoney(report.accounts.open_q)"
+              :hint="`${formatInt(report.accounts.open_customers)} ${report.accounts.open_customers === 1 ? 'cliente' : 'clientes'}`"
+            />
+          </div>
+          <ul v-if="report.accounts.top_open.length" class="mt-3 grid gap-1 op-label">
+            <li
+              v-for="row in report.accounts.top_open"
+              :key="row.customer_name"
+              class="flex items-baseline justify-between border-b border-border py-1 last:border-0"
+            >
+              <span class="text-foreground">{{ row.customer_name }}</span>
+              <span class="tnum text-foreground">{{ formatMoney(row.balance_q) }}</span>
             </li>
           </ul>
-        </section>
+        </BiSection>
 
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Gaveta por operador</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
-            Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio,
-            que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN
-            são exceção: qualquer número acima de zero se lê.
-          </p>
-          <div class="overflow-x-auto">
-            <table v-if="drawerRows.length" class="w-full min-w-160 text-sm">
-              <thead>
-                <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
-                  <th class="pb-2 font-medium">Operador</th>
-                  <th class="pb-2 text-right font-medium">Travou</th>
-                  <th class="pb-2 text-right font-medium">Aberta (total)</th>
-                  <th class="pb-2 text-right font-medium">Pior episódio</th>
-                  <th class="pb-2 text-right font-medium">Desistiu</th>
-                  <th class="pb-2 text-right font-medium">Destraves</th>
-                  <th class="pb-2 text-right font-medium">Buscou o PIN</th>
-                  <th class="pb-2 text-right font-medium">Sensor mudo</th>
-                  <th class="pb-2 text-right font-medium">Esquecida</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in drawerRows" :key="row.operator" class="border-b border-border last:border-0">
-                  <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.blocks) }}</td>
-                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatDuration(row.open_seconds) }}</td>
-                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatDuration(row.longest_open_seconds) }}</td>
-                  <td class="py-2 text-right tabular-nums" :class="row.dismissals ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.dismissals) }}</td>
-                  <td class="py-2 text-right tabular-nums" :class="row.overrides ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.overrides) }}</td>
-                  <td class="py-2 text-right tabular-nums" :class="row.unlock_attempts ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.unlock_attempts) }}</td>
-                  <td class="py-2 text-right tabular-nums" :class="row.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.sensor_blind) }}</td>
-                  <td class="py-2 text-right tabular-nums" :class="row.left_open ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.left_open) }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="text-sm text-muted-foreground">
-              Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
+        <div class="grid gap-3 lg:grid-cols-2">
+          <BiSection
+            title="Por operador"
+            caption="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"
+          >
+            <div class="overflow-x-auto">
+              <table v-if="report.by_operator.length" class="w-full op-label">
+                <thead>
+                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
+                    <th class="pb-2 font-semibold">Operador</th>
+                    <th class="pb-2 text-right font-semibold">Turnos</th>
+                    <th class="pb-2 text-right font-semibold">Quebra</th>
+                    <th class="pb-2 text-right font-semibold">Gaveta</th>
+                    <th class="pb-2 text-right font-semibold">Destraves</th>
+                    <th class="pb-2 text-right font-semibold">Troco</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in report.by_operator" :key="row.operator" class="border-b border-border last:border-0">
+                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.shifts) }}</td>
+                    <td
+                      class="py-2 text-right tnum"
+                      :class="row.difference_q < 0 ? 'font-semibold text-destructive' : 'text-foreground'"
+                    >
+                      {{ formatMoney(row.difference_q) }}
+                    </td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.drawer_openings) }}</td>
+                    <td
+                      class="py-2 text-right tnum"
+                      :class="row.drawer_unlocks ? 'font-semibold text-foreground' : 'text-muted-foreground'"
+                    >
+                      {{ formatInt(row.drawer_unlocks) }}
+                    </td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.change_requests) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="op-body text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
+            </div>
+          </BiSection>
+          <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
+               dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
+               sensor que não estava falando com o PDV. -->
+          <section v-if="anomalies.length" class="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
+            <h2 class="op-title text-foreground">Gaveta · o que pede explicação</h2>
+            <p class="mb-3 op-micro text-muted-foreground">
+              Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
             </p>
-          </div>
-        </section>
+            <ul class="flex flex-col gap-2">
+              <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="flex gap-2 op-label">
+                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                <span class="text-foreground">
+                  <span class="font-semibold">{{ item.operator }}</span>
+                  <span class="text-muted-foreground"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
+                </span>
+              </li>
+            </ul>
+          </section>
 
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Meios de pagamento</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Consolidado dos fechamentos do período</p>
-          <ChartHBarList v-if="methodRows.length" :rows="methodRows" />
-          <p v-else class="text-sm text-muted-foreground">Nenhum fechamento na janela ainda.</p>
-        </section>
-      </div>
+          <BiSection
+            title="Gaveta por operador"
+            caption="Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio, que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN são exceção: qualquer número acima de zero se lê."
+          >
+            <div class="overflow-x-auto">
+              <table v-if="drawerRows.length" class="w-full min-w-160 op-label">
+                <thead>
+                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
+                    <th class="pb-2 font-semibold">Operador</th>
+                    <th class="pb-2 text-right font-semibold">Travou</th>
+                    <th class="pb-2 text-right font-semibold">Aberta (total)</th>
+                    <th class="pb-2 text-right font-semibold">Pior episódio</th>
+                    <th class="pb-2 text-right font-semibold">Desistiu</th>
+                    <th class="pb-2 text-right font-semibold">Destraves</th>
+                    <th class="pb-2 text-right font-semibold">Buscou o PIN</th>
+                    <th class="pb-2 text-right font-semibold">Sensor mudo</th>
+                    <th class="pb-2 text-right font-semibold">Esquecida</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in drawerRows" :key="row.operator" class="border-b border-border last:border-0">
+                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.blocks) }}</td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.open_seconds) }}</td>
+                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.longest_open_seconds) }}</td>
+                    <td class="py-2 text-right tnum" :class="row.dismissals ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.dismissals) }}</td>
+                    <td class="py-2 text-right tnum" :class="row.overrides ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.overrides) }}</td>
+                    <td class="py-2 text-right tnum" :class="row.unlock_attempts ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.unlock_attempts) }}</td>
+                    <td class="py-2 text-right tnum" :class="row.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.sensor_blind) }}</td>
+                    <td class="py-2 text-right tnum" :class="row.left_open ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.left_open) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="op-body text-muted-foreground">
+                Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
+              </p>
+            </div>
+          </BiSection>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Gaveta por hora do dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">Aberturas sem venda e destraves da trava, do log de eventos do PDV</p>
-        <ChartHBarList v-if="drawerHourRows.length" :rows="drawerHourRows" />
-        <p v-else class="text-sm text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
-      </section>
-    </template>
-  </main>
+          <BiSection title="Meios de pagamento" caption="Consolidado dos fechamentos do período">
+            <ChartHBarList v-if="methodRows.length" :rows="methodRows" />
+            <p v-else class="op-body text-muted-foreground">Nenhum fechamento na janela ainda.</p>
+          </BiSection>
+        </div>
+
+        <BiSection title="Gaveta por hora do dia" caption="Aberturas sem venda e destraves da trava, do log de eventos do PDV">
+          <ChartHBarList v-if="drawerHourRows.length" :rows="drawerHourRows" />
+          <p v-else class="op-body text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
+        </BiSection>
+      </template>
+    </main>
+  </div>
 </template>

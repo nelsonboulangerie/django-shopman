@@ -155,15 +155,17 @@ const chipClass = (active: boolean) =>
     ? "bg-card font-semibold text-foreground shadow-sm"
     : "text-muted-foreground hover:bg-card/60 hover:text-foreground";
 const arrowClass =
-  "grid size-control shrink-0 place-items-center rounded-md border border-border bg-background text-foreground transition hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40";
+  "grid size-control shrink-0 place-items-center rounded-md border border-border bg-background text-foreground transition hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 suite:bg-card suite:disabled:opacity-100 suite:disabled:text-muted-foreground/40";
 </script>
 
 <template>
   <div ref="root" class="flex flex-wrap items-center gap-2" role="group" :aria-label="label" data-period-picker>
-    <div class="relative flex items-center gap-1">
+    <!-- Visual da suíte (`suite:`, V4-BI): as três peças viram UM controle, como o
+         período do cabeçalho de `bi-sobra4.html` (‹ · botão · › com divisórias). -->
+    <div class="relative flex items-center gap-1 suite:gap-0">
       <button
         type="button"
-        :class="arrowClass"
+        :class="[arrowClass, 'suite:rounded-r-none']"
         :aria-label="steps.prev"
         :title="steps.prev"
         :disabled="!prev"
@@ -174,7 +176,7 @@ const arrowClass =
       </button>
       <button
         type="button"
-        class="inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground"
+        class="inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground suite:rounded-none suite:border-x-0 suite:bg-card suite:text-[13px] suite:font-semibold suite:hover:bg-accent"
         :aria-expanded="open"
         :aria-label="`${label}: ${buttonLabel}`"
         data-period-button
@@ -186,7 +188,7 @@ const arrowClass =
       </button>
       <button
         type="button"
-        :class="arrowClass"
+        :class="[arrowClass, 'suite:rounded-l-none']"
         :aria-label="steps.next"
         :title="steps.next"
         :disabled="!next"

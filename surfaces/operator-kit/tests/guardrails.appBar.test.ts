@@ -65,9 +65,9 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(proprios.sort()).toEqual(CABECALHOS_PROPRIOS_CONHECIDOS);
   });
 
-  it("os três convertidos consomem a peça da layer", () => {
+  it("os convertidos consomem a peça da layer", () => {
+    // O B.I. saiu desta lista para a do rail da suíte (V4-BI).
     const convertidos = [
-      "bi-nuxt/app/components/BiTopBar.vue",
       "marketing-nuxt/app/components/CampaignTopBar.vue",
     ];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
@@ -100,6 +100,7 @@ describe("guardrail do cabeçalho de seções", () => {
       "kds-nuxt/app/components/KdsNav.vue",
       // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
       "production-nuxt/app/components/ProductionNav.vue",
+      "bi-nuxt/app/components/BiNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",
