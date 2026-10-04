@@ -8,43 +8,69 @@
 //
 //   EM ANDAMENTO 7 · O SISTEMA FEZ (últimos 15 min) · AGORA NO CARDÁPIO
 //
-// Só o fato humano é botão. A Supervisão (o quadro de três colunas) segue a um toque
-// (alternador e tecla T); o detalhe abre pelo código. Nada aqui decide estado: o fato,
-// a meta e o "o sistema fez" vêm do servidor (`order_attention`).
+// Só o fato humano é botão. A Supervisão (a tabela densa, seleção em lote) segue a um
+// toque (alternador e tecla T); as três colunas, no ⋯ e na tecla V; o detalhe abre pelo
+// código. Recortes (v4): "Precisa de você" com 4 em foco e o resto num "+N", "Todos" e
+// "Atrasados". O tempo é âmbar com intensidade: vermelho é só o bloqueio com motivo.
+// Nada aqui decide estado: o fato, a meta, a previsão da Cozinha e o "o sistema fez"
+// vêm do servidor (`order_attention`).
 import type { OrderCardProjection, QueueAwarenessProjection } from "~/types/orders";
 import type { AffordanceRef } from "~/presentation/board";
 import { channelLabel, confirmationRemainingLabel, splitRef, undoLine } from "~/presentation/board";
-import { inProgress, queueGesture, queueItems, queueWho, restLine, type QueueTone } from "~/presentation/queue";
+import {
+  inProgress,
+  QUEUE_FOCUS,
+  QUEUE_SORT_OPTIONS,
+  queueGesture,
+  queueItems,
+  queueToneClass,
+  queueWho,
+  restLine,
+  type QueueItem,
+  type QueueScope,
+  type QueueSort,
+} from "~/presentation/queue";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   cards: OrderCardProjection[];
   awareness: QueueAwarenessProjection | null | undefined;
   nowMs: number;
   focusRef: string;
+  /** O pedido novo que a tecla A aceita (o em foco, ou o mais urgente). */
+  acceptRef?: string;
+  scope?: QueueScope;
+  sort?: QueueSort;
   isBusy: (ref: string) => boolean;
   actionError: (ref: string) => string;
   canOpen: boolean;
-}>();
+  /** O interruptor do canal está indo ao servidor. */
+  switching?: (ref: string) => boolean;
+}>(), { acceptRef: "", scope: "attention", sort: "urgency", switching: () => false });
 const emit = defineEmits<{
   (e: "action", ref: string, action: AffordanceRef): void;
   (e: "station-ready", card: OrderCardProjection, stationRef: string): void;
-  (e: "focus" | "dismiss-error", ref: string): void;
-  (e: "show-all"): void;
+  (e: "focus" | "dismiss-error" | "switch", ref: string): void;
+  (e: "scope", scope: QueueScope): void;
 }>();
 
-const items = computed(() => queueItems(props.cards, props.nowMs));
+const items = computed(() => queueItems(props.cards, props.nowMs, { scope: props.scope, sort: props.sort }));
+// Densidade pela atenção (SPEC4 §4): em "Precisa de você", 4 em foco; o resto vira "+N".
+const shown = computed(() => (props.scope === "attention" ? items.value.slice(0, QUEUE_FOCUS) : items.value));
+const hidden = computed(() => items.value.length - shown.value.length);
 const progress = computed(() => inProgress(props.cards, props.nowMs));
-const rest = computed(() => restLine(progress.value));
+const rest = computed(() => (props.scope === "attention" ? restLine(progress.value, hidden.value) : { count: 0, text: "" }));
 const progressCount = computed(() => progress.value.reduce((n, line) => n + line.count, 0));
 const systemActions = computed(() => props.awareness?.system_actions ?? []);
 const outages = computed(() => props.awareness?.menu_outages ?? []);
 const menuChannels = computed(() => props.awareness?.menu_channels ?? []);
+const title = computed(() => ({ attention: "Precisa de você", all: "Todos", late: "Atrasados" })[props.scope]);
+const sortHint = computed(() => QUEUE_SORT_OPTIONS.find((option) => option.key === props.sort)?.hint ?? "");
+const emptyText = computed(() => ({
+  attention: "Nada pede você agora.",
+  all: "Nenhum pedido em andamento.",
+  late: "Nenhum pedido passou da meta.",
+})[props.scope]);
 
-function toneClass(tone: QueueTone): string {
-  if (tone === "late") return "text-destructive";
-  if (tone === "warning") return "text-warning";
-  return "text-foreground";
-}
 function clock(iso: string): string {
   const at = iso ? new Date(iso) : null;
   return at && !Number.isNaN(at.getTime()) ? at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -58,6 +84,23 @@ function systemUndoOpen(line: { undo_action: string; undo_until_iso: string }): 
 function cardFor(ref: string): OrderCardProjection | undefined {
   return props.cards.find((card) => card.ref === ref);
 }
+/** A pílula do bloqueio é um estado, não uma espera em curso: sem reticências. */
+function blockLabel(card: OrderCardProjection): string {
+  return (card.advance_block_label || "Bloqueado").replace(/…$/, "");
+}
+/** A tecla impressa no botão (desktop, `pointer: fine`): Enter no item em foco; A no
+ *  pedido novo que a tecla aceita. A que não vale ali não se imprime (o R é "atualizar"). */
+function printedKey(item: QueueItem): string {
+  const gesture = queueGesture(item);
+  if (!gesture.primary || gesture.primary.disabled) return "";
+  if (gesture.shortcut === "A") return item.card.ref === props.acceptRef ? "A" : "";
+  return item.card.ref === props.focusRef ? gesture.shortcut : "";
+}
+/** "desligar pede gerente" / "ligar pede gerente": a consequência antes do gesto. */
+function switchHint(row: { active: boolean; switch?: { requires_manager_approval: boolean } | null }): string {
+  if (!row.switch?.requires_manager_approval) return "";
+  return row.active ? "desligar pede gerente" : "ligar pede gerente";
+}
 </script>
 
 <template>
@@ -65,21 +108,21 @@ function cardFor(ref: string): OrderCardProjection | undefined {
     <!-- a Fila: só o que pede um fato humano, por urgência -->
     <section class="flex min-w-0 flex-col gap-2.5" aria-labelledby="queue-title">
       <div class="flex items-baseline gap-2 border-b border-border pb-2">
-        <h2 id="queue-title" class="op-eyebrow">Precisa de você</h2>
+        <h2 id="queue-title" class="op-eyebrow">{{ title }}</h2>
         <span class="op-label tnum text-muted-foreground" data-queue-count>{{ items.length }}</span>
-        <span class="ml-auto hidden op-micro text-muted-foreground sm:inline">Mais urgente primeiro (tempo contra a meta)</span>
+        <span class="ml-auto hidden op-micro text-muted-foreground sm:inline" data-queue-sort-hint>{{ sortHint }}</span>
       </div>
 
       <p v-if="!items.length" class="rounded-lg border border-dashed border-border p-6 text-center op-body text-muted-foreground" data-queue-empty>
-        Nada pede você agora.
+        {{ emptyText }}
       </p>
 
       <article
-        v-for="item in items"
+        v-for="item in shown"
         :key="item.card.ref"
         class="queue-item grid items-center gap-x-[18px] gap-y-2 rounded-[10px] border bg-card px-4 py-3.5"
         :class="item.card.ref === focusRef ? 'border-primary shadow-[0_0_0_1px_var(--primary)]' : 'border-border'"
-        :data-queue-item="item.kind"
+        :data-queue-item="item.kind || 'moving'"
         :data-queue-ref="item.card.ref"
         :aria-current="item.card.ref === focusRef || undefined"
         @pointerdown="emit('focus', item.card.ref)"
@@ -88,17 +131,17 @@ function cardFor(ref: string): OrderCardProjection | undefined {
         <div class="min-w-0">
           <NuxtLink v-if="canOpen" :to="`/${item.card.ref}`" class="block op-figure leading-none hover:underline" :aria-label="`Abrir pedido ${item.card.ref}`">{{ splitRef(item.card.ref).code }}</NuxtLink>
           <p v-else class="op-figure leading-none">{{ splitRef(item.card.ref).code }}</p>
-          <p class="mt-1.5 op-title tnum" :class="toneClass(item.tone)" data-queue-time>{{ item.timeLabel }}</p>
+          <p class="mt-1.5 op-title tnum" :class="queueToneClass(item.tone)" :data-queue-tone="item.tone" data-queue-time>{{ item.timeLabel }}</p>
           <p class="op-micro text-muted-foreground" data-queue-goal>{{ item.goalLabel }}</p>
         </div>
 
-        <!-- quem, o quê e o estado escrito -->
+        <!-- quem, o quê e o estado escrito (a cópia não se corta: quebra a linha) -->
         <div class="flex min-w-0 flex-col gap-1.5">
-          <p class="truncate op-body">
+          <p class="op-body">
             <span class="font-semibold">{{ queueWho(item.card, channelLabel(item.card.channel_ref)).name }}</span>
             <span class="text-muted-foreground"> · {{ queueWho(item.card, channelLabel(item.card.channel_ref)).rest }}</span>
           </p>
-          <p class="truncate op-body text-foreground/85" :title="item.card.items_summary">{{ item.card.items_summary }}</p>
+          <p class="op-body text-foreground/85">{{ item.card.items_summary }}</p>
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <template v-if="undoLine(item.card, nowMs)?.kind === 'auto_ready'">
               <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 text-xs font-semibold whitespace-nowrap text-muted-foreground" data-queue-auto>
@@ -109,22 +152,23 @@ function cardFor(ref: string): OrderCardProjection | undefined {
             </template>
             <template v-else-if="item.kind === 'confirm'">
               <span class="pill-primary inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold"><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />Novo</span>
-              <span v-if="item.card.confirmation_deadline_iso && confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs)" class="op-micro text-muted-foreground">
+              <span v-if="item.card.confirmation_deadline_iso && confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs)" class="op-micro text-muted-foreground" data-queue-deadline>
                 {{ item.card.confirmation_action === "cancel" ? "cancela sozinho em" : "aceita sozinho em" }}
                 <span class="font-semibold tnum text-foreground">{{ confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs) }}</span>
               </span>
             </template>
             <template v-else-if="item.kind === 'blocked'">
-              <span class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold"><Icon name="lucide:lock" class="size-3.5" />{{ item.card.advance_block_label || "Bloqueado" }}</span>
-              <span class="min-w-0 truncate op-micro text-muted-foreground" :title="item.card.advance_block_reason">{{ item.card.advance_block_reason }}</span>
+              <span class="pill-destructive inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 op-micro font-semibold whitespace-nowrap" data-queue-block><Icon name="lucide:lock" class="size-3.5" />{{ blockLabel(item.card) }}</span>
+              <span class="min-w-0 op-micro text-muted-foreground" data-queue-block-reason>{{ item.card.advance_block_reason }}</span>
             </template>
             <template v-else-if="item.kind === 'station' && readyStation(item.card)">
               <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2 op-micro font-semibold"><Icon name="lucide:printer" class="size-3.5" />{{ readyStation(item.card)!.station_name }} no papel</span>
               <span class="op-micro text-muted-foreground">{{ item.card.kitchen?.missing_label }}</span>
             </template>
-            <span v-if="item.card.volumes || item.card.items_count" class="op-micro text-muted-foreground" data-queue-pack>
-              {{ item.card.volumes ? `${item.card.volumes} ${item.card.volumes === 1 ? "volume" : "volumes"}` : `${item.card.items_count} ${item.card.items_count === 1 ? "item" : "itens"}` }}
-            </span>
+            <template v-else-if="!item.kind">
+              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 op-micro font-semibold text-muted-foreground" data-queue-moving><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ item.card.status_label }}</span>
+              <span class="op-micro text-muted-foreground">nada pede você agora</span>
+            </template>
           </div>
           <div v-if="actionError(item.card.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
             <span class="min-w-0 flex-1">{{ actionError(item.card.ref) }}</span>
@@ -137,7 +181,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
         <!-- pagamento, total e o gesto -->
         <div class="flex min-w-0 flex-col gap-1.5">
           <div class="flex items-baseline justify-between gap-2">
-            <span class="truncate op-micro text-muted-foreground">{{ item.card.change_label || item.card.payment_method_label }}</span>
+            <span class="min-w-0 op-micro leading-tight text-muted-foreground" data-queue-payment>{{ item.card.change_label || item.card.payment_method_label }}</span>
             <span class="shrink-0 op-title tnum">{{ item.card.total_display }}</span>
           </div>
           <template v-if="item.kind === 'station' && readyStation(item.card)">
@@ -149,6 +193,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
               @click="emit('station-ready', item.card, readyStation(item.card)!.station_ref)"
             >
               <Icon name="lucide:check" class="size-4" />Pronto de {{ readyStation(item.card)!.station_name }}
+              <kbd v-if="item.card.ref === focusRef" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>Enter</kbd>
             </button>
           </template>
           <div v-else-if="queueGesture(item).primary" class="flex gap-1.5">
@@ -173,23 +218,23 @@ function cardFor(ref: string): OrderCardProjection | undefined {
               @click="emit('action', item.card.ref, queueGesture(item).primary!.ref)"
             >
               <Icon :name="queueGesture(item).primary!.disabled ? 'lucide:lock' : item.kind === 'dispatch' ? 'lucide:bike' : item.kind === 'handoff' ? 'lucide:hand-platter' : queueGesture(item).primary!.icon" class="size-4 shrink-0" />
-              <span class="truncate">{{ queueGesture(item).primary!.verb }}</span>
-              <kbd v-if="!queueGesture(item).primary!.disabled && item.card.ref === focusRef" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline">{{ queueGesture(item).shortcut }}</kbd>
+              <span>{{ queueGesture(item).primary!.verb }}</span>
+              <kbd v-if="printedKey(item)" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>{{ printedKey(item) }}</kbd>
             </button>
           </div>
         </div>
       </article>
 
-      <!-- o excedente vira número: nunca paginação -->
+      <!-- o excedente vira número: nunca paginação. "Ver todos" abre o recorte Todos. -->
       <button
         v-if="rest.count"
         type="button"
-        class="mt-0.5 flex h-12 items-center gap-3 rounded-lg border border-dashed border-border px-4 text-left op-label transition hover:bg-accent"
+        class="mt-0.5 flex min-h-12 items-center gap-3 rounded-lg border border-dashed border-border px-4 py-2 text-left op-label transition hover:bg-accent"
         data-queue-rest
-        @click="emit('show-all')"
+        @click="emit('scope', 'all')"
       >
         <span class="op-title tnum">+{{ rest.count }}</span>
-        <span class="min-w-0 truncate font-normal text-muted-foreground">{{ rest.text }}</span>
+        <span class="min-w-0 font-normal text-muted-foreground">{{ rest.text }}</span>
         <span class="ml-auto inline-flex shrink-0 items-center gap-1 font-semibold">Ver todos<Icon name="lucide:chevron-right" class="size-4" /></span>
       </button>
     </section>
@@ -204,7 +249,11 @@ function cardFor(ref: string): OrderCardProjection | undefined {
           <div v-for="line in progress" :key="line.key" class="queue-row">
             <Icon :name="line.icon" class="size-4 text-info" />
             <span class="flex-1 op-body">{{ line.label }}</span>
-            <span class="op-micro text-muted-foreground">{{ line.detail }}</span>
+            <span
+              class="op-micro text-muted-foreground"
+              :title="line.key === 'kitchen' && awareness?.kitchen_eta_basis ? `Previsão ${awareness.kitchen_eta_basis}` : undefined"
+              :data-queue-progress-detail="line.key"
+            >{{ line.detail }}</span>
             <span class="w-6 text-right op-title tnum">{{ line.count }}</span>
           </div>
         </div>
@@ -220,7 +269,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
           <p v-if="!systemActions.length" class="queue-row op-micro text-muted-foreground">Nada automático neste intervalo.</p>
           <div v-for="line in systemActions" :key="`${line.order_ref}-${line.at_iso}`" class="queue-row">
             <span class="w-11 op-label font-semibold tnum">{{ splitRef(line.order_ref).code }}</span>
-            <span class="min-w-0 flex-1 truncate op-body">{{ line.verb }} <span class="text-muted-foreground">· {{ line.reason }}</span></span>
+            <span class="min-w-0 flex-1 op-body">{{ line.verb }} <span class="text-muted-foreground">· {{ line.reason }}</span></span>
             <button
               v-if="systemUndoOpen(line) && cardFor(line.order_ref)"
               type="button"
@@ -247,19 +296,26 @@ function cardFor(ref: string): OrderCardProjection | undefined {
               <span class="inline-flex items-center gap-1 op-micro text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />{{ outage.detail }}</span>
             </span>
           </div>
-          <template v-for="row in menuChannels" :key="row.ref">
-            <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="queue-row transition hover:bg-accent" :title="`Abrir ${row.name} em Canais`" data-queue-channel>
-              <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 flex-1 truncate op-body" :title="row.line">{{ row.name }}</span>
-              <span class="h-6 rounded-full px-2 op-micro leading-6 font-semibold" :class="row.active ? 'pill-success' : 'bg-muted text-muted-foreground'">{{ row.active ? "ligado" : "desligado" }}</span>
-              <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
+          <!-- o canal: "iFood ligado · desligar pede gerente · [interruptor]" (v4). O
+               interruptor abre o MESMO diálogo de Canais (período, motivo, gerente). -->
+          <div v-for="row in menuChannels" :key="row.ref" class="queue-row" data-queue-channel>
+            <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
+            <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="min-w-0 flex-1 op-body hover:underline" :title="`Abrir ${row.name} em Canais`">
+              {{ row.name }} {{ row.active ? "ligado" : "desligado" }}
             </NuxtLink>
-            <div v-else class="queue-row" data-queue-channel>
-              <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 flex-1 truncate op-body" :title="row.line">{{ row.name }}</span>
-              <span class="h-6 rounded-full px-2 op-micro leading-6 font-semibold" :class="row.active ? 'pill-success' : 'bg-muted text-muted-foreground'">{{ row.active ? "ligado" : "desligado" }}</span>
-            </div>
-          </template>
+            <span v-else class="min-w-0 flex-1 op-body">{{ row.name }} {{ row.active ? "ligado" : "desligado" }}</span>
+            <span v-if="switchHint(row)" class="hidden shrink-0 op-micro text-muted-foreground sm:inline" data-queue-channel-hint>{{ switchHint(row) }}</span>
+            <UiSwitch
+              v-if="row.switch"
+              tone="success"
+              :model-value="row.active"
+              :disabled="switching(row.ref) || !row.switch.enabled"
+              :aria-label="row.active ? `${row.name}: ligado. Desligar…` : `${row.name}: desligado. Ligar…`"
+              :title="row.switch.enabled ? undefined : row.switch.disabled_reason"
+              data-queue-channel-switch
+              @update:model-value="emit('switch', row.ref)"
+            />
+          </div>
         </div>
       </section>
     </aside>

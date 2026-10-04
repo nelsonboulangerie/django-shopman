@@ -16,8 +16,7 @@ from django.test import override_settings
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import OperatorAlert
-from shopman.shop.services import kds, operator_orders
-from shopman.shop.tests._handoff import settle
+from shopman.shop.services import operator_orders
 
 pytestmark = pytest.mark.django_db
 
@@ -67,43 +66,6 @@ def test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar():
     assert order.status == Order.Status.DISPATCHED
     assert _alertas(order.ref).count() == 1
     assert "sem NFC-e autorizada" in _alertas(order.ref).get().message
-
-
-@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
-def test_a_saida_do_kds_conclui_e_o_alerta_nasce_sem_barrar():
-    """A emissão MORTA grita na retirada — a porta do KDS também confere."""
-    from shopman.orderman.models import Directive
-
-    from shopman.shop.directives import FISCAL_EMIT_NFCE
-
-    order = _cod("HANDOFF-KDS", fulfillment_type="pickup")
-    order.data["payment"]["cod_settled_at"] = "2026-09-16T10:00:00Z"
-    order.save(update_fields=["data"])
-    Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
-
-    assert kds.expedition_action(order, action="complete", actor="operator:test") == Order.Status.COMPLETED
-    # UX-G2: a Saída pede a saída; o alerta nasce quando ela é gravada (fim da janela).
-    assert _alertas(order.ref).count() == 0
-    assert settle(order) == Order.Status.COMPLETED
-
-    assert _alertas(order.ref).count() == 1
-
-
-@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)
-def test_retirada_cuja_nota_espera_a_saida_conclui_em_silencio():
-    """Encomenda paga antes: a nota nasce NA retirada (decisão de 26/09/2026).
-
-    A conclusão é o ponto de emissão, não um atraso — gritar "saiu sem nota"
-    em toda retirada de encomenda seria ruído. A falha da emissão tem o alerta
-    dela (``fiscal_emit_failed``).
-    """
-    order = _cod("HANDOFF-KDS-ENCOMENDA", fulfillment_type="pickup")
-    order.data["payment"]["cod_settled_at"] = "2026-09-16T10:00:00Z"
-    order.save(update_fields=["data"])
-
-    assert kds.expedition_action(order, action="complete", actor="operator:test") == Order.Status.COMPLETED
-
-    assert not _alertas(order.ref).exists()
 
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=ALWAYS)

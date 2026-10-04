@@ -209,13 +209,35 @@ def _build_switch(channel, *, user, authorized: bool, is_manager: bool, state, n
     )
 
 
+def switch_authority(user) -> tuple[bool, bool]:
+    """Quem mexe no interruptor de um canal: (pode editar o catálogo, é gerente).
+
+    Gerente é quem autoriza exceção no PDV (``cashman.adjust_shift``): ele só
+    confirma; quem não é, chama um gerente (crachá ou PIN) no mesmo diálogo.
+    """
+    from shopman.backstage.services.operator import ADJUST_SHIFT
+
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    return authorized, bool(authorized and user.has_perm(ADJUST_SHIFT))
+
+
+def switch_managers(user) -> tuple[tuple[ManagerOptionProjection, ...], str]:
+    """A lista de quem autoriza (vazia para o gerente) e o nome de quem opera."""
+    from shopman.backstage.projections.pos import _manager_cards
+
+    authorized, is_manager = switch_authority(user)
+    managers = () if is_manager or not authorized else tuple(
+        ManagerOptionProjection(username=card["username"], name=card["name"]) for card in _manager_cards(user)
+    )
+    viewer = (user.get_full_name() or user.get_username()).strip() if authorized else ""
+    return managers, viewer
+
+
 def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
     from django.utils import timezone
     from shopman.offerman.models import Collection
 
-    from shopman.backstage.projections.pos import _manager_cards
     from shopman.backstage.services import feeds as feed_service
-    from shopman.backstage.services.operator import ADJUST_SHIFT
     from shopman.shop.models import Channel
     from shopman.shop.services import business_calendar
     from shopman.shop.services import channel_switch as switches
@@ -227,10 +249,7 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
     coll_by_ref = {c.ref: c for c in collections}
     order_index = {c.ref: i for i, c in enumerate(collections)}
 
-    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
-    # Gerente é quem autoriza exceção no PDV (``cashman.adjust_shift``): ele só
-    # confirma; quem não é, chama um gerente (crachá ou PIN) no mesmo diálogo.
-    is_manager = bool(authorized and user.has_perm(ADJUST_SHIFT))
+    authorized, is_manager = switch_authority(user)
     feeds: list[FeedProjection] = []
     channels = Channel.objects.filter(
         commerce_policy=Channel.CommercePolicy.DISPLAY
@@ -337,9 +356,6 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
             switch=_build_switch(channel, user=user, authorized=authorized, is_manager=is_manager,
                                  state=state, now=now) if switches.is_switchable(channel) else None,
         ))
-    managers = () if is_manager or not authorized else tuple(
-        ManagerOptionProjection(username=card["username"], name=card["name"]) for card in _manager_cards(user)
-    )
-    viewer = (user.get_full_name() or user.get_username()).strip() if authorized else ""
+    managers, viewer = switch_managers(user)
     return FeedBoardProjection(feeds=tuple(feeds), all_collections=options,
                               catalog_channels=tuple(catalog_channels), managers=managers, viewer_name=viewer)

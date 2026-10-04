@@ -4,12 +4,13 @@
 // `python manage.py export_kds_schema` and drift-guarded in the Django CI).
 // This module only narrows fields the backend types as plain `str` and adds
 // the API envelopes (shopman/backstage/api/kds.py response shapes).
+//
+// A Saída não tem quadro na Cozinha (SUITE-UX §15 e §16: ela mora no Gestor), e o
+// quadro é sempre o de hoje (a prévia de outra data foi para a Produção/Encomendas).
 
 import type {
   KDSBoardProjection as KDSBoardContract,
   KDSCustomerStatusProjection,
-  KDSExitPreparingCardProjection,
-  KDSExpeditionCardProjection,
   KDSInstanceSummaryProjection,
   KDSTicketProjection as KDSTicketContract,
 } from "~/generated/kdsContract";
@@ -17,9 +18,6 @@ import type {
 export type {
   KDSCustomerOrderProjection,
   KDSCustomerStatusProjection,
-  KDSExitPreparingCardProjection,
-  KDSExitStationChipProjection,
-  KDSExpeditionCardProjection,
   KDSInstanceSummaryProjection,
   KDSItemProjection,
 } from "~/generated/kdsContract";
@@ -31,12 +29,9 @@ export interface KDSTicketProjection extends KDSTicketContract {
 }
 
 export interface KDSBoardProjection extends KDSBoardContract {
-  /** Prep stations hold KDSTicketProjection; expedition holds KDSExpeditionCardProjection. */
-  tickets: (KDSTicketProjection | KDSExpeditionCardProjection)[];
+  tickets: KDSTicketProjection[];
   cancelled_tickets: KDSTicketProjection[];
   recent_done: KDSTicketProjection[]; // para recall (desfazer finalização)
-  /** Só na Saída: pedidos que ainda esperam alguma estação (coluna "Em preparo"). */
-  preparing: KDSExitPreparingCardProjection[];
 }
 
 // API envelopes (shopman/backstage/api/kds.py response shapes).
@@ -44,3 +39,4 @@ export interface KDSIndexResponse { instances: KDSInstanceSummaryProjection[] }
 export interface KDSBoardResponse { board: KDSBoardProjection }
 export interface KDSTicketResponse { ticket: KDSTicketProjection }
 export interface KDSCustomerStatusResponse { status: KDSCustomerStatusProjection }
+export interface KDSStationSettingsResponse { density: string; sound_enabled: boolean }

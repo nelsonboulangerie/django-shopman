@@ -6,12 +6,13 @@ import {
   fulfillmentLabel,
   boardView,
   elapsedLabel,
-  isExpeditionCard,
   KDS_UNDO_WINDOW_MS,
   additionTicketPks,
   nextTicketPk,
-  shortDateLabel,
+  thumbActionLabel,
   ticketAction,
+  ticketOverline,
+  ticketStartLine,
   lucideIcon,
   slaPercent,
   sortByUrgency,
@@ -32,11 +33,7 @@ import {
   cancelledSummary,
   queueLine,
 } from "../app/presentation/board";
-import type {
-  KDSBoardProjection,
-  KDSExpeditionCardProjection,
-  KDSTicketProjection,
-} from "../app/types/kds";
+import type { KDSBoardProjection, KDSTicketProjection } from "../app/types/kds";
 
 const ticket = (
   over: Partial<KDSTicketProjection> = {},
@@ -61,7 +58,6 @@ const ticket = (
   ],
   status: "in_progress",
   previous_tab_ref: "",
-  is_scheduled: false,
   status_label: "",
   is_cancelled: false,
   cancelled_at_display: "",
@@ -70,26 +66,16 @@ const ticket = (
   customer_note: "",
   finish_block_label: "",
   finish_block_reason: "",
-  is_expedition: false,
+  test_order_label: "",
+  volumes: 0,
+  volumes_order_ref: "",
+  volumes_revision: "",
+  started_by: "",
+  started_at_display: "",
+  is_preorder: false,
+  due_time_display: "",
+  seen: false,
   ...over,
-});
-
-const expedition = (): KDSExpeditionCardProjection => ({
-  pk: 9,
-  order_ref: "WHATS-9",
-  channel_icon: "store",
-  customer_name: "Beto",
-  fulfillment_icon: "bike",
-  fulfillment_label: "Entrega",
-  is_delivery: true,
-  units_count: "3",
-  line_count: 2,
-  total_display: "R$ 30,00",
-  items: [],
-  is_scheduled: false,
-  is_expedition: true,
-  advance_block_label: "",
-  advance_block_reason: "",
 });
 
 describe("kds board presentation", () => {
@@ -99,25 +85,17 @@ describe("kds board presentation", () => {
     expect(ticketTone("timer-ok")).toBe("ok");
   });
 
-  it("guards expedition cards from prep tickets", () => {
-    expect(isExpeditionCard(expedition())).toBe(true);
-    expect(isExpeditionCard(ticket())).toBe(false);
-  });
-
   it("shapes the board view + counts", () => {
     const board: KDSBoardProjection = {
       instance_ref: "cafes",
       instance_name: "Cafés",
       instance_type: "prep",
-      is_expedition: false,
       tickets: [ticket(), ticket({ pk: 2 })],
       counts: { total: 2, pending: 1, in_progress: 1 },
-      service_date: "2026-09-15",
-      service_date_display: "Hoje",
-      today: "2026-09-15",
-      available_dates: ["2026-09-15"],
       cancelled_tickets: [ticket({ pk: 3, is_cancelled: true })],
       recent_done: [],
+      density: "roomy",
+      sound_enabled: false,
     };
     const view = boardView(board);
     expect(view.instanceName).toBe("Cafés");
@@ -125,6 +103,9 @@ describe("kds board presentation", () => {
     expect(view.cancelled).toHaveLength(1);
     expect(view.total).toBe(2);
     expect(view.blockedRefs.has("PDV-1")).toBe(true);
+    // Densidade e som vêm da estação provisionada (v4 nota 1).
+    expect(view.density).toBe("roomy");
+    expect(view.soundEnabled).toBe(false);
   });
 
   it("mantém o card na grade durante a janela de desfazer, mas fora do trabalho", () => {
@@ -132,15 +113,12 @@ describe("kds board presentation", () => {
       instance_ref: "cafes",
       instance_name: "Cafés",
       instance_type: "prep",
-      is_expedition: false,
       tickets: [ticket({ pk: 1, status: "pending" }), ticket({ pk: 2 })],
       counts: { total: 2, pending: 1, in_progress: 1 },
-      service_date: "2026-09-15",
-      service_date_display: "Hoje",
-      today: "2026-09-15",
-      available_dates: ["2026-09-15"],
       cancelled_tickets: [],
       recent_done: [],
+      density: "cozy",
+      sound_enabled: true,
     };
     const view = boardView(board, new Set([2]));
     // O card continua desenhado — é ele que carrega o "Desfazer", no lugar onde o
@@ -157,12 +135,32 @@ describe("kds board presentation", () => {
     expect(view.nextPk).toBe(1); // nunca aponta para quem está saindo
   });
 
-  it("o próximo pula agendado e quem está saindo", () => {
-    const scheduled = ticket({ pk: 5, is_scheduled: true, status: "scheduled" });
+  it("o próximo é o primeiro da fila de trabalho", () => {
     const live = ticket({ pk: 6, status: "pending" });
-    expect(nextTicketPk([scheduled, live], false)).toBe(6);
-    expect(nextTicketPk([scheduled], false)).toBeNull();
-    expect(nextTicketPk([live], true)).toBeNull(); // a Saída não tem "próximo"
+    expect(nextTicketPk([live, ticket({ pk: 7 })])).toBe(6);
+    expect(nextTicketPk([])).toBeNull();
+  });
+
+  it("v4 nota 6: o card do dia diz só Retirada/Entrega; a encomenda diz o cliente", () => {
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", customer_name: "+5543993333333" }))).toBe("Retirada");
+    expect(ticketOverline(ticket({ fulfillment_icon: "local_shipping", customer_name: "Ana" }))).toBe("Entrega");
+    expect(ticketOverline(ticket({ is_preorder: true, customer_name: "Café Parisiense" }))).toBe("Encomenda · Café Parisiense");
+    expect(ticketOverline(ticket({ is_preorder: true, customer_name: "(43) 99333-3333" }))).toBe("Encomenda");
+  });
+
+  it("v4 nota 7: iniciado por e a hora combinada numa linha", () => {
+    expect(ticketStartLine(ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }))).toBe(
+      "iniciado por Rafael às 21:56 · retira às 22:30",
+    );
+    expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("entrega às 11:00");
+    expect(ticketStartLine(ticket())).toBe("");
+  });
+
+  it("o polegar do celular leva o código: Pronto W07 (v4 cozinha-celular b)", () => {
+    const armed = { armed: true, blocked: false };
+    expect(thumbActionLabel(ticketAction(ticket({ status: "in_progress" }), armed), "W07")).toBe("Pronto W07");
+    expect(thumbActionLabel(ticketAction(ticket({ status: "pending" }), armed), "W07")).toBe("Iniciar W07");
+    expect(thumbActionLabel(ticketAction(ticket(), { ...armed, finishing: true }), "W07")).toBe("Desfazer W07");
   });
 
   it("formats elapsed compactly — seconds only in the first minute, then whole minutes", () => {
@@ -225,7 +223,6 @@ describe("kds board presentation", () => {
     expect(ticketPill(ticket({ status: "pending" }), {})).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "in_progress" }), {})).toEqual({ label: "Em preparo", tone: "primary" });
     expect(ticketPill(ticket({ status: "in_progress" }), { blocked: true })?.label).toBe("Bloqueado");
-    expect(ticketPill(ticket({ is_scheduled: true }), { next: true })).toBeNull();
   });
 
   it("destaque do próximo é borda + tint: ring fica reservado ao foco de teclado", () => {
@@ -376,18 +373,6 @@ describe("o botão do card", () => {
     expect(
       ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: false, finishing: true }).kind,
     ).toBe("undo");
-  });
-
-  it("encomenda futura não tem botão: prévia não age", () => {
-    const preview = ticketAction(ticket({ status: "scheduled", is_scheduled: true }), armed);
-    expect(preview.kind).toBe("none");
-    expect(preview.label).toBe("");
-  });
-
-  it("a data da prévia sai da ISO sem passar por fuso horário", () => {
-    expect(shortDateLabel("2026-09-19")).toBe("19/09");
-    expect(shortDateLabel("2026-01-01")).toBe("01/01");
-    expect(shortDateLabel("")).toBe("");
   });
 
   it("a janela de desfazer é curta o bastante para não segurar a cozinha", () => {

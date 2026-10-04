@@ -54,6 +54,8 @@ const props = withDefaults(
     danfePrinting?: boolean;
     touch?: boolean;
     canOpen?: boolean;
+    /** Celular (G17): o Recusar mora no deslize do cartão; a ação principal fica larga. */
+    swipeReject?: boolean;
   }>(),
   { canOpen: true },
 );
@@ -104,7 +106,7 @@ const recallOptions = computed(() => props.negotiationOnly ? [] : kitchenRecallO
 const onRoad = computed(() => onRoadLine(props.card));
 const affordances = computed(() => props.negotiationOnly ? [] : cardAffordances(props.card));
 const primary = computed(() => affordances.value.find((a) => a.priority === "primary" || a.disabled) ?? null);
-const secondary = computed(() => affordances.value.filter((a) => a !== primary.value));
+const secondary = computed(() => affordances.value.filter((a) => a !== primary.value && !(props.swipeReject && a.ref === "reject")));
 const primaryLabel = computed(() => primary.value ? primaryVerb(props.card, primary.value) : "");
 // A estação ainda trabalha e o "Marcar pronto" mora no menu: o lugar do botão diz o que
 // se espera ("Aguardando Café"), sem ser botão.
@@ -151,7 +153,9 @@ let pressTimer: ReturnType<typeof setTimeout> | null = null;
 function pressStart(event: PointerEvent) {
   if (props.negotiationOnly || props.selecting || event.button > 0) return;
   if ((event.target as HTMLElement).closest("button, a, input, textarea")) return;
-  pressTimer = setTimeout(() => { pressTimer = null; emit("select-mode"); }, 550);
+  // Na Saída larga (posto do passe, v4) o cartão não tem ⋯ à vista: o toque longo abre
+  // o menu do pedido. No resto do quadro, liga a seleção em lote.
+  pressTimer = setTimeout(() => { pressTimer = null; if (props.fill) menuOpen.value = true; else emit("select-mode"); }, 550);
 }
 function pressEnd() {
   if (pressTimer) clearTimeout(pressTimer);
@@ -242,8 +246,8 @@ function secondaryClass(priority: string): string {
           class="block break-all text-xs font-medium tnum text-muted-foreground"
           data-channel-display-id
         >iFood #{{ card.channel_display_id }}</span>
-        <p class="truncate op-title" :title="card.customer_name || 'Sem cliente'">
-          <span>{{ card.customer_name || "Sem cliente" }}</span><span class="font-normal text-muted-foreground"> · {{ channelLabel(card.channel_ref) }}</span>
+        <p class="op-title break-words" data-card-who>
+          <span>{{ card.customer_name || "Sem cliente" }}</span> <span class="font-normal whitespace-nowrap text-muted-foreground">· {{ channelLabel(card.channel_ref) }}</span>
         </p>
       </div>
       <div v-if="!handoff" class="flex shrink-0 flex-col items-end gap-1 pt-1">
@@ -262,7 +266,7 @@ function secondaryClass(priority: string): string {
         <span
           v-else
           class="op-micro tnum"
-          :class="clock.tone === 'late' ? 'font-semibold text-destructive' : clock.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted-foreground'"
+          :class="clock.tone === 'late' ? 'font-bold text-warning' : clock.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted-foreground'"
           data-card-clock
         ><template v-if="seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso">{{ card.status_label }} · </template>{{ clock.text }}</span>
       </div>
@@ -332,16 +336,14 @@ function secondaryClass(priority: string): string {
         >
           <Icon name="lucide:message-square" class="size-4" />
         </span>
-        <!-- Saída larga (v4): o pagamento só vira etiqueta quando pede atenção -->
-        <span v-if="fill && paymentAttention" :class="[CHIP, chipSize, 'bg-warning/12 text-warning']" data-card-payment-tag>
-          <Icon :name="paymentIcon" class="size-4" />{{ card.payment_method_label }}
-        </span>
         <span v-if="card.assigned_operator" :class="[CHIP, chipSize, 'bg-primary/12 text-primary']" data-card-assigned>
           <Icon name="lucide:user-check" class="size-4" /><span class="max-w-24 truncate">{{ card.assigned_operator }}</span>
         </span>
       </div>
 
-      <p class="op-body text-foreground/85" :class="fill ? 'line-clamp-1' : 'line-clamp-2'" :title="card.items_summary">{{ card.items_summary }}</p>
+      <!-- Saída larga (v4): o cartão fica com código, nome, etiquetas, traços e a frase; os
+           itens moram no detalhe e no cartão da coluna. -->
+      <p v-if="!fill" class="op-body text-foreground/85" :title="card.items_summary">{{ card.items_summary }}</p>
 
       <p v-if="card.courier_status_label" class="flex items-center gap-1.5 truncate op-micro text-muted-foreground">
         <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
@@ -376,7 +378,7 @@ function secondaryClass(priority: string): string {
             data-kitchen-station
           />
         </div>
-        <p v-if="progress.done" class="op-micro text-muted-foreground">{{ progress.summary }}</p>
+        <p v-if="progress.done" class="op-micro text-muted-foreground">{{ progress.summary }}<span v-if="fill && paymentAttention" class="text-warning" data-card-payment-note> · {{ card.payment_method_label.toLowerCase() }}</span></p>
         <p v-else class="op-label">
           <span class="text-muted-foreground">{{ progress.summary }} · </span><b class="font-semibold text-info" data-kitchen-missing>{{ progress.missing }}</b>
         </p>
@@ -407,6 +409,8 @@ function secondaryClass(priority: string): string {
           </button>
         </div>
       </div>
+
+      <p v-if="fill && paymentAttention && !progress?.done" class="op-micro text-warning" data-card-payment-note>{{ card.payment_method_label }}</p>
 
       <!-- o sistema fez: "Pronto · automático · desfazer" -->
       <div v-if="undo && undo.kind === 'auto_ready'" class="flex flex-wrap items-center gap-x-2 gap-y-1" :data-undo="undo.kind">
@@ -571,12 +575,13 @@ function secondaryClass(priority: string): string {
       </template>
       <div v-else class="flex-1" />
 
-      <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir -->
-      <div class="relative shrink-0">
+      <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. Na Saída larga
+           (v4) ele não aparece: o toque longo abre o menu, e o teclado ainda o alcança. -->
+      <div class="relative shrink-0" :class="fill ? 'absolute right-3 bottom-3 size-0' : ''">
         <button
           type="button"
           class="grid h-full place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          :class="touch ? 'min-h-14 w-14' : 'min-h-12 w-12'"
+          :class="[touch ? 'min-h-14 w-14' : 'min-h-12 w-12', fill ? 'sr-only focus:not-sr-only' : '']"
           aria-haspopup="menu"
           :aria-expanded="menuOpen"
           :aria-label="`Mais ações do pedido ${code.code}`"

@@ -38,7 +38,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: {
         surfaceRef: "hub",
-        categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
+        categories: ["campaign", "production", "order", "purchase", "report", "kitchen", "sign_in", "system"],
       },
       shortcuts: [
         { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders" },

@@ -11,7 +11,10 @@ import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vu
 import {
   appendTag,
   changeBackSuggestionQ,
+  confirmationRemainingLabel,
+  lucideIcon,
   moneyInput,
+  realtimeIndicator,
   splitRef,
   statusTone,
   toneBadge,
@@ -34,7 +37,7 @@ const { readMetadata, order, pending, error, refresh, busy, mutationError, confi
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
-useOrderEvents(orderRef.value, () => refresh());
+const { realtime } = useOrderEvents(orderRef.value, () => refresh());
 
 // O rascunho do comentário mora aqui (o aviso de texto não salvo é da página);
 // o campo é do `OperatorOrderDetail`, que só o mostra com a ação `comment`.
@@ -253,41 +256,205 @@ async function submitDispatch(value: string | null) {
 
 // Estação travada pelo servidor: não é "pedido não encontrado".
 const { denied: stationLocked } = useStationLock();
+
+// ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
+const isPhone = useMediaQuery("(max-width: 767.98px)");
+const MENU_ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50";
+function menuDo(fn: () => unknown) {
+  menuOpen.value = false;
+  void fn();
+}
+const rejectAction = computed(() => projectedAction("reject"));
+/** A ação primária do pedido agora: aceitar, o próximo passo do fluxo ou o acerto. O
+ *  servidor decide se vale; travada, ela continua no lugar dizendo por quê. */
+const primary = computed(() => {
+  const o = order.value;
+  if (!o) return null;
+  const confirmAction = projectedAction("confirm");
+  if (confirmAction) return { key: "confirm" as const, label: "Aceitar", icon: "lucide:check", enabled: confirmAction.enabled, reason: confirmAction.reason };
+  const advance = advanceAction.value;
+  if (advance) {
+    return advance.enabled
+      ? { key: "advance" as const, label: o.next_action_label || advance.label, icon: "lucide:arrow-right", enabled: true, reason: "" }
+      : { key: "advance" as const, label: (o.advance_block_label || advance.label).replace(/…$/, ""), icon: "lucide:lock", enabled: false, reason: advance.reason };
+  }
+  if (o.can_settle_delivery_cash) {
+    return { key: "settle" as const, label: o.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega", icon: "lucide:banknote", enabled: Boolean(settleAction.value?.enabled), reason: settleAction.value?.reason || "" };
+  }
+  return null;
+});
+function runPrimary() {
+  const p = primary.value;
+  if (!p?.enabled || busy.value) return;
+  if (p.key === "confirm") confirm();
+  else if (p.key === "advance") onAdvance();
+  else openDialog("settle");
+}
+// O ao vivo do cabeçalho: a hora da última leitura útil e o estado do empurrão (SSE).
+const liveTone = computed(() => (error.value ? "off" : realtime.value === "live" ? "live" : realtime.value === "connecting" ? "late" : "calm"));
+const liveLabel = computed(() => realtimeIndicator(realtime.value).label);
+const liveDetail = computed(() => realtimeIndicator(realtime.value).title);
+// A hora sai do relógio do navegador (fuso de quem opera), nunca do servidor no SSR.
+const clockReady = ref(false);
+onMounted(() => { clockReady.value = true; });
+const readClock = computed(() => {
+  const at = clockReady.value ? readMetadata?.value?.generated_at : "";
+  return at ? new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+});
+const channelIcon = computed(() => `lucide:${lucideIcon(order.value?.channel_icon || "")}`);
+// "Confirma sozinho em 4:32 se ninguém recusar." — o prazo do pedido novo, no relógio.
+const deadlineText = computed(() => {
+  const o = order.value;
+  if (!o?.confirmation_deadline_iso) return null;
+  const left = confirmationRemainingLabel(o.confirmation_deadline_iso, nowMs.value);
+  if (!left || left === "0:00") return null;
+  return o.confirmation_action === "cancel"
+    ? { before: "Cancela sozinho em", left, after: "se ninguém aceitar." }
+    : { before: "Confirma sozinho em", left, after: "se ninguém recusar." };
+});
+// Bilhete de volta: quem veio de outro app (`?back=<url>&back_label=<texto>`) volta para
+// onde estava. Só endereço http(s); sem os dois parâmetros, nada aparece.
+const returnTicket = computed(() => {
+  const query = route.query ?? {};
+  const href = typeof query.back === "string" ? query.back : "";
+  const label = typeof query.back_label === "string" ? query.back_label.trim() : "";
+  return href && label && /^https?:\/\//.test(href) ? { href, label } : null;
+});
+// Fora da loja (G18): com o consentimento, a posição do dispositivo decide o resumo.
+const outside = useOutsideStore(() => order.value?.store_location ?? null, isPhone);
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-detail3.html`): o caminho
-         de volta, o pedido, o estado e o ao vivo. -->
-    <OperatorPageHeader :title="`Pedido ${code.code}`">
+  <main class="flex min-h-0 flex-1 flex-col" :class="isPhone ? 'pb-24' : ''">
+    <!-- Cabeçalho de UMA linha (G14, prévia v3 `depois-gestor-detalhe`):
+         ‹ Pedidos | Pedido S84 · estado · ao vivo | bilhete de volta | ⋯ | a ação primária.
+         No celular (v3 `depois-gestor-celular` (c)): ← U68 · iFood · ⋯, e o gesto desce
+         para o polegar. -->
+    <OperatorPageHeader :title="clockReady && isPhone ? code.code : `Pedido ${code.code}`">
       <template #lead>
         <NuxtLink
           :to="backLocation"
           class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
           :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+          data-detail-back
         >
-          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
+          <Icon :name="isPhone ? 'lucide:arrow-left' : 'lucide:chevron-left'" class="size-5 md:size-4" />
           <span class="max-md:sr-only">{{ fromHistory ? "Histórico" : "Pedidos" }}</span>
         </NuxtLink>
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
       <template #status>
+        <!-- Celular e desktop pelo CSS (não pela largura lida no JS): o servidor desenha
+             o mesmo que o navegador vai mostrar. -->
+        <span v-if="order" class="inline-flex min-w-0 items-center gap-1 op-micro text-muted-foreground md:hidden" data-detail-channel>
+          <Icon :name="channelIcon" class="size-4 shrink-0" />{{ order.channel_name || order.channel_ref }}
+        </span>
         <span
           v-if="order?.status_label"
           class="hidden h-6 shrink-0 items-center gap-1.5 rounded-full border border-transparent px-2 text-xs font-semibold md:inline-flex"
           :class="toneBadge(statusTone(order.status))"
+          data-detail-status
         >
           <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
           {{ order.status_label }}
         </span>
-        <span class="hidden op-micro text-muted-foreground lg:inline">{{ code.prefix }}</span>
+        <span class="hidden md:inline-flex">
+          <OperatorLiveStatus :tone="liveTone" :time="readClock" :label="error ? 'Atualização falhou' : liveLabel" :detail="liveDetail" />
+        </span>
       </template>
-      <template #actions>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+      <template #phone-actions>
+        <div class="relative">
+          <button type="button" class="grid size-12 place-items-center rounded-md" aria-label="Mais ações do pedido" :aria-expanded="menuOpen" data-action="menu-phone" @click="menuOpen = !menuOpen">
+            <Icon name="lucide:ellipsis-vertical" class="size-6" />
+          </button>
+        </div>
+      </template>
+      <template v-if="!isPhone" #actions>
+        <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
+        <a
+          v-if="returnTicket"
+          :href="returnTicket.href"
+          class="inline-flex h-control items-center gap-2 rounded-full bg-destructive/85 px-4 op-label font-semibold text-white transition hover:bg-destructive"
+          data-detail-return
+        >
+          <Icon name="lucide:corner-up-left" class="size-4" />{{ returnTicket.label }}
+        </a>
+        <div class="relative">
+          <UiIconButton icon="lucide:ellipsis" label="Mais ações do pedido" aria-haspopup="menu" :aria-expanded="menuOpen" data-action="menu" @click="menuOpen = !menuOpen" />
+        </div>
+        <button
+          v-if="rejectAction"
+          type="button"
+          :disabled="busy || !rejectAction.enabled"
+          class="inline-flex h-control items-center gap-1.5 rounded-md border border-border bg-card px-3.5 op-label font-semibold text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          data-action="reject"
+          @click="openDialog('reject')"
+        >Recusar</button>
+        <button
+          v-if="primary"
+          type="button"
+          :disabled="busy || !primary.enabled"
+          :title="primary.reason || undefined"
+          class="inline-flex h-control items-center gap-2 rounded-md px-4 op-label font-semibold transition"
+          :class="primary.enabled ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
+          :data-action="primary.key === 'advance' && !primary.enabled ? 'advance-blocked' : primary.key"
+          @click="runPrimary"
+        >
+          <Icon :name="primary.icon" class="size-4" />{{ primary.label }}
+        </button>
       </template>
     </OperatorPageHeader>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
-    <div class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-6 md:pt-4">
+
+    <!-- ⋯ do pedido: atualizar e os gestos que não são o do momento -->
+    <template v-if="menuOpen">
+      <div class="fixed inset-0 z-40" :class="isPhone ? 'bg-black/30' : ''" aria-hidden="true" @click="menuOpen = false" />
+      <div
+        class="fixed z-50 overflow-y-auto rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg"
+        :class="isPhone ? 'inset-x-2 bottom-2 max-h-[80dvh]' : 'top-16 right-4 w-80 max-h-[calc(100dvh-5rem)]'"
+        role="menu"
+        data-detail-menu
+      >
+        <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
+        <button type="button" role="menuitem" :class="MENU_ITEM" data-action="refresh" @click="refresh()">
+          <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
+        </button>
+        <button v-if="menuAdvance" type="button" role="menuitem" :disabled="busy || !menuAdvance.enabled" :title="menuAdvance.reason || undefined" :class="MENU_ITEM" class="flex-col items-start! py-2" data-action="menu-advance" @click="onMenuAdvance">
+          <span class="font-semibold">{{ menuAdvance.label }}</span>
+          <span class="text-xs text-muted-foreground">O pronto vem sozinho quando a Cozinha conclui. Use para a estação sem tela.</span>
+        </button>
+        <button v-if="order?.can_settle_delivery_cash && primary?.key !== 'settle'" type="button" role="menuitem" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" :class="MENU_ITEM" @click="menuDo(() => openDialog('settle'))">
+          <Icon name="lucide:banknote" class="size-4 text-muted-foreground" />{{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
+        </button>
+        <button v-if="order?.equipment_back_pending" type="button" role="menuitem" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || undefined" :class="MENU_ITEM" @click="menuDo(equipmentBack)">
+          <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />Maquininha voltou
+        </button>
+        <button v-if="order?.fiscal_status === 'failed'" type="button" role="menuitem" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || undefined" :class="MENU_ITEM" @click="menuDo(requeueFiscal)">
+          <Icon name="lucide:file-text" class="size-4 text-muted-foreground" />Reprocessar NFC-e
+        </button>
+        <button v-if="order?.can_resend_payment_link" type="button" role="menuitem" :disabled="busy" :class="MENU_ITEM" data-action="resend-payment-link" @click="menuDo(resendPaymentLink)">
+          <Icon name="lucide:send" class="size-4 text-muted-foreground" />Reenviar link de pagamento
+        </button>
+        <!-- Cancelar mora no ⋯ (v3): `can_cancel` já é régua + política + permissão. -->
+        <button v-if="order?.can_cancel" type="button" role="menuitem" :disabled="busy" :class="MENU_ITEM" class="text-destructive" data-action="cancel" @click="menuDo(() => openDialog('cancel'))">
+          <Icon name="lucide:ban" class="size-4" />{{ order.cancel_requires_approval ? "Cancelar pedido (pede gerente)" : "Cancelar pedido" }}
+        </button>
+        <p v-else-if="order?.cancel_block_label" class="px-2.5 py-2 op-micro text-muted-foreground" data-cancel-block>{{ order.cancel_block_label }}</p>
+      </div>
+    </template>
+
+    <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
+    <div v-if="outside.askConsent.value" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 op-label md:mx-6" data-outside-consent>
+      <Icon name="lucide:map-pin" class="size-4 text-info" />
+      <span class="min-w-0 flex-1 basis-[16rem]">Usar a localização deste dispositivo para, fora da loja, mostrar só o que pede decisão?</span>
+      <button type="button" class="h-9 rounded-md px-3 font-semibold text-muted-foreground hover:bg-accent" @click="outside.decline()">Agora não</button>
+      <button type="button" class="h-9 rounded-md bg-primary px-3 font-semibold text-primary-foreground" @click="outside.allow()">Permitir</button>
+    </div>
+    <p v-if="outside.away.value" class="mx-4 mt-3 flex items-center gap-2 rounded-lg bg-info/12 px-3 py-2 op-label font-semibold text-info md:mx-6" data-outside-band>
+      <Icon name="lucide:map-pin-off" class="size-4 shrink-0" />Você está fora da loja: mostrando o que pede decisão
+      <button type="button" class="ml-auto shrink-0 font-semibold underline underline-offset-2" @click="outside.showAll()">Ver tudo</button>
+    </p>
+
+    <div class="flex w-full flex-col gap-4 p-4 md:p-6 md:pt-4">
 
     <p v-if="pending && !order" class="text-sm text-muted-foreground">Carregando…</p>
     <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
@@ -303,6 +470,9 @@ const { denied: stationLocked } = useStationLock();
       :order="order"
       :busy="busy"
       :admin-base-url="adminBaseUrl"
+      :show-status="false"
+      :decision-only="outside.away.value"
+      layout="split"
       @comment="submitComment"
     >
       <!-- iFood: o resumo do pagamento/operação e as negociações abertas. -->
@@ -311,85 +481,41 @@ const { denied: stationLocked } = useStationLock();
         <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
       </template>
 
+      <!-- O estado do momento, escrito: no celular as pílulas e o prazo (v3 (c)); em todo
+           tamanho, o "o sistema fez · desfazer" e o bloqueio do avanço com o motivo. -->
       <template #actions>
-        <!-- actions — as MESMAS regras do board (cardAffordances), lidas da mesma
-             projection. A guarda do "Avançar" era `can_settle_delivery_cash !==
-             undefined`, sempre verdadeira, e o "Aceitar" não tinha guarda: num
-             pedido `new` os dois apareciam cheios e o clique levava 400. Aqui o
-             que decide é o servidor, e quando ele bloqueia o lugar do botão
-             continua ocupado dizendo o motivo, em vez de sumir. -->
-        <section class="flex flex-wrap gap-2">
-          <div v-if="undo" class="flex w-full flex-wrap items-center gap-2 text-sm" :data-undo="undo.kind">
+        <section v-if="(isPhone && order.status_label) || deadlineText || undo || (advanceAction && !advanceAction.enabled && order.advance_block_reason)" class="flex flex-col gap-2.5" data-detail-state>
+          <div v-if="isPhone" class="flex flex-wrap items-center gap-2" data-detail-pills>
+            <span class="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold" :class="toneBadge(statusTone(order.status))">
+              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ order.status_label }}
+            </span>
+            <span v-if="order.payment_method_label" class="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs font-semibold text-muted-foreground">
+              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ order.payment_status_label ? `${order.payment_method_label} · ${order.payment_status_label}` : order.payment_method_label }}
+            </span>
+          </div>
+          <p v-if="deadlineText" class="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 op-body" data-detail-deadline>
+            <Icon name="lucide:timer" class="size-5 shrink-0 text-warning" />
+            <span>{{ deadlineText.before }} <b class="tnum">{{ deadlineText.left }}</b> {{ deadlineText.after }}</span>
+          </p>
+          <div v-if="undo" class="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm" :data-undo="undo.kind">
             <span class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium">
               <Icon :name="undo.kind === 'handoff' ? 'lucide:check' : 'lucide:sparkles'" class="size-3.5" />
               {{ undo.label }}
             </span>
             <span class="text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
             <span v-if="undo.alreadyOut" class="text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
-            <button v-if="undo.canUndo" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="undo" @click="onUndo">
+            <button v-if="undo.canUndo" type="button" :disabled="busy" class="ml-auto inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="undo" @click="onUndo">
               <Icon name="lucide:undo-2" class="size-4" /> <span class="tabular-nums">{{ undo.kind === "handoff" ? `Desfazer ${undo.countdown}` : "Desfazer" }}</span>
             </button>
           </div>
-          <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
-            <Icon name="lucide:check" class="size-4" /> Aceitar
-          </button>
-          <button v-else-if="advanceAction?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
-            <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
-          </button>
-          <button v-else-if="advanceAction" type="button" disabled :title="advanceAction?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
-            <Icon name="lucide:clock" class="size-4" /> {{ advanceAction?.reason }}
-          </button>
-          <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-            <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
-          </button>
-          <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
-            <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
-          </button>
-          <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
-            <Icon name="lucide:file-text" class="size-4" /> Reprocessar NFC-e
-          </button>
-          <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
-               não pago, não vencido) — o servidor decide, a tela obedece. A
-               cadência (cedo demais, envio em andamento) é recusa da hora do
-               clique, com o motivo no toast. -->
-          <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
-            <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
-          </button>
-          <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
-               aceito o gesto certo é Cancelar. -->
-          <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
-            <Icon name="lucide:x" class="size-4" /> Recusar
-          </button>
-          <!-- `can_cancel` já é régua + política + permissão, resolvidas no
-               servidor. O botão ficava sempre visível e o servidor respondia
-               "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
-               de oferecer um gesto que não acontece. -->
-          <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
-            <Icon name="lucide:ban" class="size-4" />
-            {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
-          </button>
-          <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
-            {{ order.cancel_block_label }}
+          <p v-if="advanceAction && !advanceAction.enabled && order.advance_block_reason" class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 op-label" data-detail-block>
+            <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
+            <span><b class="font-semibold">{{ order.advance_block_label.replace(/…$/, "") || "Bloqueado" }}</b> · {{ order.advance_block_reason }}</span>
           </p>
-          <!-- Menu do pedido (⋯): o gesto à mão do que o sistema faz sozinho. Hoje,
-               "Marcar pronto" enquanto a Cozinha trabalha (estação sem tela, caso
-               que o sistema não viu). -->
-          <div v-if="menuAdvance" class="relative ml-auto">
-            <button type="button" class="grid min-h-control min-w-control place-items-center rounded-md border transition hover:bg-accent" aria-label="Mais ações do pedido" :aria-expanded="menuOpen" data-action="menu" @click="menuOpen = !menuOpen">
-              <Icon name="lucide:ellipsis" class="size-4" />
-            </button>
-            <div v-if="menuOpen" class="fixed inset-0 z-10" aria-hidden="true" @click="menuOpen = false" />
-            <div v-if="menuOpen" class="absolute right-0 z-20 mt-1 w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md" role="menu">
-              <button type="button" role="menuitem" :disabled="busy || !menuAdvance.enabled" :title="menuAdvance.reason || undefined" class="flex min-h-control w-full flex-col items-start rounded px-2.5 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50" data-action="menu-advance" @click="onMenuAdvance">
-                <span class="font-semibold">{{ menuAdvance.label }}</span>
-                <span class="text-xs text-muted-foreground">O pronto vem sozinho quando a Cozinha conclui. Use para a estação sem tela.</span>
-              </button>
-            </div>
-          </div>
         </section>
       </template>
 
-      <template #after-profile>
+      <template v-if="!outside.away.value" #after-profile>
         <!-- corrida de entrega (logística externa) -->
         <OrderCourierPanel
           v-if="order.courier"
@@ -407,9 +533,9 @@ const { denied: stationLocked } = useStationLock();
       </template>
 
       <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->
-      <template #kitchen-note>
+      <template v-if="!outside.away.value" #kitchen-note>
         <section class="flex flex-col gap-2 rounded-lg border bg-card p-4">
-          <label class="text-sm font-bold uppercase tracking-wide" for="order-notes">Nota da cozinha</label>
+          <label class="text-sm font-bold uppercase tracking-wide" for="order-notes">Nota para a cozinha</label>
           <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
           <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
             <button
@@ -426,7 +552,7 @@ const { denied: stationLocked } = useStationLock();
             id="order-notes"
             v-model="notes"
             rows="3"
-            placeholder="Instruções de preparo para a cozinha…"
+            placeholder="Escreva uma nota…"
             class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
           <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
@@ -440,6 +566,7 @@ const { denied: stationLocked } = useStationLock();
           </div>
           <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
           <button
+            v-if="notesDirty || notesConflict"
             type="button"
             :disabled="busy || !notesDirty || notesConflict"
             class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
@@ -450,6 +577,34 @@ const { denied: stationLocked } = useStationLock();
         </section>
       </template>
     </OperatorOrderDetail>
+
+    <!-- celular: o gesto no polegar, fixo (v3 (c)): Recusar menor à esquerda, a ação
+         principal larga. Cobre a barra de seções, como na prévia. -->
+    <div
+      v-if="isPhone && order && (primary || rejectAction)"
+      class="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+      data-detail-thumb
+    >
+      <button
+        v-if="rejectAction"
+        type="button"
+        :disabled="busy || !rejectAction.enabled"
+        class="h-14 rounded-xl border border-border bg-card px-5 op-action font-semibold text-destructive disabled:opacity-50"
+        data-action="reject"
+        @click="openDialog('reject')"
+      >Recusar</button>
+      <button
+        v-if="primary"
+        type="button"
+        :disabled="busy || !primary.enabled"
+        class="flex h-14 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl op-action font-semibold"
+        :class="primary.enabled ? 'bg-primary text-primary-foreground' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
+        :data-action="primary.key"
+        @click="runPrimary"
+      >
+        <Icon :name="primary.icon" class="size-5" />{{ primary.label }}
+      </button>
+    </div>
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
