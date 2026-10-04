@@ -7,7 +7,7 @@ test.describe("KDS — banner de conexão", () => {
   test("aparece ao cair a rede e some ao voltar", async ({ page, context }) => {
     await context.addCookies([authed]);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Escolha uma estação" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Estações" })).toBeVisible();
 
     await expect(page.getByText(/Sem conexão/i)).toHaveCount(0);
     await context.setOffline(true);

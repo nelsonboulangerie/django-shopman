@@ -38,9 +38,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS = [
   // saiu da lista com elas.
   "pos-nuxt/app/pages/index.vue",
   "pos-nuxt/app/pages/session/index.vue",
-  // A Cozinha carrega relógio ao vivo e seletor de dia operacional no cabeçalho.
-  "kds-nuxt/app/pages/[ref].vue",
-  "kds-nuxt/app/pages/index.vue",
   // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
   "production-nuxt/app/components/ProductionHeader.vue",
   "production-nuxt/app/components/RecipeHeader.vue",
@@ -103,6 +100,7 @@ describe("guardrail do cabeçalho de seções", () => {
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
     const migrados = [
       "orders-nuxt/app/components/GestorNav.vue",
+      "kds-nuxt/app/components/KdsNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",
