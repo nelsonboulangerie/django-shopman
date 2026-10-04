@@ -97,7 +97,7 @@ def test_mark_ticket_done_requires_acknowledging_item_cancellation(ticket):
         cancelled_at=timezone.now(),
     )
 
-    with pytest.raises(KDSError, match="toque em Ciente"):
+    with pytest.raises(KDSError, match="Toque em Recebi o cancelamento"):
         kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
 
     ticket.refresh_from_db()

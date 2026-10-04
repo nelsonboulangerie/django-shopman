@@ -50,11 +50,11 @@ class FutureWorkBlocked(ValueError):
 
 
 class TicketRecallBlocked(ValueError):
-    """Desfazer finalização recusado: o pedido já saiu da cozinha."""
+    """Desfazer o Pronto recusado: o pedido já saiu da cozinha."""
 
 
 # Enquanto o pedido está num destes, a cozinha ainda responde por ele e o
-# "desfazer finalização" tem o que desfazer. Depois (despachado, entregue,
+# "desfazer o Pronto" tem o que desfazer. Depois (despachado, entregue,
 # concluído, cancelado, devolvido) reabrir o ticket poria trabalho morto de volta
 # na grade — e, num pedido pronto que já tinha saído, nada o traria de volta.
 RECALLABLE_ORDER_STATUSES = frozenset({
@@ -74,7 +74,7 @@ def recall_block_reason(source) -> str:
     """
     if not isinstance(source, Order) or source.status in RECALLABLE_ORDER_STATUSES:
         return ""
-    return f"O pedido já está {source.get_status_display()}: a finalização não pode mais ser desfeita."
+    return f"O pedido já está {source.get_status_display()}: o Pronto não pode mais ser desfeito."
 
 
 def dispatch(order) -> list:
@@ -591,7 +591,8 @@ def reconcile_to_lines(order, *, previous_lines: list[dict]) -> dict:
     - linha que saiu, ou cuja quantidade mudou, é **desfirada**
       (``unfire_session_lines``). Isso não apaga o fato: o adapter recorta a
       linha do ticket vivo e cria um ticket ``cancelled`` só com ela, que é o
-      comprovante que o board mostra e que alguém precisa dar "Ciente". A
+      comprovante que o board mostra e que alguém precisa confirmar em "Recebi o
+      cancelamento". A
       cozinha não descobre por adivinhação que parou de fazer alguma coisa.
     - a lista nova é **firada** em seguida. ``fire_lines`` é idempotente por
       ``line_id``, então o que não mudou não vira ticket de novo, e a linha
@@ -932,7 +933,8 @@ def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station")
         .exists()
     ):
         raise TicketCompletionBlocked(
-            "Há item cancelado neste pedido. Confira o alerta vermelho e toque em Ciente antes de finalizar."
+            "Há item cancelado neste pedido. Toque em Recebi o cancelamento, no cartão vermelho, "
+            "para poder marcar Pronto."
         )
     order = source if isinstance(source, Order) else None
     if order is not None and order.status in (Order.Status.NEW, Order.Status.ACCEPTED):
@@ -953,7 +955,7 @@ def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station")
 
 
 def reopen_ticket(ticket, *, actor: str) -> bool:
-    """Recall a done ticket back to work (operator un-bump / desfazer finalização).
+    """Recall a done ticket back to work (operator un-bump / desfazer o Pronto).
 
     Reverses ``complete_ticket``: ``done`` → ``in_progress``. If the order had
     advanced to READY because this was its last open ticket, it is pulled back to

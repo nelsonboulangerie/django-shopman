@@ -130,9 +130,9 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
 // rotulado. O preparo é estado do TICKET (o servidor guarda e todos os tablets
 // veem), nunca do item.
 
-/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. O
+/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de Pronto. O
  *  botão fica no MESMO lugar nos dois estados, então um toque duplo (ou o dedo
- *  que quica na tela molhada) iniciaria e finalizaria o mesmo pedido em 300 ms.
+ *  que quica na tela molhada) iniciaria e marcaria Pronto no mesmo pedido em 300 ms.
  *  Durante o intervalo o rótulo já é "Pronto" — o que muda é só ele
  *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
@@ -159,14 +159,14 @@ const NO_ACTION: KDSTicketAction = { kind: "none", label: "", icon: "", enabled:
 
 /** O que o botão do card oferece, dado o estado do ticket.
  *
- *  - `undo`  — finalizado há menos de 5 s; o POST ainda não saiu.
+ *  - `undo`  — Pronto há menos de 5 s; o POST ainda não saiu.
  *  - `blocked` — há item cancelado deste pedido esperando confirmação: o servidor
- *    recusaria o finalizar, então a tela recusa antes e diz PARA ONDE ir. Iniciar
+ *    recusaria o Pronto, então a tela recusa antes e diz PARA ONDE ir. Iniciar
  *    nunca é bloqueado — começar o que sobrou é seguro.
  *  - `locked` — o servidor recusaria o Pronto por outro motivo (pagamento digital
  *    ainda não capturado, pedido sem confirmação: `finish_block_label`). O botão fica
  *    no lugar, tracejado e com cadeado, e o toque diz o motivo em vez de fingir que
- *    finalizou. Iniciar continua livre: "pode adiantar".
+ *    deu Pronto. Iniciar continua livre: "pode adiantar".
  */
 export function ticketAction(
   ticket: Pick<KDSTicketProjection, "status"> & { finish_block_label?: string },
@@ -284,8 +284,8 @@ export function ticketStartLine(
   return parts.join(" · ");
 }
 
-/** Pedidos com item cancelado ainda sem "Ciente" nesta estação. O servidor
- *  bloqueia o finalizar por pedido+estação; a referência exibida é a mesma
+/** Pedidos com item cancelado ainda sem "Recebi o cancelamento" nesta estação. O servidor
+ *  bloqueia o Pronto por pedido+estação; a referência exibida é a mesma
  *  para o ticket vivo e o cancelado da mesma venda. */
 export function blockedOrderRefs(cancelled: KDSTicketProjection[]): Set<string> {
   return new Set(cancelled.map((ticket) => ticket.order_ref));
@@ -314,16 +314,16 @@ export interface KDSBoardView {
   /** Active tickets, auto-sorted by urgency. */
   cards: KDSTicketProjection[];
   cancelled: KDSTicketProjection[];
-  /** Concluídos recentes (≤30min) — para recall (desfazer finalização). */
+  /** Concluídos recentes (≤30min) — para recall (desfazer o Pronto). */
   recentDone: KDSTicketProjection[];
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
-  /** Pedidos com cancelado sem confirmação — finalizar espera. */
+  /** Pedidos com cancelado sem confirmação: o Pronto espera. */
   blockedRefs: Set<string>;
   /** Tickets que são adicional de um pedido já visto nesta estação. */
   additionPks: Set<number>;
-  /** Finalizados com a janela de "Desfazer" aberta: continuam na grade, apagados. */
+  /** Marcados Pronto com a janela de "Desfazer" aberta: continuam na grade, apagados. */
   finishingPks: Set<number>;
   /** O ticket que a estação deve pegar agora (o 1º da ordem de urgência que
    *  ainda é trabalho). Nunca um que está saindo. */
@@ -342,7 +342,7 @@ export function stationDensity(value: string): KDSDensity {
   return value === "compact" || value === "roomy" ? value : "cozy";
 }
 
-/** `finishingPks`: tickets finalizados cuja janela de "Desfazer" ainda está
+/** `finishingPks`: tickets marcados Pronto cuja janela de "Desfazer" ainda está
  *  aberta. Eles CONTINUAM na grade, no mesmo lugar, apagados e carregando o
  *  botão de desfazer — sumir e oferecer o desfazer num aviso lá no topo da tela
  *  era pedir que a cozinha atravessasse a tela com a mão ocupada. O que eles

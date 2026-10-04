@@ -52,11 +52,11 @@ const props = withDefaults(
     ticket: KDSTicketProjection;
     density?: KDSDensity;
     next?: boolean;
-    /** Há item cancelado deste pedido sem confirmação — finalizar espera. */
+    /** Há item cancelado deste pedido sem confirmação: o Pronto espera. */
     blocked?: boolean;
     /** Ticket adicional de um pedido que já passou por esta estação. */
     addition?: boolean;
-    /** Finalizado com a janela de "Desfazer" ainda aberta. */
+    /** Marcado Pronto com a janela de "Desfazer" ainda aberta. */
     finishing?: boolean;
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
@@ -84,8 +84,8 @@ const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && 
 // a mais na tela. A página decide se escuta (`@hold`).
 const longPress = useLongPress(() => emit("hold"));
 
-// Armar o finalizar: o botão fica no MESMO lugar nos dois estados, então o toque
-// que INICIOU não pode, quicando, finalizar também. O rótulo já é "Pronto"
+// Armar o Pronto: o botão fica no MESMO lugar nos dois estados, então o toque
+// que INICIOU não pode, quicando, marcar Pronto também. O rótulo já é "Pronto"
 // durante o intervalo — o que muda é só ele não aceitar o toque. Card que
 // já chega em preparo (outro tablet, recarga) nasce armado.
 const armed = ref(props.ticket.status !== "pending");
@@ -130,16 +130,16 @@ const actionAria = computed(() => {
   const kind = action.value.kind;
   if (kind === "start") return `Iniciar o preparo do pedido ${code.value}`;
   if (kind === "finish") return `Marcar o pedido ${code.value} como pronto`;
-  if (kind === "undo") return `Desfazer a finalização do pedido ${code.value}`;
+  if (kind === "undo") return `Desfazer o Pronto do pedido ${code.value}`;
   if (kind === "blocked")
-    return `Pedido ${code.value}: confirme o cancelamento no cartão vermelho para poder finalizar`;
+    return `Pedido ${code.value}: toque em Recebi o cancelamento, no cartão vermelho, para poder marcar Pronto`;
   if (kind === "locked")
     return `Pedido ${code.value}: ${props.ticket.finish_block_label}. ${props.ticket.finish_block_reason}`;
   return "";
 });
 
 // Tom do botão por ato (v4): o convite do PRÓXIMO é o único sólido de iniciar; os
-// outros convites são contornados; finalizar é verde sólido; travado é tracejado.
+// outros convites são contornados; Pronto é verde sólido; travado é tracejado.
 const actionTone = computed<KdsCardButtonTone>(() => {
   const kind = action.value.kind;
   if (kind === "start") return props.next ? "lead" : "invite";
@@ -355,7 +355,7 @@ const d = computed(() => ({
           class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
         >
           <Icon name="lucide:check-check" class="size-4 shrink-0" />
-          Finalizado. Sai em {{ undoWindowSeconds }}s
+          Pronto. Sai em {{ undoWindowSeconds }}s
         </p>
         <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <div class="kds-undo-drain h-full bg-foreground/50" />

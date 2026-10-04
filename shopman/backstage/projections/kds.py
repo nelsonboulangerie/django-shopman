@@ -182,7 +182,7 @@ class KDSBoardProjection:
     tickets: tuple[KDSTicketProjection, ...]
     counts: dict[str, int]  # "pending", "in_progress", "total"
     cancelled_tickets: tuple[KDSTicketProjection, ...] = ()
-    recent_done: tuple[KDSTicketProjection, ...] = ()  # para recall (desfazer finalização)
+    recent_done: tuple[KDSTicketProjection, ...] = ()  # para recall (desfazer o Pronto)
     # Como a estação provisionada se mostra (prévia v4, nota 1: "densidade e som
     # saem do botão: vêm da estação provisionada"). É da BANCADA, não do toque de
     # quem passa: o cadastro guarda (``KDSInstance.sound_enabled`` e
@@ -298,7 +298,7 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
     cancelled = [ticket for ticket in cancelled_all if _due_today(sources[ticket.pk], today=today)]
     from shopman.shop.services import kds as kds_core
 
-    # A lista de concluídos existe só para o "desfazer finalização": ticket de
+    # A lista de concluídos existe só para o "desfazer o Pronto": ticket de
     # pedido que já saiu da cozinha (despachado, concluído, cancelado) não entra,
     # porque o servidor recusaria o desfazer (``recall_block_reason``).
     done = [
@@ -487,7 +487,7 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     from shopman.orderman.models import Session
 
     # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
-    # "pronto", ticket nunca finalizado) não é chamada para o cliente do salão,
+    # "pronto", ticket que nunca recebeu o Pronto) não é chamada para o cliente do salão,
     # e encomenda de amanhã também não. O dia do pedido é a data do compromisso
     # quando há, senão o dia em que ele nasceu — pelo relógio da loja
     # (``localdate``), o mesmo do quadro do KDS. Mais recentes primeiro.

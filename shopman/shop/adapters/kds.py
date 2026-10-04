@@ -93,9 +93,9 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
             if kept:
                 # Não apague o fato operacional. Antes, um cancelamento parcial
                 # apenas sumia do JSON do ticket vivo: o KDS não tinha card,
-                # alerta nem gesto de ciência e deixava finalizar o restante em
+                # alerta nem gesto de ciência e deixava marcar Pronto no restante em
                 # silêncio. O comprovante cancelado preserva somente os itens
-                # retirados e usa o fluxo canônico de "Ciente" do board.
+                # retirados e usa o fluxo canônico de "Recebi o cancelamento" do board.
                 ticket.items = kept
                 ticket.save(update_fields=["items"])
                 KDSTicket.objects.create(

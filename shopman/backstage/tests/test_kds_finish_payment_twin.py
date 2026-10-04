@@ -1,6 +1,6 @@
 """A gêmea do gate de pagamento no card da estação (prévia v4, K11).
 
-O servidor recusa o Finalizar de um pedido que ainda não pode entrar em preparo
+O servidor recusa o Pronto de um pedido que ainda não pode entrar em preparo
 (pagamento digital não capturado, pedido sem confirmação). Antes a cozinha só
 descobria depois do toque, num toast que chegava quando a janela de "Desfazer"
 fechava. O card diz antes, e não diz nada quando o pagamento é na porta.

@@ -142,7 +142,7 @@ function boardFor(ref, tickets, name) {
   };
 }
 
-/** Estado vivo da prévia: iniciar/finalizar mudam o quadro, para que dê
+/** Estado vivo da prévia: iniciar e Pronto mudam o quadro, para que dê
  *  para tocar nos botões e ver o card responder. Reiniciar o mock volta ao começo. */
 export function createPreviewState() {
   const prep = PREP_TICKETS.map((t) => ({ ...t }));

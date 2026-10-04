@@ -100,7 +100,7 @@ export function useKdsBoard(stationRef: string) {
   // "escolha outra estação". O poll continua (barato): se a estação voltar com o
   // mesmo ref, o quadro volta sozinho.
   const stationMissing = computed(() => httpError(error.value).status === 404);
-  // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
+  // Marcados Pronto dentro da janela de "Desfazer": o servidor ainda os tem abertos,
   // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
   // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
   // trabalho enquanto a janela está aberta.
@@ -228,7 +228,7 @@ export function useKdsBoard(stationRef: string) {
     connectSse();
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
-    // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
+    // Tablet que dorme ou fecha com um "Desfazer" aberto: o Pronto vale na hora
     // (keepalive), em vez de sumir com a aba.
     const onVisible = () => {
       if (document.visibilityState === "visible") {
@@ -315,7 +315,7 @@ export function useKdsBoard(stationRef: string) {
       });
   }
 
-  // Segundo toque: finalizar — com janela de "Desfazer". O POST só sai quando a
+  // Segundo toque: Pronto, com janela de "Desfazer". O POST só sai quando a
   // janela fecha (ou o tablet dorme), então um toque errado não vira "pedido
   // pronto" avisado ao cliente. O aviso e o desfazer vivem NO CARD, que fica no
   // lugar por 5 s: um toast no topo da tela não se alcança com a mão ocupada.
@@ -340,7 +340,7 @@ export function useKdsBoard(stationRef: string) {
       })
       .catch((err) => {
         releaseFinish(pk); // volta para a grade
-        useSonner.error(httpErrorMessage(err, "Falha ao finalizar. Tente de novo."));
+        useSonner.error(httpErrorMessage(err, "Falha ao marcar Pronto. Tente de novo."));
         refresh();
       });
   }
@@ -357,7 +357,7 @@ export function useKdsBoard(stationRef: string) {
     for (const pk of [...finishTimers.keys()]) commitFinish(pk);
   }
 
-  const finalize = (pk: number) => {
+  const finish = (pk: number) => {
     if (finishTimers.has(pk)) return;
     const t = findTicket(pk);
     if (!t) return;
@@ -427,7 +427,7 @@ export function useKdsBoard(stationRef: string) {
     activateAttentionSound,
     acknowledgeAttention,
     start,
-    finalize,
+    finish,
     undoFinish,
     recall,
     acknowledge,
