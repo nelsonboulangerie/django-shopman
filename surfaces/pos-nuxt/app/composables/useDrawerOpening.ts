@@ -89,7 +89,8 @@ export function useDrawerOpening({ pos, actions, action, drawer }: DrawerOpening
       if (!info.status) {
         settle("offline");
       } else {
-        settle("failed", httpErrorMessage(error, "A abertura não entrou no livro-caixa: a gaveta não abriu."));
+        // A saída vem FORA do fallback: o `detail` do servidor o substitui.
+        settle("failed", `${httpErrorMessage(error, "A abertura não entrou no livro-caixa: a gaveta não abriu.")} Tente de novo ou abra com a chave.`);
       }
       return null;
     }
