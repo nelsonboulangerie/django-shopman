@@ -60,7 +60,9 @@ const crowded = computed(() => props.sections.length > 6);
       >
         <Icon :name="section.icon" class="size-[22px]" aria-hidden="true" />
       </span>
-      <span>{{ section.label }}</span>
+      <span v-if="section.shortLabel && section.shortLabel !== section.label" aria-hidden="true" data-section-short>{{ section.shortLabel }}</span>
+      <span v-if="section.shortLabel && section.shortLabel !== section.label" class="sr-only">{{ section.label }}</span>
+      <span v-else>{{ section.label }}</span>
       <span
         v-if="section.badge"
         aria-hidden="true"

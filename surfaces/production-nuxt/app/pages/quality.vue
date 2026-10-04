@@ -8,6 +8,7 @@
 import type { QCOrderCardProjection } from "~/types/production";
 import { isStale, isoForOffset } from "~/presentation/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
+import { qualityGate } from "~/presentation/qualityGate";
 import {
   periodAnchor,
   periodOfDay,
@@ -75,6 +76,30 @@ const qualityPendingCount = computed(
       (order) => order.closed && !order.quality_reviewed,
     ).length,
 );
+
+// A troca "Para confirmar | Confirmados" mora na linha do título (prévia v4
+// `producao-qualidade4.html`), com as contagens do mesmo portão do painel.
+const view = ref<"pending" | "reviewed">("pending");
+const gateCounts = computed(() => {
+  const gate = qualityGate(qualityOrders.value);
+  return {
+    pending: gate.clean.length + gate.exceptions.length,
+    reviewed: gate.reviewed.length,
+  };
+});
+// O selo da Qualidade no rail: os lotes fechados esperando a revisão. Fora desta
+// tela o selo some (o número sem a leitura viva mentiria).
+const productionRail = useProductionRail();
+watch(
+  qualityPendingCount,
+  (count) => {
+    productionRail.value.qualityPending = count;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  productionRail.value.qualityPending = 0;
+});
 
 function projectedAction(ref: string) {
   return kiosk.value?.actions.find((action) => action.ref === ref);
@@ -166,15 +191,65 @@ const screenStarted = computed(() => {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       v-model:query="query"
       title="Qualidade"
-      :count="qualityPendingCount"
-      count-label="aguardando revisão"
+      :eyebrow="selectedDate === '' ? 'Lotes fechados hoje' : 'Lotes fechados no dia'"
       :pending="pending"
+      :stale="stale"
+      :searchable="false"
       @refresh="refresh"
-    />
+    >
+      <template #actions>
+        <div
+          v-if="!correcting && kiosk && kiosk.orders.length"
+          class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+          role="tablist"
+          aria-label="Lotes da Qualidade"
+          data-quality-view
+        >
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="view === 'pending'"
+            class="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-4 op-label font-semibold transition"
+            :class="
+              view === 'pending'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            "
+            @click="view = 'pending'"
+          >
+            Para confirmar
+            <span class="tnum">{{ gateCounts.pending }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="view === 'reviewed'"
+            class="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-4 op-label font-semibold transition"
+            :class="
+              view === 'reviewed'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            "
+            @click="view = 'reviewed'"
+          >
+            Confirmados
+            <span class="tnum">{{ gateCounts.reviewed }}</span>
+          </button>
+        </div>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="['day']"
+          :today="todayISO"
+          :max="todayISO"
+          label="Data dos lotes"
+          align="end"
+        />
+      </template>
+    </ProductionHeader>
 
     <QcCloseScreen
       v-if="correcting && kiosk"
@@ -194,19 +269,8 @@ const screenStarted = computed(() => {
 
     <div
       v-else
-      class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4"
+      class="flex w-full flex-col gap-4 px-4 py-4"
     >
-      <div class="flex items-center justify-between gap-3">
-        <OperatorPeriodPicker
-          v-model="period"
-          :presets="['day']"
-          :today="todayISO"
-          :max="todayISO"
-          label="Data dos lotes"
-          align="start"
-        />
-      </div>
-
       <div
         v-if="stale"
         role="status"
@@ -232,6 +296,8 @@ const screenStarted = computed(() => {
 
       <QualityGatePanel
         v-if="kiosk && kiosk.orders.length"
+        v-model:view="view"
+        hide-tabs
         :orders="qualityOrders"
         :grades="kiosk.grades"
         :defects="kiosk.defects"
