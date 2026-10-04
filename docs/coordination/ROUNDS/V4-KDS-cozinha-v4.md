@@ -2,7 +2,7 @@
 
 - **id:** V4-KDS
 - **branch:** claude/v4-kds
-- **PR:** ver o PR do branch `claude/v4-kds`
+- **PR:** #1455 (auto-merge ligado)
 - **estado:** PR aberto, auto-merge
 - **início (UTC):** 2026-10-04
 
