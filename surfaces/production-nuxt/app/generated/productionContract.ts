@@ -164,6 +164,17 @@ export interface SuggestionMaterialShortageProjection {
   fits_quantity: string;
 }
 
+/** O porquê que o B.I. levou a esta linha ("Levar ao plano", ``bi-sobra4`` pino 3). */
+export interface PlanCarryNoteProjection {
+  source_day: string;
+  verdict: string;
+  made: string;
+  sold: string;
+  leftover: string;
+  soldout_at: string;
+  lost_estimate: string;
+}
+
 /** A suggested production row from Craftsman demand planning. */
 export interface ProductionSuggestionProjection {
   recipe_pk: number;
@@ -189,6 +200,7 @@ export interface ProductionSuggestionProjection {
   fits_quantity: string;
   season_fallback: boolean;
   current_season_label: string;
+  bi_notes: PlanCarryNoteProjection[];
 }
 
 /** A high-volume production matrix row grouped by SKU. */
