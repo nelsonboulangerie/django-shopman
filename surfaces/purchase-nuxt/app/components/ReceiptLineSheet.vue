@@ -130,7 +130,7 @@ function onCheck(checked: boolean) {
       <UiSheetHeader class="shrink-0 gap-2 border-b border-border bg-card p-4">
         <div class="flex items-start justify-between gap-2">
           <span
-            class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold"
+            class="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold"
             :class="RECEIPT_LINE_STATUS_BADGE[status]"
           >
             <Icon :name="badge.icon" class="size-3.5" />

@@ -210,6 +210,26 @@ export function invoiceProbe(raw: string) {
   };
 }
 
+/**
+ * O número da NF lido da própria chave de acesso ("NF 12.884"), para o cabeçalho da
+ * conferência. A chave de 44 dígitos traz o número nas posições 26 a 34 (layout
+ * oficial: UF, AAMM, CNPJ, modelo, série, número, tipo de emissão, código, DV).
+ * Chave ausente ou de outro tamanho → "" (o cabeçalho não inventa número).
+ */
+export function invoiceNumberLabel(accessKey: string | null | undefined): string {
+  const digits = (accessKey ?? "").replace(/\D/g, "");
+  if (digits.length !== 44) return "";
+  const number = Number(digits.slice(25, 34));
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return `NF ${number.toLocaleString("pt-BR")}`;
+}
+
+/** A chave curta do selo ("Chave …4170"): os quatro últimos dígitos bastam para conferir. */
+export function invoiceKeyTail(accessKey: string | null | undefined): string {
+  const digits = (accessKey ?? "").replace(/\D/g, "");
+  return digits.length >= 4 ? `Chave …${digits.slice(-4)}` : "";
+}
+
 export function receiptBaseQty(line: ReceiptLine, conversion: MaterialConversion | null): number {
   const factor = conversion?.toBaseFactor ?? 1;
   return line.purchaseQty * factor;

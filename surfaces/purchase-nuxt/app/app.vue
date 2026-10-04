@@ -5,19 +5,15 @@ const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, 
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
-const { view, metrics } = usePurchaseDesk();
+const { view } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 const route = useRoute();
 
-const railItems = [
-  { key: "panel", label: "Painel", icon: "layout-dashboard" },
-  { key: "buy", label: "Comprar", icon: "shopping-cart" },
-  { key: "receive", label: "Receber", icon: "package-check" },
-  { key: "base", label: "Base", icon: "database" },
-] as const;
+const SECTION_KEYS = ["panel", "buy", "receive", "base"] as const;
 
+// Atalho do PWA ("Recebimento" → `/?view=receive`) e links diretos para uma seção.
 function applyShortcutView(value: unknown) {
-  if (typeof value === "string" && railItems.some((item) => item.key === value)) {
+  if (typeof value === "string" && (SECTION_KEYS as readonly string[]).includes(value)) {
     view.value = value as typeof view.value;
   }
 }
@@ -28,47 +24,27 @@ useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <!-- `data-suite="v3"`: o Compras veste a camada visual da suíte (V4-COMPRAS, modelo do
+       Gestor). Os primitivos do kit leem esse atributo para vestir o visual das prévias. -->
+  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
     <NuxtRouteAnnouncer />
     <OfflineBanner />
-    <div v-if="canIdentify" class="sticky top-0 hidden h-screen shrink-0 print:hidden md:flex">
-      <OperatorRail
-        :hub-url="hubUrl"
-        :operator-name="operator?.name"
-        @lock="lock"
-      >
-        <template #nav>
-          <RailItem
-            v-for="item in railItems"
-            :key="item.key"
-            :icon="item.icon"
-            :label="item.label"
-            :active="view === item.key"
-            :attention="item.key === 'buy' && metrics.urgentMaterials > 0"
-            @activate="view = item.key"
-          />
-        </template>
-      </OperatorRail>
-    </div>
+    <!-- Rail da suíte (kit): o selo do app (Central), as quatro seções, avisos, Bloquear
+         e o menu do operador. Do tablet para cima; no celular as seções vão para a barra
+         do polegar, no fim da coluna de conteúdo. -->
+    <PurchaseNav
+      v-if="canIdentify"
+      place="rail"
+      :hub-url="hubUrl"
+      :operator-name="operator?.name"
+      @lock="lock"
+    />
     <div class="flex min-w-0 flex-1 flex-col">
-      <PurchaseTopBar v-if="canIdentify" :view="view" :metrics="metrics" @update:view="view = $event" />
-      <div v-show="canIdentify" class="min-w-0 flex-1">
+      <div v-show="canIdentify" class="flex min-h-0 min-w-0 flex-1 flex-col">
         <NuxtPage />
       </div>
+      <PurchaseNav v-if="canIdentify && !locked && !mustChange" place="bar" />
     </div>
-    <nav v-if="canIdentify" class="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 px-2 py-1.5 backdrop-blur md:hidden" aria-label="Navegação principal">
-      <button
-        v-for="item in railItems"
-        :key="item.key"
-        type="button"
-        class="flex h-14 flex-col items-center justify-center gap-1 rounded-md text-xs"
-        :class="view === item.key ? 'bg-primary/10 font-semibold text-primary' : 'text-muted-foreground'"
-        @click="view = item.key"
-      >
-        <Icon :name="`lucide:${item.icon}`" class="size-5" />
-        <span>{{ item.label }}</span>
-      </button>
-    </nav>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
          alpha subia a tela de senha com a sessão viva. -->
     <OperatorSessionUnavailable v-if="sessionUnavailable" scope="as compras" @retry="refresh()" />
