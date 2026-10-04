@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -32,6 +32,11 @@ from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjec
 from shopman.backstage.projections.notification_receipts import (
     NotificationReceiptProjection,
     build_notification_receipts,
+)
+from shopman.backstage.projections.order_attention import (
+    QueueAwarenessProjection,
+    build_queue_awareness,
+    card_attention,
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
@@ -444,6 +449,13 @@ class OrderCardProjection:
     # Quando saiu para a entrega (``Order.dispatched_at``), em DISPATCHED/DELIVERED:
     # o "na rua há N min".
     dispatched_at_iso: str = ""
+    # A Fila "Precisa de você" (V4-G4, ``order_attention``): o fato humano que o
+    # pedido espera (``""`` = nada, está em andamento), desde quando o relógio da
+    # etapa conta e a meta dela ("meta 30", "no balcão").
+    attention: str = ""
+    attention_since_iso: str = ""
+    goal_minutes: int = 0
+    goal_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -730,6 +742,9 @@ class TwoZoneQueueProjection:
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
+    # A coluna ao lado da Fila: o que o sistema fez nos últimos minutos e o estado
+    # do cardápio e dos canais (``order_attention.build_queue_awareness``).
+    awareness: QueueAwarenessProjection | None = None
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -1496,6 +1511,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         service_day_ends_at=service_day_ends_at.isoformat(),
         preorders=preorders,
         preorders_count=len(preorders),
+        awareness=build_queue_awareness(user=user),
     )
 
 
@@ -1729,7 +1745,7 @@ def _build_card(
         revision = next((action.payload_schema["base_revision"] for action in actions if action.ref in refs), None)
         revisions[field] = revision if revision is not None else operator_orders.operational_revision(order, field=field)
 
-    return OrderCardProjection(
+    card = OrderCardProjection(
         ref=order.ref,
         status=order.status,
         actions=(*actions, *_cash_settlement_actions(order, user, cash_context)),
@@ -1806,6 +1822,8 @@ def _build_card(
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
     )
+    attention = card_attention(order, card, channel_config)
+    return replace(card, **attention) if attention else card
 
 
 def _join_names(names: list[str]) -> str:

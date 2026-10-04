@@ -17,6 +17,7 @@ Superfície = Channel; célula = ListingItem da listing de mesmo ref.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from math import isfinite
 
@@ -24,6 +25,8 @@ from django.db import transaction
 
 from shopman.backstage.services.exceptions import CatalogError
 from shopman.shop.services import attributes
+
+logger = logging.getLogger(__name__)
 
 
 def _reconcile_if_projected(surface_ref: str) -> None:
@@ -592,7 +595,51 @@ def _detail_payload(product) -> dict:
         # vocação. Serve só ao B.I.; não muda a venda. As escolhas vêm do
         # catálogo de papéis, editável no Admin — não de uma lista no Nuxt.
         **_vocation_payload(product.sku),
+        # Disponibilidade nos canais (V4-G4, prévia ``catalogo-produto4.html``):
+        # somente leitura, do registro de faltas (``ShelfOutage``). Pausar segue
+        # no interruptor do canal, na tabela.
+        "channel_availability": _channel_availability_payload(product.sku),
     }
+
+
+#: Canais que recebem a indisponibilidade sozinhos (o iFood pelo catálogo
+#: projetado; os de exibição pelo estoque do canal de origem, #1404).
+_AUTOMATIC_CHANNELS = frozenset({"ifood"})
+
+
+def _channel_availability_payload(sku: str) -> list[dict]:
+    """Em que canal dá para comprar o produto agora, e desde quando não dá.
+
+    ``state``: ``available`` · ``sold_out`` · ``paused``. Canal de exibição
+    (Meta, Google) não vende: segue o estoque do canal para onde manda o
+    cliente (``external_availability.stock_channel_ref``) e é ``automatic``.
+    Leitura que falha some (lista vazia): ausência de resposta não é resposta.
+    """
+    from django.utils import timezone
+
+    from shopman.backstage.models import ShelfOutage
+    from shopman.shop.models import Channel
+    from shopman.shop.services import external_availability
+
+    try:
+        open_rows = {row.channel_ref: row for row in ShelfOutage.objects.filter(sku=sku, ended_at__isnull=True)}
+        rows = []
+        for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name"):
+            sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
+            source = channel.ref if sale else external_availability.stock_channel_ref(channel.ref)
+            outage = open_rows.get(source)
+            rows.append({
+                "ref": channel.ref,
+                "name": channel.name or channel.ref,
+                "kind": "sale" if sale else "display",
+                "state": outage.reason if outage else "available",
+                "since": timezone.localtime(outage.started_at).strftime("%H:%M") if outage else "",
+                "automatic": (not sale) or channel.ref in _AUTOMATIC_CHANNELS,
+            })
+        return rows
+    except Exception:
+        logger.warning("catalog.channel_availability_failed sku=%s", sku, exc_info=True)
+        return []
 
 
 def _vocation_payload(sku: str) -> dict:
@@ -691,7 +738,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():

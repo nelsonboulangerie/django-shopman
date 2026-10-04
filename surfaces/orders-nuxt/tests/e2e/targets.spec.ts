@@ -10,7 +10,8 @@ for (const touch of [false, true]) {
         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
       }
-      await page.goto("/");
+      // O quadro de colunas é a Supervisão (V4-G4: o desktop abre na Fila).
+      await page.goto("/?view=board");
       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
       // v4 (UX-KIT-V2): atender e a seleção em lote moram no ⋯ do cartão; a caixa volta
       // ao cartão no modo de seleção.
@@ -48,7 +49,8 @@ for (const touch of [false, true]) {
         await target(page.getByRole("menuitemradio").first(), "Opção de ordenação");
         await page.getByRole("menuitemradio").first().click();
         await target(page.getByRole("button", { name: "Ver em tabela" }), "Modo tabela");
-        await target(page.getByRole("button", { name: "Ver em colunas" }), "Modo colunas");
+        await target(page.getByRole("button", { name: "Supervisão: ver em colunas" }), "Modo colunas");
+        await target(page.getByRole("button", { name: "Fila: o que precisa de você" }), "Modo fila");
         await page.screenshot({ path: testInfo.outputPath("board.png") });
         await page.getByRole("button", { name: "Ver em tabela" }).click();
       }
