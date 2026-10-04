@@ -3683,6 +3683,21 @@ class OrderNotesView(_OrderActionBase):
         return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base, actor=_actor(request)))
 
 
+class OrderVolumesView(_OrderActionBase):
+    """Quantos volumes o pedido leva, declarado por quem embala (``Order.data["volumes"]``)."""
+
+    intention_operation = "volumes"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        volumes = request.data.get("volumes")
+        if isinstance(volumes, bool) or not isinstance(volumes, int):
+            return Response({"detail": "Volumes deve ser um número inteiro.", "field": "volumes", "errors": {"volumes": ["Volumes deve ser um número inteiro."]}}, status=400)
+        return self._context_response(request, order, "volumes", {"volumes": volumes}, lambda base: orders_service.save_volumes(order, volumes=volumes, expected_revision=base, actor=_actor(request)))
+
+
 def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 

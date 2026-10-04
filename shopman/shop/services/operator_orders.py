@@ -1563,6 +1563,35 @@ def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None
     order.emit_event(event_type="kitchen_note_changed", actor=actor)
 
 
+#: Teto dos volumes declarados de um pedido. Acima disso é engano de toque.
+MAX_VOLUMES = 99
+
+
+@transaction.atomic
+def save_volumes(order: Order, *, volumes: int, expected_revision: str | None = None, actor: str = "system") -> None:
+    """Grava quantos volumes (sacolas, caixas) o pedido leva, como quem embalou contou.
+
+    Não existe volume deduzido: o número é declarado por quem embala, na Saída,
+    e fica em ``Order.data["volumes"]`` (inteiro). Zero apaga a declaração, e o
+    cartão volta a mostrar a contagem de itens. Ver ``docs/reference/data-schemas.md``.
+    """
+    if isinstance(volumes, bool) or not isinstance(volumes, int) or not 0 <= volumes <= MAX_VOLUMES:
+        raise ValueError(f"Volumes é um número inteiro de 0 a {MAX_VOLUMES}.")
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order, field="volumes"):
+        raise OrderStateConflict("Os volumes deste pedido mudaram. Confira o valor atual antes de gravar.")
+    data = dict(order.data or {})
+    if volumes:
+        data["volumes"] = volumes
+    else:
+        data.pop("volumes", None)
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+    order.emit_event(event_type="volumes_declared", actor=actor, payload={"volumes": volumes})
+
+
 @transaction.atomic
 def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: str, expected_revision: str | None = None) -> None:
     """Claim an order for an operator ("estou atendendo"), stored in Order.data.
@@ -1742,7 +1771,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     data = order.data or {}
-    if field in {"kitchen_note", "assignment"}:
+    if field in {"kitchen_note", "assignment", "volumes"}:
         state = data.get(field)
     elif field == "equipment":
         dispatch = data.get("dispatch") or {}
@@ -1879,6 +1908,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
+        ("volumes", "Declarar volumes", "volumes"),
         ("comment", "Adicionar comentário", "comment"),
         ("unassign", "Liberar atendimento", "assignment") if (order.data or {}).get("assignment") else ("assign", "Atender", "assignment"),
     ):
