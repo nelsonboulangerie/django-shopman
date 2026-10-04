@@ -2,7 +2,7 @@
 
 - **id:** V4-G4
 - **branches:** `claude/v4-g4-gestor-dados` (PR A: dados do cartão) · `claude/v4-g4-gestor-fila` (PR B: a Fila "Precisa de você" e o painel do produto)
-- **PRs:** #1453 (A, auto-merge) · PR B (auto-merge, em cima do A)
+- **PRs:** #1453 (A, mergeado) · #1460 (B, auto-merge)
 - **estado:** entregue, esperando o CI e as perguntas ao dono
 - **início (UTC):** 2026-10-04
 - **escopo:** `surfaces/orders-nuxt`, o backend do backstage/shop que o alimenta e o mínimo aditivo no kit. O detalhe do pedido (`OperatorOrderDetail`, compartilhado com o PDV) fica como está.
