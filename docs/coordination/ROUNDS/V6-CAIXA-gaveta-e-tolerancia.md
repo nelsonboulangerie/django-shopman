@@ -31,7 +31,7 @@ caminho e o dispositivo, com a resposta do agente ao pulso logo abaixo.
 
 **Pulso pelo relay (`backstage/services/drawer_pulse.py`).** O dono único das aberturas.
 `via=local`: o Balcão grava e chuta pelo agente da própria máquina. `via=relay`: o tablet pede, o
-servidor grava a linha e cria um `PrintJob` `kind=drawer_pulse` (`backstage.0084`) com os cinco
+servidor grava a linha e cria um `PrintJob` `kind=drawer_pulse` (`backstage.0086`) com os cinco
 bytes `ESC p` (`receipt_escpos.drawer_kick`, com o pino e o pulso do terminal) na mesma transação;
 o agente do terminal busca pelo relay que já existia e entrega à impressora sem saber que é
 gaveta (nenhuma mudança no agente; teste prova que o claim passa). O pulso vale 30 s e expira:
