@@ -22,7 +22,7 @@ const base = { tabs: [], hasOpenCashSession: true };
 describe("Encomendas na barra lateral do PDV", () => {
   it("a seção mora entre Comandas e Caixa, e leva à casa da seção", () => {
     const keys = posSections({ ...base, preorders: { allowed: true } }).map((s) => s.key);
-    expect(keys).toEqual(["board", "preorders", "cash", "display"]);
+    expect(keys).toEqual(["board", "preorders", "cash", "display", "settings"]);
     const preorders = posSections({ ...base, preorders: { allowed: true } })[1]!;
     expect(preorders.label).toBe("Encomendas");
     expect(preorders.to).toBe("/preorders");
@@ -49,6 +49,12 @@ describe("Encomendas na barra lateral do PDV", () => {
     expect(sections[0]).toMatchObject({ key: "board", badge: "2", shortcut: "F2" });
     expect(sections.find((s) => s.key === "cash")?.attention).toBeTruthy();
     expect(posSections({ ...base, preorders: { allowed: false } }).find((s) => s.key === "cash")?.attention).toBeUndefined();
+  });
+
+  it("Ajustes mora no pé do rail e leva ao Salão (V5-SALAO)", () => {
+    const settings = posSections({ ...base, preorders: { allowed: false } }).find((s) => s.key === "settings")!;
+    expect(settings).toMatchObject({ label: "Ajustes", foot: true, to: "/settings/seating", match: ["/settings"] });
+    expect(posCurrentSection("settings")).toBe("settings");
   });
 
   it("'Fichas de pedido' não volta, e a antesala não carrega mais a seção", () => {
