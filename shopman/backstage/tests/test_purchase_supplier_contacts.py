@@ -28,7 +28,7 @@ from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.services.purchase import (
     PurchaseError,
     _supplier_dispatch_route,
-    set_purchase_request_status,
+    send_purchase_request,
 )
 from shopman.shop.adapters._notification_templates import derive_context
 from shopman.shop.adapters.notification_email import BODY_TEMPLATES
@@ -162,7 +162,7 @@ def test_purchase_request_greets_the_person_by_first_name(supplier, material, pr
         email="marcelo@tamura.example",
     )
 
-    set_purchase_request_status(material.sku, "sent")
+    send_purchase_request(material.sku)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     context = directive.payload["context"]
@@ -181,7 +181,7 @@ def test_purchase_request_greets_the_person_by_first_name(supplier, material, pr
 def test_purchase_request_greets_the_house_when_nobody_is_registered(supplier, material, preferred_cost):
     _deposito()
 
-    set_purchase_request_status(material.sku, "sent")
+    send_purchase_request(material.sku)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     body = BODY_TEMPLATES["purchase_request"].format_map(derive_context(directive.payload["context"]))
@@ -193,7 +193,7 @@ def test_estimated_total_carries_the_thousands_separator(supplier, material, pre
     """``R$ 1185,00`` lê como número de sistema; ``R$ 1.185,00`` lê como preço."""
     _deposito()
 
-    set_purchase_request_status(material.sku, "sent")
+    send_purchase_request(material.sku)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     total = directive.payload["context"]["estimated_total"]

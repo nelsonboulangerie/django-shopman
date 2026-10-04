@@ -281,23 +281,6 @@ class PurchaseCountConfirmView(APIView):
         return Response({"ok": True, "count": projection_data(projection), "message": message})
 
 
-class PurchaseRequestApproveView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_purchase"
-
-    @extend_schema(
-        tags=["backstage"],
-        summary="Approve a replenishment request",
-        responses={200: OpenApiResponse(description="Request marked as approved.")},
-    )
-    def post(self, request, material_sku: str):
-        try:
-            projection = purchase_service.set_purchase_request_status(material_sku, "approved", user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        return _purchase_response(projection, message="Solicitação aprovada.")
-
-
 class PurchaseRequestSendView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
@@ -309,7 +292,24 @@ class PurchaseRequestSendView(APIView):
     )
     def post(self, request, material_sku: str):
         try:
-            projection = purchase_service.set_purchase_request_status(material_sku, "sent", user=request.user)
+            projection = purchase_service.send_purchase_request(material_sku, user=request.user)
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Pedido enviado ao canal do fornecedor.")
+
+
+class PurchaseRequestCancelView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Cancel the open replenishment request so the material can be ordered again",
+        responses={200: OpenApiResponse(description="Open request cleared; the supplier is not notified.")},
+    )
+    def post(self, request, material_sku: str):
+        try:
+            projection = purchase_service.cancel_purchase_request(material_sku)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Pedido cancelado aqui. Avise o fornecedor.")

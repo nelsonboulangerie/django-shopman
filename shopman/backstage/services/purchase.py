@@ -351,6 +351,10 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                     make_preferred=False,
                     prefer_if_missing=True,
                 )
+        # O que chegou encerra o pedido que esperava por ele: sem isto o card ficava
+        # "aguardando entrega" para sempre e o insumo nunca mais podia ser pedido.
+        for material in {line.material.pk: line.material for line in lines}.values():
+            _close_purchase_request(material)
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
             _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
@@ -890,33 +894,72 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 
-def set_purchase_request_status(material_sku: str, status: str, *, user=None) -> dict[str, Any]:
-    """Persist the operator-side status for a replenishment decision."""
-    if status not in {"approved", "sent"}:
-        raise PurchaseError("Status de compra inválido.", code="request_status_invalid")
+def send_purchase_request(material_sku: str, *, user=None) -> dict[str, Any]:
+    """Despacha o pedido ao fornecedor e marca o insumo como aguardando entrega.
+
+    O pedido fica em aberto (`purchase.request_status = "sent"`) até o
+    recebimento do insumo ou o cancelamento (`cancel_purchase_request`).
+    """
     Material = apps.get_model("buyman", "Material")
     material = Material.objects.filter(sku=material_sku).first()
     if not material:
         raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="materialSku", status_code=404)
+    if dict((material.metadata or {}).get("purchase") or {}).get("request_status") == "sent":
+        raise PurchaseError(
+            "Este insumo já tem pedido aguardando entrega. Cancele o pedido antes de pedir de novo.",
+            code="purchase_request_open",
+            field="materialSku",
+            status_code=409,
+        )
 
     with transaction.atomic():
-        dispatch = _queue_supplier_purchase_request(material, user=user) if status == "sent" else None
+        dispatch = _queue_supplier_purchase_request(material, user=user)
 
         metadata = dict(material.metadata or {})
         purchase = dict(metadata.get("purchase") or {})
-        purchase["request_status"] = status
+        purchase["request_status"] = "sent"
         purchase["request_status_at"] = timezone.now().isoformat()
-        if dispatch:
-            purchase["request_ref"] = dispatch["purchase_ref"]
-            purchase["request_supplier_ref"] = dispatch["supplier_ref"]
-            purchase["request_channel"] = dispatch["channel"]
-            purchase["request_recipient"] = dispatch["recipient"]
-            purchase["request_contact_name"] = dispatch["contact_name"]
-            purchase["request_dedupe_key"] = dispatch["dedupe_key"]
+        purchase["request_ref"] = dispatch["purchase_ref"]
+        purchase["request_supplier_ref"] = dispatch["supplier_ref"]
+        purchase["request_channel"] = dispatch["channel"]
+        purchase["request_recipient"] = dispatch["recipient"]
+        purchase["request_contact_name"] = dispatch["contact_name"]
+        purchase["request_dedupe_key"] = dispatch["dedupe_key"]
         metadata["purchase"] = purchase
         material.metadata = metadata
         material.save(update_fields=["metadata", "updated_at"])
     return build_purchase()
+
+
+def cancel_purchase_request(material_sku: str) -> dict[str, Any]:
+    """Desfaz o pedido em aberto do insumo, para que ele possa ser pedido de novo.
+
+    Não avisa o fornecedor: a mensagem já saiu, e quem cancela combina com ele.
+    Sem pedido em aberto, não há o que desfazer e a tela só se atualiza.
+    """
+    Material = apps.get_model("buyman", "Material")
+    material = Material.objects.filter(sku=material_sku).first()
+    if not material:
+        raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="materialSku", status_code=404)
+    with transaction.atomic():
+        _close_purchase_request(material)
+    return build_purchase()
+
+
+def _close_purchase_request(material) -> None:
+    """Apaga o estado do pedido (`purchase.request_*`): o insumo volta a "Revisar".
+
+    O pedido despachado continua contado na directive de notificação; aqui só
+    morava o "em aberto", e encerrado ele não deixa resto no metadata.
+    """
+    metadata = dict(material.metadata or {})
+    purchase = dict(metadata.get("purchase") or {})
+    kept = {key: value for key, value in purchase.items() if not key.startswith("request_")}
+    if kept == purchase:
+        return
+    metadata["purchase"] = kept
+    material.metadata = metadata
+    material.save(update_fields=["metadata", "updated_at"])
 
 
 def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:

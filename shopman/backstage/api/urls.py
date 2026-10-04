@@ -253,7 +253,7 @@ from .purchase import (
     PurchaseMinStockView,
     PurchaseOpeningView,
     PurchaseRejectReceiptView,
-    PurchaseRequestApproveView,
+    PurchaseRequestCancelView,
     PurchaseRequestSendView,
     PurchaseSaleView,
     PurchaseScanInvoiceView,
@@ -518,14 +518,14 @@ urlpatterns = [
         name="api-backstage-purchase-conversions",
     ),
     path(
-        "purchase/requests/<str:material_sku>/approve/",
-        PurchaseRequestApproveView.as_view(),
-        name="api-backstage-purchase-request-approve",
-    ),
-    path(
         "purchase/requests/<str:material_sku>/send/",
         PurchaseRequestSendView.as_view(),
         name="api-backstage-purchase-request-send",
+    ),
+    path(
+        "purchase/requests/<str:material_sku>/cancel/",
+        PurchaseRequestCancelView.as_view(),
+        name="api-backstage-purchase-request-cancel",
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),

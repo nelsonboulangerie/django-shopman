@@ -148,6 +148,7 @@ export function usePurchaseDesk() {
   const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
   const countPending = ref(false);
   const api = usePurchaseApi();
+  const confirm = useConfirm();
   const actionPending = ref(false);
   const actionError = ref("");
   const { flagIfStationLocked } = useStationLock();
@@ -1094,6 +1095,22 @@ export function usePurchaseDesk() {
     await runBackendAction(() => api.sendRequest({ materialSku: sku }));
   }
 
+  // O recebimento do insumo já fecha o pedido sozinho. Cancelar é para o pedido
+  // que não vai chegar: libera o insumo para pedir de novo, sem avisar o fornecedor.
+  async function cancelPurchaseRequest(sku: string, materialName: string) {
+    if (purchaseRequestStatus(sku) !== "sent") return;
+    if (!requireBackend("cancelar o pedido")) return;
+    const confirmed = await confirm({
+      title: `Cancelar o pedido de ${materialName}?`,
+      description:
+        "O fornecedor não é avisado por aqui: combine com ele. O insumo volta a poder ser pedido.",
+      confirmLabel: "Cancelar pedido",
+      cancelLabel: "Manter pedido",
+    });
+    if (!confirmed) return;
+    await runBackendAction(() => api.cancelRequest({ materialSku: sku }));
+  }
+
   async function setPreferredCost(costId: string) {
     const target = costs.value.find((cost) => cost.id === costId);
     if (!target) return;
@@ -1252,6 +1269,7 @@ export function usePurchaseDesk() {
     confirmCount,
     purchaseRequestStatus,
     sendPurchaseRequest,
+    cancelPurchaseRequest,
     setPreferredCost,
     saveQuote,
     costPerBaseUnitQ,

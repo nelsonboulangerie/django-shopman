@@ -3,7 +3,9 @@ export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs", "count"] 
 
 export type PurchaseView = (typeof PURCHASE_VIEWS)[number];
 export type PurchaseBaseView = (typeof PURCHASE_BASE_VIEWS)[number];
-export type PurchaseRequestStatus = "review" | "approved" | "sent";
+// `sent` = pedido em aberto, aguardando entrega. Fecha no recebimento do insumo
+// ou no cancelamento, e o insumo volta a `review`.
+export type PurchaseRequestStatus = "review" | "sent";
 export type MaterialUnit = "kg" | "g" | "l" | "ml" | "un";
 export type ConversionKind = "conventional" | "approximate";
 export type MaterialTone = "ok" | "watch" | "urgent";
