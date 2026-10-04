@@ -60,7 +60,9 @@ class Entry(models.Model):
         COUNT = "count", _("Contagem de fechamento")
         COUNT_CORRECTION = "count_correction", _("Correção da contagem")
         # Sem dinheiro
-        DRAWER_OPEN = "drawer_open", _("Gaveta aberta sem venda")
+        # Toda abertura pedida (pelo tablet ou pelo próprio balcão), com venda ou
+        # sem: o porquê mora em ``payload["purpose"]`` (``DRAWER_OPEN_PURPOSES``).
+        DRAWER_OPEN = "drawer_open", _("Gaveta aberta")
         DRAWER_UNLOCK = "drawer_unlock", _("Trava da gaveta liberada")
         CHANGE_REQUESTED = "change_requested", _("Troco pedido")
         CHANGE_SERVED = "change_served", _("Troco atendido")
@@ -112,6 +114,12 @@ class Entry(models.Model):
     #: dialeto do balcão, mas lê a lista daqui — o schema do payload é do único
     #: escritor, e duas listas divergiriam no dia em que um estado novo entrasse.
     RECEIPT_STATUSES: frozenset[str] = frozenset({"printed", "failed", "skipped"})
+
+    #: Por que a gaveta abriu (``drawer_open.payload["purpose"]``). ``sale`` é a
+    #: venda em dinheiro (exige ``order_ref``: "venda X"); ``no_sale`` é abrir
+    #: sem venda (troco, conferência), e exige ``reason``. Lançamento antigo,
+    #: sem a chave, é abertura sem venda: era o único caso que existia.
+    DRAWER_OPEN_PURPOSES: frozenset[str] = frozenset({"sale", "no_sale"})
 
     #: Tipos que exigem a segunda assinatura (``approved_by``): a exceção do
     #: caixa tem sempre duas pessoas, quem faz e quem autoriza.
