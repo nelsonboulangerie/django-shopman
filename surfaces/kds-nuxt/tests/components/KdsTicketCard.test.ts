@@ -180,7 +180,7 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("toque duplo não inicia e finaliza: o botão só arma depois do intervalo", async () => {
+  it("toque duplo não inicia e marca Pronto: o botão só arma depois do intervalo", async () => {
     vi.useFakeTimers();
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     await w.get("button[data-kds-action]").trigger("click");
@@ -218,12 +218,12 @@ describe("KdsTicketCard — os dois gestos", () => {
 });
 
 describe("KdsTicketCard — o Desfazer mora no card", () => {
-  it("finalizado dentro da janela: o card fica, apagado, com o Desfazer no lugar do ato", async () => {
+  it("Pronto dentro da janela: o card fica, apagado, com o Desfazer no lugar do ato", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true });
     // O pedido continua legível — é o mesmo card, não um aviso no topo da tela.
     expect(w.text()).toContain("0007");
     expect(w.text()).toContain("Pão na Chapa");
-    expect(w.get("[data-kds-undo]").text()).toContain("Finalizado");
+    expect(w.get("[data-kds-undo]").text()).toContain("Pronto. Sai em");
     const action = w.get("button[data-kds-action]");
     expect(action.text()).toContain("Desfazer");
     await action.trigger("click");
@@ -344,15 +344,15 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(action.element.parentElement?.className).toContain("px-3.5");
   });
 
-  it("v4: só o PRÓXIMO convida sólido; os outros convites são contornados; finalizar é verde", () => {
+  it("v4: só o PRÓXIMO convida sólido; os outros convites são contornados; Pronto é verde", () => {
     // A parede amarela de 21/09 (#913) não volta: um sólido de iniciar por grade.
     const proximo = mountCard({ ticket: ticket({ status: "pending" }), next: true }).get("button[data-kds-action]");
     expect(proximo.classes()).toContain("bg-primary");
     const outro = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
     expect(outro.classes()).toContain("border-foreground/80");
     expect(outro.classes().some((c) => c.startsWith("bg-primary") || c === "bg-success")).toBe(false);
-    const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
-    expect(finalizar.classes()).toContain("bg-success");
+    const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(pronto.classes()).toContain("bg-success");
   });
 
   it("pagamento não confirmado: o motivo aparece no card e o Pronto tranca, sem emitir finish", async () => {

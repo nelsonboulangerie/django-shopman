@@ -7,7 +7,7 @@
 //
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
 // estação `bancada` (preparo) serve os quadros de previewFixtures.mjs, com
-// iniciar/finalizar mudando o quadro. Serve para VER os cards sem Django.
+// iniciar e Pronto mudando o quadro. Serve para VER os cards sem Django.
 import { createServer } from "node:http";
 import { createPreviewState } from "./previewFixtures.mjs";
 

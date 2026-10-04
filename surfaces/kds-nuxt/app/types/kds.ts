@@ -31,7 +31,7 @@ export interface KDSTicketProjection extends KDSTicketContract {
 export interface KDSBoardProjection extends KDSBoardContract {
   tickets: KDSTicketProjection[];
   cancelled_tickets: KDSTicketProjection[];
-  recent_done: KDSTicketProjection[]; // para recall (desfazer finalização)
+  recent_done: KDSTicketProjection[]; // para recall (desfazer o Pronto)
 }
 
 // API envelopes (shopman/backstage/api/kds.py response shapes).

@@ -54,7 +54,7 @@ def test_recall_is_refused_once_the_order_left_the_kitchen(prep, status):
     ticket = _done_ticket(prep, f"RCL-{status}", status)
 
     assert ticket.pk not in {t.pk for t in build_kds_board(prep.ref).recent_done}
-    with pytest.raises(KDSError, match="não pode mais ser desfeita"):
+    with pytest.raises(KDSError, match="o Pronto não pode mais ser desfeito"):
         kds_backstage.recall_ticket(ticket_pk=ticket.pk, actor="kds:op")
     ticket.refresh_from_db()
     assert ticket.status == "done"
@@ -75,7 +75,7 @@ def test_recall_still_pulls_a_ready_order_back_to_preparing(prep):
 def test_recall_block_reason_speaks_the_order_status():
     order = Order(ref="X", status=Order.Status.DISPATCHED)
     assert kds_core.recall_block_reason(order) == (
-        "O pedido já está despachado: a finalização não pode mais ser desfeita."
+        "O pedido já está despachado: o Pronto não pode mais ser desfeito."
     )
     assert kds_core.recall_block_reason(Order(ref="Y", status=Order.Status.READY)) == ""
 

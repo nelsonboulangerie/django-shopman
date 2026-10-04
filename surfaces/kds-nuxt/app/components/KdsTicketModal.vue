@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Detalhe do pedido — aberto por um toque na área de leitura do card (a que mostra
 // identidade e itens; o `i` é a marca dela). Canal, horário, cliente, quem iniciou,
-// notas e itens completos. A ação (iniciar/finalizar) mora no BOTÃO do card, e só
+// notas e itens completos. A ação (Iniciar/Pronto) mora no BOTÃO do card, e só
 // lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
 //
 // O gesto daqui é outro: "Declarar volumes" (quem embalou declara, onde estiver;

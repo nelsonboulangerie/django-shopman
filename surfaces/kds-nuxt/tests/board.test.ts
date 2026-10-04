@@ -343,7 +343,7 @@ describe("o botão do card", () => {
     });
   });
 
-  it("recém-iniciado ainda não finaliza: o rótulo não pisca, só o toque não passa", () => {
+  it("recém-iniciado ainda não aceita o Pronto: o rótulo não pisca, só o toque não passa", () => {
     const justStarted = ticketAction(ticket({ status: "in_progress" }), {
       armed: false,
       blocked: false,
@@ -353,7 +353,7 @@ describe("o botão do card", () => {
     expect(justStarted.enabled).toBe(false);
   });
 
-  it("item cancelado trava o finalizar e diz PARA ONDE ir, mas não trava o iniciar", () => {
+  it("item cancelado trava o Pronto e diz PARA ONDE ir, mas não trava o iniciar", () => {
     const blocked = { armed: true, blocked: true };
     const stuck = ticketAction(ticket({ status: "in_progress" }), blocked);
     expect(stuck.kind).toBe("blocked");
@@ -374,7 +374,7 @@ describe("o botão do card", () => {
     ).toBe("undo");
   });
 
-  it("pagamento não confirmado tranca o finalizar ANTES do toque, mas não o iniciar", () => {
+  it("pagamento não confirmado tranca o Pronto ANTES do toque, mas não o iniciar", () => {
     const unpaid = { finish_block_label: "Pix não confirmado" };
     const locked = ticketAction(ticket({ status: "in_progress", ...unpaid }), armed);
     expect(locked).toMatchObject({ kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true });
@@ -400,7 +400,7 @@ describe("ticket adicional do mesmo pedido", () => {
     expect([...additionTicketPks([extra, other, first], [])]).toEqual([14]);
   });
 
-  it("conta o primeiro ticket já finalizado nos concluídos recentes", () => {
+  it("conta o primeiro ticket já marcado Pronto nos concluídos recentes", () => {
     const done = ticket({ pk: 3, order_ref: "PDV-7", status: "done" });
     const extra = ticket({ pk: 9, order_ref: "PDV-7" });
     expect([...additionTicketPks([extra], [done])]).toEqual([9]);

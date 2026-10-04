@@ -191,7 +191,7 @@ describe("useKdsBoard: quem embalou declara os volumes na estação", () => {
   });
 });
 
-describe("useKdsBoard — finalize com janela de desfazer", () => {
+describe("useKdsBoard — finish com janela de desfazer", () => {
   beforeEach(() => {
     env.reset();
     vi.useFakeTimers();
@@ -200,8 +200,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("tira o card do TRABALHO na hora, mas o deixa na grade, e só POSTa quando a janela fecha", async () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     // O card fica desenhado: é ele que carrega o "Desfazer", onde o dedo tocou.
     expect(view.value?.cards).toHaveLength(1);
     expect(view.value?.finishingPks.has(1)).toBe(true);
@@ -223,8 +223,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("Desfazer devolve o card ao trabalho e nada vai ao servidor", async () => {
     env.fetchData.value = board();
-    const { finalize, undoFinish, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, undoFinish, view } = useKdsBoard("bancada");
+    finish(1);
     undoFinish(1);
     expect(view.value?.cards).toHaveLength(1);
     expect(view.value?.finishingPks.has(1)).toBe(false);
@@ -236,8 +236,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("um refresh durante a janela não devolve o card ao trabalho", () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     env.fetchData.value = board(); // poll/SSE trouxe o servidor, que ainda o tem aberto
     expect(view.value?.finishingPks.has(1)).toBe(true);
     expect(view.value?.total).toBe(0);
@@ -246,8 +246,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
   it("recusa do servidor devolve o card ao trabalho e avisa", async () => {
     env.fetchData.value = board();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(view.value?.cards).toHaveLength(1);

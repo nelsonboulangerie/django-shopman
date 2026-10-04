@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Quadro da estação, no desenho da prévia v4 (`cozinha-estacao4.html`, celular em
 // `cozinha-celular4.html` (b)). Lê a projection canônica + tempo real (SSE + poll de
-// 15 s) por useKdsBoard; os gestos (iniciar, finalizar, desfazer, reabrir, recebi o
+// 15 s) por useKdsBoard; os gestos (iniciar, Pronto, desfazer, reabrir, recebi o
 // cancelamento, visto) passam pelo proxy do Django (CSRF lá) de forma otimista.
 //
 // A FILA do cozinheiro: 4 a 6 tickets em foco (3×2 no tablet deitado), o resto vira
@@ -41,7 +41,7 @@ const {
   activateAttentionSound,
   acknowledgeAttention,
   start,
-  finalize,
+  finish,
   undoFinish,
   recall,
   acknowledge,
@@ -107,7 +107,7 @@ const emptyTodayLine = computed(() =>
     : "Nenhum pedido na fila agora. O som está desligado: o próximo pedido aparece aqui sem avisar.",
 );
 
-// Recall: painel de concluídos recentes (desfazer finalização).
+// Recall: painel de concluídos recentes (desfazer o Pronto).
 const recallOpen = ref(false);
 
 // Relógio em tempo real (client-only; new Date() no SSR causaria mismatch).
@@ -232,7 +232,7 @@ const openTicketPk = ref<number | null>(null);
 const openTicket = computed<KDSTicketProjection | null>(() => {
   const pk = openTicketPk.value;
   if (pk == null) return null;
-  // O concluído recente também abre: embalar vem depois de finalizar, e os volumes se
+  // O concluído recente também abre: embalar vem depois do Pronto, e os volumes se
   // declaram no detalhe.
   return tickets.value.find((c) => c.pk === pk) ?? view.value?.recentDone.find((c) => c.pk === pk) ?? null;
 });
@@ -279,7 +279,7 @@ onMounted(() => {
 // repete PARA ONDE ir. O gesto se chama "Recebi o cancelamento".
 function warnBlocked() {
   useSonner.error(
-    "Este pedido tem item cancelado. Confirme o cancelamento no cartão vermelho para poder finalizar.",
+    "Este pedido tem item cancelado. Toque em Recebi o cancelamento, no cartão vermelho, para poder marcar Pronto.",
   );
 }
 // Toque no Pronto travado pelo pagamento: o motivo, com as palavras do servidor.
@@ -550,7 +550,7 @@ function warnLocked(pk: number) {
             :density="density"
             @open="(pk) => (openTicketPk = pk)"
             @start="(pk) => start(pk)"
-            @finish="(pk) => finalize(pk)"
+            @finish="(pk) => finish(pk)"
             @undo="(pk) => undoFinish(pk)"
             @blocked="warnBlocked"
             @locked="warnLocked"
@@ -576,7 +576,7 @@ function warnLocked(pk: number) {
                     :finishing="view.finishingPks.has(card.pk)"
                     @open="openTicketPk = card.pk"
                     @start="start(card.pk)"
-                    @finish="finalize(card.pk)"
+                    @finish="finish(card.pk)"
                     @undo="undoFinish(card.pk)"
                     @blocked="warnBlocked"
                     @locked="warnLocked(card.pk)"
@@ -638,12 +638,12 @@ function warnLocked(pk: number) {
       @reopen="recallOpen = true"
     />
 
-    <!-- recall: concluídos recentes (desfazer finalização) -->
+    <!-- recall: concluídos recentes (desfazer o Pronto) -->
     <UiDialog :open="recallOpen" @update:open="recallOpen = Boolean($event)">
       <UiDialogContent class="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md" data-suite="v3">
         <UiDialogTitle class="border-b px-5 py-4 op-title">Concluídos recentes</UiDialogTitle>
         <UiDialogDescription class="sr-only"
-          >Reabra um pedido finalizado por engano (últimos 30 minutos).</UiDialogDescription
+          >Reabra um pedido marcado Pronto por engano (últimos 30 minutos).</UiDialogDescription
         >
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <p v-if="!view || !view.recentDone.length" class="p-6 text-center op-body text-muted-foreground">
@@ -692,7 +692,7 @@ function warnLocked(pk: number) {
 </template>
 
 <style scoped>
-/* Transição da grade: ao finalizar, o card sai com um respiro e a fila desliza (FLIP),
+/* Transição da grade: no Pronto, o card sai com um respiro e a fila desliza (FLIP),
    o próximo "assume o foco". Novos pedidos entram com o mesmo respiro. */
 .kds-card-move {
   transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
