@@ -1059,7 +1059,7 @@ def schedule_delivery_auto_complete(order: Order) -> None:
 def confirm_received(order: Order, *, actor: str = "customer", expected_courier_id: str | None = None) -> bool:
     """Customer confirms a dispatched delivery arrived → mark delivered.
 
-    Same machinery as the operator "Marcar como Entregue" (fulfillment sync +
+    Same machinery as the operator "Marcar como entregue" (fulfillment sync +
     transition), so handlers/notifications fire exactly once. Only valid while
     the order is out for delivery; idempotent (returns False) otherwise — couriers
     são terceirizados, então o cliente fechando o loop é uma das vias legítimas
@@ -1840,8 +1840,8 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     elif next_status_for(order):
         labels = {
             "preparing": "Iniciar preparo", "ready": "Marcar pronto",
-            "dispatched": "Marcar saída para entrega", "delivered": "Marcar como Entregue",
-            "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
+            "dispatched": "Marcar saída para entrega", "delivered": "Marcar como entregue",
+            "completed": "Marcar como retirado" if order.status == "ready" else "Concluir",
         }
         target = next_status_for(order)
         if target == Order.Status.DISPATCHED:

@@ -110,8 +110,16 @@ describe("OrderCard — render", () => {
     expect(mountCard({ card: card({ customer_name: "" }) }).text()).toContain("Sem cliente");
   });
 
-  it("can_confirm (não selecionado) ganha o filete âmbar à esquerda", () => {
-    expect(mountCard({ card: card({ can_confirm: true }) }).find("article").classes()).toContain("border-l-warning");
+  it("can_confirm (não selecionado): selo Novo e a moldura na cor da decisão", () => {
+    const w = mountCard({ card: card({ can_confirm: true }) });
+    expect(w.get("[data-card-seal]").text()).toBe("Novo");
+    expect(w.find("article").classes()).toContain("border-primary/70");
+  });
+
+  it("o estado continua escrito quando o selo diz outra coisa (Novo, Próximo, Bloqueado)", () => {
+    const w = mountCard({ card: card({ status: "ready", status_label: "Pronto" }), next: true });
+    expect(w.get("[data-card-seal]").text()).toBe("Próximo");
+    expect(w.get("[data-card-clock]").text()).toContain("Pronto · ");
   });
 });
 
@@ -129,16 +137,33 @@ describe("OrderCard — ações emitidas", () => {
     expect(btn.attributes("disabled")).toBeDefined();
   });
 
-  it("toggle-select e toggle-assign emitem", async () => {
+  it("atender e a seleção em lote moram no ⋯ do cartão (v4); fora do modo, sem caixa", async () => {
     const w = mountCard({ card: card() });
-    await w.find('[aria-label="Selecionar pedido"]').trigger("click");
-    expect(w.emitted("toggle-select")).toBeTruthy();
-    await w.find('[aria-label="Atender este pedido"]').trigger("click");
+    expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
+    expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
+    await w.get("[data-card-menu]").trigger("click");
+    await w.get('[aria-label="Atender este pedido"]').trigger("click");
     expect(w.emitted("toggle-assign")).toBeTruthy();
+    await w.get("[data-card-menu]").trigger("click");
+    await w.get("[data-card-select-mode]").trigger("click");
+    expect(w.emitted("select-mode")).toBeTruthy();
+  });
+
+  it("no modo de seleção, a caixa volta ao cartão e emite toggle-select", async () => {
+    const w = mountCard({ card: card(), selecting: true });
+    await w.get('[aria-label="Selecionar pedido"]').trigger("click");
+    expect(w.emitted("toggle-select")).toBeTruthy();
+  });
+
+  it("quem já atende aparece numa etiqueta, e o ⋯ oferece liberar", async () => {
+    const w = mountCard({ card: card({ assigned_operator: "Rita" }) });
+    expect(w.get("[data-card-assigned]").text()).toContain("Rita");
+    await w.get("[data-card-menu]").trigger("click");
+    expect(w.get("[data-card-assign]").attributes("aria-label")).toBe("Atendido por Rita. Toque para liberar");
   });
 
   it("selected → aria-pressed + ring de seleção", () => {
-    const w = mountCard({ card: card(), selected: true });
+    const w = mountCard({ card: card(), selected: true, selecting: true });
     expect(w.find('[aria-label="Desmarcar pedido"]').attributes("aria-pressed")).toBe("true");
     expect(w.find("article").classes()).toContain("ring-primary");
   });

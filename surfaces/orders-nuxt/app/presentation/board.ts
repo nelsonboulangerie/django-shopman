@@ -686,3 +686,180 @@ export function appendTag(current: string, tag: string): string {
   if (base.toLowerCase().includes(t.toLowerCase())) return base;
   return `${base}, ${t}`;
 }
+
+// ── O cartão no desenho da v4 (UX-KIT-V2, `gestor-colunas4.html` e `gestor-fila4.html`) ──
+//
+// Seis significados de estado, só eles (SPEC4 §2): precisa de você (primary), em
+// andamento (info), feito (success), bloqueado com motivo (destructive), o sistema fez
+// (neutro, com ícone de automático) e atenção ao tempo (um número com intensidade).
+// Aqui se decide só a palavra e o tom; o ciclo continua do servidor.
+
+export type SealTone = "primary" | "info" | "success" | "warning" | "destructive" | "muted";
+
+export interface CardSeal {
+  label: string;
+  tone: SealTone;
+}
+
+const SEAL_TONE: Record<string, SealTone> = {
+  new: "primary",
+  accepted: "info",
+  preparing: "info",
+  dispatched: "info",
+  ready: "success",
+  delivered: "success",
+  completed: "success",
+  cancelled: "destructive",
+};
+
+type SealSource = Pick<OrderCardProjection, "status" | "status_label" | "can_confirm" | "advance_block_reason" | "actions">;
+
+/** Selo do canto do cartão. Bloqueio primeiro (o motivo vem escrito no cartão); depois
+ *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado. */
+export function cardSeal(card: SealSource, opts: { next?: boolean } = {}): CardSeal {
+  const advance = (card.actions ?? []).find((a) => a.ref === "advance" && a.priority !== "menu");
+  if (card.advance_block_reason && advance && !advance.enabled) return { label: "Bloqueado", tone: "destructive" };
+  if (card.can_confirm) return { label: "Novo", tone: "primary" };
+  if (opts.next) return { label: "Próximo", tone: "primary" };
+  return { label: card.status_label, tone: SEAL_TONE[card.status] ?? "muted" };
+}
+
+/** Classes da pílula do selo (o `pill-*` da camada da suíte). */
+// Literais (não `pill-${tone}`): o Tailwind só gera a classe que lê escrita no código.
+const SEAL_CLASS: Record<SealTone, string> = {
+  primary: "pill-primary",
+  info: "pill-info",
+  success: "pill-success",
+  warning: "pill-warning",
+  destructive: "pill-destructive",
+  muted: "pill-muted",
+};
+
+export function sealClass(tone: SealTone): string {
+  return SEAL_CLASS[tone];
+}
+
+/** "há 9 min": o tempo do pedido em palavras, como na v4. Abaixo de um minuto, "agora". */
+export function agoLabel(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return "agora";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `há ${m} min`;
+  return `há ${elapsedLabel(s).replace(/(\d+)m$/, "$1 min")}`;
+}
+
+export interface CardClock {
+  text: string;
+  tone: TimerTone;
+  /** Prazo correndo (confirmação otimista): o leitor de tela ouve como relógio. */
+  countdown: boolean;
+}
+
+type ClockSource = Pick<OrderCardProjection, "confirmation_deadline_iso" | "confirmation_action" | "elapsed_seconds" | "timer_class">;
+
+/** A linha do tempo do canto: o prazo, quando há ("aceita sozinho em 2:40"), senão o
+ *  decorrido ("há 9 min"). Um relógio só: quanto falta decide; quanto passou, não. */
+export function cardClock(card: ClockSource, nowMs: number): CardClock {
+  const left = confirmationRemainingLabel(card.confirmation_deadline_iso, nowMs);
+  if (left) {
+    const verb = card.confirmation_action === "cancel" ? "cancela sozinho em" : "aceita sozinho em";
+    return { text: `${verb} ${left}`, tone: deadlineTone(card.confirmation_deadline_iso, nowMs), countdown: true };
+  }
+  return { text: agoLabel(card.elapsed_seconds), tone: timerTone(card.timer_class as OrderTimerClass), countdown: false };
+}
+
+/** O primeiro nome, quando o "nome" do cliente é mesmo um nome (não telefone nem vazio). */
+export function customerFirstName(name: string): string {
+  const clean = (name || "").trim();
+  if (!clean || /\d/.test(clean)) return "";
+  return clean.split(/\s+/)[0] ?? "";
+}
+
+type VerbSource = Pick<OrderCardProjection, "ref" | "status" | "fulfillment_type" | "next_status" | "customer_name">;
+
+/** O verbo do botão largo, com o nome (v4: "Entregar a Ana", "Despachar M09").
+ *
+ *  Só muda o rótulo da SAÍDA, onde o fato é entregar à pessoa ou despachar: o rótulo do
+ *  servidor ("Marcar como retirado") fica no `title` do botão. Os outros passos seguem
+ *  com o rótulo do servidor, que é a fonte única. */
+export function primaryVerb(card: VerbSource, aff: Pick<Affordance, "ref" | "label" | "disabled">): string {
+  if (aff.ref !== "advance" || aff.disabled) return aff.label;
+  if (card.next_status === "dispatched") return `Despachar ${splitRef(card.ref).code}`;
+  if (card.status === "ready" && card.fulfillment_type === "pickup") {
+    const name = customerFirstName(card.customer_name);
+    return name ? `Entregar a ${name}` : `Entregar ${splitRef(card.ref).code}`;
+  }
+  return aff.label;
+}
+
+export type SegmentState = "done" | "working" | "waiting" | "alert";
+
+export interface StationProgress {
+  segments: Array<{ ref: string; state: SegmentState; title: string }>;
+  /** "Forno e Café prontos" · "2 de 3 prontos" */
+  summary: string;
+  /** "falta Café" (o que ainda segura o pedido), vazio quando todas terminaram. */
+  missing: string;
+  /** Nomes do que falta, para "Aguardando Café". */
+  missingNames: string;
+  done: boolean;
+}
+
+function joinNames(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+/** A barra de progresso por estação (um traço por estação) e a frase dela. */
+export function stationProgress(kitchen: OrderCardProjection["kitchen"]): StationProgress | null {
+  if (!kitchen || !kitchen.stations.length) return null;
+  const segments = kitchen.stations.map((station) => {
+    const state: SegmentState = station.state === "done"
+      ? "done"
+      : station.prints && station.paper_failed
+        ? "alert"
+        : station.state === "in_progress" ? "working" : "waiting";
+    return { ref: station.station_ref, state, title: `${station.station_name}: ${station.state_label}` };
+  });
+  const doneNames = kitchen.stations.filter((s) => s.state === "done").map((s) => s.station_name);
+  const missingNames = kitchen.stations.filter((s) => s.state !== "done").map((s) => s.station_name);
+  const done = missingNames.length === 0;
+  const total = kitchen.stations.length;
+  const summary = done
+    ? `${joinNames(doneNames)} ${total === 1 ? "pronto" : "prontos"}`
+    : `${doneNames.length} de ${total} ${doneNames.length === 1 ? "pronto" : "prontos"}`;
+  const label = kitchen.missing_label || "";
+  const missing = label ? label.charAt(0).toLowerCase() + label.slice(1) : "";
+  return { segments, summary, missing, missingNames: joinNames(missingNames), done };
+}
+
+/** A Saída: o primeiro cartão com o gesto da saída à mão é o "Próximo". */
+export function nextOutRef(cards: OrderCardProjection[]): string {
+  const first = cards.find((card) => card.status === "ready" && (card.actions ?? []).some((a) => a.ref === "advance" && a.enabled && a.priority !== "menu"));
+  return first?.ref ?? "";
+}
+
+/** O excedente da Saída larga vira número: "prontos esperando (K44, T18)". */
+export function waitingStripText(cards: OrderCardProjection[]): string {
+  if (!cards.length) return "";
+  const codes = cards.slice(0, 4).map((card) => splitRef(card.ref).code);
+  const more = cards.length > 4 ? ", …" : "";
+  return `${cards.length === 1 ? "pronto esperando" : "prontos esperando"} (${codes.join(", ")}${more})`;
+}
+
+/** A frase curta da coluna recolhida: a urgência que sobrevive ao recolher.
+ *  Atrasados primeiro; na Entrada, o prazo mais curto ("aceita sozinho em 1:10"). */
+export function stripSummary(zoneKey: ZoneView["key"], cards: OrderCardProjection[], nowMs: number): { text: string; tone: "warning" | "late" | "" } {
+  const late = cards.filter((card) => timerTone(card.timer_class as OrderTimerClass) === "late").length;
+  if (late) return { text: late === 1 ? "1 atrasado" : `${late} atrasados`, tone: "late" };
+  if (zoneKey === "intake") {
+    let best: { left: number; card: OrderCardProjection } | null = null;
+    for (const card of cards) {
+      const ms = Date.parse(card.confirmation_deadline_iso || "");
+      if (Number.isNaN(ms)) continue;
+      const left = ms - nowMs;
+      if (left > 0 && (!best || left < best.left)) best = { left, card };
+    }
+    if (best) return { text: cardClock(best.card, nowMs).text, tone: "warning" };
+  }
+  return { text: "", tone: "" };
+}
