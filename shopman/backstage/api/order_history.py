@@ -65,6 +65,7 @@ class OrderHistoryQuerySerializer(StrictQuerySerializer):
     payment = _CommaListField(max_length=1000)
     fulfillment = _CommaListField(choices=tuple(FULFILLMENT_LABELS))
     q = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    sku = serializers.CharField(required=False, allow_blank=True, max_length=100)
     page = serializers.IntegerField(required=False, min_value=1, default=1)
 
     def validate(self, attrs):
@@ -106,6 +107,7 @@ class OrderHistoryView(OperationalObservationMixin, APIView):
                 payments=data.get("payment") or (),
                 fulfillments=data.get("fulfillment") or (),
                 query=(data.get("q") or "").strip(),
+                sku=(data.get("sku") or "").strip(),
                 page=data["page"],
             )
         )

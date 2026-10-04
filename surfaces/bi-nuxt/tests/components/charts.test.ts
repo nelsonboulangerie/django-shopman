@@ -23,9 +23,9 @@ describe("chart/BarSeries", () => {
     const wrapper = mount(BarSeries, {
       props: { points, format: (v: number) => `#${v}` },
     });
-    // O tooltip (oculto por CSS) existe para todo ponto; o rótulo DIRETO
-    // (span -top-4) só no pico.
-    const direct = wrapper.findAll(".-top-4");
+    // O tooltip (oculto por CSS) existe para todo ponto; o rótulo DIRETO (a pílula
+    // do pico, prévia `depois-bi-vendas`) só no pico.
+    const direct = wrapper.findAll("[data-chart-peak]");
     expect(direct).toHaveLength(1);
     expect(direct[0]!.text()).toBe("#40");
   });
@@ -48,7 +48,15 @@ describe("chart/BarSeries", () => {
     const dash = wrapper.find(".h-0\\.5");
     expect(dash.exists()).toBe(true);
     expect(dash.attributes("style")).toContain("bottom: 100%");
-    expect(wrapper.text()).toContain("anterior #80");
+    expect(wrapper.text()).toContain("comparação #80");
+  });
+
+  it("dia em que a casa não abre diz \"fechado\" no lugar da barra", () => {
+    const wrapper = mount(BarSeries, {
+      props: { points: [{ label: "sáb", value: 30 }, { label: "dom", value: 0, closed: true }], tone: "success" },
+    });
+    expect(wrapper.findAll("[data-chart-closed]")).toHaveLength(1);
+    expect(wrapper.find("[data-chart-closed]").text()).toBe("fechado");
   });
 });
 

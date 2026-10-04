@@ -899,11 +899,13 @@ export interface OrderHistoryRowProjection {
   closed_display: string;
 }
 
-/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
 export interface OrderHistoryProjection {
   date_from: string;
   date_to: string;
   query: string;
+  sku: string;
+  sku_name: string;
   facets: HistoryFacet[];
   items: OrderHistoryRowProjection[];
   page: number;

@@ -57,6 +57,7 @@ export type {
   RecipeOptionProjection,
   RecipeWasteRow,
   SuggestionMaterialShortageProjection,
+  PlanCarryNoteProjection,
   WorkOrderCardProjection,
   WorkOrderReportRow,
 } from "~/generated/productionContract";
