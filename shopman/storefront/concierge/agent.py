@@ -81,6 +81,9 @@ class AgentOutcome:
     usage: dict = field(default_factory=dict)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff quando quem chamou a equipe tem o que dizer (o motivo
+    #: verdadeiro e "já chamei a equipe"); vazio = o aviso padrão da casa.
+    handoff_ack: str = ""
     extra_replies: list[str] = field(default_factory=list)
     tool_events: list[dict] = field(default_factory=list)
     order_ref: str = ""
@@ -341,6 +344,11 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             )
         else:
             addition = order_addition.apply(conversation, request)
+        if addition.handoff:
+            return AgentOutcome(
+                reply_text="", handoff=True, handoff_reason=addition.handoff_reason,
+                handoff_ack=addition.text, layer=LAYER_CONTEXT, memory=memory, memory_memos=memos,
+            )
         return AgentOutcome(
             reply_text=addition.text,
             order_ref=addition.order_ref if addition.code == "added" else "",
@@ -575,6 +583,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome.usage = usage
     outcome.handoff = ctx.handoff
     outcome.handoff_reason = ctx.handoff_reason
+    outcome.handoff_ack = ctx.handoff_ack
     outcome.extra_replies = list(ctx.extra_replies)
     outcome.order_ref = ctx.order_ref
     return outcome

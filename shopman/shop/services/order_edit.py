@@ -408,7 +408,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
 
 def edit(
     order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None,
-    source: str = SOURCE,
+    source: str = SOURCE, notify_customer: bool = True,
 ) -> EditResult:
     """Aplica a edição sob o lock do pedido, numa transação.
 
@@ -416,6 +416,10 @@ def edit(
     parte: recusa e NADA muda. Redução com dinheiro recebido exige
     ``approved_by`` (o gerente que assinou, mesma régua do cancelamento de
     pedido pago). A mesma edição de novo não mexe em nada.
+
+    ``notify_customer=False`` quando quem edita já está falando com o cliente e
+    leva o que o aviso ``order_updated`` diria na própria resposta (a Concierge):
+    o cliente recebe UMA mensagem por edição, nunca duas.
     """
     from shopman.orderman.exceptions import ValidationError
 
@@ -486,7 +490,8 @@ def edit(
             transaction.on_commit(lambda: _refund_gateway(ref, amount_q=amount_q, idempotency_key=key))
         if result.items_changed:
             _relink_production(locked, previous_skus=previous_skus)
-        _notify_customer(locked, result)
+        if notify_customer:
+            _notify_customer(locked, result)
 
     order.refresh_from_db()
     logger.info(
@@ -1101,7 +1106,7 @@ def customer_note(result: EditPlan) -> str:
             sentences.append(f"Nova data: {phrase}.")
     if result.notes_changed:
         sentences.append("Anotamos sua observação." if result.notes_after else "Tiramos a observação do pedido.")
-    money = _money_for_customer(result)
+    money = money_for_customer(result)
     if money:
         sentences.append(money)
     return " ".join(sentences) or "Os detalhes estão no acompanhamento."
@@ -1133,7 +1138,8 @@ def _describe_for_customer(difference: dict) -> str:
     return text[:1].upper() + text[1:] + "."
 
 
-def _money_for_customer(result: EditPlan) -> str:
+def money_for_customer(result: EditPlan) -> str:
+    """O total novo e o destino da diferença, na frase que o cliente lê."""
     total = _brl(result.total_q)
     where = "na entrega" if result.fulfillment_after == "delivery" else "na retirada"
     settlement = result.settlement
@@ -1406,6 +1412,7 @@ __all__ = [
     "Settlement",
     "apply_final_items",
     "customer_note",
+    "money_for_customer",
     "edit",
     "fiscal_authorized",
     "plan",

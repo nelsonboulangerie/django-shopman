@@ -86,8 +86,12 @@ class Outcome:
     text: str
     order_ref: str = ""
     #: A próxima pergunta pendente da conversa (``dialogue``): a confirmação, a
-    #: oferta de pedido novo ou a da equipe. ``None`` quando nada fica no ar.
+    #: oferta de pedido novo. ``None`` quando nada fica no ar.
     pending: dict | None = None
+    #: A equipe foi chamada: ``text`` é o aviso do handoff (motivo + "já chamei a
+    #: equipe"), e ``handoff_reason`` é o que a equipe lê.
+    handoff: bool = False
+    handoff_reason: str = ""
 
     @property
     def memo(self) -> dict:
@@ -219,16 +223,17 @@ def _refused(order, additions: list[dict], reason: str, *, order_ref: str = "") 
     """O motivo verdadeiro e o caminho que existe: pedido novo (do dia) ou a equipe (encomenda)."""
     ref = order.ref if order is not None else order_ref
     items = items_text(additions) if additions else ""
-    if order is not None and _is_preorder(order):
+    if (order is not None and _is_preorder(order)) or not items:
+        # Encomenda: o motivo e a equipe já chamada, na mesma mensagem (o handoff
+        # é criado de fato pelo turno; a R6 só deixa a frase sair com o recibo).
+        what = f"acrescentar {items}" if items else "acrescentar itens"
         return Outcome(
             "refused",
             _copy(REFUSED_TEAM_COPY_KEY, reason=reason),
             ref,
-            pending={"kind": "offer_team", "day": _today_iso()},
+            handoff=True,
+            handoff_reason=f"Cliente pediu para {what} ao pedido {ref}: {reason}"[:200],
         )
-    if not items:
-        return Outcome("refused", _copy(REFUSED_TEAM_COPY_KEY, reason=reason), ref,
-                       pending={"kind": "offer_team", "day": _today_iso()})
     return Outcome(
         "refused",
         _copy(REFUSED_NEW_COPY_KEY, reason=reason, items=items),
@@ -340,8 +345,11 @@ def apply(conversation, pending: dict) -> Outcome:
 
     try:
         with transaction.atomic():
+            # Uma mensagem só: a resposta da Concierge leva o que o aviso
+            # ``order_updated`` diria (total novo, saldo e destino da diferença).
             result = order_edit.edit(
                 order, lines=_lines(order, entries), actor=ACTOR, source=order_edit.CONCIERGE_SOURCE,
+                notify_customer=False,
             )
             ConversationMessage.objects.create(
                 conversation=conversation,
@@ -360,7 +368,6 @@ def apply(conversation, pending: dict) -> Outcome:
         DONE_COPY_KEY,
         items=items_text(entries),
         order_ref=order.ref,
-        total=_brl(plan.total_q),
-        balance=_brl(plan.balance_after_q),
+        money=order_edit.money_for_customer(plan),
     )
     return Outcome("added", text, order.ref, pending=None)

@@ -7,11 +7,12 @@ Concierge não poderia fazer?" O que se prova aqui:
 - dentro da etapa: a pergunta de uma linha traz os dados do sistema (itens,
   pedido, total novo, saldo) e só o "sim" aplica, pelo MESMO serviço do PDV
   (``order_edit``), com o histórico "Itens acrescentados pela Concierge a pedido
-  do cliente" e o aviso ``order_updated``;
+  do cliente"; o cliente recebe UMA mensagem (a resposta leva o total novo e o
+  destino da diferença, e o aviso ``order_updated`` não sai);
 - pedido pago: a diferença vira saldo a receber, como no balcão;
 - fora da etapa, NFC-e autorizada, iFood, sem estoque: nada muda, o motivo é o
-  verdadeiro e a oferta é a que existe (pedido novo no pedido do dia, equipe na
-  encomenda);
+  verdadeiro; no pedido do dia, a oferta de pedido novo; na encomenda, a equipe
+  já chamada na mesma mensagem (handoff de verdade);
 - "não": nada muda;
 - pedido de outra pessoa: não é achado;
 - o valor mudou entre a pergunta e o "sim": pergunta de novo.
@@ -122,7 +123,10 @@ def test_inside_the_stage_asks_with_system_data_and_applies_only_on_yes(ctx, cus
     done = order_addition.apply(ctx.conversation, asked.pending)
 
     assert done.code == "added"
-    assert done.text == "Pronto, acrescentei 2 Pão Francês ao pedido NB-ADD-1. Total novo R$ 3,60, saldo a pagar R$ 1,80. 💛"
+    assert done.text == (
+        "Pronto, acrescentei 2 Pão Francês ao pedido NB-ADD-1. "
+        "O novo total é R$ 3,60. A diferença de R$ 1,80 fica para a retirada. 💛"
+    )
     order.refresh_from_db()
     record = order_composition.adjustment(order)
     assert record["source"] == order_edit.CONCIERGE_SOURCE and record["event_id"] == "concierge-edit:NB-ADD-1:1"
@@ -138,12 +142,13 @@ def test_inside_the_stage_asks_with_system_data_and_applies_only_on_yes(ctx, cus
 
     labels = [row.label for row in _build_timeline(order)]
     assert "Itens acrescentados pela Concierge a pedido do cliente" in labels
-    # A conversa registra para quem lê no Admin, e o cliente recebe o aviso da edição.
+    # A conversa registra para quem lê no Admin. Uma mensagem só ao cliente: a da
+    # Concierge; o aviso ``order_updated`` não sai nesse caso.
     assert ConversationMessage.objects.filter(
         conversation=ctx.conversation, kind=ConversationMessage.Kind.NOTE,
         text__startswith="Itens acrescentados pela Concierge a pedido do cliente",
     ).exists()
-    assert _notices(order).count() == 1
+    assert not _notices(order).exists()
 
 
 def test_value_changed_between_question_and_yes_asks_again(ctx, customer):
@@ -179,10 +184,12 @@ def test_authorized_nfce_on_a_preorder_refuses_and_offers_the_team(ctx, customer
 
     refused = order_addition.propose(ctx.conversation, order_ref=order.ref, additions=[{"sku": SKU, "qty": 2}])
 
-    assert refused.code == "refused"
-    assert refused.text.startswith("A nota fiscal desse pedido já foi emitida")
-    assert refused.text.endswith("Posso chamar a equipe para ver isso com você? Responda sim ou não.")
-    assert refused.pending["kind"] == dialogue.OFFER_TEAM
+    assert refused.code == "refused" and refused.handoff and refused.pending is None
+    assert refused.text == (
+        "A nota fiscal desse pedido já foi emitida, e aí não dá mais para acrescentar itens nele. "
+        "Já chamei a equipe para ver isso com você."
+    )
+    assert "NB-ADD-4" in refused.handoff_reason and "2 Pão Francês" in refused.handoff_reason
     assert _unchanged(order)
 
 
@@ -238,7 +245,7 @@ def test_without_commercial_authority_nothing_changes(ctx, customer):
 
     refused = order_addition.propose(ctx.conversation, order_ref=order.ref, additions=[{"sku": SKU, "qty": 1}])
 
-    assert refused.code == "refused" and refused.pending["kind"] == dialogue.OFFER_TEAM
+    assert refused.code == "refused" and refused.handoff
     assert _unchanged(order)
 
 
@@ -310,3 +317,30 @@ def test_turn_one_then_yes_adds_through_the_same_service(conversation, customer,
     order.refresh_from_db()
     assert order_composition.effective_total_q(order) == 360
     assert order.events.get(type="order_edited").payload["source"] == "concierge:add"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_turn_refused_preorder_says_why_and_the_team_is_really_called(conversation, customer, outbox, settings):
+    from shopman.shop.models import Conversation
+
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    settings.AI_ASSIST_API_KEY = "sk-teste"
+    order = _order("NB-ADD-E", customer.ref, offset=3, nfce_access_key="4126" + "0" * 40)
+    now = timezone.now()
+    pending = {"kind": dialogue.CHOOSE_ORDER, "order_ref": order.ref, "item": "2 Pão Francês", "sku": SKU, "qty": 2}
+    state = dialogue.next_state({}, [{"pending": pending}], now=now, fence=1, until=now + timedelta(days=1))
+    Conversation.objects.filter(pk=conversation.pk).update(flags={"dialogue": state})
+
+    _receive(conversation, "1", "add-e1")
+    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+
+    assert result.handoff
+    conversation.refresh_from_db()
+    assert conversation.state == Conversation.State.HANDOFF
+    assert "NB-ADD-E" in conversation.handoff_reason
+    # Uma mensagem: o motivo verdadeiro e a equipe já chamada (a R6 deixa sair: há o recibo).
+    assert outbox.sent == [
+        "A nota fiscal desse pedido já foi emitida, e aí não dá mais para acrescentar itens nele. "
+        "Já chamei a equipe para ver isso com você."
+    ]
+    assert _unchanged(order)

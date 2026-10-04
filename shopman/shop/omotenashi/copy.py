@@ -1244,19 +1244,20 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # Acrescentar a um pedido já feito (``shopman/storefront/concierge/order_addition.py``):
     # a Concierge não oferece, faz quando o cliente pede, pelo mesmo serviço do PDV.
-    # ``{items}``, ``{order}``, ``{order_ref}``, ``{total}``, ``{balance}`` e
-    # ``{reason}`` saem do sistema (catálogo, pedido, edição e a recusa do serviço).
+    # ``{items}``, ``{order}``, ``{order_ref}``, ``{total}``, ``{balance}``, ``{money}``
+    # (o total novo e o destino da diferença, a frase do aviso ``order_updated``, que
+    # nesse caso não é enviado) e ``{reason}`` saem do sistema.
     "CONCIERGE_ADD_CONFIRM": {
         WILDCARD: {WILDCARD: CopyEntry(message="Acrescento {items} ao {order}? Total novo {total}, saldo a pagar {balance}. Responda sim ou não.")},
     },
     "CONCIERGE_ADD_DONE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, acrescentei {items} ao pedido {order_ref}. Total novo {total}, saldo a pagar {balance}. 💛")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, acrescentei {items} ao pedido {order_ref}. {money} 💛")},
     },
     "CONCIERGE_ADD_REFUSED_NEW": {
         WILDCARD: {WILDCARD: CopyEntry(message="{reason} Quer que eu faça um pedido novo com {items}? Responda sim ou não.")},
     },
     "CONCIERGE_ADD_REFUSED_TEAM": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{reason} Posso chamar a equipe para ver isso com você? Responda sim ou não.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="{reason} Já chamei a equipe para ver isso com você.")},
     },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(

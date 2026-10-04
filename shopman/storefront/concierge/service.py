@@ -1016,6 +1016,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                 outcome.handoff_reason or "pedido do cliente",
                 consumed_ids=ids,
                 meter=meter,
+                ack_text=getattr(outcome, "handoff_ack", ""),
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         from . import house_rules
@@ -1423,8 +1424,13 @@ def mark_handoff(
     triage=None,
     meter=None,
     house_rules_held=None,
+    ack_text: str = "",
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
+
+    ``ack_text`` substitui o aviso padrão (``CONCIERGE_HANDOFF_ACK``) quando quem
+    chamou a equipe montou a frase com o motivo (a Concierge recusando o acréscimo
+    numa encomenda). Passa pelas regras da casa como qualquer aviso de handoff.
 
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
     ``house_rules_held`` é a resposta que as regras da casa seguraram
@@ -1501,7 +1507,7 @@ def mark_handoff(
             consumed,
             purpose="handoff_ack",
         )
-        ack = copy_message("CONCIERGE_HANDOFF_ACK")
+        ack = (ack_text or "").strip() or copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:
             _dispatch_reply(
                 current,

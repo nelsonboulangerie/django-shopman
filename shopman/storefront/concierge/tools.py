@@ -80,6 +80,8 @@ class ToolContext:
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff montado pela casa (motivo + "já chamei a equipe").
+    handoff_ack: str = ""
     order_ref: str = ""
     rendered_results: list[str] = field(default_factory=list)
 
@@ -1467,6 +1469,10 @@ def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
     outcome = order_addition.propose(
         ctx.conversation, order_ref=str(order_ref or ""), additions=[{"sku": sku, "qty": qty}]
     )
+    if outcome.handoff:
+        ctx.handoff = True
+        ctx.handoff_reason = outcome.handoff_reason
+        ctx.handoff_ack = outcome.text
     return {"ok": True, "code": outcome.code, "message": outcome.text, "pending": outcome.pending}
 
 

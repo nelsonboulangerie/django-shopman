@@ -24,6 +24,15 @@ acréscimo"), registradas abaixo como histórico.
 - Recusa do serviço: o motivo verdadeiro, e a oferta que existe: **pedido novo** (pedido do dia) ou
   **a equipe** (encomenda).
 
+## Dois ajustes de omotenashi (coordenação, 03/10; não foram ao dono)
+- **Encomenda recusada:** o motivo verdadeiro e a equipe já chamada na MESMA mensagem ("<motivo> Já
+  chamei a equipe para ver isso com você."), sem pergunta extra. O handoff é criado de fato
+  (`mark_handoff(ack_text=...)`: a frase substitui o aviso padrão e passa pelas regras da casa com o
+  recibo do handoff, R6). Pedido do dia segue oferecendo pedido novo.
+- **Uma mensagem só:** quando a edição vem da Concierge, a resposta leva o que o `order_updated` diria
+  (`order_edit.money_for_customer`: total novo e destino da diferença) e o aviso não é enviado
+  (`order_edit.edit(notify_customer=False)`). Edição vinda do PDV/Gestor segue avisando.
+
 ## O que mudou
 - `shop/services/order_edit.py`: `plan`/`edit` aceitam `source` (`pos:edit` no balcão,
   `concierge:add` na Concierge). A origem vai para `adjustment.source`, `meta.added_by` da linha nova, o
