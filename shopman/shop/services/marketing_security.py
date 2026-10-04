@@ -1152,6 +1152,8 @@ def _has_device(actor) -> bool:
 
         return has_passkey(actor)
     except Exception:
+        # O selo segue pelo código; só o atalho da digital fica de fora.
+        logger.warning("marketing.device_passkey_lookup_failed actor=%s", getattr(actor, "pk", None), exc_info=True)
         return False
 
 
