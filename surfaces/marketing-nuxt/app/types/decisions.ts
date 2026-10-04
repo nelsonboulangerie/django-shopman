@@ -30,6 +30,14 @@ export interface DecisionItem {
   campaign_name: string;
   trigger: string;
   product_name: string;
+  /** A foto que o anúncio leva, ou a do produto; vazia sem foto. */
+  image_url: string;
+  /** O fato do lote: quantas unidades e quando saiu ("24 un saíram às 10:01"). */
+  lot_quantity: string;
+  lot_finished_at: string | null;
+  /** Falha: as outras plataformas que já entregaram, e quantas pessoas receberam. */
+  delivered_platform_refs: string[];
+  delivered_people: number;
   platform_refs: string[];
   reach: DecisionReach;
   deadline_at: string | null;
@@ -57,6 +65,7 @@ export interface ScheduledItem {
   campaign_name: string;
   trigger: string;
   product_name: string;
+  image_url: string;
   platform_refs: string[];
   reach: DecisionReach;
   scheduled_for: string;

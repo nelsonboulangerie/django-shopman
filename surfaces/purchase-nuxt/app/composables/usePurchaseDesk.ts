@@ -13,6 +13,7 @@ import type {
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptMode,
+  ReceiptHistoryEntry,
   ReceiptOutcome,
   Supplier,
   SupplierMaterialCost,
@@ -105,6 +106,8 @@ export function usePurchaseDesk() {
   // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
   // o aviso de sucesso mostra.
   const receiptOutcome = useState<ReceiptOutcome | null>("purchase-receipt-outcome", () => null);
+  // As entradas já registradas ("essa nota já entrou?" e as "Entradas de hoje").
+  const receiptHistory = useState<ReceiptHistoryEntry[]>("purchase-receipt-history", () => []);
   const receiptHydrated = useState("purchase-receipt-hydrated", () => false);
   const purchaseRequestStatuses = useState<Record<string, PurchaseRequestStatus>>(
     "purchase-request-statuses",
@@ -661,6 +664,7 @@ export function usePurchaseDesk() {
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
+    receiptHistory.value = copy(next.receiptHistory ?? []);
     if (options.receipt) {
       receiptMode.value = next.activeReceipt.mode;
       receiptSupplierRef.value = next.activeReceipt.supplierRef || "";
@@ -668,7 +672,9 @@ export function usePurchaseDesk() {
       receiptNote.value = next.activeReceipt.note || "";
       receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
       receiptInvoiceVolumes.value = Number(next.activeReceipt.invoiceVolumes) || 0;
-      receiptVolumesCounted.value = null;
+      // A contagem de volumes mora no servidor (C23): a mesma NF aberta em outro
+      // dispositivo já chega contada.
+      receiptVolumesCounted.value = next.activeReceipt.volumesCounted ?? null;
       receiptOutcome.value = null;
       receiptHydrated.value = true;
     }
@@ -771,10 +777,18 @@ export function usePurchaseDesk() {
     receiptVolumesCounted.value = null;
   }
 
-  /** O ato físico: "Contei N volumes". `null` desfaz a contagem. */
+  /** O ato físico: "Contei N volumes". `null` desfaz a contagem. Vai ao servidor
+   *  (C23): quem abrir a mesma NF em outro dispositivo não conta de novo. */
   function setReceiptVolumesCounted(counted: number | null) {
     receiptOutcome.value = null;
     receiptVolumesCounted.value = counted !== null && Number.isFinite(counted) && counted > 0 ? Math.round(counted) : null;
+    const accessKey = invoiceStatus.value.accessKey;
+    if (!accessKey || !backendReady.value) return;
+    void api
+      .saveReceiptVolumes({ invoiceAccessKey: accessKey, counted: receiptVolumesCounted.value })
+      .catch((err) => {
+        useSonner.error(httpErrorMessage(err, "A contagem ficou só neste dispositivo. Tente de novo."));
+      });
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
@@ -974,6 +988,38 @@ export function usePurchaseDesk() {
     );
     if (ok) receiptOutcome.value = snapshot;
     return Boolean(ok);
+  }
+
+  /**
+   * "Devolver só este item" (recusa parcial, v4 c): devolve UMA linha ao
+   * fornecedor com o motivo e tira a linha do rascunho; a entrada segue com as
+   * outras. O estoque não muda (é devolução, não entrada).
+   */
+  async function rejectReceiptLine(lineId: string): Promise<boolean> {
+    if (!requireBackend("devolver o item")) return false;
+    const line = receiptLines.value.find((item) => item.id === lineId);
+    if (!line) return false;
+    const reason = (line.lineNote || "").trim();
+    if (!reason) {
+      actionError.value = "Escolha o motivo da diferença antes de devolver o item.";
+      useSonner.error(actionError.value);
+      return false;
+    }
+    const response = await runBackendAction(
+      () =>
+        api.rejectReceipt({
+          mode: receiptMode.value,
+          supplierRef: receiptSupplierRef.value,
+          invoiceAccessKey: invoiceStatus.value.accessKey,
+          note: reason,
+          lines: [line],
+          partial: true,
+        }),
+      { receipt: false },
+    );
+    if (!response) return false;
+    receiptLines.value = receiptLines.value.filter((item) => item.id !== lineId);
+    return true;
   }
 
   /** Fecha o aviso de sucesso — o proximo recebimento comeca da tela limpa. */
@@ -1236,6 +1282,8 @@ export function usePurchaseDesk() {
     readInvoice,
     confirmReceipt,
     rejectReceipt,
+    rejectReceiptLine,
+    receiptHistory,
     countBoardRows,
     countFilteredRows,
     countDivergentRows,

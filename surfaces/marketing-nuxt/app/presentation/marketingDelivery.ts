@@ -32,9 +32,11 @@ export function deliveryActionLabel(options: {
   if (options.scheduled) return "Agendar";
   const message = includesDirectMessage(options.platforms);
   const post = includesPublicPost(options.platforms);
-  if (message && post) return "Disparar agora";
-  if (message) return "Enviar agora";
-  return "Publicar agora";
+  // O selo da v4 (pino 8): os dois atos pelo nome, "Publicar e enviar", e não o
+  // genérico. O "agora" já está escrito no selo, na linha de cima ("Agora, às 10:04").
+  if (message && post) return "Publicar e enviar";
+  if (message) return "Enviar";
+  return "Publicar";
 }
 
 /** A foto que vai sair com o anúncio.
@@ -124,7 +126,7 @@ export function sealRows(input: {
       platform,
       label: platformResultLabel(platform),
       kind: "mensagem direta",
-      amount: `${formatCount(count)} ${count === 1 ? "pessoa" : "pessoas"}`,
+      amount: `${formatCount(count)} ${count === 1 ? "cliente" : "clientes"}`,
       strong: true,
     });
   }

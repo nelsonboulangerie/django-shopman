@@ -549,6 +549,12 @@ export interface POSProjection {
   terminal_components: POSTerminalComponentProjection[];
   cash_drawer?: POSCashDrawerProjection;
   device_agent?: POSDeviceAgentProjection;
+  /**
+   * O pulso pelo RELAY: o tablet (que não alcança o agente do Balcão) pede ao
+   * servidor, e o agente do terminal abre a gaveta. `available` = há caminho;
+   * `online` = o agente buscou trabalho há pouco; `reason` = por que não, ou o aviso.
+   */
+  drawer_relay?: { available: boolean; online: boolean; terminal_label: string; reason: string };
   favorite_collection_refs: string[];
   /** As mesas do Salão de hoje, para o vínculo OPCIONAL comanda × mesa (renomear). */
   seating_spots?: POSSeatingSpotOption[];

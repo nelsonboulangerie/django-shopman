@@ -496,6 +496,9 @@ class POSProjection:
     # o PDV pendurava a impressão no flag da gaveta, um balcão com impressora e
     # gaveta de chave recusava recibo, DANFE, ficha e comprovante de caixa.
     device_agent: dict = field(default_factory=dict)
+    # O pulso pelo RELAY: o tablet (que não alcança o agente do Balcão) pede, e o
+    # agente do terminal abre a gaveta (services/drawer_pulse.relay_capability).
+    drawer_relay: dict = field(default_factory=dict)
     # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
     # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
     shop_name: str = ""
@@ -601,6 +604,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         # resolve; duas sem estação válida pedem a escolha).
         terminal = resolve_terminal(terminal_ref, strict=False)
     cash_shift = _active_cash_shift_for_terminal(terminal)
+    from shopman.backstage.services.drawer_pulse import relay_capability
     from shopman.backstage.services.pos_hardware import CashDrawerConfig, DeviceAgentConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
 
@@ -654,6 +658,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         terminal_roll_margin_mm=runtime.printer.margin_mm,
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
         device_agent=DeviceAgentConfig.from_terminal(terminal).surface_payload(),
+        drawer_relay=relay_capability(terminal),
         shop_name=_shop_name(),
         seating_spots=_seating_spots(),
     )
@@ -1371,7 +1376,7 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/drawer-open/",
-            payload_schema={"required": ["reason"]},
+            payload_schema={"required": ["purpose"], "optional": ["order_ref", "reason", "via"]},
             idempotency="none",
         ),
         Action(

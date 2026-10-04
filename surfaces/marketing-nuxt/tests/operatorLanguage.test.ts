@@ -185,6 +185,9 @@ describe("o sistema não sai: ele envia, publica ou dispara", () => {
     // Exemplo de NOME de modelo, no mesmo formulário e pela mesma razão: quem nomeia
     // é o padeiro, e o que sai do forno é o pão.
     "Saiu do forno",
+    // O fato do lote na fila (v4, V6-MKT): "24 un saíram às 10:01". Quem sai é o pão,
+    // do forno; o anúncio continua se publicando ou se enviando.
+    "un saíram",
   ];
 
   it("nenhum texto de tela diz que alguma coisa 'sai'", () => {

@@ -8,6 +8,7 @@ import {
   audienceRulesSummary,
   choiceLabels,
   formatCount,
+  platformIcon,
   platformsSummary,
 } from "~/presentation/campaign";
 import {
@@ -191,10 +192,9 @@ function changeSearch(value: string) {
   );
 }
 
-function changeState(event: Event) {
-  const target = event.target;
-  if (target instanceof HTMLSelectElement)
-    void replaceListQuery({ state: target.value || undefined, page: 1 });
+/** "Visto": a faixa da campanha criada sai da URL (e da tela). */
+function dismissCreated() {
+  void replaceListQuery({ created: undefined });
 }
 
 function changePlatform(event: Event) {
@@ -262,18 +262,12 @@ function openEdit(rule: Campaign) {
 }
 
 async function close() {
-  const returnToV2 = route.query.experience === "v2";
   creating.value = false;
   editingPk.value = null;
-  if (returnToV2) {
-    await navigateTo(
-      { path: "/v2", query: { area: "campaigns" } },
-      { replace: true },
-    );
+  if (route.query.new) {
+    await replaceListQuery({ new: undefined, offer: undefined });
     await nextTick();
-    document
-      .querySelector<HTMLElement>("[data-marketing-new-campaign]")
-      ?.focus();
+    document.querySelector<HTMLElement>("[data-marketing-new-campaign]")?.focus();
   }
 }
 
@@ -335,13 +329,7 @@ async function showFireResult(response: MarketingCommandResponse) {
   closeFire();
   await refresh();
   const destination = fireDispatchRoute(response);
-  await navigateTo({
-    ...destination,
-    query: {
-      ...destination.query,
-      ...(route.query.experience === "v2" ? { experience: "v2" } : {}),
-    },
-  });
+  await navigateTo(destination);
 }
 
 async function onFire(request: {
@@ -414,7 +402,7 @@ async function onSubmit(payload: Record<string, unknown>) {
   await navigateTo(
     {
       path: "/campaigns",
-      query: { experience: "v2", created: created.pk },
+      query: { created: created.pk },
     },
     { replace: true },
   );
@@ -424,21 +412,122 @@ async function onSubmit(payload: Record<string, unknown>) {
     ?.focus();
 }
 
+// A linha 2 (v3 pino 5): a situação em chips com a contagem, a plataforma num chip.
+const stateCounts = computed(() => ({
+  all: rules.value.length,
+  active: rules.value.filter((rule) => rule.is_active).length,
+  inactive: rules.value.filter((rule) => !rule.is_active).length,
+}));
+function setState(value: "" | "active" | "inactive") {
+  void replaceListQuery({ state: value || undefined, page: undefined });
+}
+const platformLabel = computed(
+  () => platforms.value.find((platform) => platform.value === platformFilter.value)?.label ?? "todas",
+);
+
+/** O gatilho com ícone e a frase de quando (v3: "Produção concluída / Quando um lote termina"). */
+const TRIGGER_ICONS: Record<string, string> = {
+  production_finished: "lucide:croissant",
+  low_stock: "lucide:package-minus",
+  stock_back: "lucide:package-check",
+  product_created: "lucide:sparkles",
+  manual: "lucide:hand",
+  schedule: "lucide:calendar-clock",
+};
+const TRIGGER_WHEN: Record<string, string> = {
+  production_finished: "Quando um lote termina",
+  low_stock: "Quando o estoque fica baixo",
+  stock_back: "Quando o produto volta",
+  product_created: "Quando entra produto novo",
+  manual: "Quando você mandar",
+};
+function triggerWhen(rule: Campaign): string {
+  if (rule.trigger === "schedule") return rule.exhausted ? "Não dispara mais" : rule.schedule_label || "Na hora marcada";
+  return TRIGGER_WHEN[rule.trigger] ?? "";
+}
+
+// O ⋯ e a ação primária na linha do título (v3 pino 4), com as teclas.
+const MENU = [
+  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/templates" },
+  { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
+  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
+];
+function typing(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  return Boolean(event.ctrlKey || event.metaKey || event.altKey || target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog']"));
+}
+onKeyStroke(["r", "R"], (event) => {
+  if (typing(event)) return;
+  void refresh();
+});
+onKeyStroke(["n", "N"], (event) => {
+  if (typing(event) || panelOpen.value) return;
+  event.preventDefault();
+  openNew();
+});
+
 useHead({ title: "Campanhas" });
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <MarketingPageHeader title="Campanhas">
+    <MarketingPageHeader title="Campanhas" phone-hides-actions>
+      <template #search>
+        <UiSearchInput
+          :model-value="search"
+          placeholder="Buscar campanha, gatilho, modelo"
+          aria-label="Buscar campanha"
+          @update:model-value="changeSearch"
+        />
+      </template>
       <template #actions>
-        <!-- Os Modelos ficam a um toque, na linha de Ajustes logo abaixo do título. -->
-        <UiButton type="button" @click="openNew">
-          <Icon name="lucide:plus" class="size-4" />
+        <MarketingPageMenu heading="Campanhas" :items="MENU" @select="(key) => key === 'refresh' && refresh()" />
+        <UiButton type="button" data-marketing-new-campaign @click="openNew">
+          <Icon name="lucide:plus" class="size-4" aria-hidden="true" />
           Nova campanha
+          <kbd class="ml-1 rounded bg-primary-foreground/20 px-1.5 text-[11px] font-semibold">N</kbd>
         </UiButton>
       </template>
+      <template #phone-actions>
+        <UiIconButton icon="lucide:plus" label="Nova campanha" @click="openNew" />
+      </template>
+      <template #filters>
+        <UiFilterChip :active="!stateFilter" :count="stateCounts.all" :aria-pressed="!stateFilter" @click="setState('')">
+          <template #icon><Icon v-if="!stateFilter" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
+          Todas
+        </UiFilterChip>
+        <UiFilterChip :active="stateFilter === 'active'" :count="stateCounts.active" :aria-pressed="stateFilter === 'active'" @click="setState(stateFilter === 'active' ? '' : 'active')">
+          <template #icon><span class="size-2 rounded-full bg-success" aria-hidden="true" /></template>
+          Ligadas
+        </UiFilterChip>
+        <UiFilterChip :active="stateFilter === 'inactive'" :count="stateCounts.inactive" :aria-pressed="stateFilter === 'inactive'" @click="setState(stateFilter === 'inactive' ? '' : 'inactive')">
+          <template #icon><span class="size-2 rounded-full bg-muted-foreground" aria-hidden="true" /></template>
+          Desligadas
+        </UiFilterChip>
+        <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
+        <label
+          class="relative inline-flex min-h-control items-center gap-2 rounded-full border px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40"
+          :class="platformFilter ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+        >
+          <Icon :name="platformFilter ? platformIcon(platformFilter) : 'lucide:radio-tower'" class="size-4" aria-hidden="true" />
+          Plataforma: {{ platformLabel }}
+          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+          <select :value="platformFilter" class="absolute inset-0 cursor-pointer opacity-0" aria-label="Plataforma" @change="changePlatform">
+            <option value="">Todas as plataformas</option>
+            <option v-for="platform in platforms" :key="platform.value" :value="platform.value">{{ platform.label }}</option>
+          </select>
+        </label>
+        <button
+          v-if="hasListFilters"
+          type="button"
+          class="inline-flex min-h-control items-center gap-1 px-2 op-label font-semibold text-primary"
+          @click="clearListFilters"
+        >
+          <Icon name="lucide:x" class="size-4" aria-hidden="true" />Limpar filtros
+        </button>
+      </template>
     </MarketingPageHeader>
-    <div class="mx-auto w-full max-w-4xl px-4 py-6">
+    <div class="mx-auto w-full max-w-6xl px-4 py-5">
 
     <div
       v-if="error && rules.length === 0"
@@ -489,63 +578,16 @@ useHead({ title: "Campanhas" });
         class="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm"
         role="status"
       >
-        <p class="font-semibold">Campanha criada e salva.</p>
-        <p class="mt-1 text-muted-foreground">
-          Ela está destacada abaixo. Abra para conferir ou prepare o primeiro
-          disparo.
-        </p>
-      </div>
-      <section
-        class="mb-4 rounded-md border border-border bg-card p-3"
-        aria-labelledby="campaign-filters-title"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="campaign-filters-title" class="text-sm font-semibold">
-            Encontrar uma campanha
-          </h2>
-          <UiButton
-            v-if="hasListFilters"
-            type="button"
-            variant="link"
-            @click="clearListFilters"
-          >
-            Limpar filtros
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold">Campanha criada e salva.</p>
+            <p class="mt-1 text-muted-foreground">Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo.</p>
+          </div>
+          <UiButton type="button" variant="outline" @click="dismissCreated">
+            <Icon name="lucide:check" class="size-4" aria-hidden="true" />Visto
           </UiButton>
         </div>
-        <div class="mt-2 grid gap-2 sm:grid-cols-3">
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Buscar
-            <UiInput
-              type="search"
-              :model-value="search"
-              placeholder="Nome, gatilho ou modelo"
-              @update:model-value="changeSearch"
-            />
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Situação
-            <UiNativeSelect :value="stateFilter" @change="changeState">
-              <option value="">Todas</option>
-              <option value="active">Ligadas</option>
-              <option value="inactive">Desligadas</option>
-            </UiNativeSelect>
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Plataforma
-            <UiNativeSelect :value="platformFilter" @change="changePlatform">
-              <option value="">Todas</option>
-              <option
-                v-for="platform in platforms"
-                :key="platform.value"
-                :value="platform.value"
-              >
-                {{ platform.label }}
-              </option>
-            </UiNativeSelect>
-          </label>
-        </div>
-      </section>
-
+      </div>
       <div
         v-if="error"
         class="mb-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-sm"
@@ -584,9 +626,95 @@ useHead({ title: "Campanhas" });
         </UiButton>
       </div>
 
+      <!-- Do desktop largo para cima, a tabela da v3 (pino 7): Campanha, Gatilho,
+           Destinos, Público, a chave Ligada e "Preparar disparo". Abaixo, a lista. -->
+      <div v-else class="hidden overflow-hidden rounded-lg border border-border bg-card lg:block" data-campaigns-table>
+        <p class="flex items-center justify-between border-b border-border px-4 py-2 op-eyebrow text-muted-foreground">
+          <span>Campanhas {{ filteredRules.length }} de {{ rules.length }}</span>
+          <span class="font-normal tracking-normal normal-case">A chave liga ou desliga sem abrir.</span>
+        </p>
+        <table class="w-full op-label">
+          <thead>
+            <tr class="border-b border-border bg-muted/50 text-left op-eyebrow text-muted-foreground">
+              <th class="px-4 py-2.5 font-semibold">Campanha</th>
+              <th class="px-3 py-2.5 font-semibold">Gatilho</th>
+              <th class="px-3 py-2.5 font-semibold">Destinos</th>
+              <th class="px-3 py-2.5 font-semibold">Público</th>
+              <th class="px-3 py-2.5 font-semibold"><span class="sr-only">Ligada</span></th>
+              <th class="px-4 py-2.5 text-right font-semibold">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="rule in pageRules"
+              :key="rule.pk"
+              class="border-b border-border align-top last:border-0"
+              :class="rule.pk === createdPk ? 'bg-success/5 shadow-[inset_3px_0_0_var(--success)]' : ''"
+              :data-campaign-row="rule.pk"
+            >
+              <td class="px-4 py-3">
+                <button
+                  type="button"
+                  class="text-left disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="!editState(rule).enabled"
+                  :aria-label="editState(rule).enabled ? `Editar a campanha ${rule.name}` : `${editState(rule).reason} Campanha ${rule.name}`"
+                  @click="openEdit(rule)"
+                >
+                  <span class="text-[15px] font-semibold" :class="rule.is_active ? '' : 'text-muted-foreground'">{{ rule.name }}</span>
+                  <span v-if="!rule.requires_approval" class="ml-2 rounded-full bg-warning/10 px-2 py-0.5 op-micro font-semibold text-warning">Automática</span>
+                  <span v-if="rule.pk === createdPk" class="ml-2 rounded-full bg-success/10 px-2 py-0.5 op-micro font-semibold text-success">Nova</span>
+                </button>
+                <p class="mt-0.5 op-micro text-muted-foreground">
+                  <template v-if="rule.sent_count">Disparou {{ formatCount(rule.sent_count) }}× · {{ formatCount(rule.reached_total) }} {{ rule.reached_total === 1 ? "cliente" : "clientes" }}</template>
+                  <template v-else>Ainda não disparou</template>
+                  <span v-if="rule.failed_count" class="text-destructive"> · {{ formatCount(rule.failed_count) }} {{ rule.failed_count === 1 ? "falha" : "falhas" }}<template v-if="rule.last_failure">, a última por {{ rule.last_failure }}</template></span>
+                </p>
+              </td>
+              <td class="px-3 py-3">
+                <span class="inline-flex items-center gap-1.5"><Icon :name="TRIGGER_ICONS[rule.trigger] ?? 'lucide:zap'" class="size-4 text-muted-foreground" aria-hidden="true" />{{ rule.trigger_label }}</span>
+                <p class="op-micro text-muted-foreground" :class="rule.exhausted ? 'text-destructive' : ''">{{ triggerWhen(rule) }}</p>
+              </td>
+              <td class="px-3 py-3">
+                <ul class="flex flex-wrap gap-1">
+                  <li v-for="platform in rule.platforms" :key="platform" class="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 op-micro font-semibold">
+                    <Icon :name="platformIcon(platform)" class="size-3.5" aria-hidden="true" />{{ platformLabels[platform] ?? platform }}
+                  </li>
+                </ul>
+              </td>
+              <td class="max-w-56 px-3 py-3 op-micro text-muted-foreground">{{ audienceRulesSummary(rule.audience_rules, audienceLabels) }}</td>
+              <td class="px-3 py-3">
+                <label class="inline-flex items-center gap-2">
+                  <UiSwitch
+                    :model-value="rule.is_active"
+                    :disabled="mutatingCampaignPk !== null || !editState(rule).enabled"
+                    :aria-busy="mutatingCampaignPk === rule.pk"
+                    :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
+                    @update:model-value="toggle(rule)"
+                  />
+                  <span class="font-semibold" :class="rule.is_active ? 'text-success' : 'text-muted-foreground'">{{ rule.is_active ? "Ligada" : "Desligada" }}</span>
+                </label>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <UiButton
+                  type="button"
+                  :disabled="!fireAction(rule)?.enabled"
+                  :aria-label="fireAction(rule)?.enabled ? `Preparar o disparo da campanha ${rule.name}` : `${fireState(rule).reason} Campanha ${rule.name}`"
+                  variant="outline"
+                  @click="openFire(rule)"
+                >
+                  <Icon name="lucide:send" class="size-4" aria-hidden="true" />
+                  Preparar disparo
+                </UiButton>
+                <p v-if="!fireState(rule).enabled" class="mt-1 op-micro text-muted-foreground">{{ fireState(rule).reason }}</p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <ul
-        v-else
-        class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card"
+        v-if="filteredRules.length"
+        class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card lg:hidden"
       >
         <li
           v-for="rule in pageRules"

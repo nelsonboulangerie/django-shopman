@@ -1677,6 +1677,22 @@ def test_claim_aceita_content_base64_so_como_alias_defensivo():
     assert counter_agent.RelayJob.from_claim(raw).payload == b"\x1b@ETIQUETA\n"
 
 
+def test_pulso_de_gaveta_pelo_relay_e_um_trabalho_como_outro_qualquer():
+    """O tablet abre a gaveta do Balcão pelo relay (backstage/services/drawer_pulse.py).
+
+    O servidor compõe os cinco bytes ``ESC p`` (os mesmos de ``kick_bytes``) e o
+    agente os entrega à fila da impressora sem saber que é gaveta: o relay não
+    ganha caminho especial, e por isso não ganha um jeito novo de errar.
+    """
+    pulse = counter_agent.kick_bytes()
+    raw = _claimed_job(pulse)
+    raw["kind"] = "drawer_pulse"
+    del raw["title"]
+    job = counter_agent.RelayJob.from_claim(raw)
+    assert job.payload == bytes([0x1B, 0x70, 0x00, 0x19, 0xFA])
+    assert job.title == "drawer_pulse"
+
+
 def test_claim_confere_tamanho_declarado_quando_presente():
     raw = _claimed_job()
     raw["payload_size"] += 1

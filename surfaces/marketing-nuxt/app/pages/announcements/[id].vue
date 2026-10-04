@@ -37,6 +37,8 @@ import {
   outgoingImageUrl,
 } from "~/presentation/marketingDelivery";
 import { scheduleSummary } from "~/utils/marketingSchedule";
+import { clockLabel, decisionTitle, remainingLabel } from "~/presentation/decisions";
+import type { DecisionItem } from "~/types/decisions";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -310,6 +312,8 @@ async function finishDecision(
 async function confirmServerDecision(value: {
   credential: string;
   typedConfirmation: string;
+  deviceSealed?: boolean;
+  secondApproved?: boolean;
 }) {
   const command = decisionCommand.pendingDecision.value;
   if (!command) return;
@@ -361,13 +365,54 @@ async function resumeServerDecision() {
   }
 }
 
-// O título da tela é o nome da campanha (o mesmo do cartão); sem campanha, o anúncio
-// é avulso. Enquanto carrega, "Anúncio".
-const headerTitle = computed(() =>
-  announcement.value
-    ? announcement.value.rule_name || "Anúncio avulso"
-    : "Anúncio",
-);
+// O título da tela é a ocasião com o produto (v4: "Lote pronto: Croissant"), o mesmo
+// do cartão da fila; sem ocasião, o nome da campanha; sem campanha, anúncio avulso.
+const headerTitle = computed(() => {
+  const current = announcement.value;
+  if (!current) return "Anúncio";
+  const product = current.sku
+    ? products.value.find((option) => option.value === current.sku)?.label || ""
+    : "";
+  return decisionTitle({
+    trigger: current.trigger,
+    product_name: product,
+    campaign_name: current.rule_name,
+  } as DecisionItem);
+});
+
+// O prazo, colado no título (v4: "decide até 10:15 · faltam 11 min"), no tom da
+// atenção ao tempo: âmbar, mais forte quando está perto. Vermelho é de bloqueio.
+const clock = ref(Date.now());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  clockTimer = setInterval(() => (clock.value = Date.now()), 30_000);
+});
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer);
+});
+const deadline = computed(() => {
+  const current = announcement.value;
+  if (!current?.expires_at || current.status !== "pending_review") return null;
+  const left = Date.parse(current.expires_at) - clock.value;
+  return {
+    text: `decide até ${clockLabel(current.expires_at, shopTimezone.value, clock.value)} · ${remainingLabel(current.expires_at, clock.value)}`,
+    tone: left <= 15 * 60_000 ? "font-semibold text-warning" : left <= 60 * 60_000 ? "text-warning" : "text-muted-foreground",
+  };
+});
+
+// O ⋮ da revisão: o que não é a decisão (recusar com motivo também está no polegar).
+const card = ref<{ openScheduling: () => void; askToReject: () => void } | null>(null);
+const REVIEW_MENU = [
+  { key: "schedule", label: "Agendar para outra hora", icon: "lucide:calendar-clock" },
+  { key: "reject", label: "Recusar com motivo", icon: "lucide:circle-slash" },
+  { key: "campaigns", label: "Ver as campanhas", icon: "lucide:megaphone", to: "/campaigns" },
+];
+function onReviewMenu(key: string) {
+  if (key === "schedule") card.value?.openScheduling();
+  if (key === "reject") card.value?.askToReject();
+}
+
+definePageMeta({ fullscreen: true });
 
 useHead({ title: "Anúncio" });
 </script>
@@ -376,7 +421,7 @@ useHead({ title: "Anúncio" });
   <main class="flex min-h-0 flex-1 flex-col">
     <!-- Cabeçalho de uma linha (v4, a revisão aberta): o voltar no lugar do selo, o
          nome da campanha e, do tablet para cima, a ocasião ao lado. -->
-    <MarketingPageHeader :title="headerTitle">
+    <MarketingPageHeader :title="headerTitle" phone-hides-actions>
       <template #lead>
         <NuxtLink
           to="/"
@@ -388,8 +433,19 @@ useHead({ title: "Anúncio" });
           <Icon name="lucide:arrow-left" class="size-6 md:size-5" aria-hidden="true" />
         </NuxtLink>
       </template>
-      <template v-if="announcement?.trigger_label" #status>
-        <span class="hidden op-micro text-muted-foreground sm:inline">{{ announcement.trigger_label }}</span>
+      <template v-if="deadline" #status>
+        <span class="hidden op-micro tnum md:inline" :class="deadline.tone" data-review-deadline>{{ deadline.text }}</span>
+      </template>
+      <!-- No celular o prazo desce para a linha de baixo (v4): o título inteiro cabe em
+           cima ("Lote pronto: Croissant") e o prazo fica logo abaixo, no mesmo âmbar. -->
+      <template v-if="deadline" #below>
+        <p class="-mt-1 px-4 pb-2.5 pl-[3.25rem] op-label tnum md:hidden" :class="deadline.tone" data-review-deadline-phone>{{ deadline.text }}</p>
+      </template>
+      <template v-if="announcement?.status === 'pending_review'" #actions>
+        <MarketingPageMenu heading="Revisão" :items="REVIEW_MENU" @select="onReviewMenu" />
+      </template>
+      <template v-if="announcement?.status === 'pending_review'" #phone-actions>
+        <MarketingPageMenu heading="Revisão" :items="REVIEW_MENU" @select="onReviewMenu" />
       </template>
     </MarketingPageHeader>
 
@@ -550,6 +606,7 @@ useHead({ title: "Anúncio" });
         </div>
 
         <AnnouncementCard
+          ref="card"
           :announcement="announcement"
           :platform-options="platforms"
           :platform-readiness="platformReadiness"

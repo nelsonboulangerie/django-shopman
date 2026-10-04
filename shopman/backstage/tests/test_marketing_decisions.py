@@ -228,3 +228,37 @@ def test_endpoint_needs_marketing_capability_and_carries_no_copy(client, rule):
 def test_projection_data_is_json_safe(rule):
     _pending(rule, minutes=12)
     json.dumps(projection_data(build_decision_queue()))
+
+
+def test_review_card_carries_the_lot_fact_and_the_product_photo(rule):
+    """V6-MKT (v4 pinos 2 e 3): "24 un saíram às 10:01" e a foto do produto na miniatura."""
+    from shopman.offerman.models import Product
+
+    Product.objects.create(sku="CRO-001", name="Croissant", base_price_q=1200, image_url="https://cdn.example/cro.jpg")
+    finished = timezone.now() - timedelta(minutes=3)
+    _pending(
+        rule,
+        minutes=12,
+        trigger_context={"sku": "CRO-001", "quantity": "24.000", "finished_at": finished.isoformat()},
+    )
+
+    [item] = build_decision_queue().items
+
+    assert item.product_name == "Croissant"
+    assert item.image_url == "https://cdn.example/cro.jpg"
+    assert item.lot_quantity == "24"
+    assert item.lot_finished_at == timezone.localtime(finished, item.lot_finished_at.tzinfo)
+
+
+def test_failure_card_counts_what_was_already_delivered():
+    announcement, _targets_rows = _targets(
+        suffix="queue-delivered",
+        states=(DeliveryTarget.State.FAILED_RETRYABLE, DeliveryTarget.State.CONFIRMED),
+    )
+    Announcement.objects.filter(pk=announcement.pk).update(expires_at=timezone.now() + timedelta(minutes=40))
+
+    [item] = [item for item in build_decision_queue().items if item.kind == "retry_failed"]
+
+    # A pessoa que já recebeu conta; a plataforma que falhou não aparece como entregue.
+    assert item.delivered_people == 1
+    assert "whatsapp" not in item.delivered_platform_refs

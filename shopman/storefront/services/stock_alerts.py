@@ -81,7 +81,7 @@ def default_alert_type(sku: str) -> str:
 
     Antes desta derivação a loja mandava o POST sem ``alert_type``, todo mundo
     caía em ``stock_back`` e o eixo ``production_ready`` era código órfão: o
-    receptor de fornada nunca achava ninguém, e o público de "Fornada pronta"
+    receptor de fornada nunca achava ninguém, e o público de "Lote pronto"
     do Marketing prometia gente que a loja não sabia criar.
     """
     from shopman.shop.projections import catalog_context

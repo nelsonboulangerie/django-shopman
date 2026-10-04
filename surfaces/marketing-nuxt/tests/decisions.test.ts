@@ -63,7 +63,7 @@ describe("fila de decisões: o cartão", () => {
 
   it("separa postagens de pessoas e nunca soma as duas", () => {
     expect(destinationsLine(item().platform_refs, item().reach)).toBe(
-      "Instagram, Facebook e WhatsApp (86 pessoas)",
+      "Instagram, Facebook e WhatsApp (86 clientes)",
     );
     expect(destinationsLine(["instagram"], { posts: 1, people: 0 })).toBe(
       "Instagram",
@@ -122,7 +122,7 @@ describe("fila de decisões: o cartão", () => {
       ],
       deadline_at: "2026-10-03T11:40:00-03:00",
     });
-    expect(failureHeadline(failed)).toBe("Falhou no Instagram · 1 postagem");
+    expect(failureHeadline(failed)).toBe("Falhou no Instagram · 1 envio");
     expect(failureReason(failed.failures[0]!, "retry_failed")).toBe(
       "A conexão com a plataforma caiu antes do envio. Nada foi disparado.",
     );
@@ -152,7 +152,7 @@ describe("fila de decisões: o cartão", () => {
       deadline_at: null,
     });
     expect(failureHeadline(uncertain)).toBe(
-      "Resultado incerto no WhatsApp · 3 pessoas",
+      "Resultado incerto no WhatsApp · 3 envios",
     );
     expect(failureReason(uncertain.failures[0]!, "reconcile_unknown")).toContain(
       "não reenvia",

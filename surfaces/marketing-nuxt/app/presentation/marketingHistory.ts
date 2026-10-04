@@ -88,3 +88,31 @@ export function historyLinkLabel(
     ? "Abrir e resolver"
     : "Ver resultado";
 }
+
+/**
+ * A data curta da lista (v4: lista calma): "hoje às 09:52", "ontem às 18:10",
+ * "01/10 às 08:00", e o ano só quando não é este. A data por extenso cansava a lista.
+ */
+export function historyWhen(instant: string, timeZone: string, nowMs = Date.now()): string {
+  const ms = Date.parse(instant);
+  if (!Number.isFinite(ms)) return "";
+  const parts = (value: number) => {
+    const formatted = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(value));
+    const get = (type: string) => formatted.find((part) => part.type === type)?.value ?? "";
+    return { year: get("year"), day: `${get("year")}-${get("month")}-${get("day")}`, short: `${get("day")}/${get("month")}`, time: `${get("hour")}:${get("minute")}` };
+  };
+  const at = parts(ms);
+  const today = parts(nowMs);
+  if (at.day === today.day) return `hoje às ${at.time}`;
+  if (at.day === parts(nowMs - 86_400_000).day) return `ontem às ${at.time}`;
+  const date = at.year === today.year ? at.short : `${at.short}/${at.year}`;
+  return `${date} às ${at.time}`;
+}

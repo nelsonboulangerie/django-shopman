@@ -1452,6 +1452,7 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 |-------|------|----------|-----------|
 | `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 | `pos.weighed_weight_entry` | `bool` | `weighed_sale.weight_entry_enabled` (`shop/services/weighed_sale.py`) → `POSProjection.weighed_weight_entry` | **Venda por peso: o operador pode digitar o PESO**, além do valor da etiqueta. Liga quando houver balança no balcão. Ausente/qualquer valor que não `true` = **desligado** (o padrão): o PDV só pede o valor da etiqueta, a opção "Peso" não aparece e o servidor recusa `entry: "weight"` (`weight_entry_disabled`). Por LOJA e não por terminal: é equipamento do balcão, e uma chave só evita dois PDVs discordando. |
+| `pos.cash_tolerance` | `dict` `{percent: str, min_q: int, max_q: int}` | `cash_tolerance.shop_policy` (`backstage/services/cash_tolerance.py`) | **Tolerância do caixa** (decisão do dono, 04/10/2026): a diferença do fechamento que vira só registro, sem alerta. `percent` do dinheiro do dia (vendas, acertos de entrega e de conta em dinheiro do turno), preso entre `min_q` e `max_q` (centavos). Ausente ou chave ausente = **padrão do dono: `0.5`%, `200` (R$ 2), `2000` (R$ 20)**. Valor ilegível cai no padrão, nunca desliga a régua. Editado no ShopAdmin (Ponto de venda → "Tolerância do caixa", mínima e máxima, em % e R$). Cada terminal pode sobrescrever (`Terminal.metadata["cash_tolerance"]`). O operador nunca vê o veredito: o fechamento continua cego |
 | `pos.late_fiscal_emission_days` | `int` (dias) | `late_emission_days` (`shop/services/fiscal.py`) | Quantos dias DEPOIS do dia da venda a emissão avulsa da NFC-e (Últimas vendas do PDV, com gerente) ainda vale. Conta por dia de operação no fuso da loja (`TIME_ZONE`), não por 24 h corridas. **`0` ou ausente = só no mesmo dia** (padrão). Valor ilegível cai no mesmo dia, nunca em "sem limite". Editado no ShopAdmin (PDV e alertas → "Emissão avulsa de NFC-e: dias depois da venda"). ⚠️ A nota sai com a data e a hora da emissão, não da venda. A lista Últimas vendas estica a janela (24 h) até o primeiro dia do prazo, para a venda não sumir antes de vencer |
 
 ### Marketing — `Shop.defaults["marketing"]`
@@ -1702,6 +1703,7 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 |-------|------|-------------|----------|-----------|
 | `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
 | `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
+| `purchase.eans` | `list[str]` (GTIN-8/12/13/14, dígito verificador conferido) | `_learn_material_eans` em `confirm_receipt` (`backstage/services/purchase.py`): o EAN lido na embalagem (`scannedEan` da linha, "Ler EAN") e os da nota (`invoiceEan`, `invoicePackageEan`) de toda linha confirmada | `_material_projection` (`eans`); "Ler EAN" do Receber (`presentation/scanning.ts`) | **Os códigos de barras que já chegaram com este insumo e foram conferidos.** Só acrescenta (sem duplicar, na ordem em que apareceram); quem confirma o item é a fonte. É o que permite à câmera do recebimento achar o item da caixa sem a nota dizer. |
 | `purchase.request_status` | `str` | `set_purchase_request_status` | projection (`purchaseRequestStatuses`) | `review` \| `approved` \| `sent`. Não há model de solicitação: o estado mora aqui. |
 | `purchase.request_status_at` | `str` ISO 8601 | `set_purchase_request_status` | auditoria | Quando o status mudou. |
 | `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
@@ -1946,6 +1948,24 @@ serializa receita/SKU de saída. No modo `explicit`, o documento não serializa
 ingredientes nem alvos individuais; ele declara **uso interno**. Um rótulo
 comercial futuro é outro contrato (ADR-028).
 
+### `kind=drawer_pulse` — o pulso da gaveta pedido pelo tablet
+
+Escrito por `backstage/services/drawer_pulse._create_job`, na mesma transação da
+linha `drawer_open` do livro (`via=relay`). Os bytes são `ESC p m t1 t2`
+(`receipt_escpos.drawer_kick`, com o pino e o pulso do `CashDrawerConfig` do
+terminal); o agente do terminal os entrega à fila da impressora do Balcão sem
+saber que é gaveta. Vale `drawer_pulse.PULSE_WINDOW` (30 s): pulso que chegasse
+depois abriria a gaveta sem ninguém na frente, então expira.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `purpose` | `drawer_pulse` | Finalidade do trabalho. |
+| `drawer_purpose` | `sale\|no_sale` | O porquê da abertura (o mesmo do livro). |
+| `order_ref` | `str` | A venda, quando `sale`. |
+| `terminal` | `str` | `ref` do terminal da gaveta. |
+| `pulse` | `{pin, on_ms, off_ms}` | O pulso composto, em ms. |
+| `entry_id` | `int` | A linha `drawer_open` que autorizou o pulso; a resposta do agente vira uma nota filha dela. |
+
 ### `kind=kitchen_ticket` — a Via Cozinha do posto sem tela
 
 Escrito por `backstage/services/kitchen_ticket_print._create_job`, um por
@@ -2024,6 +2044,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO DISPOSITIVO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
+| `cash_tolerance` | `dict` `{percent?: str, min_q?: int, max_q?: int}` | Admin (seção "Tolerância do caixa") | `cash_tolerance.policy_for` | A tolerância do caixa DESTE terminal, por cima da da loja (`Shop.defaults["pos"]["cash_tolerance"]`), chave a chave: chave ausente = vale a da loja. Mesmas regras de leitura (valor ilegível mantém o de baixo; teto abaixo do piso vira o piso) |
 | `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
 
 ⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
@@ -2184,7 +2205,9 @@ TOCTOU. Quem chama recebe `CashError("DUPLICATE_ENTRY")`, não `IntegrityError`.
 | `cash_out` | < 0 (exige `approved_by`) | — | — (motivo em `reason`) | sangria: idem (PIN de gerente, `cashman.adjust_shift`) |
 | `count` | contado − esperado | — | `{counted_q, notes}` | `services.close_shift`. Quem contou é `Entry.operator`. ⚠️ `supervisory` foi ESCRITO até 21/08/2026 e ainda aparece em lançamentos antigos (o livro é imutável); parou de ser escrito quando a custódia passou a ser da gaveta — turno sem dono não tem substituto, e a gerente fechar o caixa que outra pessoa abriu virou o caso normal |
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
-| `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
+| `drawer_open` | 0 | — | `{purpose: sale\|no_sale, via: local\|relay, pulse_job?}` (motivo em `reason`; a venda em `order_ref`) | **toda abertura pedida por um operador**, pelo dono único `backstage/services/drawer_pulse.py::open_drawer` (`POST pos/cash/drawer-open/`, permissão `cashman.operate_pos`). `operator` é quem está no dispositivo que pediu (o PIN do tablet, não quem está logado no PC do Balcão); o dispositivo é o `station_device_id`. `purpose=sale` exige `order_ref` cujo dinheiro entrou NESTA gaveta (linha `sale`/`cod_settled` com valor); `purpose=no_sale` exige `reason` (o `record` cobra os dois, `CashError("INVALID_PAYLOAD")`). `via=local`: o navegador do Balcão chuta pelo agente da própria máquina depois do `ok`; `via=relay`: o tablet pediu e o servidor pôs o pulso na fila do relay do terminal (`PrintJob kind=drawer_pulse`, ref em `pulse_job`). Linha antiga sem `purpose` é abertura sem venda. O B.I. (`bi_cash`) conta como "abertura sem venda" só o que não é `purpose=sale` |
+| `note` (resposta ao pulso) | 0 | `drawer_open` | `{event: "drawer_pulse_result", status: sent\|failed\|expired\|uncertain, job, detail}` | a resposta final do agente ao pulso pedido pelo relay, uma nota por abertura: `drawer_pulse._close_in_ledger`, no ACK do agente (`print_jobs.acknowledge_job`) ou quando a tela lê o pulso vencido (`GET pos/cash/drawer-pulse/<ref>/`). O relatório do turno no Admin mostra a frase ao lado da abertura |
+| `note` (tolerância) | 0 | — | `{event: "cash_tolerance", within, difference_q, tolerance_q, cash_received_q, policy: {percent, min_q, max_q}}` | o veredito da tolerância, gravado DEPOIS do fechamento cego por `backstage/services/cash_tolerance.py` (ouvindo `shift_closed`; refeito a cada `count_correction`, e vale a última nota). Congela a régua do dia. Só o relatório do turno (`cashman.audit_shift`) lê; o operador nunca vê. Fora da tolerância sai junto um `OperatorAlert` `cash_out_of_tolerance` (público `finance`) |
 | `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw, outcome, duration_ms}` | **EXCEÇÃO** da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). ⚠️ Desde 29/08 a trava é DURA e quem libera é o mundo físico — o bloqueio cai quando o sensor diz que a gaveta fechou. Este caminho existe só para gaveta emperrada aberta ou sensor morto; `outcome` (`manager_override` \| `sensor_lost`) é o que separa a emergência da rotina no B.I., e `duration_ms` é quanto tempo a gaveta ficou aberta |
 | `note` (bloqueio) | 0 | — | `{event: "drawer_blocked", outcome, duration_ms, drawer_raw}` | o bloqueio por gaveta aberta terminou: `record_drawer_block` (`POST pos/cash/drawer-block/`). `outcome` = `closed` (o operador fechou — caminho normal) \| `dismissed` (desistiu da venda pelo X, ou saiu da tela com a trava de pé) \| `sensor_lost` \| `manager_override`. É esta linha que torna a duração real mensurável: no desenho antigo o PIN cortava a medição no meio |
 | `note` (busca da saída) | 0 | — | `{event: "drawer_unlock_attempt", outcome}` | alguém ABRIU a tela de PIN da trava: `record_unlock_attempt` (`POST pos/cash/drawer-unlock-attempt/`). `outcome` = `opened` \| `abandoned` (Esc de volta) \| `denied` (PIN recusado). A tela de trava **não mostra** a saída de emergência — mostrá-la ensinaria o bypass —, e por isso quem a procura é sinal: registrar só o destrave bem-sucedido apagaria justamente quem tenta e desiste |
@@ -2353,6 +2376,30 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
 - Entrada divergente (mesmo `cProd` apontando para outro insumo) é
   substituída — a confirmação do operador é a verdade mais fresca — com
   `warning` estruturado `purchase.invoice_product_map_overwrite`.
+
+### `purchase.receipt_volume_counts`
+
+A contagem de volumes na doca, por NF ainda não confirmada (o operador conta os
+volumes antes de conferir item a item; a contagem sobrevive à troca de dispositivo).
+
+```json
+{
+  "purchase": {
+    "receipt_volume_counts": {
+      "<chave da NF, 44 dígitos>": {"counted": 12, "counted_by": "ana", "counted_at": "2026-10-04T09:12:00-03:00"}
+    }
+  }
+}
+```
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `receipt_volume_counts.<chave>` | `{counted: int, counted_by: str, counted_at: ISO str}` | `backstage/services/purchase.py::save_receipt_volumes` (`POST purchase/receipts/volumes/`) | `counted_receipt_volumes` (scan da NF e `ActiveReceiptProjection.volumesCounted`) |
+
+- O fornecedor é o do CNPJ embutido na chave da NF; sem fornecedor cadastrado, a
+  gravação recusa com `supplier_not_found`.
+- A entrada sai do mapa quando a NF é confirmada ou quando o operador desfaz a contagem
+  (`forget_receipt_volumes`).
 
 O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do

@@ -52,6 +52,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
   // caminho da venda em dinheiro: um só, para os quatro momentos.
   const drawer = useCounterAgent(pos);
+  // O tablet não alcança o agente do Balcão: abre pelo relay do servidor, com a
+  // mesma linha no livro-caixa (quem, de qual dispositivo, quando, por quê).
+  const drawerOpening = useDrawerOpening({ pos, actions, action, drawer });
 
   const cashManagement = computed<POSCashManagementCapability | null>(
     () => pos.value?.checkout?.capabilities?.cash_management ?? null,
@@ -272,9 +275,24 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    */
   async function openDrawerWithoutSale(reason: string): Promise<boolean> {
     if (busy.value) return false;
+    // No TABLET (o agente não responde nesta máquina) o pedido vai pelo relay:
+    // o servidor grava a abertura e o agente do Balcão abre a gaveta. O motivo
+    // e a permissão são os mesmos; a autoria é de quem está neste dispositivo.
+    if (drawerOpening.relay.value?.available && !(await drawer.reachable())) {
+      busy.value = true;
+      try {
+        const opened = await drawerOpening.open({ purpose: "no_sale", reason });
+        if (!opened) {
+          toast.error(`${drawerOpening.message.value} Tente de novo ou abra com a chave.`);
+        }
+        return opened;
+      } finally {
+        busy.value = false;
+      }
+    }
     const registered = await run(
       actionHref(actions.value, "drawer_open", "/api/v1/backstage/pos/cash/drawer-open/"),
-      { reason },
+      { purpose: "no_sale", reason, via: "local" },
       "A abertura da gaveta não entrou na trilha.",
       "A gaveta continua fechada: sem registro ela não abre. Tente de novo.",
     );
@@ -426,7 +444,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     // "pode ser reimpresso depois" não tinha.
     reprintMovementReceipt,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
-    canOpenDrawer: drawer.canKick,
+    // Pelo agente do Balcão OU, no tablet, pelo relay do servidor.
+    canOpenDrawer: drawerOpening.canOpen,
+    drawerOpening,
     drawerUnavailableReason: drawer.unavailableReason,
     // IMPRESSORA, capacidade à parte: o comprovante de sangria/suprimento sai
     // onde há bobina, mesmo que a gaveta deste balcão abra com a chave.

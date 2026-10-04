@@ -23,6 +23,7 @@ export const PURCHASE_API_ENDPOINTS = {
   scanInvoice: `${PURCHASE_API_BASE}receipts/scan-invoice/`,
   confirmReceipt: `${PURCHASE_API_BASE}receipts/confirm/`,
   rejectReceipt: `${PURCHASE_API_BASE}receipts/reject/`,
+  receiptVolumes: `${PURCHASE_API_BASE}receipts/volumes/`,
   upsertCost: `${PURCHASE_API_BASE}costs/`,
   upsertCostBatch: `${PURCHASE_API_BASE}costs/batch/`,
   setMinStock: `${PURCHASE_API_BASE}materials/min-stock/`,
@@ -72,6 +73,15 @@ export function usePurchaseApi() {
 
   async function rejectReceipt(payload: PurchaseReceiptRejectPayload) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.rejectReceipt, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  /** "Contei N volumes" no servidor: outro dispositivo com a mesma NF não pede de novo. */
+  async function saveReceiptVolumes(payload: { invoiceAccessKey: string; counted: number | null }) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.receiptVolumes, {
       ...fetchOptions(),
       method: "POST",
       body: payload,
@@ -160,6 +170,7 @@ export function usePurchaseApi() {
     scanInvoice,
     confirmReceipt,
     rejectReceipt,
+    saveReceiptVolumes,
     approveRequest,
     sendRequest,
     upsertCost,

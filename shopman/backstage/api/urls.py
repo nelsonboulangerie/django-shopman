@@ -105,6 +105,15 @@ from .marketing import (
     WhatsAppTemplateView,
     WhatsAppTestSendView,
 )
+from .marketing_seal import (
+    MarketingAnnouncementPhotoView,
+    MarketingDeviceStepUpOptionsView,
+    MarketingDeviceStepUpView,
+    MarketingSecondControlRequestView,
+    MarketingSecondControlView,
+    OperatorPasskeyRegistrationOptionsView,
+    OperatorPasskeyRegistrationView,
+)
 from .notifications import (
     NotificationAcknowledgeView,
     NotificationActionView,
@@ -168,6 +177,7 @@ from .operations import (
     POSCashDrawerBlockView,
     POSCashDrawerLeftOpenView,
     POSCashDrawerOpenView,
+    POSCashDrawerPulseView,
     POSCashDrawerUnlockAttemptView,
     POSCashDrawerUnlockView,
     POSCashOpenView,
@@ -255,6 +265,7 @@ from .purchase import (
     PurchaseCountView,
     PurchaseMinStockView,
     PurchaseOpeningView,
+    PurchaseReceiptVolumesView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
@@ -479,6 +490,11 @@ urlpatterns = [
         "purchase/receipts/confirm/",
         PurchaseConfirmReceiptView.as_view(),
         name="api-backstage-purchase-confirm-receipt",
+    ),
+    path(
+        "purchase/receipts/volumes/",
+        PurchaseReceiptVolumesView.as_view(),
+        name="api-backstage-purchase-receipt-volumes",
     ),
     path(
         "purchase/receipts/reject/",
@@ -803,6 +819,41 @@ urlpatterns = [
         name="api-backstage-marketing-reject",
     ),
     path(
+        "marketing/announcements/<int:pk>/photo/",
+        MarketingAnnouncementPhotoView.as_view(),
+        name="api-backstage-marketing-announcement-photo",
+    ),
+    path(
+        "marketing/security/device/register/options/",
+        OperatorPasskeyRegistrationOptionsView.as_view(),
+        name="api-backstage-marketing-device-register-options",
+    ),
+    path(
+        "marketing/security/device/register/",
+        OperatorPasskeyRegistrationView.as_view(),
+        name="api-backstage-marketing-device-register",
+    ),
+    path(
+        "marketing/security/device/options/",
+        MarketingDeviceStepUpOptionsView.as_view(),
+        name="api-backstage-marketing-device-options",
+    ),
+    path(
+        "marketing/security/device/",
+        MarketingDeviceStepUpView.as_view(),
+        name="api-backstage-marketing-device",
+    ),
+    path(
+        "marketing/security/second-control/request/",
+        MarketingSecondControlRequestView.as_view(),
+        name="api-backstage-marketing-second-control-request",
+    ),
+    path(
+        "marketing/security/second-control/<str:ref>/",
+        MarketingSecondControlView.as_view(),
+        name="api-backstage-marketing-second-control",
+    ),
+    path(
         "marketing/announcements/<int:pk>/cancel/",
         AnnouncementCancelView.as_view(),
         name="api-backstage-marketing-cancel",
@@ -871,6 +922,11 @@ urlpatterns = [
     path("pos/cash/movement/", POSMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    path(
+        "pos/cash/drawer-pulse/<uuid:ref>/",
+        POSCashDrawerPulseView.as_view(),
+        name="api-backstage-pos-cash-drawer-pulse",
+    ),
     # A trava vive no PDV (é ele que lê a gaveta); o destrave passa aqui para
     # ficar no livro com quem liberou.
     path(

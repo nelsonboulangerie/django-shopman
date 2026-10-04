@@ -104,13 +104,15 @@ function mountCard(
 }
 
 describe("AnnouncementCard", () => {
-  it("shows the generated text, the audience and the deadline", () => {
+  // V6-MKT (v4): o nome da ocasião e o prazo moram no cabeçalho da página (o prazo em
+  // âmbar); o cartão abre pela origem do texto e mostra o público por extenso.
+  it("abre pela origem do texto e mostra o público, sem repetir o prazo", () => {
     const text = mountCard(
       makeAnnouncement({ platforms: ["whatsapp"] }),
     ).text();
-    expect(text).toContain("Lote de pães");
+    expect(text).toContain("Rascunho do modelo: Lote");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
-    expect(text).toContain("Expira em 20 min");
+    expect(text).not.toContain("Expira em");
   });
 
   // ⚠️ O cabeçalho mostrava o SKU em monoespaçado e a foto dizia "Foto de CRO-001".
@@ -127,7 +129,6 @@ describe("AnnouncementCard", () => {
       },
     );
 
-    expect(wrapper.text()).toContain("Croissant de manteiga");
     expect(wrapper.text()).not.toContain("CRO-001");
     expect(wrapper.get("img").attributes("alt")).toBe(
       "Foto de Croissant de manteiga",
@@ -137,7 +138,6 @@ describe("AnnouncementCard", () => {
   it("cai no SKU só quando não há rótulo", () => {
     const wrapper = mountCard(makeAnnouncement({ image_url: "/media/c.jpg" }));
 
-    expect(wrapper.text()).toContain("CRO-001");
     expect(wrapper.get("img").attributes("alt")).toBe("Foto de CRO-001");
   });
 
@@ -174,15 +174,15 @@ describe("AnnouncementCard", () => {
     );
     const text = wrapper.text();
 
-    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
-      "Instagram · não publica",
-    );
-    expect(wrapper.find('[data-readiness="limited"]').text()).toContain(
-      "WhatsApp · limitada",
-    );
-    expect(text).toContain(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
-    );
+    // Uma linha por plataforma (v4): o aviso fica embaixo do nome, e uma frase só
+    // resume o porquê para todas.
+    const blocked = wrapper.find('[data-readiness="blocked"]').text();
+    expect(blocked).toContain("Instagram");
+    expect(blocked).toContain("não publica");
+    const limited = wrapper.find('[data-readiness="limited"]').text();
+    expect(limited).toContain("WhatsApp");
+    expect(limited).toContain("limitada");
+    expect(wrapper.get("[data-review-readiness]").text()).toContain("Instagram");
     expect(text).not.toContain("um por vez");
 
     const publishNow = wrapper.get("[data-testid=publish-now]");
@@ -227,10 +227,9 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(
       makeAnnouncement({ platforms: ["instagram", "whatsapp"] }),
     );
-    // A pílula é um `UiToggleChip`: o estado vive em `aria-checked`, não num
-    // `<input>` escondido atrás dela.
+    // Uma linha por plataforma com a chave (v4): o estado vive em `aria-checked`.
     const checked = wrapper
-      .findAll('[role="checkbox"]')
+      .findAll('[role="switch"]')
       .filter((chip) => chip.attributes("aria-checked") === "true");
     expect(checked).toHaveLength(2);
   });
@@ -278,6 +277,8 @@ describe("AnnouncementCard", () => {
         },
       },
     });
+    // A prévia fica recolhida (v4): abre no "Ver como fica em cada plataforma".
+    await wrapper.get("[data-review-preview-toggle]").trigger("click");
     await wrapper.find("textarea").setValue("Texto revisado");
     await wrapper.find("input[type=text]").setValue("#paes #fornada");
     await vi.advanceTimersByTimeAsync(400);
@@ -322,7 +323,7 @@ describe("AnnouncementCard", () => {
     // ⚠️ O rodapé mandava "Aprovar" num card que não tem botão "Aprovar" — e "selar" é
     // palavra de ADR, não de padaria. Ele descreve o que a próxima tela mostra.
     expect(wrapper.text()).toContain(
-      "O texto que você conferir na próxima tela é o que será disparado",
+      "O texto que você conferir na próxima tela é o que vai",
     );
     expect(wrapper.text()).not.toMatch(/\bAprovar\b|\bsela\b/);
     expect(

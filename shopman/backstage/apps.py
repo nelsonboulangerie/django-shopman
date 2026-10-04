@@ -94,6 +94,21 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # A tolerância do caixa: o veredito nasce DEPOIS do fechamento cego, por
+        # quem ouve o livro, e vai só para quem audita (services/cash_tolerance.py).
+        from shopman.backstage.services import cash_tolerance
+
+        shift_closed.connect(
+            cash_tolerance.on_shift_closed,
+            dispatch_uid="backstage.cash_tolerance.on_shift_closed",
+            weak=False,
+        )
+        entry_recorded.connect(
+            cash_tolerance.on_entry_recorded,
+            dispatch_uid="backstage.cash_tolerance.on_entry_recorded",
+            weak=False,
+        )
+
         # A DANFE da entrega sai pela impressora do despacho, pelo relay, sem
         # depender de onde o Gestor está aberto. Duas portas, porque a ordem
         # varia: a nota autoriza depois do despacho (o normal) ou o pedido é
