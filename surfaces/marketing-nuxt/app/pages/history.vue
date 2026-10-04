@@ -132,33 +132,35 @@ function changeFilter(name: MarketingHistoryFilterName, event: Event) {
   if (target instanceof HTMLSelectElement) void setFilter(name, target.value);
 }
 
-useHead({ title: "Histórico" });
+useHead({ title: "Enviados" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-    <div class="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-      <div class="min-w-0">
-        <h1 class="text-lg font-semibold">Histórico</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Resultado rastreado por plataforma, sem confundir aceite com entrega.
-        </p>
-      </div>
-      <UiButton
-        type="button"
-        variant="outline"
-        class="text-muted-foreground sm:ml-auto"
-        :disabled="loading"
-        @click="refresh()"
-      >
-        <Icon
-          name="lucide:refresh-cw"
-          class="size-3.5"
-          :class="loading ? 'animate-spin' : ''"
+  <main class="flex min-h-0 flex-1 flex-col">
+    <MarketingPageHeader title="Enviados" phone-hides-actions>
+      <template #phone-actions>
+        <UiIconButton
+          icon="lucide:refresh-cw"
+          label="Atualizar"
+          :spinning="loading"
+          :disabled="loading"
+          @click="refresh()"
         />
-        Atualizar
-      </UiButton>
-    </div>
+      </template>
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline">Resultado rastreado por plataforma, sem confundir aceite com entrega.</span>
+      </template>
+      <template #actions>
+        <UiIconButton
+          icon="lucide:refresh-cw"
+          label="Atualizar"
+          :spinning="loading"
+          :disabled="loading"
+          @click="refresh()"
+        />
+      </template>
+    </MarketingPageHeader>
+    <div class="mx-auto w-full max-w-5xl px-4 py-6">
 
     <section
       class="mb-5 rounded-md border border-border bg-card p-4"
@@ -433,5 +435,6 @@ useHead({ title: "Histórico" });
         </div>
       </div>
     </template>
+    </div>
   </main>
 </template>

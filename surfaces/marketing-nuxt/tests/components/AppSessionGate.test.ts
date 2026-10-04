@@ -40,6 +40,8 @@ beforeEach(() => {
     // ela fica fechada para o gate de sessão ser o único assunto.
     useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
+    // O menu do operador do celular recebe o `lock` do shell por injeção.
+    provideMarketingShell: vi.fn(),
   });
 });
 
@@ -50,7 +52,6 @@ function mountApp() {
   return mount(MarketingApp, {
     global: {
       stubs: {
-        CampaignTopBar: true,
         Icon: true,
         NuxtPage: {
           setup(_props: unknown, { slots }: { slots: { default?: Slot } }) {
@@ -61,7 +62,8 @@ function mountApp() {
         OfflineBanner: true,
         OperatorLock: true,
         OperatorLogin: true,
-        OperatorRail: true,
+        MarketingNav: true,
+        MarketingInboxLive: true,
         OperatorStationSetup: true,
         UiSonner: true,
       },
@@ -77,6 +79,8 @@ describe("Marketing app session gate", () => {
     expect(wrapper.findComponent({ name: "OperatorLogin" }).exists()).toBe(
       true,
     );
+    // Sem sessão, nenhuma conexão da caixa pessoal.
+    expect(wrapper.findComponent({ name: "MarketingInboxLive" }).exists()).toBe(false);
   });
 
   it("mounts the protected route only after capability authentication", () => {
@@ -85,6 +89,9 @@ describe("Marketing app session gate", () => {
     const wrapper = mountApp();
 
     expect(wrapper.find('[data-testid="protected-page"]').exists()).toBe(true);
+    // A camada visual da suíte (V4-MKT) e a caixa pessoal, uma só, depois do gate.
+    expect(wrapper.get("[data-marketing-app-root]").attributes("data-suite")).toBe("v3");
+    expect(wrapper.findComponent({ name: "MarketingInboxLive" }).exists()).toBe(true);
   });
 
   it("keeps the route closed when the session endpoint is unavailable", () => {

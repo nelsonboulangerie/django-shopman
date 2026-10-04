@@ -321,11 +321,13 @@ useHead({ title: "Plataformas" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-    <h1 class="mb-1 text-lg font-semibold">Plataformas</h1>
-    <p class="mb-4 text-sm text-muted-foreground">
-      Por onde o anúncio é disparado. Quem vende é o canal; aqui é quem fala.
-    </p>
+  <main class="flex min-h-0 flex-1 flex-col">
+    <MarketingPageHeader title="Plataformas">
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline">Por onde o anúncio é disparado. Quem vende é o canal; aqui é quem fala.</span>
+      </template>
+    </MarketingPageHeader>
+    <div class="mx-auto w-full max-w-3xl px-4 py-6">
 
     <div
       v-if="error && !platforms.length"
@@ -862,5 +864,6 @@ useHead({ title: "Plataformas" });
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+    </div>
   </main>
 </template>

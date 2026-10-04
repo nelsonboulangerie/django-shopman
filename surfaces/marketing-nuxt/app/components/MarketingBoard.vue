@@ -180,7 +180,18 @@ useHead(() => ({
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
+  <main class="flex min-h-0 flex-1 flex-col">
+    <MarketingPageHeader title="Painel">
+      <template #actions>
+        <UiIconButton
+          icon="lucide:refresh-cw"
+          label="Atualizar"
+          @click="refresh()"
+        />
+      </template>
+    </MarketingPageHeader>
+
+    <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <section
       v-if="pendingReauthentication"
       class="mb-5 rounded-md border border-warning/40 bg-warning/5 p-4"
@@ -216,18 +227,6 @@ useHead(() => ({
       </p>
     </section>
 
-    <div class="mb-5 flex items-center gap-3">
-      <h1 class="text-lg font-semibold">Painel</h1>
-      <UiButton
-        type="button"
-        variant="outline"
-        class="ml-auto text-muted-foreground"
-        @click="refresh()"
-      >
-        <Icon name="lucide:refresh-cw" class="size-3.5" />
-        Atualizar
-      </UiButton>
-    </div>
 
     <section
       v-if="freshness && freshness.state !== 'fresh' && !error"
@@ -592,5 +591,6 @@ useHead(() => ({
       @confirm="confirmServerDecision"
       @cancel="cancelDecision"
     />
+    </div>
   </main>
 </template>

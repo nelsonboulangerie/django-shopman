@@ -49,6 +49,12 @@ const sectionRefs = new Set<SectionRef>([
   "offers",
   "platforms",
 ]);
+const AREA_TITLES: Record<SectionRef, string> = {
+  today: "Panorama",
+  campaigns: "Campanhas",
+  offers: "Ofertas e cupons",
+  platforms: "Plataformas",
+};
 const activeSection = computed<SectionRef>(() => {
   const requested = String(route.query.area || "") as SectionRef;
   return sectionRefs.has(requested) ? requested : "today";
@@ -166,49 +172,43 @@ function offerStatus(status: string): string {
   );
 }
 
-useHead({ title: "Marketing V2" });
+useHead(() => ({ title: AREA_TITLES[activeSection.value] }));
 </script>
 
 <template>
   <main
-    class="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6"
+    class="flex min-h-0 flex-1 flex-col"
     data-marketing-experience="v2"
   >
-    <header class="flex flex-wrap items-start gap-4">
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <p
-            class="text-xs font-semibold uppercase tracking-[0.18em] text-primary"
-          >
-            Marketing V2
-          </p>
-          <span
-            class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
-          >
-            Operacional
-          </span>
-        </div>
-        <h1 class="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-          Uma campanha, consequências honestas em cada destino
-        </h1>
-        <p class="mt-2 max-w-3xl text-sm text-muted-foreground sm:text-base">
-          Dados, permissões e disparos continuam canônicos. A V2 organiza a
-          operação sem esconder diferenças entre publicação pública e mensagem
-          direta.
-        </p>
-      </div>
-      <UiButton
-        type="button"
-        variant="outline"
-        class="disabled:opacity-100"
-        :disabled="busy"
-        :aria-busy="busy"
-        @click="refreshWorkspace"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" />
-        {{ busy ? "Atualizando…" : "Atualizar" }}
-      </UiButton>
-    </header>
+    <!-- Cabeçalho de uma linha (camada visual da suíte): o nome da área é o título, e
+         a linha de Ajustes (Campanhas, Modelos, Ofertas e cupons, Plataformas) vem
+         logo abaixo. O panorama antigo (`area=today`) continua acessível pela URL. -->
+    <MarketingPageHeader :title="AREA_TITLES[activeSection]" phone-hides-actions>
+      <template #phone-actions>
+        <UiIconButton
+          icon="lucide:refresh-cw"
+          label="Atualizar"
+          :spinning="busy"
+          :disabled="busy"
+          @click="refreshWorkspace"
+        />
+      </template>
+      <template #actions>
+        <UiButton
+          type="button"
+          variant="outline"
+          class="disabled:opacity-100"
+          :disabled="busy"
+          :aria-busy="busy"
+          @click="refreshWorkspace"
+        >
+          <Icon name="lucide:refresh-cw" class="size-4" />
+          {{ busy ? "Atualizando…" : "Atualizar" }}
+        </UiButton>
+      </template>
+    </MarketingPageHeader>
+
+    <div class="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6">
 
     <section v-if="activeSection === 'today'" class="mt-6 space-y-6">
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -749,5 +749,6 @@ useHead({ title: "Marketing V2" });
         </div>
       </article>
     </section>
+    </div>
   </main>
 </template>

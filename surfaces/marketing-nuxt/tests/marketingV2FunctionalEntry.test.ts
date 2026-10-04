@@ -13,10 +13,10 @@ describe("entrada funcional do Marketing V2", () => {
   const currentEntry = read("../app/pages/index.vue");
   const v2Entry = read("../app/pages/v2.vue");
   const workspace = read("../app/components/MarketingV2Workspace.vue");
-  // As quatro seções moram em `useMarketingSections` (fonte única das duas barras);
-  // a segunda linha de Ajustes, na barra do topo.
+  // As quatro seções e as de Ajustes moram em `useMarketingSections` (fonte única do
+  // rail, da barra do polegar e da segunda linha de Ajustes).
   const topBar =
-    read("../app/components/CampaignTopBar.vue") +
+    read("../app/components/MarketingSettingsNav.vue") +
     read("../app/composables/useMarketingSections.ts");
   const board = read("../app/components/MarketingBoard.vue");
   const shell = read("../app/app.vue");

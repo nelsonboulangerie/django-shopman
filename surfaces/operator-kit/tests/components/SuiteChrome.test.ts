@@ -14,6 +14,7 @@ import type { VueWrapper } from "vue";
 
 import OperatorLiveStatus from "../../app/components/OperatorLiveStatus.vue";
 import OperatorPageHeader from "../../app/components/OperatorPageHeader.vue";
+import OperatorPhoneMenu from "../../app/components/OperatorPhoneMenu.vue";
 import OperatorSectionBar from "../../app/components/OperatorSectionBar.vue";
 import OperatorSuiteRail from "../../app/components/OperatorSuiteRail.vue";
 import type { OperatorSection } from "../../app/presentation/appBar";
@@ -251,5 +252,44 @@ describe("OperatorLiveStatus", () => {
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text()).toContain("Atualização falhou");
     expect(wrapper.attributes("data-live-tone")).toBe("off");
+  });
+});
+
+// V4-MKT: no celular o rail não existe, e sem este menu o tema, o giro e o Bloquear
+// ficavam fora de alcance. O mesmo menu do pé do rail, na barra de 56px.
+describe("OperatorPhoneMenu", () => {
+  async function mountMenu(props: Record<string, unknown> = {}) {
+    const wrapper = await mountSuspended(OperatorPhoneMenu, {
+      props: { operatorName: "Ana Ferreira", ...props },
+      global: { stubs: { Icon: true, ClientOnly: { template: "<div><slot /></div>" } } },
+      attachTo: document.body,
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    return wrapper;
+  }
+
+  it("só existe abaixo de md, com as iniciais e o nome do operador", async () => {
+    const wrapper = await mountMenu();
+    const trigger = wrapper.get("[data-operator-phone-menu]");
+    expect(trigger.classes()).toContain("md:hidden");
+    expect(trigger.text()).toBe("AF");
+    expect(trigger.attributes("aria-label")).toBe("Menu de Ana Ferreira");
+  });
+
+  it("abre com o tema e o Bloquear; Bloquear fecha o menu e emite", async () => {
+    const wrapper = await mountMenu();
+    await wrapper.get("[data-operator-phone-menu]").trigger("click");
+    const panel = document.querySelector<HTMLElement>("[data-operator-phone-menu-panel]");
+    expect(panel?.textContent).toContain("Tema escuro");
+    document.querySelector<HTMLElement>("[data-operator-phone-menu-lock]")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("lock")).toHaveLength(1);
+  });
+
+  it("sem operador, sem Bloquear", async () => {
+    const wrapper = await mountMenu({ operatorName: undefined });
+    expect(wrapper.get("[data-operator-phone-menu]").attributes("aria-label")).toBe("Menu do dispositivo");
+    await wrapper.get("[data-operator-phone-menu]").trigger("click");
+    expect(document.querySelector("[data-operator-phone-menu-lock]")).toBeNull();
   });
 });

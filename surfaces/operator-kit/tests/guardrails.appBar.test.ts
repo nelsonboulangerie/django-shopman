@@ -63,21 +63,11 @@ describe("guardrail do cabeçalho de seções", () => {
 
   it("os convertidos consomem a peça da layer", () => {
     // O B.I. saiu desta lista para a do rail da suíte (V4-BI).
-    const convertidos = [
-      "marketing-nuxt/app/components/CampaignTopBar.vue",
-    ];
+    // O Marketing também saiu (V4-MKT): a lista ficou vazia, e a trava segue valendo
+    // para quem voltar a usar a barra de seções do topo.
+    const convertidos: string[] = [];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
-    const navLocalDeclarada: Record<string, string> = {
-      // UX-M1 (decisão do dono, 03/10/2026, SUITE-UX §6): no celular as quatro
-      // seções do Marketing (Decisões, Agendados, Enviados, Ajustes) vão para a
-      // barra do polegar, no pé da tela, e Ajustes entra por um item só, com as
-      // próprias seções numa segunda linha. A barra do topo continua sendo a do
-      // kit. A barra do pé mora em `MarketingSectionBar.vue`, no fim da coluna de
-      // conteúdo (fixa na janela ela cobria o rail). Quando outro app pedir a barra
-      // do pé, ela vira peça da layer e esta linha sai.
-      "marketing-nuxt/app/components/CampaignTopBar.vue":
-        "segunda linha de Ajustes (a barra do pé é MarketingSectionBar.vue)",
-    };
+    const navLocalDeclarada: Record<string, string> = {};
     for (const file of convertidos) {
       const source = readFileSync(join(SURFACES, file), "utf8");
       expect(source, file).toContain("<OperatorAppBar");
@@ -94,6 +84,10 @@ describe("guardrail do cabeçalho de seções", () => {
     const migrados = [
       "orders-nuxt/app/components/GestorNav.vue",
       "kds-nuxt/app/components/KdsNav.vue",
+      // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
+      // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
+      // do `OperatorPageHeader`; ela não é barra de seções do app.
+      "marketing-nuxt/app/components/MarketingNav.vue",
       // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
       "pos-nuxt/app/components/PosFunctionRail.vue",
       // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.

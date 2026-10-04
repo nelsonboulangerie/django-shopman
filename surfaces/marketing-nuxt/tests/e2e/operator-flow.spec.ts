@@ -136,11 +136,9 @@ test("o panorama V2 continua acessível e Ajustes tem as próprias seções", as
 
   await expect(page).toHaveURL(/\/v2$/);
   await expect(page.locator('[data-marketing-experience="v2"]')).toBeVisible();
+  // Cabeçalho de uma linha da suíte (V4-MKT): o nome da área é o título.
   await expect(
-    page.getByRole("heading", {
-      level: 1,
-      name: "Uma campanha, consequências honestas em cada destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Panorama" }),
   ).toBeVisible();
   for (const name of ["Agendados", "Enviados", "Ajustes"]) {
     await expect(

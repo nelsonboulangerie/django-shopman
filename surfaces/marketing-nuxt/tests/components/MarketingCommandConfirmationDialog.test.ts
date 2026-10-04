@@ -19,6 +19,15 @@ const DialogStub = defineComponent({
   template: '<div v-if="open"><slot /></div>',
 });
 
+/** O selo (v4): uma linha por destino, o nome e a grandeza em colunas. */
+function sealRow(wrapper: { get: (selector: string) => { findAll: (s: string) => { text: () => string }[] } }, platform: string): string {
+  return wrapper
+    .get(`[data-seal-row="${platform}"]`)
+    .findAll(":scope > span")
+    .map((cell) => cell.text())
+    .join(" · ");
+}
+
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
@@ -84,7 +93,11 @@ describe("MarketingCommandConfirmationDialog", () => {
     );
     // Uma linha por plataforma: diz que a postagem é por plataforma e que ela não
     // fala com ninguém em particular, sem obrigar ninguém a distribuir um "em cada".
-    expect(wrapper.text()).toContain("Instagram · 1 postagem");
+    expect(sealRow(wrapper, "instagram")).toBe("Instagram · 1 postagem");
+    // O selo separa o que volta (postagem) do que não volta (mensagem).
+    expect(wrapper.get("[data-seal-consequence]").text()).toBe(
+      "Postagem pode ser apagada depois, na plataforma.",
+    );
   });
 
   it("mostra O QUE vai sair antes de pedir a confirmação sem volta", () => {
@@ -233,7 +246,9 @@ describe("MarketingCommandConfirmationDialog", () => {
     });
 
     expect(wrapper.text()).not.toContain("Sem foto");
-    expect(wrapper.text()).toContain("WhatsApp · 4 pessoas");
+    expect(sealRow(wrapper, "whatsapp")).toBe(
+      "WhatsApp mensagem direta · 4 pessoas",
+    );
   });
 
   it("chama o efeito pelo nome, em vez de pedir para confirmar uma consequência", () => {
@@ -339,8 +354,12 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");
-    expect(wrapper.text()).toContain("WhatsApp · 12 pessoas");
-    expect(wrapper.text()).toContain("Instagram · 1 postagem");
+    expect(sealRow(wrapper, "whatsapp")).toBe(
+      "WhatsApp mensagem direta · 12 pessoas",
+    );
+    expect(sealRow(wrapper, "instagram")).toBe("Instagram · 1 postagem");
+    // Criar para revisão não faz nada sair: sem a frase do que volta e do que não volta.
+    expect(wrapper.find("[data-seal-consequence]").exists()).toBe(false);
   });
   // ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O texto antigo
   // explicava o desenho do gate — "a confirmação independente continua obrigatória;

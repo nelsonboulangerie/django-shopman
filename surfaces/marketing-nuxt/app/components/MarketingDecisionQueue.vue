@@ -6,6 +6,12 @@
 // fila é uma só, sem corte, e o sino abre esta mesma lista. Cada cartão tem UM
 // gesto, "Revisar", que leva ao lugar exato onde a decisão já é tomada (a revisão
 // do anúncio, ou o resultado da entrega dele). A fila não decide nada sozinha.
+//
+// Desenho: `marketing-decisoes4.html` (v4). Cartão de 14px de raio e 12px de
+// respiro; a miniatura de 60px (a ocasião, ou a plataforma que falhou); título de
+// 16px e destino de 13px; o motivo da falha numa faixa vermelha clara; o prazo como
+// hora + tom; "Revisar" de 48px, cheio só no mais urgente.
+import { platformIcon } from "~/presentation/campaign";
 import {
   automaticCheckLine,
   deadlinePresentation,
@@ -14,7 +20,7 @@ import {
   failureHeadline,
   failureReason,
   queueHeadline,
-  scheduledSummary,
+  scheduledSummaryParts,
   type DeadlineTone,
 } from "~/presentation/decisions";
 import type { DecisionItem } from "~/types/decisions";
@@ -31,6 +37,11 @@ const {
 } = useMarketingDecisions();
 
 const headline = computed(() => queueHeadline(items.value.length));
+const live = useMarketingLiveStatus({
+  generatedAt: computed(() => queue.value?.generated_at),
+  failed: computed(() => Boolean(error.value)),
+  timeZone: shopTimezone,
+});
 
 const TRIGGER_ICONS: Record<string, string> = {
   production_finished: "lucide:croissant",
@@ -42,8 +53,11 @@ const TRIGGER_ICONS: Record<string, string> = {
 };
 
 function icon(item: DecisionItem): string {
-  if (item.kind === "retry_failed") return "lucide:triangle-alert";
+  // A falha mostra ONDE falhou (v4: a miniatura do cartão de falha é a plataforma).
+  const failed = item.failures[0]?.platform_ref;
+  if (item.kind !== "review" && failed) return platformIcon(failed);
   if (item.kind === "reconcile_unknown") return "lucide:circle-help";
+  if (item.kind === "retry_failed") return "lucide:triangle-alert";
   return TRIGGER_ICONS[item.trigger] ?? "lucide:megaphone";
 }
 
@@ -64,6 +78,13 @@ function subtitle(item: DecisionItem): string {
 }
 
 const toneClasses: Record<DeadlineTone, string> = {
+  urgent: "font-semibold text-destructive",
+  soon: "font-semibold text-warning",
+  calm: "text-muted-foreground",
+  none: "text-muted-foreground",
+};
+
+const iconToneClasses: Record<DeadlineTone, string> = {
   urgent: "text-destructive",
   soon: "text-warning",
   calm: "text-muted-foreground",
@@ -73,194 +94,208 @@ const toneClasses: Record<DeadlineTone, string> = {
 function deadline(item: DecisionItem) {
   return deadlinePresentation(item, shopTimezone.value, nowMs.value);
 }
+
+/** "Decide até 10:15" → ["Decide até ", "10:15"]: a hora vai em negrito (v4). */
+function splitClock(label: string): [string, string] {
+  const match = /^(.*?)((?:amanhã, |\d{2}\/\d{2}, )?\d{2}:\d{2})$/.exec(label);
+  return match ? [match[1]!, match[2]!] : [label, ""];
+}
+
+const scheduledLine = computed(() =>
+  queue.value
+    ? scheduledSummaryParts(
+        queue.value.scheduled_today_count,
+        queue.value.active_campaign_count,
+      )
+    : null,
+);
 </script>
 
 <template>
-  <main
-    class="mx-auto w-full max-w-3xl flex-1 px-4 py-5 sm:px-6"
-    data-marketing-decisions
-  >
-    <header class="flex items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight">Decisões</h1>
-        <p class="mt-1 text-sm" role="status" aria-live="polite">
-          <strong class="font-semibold">{{ headline.strong }}</strong>
-          <span v-if="headline.rest" class="text-muted-foreground">
-            · {{ headline.rest }}</span
-          >
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-decisions>
+    <MarketingPageHeader title="Decisões">
+      <template #status>
+        <!-- Cede antes do título: fora do ao vivo o rótulo por extenso ("Atualiza a
+             cada 1 min") não cabe ao lado do título, do sino e do menu em 320px, e o
+             título sumia (medido na CI: SSE caído, 320px). Abaixo de 380px fica só o ponto
+             (o kit já esconde a hora ali); o nome acessível continua dizendo o estado. -->
+        <span class="flex min-w-0 shrink-[1000] overflow-hidden max-[379px]:[&_[data-operator-live-status]>span:not(.live-dot)]:hidden" data-marketing-live>
+          <OperatorLiveStatus
+            :tone="live.tone"
+            :time="live.time"
+            :label="live.label"
+            :detail="live.detail"
+          />
+        </span>
+      </template>
+    </MarketingPageHeader>
+
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-4 pt-3 pb-5 sm:px-6">
+      <div class="flex min-h-11 items-center gap-2">
+        <p class="min-w-0 flex-1 text-[14px] text-muted-foreground" role="status" aria-live="polite">
+          <strong class="font-semibold text-foreground">{{ headline.strong }}</strong><template v-if="headline.rest"> · {{ headline.rest }}</template>
         </p>
+        <UiIconButton
+          icon="lucide:refresh-cw"
+          label="Atualizar decisões"
+          :spinning="loading"
+          :disabled="loading"
+          @click="refresh()"
+        />
       </div>
-      <UiIconButton
-        icon="lucide:refresh-cw"
-        label="Atualizar decisões"
-        :spinning="loading"
-        :disabled="loading"
-        @click="refresh()"
-      />
-    </header>
 
-    <div
-      v-if="error && !queue"
-      class="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-      role="alert"
-    >
-      <p class="font-semibold">A fila de decisões não carregou</p>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Isso não quer dizer que nada pede você. Atualize antes de concluir.
-      </p>
-      <UiButton
-        type="button"
-        variant="outline"
-        class="mt-3"
-        @click="refresh()"
+      <div
+        v-if="error && !queue"
+        class="rounded-[14px] border border-destructive/30 bg-destructive/5 p-4"
+        role="alert"
       >
-        Tentar de novo
-      </UiButton>
-    </div>
-
-    <ol v-else-if="items.length" class="mt-4 flex flex-col gap-3">
-      <li
-        v-for="(item, index) in items"
-        :key="item.ref"
-        :data-decision="item.ref"
-        :data-decision-kind="item.kind"
-        class="rounded-2xl border bg-card p-4"
-        :class="
-          index === 0
-            ? 'border-primary/70 shadow-sm ring-1 ring-primary/30'
-            : 'border-border'
-        "
-      >
-        <div class="flex items-start gap-3">
-          <span
-            class="grid size-12 shrink-0 place-items-center rounded-xl"
-            :class="
-              item.kind === 'review'
-                ? 'bg-primary/10 text-primary'
-                : 'bg-destructive/10 text-destructive'
-            "
-            aria-hidden="true"
-          >
-            <Icon :name="icon(item)" class="size-6" />
-          </span>
-          <div class="min-w-0 flex-1">
-            <h2 class="break-words text-base font-semibold leading-snug">
-              {{ title(item) }}
-            </h2>
-            <p class="mt-0.5 break-words text-sm text-muted-foreground">
-              {{ subtitle(item) }}
-            </p>
-          </div>
-        </div>
-
-        <ul
-          v-if="item.failures.length"
-          class="mt-3 flex flex-col gap-1.5"
-          :aria-label="`Motivo de ${title(item)}`"
+        <p class="font-semibold">A fila de decisões não carregou</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Isso não quer dizer que nada pede você. Atualize antes de concluir.
+        </p>
+        <UiButton
+          type="button"
+          variant="outline"
+          class="mt-3"
+          @click="refresh()"
         >
-          <li
-            v-for="failure in item.failures"
-            :key="failure.platform_ref"
-            class="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          Tentar de novo
+        </UiButton>
+      </div>
+
+      <ol v-else-if="items.length" class="flex flex-col gap-2.5">
+        <li
+          v-for="(item, index) in items"
+          :key="item.ref"
+          :data-decision="item.ref"
+          :data-decision-kind="item.kind"
+          class="flex flex-col gap-2.5 rounded-[14px] border bg-card p-3"
+          :class="index === 0 ? 'border-primary ring-1 ring-primary' : 'border-border'"
+          :data-decision-focus="index === 0 || undefined"
+        >
+          <div class="flex gap-3">
+            <span
+              class="grid size-[60px] shrink-0 place-items-center rounded-lg"
+              :class="
+                item.kind === 'review'
+                  ? 'bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]'
+                  : 'bg-destructive/10 text-destructive'
+              "
+              aria-hidden="true"
+            >
+              <Icon :name="icon(item)" class="size-7" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <h2 class="break-words text-[16px] font-semibold leading-snug">
+                {{ title(item) }}
+              </h2>
+              <p class="mt-0.5 break-words text-[13px] leading-snug text-muted-foreground">
+                {{ subtitle(item) }}
+              </p>
+            </div>
+          </div>
+
+          <ul
+            v-if="item.failures.length"
+            class="flex flex-col gap-1.5"
+            :aria-label="`Motivo de ${title(item)}`"
           >
+            <li
+              v-for="failure in item.failures"
+              :key="failure.platform_ref"
+              class="flex items-start gap-1.5 rounded-lg bg-destructive/8 px-2.5 py-2 text-[13px] leading-snug font-medium text-destructive"
+            >
+              <Icon
+                name="lucide:triangle-alert"
+                class="mt-px size-4"
+                aria-hidden="true"
+              />
+              <span>{{ failureReason(failure, item.kind) }}</span>
+            </li>
+          </ul>
+
+          <div class="flex items-center gap-3">
             <Icon
-              name="lucide:triangle-alert"
-              class="mt-0.5 size-4"
+              :name="item.scheduled_for ? 'lucide:calendar' : 'lucide:clock'"
+              class="size-5"
+              :class="iconToneClasses[deadline(item).tone]"
               aria-hidden="true"
             />
-            <span>{{ failureReason(failure, item.kind) }}</span>
-          </li>
-        </ul>
+            <p class="min-w-0 flex-1 leading-tight">
+              <span class="block text-[14px]">{{ splitClock(deadline(item).label)[0] }}<b v-if="splitClock(deadline(item).label)[1]" class="tnum font-semibold">{{ splitClock(deadline(item).label)[1] }}</b></span>
+              <span
+                v-if="deadline(item).detail"
+                class="block text-[13px] tnum"
+                :class="toneClasses[deadline(item).tone]"
+                >{{ deadline(item).detail }}</span
+              >
+            </p>
+            <UiButton
+              :to="item.href"
+              :variant="index === 0 ? 'default' : 'outline'"
+              class="h-12 shrink-0 rounded-xl px-6 text-[15px] font-semibold"
+              :aria-label="`Revisar: ${title(item)}`"
+              data-decision-review
+            >
+              Revisar
+            </UiButton>
+          </div>
+        </li>
+      </ol>
 
-        <div class="mt-3 flex items-center gap-3">
-          <Icon
-            :name="item.scheduled_for ? 'lucide:calendar-clock' : 'lucide:clock'"
-            class="size-5 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <p class="min-w-0 flex-1 text-sm leading-tight">
-            <span class="block font-semibold">{{ deadline(item).label }}</span>
+      <div
+        v-else-if="queue"
+        class="rounded-[14px] border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      >
+        <Icon
+          name="lucide:inbox"
+          class="mx-auto size-8 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <p class="mt-2 font-semibold">Nenhuma decisão esperando você</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Quando um anúncio pedir revisão, ele aparece aqui, com o prazo.
+        </p>
+      </div>
+
+      <ul
+        v-if="automaticChecks.length"
+        class="flex flex-col gap-1"
+        aria-label="Conferências automáticas"
+      >
+        <li v-for="check in automaticChecks" :key="check.ref">
+          <NuxtLink
+            :to="check.href"
+            :data-automatic-check="check.state"
+            class="flex min-h-11 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <span
-              v-if="deadline(item).detail"
-              class="block"
-              :class="toneClasses[deadline(item).tone]"
-              >{{ deadline(item).detail }}</span
+              class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
+              aria-hidden="true"
             >
-          </p>
-          <UiButton
-            :to="item.href"
-            :variant="index === 0 ? 'default' : 'outline'"
-            class="shrink-0 px-5"
-            :aria-label="`Revisar: ${title(item)}`"
-            data-decision-review
-          >
-            Revisar
-          </UiButton>
-        </div>
-      </li>
-    </ol>
+              <Icon name="lucide:sparkles" class="size-4" />
+            </span>
+            <!-- Título e detalhe na MESMA linha do template: espaço entre tags que
+                 atravessa quebra de linha o compilador do Vue descarta, e a frase
+                 virava "incerto.O sistema". -->
+            <span class="min-w-0 flex-1 text-[13px] leading-snug text-muted-foreground"><strong class="font-semibold text-foreground">{{ automaticCheckLine(check, shopTimezone, nowMs).title }}</strong> {{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span>
+          </NuxtLink>
+        </li>
+      </ul>
 
-    <div
-      v-else-if="queue"
-      class="mt-5 rounded-2xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-    >
-      <Icon
-        name="lucide:inbox"
-        class="mx-auto size-8 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <p class="mt-2 font-semibold">Nenhuma decisão esperando você</p>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Quando um anúncio pedir revisão, ele aparece aqui, com o prazo.
-      </p>
+      <NuxtLink
+        v-if="queue && scheduledLine"
+        to="/scheduled"
+        class="flex min-h-12 items-center gap-2 rounded-xl border border-dashed border-border px-3.5 text-[14px] hover:bg-muted"
+        data-decisions-scheduled-line
+      >
+        <span class="min-w-0 flex-1"><b v-if="scheduledLine.lead" class="tnum font-semibold">{{ scheduledLine.lead }}</b> <span class="text-muted-foreground">{{ scheduledLine.rest }}</span></span>
+        <Icon
+          name="lucide:chevron-right"
+          class="size-5 text-muted-foreground"
+          aria-hidden="true"
+        />
+      </NuxtLink>
     </div>
-
-    <ul
-      v-if="automaticChecks.length"
-      class="mt-4 flex flex-col gap-2"
-      aria-label="Conferências automáticas"
-    >
-      <li v-for="check in automaticChecks" :key="check.ref">
-        <NuxtLink
-          :to="check.href"
-          :data-automatic-check="check.state"
-          class="flex min-h-11 items-start gap-3 rounded-xl px-1 py-1.5 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span
-            class="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
-            aria-hidden="true"
-          >
-            <Icon name="lucide:scan-search" class="size-4" />
-          </span>
-          <span class="min-w-0 flex-1">
-            <strong class="font-semibold">{{
-              automaticCheckLine(check, shopTimezone, nowMs).title
-            }}</strong>
-            <span class="text-muted-foreground">
-              {{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span
-            >
-          </span>
-        </NuxtLink>
-      </li>
-    </ul>
-
-    <NuxtLink
-      v-if="queue"
-      to="/scheduled"
-      class="mt-4 flex min-h-12 items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 text-sm hover:bg-muted"
-      data-decisions-scheduled-line
-    >
-      <span>{{
-        scheduledSummary(
-          queue.scheduled_today_count,
-          queue.active_campaign_count,
-        )
-      }}</span>
-      <Icon
-        name="lucide:chevron-right"
-        class="size-4 text-muted-foreground"
-        aria-hidden="true"
-      />
-    </NuxtLink>
   </main>
 </template>

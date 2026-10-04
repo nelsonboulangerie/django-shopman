@@ -128,7 +128,10 @@ export default defineNuxtConfig({
 
   icon: {
     clientBundle: {
-      scan: true,
+      // `.ts` também: as seções (`useMarketingSections`) e as presentations
+      // escolhem ícones fora dos templates, e ícone fora do pacote o navegador iria
+      // buscar no api.iconify.design, que a CSP do Marketing recusa.
+      scan: { globInclude: ["**/*.{vue,ts}"] },
       sizeLimitKb: 0,
     },
 

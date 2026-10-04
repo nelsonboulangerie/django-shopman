@@ -393,6 +393,10 @@ Como um app migra:
 | `OperatorSectionBar` | barra do polegar no celular (pílula de 56×30 no ativo, selo e ponto iguais aos do rail) | `orders-phone3.html` |
 | `OperatorPageHeader` | cabeçalho de uma linha; no celular, barra de 56px com selo, título, ponto ao vivo, lupa e as ações de polegar; controles e recortes descem para linhas que rolam | `orders-board3.html` |
 | `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
+| `OperatorPhoneMenu` | o menu do operador no celular (tema, giro, Bloquear), as iniciais em 44px na barra de 56px; sem ele o celular perdia o que o rail clássico mostrava em qualquer largura (V4-MKT) | menu de `_rail3bottom.html` |
+
+O `OperatorPhoneMenu` é opt-in como o resto: o Marketing (V4-MKT) o monta no
+`#phone-actions` de cada tela, depois do sino.
 
 Opções do rail e da barra (V4-PROD, todas opcionais): `OperatorSuiteRail` com
 `print-shortcuts` imprime a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino,

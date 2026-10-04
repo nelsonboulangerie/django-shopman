@@ -428,24 +428,17 @@ useHead({ title: "Campanhas" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
-    <div class="mb-5 flex flex-wrap items-center gap-3">
-      <h1 class="w-full text-lg font-semibold sm:w-auto">Campanhas</h1>
-      <!-- A biblioteca de modelos é vista SECUNDÁRIA daqui, não seção irmã: o gestor pensa
-           "o que a padaria diz quando X acontece", e separar o texto da intenção o obrigava
-           a montar isso em duas telas. -->
-      <NuxtLink
-        to="/templates"
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted sm:ml-auto"
-      >
-        <Icon name="lucide:file-text" class="size-3.5" />
-        Modelos
-      </NuxtLink>
-      <UiButton type="button" @click="openNew">
-        <Icon name="lucide:plus" class="size-4" />
-        Nova campanha
-      </UiButton>
-    </div>
+  <main class="flex min-h-0 flex-1 flex-col">
+    <MarketingPageHeader title="Campanhas">
+      <template #actions>
+        <!-- Os Modelos ficam a um toque, na linha de Ajustes logo abaixo do título. -->
+        <UiButton type="button" @click="openNew">
+          <Icon name="lucide:plus" class="size-4" />
+          Nova campanha
+        </UiButton>
+      </template>
+    </MarketingPageHeader>
+    <div class="mx-auto w-full max-w-4xl px-4 py-6">
 
     <div
       v-if="error && rules.length === 0"
@@ -836,5 +829,6 @@ useHead({ title: "Campanhas" });
       @confirm="onConfirmFire"
       @cancel="cancelFireConfirmation"
     />
+    </div>
   </main>
 </template>

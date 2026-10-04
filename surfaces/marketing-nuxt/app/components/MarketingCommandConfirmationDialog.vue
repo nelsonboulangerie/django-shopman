@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
 import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
+import { platformIcon } from "~/presentation/campaign";
 import {
   deliveryActionLabel,
   includesDirectMessage,
   includesPublicPost,
-  reachLines,
+  sealConsequence,
+  sealRows,
 } from "~/presentation/marketingDelivery";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
@@ -142,14 +144,19 @@ const simulatedScenes = computed(() =>
       }),
 );
 
-/** Uma linha por destino, cada uma na sua grandeza. A regra mora em
- *  `presentation/marketingDelivery`, porque o diálogo de recuperação precisa da mesma
- *  — e era lá que ela faltava. */
+/** O SELO (v4, `marketing-decisoes4.html`): uma linha por destino, cada uma na sua
+ *  grandeza, em colunas. A regra mora em `presentation/marketingDelivery`, porque o
+ *  diálogo de recuperação precisa da mesma, e era lá que ela faltava. */
 const reach = computed(() =>
-  reachLines({
+  sealRows({
     platforms: challengePlatforms.value,
     audienceCount: challenge.value?.audience_count ?? 0,
   }),
+);
+/** Só o que faz algo sair leva o carimbo e a frase do que volta e do que não volta. */
+const sealed = computed(() => props.command?.action === "approve");
+const consequence = computed(() =>
+  sealed.value ? sealConsequence(challengePlatforms.value) : "",
 );
 
 /** Postagem sem foto é um fato que só aparece depois de publicada, quando já não tem
@@ -191,9 +198,22 @@ function submit() {
       }
     "
   >
-    <UiDialogContent class="sm:max-w-lg">
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
+    <!-- No celular a caixa sobe do pé como folha (v4, "a revisão aberta, com o selo"),
+         ao alcance do polegar; do tablet para cima segue centrada. -->
+    <UiDialogContent
+      class="sm:max-w-lg max-sm:top-auto max-sm:bottom-0 max-sm:max-w-full max-sm:translate-y-0 max-sm:rounded-t-[22px] max-sm:rounded-b-none max-sm:border-x-0 max-sm:border-b-0 max-sm:px-4 max-sm:pb-[max(2rem,env(safe-area-inset-bottom))]"
+      data-marketing-seal
+    >
+      <UiDialogHeader class="flex-row items-start gap-3 text-left">
+        <span
+          v-if="sealed"
+          class="grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]"
+          aria-hidden="true"
+        >
+          <Icon name="lucide:stamp" class="size-5" />
+        </span>
+        <div class="flex min-w-0 flex-col gap-1">
+        <UiDialogTitle class="text-[20px] leading-tight font-semibold">{{ title }}</UiDialogTitle>
         <!-- Uma linha. A descrição diz o que acontece DEPOIS do botão, e nada mais:
              quem está aqui já decidiu, só quer conferir antes de não poder voltar. -->
         <UiDialogDescription>
@@ -208,6 +228,7 @@ function submit() {
           </template>
           <template v-else>Depois de confirmar, não tem desfazer.</template>
         </UiDialogDescription>
+        </div>
       </UiDialogHeader>
 
       <div v-if="challenge" class="space-y-3">
@@ -247,12 +268,32 @@ function submit() {
           />
         </div>
 
-        <ul class="space-y-0.5 text-sm font-medium" aria-label="Para quem vai">
-          <li v-for="line in reach" :key="line">{{ line }}</li>
-          <li v-if="!reach.length" class="text-muted-foreground">
+        <ul
+          class="rounded-xl border border-border px-3.5"
+          aria-label="Para quem vai"
+          data-seal-rows
+        >
+          <li
+            v-for="row in reach"
+            :key="row.platform"
+            class="flex min-h-[52px] items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
+            :data-seal-row="row.platform"
+          >
+            <Icon :name="platformIcon(row.platform)" class="size-5" aria-hidden="true" />
+            <span class="min-w-0 flex-1 text-[15px] leading-tight">{{ row.label }} <span v-if="row.kind" class="block text-[13px] text-muted-foreground">{{ row.kind }}</span></span>
+            <span class="tnum" :class="row.strong ? 'text-[15px] font-semibold' : 'text-[14px]'">{{ row.amount }}</span>
+          </li>
+          <li v-if="!reach.length" class="flex min-h-[52px] items-center text-sm text-muted-foreground">
             Nenhuma plataforma
           </li>
         </ul>
+        <p
+          v-if="consequence"
+          class="text-[13px] leading-snug text-muted-foreground"
+          data-seal-consequence
+        >
+          {{ consequence }}
+        </p>
 
         <p v-if="challenge.scheduled_for" class="text-sm font-medium">
           {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
@@ -353,10 +394,11 @@ function submit() {
         {{ error }}
       </p>
 
-      <UiDialogFooter>
+      <UiDialogFooter class="max-sm:flex-row max-sm:gap-2.5">
         <UiButton
           type="button"
           variant="outline"
+          class="max-sm:h-14 max-sm:rounded-xl max-sm:px-4 max-sm:text-[15px] max-sm:font-semibold"
           :disabled="busy"
           @click="emit('cancel')"
         >
@@ -367,11 +409,18 @@ function submit() {
         <UiButton
           v-if="challenge?.dual_control"
           type="button"
+          class="max-sm:h-14 max-sm:flex-1 max-sm:rounded-xl max-sm:text-[16px] max-sm:font-semibold"
           @click="emit('cancel')"
         >
           Entendi
         </UiButton>
-        <UiButton v-else type="button" :disabled="!ready" @click="submit">
+        <UiButton
+          v-else
+          type="button"
+          class="max-sm:h-14 max-sm:flex-1 max-sm:rounded-xl max-sm:text-[16px] max-sm:font-semibold"
+          :disabled="!ready"
+          @click="submit"
+        >
           {{ confirmLabel }}
         </UiButton>
       </UiDialogFooter>

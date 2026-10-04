@@ -67,14 +67,16 @@ useHead({ title: "Modelos" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-    <div class="mb-4 flex items-center gap-3">
-      <h1 class="text-lg font-semibold">Modelos</h1>
-      <UiButton type="button" class="ml-auto" @click="openNew">
-        <Icon name="lucide:plus" class="size-4" />
-        Novo modelo
-      </UiButton>
-    </div>
+  <main class="flex min-h-0 flex-1 flex-col">
+    <MarketingPageHeader title="Modelos">
+      <template #actions>
+        <UiButton type="button" @click="openNew">
+          <Icon name="lucide:plus" class="size-4" />
+          Novo modelo
+        </UiButton>
+      </template>
+    </MarketingPageHeader>
+    <div class="mx-auto w-full max-w-3xl px-4 py-6">
 
     <div
       v-if="error && !templates.length"
@@ -278,5 +280,6 @@ useHead({ title: "Modelos" });
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+    </div>
   </main>
 </template>
