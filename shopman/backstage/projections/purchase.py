@@ -247,7 +247,7 @@ class ActiveReceiptProjection:
     #: Volumes que a nota declara no transporte (``qVol``); 0 quando não declara.
     invoiceVolumes: int = 0
     #: Volumes já contados desta NF ("Contei N volumes"), em qualquer dispositivo;
-    #: ``None`` enquanto ninguém contou (ver ``ReceiptVolumeCount``).
+    #: ``None`` enquanto ninguém contou (``Supplier.metadata.purchase.receipt_volume_counts``).
     volumesCounted: int | None = None
 
 

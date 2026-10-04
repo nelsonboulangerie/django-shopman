@@ -402,6 +402,22 @@ def _learn_material_eans(lines: list[ResolvedReceiptLine]) -> None:
         material.save(update_fields=["metadata"])
 
 
+#: Onde mora a contagem de volumes da NF em conferência: no fornecedor emitente,
+#: por chave de acesso (``Supplier.metadata.purchase.receipt_volume_counts``, ver
+#: docs/reference/data-schemas.md). JSON primeiro (CLAUDE.md): sem modelo novo.
+RECEIPT_VOLUME_COUNTS_KEY = "receipt_volume_counts"
+
+
+def _receipt_volume_supplier(invoice_key: str, *, for_update: bool = False):
+    """O fornecedor emitente da NF (CNPJ da chave), ou ``None``."""
+    Supplier = apps.get_model("buyman", "Supplier")
+    ref = _supplier_ref_from_invoice_key(invoice_key)
+    if not ref:
+        return None
+    qs = Supplier.objects.select_for_update() if for_update else Supplier.objects
+    return qs.filter(ref=ref).first()
+
+
 def save_receipt_volumes(payload: dict[str, Any], *, user) -> dict[str, Any]:
     """Grava a contagem de volumes da NF em conferência ("Contei N volumes").
 
@@ -409,7 +425,6 @@ def save_receipt_volumes(payload: dict[str, Any], *, user) -> dict[str, Any]:
     da doca: abrir a mesma NF em outro dispositivo não pode voltar a pedir que
     alguém conte as caixas de novo (L7). ``counted`` nulo desfaz a contagem.
     """
-    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
     invoice_key = parse_invoice_access_key(str(payload.get("invoiceAccessKey") or payload.get("invoiceInput") or ""))
     if not invoice_key:
         raise PurchaseError("Leia a NF antes de contar os volumes.", code="invoice_key_required", field="invoiceAccessKey")
@@ -423,13 +438,26 @@ def save_receipt_volumes(payload: dict[str, Any], *, user) -> dict[str, Any]:
         raise PurchaseError("Contagem de volumes inválida.", code="volumes_invalid", field="counted") from exc
     if not 1 <= counted <= 999:
         raise PurchaseError("Conte entre 1 e 999 volumes.", code="volumes_invalid", field="counted")
-    ReceiptVolumeCount.objects.update_or_create(
-        invoice_key=invoice_key,
-        defaults={
+    with transaction.atomic():
+        supplier = _receipt_volume_supplier(invoice_key, for_update=True)
+        if supplier is None:
+            raise PurchaseError(
+                "Cadastre o fornecedor da nota antes de contar os volumes.",
+                code="supplier_not_found",
+                field="supplierRef",
+            )
+        metadata = dict(supplier.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        counts = dict(purchase.get(RECEIPT_VOLUME_COUNTS_KEY) or {})
+        counts[invoice_key] = {
             "counted": counted,
             "counted_by": (getattr(user, "get_username", lambda: "")() if user else "") or "",
-        },
-    )
+            "counted_at": timezone.now().isoformat(),
+        }
+        purchase[RECEIPT_VOLUME_COUNTS_KEY] = counts
+        metadata["purchase"] = purchase
+        supplier.metadata = metadata
+        supplier.save(update_fields=["metadata", "updated_at"])
     return build_purchase()
 
 
@@ -437,14 +465,31 @@ def counted_receipt_volumes(invoice_key: str) -> int | None:
     """A contagem já feita desta NF (em qualquer dispositivo), ou ``None``."""
     if not invoice_key:
         return None
-    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
-    row = ReceiptVolumeCount.objects.filter(invoice_key=invoice_key).only("counted").first()
-    return row.counted if row else None
+    supplier = _receipt_volume_supplier(invoice_key)
+    if supplier is None:
+        return None
+    entry = ((supplier.metadata or {}).get("purchase") or {}).get(RECEIPT_VOLUME_COUNTS_KEY, {}).get(invoice_key)
+    try:
+        return int(entry["counted"]) if entry else None
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def forget_receipt_volumes(invoice_key: str) -> None:
-    ReceiptVolumeCount = apps.get_model("backstage", "ReceiptVolumeCount")
-    ReceiptVolumeCount.objects.filter(invoice_key=invoice_key).delete()
+    with transaction.atomic():
+        supplier = _receipt_volume_supplier(invoice_key, for_update=True)
+        if supplier is None:
+            return
+        metadata = dict(supplier.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        counts = dict(purchase.get(RECEIPT_VOLUME_COUNTS_KEY) or {})
+        if invoice_key not in counts:
+            return
+        counts.pop(invoice_key)
+        purchase[RECEIPT_VOLUME_COUNTS_KEY] = counts
+        metadata["purchase"] = purchase
+        supplier.metadata = metadata
+        supplier.save(update_fields=["metadata", "updated_at"])
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:

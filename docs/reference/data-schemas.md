@@ -2343,6 +2343,30 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
   substituída — a confirmação do operador é a verdade mais fresca — com
   `warning` estruturado `purchase.invoice_product_map_overwrite`.
 
+### `purchase.receipt_volume_counts`
+
+A contagem de volumes na doca, por NF ainda não confirmada (o operador conta os
+volumes antes de conferir item a item; a contagem sobrevive à troca de dispositivo).
+
+```json
+{
+  "purchase": {
+    "receipt_volume_counts": {
+      "<chave da NF, 44 dígitos>": {"counted": 12, "counted_by": "ana", "counted_at": "2026-10-04T09:12:00-03:00"}
+    }
+  }
+}
+```
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `receipt_volume_counts.<chave>` | `{counted: int, counted_by: str, counted_at: ISO str}` | `backstage/services/purchase.py::save_receipt_volumes` (`POST purchase/receipts/volumes/`) | `counted_receipt_volumes` (scan da NF e `ActiveReceiptProjection.volumesCounted`) |
+
+- O fornecedor é o do CNPJ embutido na chave da NF; sem fornecedor cadastrado, a
+  gravação recusa com `supplier_not_found`.
+- A entrada sai do mapa quando a NF é confirmada ou quando o operador desfaz a contagem
+  (`forget_receipt_volumes`).
+
 O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
 pedido de reposição (`purchase.request_status*`, escrito por

@@ -21,7 +21,6 @@ from shopman.buyman.models import Material, MaterialConversion, Supplier
 from shopman.stockman.models import Move, Position
 from shopman.stockman.models.enums import PositionKind
 
-from shopman.backstage.models import ReceiptVolumeCount
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.services import purchase as purchase_service
 from shopman.backstage.services.purchase import PurchaseError
@@ -69,8 +68,9 @@ def _linha(c, **over):
 class TestVolumesNoServidor:
     def test_contar_grava_por_nf_e_outro_dispositivo_le(self, cenario, operador):
         purchase_service.save_receipt_volumes({"invoiceAccessKey": CHAVE, "counted": 9}, user=operador)
-        row = ReceiptVolumeCount.objects.get(invoice_key=CHAVE)
-        assert (row.counted, row.counted_by) == (9, "doca-v6")
+        cenario["fornecedor"].refresh_from_db()
+        row = cenario["fornecedor"].metadata["purchase"]["receipt_volume_counts"][CHAVE]
+        assert (row["counted"], row["counted_by"]) == (9, "doca-v6")
         assert purchase_service.counted_receipt_volumes(CHAVE) == 9
 
     def test_recontar_substitui_e_nulo_desfaz(self, cenario, operador):

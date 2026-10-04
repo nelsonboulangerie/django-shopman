@@ -37,7 +37,6 @@ from .oven_run import OvenRun
 from .pos import POSTab
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
-from .receipt_volume_count import ReceiptVolumeCount
 from .recipe_rating import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
 from .seating import SeatingSpot, SpotKind, SpotShape
 from .shelf_outage import OutageReason, ShelfOutage
@@ -95,7 +94,6 @@ __all__ = [
     "PrintJob",
     "ProductConsumptionTag",
     "Reading",
-    "ReceiptVolumeCount",
     "SeatingSpot",
     "SignInEvent",
     "SignInMethod",
