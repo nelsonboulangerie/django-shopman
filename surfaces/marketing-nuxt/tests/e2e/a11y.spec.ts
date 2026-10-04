@@ -163,11 +163,15 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     ),
   ).toBeLessThanOrEqual(0.001);
 
-  // O sino é a própria fila (decisão do dono, 03/10/2026): um link para a casa,
-  // marcado como a página atual quando a fila está na tela.
-  const bell = page.getByRole("link", { name: /^Decisões: / });
-  await expect(bell).toHaveAttribute("href", "/");
-  await expect(bell).toHaveAttribute("aria-current", "page");
+  // O sino é a caixa de Avisos do kit (V6-KIT): as decisões entram como um resumo
+  // que leva à mesma fila (decisão do dono, 03/10/2026: sem lista própria).
+  await page.locator("[data-operator-inbox-trigger]").first().click();
+  await expect(
+    page
+      .locator("[data-operator-inbox-panel]")
+      .getByRole("link", { name: /Abrir a fila de decisões/ }),
+  ).toHaveAttribute("href", "/");
+  await page.keyboard.press("Escape");
 
   await page
     .getByRole("navigation", { name: "Seções do Marketing no celular" })
@@ -212,8 +216,8 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
 
   await page.setViewportSize({ width: 320, height: 568 });
   // No celular o rail não existe: tema, giro e Bloquear moram no menu do operador,
-  // na barra de 56px (camada visual da suíte, V4-MKT).
-  await page.getByRole("button", { name: /^Menu d/ }).click();
+  // no "Mais" da barra de baixo (V6-KIT).
+  await page.getByRole("button", { name: /^Mais: / }).click();
   await page.getByRole("button", { name: "Tema escuro" }).click();
   await page.keyboard.press("Escape");
   await expect(page.locator("html")).toHaveClass(/dark/);

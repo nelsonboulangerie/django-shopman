@@ -277,14 +277,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
         @activate="emit('lock')"
       />
 
-      <!-- Menu do operador: as iniciais (size-10 da v4). O fundo é escuro, e não o
+      <!-- Menu do operador: as iniciais. 44px (alvo de toque da casa; a v4 desenha 40,
+           e o gate de toque da Produção reprova) e fundo escuro, não o
            `bg-rail-foreground/15` da prévia: no rail claro da Produção as iniciais
            ficavam com contraste 3,7:1 (axe, AA pede 4,5). -->
       <PopoverRoot v-model:open="menuOpen">
         <PopoverTrigger as-child>
           <button
             type="button"
-            class="my-2 grid size-10 place-items-center rounded-full bg-black/25 text-[13px] font-semibold text-rail-foreground transition hover:bg-black/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+            class="my-1.5 grid size-11 place-items-center rounded-full bg-black/25 text-[13px] font-semibold text-rail-foreground transition hover:bg-black/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
             :aria-label="operatorName ? `Menu de ${operatorName}` : 'Menu do dispositivo'"
             data-suite-rail-menu
           >
