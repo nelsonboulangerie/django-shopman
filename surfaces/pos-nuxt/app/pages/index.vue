@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { tabTitleView } from "~/presentation/tabTitle";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
@@ -602,7 +603,7 @@ const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
 function focusOrderEntry() {
   if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
 }
-const tabHeaderRef = ref<{ openCustomer: () => void; askRelease: () => void } | null>(null);
+const tabHeaderRef = ref<{ openCustomer: (seed?: string) => void; askRelease: () => void } | null>(null);
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
 // comanda), não só no checkout. O estado mora aqui porque as duas superfícies
@@ -620,8 +621,87 @@ watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
 // nunca abrem duas caixas diferentes.
+// NO BALCÃO os dois chips existem (v4: "Consumir aqui F7", "Agora F8") e são a
+// porta para a encomenda: entregar ou agendar É encomenda, então o gesto troca o
+// modo e abre a mesma pergunta já no modo certo. Se a troca for recusada (edição
+// de encomenda), nada abre.
+// "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
+// produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
+const kitchenStations = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const product of pos.value?.products || []) {
+    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
+  }
+  return map;
+});
+// PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
+// lidos da projeção; um meio que o canal não oferece não aparece.
+const quickPayments = computed(() => {
+  const methods = pos.value?.payment_methods || [];
+  const out: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }> = [];
+  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "PIX", icon: "lucide:qr-code" });
+  const card = methods.find((m) => m.ref === "credit") || methods.find((m) => m.ref === "card") || methods.find((m) => m.ref === "debit");
+  if (card) out.push({ ref: card.ref, label: "Maquininha", icon: "lucide:credit-card" });
+  // V6-CAIXA: o dinheiro recebido na mesa. A venda fecha aqui e vira o cartão
+  // "Abrir gaveta do Balcão" (useDrawerOpening, pulso pelo relay); a gaveta nunca
+  // abre sozinha longe do Balcão.
+  if (methods.some((m) => m.ref === "cash")) {
+    out.push({ ref: "cash", label: "Dinheiro", icon: "lucide:banknote", hint: "abre a gaveta do Balcão", secondary: true });
+  }
+  return out;
+});
+// Pagar pela folha: abre o Pagamento já com o meio escolhido lançado (a mesma
+// tecla do checkout, `pressMethodKey`), sem o operador escolher de novo.
+const QUICK_PAYMENT_KEYS: Record<string, string> = { pix: "P", credit: "C", card: "C", debit: "D", cash: "R" };
+async function payOnSheet(method: string) {
+  await prepareCheckout();
+  if (!checkoutMode.value) return;
+  await nextTick();
+  const letter = QUICK_PAYMENT_KEYS[method];
+  if (letter) paymentWorkspaceRef.value?.pressMethodKey(letter);
+}
+// ENVIO AUTOMÁTICO (opcional por estação, desligado por padrão; dono, plano §13
+// item 3): a linha nova de uma estação com o interruptor ligado vai sozinha quando
+// o operador sai da comanda ou ela fica parada. Nunca no meio do lançamento, nunca
+// na encomenda (que espera a data) e nunca na edição.
+const AUTO_FIRE_IDLE_MS = 90_000;
+const autoFireSkus = computed(() => new Set((pos.value?.products || []).filter((p) => p.kitchen_auto_fire).map((p) => p.sku)));
+const autoFireOn = computed(() => cart.items.some((item) => autoFireSkus.value.has(item.sku)));
+async function autoFireLeftovers() {
+  if (!hasOpenTab.value || editing.value || cart.salesMode === "order" || firing.value) return;
+  if (!fireAction.value.present || !fireAction.value.enabled) return;
+  const unfired = cart.items.filter((item) => !item.fired);
+  const auto = unfired.filter((item) => autoFireSkus.value.has(item.sku)).map((item) => item.line_id);
+  if (!auto.length) return;
+  // Tudo o que falta é automático: o envio de sempre (grava e manda o delta).
+  // Senão, só as linhas automáticas; as outras esperam o "Enviar à cozinha".
+  await fireTab(auto.length === unfired.length ? undefined : auto);
+}
+let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|")],
+  () => {
+    if (autoFireTimer) clearTimeout(autoFireTimer);
+    autoFireTimer = null;
+    if (!autoFireSkus.value.size || !inSaleView.value) return;
+    autoFireTimer = setTimeout(() => { void autoFireLeftovers(); }, AUTO_FIRE_IDLE_MS);
+  },
+);
+watch(inSaleView, (now, was) => {
+  if (was && !now) void autoFireLeftovers();
+});
+onBeforeUnmount(() => { if (autoFireTimer) clearTimeout(autoFireTimer); });
+const contextMoreOpen = ref(false);
+const CONTEXT_SALES_MODES = [
+  { ref: "counter", label: "Balcão", icon: "lucide:store" },
+  { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
+] as const;
+function leaveCounterThen(next: () => void) {
+  requestSalesMode("order");
+  if (cart.salesMode === "order") next();
+}
 function openFulfillmentHere() {
-  if (cart.salesMode === "counter") return;
+  if (cart.salesMode === "counter") { leaveCounterThen(openFulfillmentHere); return; }
   if (orderSetupPending.value && orderSetupIssue.value === "customer") {
     tabHeaderRef.value?.openCustomer();
     return;
@@ -665,7 +745,7 @@ watch(customerFocusNonce, () => {
 // exatamente o que a barra de contexto veio desfazer (mesmo desvio de
 // `openFulfillmentHere`).
 function openScheduleHere() {
-  if (cart.salesMode === "counter") return;
+  if (cart.salesMode === "counter") { leaveCounterThen(openScheduleHere); return; }
   if (orderSetupPending.value && ["customer", "fulfillment", "address"].includes(orderSetupIssue.value)) {
     openFulfillmentHere();
     return;
@@ -1091,6 +1171,11 @@ onBeforeUnmount(() => {
           v-model:customer-email="cart.customerEmail"
           class="min-w-0 flex-1"
           :tab-display="cart.tabDisplay"
+          :tab-number="cart.tabNumber"
+          :opened-at="cart.tabOpenedAt"
+          :seating-spots="pos.seating_spots || []"
+          :seating-spot-ref="cart.tabSeatingSpot"
+          :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
           :sales-mode="cart.salesMode"
           :has-open-tab="hasOpenTab"
           :can-rename="canRenameTab"
@@ -1117,7 +1202,7 @@ onBeforeUnmount(() => {
           @sales-mode-change="requestSalesMode"
           @customer-closed="focusOrderEntry"
           @customer-locked="(reason: string) => toast.info(reason)"
-          @rename="(ref: string) => { if (!editing) void renameTab(ref); }"
+          @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
           @clear="clearOrDiscard"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
@@ -1159,6 +1244,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
+            :class="inSaleView ? 'max-xl:hidden' : ''"
             aria-label="Últimas vendas"
             title="Últimas vendas (status fiscal, DANFE, reenvio)"
             @click="recentSalesOpen = true"
@@ -1170,14 +1256,63 @@ onBeforeUnmount(() => {
           <button
             v-if="inSaleView && hasOpenTab && !checkoutMode"
             type="button"
-            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground max-xl:hidden"
             title="Liberar comanda (pede confirmação)"
             data-pos-release-tab
             @click="tabHeaderRef?.askRelease()"
           >
             <Icon name="lucide:x" class="size-4" />
-            <span class="max-lg:sr-only">Liberar comanda</span>
+            <span class="max-2xl:sr-only">Liberar comanda</span>
           </button>
+          <!-- Abaixo do desktop a barra é de UMA linha (v3 tablet 2, v4 tablet): o que
+               não cabe mora no ⋯. No tablet deitado, Últimas vendas e Liberar; no
+               tablet em pé e no celular, também o modo e o Quando. -->
+          <UiPopover v-if="inSaleView && !checkoutMode" v-model:open="contextMoreOpen">
+            <UiPopoverTrigger as-child>
+              <button
+                type="button"
+                class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent xl:hidden"
+                aria-label="Mais ações da comanda"
+                title="Mais ações da comanda"
+                data-pos-context-more
+              >
+                <Icon name="lucide:ellipsis-vertical" class="size-5" />
+              </button>
+            </UiPopoverTrigger>
+            <UiPopoverContent align="end" class="w-64 p-1.5">
+              <div class="grid gap-0.5" data-pos-context-more-menu>
+                <div v-if="!editing" class="mb-1 grid grid-cols-2 gap-1 rounded-md bg-secondary p-1 lg:hidden" role="group" aria-label="Modo de atendimento">
+                  <button
+                    v-for="mode in CONTEXT_SALES_MODES"
+                    :key="mode.ref"
+                    type="button"
+                    class="inline-flex h-11 items-center justify-center gap-1.5 rounded op-label transition"
+                    :class="(cart.salesMode || 'counter') === mode.ref ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                    :aria-pressed="(cart.salesMode || 'counter') === mode.ref"
+                    @click="contextMoreOpen = false; requestSalesMode(mode.ref)"
+                  >
+                    <Icon :name="mode.icon" class="size-4" />{{ mode.label }}
+                  </button>
+                </div>
+                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent sm:hidden" @click="contextMoreOpen = false; openFulfillmentHere()">
+                  <Icon :name="cart.salesMode === 'order' ? 'lucide:store' : 'lucide:utensils'" class="size-4 text-muted-foreground" />
+                  {{ cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel}` : "Consumir aqui (entregar vira encomenda)" }}
+                </button>
+                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent xl:hidden" @click="contextMoreOpen = false; openScheduleHere()">
+                  <Icon name="lucide:clock" class="size-4 text-muted-foreground" />
+                  {{ cart.salesMode === "order" ? `Quando: ${scheduleChipLabel}` : "Agendar (vira encomenda)" }}
+                </button>
+                <button type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent" @click="contextMoreOpen = false; recentSalesOpen = true">
+                  <Icon name="lucide:history" class="size-4 text-muted-foreground" />
+                  Últimas vendas
+                </button>
+                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label text-destructive hover:bg-destructive/10" data-pos-release-tab-more @click="contextMoreOpen = false; tabHeaderRef?.askRelease()">
+                  <Icon name="lucide:x" class="size-4" />
+                  Liberar comanda
+                </button>
+              </div>
+            </UiPopoverContent>
+          </UiPopover>
           <!-- Onde o rail não existe (celular e tablet em pé): Avisos, a caixa do kit,
                no fim da barra (V6-KIT, T-06). -->
           <ClientOnly>
@@ -1393,6 +1528,7 @@ onBeforeUnmount(() => {
              negada). Mostrar o quadro nesse estado afirmaria "nenhuma comanda"
              sobre uma pergunta que nem foi respondida — e um balcão com comandas
              abertas leria isso como perda de dados. -->
+        <PosStoreNetworkNotice v-if="!inSaleView && pos" class="mb-3" />
         <PosTabBoard
           v-if="!inSaleView && pos"
           ref="tabBoardRef"
@@ -1449,7 +1585,12 @@ onBeforeUnmount(() => {
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"
           :pending="pending"
+          :tabs="tabs"
+          :current-tab-ref="cart.tabRef"
+          :customer-search="!editing"
           @add="addProduct"
+          @open-tab="openTab"
+          @find-customer="(query: string) => tabHeaderRef?.openCustomer(query)"
         />
       </div>
       </div>
@@ -1466,6 +1607,10 @@ onBeforeUnmount(() => {
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
             :sheet="ticketAsSheet"
+            :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
+            :kitchen-stations="kitchenStations"
+            :quick-payments="quickPayments"
+            :auto-fire="autoFireOn"
             :items="cart.items"
             :requires-tab="tabRequiredForCart"
             :has-open-tab="hasOpenTab"
@@ -1489,6 +1634,8 @@ onBeforeUnmount(() => {
             @prepare="editing ? saveOrderEdit() : prepareCheckout()"
             @move="openMoveWith"
             @fire="fireTab"
+            @pay="payOnSheet"
+            @auto-fire-settings="navigateTo('/settings/kitchen')"
             @unfire="unfireTab"
             @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
             @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"

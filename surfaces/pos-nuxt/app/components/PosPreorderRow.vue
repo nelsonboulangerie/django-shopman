@@ -33,6 +33,7 @@ import {
   customerLine,
   moneyLine,
   moneyPieces,
+  phoneCardPills,
   rowDetailLine,
   rowShowsSituation,
   rowWindow,
@@ -59,6 +60,7 @@ const moneyClass = computed(() => (balanceStandsOut(props.card)
   ? TO_RECEIVE_CLASS
   : "text-xs tabular-nums text-muted-foreground"));
 const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
+const pills = computed(() => phoneCardPills(props.card));
 </script>
 
 <template>
@@ -75,8 +77,33 @@ const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
       :draggable="movable ? 'false' : undefined"
       :data-preorder="card.ref"
     >
+      <!-- CELULAR (v3 `depois-pdv-celular` 3): o cartão com a hora numa caixa, o
+           cliente e o total, o recebimento com os itens, e as duas pílulas. -->
+      <span class="grid size-16 shrink-0 place-items-center content-center rounded-md bg-secondary text-center md:hidden" data-preorder-phone-time>
+        <span v-if="card.window_start" class="text-lg leading-none font-semibold tnum">{{ card.window_start }}</span>
+        <span v-else class="op-micro leading-tight font-semibold">a combinar</span>
+        <span class="mt-1 op-micro text-muted-foreground">{{ card.commitment_date_display }}</span>
+      </span>
+      <span class="grid min-w-0 flex-1 gap-1 md:hidden" data-preorder-phone>
+        <span class="flex items-baseline gap-2">
+          <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ card.customer_name || card.ref }}</span>
+          <span class="shrink-0 op-label font-semibold tnum">{{ card.total_display }}</span>
+        </span>
+        <span class="flex min-w-0 items-center gap-1 op-micro text-muted-foreground">
+          <Icon :name="fulfillmentIcon(card.fulfillment_type)" class="size-3.5 shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ [card.fulfillment_label, card.items_summary].filter(Boolean).join(" · ") }}</span>
+        </span>
+        <span class="flex flex-wrap gap-1">
+          <span
+            v-for="pill in pills"
+            :key="pill.label"
+            class="inline-flex h-6 items-center gap-1 rounded-full px-2 op-micro font-semibold"
+            :class="toneBadge(pill.tone)"
+          ><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ pill.label }}</span>
+        </span>
+      </span>
       <!-- A janela, e embaixo dela o recebimento. -->
-      <span class="grid shrink-0 justify-items-start gap-1">
+      <span class="grid shrink-0 justify-items-start gap-1 max-md:hidden">
         <span
           class="tabular-nums"
           :class="card.window_start ? 'text-sm font-semibold' : 'pt-0.5 text-xs text-muted-foreground'"
@@ -90,12 +117,12 @@ const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
         />
       </span>
       <!-- Quem, e embaixo o número, o canal, o recebimento e os itens. -->
-      <span class="grid min-w-20 flex-1 basis-0 gap-0.5">
+      <span class="grid min-w-20 flex-1 basis-0 gap-0.5 max-md:hidden">
         <p class="truncate text-sm font-medium" :title="customerLine(card)">{{ customerLine(card) }}</p>
         <p class="text-xs text-muted-foreground">{{ detailLine }}</p>
       </span>
       <!-- O dinheiro, e embaixo o que ele não diz: o selo e a Via impressa. -->
-      <span class="grid min-w-0 justify-items-end gap-1 text-right">
+      <span class="grid min-w-0 justify-items-end gap-1 text-right max-md:hidden">
         <span
           :class="moneyClass"
           :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'"
@@ -116,7 +143,7 @@ const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
         </span>
       </span>
     </NuxtLink>
-    <div v-if="slots.aside" class="flex shrink-0 border-l border-border">
+    <div v-if="slots.aside" class="flex shrink-0 border-l border-border max-md:hidden">
       <slot name="aside" />
     </div>
   </div>

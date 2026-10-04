@@ -26,6 +26,8 @@ import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/c
 import { candidateSubtitle, candidateValue, customerDecisionCopy, firstName as firstNameOf } from "~/presentation/customerDecision";
 
 const props = withDefaults(defineProps<{
+  /** O texto que a busca da venda já tinha ("Maria"): a busca de cliente nasce com ele. */
+  seedQuery?: string;
   open: boolean;
   customerName: string;
   customerPhone: string;
@@ -389,7 +391,7 @@ function onCreateNameOnly(name: string) {
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
 // primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
-const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
+const searchRef = ref<{ focus: () => void; reset: () => void; seed: (value: string) => void } | null>(null);
 const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
@@ -398,8 +400,10 @@ function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
     if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
-    else if (!hasCustomer.value) searchRef.value?.focus();
-    else nameInputRef.value?.inputRef?.focus();
+    else if (!hasCustomer.value) {
+      if (props.seedQuery) searchRef.value?.seed(props.seedQuery);
+      searchRef.value?.focus();
+    } else nameInputRef.value?.inputRef?.focus();
   });
 }
 

@@ -46,6 +46,7 @@ import {
 } from "~/presentation/closing";
 import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
 import type { ClosingPendingProduction } from "~/types/closing";
+import { DRAWER_DENOMINATIONS, formatAmountInput } from "~/presentation/cash";
 
 useHead({ title: "Fim do dia" });
 
@@ -63,7 +64,7 @@ function workOrderHref(row: ClosingPendingProduction): string {
 // A projection do PDV entra só pelo `can_audit_cash`: o próximo passo do fim
 // de dia (o relatório) é porta que bate na cara de quem não audita, e a tela
 // não oferece porta que vai bater.
-const { pos } = await usePosTerminal();
+const { pos, actions, refresh: refreshPos } = await usePosTerminal();
 const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === true);
 
 const { closing, pending, accessDenied, submitting, submit, answering, answerEpisode } = await useDayClosing({ action });
@@ -134,14 +135,45 @@ async function goToCashReport() {
 }
 
 // ── O corredor da v4 (`fim-do-dia.jpg`): 1 Fechar caixa · 2 Contar a vitrine · 3 Fechar
-// o dia. O passo 1 é a contagem cega da gaveta, que mora na Sessão de caixa (o mesmo
-// contador por cédula); aqui ele aparece com o estado e a porta. Os passos 2 e 3 são
-// desta tela: contar, revisar o resumo (em peças, nunca em reais) e selar.
-const step = ref<"count" | "day">("count");
+// o dia. O passo 1 é a contagem cega da gaveta DENTRO do corredor, com o mesmo
+// contador por cédula da Sessão de caixa (`PosDenominationCounter`, desenho do
+// corredor) e o mesmo fechamento de turno (`closeCashShift`). Os passos 2 e 3:
+// contar a vitrine, revisar o resumo (em peças, nunca em reais) e selar.
 const cashOpen = computed<boolean | null>(() => {
   const runtime = pos.value?.cash_runtime;
   return runtime ? Boolean(runtime.has_open_shift) : null;
 });
+const step = ref<"cash" | "count" | "day">(cashOpen.value ? "cash" : "count");
+
+// PASSO 1: a contagem cega da gaveta. Nada de esperado, nem antes nem depois (o
+// veredito da conferência fica com o gerente: decisão do dono). O selo ecoa o número.
+const { busy: cashBusy, closeCashShift } = usePosCashSession({ pos, actions, refresh: refreshPos, action });
+const drawerMode = ref<"denominations" | "total">("denominations");
+const drawerQ = ref(0);
+const drawerFilled = ref(0);
+const drawerTotal = ref(0);
+const drawerNote = ref("");
+const drawerNoteOpen = ref(false);
+const drawerConfirming = ref(false);
+const denominations = DRAWER_DENOMINATIONS;
+const drawerDisplay = computed(() => `R$ ${formatAmountInput(drawerQ.value).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`);
+const drawerMissing = computed(() => Math.max(0, drawerTotal.value - drawerFilled.value));
+const drawerShift = computed(() => {
+  const runtime = pos.value?.cash_runtime;
+  if (!runtime?.opened_at) return "";
+  const at = new Date(runtime.opened_at);
+  const time = Number.isNaN(at.getTime()) ? "" : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return [runtime.terminal_label || pos.value?.terminal_label || "", time ? `turno aberto às ${time}` : "", runtime.operator_username ? `por ${runtime.operator_username}` : ""].filter(Boolean).join(" · ");
+});
+watch(drawerMode, () => {
+  drawerQ.value = 0;
+  drawerConfirming.value = false;
+});
+async function confirmDrawer() {
+  const ok = await closeCashShift({ amount: formatAmountInput(drawerQ.value), notes: drawerNote.value.trim() });
+  drawerConfirming.value = false;
+  if (ok) step.value = "count";
+}
 const steps = computed(() =>
   closingSteps({
     cashOpen: cashOpen.value,
@@ -152,12 +184,23 @@ const steps = computed(() =>
   }),
 );
 const summary = computed(() => closingCountSummary(countItems.value, quantities));
+// "Maior sobra: Baguette (8) · Ver tudo" (v4 passo 3): sai das contagens, em peças.
+const biggestLeftover = computed(() => {
+  let best: { name: string; qty: number } | null = null;
+  for (const item of countItems.value) {
+    const qty = Number.parseInt(String(quantities[item.sku] ?? ""), 10);
+    if (Number.isFinite(qty) && qty > 0 && (!best || qty > best.qty)) best = { name: item.name, qty };
+  }
+  return best;
+});
+const hourlyShape = computed(() => closing.value?.hourly_shape ?? null);
 function goToReview() {
   if (!canSubmit.value) return;
   step.value = "day";
 }
+// O caixa ainda aberto volta ao passo 1 do próprio corredor (a mesma contagem cega).
 function goToCloseCash() {
-  void navigateTo({ path: "/session", query: { close: "1" } });
+  step.value = "cash";
 }
 
 // "Explicar o dia estranho": uma escolha por episódio, mais o detalhe se quiser.
@@ -208,6 +251,13 @@ async function confirmSubmit() {
         </p>
       </div>
       <div class="flex-1" />
+      <span
+        v-if="closing?.operator_display"
+        class="inline-flex h-11 items-center gap-1.5 rounded-full bg-secondary px-4 op-label font-semibold"
+        data-closing-operator
+      >
+        <Icon name="lucide:user-round" class="size-4" aria-hidden="true" />{{ closing.operator_display }}
+      </span>
       <button
         type="button"
         class="inline-flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
@@ -288,29 +338,93 @@ async function confirmSubmit() {
           </div>
         </section>
 
-        <!-- PASSO 1 pendente: a gaveta ainda está aberta. A contagem cega por cédula
-             mora na Sessão de caixa; aqui fica o estado e a porta. -->
+        <!-- PASSO 1 (v4 `fim-do-dia.jpg` a): quanto tem na gaveta. Contagem cega por
+             desenho: nenhum valor esperado na tela, nem depois. Por cédula ou só o
+             total (os dois modos de hoje), uma linha ativa por vez, o numérico da
+             tela e o selo que aponta e ecoa: "Contei R$ X · Confirmar". -->
         <section
-          v-if="!closing.already_closed && cashOpen"
-          class="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4"
-          data-closing-cash-open
+          v-if="!closing.already_closed && step === 'cash' && cashOpen"
+          class="grid gap-4"
+          data-closing-cash-count
         >
-          <Icon name="lucide:wallet" class="size-5 shrink-0 text-primary" />
-          <p class="min-w-0 flex-1 op-body">
-            <b class="font-semibold">O caixa ainda está aberto.</b>
-            <span class="text-muted-foreground"> A contagem da gaveta é cega: o esperado não aparece, nem depois.</span>
+          <div class="flex flex-wrap items-start gap-3">
+            <div class="min-w-0 flex-1">
+              <h2 class="op-heading">Quanto tem na gaveta?</h2>
+              <p v-if="drawerShift" class="mt-1 op-micro text-muted-foreground">{{ drawerShift }}</p>
+            </div>
+            <div class="inline-flex h-11 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Como contar">
+              <button
+                type="button"
+                class="h-full rounded px-3 op-label transition"
+                :class="drawerMode === 'denominations' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                :aria-pressed="drawerMode === 'denominations'"
+                @click="drawerMode = 'denominations'"
+              >Por cédula</button>
+              <button
+                type="button"
+                class="h-full rounded px-3 op-label transition"
+                :class="drawerMode === 'total' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                :aria-pressed="drawerMode === 'total'"
+                @click="drawerMode = 'total'"
+              >Só o total</button>
+            </div>
+          </div>
+          <p class="flex items-start gap-2 rounded-lg bg-secondary px-3 py-2 op-body text-muted-foreground">
+            <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
+            <span>Contagem cega: o esperado não aparece, nem depois. Conte o que está na gaveta.</span>
           </p>
-          <UiButton variant="outline" @click="goToCloseCash">
-            <Icon name="lucide:lock" class="size-4" />
-            Fechar caixa
-          </UiButton>
+          <PosDenominationCounter
+            :key="drawerMode"
+            layout="corridor"
+            :mode="drawerMode"
+            :denominations="denominations"
+            :disabled="cashBusy"
+            @total-q="drawerQ = $event"
+            @progress="(filled, total) => { drawerFilled = filled; drawerTotal = total; }"
+            @note="drawerNoteOpen = true"
+          />
+          <UiInput
+            v-if="drawerNoteOpen || drawerNote"
+            v-model="drawerNote"
+            class="h-12"
+            placeholder="Observação da contagem (ex.: nota rasgada separada)"
+            aria-label="Observação da contagem da gaveta"
+          />
+          <div class="sticky bottom-0 -mx-4 grid gap-1.5 border-t bg-background/95 px-4 py-3 backdrop-blur">
+            <UiButton
+              v-if="!drawerConfirming"
+              size="lg"
+              variant="outline"
+              class="h-14 w-full border-2 border-dashed border-primary/60 text-base"
+              :disabled="cashBusy"
+              data-closing-cash-confirm
+              @click="drawerConfirming = true"
+            >
+              <Icon name="lucide:arrow-down" class="size-5" />
+              Contei {{ drawerDisplay }} · Confirmar
+            </UiButton>
+            <div v-else class="grid gap-2 rounded-xl border border-primary/40 bg-card p-3 shadow-lg">
+              <p class="op-body font-semibold">Fechar o caixa com {{ drawerDisplay }} contados? O turno encerra aqui.</p>
+              <div class="grid grid-cols-2 gap-2">
+                <UiButton variant="outline" :disabled="cashBusy" @click="drawerConfirming = false">Voltar à contagem</UiButton>
+                <UiButton :disabled="cashBusy" :loading="cashBusy" data-closing-cash-seal @click="confirmDrawer">Fechar o caixa</UiButton>
+              </div>
+            </div>
+            <p class="text-center op-micro text-muted-foreground">
+              <template v-if="drawerMode === 'denominations' && drawerMissing">Faltam {{ drawerMissing }} {{ drawerMissing === 1 ? "valor" : "valores" }}. Valor em branco conta como zero ao confirmar; o total se repete para você conferir.</template>
+              <template v-else>O total se repete para você conferir antes de fechar.</template>
+            </p>
+            <button type="button" class="justify-self-center op-micro text-muted-foreground underline underline-offset-2" @click="step = 'count'">
+              Contar a vitrine primeiro
+            </button>
+          </div>
         </section>
 
         <!-- BLOQUEIO, antes da contagem. Diz QUANTAS ordens faltam e para onde
              ir; não diz SKU nem quantidade, que é o que entregaria a resposta.
              A tabela completa aparece depois que a contagem é registrada. -->
         <section
-          v-if="!closing.already_closed && closing.has_pending_production"
+          v-if="!closing.already_closed && closing.has_pending_production && step !== 'cash'"
           class="grid gap-2 rounded-xl border border-warning/40 bg-warning/10 p-4"
         >
           <div class="flex items-center gap-2">
@@ -586,7 +700,17 @@ async function confirmSubmit() {
                 <div class="flex justify-between gap-2"><dt class="text-muted-foreground">Viram perda</dt><dd class="op-title tnum">{{ piecesLabel(summary.loss) }}</dd></div>
                 <div v-if="summary.mixed" class="flex justify-between gap-2"><dt class="text-muted-foreground">Lote misto (parte vence)</dt><dd class="op-title tnum">{{ piecesLabel(summary.mixed) }}</dd></div>
               </dl>
-              <button type="button" class="justify-self-start op-label font-semibold text-primary underline underline-offset-4" @click="step = 'count'">
+              <button
+                v-if="biggestLeftover"
+                type="button"
+                class="flex items-center justify-between gap-2 rounded-lg bg-secondary px-3 py-2 text-left op-label"
+                data-closing-biggest
+                @click="step = 'count'"
+              >
+                <span class="font-semibold">Maior sobra: {{ biggestLeftover.name }} ({{ biggestLeftover.qty }})</span>
+                <span class="shrink-0 font-semibold text-primary">Ver tudo</span>
+              </button>
+              <button v-else type="button" class="justify-self-start op-label font-semibold text-primary underline underline-offset-4" @click="step = 'count'">
                 Voltar à contagem
               </button>
             </section>
@@ -623,9 +747,12 @@ async function confirmSubmit() {
               <div class="min-w-0">
                 <p class="op-eyebrow text-primary">Explicar o dia estranho</p>
                 <p class="op-title">{{ episode.signal }}. Aconteceu algo?</p>
-                <p class="op-micro text-muted-foreground tnum">{{ episode.window_display }}</p>
+                <p class="op-micro text-muted-foreground tnum">
+                  {{ hourlyShape?.drop_after ? `O movimento caiu depois das ${hourlyShape.drop_after}.` : episode.window_display }}
+                </p>
               </div>
             </div>
+            <PosHourlyShape v-if="hourlyShape" :shape="hourlyShape" />
             <div class="flex flex-wrap gap-2" role="group" :aria-label="`O que houve: ${episode.signal}`">
               <button
                 v-for="option in closing.episode_options || []"

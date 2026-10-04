@@ -153,16 +153,17 @@ export function closingSteps(input: {
   cashOpen: boolean | null;
   counted: number;
   total: number;
-  step: "count" | "day";
+  /** "cash": o passo 1 é a contagem cega da gaveta, dentro do corredor (v4). */
+  step: "cash" | "count" | "day";
   dayClosed: boolean;
 }): ClosingStepView[] {
   const cash: ClosingStepView = input.cashOpen === false
-    ? { key: "cash", label: "Fechar caixa", detail: "contagem registrada", state: "done" }
+    ? { key: "cash", label: "Fechar caixa", detail: "conferido", state: "done" }
     : {
         key: "cash",
         label: "Fechar caixa",
-        detail: input.cashOpen ? "caixa aberto" : "contagem cega",
-        state: input.cashOpen ? "current" : "todo",
+        detail: input.step === "cash" ? "contagem cega" : input.cashOpen ? "caixa aberto" : "contagem cega",
+        state: input.step === "cash" ? "current" : "todo",
       };
   const countDone = input.dayClosed || (input.step === "day" && input.total > 0 && input.counted === input.total);
   const count: ClosingStepView = {

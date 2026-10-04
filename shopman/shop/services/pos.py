@@ -1681,7 +1681,13 @@ def rename_pos_tab(
         handle_ref=ref,
     )
     session.refresh_from_db()
-    session.data = {**(session.data or {}), "tab_ref": ref, "tab_display": tab_display}
+    data = dict(session.data or {})
+    # O NÚMERO da comanda sobrevive ao nome: "Mesa 6" é como a mesa chama, e
+    # "#1007" segue sendo a referência que o balcão e o cupom conhecem. Guardado
+    # só no primeiro renomear (o segundo renomear não troca o número).
+    data.setdefault("tab_number", display_tab_ref(old_ref) if old_ref else "")
+    data.update({"tab_ref": ref, "tab_display": tab_display})
+    session.data = data
     session.save(update_fields=["data"])
 
     session.emit_event("tab_renamed", actor=operator_username, payload={"from_ref": old_ref, "to_ref": ref})
@@ -1690,6 +1696,59 @@ def rename_pos_tab(
         "pos_rename_tab session=%s new_ref=%s operator=%s",
         session.session_key, ref, operator_username,
     )
+    return session
+
+
+def set_pos_tab_seating(
+    *,
+    channel_ref: str,
+    session_key: str,
+    seating_spot_ref: str,
+    operator_username: str,
+    spot_label: str = "",
+) -> Session:
+    """Vincula (ou desvincula) a comanda a uma mesa do Salão. OPCIONAL.
+
+    Decisão do dono (04/10/2026): ao dar nome à comanda, as mesas do Salão
+    aparecem para escolher com um toque; o balcão segue sem mesa, e quem não
+    escolhe vende como hoje (zero passo a mais por venda). Com o vínculo, o
+    Salão mostra a mesa ocupada e o B.I. pode medir a lotação real por mesa
+    (``Order.data["seating_spot_ref"]``, escrito no commit).
+
+    Mora em ``Session.data["seating_spot_ref"]`` (sem campo novo). Uma mesa tem
+    no máximo uma comanda aberta: a segunda é recusada com o nome da primeira.
+    ``seating_spot_ref=""`` desfaz o vínculo. Que a mesa exista no salão de hoje
+    é conferido por quem chama (``backstage/services/pos_seating.py``): o shop
+    não lê o cadastro do backstage.
+    """
+    channel, _config = _channel_and_config(channel_ref)
+    session = _get_open_pos_tab_session_by_key(channel_ref=channel.ref, session_key=session_key)
+    if session is None:
+        raise PosIntentError(code="tab_not_found", message="Comanda não encontrada.", field="session_key", focus="cart")
+
+    spot_ref = str(seating_spot_ref or "").strip()
+    data = dict(session.data or {})
+    if spot_ref:
+        holder = (
+            Session.objects.filter(channel_ref=channel.ref, state="open", data__seating_spot_ref=spot_ref)
+            .exclude(session_key=session.session_key)
+            .first()
+        )
+        if holder is not None:
+            holder_display = str((holder.data or {}).get("tab_display") or holder.handle_ref or "")
+            raise PosIntentError(
+                code="seating_spot_in_use",
+                message=f"{spot_label or 'Esta mesa'} já está com a comanda {holder_display}.",
+                field="seating_spot_ref",
+                focus="cart",
+            )
+        data["seating_spot_ref"] = spot_ref
+    else:
+        data.pop("seating_spot_ref", None)
+    session.data = data
+    session.save(update_fields=["data"])
+    session.emit_event("tab_seated", actor=operator_username, payload={"seating_spot_ref": spot_ref})
+    logger.info("pos_tab_seating session=%s spot=%s operator=%s", session.session_key, spot_ref or "-", operator_username)
     return session
 
 
@@ -4128,6 +4187,10 @@ def _mark_tab_committed(
     if tab_ref:
         order_data["tab_ref"] = tab_ref
         order_data["tab_display"] = str(session_data.get("tab_display") or display_tab_ref(tab_ref))
+    # A mesa da comanda (vínculo OPCIONAL, ``set_pos_tab_seating``): o pedido leva
+    # a mesa para o B.I. medir a lotação por mesa. Sem vínculo, nada é gravado.
+    if session_data.get("seating_spot_ref"):
+        order_data["seating_spot_ref"] = str(session_data["seating_spot_ref"])
     session_pos_data = dict(session_data.get("pos") or {})
     if session_pos_data:
         order_data["pos"] = {**dict(order_data.get("pos") or {}), **session_pos_data}

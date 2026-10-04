@@ -75,6 +75,29 @@ const openTabs = computed(() => tabs.value.filter((tab) => tab.state === "in_use
 const changedKeys = computed(() => new Set(seating.changes.value.map((change) => change.key)));
 const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`);
 
+// Pinça no tablet (v4: "No tablet: pinça para zoom"): o zoom acompanha os dedos
+// entre o menor e o maior passo dos botões.
+let pinchBase = 1;
+function onPinch(ratio: number, phase: "start" | "move") {
+  if (phase === "start") {
+    pinchBase = zoom.value;
+    return;
+  }
+  const min = ZOOM_STEPS[0] ?? 0.5;
+  const max = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 1.5;
+  zoom.value = Math.round(Math.min(max, Math.max(min, pinchBase * ratio)) * 100) / 100;
+}
+// A comanda aberta em cada mesa (vínculo opcional comanda × mesa).
+const occupiedSpots = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const [ref, tab] of Object.entries(seating.data.value?.open_tabs || {})) map[ref] = tab.tab_display || tab.tab_ref;
+  return map;
+});
+function onAddFixture(kind: "showcase" | "entrance") {
+  const label = seating.data.value?.fixture_kinds?.find((item) => item.value === kind)?.label || (kind === "showcase" ? "Vitrine e caixa" : "Entrada");
+  seating.addFixture(kind, label, plan.value?.visibleCenter() ?? { x: 200, y: 200 });
+}
+
 function stepZoom(direction: 1 | -1) {
   const index = ZOOM_STEPS.findIndex((step) => step >= zoom.value - 0.001);
   const next = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, (index < 0 ? ZOOM_STEPS.length - 1 : index) + direction))];
@@ -147,9 +170,21 @@ function onMove(key: string, x: number, y: number) {
   seating.update(key, { x, y }, { checkpoint: false });
 }
 
-function removeSelected() {
+async function removeSelected() {
   const key = seating.selectedKey.value;
   if (!key) return;
+  const spot = seating.selected.value;
+  const tab = spot?.ref ? occupiedSpots.value[spot.ref] : "";
+  // Mesa com comanda aberta: o aviso vem antes (v4 "Mesa 4 tem comanda aberta agora").
+  if (spot && tab) {
+    const agreed = await confirm({
+      tone: "danger",
+      title: `${spot.label} tem comanda aberta agora`,
+      description: `A comanda ${tab} continua aberta e só perde a mesa. Tirar ${spot.label} do salão a partir de hoje?`,
+      confirmLabel: "Tirar do salão",
+    });
+    if (!agreed) return;
+  }
   seating.remove(key);
   sheetOpen.value = false;
 }
@@ -332,15 +367,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
           </UiPopover>
         </template>
         <template #below>
-          <!-- O andar Ajustes do PDV: por enquanto o Salão. Terminal mora no pé do rail
-               (saúde e Atualizar), como na venda. -->
-          <nav class="flex items-center gap-1 px-4" aria-label="Ajustes do PDV">
-            <NuxtLink
-              to="/settings/seating"
-              class="inline-flex h-11 items-center rounded-t-md bg-secondary px-3 op-label font-semibold shadow-[inset_0_-2px_0_var(--primary)]"
-              aria-current="page"
-            >Salão</NuxtLink>
-          </nav>
+          <PosSettingsTabs />
         </template>
       </OperatorPageHeader>
 
@@ -380,6 +407,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
                   :today-label="seating.data.value.today_label"
                   :max-seats="seating.data.value.max_seats"
                   :open-tabs="openTabs"
+                  :spot-tab="seating.selected.value?.ref ? occupiedSpots[seating.selected.value.ref] : ''"
                   @update="(patch) => seating.update(seating.selected.value!.key, patch)"
                   @rotate="seating.rotate(seating.selected.value!.key)"
                   @duplicate="seating.duplicate(seating.selected.value!.key)"
@@ -409,6 +437,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
               @grab="onGrab"
               @select-area="(name) => (activeArea = name)"
               @add-area="onAddArea"
+              @add-fixture="onAddFixture"
             />
             <PosSeatingPlan
               ref="plan"
@@ -416,10 +445,17 @@ const saveHint = "vale a partir de hoje; o passado não muda";
               :selected-key="seating.selectedKey.value"
               :zoom="zoom"
               :snap-enabled="snapEnabled"
+              :fixtures="seating.fixtures.value"
+              :occupied="occupiedSpots"
               @select="(key) => (seating.selectedKey.value = key)"
               @move-start="seating.checkpoint()"
               @move="onMove"
               @rotate="seating.rotate"
+              @fixture-move-start="seating.checkpoint()"
+              @move-fixture="seating.moveFixture"
+              @rotate-fixture="seating.rotateFixture"
+              @remove-fixture="seating.removeFixture"
+              @pinch="onPinch"
             />
           </div>
           <aside
@@ -436,6 +472,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
               :today-label="seating.data.value.today_label"
               :max-seats="seating.data.value.max_seats"
               :open-tabs="openTabs"
+              :spot-tab="seating.selected.value?.ref ? occupiedSpots[seating.selected.value.ref] : ''"
               @update="(patch) => seating.update(seating.selected.value!.key, patch)"
               @rotate="seating.rotate(seating.selected.value!.key)"
               @duplicate="seating.duplicate(seating.selected.value!.key)"

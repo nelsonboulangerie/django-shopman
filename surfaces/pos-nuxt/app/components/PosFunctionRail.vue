@@ -76,6 +76,7 @@ function onSelect(key: string) {
     :sections="shared.sections"
     :current="shared.current"
     label="Seções do PDV"
+    print-shortcuts
     :hub-url="hubUrl"
     :operator-name="operatorName || undefined"
     touch-label="none"

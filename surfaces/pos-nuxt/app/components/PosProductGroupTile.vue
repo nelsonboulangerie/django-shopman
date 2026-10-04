@@ -9,6 +9,8 @@ import { cartQtyForSku, productFallbackIcon, productFallbackStyle } from "~/pres
 const props = defineProps<{
   group: POSChoiceGroup;
   cartItems: POSCartItem[];
+  /** Toque: a faixa mais alta, igual ao tile do produto. */
+  touch?: boolean;
 }>();
 
 const emit = defineEmits<{ add: [POSProductProjection] }>();
@@ -40,7 +42,7 @@ function choose(product: POSProductProjection) {
     data-pos-choice-group
     @click="open = true"
   >
-    <div class="relative h-[92px] w-full shrink-0 overflow-hidden" :class="group.allBlocked ? 'opacity-55' : ''">
+    <div class="relative w-full shrink-0 overflow-hidden" :class="[touch ? 'h-[108px]' : 'h-[92px]', group.allBlocked ? 'opacity-55' : '']">
       <img v-if="showImage" :src="cover.image_url" :alt="group.name" loading="lazy" class="size-full object-cover" @error="imageBroken = true" />
       <div v-else class="pos-tile-fallback grid size-full place-items-center" :style="fallbackStyle" aria-hidden="true">
         <Icon :name="fallbackIcon" class="size-9" />

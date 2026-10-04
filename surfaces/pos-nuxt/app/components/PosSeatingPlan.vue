@@ -20,12 +20,17 @@ import {
   snap,
   spotSize,
 } from "~/presentation/seating";
+import type { SeatingFixtureKind, SeatingFixtureProjection } from "~/types/seating";
 
 const props = defineProps<{
   spots: readonly DraftSpot[];
   selectedKey: string | null;
   zoom: number;
   snapEnabled: boolean;
+  /** A vitrine e caixa e a entrada (v4): desenho que orienta, sem lugar. */
+  fixtures?: readonly SeatingFixtureProjection[];
+  /** Mesa → comanda aberta nela (vínculo opcional comanda × mesa). */
+  occupied?: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -34,10 +39,24 @@ const emit = defineEmits<{
   moveStart: [key: string];
   move: [key: string, x: number, y: number];
   rotate: [key: string];
+  fixtureMoveStart: [kind: SeatingFixtureKind];
+  moveFixture: [kind: SeatingFixtureKind, x: number, y: number];
+  rotateFixture: [kind: SeatingFixtureKind];
+  removeFixture: [kind: SeatingFixtureKind];
+  /** Pinça no tablet ("No tablet: pinça para zoom", v4): a razão desde o começo do gesto. */
+  pinch: [ratio: number, phase: "start" | "move"];
 }>();
 
 const viewport = ref<HTMLElement | null>(null);
-const size = computed(() => canvasSize(props.spots));
+const size = computed(() => {
+  const base = canvasSize(props.spots);
+  let { w, h } = base;
+  for (const fixture of props.fixtures || []) {
+    w = Math.max(w, PLAN_OFFSET.x + fixture.plan_x + fixture.width + 40);
+    h = Math.max(h, PLAN_OFFSET.y + fixture.plan_y + fixture.height + 40);
+  }
+  return { w, h };
+});
 const areas = computed(() => areaBoxes(props.spots));
 
 interface Drag { key: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean }
@@ -66,6 +85,58 @@ function onSpotPointerMove(event: PointerEvent) {
 
 function onSpotPointerUp(event: PointerEvent) {
   if (drag.value?.pointerId === event.pointerId) drag.value = null;
+}
+
+// ── Elementos fixos: arrastar move; tocar escolhe (girar, tirar). ──
+interface FixtureDrag { kind: SeatingFixtureKind; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean }
+const fixtureDrag = ref<FixtureDrag | null>(null);
+const selectedFixture = ref<SeatingFixtureKind | null>(null);
+function onFixturePointerDown(event: PointerEvent, fixture: SeatingFixtureProjection) {
+  if (event.button !== 0) return;
+  emit("select", null);
+  selectedFixture.value = fixture.kind;
+  (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  fixtureDrag.value = { kind: fixture.kind, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: fixture.plan_x, originY: fixture.plan_y, moved: false };
+}
+function onFixturePointerMove(event: PointerEvent) {
+  const current = fixtureDrag.value;
+  if (!current || current.pointerId !== event.pointerId) return;
+  const dx = (event.clientX - current.startX) / props.zoom;
+  const dy = (event.clientY - current.startY) / props.zoom;
+  if (!current.moved) {
+    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+    current.moved = true;
+    emit("fixtureMoveStart", current.kind);
+  }
+  emit("moveFixture", current.kind, snap(current.originX + dx, props.snapEnabled), snap(current.originY + dy, props.snapEnabled));
+}
+function onFixturePointerUp(event: PointerEvent) {
+  if (fixtureDrag.value?.pointerId === event.pointerId) fixtureDrag.value = null;
+}
+watch(() => props.selectedKey, (key) => { if (key) selectedFixture.value = null; });
+
+// ── Pinça para zoom (dois dedos na planta). O arraste de mesa já é de um dedo só. ──
+let pinchStart = 0;
+function touchDistance(event: TouchEvent): number {
+  const [a, b] = [event.touches[0], event.touches[1]];
+  if (!a || !b) return 0;
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+function onTouchStart(event: TouchEvent) {
+  if (event.touches.length !== 2) return;
+  pinchStart = touchDistance(event);
+  drag.value = null;
+  fixtureDrag.value = null;
+  if (pinchStart > 0) emit("pinch", 1, "start");
+}
+function onTouchMove(event: TouchEvent) {
+  if (event.touches.length !== 2 || !pinchStart) return;
+  event.preventDefault();
+  const distance = touchDistance(event);
+  if (distance > 0) emit("pinch", distance / pinchStart, "move");
+}
+function onTouchEnd(event: TouchEvent) {
+  if (event.touches.length < 2) pinchStart = 0;
 }
 
 /** Ponto da tela → posição na planta (para soltar uma mesa nova da paleta). Fora da planta: null. */
@@ -114,7 +185,11 @@ function spotAria(spot: DraftSpot) {
     ref="viewport"
     class="relative min-h-0 flex-1 touch-pan-x touch-pan-y overflow-auto bg-background"
     data-seating-plan
-    @pointerdown.self="emit('select', null)"
+    @pointerdown.self="emit('select', null); selectedFixture = null"
+    @touchstart.passive="onTouchStart"
+    @touchmove="onTouchMove"
+    @touchend.passive="onTouchEnd"
+    @touchcancel.passive="onTouchEnd"
   >
     <div class="relative" :style="{ width: `${size.w * zoom}px`, height: `${size.h * zoom}px` }" @pointerdown.self="emit('select', null)">
       <div
@@ -136,6 +211,44 @@ function spotAria(spot: DraftSpot) {
               :style="{ left: `${box.x + 14}px`, top: `${box.y}px` }"
             >{{ areaTitle(box) }}</span>
           </template>
+
+          <!-- ELEMENTOS FIXOS (v4): a vitrine e caixa (faixa cinza com o nome em pé) e
+               a entrada (um vão com o nome embaixo). Arrastar move; tocar escolhe. -->
+          <div
+            v-for="fixture in fixtures || []"
+            :key="`fixture-${fixture.kind}`"
+            role="button"
+            tabindex="0"
+            class="absolute cursor-grab touch-none select-none"
+            :class="selectedFixture === fixture.kind ? 'z-10' : ''"
+            :style="{ left: `${fixture.plan_x}px`, top: `${fixture.plan_y}px`, width: `${fixture.width}px`, height: `${fixture.height}px` }"
+            :aria-label="fixture.label"
+            :data-seating-fixture="fixture.kind"
+            @pointerdown="onFixturePointerDown($event, fixture)"
+            @pointermove="onFixturePointerMove"
+            @pointerup="onFixturePointerUp"
+            @pointercancel="onFixturePointerUp"
+          >
+            <div
+              v-if="fixture.kind === 'showcase'"
+              class="grid size-full place-items-center rounded-md border bg-muted"
+              :class="selectedFixture === fixture.kind ? 'border-2 border-primary' : 'border-foreground/20'"
+            >
+              <span class="op-micro whitespace-nowrap text-muted-foreground" :class="fixture.height > fixture.width ? '[writing-mode:vertical-rl]' : ''">{{ fixture.label }}</span>
+            </div>
+            <div v-else class="relative size-full">
+              <span class="absolute inset-x-0 top-1/2 border-t-2 border-dashed" :class="selectedFixture === fixture.kind ? 'border-primary' : 'border-foreground/40'" aria-hidden="true" />
+              <span class="absolute top-full left-1/2 -translate-x-1/2 bg-background px-1 op-micro whitespace-nowrap text-muted-foreground">{{ fixture.label }}</span>
+            </div>
+            <div v-if="selectedFixture === fixture.kind" class="absolute -top-11 left-1/2 flex -translate-x-1/2 gap-1 rounded-md border border-border bg-card p-1 shadow" @pointerdown.stop>
+              <button type="button" class="grid size-8 place-items-center rounded hover:bg-accent" :aria-label="`Girar ${fixture.label}`" @click.stop="emit('rotateFixture', fixture.kind)">
+                <Icon name="lucide:rotate-cw" class="size-4" />
+              </button>
+              <button type="button" class="grid size-8 place-items-center rounded text-destructive hover:bg-destructive/10" :aria-label="`Tirar ${fixture.label} da planta`" @click.stop="emit('removeFixture', fixture.kind); selectedFixture = null">
+                <Icon name="lucide:trash-2" class="size-4" />
+              </button>
+            </div>
+          </div>
 
           <!-- de onde a mesa saiu, enquanto é arrastada -->
           <div
@@ -198,6 +311,14 @@ function spotAria(spot: DraftSpot) {
                 <p v-if="spot.shape !== 'stool'" class="mt-0.5 op-micro text-muted-foreground tabular-nums">{{ seatsLabel(spot.seats) }}</p>
               </div>
             </div>
+            <span
+              v-if="spot.ref && occupied?.[spot.ref]"
+              class="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full bg-primary text-primary-foreground shadow"
+              :title="`Comanda ${occupied[spot.ref]} aberta nesta mesa`"
+              :data-seating-occupied="spot.ref"
+            >
+              <Icon name="lucide:receipt-text" class="size-3.5" aria-hidden="true" />
+            </span>
             <template v-if="selectedKey === spot.key">
               <span class="absolute -top-[5px] -left-[5px] size-2.5 rounded-sm border-2 border-primary bg-card" aria-hidden="true" />
               <span class="absolute -top-[5px] -right-[5px] size-2.5 rounded-sm border-2 border-primary bg-card" aria-hidden="true" />

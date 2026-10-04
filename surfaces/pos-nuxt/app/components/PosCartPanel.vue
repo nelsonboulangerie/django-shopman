@@ -66,7 +66,26 @@ const props = defineProps<{
    * resumo e Pagamento; aberta, as linhas e o editor. No desktop ela é a coluna.
    */
   sheet?: boolean;
+  /**
+   * Para onde cada produto vai na cozinha (sku → estação), lido do roteamento
+   * real (`kitchen_station` do catálogo). A linha nova com preparo diz "vai à
+   * cozinha" ANTES do envio (v4); sem estação, a linha não carrega fato nenhum.
+   */
+  kitchenStations?: Record<string, string>;
+  /** O nome da comanda ("Mesa 6"), que a folha aberta lê no cabeçalho ("Mesa 6 · 4 itens"). */
+  tabTitle?: string;
+  /** Alguma linha desta comanda é de estação com envio automático ligado. */
+  autoFire?: boolean;
+  /**
+   * Os meios eletrônicos que a folha oferece direto (v4 tablet, `pos-tablet.jpg`
+   * b): PIX e Maquininha. Vazio, a folha mostra só o Pagamento de sempre.
+   */
+  quickPayments?: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }>;
 }>();
+// Folha aberta: PIX e Maquininha são o gesto principal; o dinheiro (V6-CAIXA)
+// vem embaixo, secundário.
+const primaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => !m.secondary));
+const secondaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => m.secondary));
 const sheetOpen = ref(false);
 const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
 const primaryText = computed(() => props.primaryLabel || "Pagamento");
@@ -98,6 +117,10 @@ const emit = defineEmits<{
   fireLines: [string[], (success: boolean) => void];
   unfireLines: [string[], (success: boolean) => void];
   requestTab: [];
+  /** Pagar direto na folha por um meio (PIX, Maquininha): abre o Pagamento já nele. */
+  pay: [method: string];
+  /** O interruptor do envio automático mora por estação, em Ajustes › Envio à cozinha. */
+  autoFireSettings: [];
 }>();
 
 // Multi-select (spec §2.2): selection is screen state (um conjunto de
@@ -249,10 +272,6 @@ const detailsPrefix = useId();
 function detailsId(lineId: string) {
   return `${detailsPrefix}-${encodeURIComponent(lineId)}`;
 }
-function toggleDetails(lineId: string) {
-  selectLine(lineId);
-  expandedLineId.value = expandedLineId.value === lineId ? "" : lineId;
-}
 watch(
   () => props.items.map((item) => item.line_id),
   (ids) => {
@@ -334,11 +353,22 @@ function syncBufferToMode() {
 watch(activeLineId, () => syncBufferToMode());
 watch(numpadMode, () => syncBufferToMode());
 
+// "Quantidade de Cappuccino (era 1)" (v4 tablet): o número de quando o editor
+// abriu a linha, para o operador conferir o que mudou.
+const qtyWas = ref(0);
 function selectLine(lineId: string) {
+  if (lineId !== selectedLineId.value || editorClosed.value) qtyWas.value = qtyOf(lineId);
   selectedLineId.value = lineId;
   editorClosed.value = false;
   syncBufferToMode();
 }
+/** A linha vai à cozinha quando for enviada (há estação para o produto dela). */
+function goesToKitchen(item: POSCartItem): boolean {
+  return !item.fired && Boolean(props.kitchenStations?.[item.sku]);
+}
+// Com itens a enviar, a folha fechada promove "Enviar à cozinha" a primária e o
+// Pagamento fica ao lado, contornado (v4 `pos-tablet-fluxo` 1).
+const sheetFirePrimary = computed(() => Boolean(props.sheet && fireBar.value.visible && fireBar.value.unfired && !fireBar.value.disabled));
 
 // ── Editor da linha, sob demanda (v4) ─────────────────────────────────────────
 // Aberto para a linha ativa (a tocada, ou a última lançada); "Fechar" (Esc) devolve
@@ -389,7 +419,29 @@ const discountButtonLabel = computed(() => {
 const numpadVisible = computed(() => {
   if (batchMode.value) return discountOpen.value && !lineAdjustmentsBlocked.value;
   if (!editorVisible.value) return false;
-  return discountOpen.value || (coarsePointer.value && !lineAdjustmentsBlocked.value);
+  // No toque o numérico mora DENTRO do editor (um instrumento só, v4 tablet b).
+  if (touchEditor.value) return false;
+  return discountOpen.value;
+});
+/** O editor de toque (v4 `pos-tablet.jpg` b): "Quantidade de X (era 1)", a caixa
+ *  grande, o numérico 3×4 de 64 px e a coluna Desconto · Observação · Remover ·
+ *  Pronto. Um instrumento só para a quantidade, sem −/+ duplicado. */
+const touchEditor = computed(() => coarsePointer.value && editorVisible.value && !batchMode.value);
+/** O que a caixa grande mostra: a quantidade, ou o desconto que se digita. */
+const touchEditorValue = computed(() => {
+  const item = activeItem.value;
+  if (!item) return "";
+  if (inDiscountMode.value) return numpadMode.value === "disc_brl" ? `R$ ${numpadBuffer.value || "0"}` : `${numpadBuffer.value || "0"}%`;
+  return isWeighedLine(item) ? lineQtyLabel(item) : String(item.qty);
+});
+/** Quem lançou e quem editou a linha ativa, numa frase (era o "⌄" da linha). */
+const activeAuthorship = computed(() => {
+  const a = activeItem.value?.authorship;
+  if (!a) return "";
+  const parts = [];
+  if (a.created_by) parts.push(`Lançado por ${a.created_label || a.created_by}`);
+  if (a.updated_by) parts.push(`editado por ${a.updated_label || a.updated_by}`);
+  return parts.join(", ");
 });
 
 /** "Na cozinha 21:52": o selo da cozinha com a hora do envio, quando ela existe. */
@@ -880,10 +932,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
       >
         <span class="h-1.5 w-12 rounded-full bg-border" aria-hidden="true" />
       </button>
-      <div v-if="!sheetOpen" class="flex items-center gap-3 px-4 pt-1 pb-3">
+      <div v-if="!sheetOpen" class="grid gap-2 px-4 pt-1 pb-3" :class="sheetFirePrimary ? '' : 'sm:flex sm:items-center sm:gap-3'">
       <button
         type="button"
-        class="flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left"
+        class="flex min-h-14 min-w-0 flex-1 items-center gap-3 text-left"
         aria-label="Abrir a comanda"
         data-pos-sheet-summary
         @click="sheetOpen = true"
@@ -893,22 +945,48 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <span v-if="cartUnits" class="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-suite-badge px-1 op-micro font-bold text-suite-badge-foreground tnum">{{ cartUnits }}</span>
         </span>
         <span class="min-w-0 flex-1">
-          <span class="block op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
-          <span v-if="fireBar.fired" class="flex items-center gap-1 truncate op-micro text-success">
-            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.fired }} na cozinha
+          <span class="block truncate whitespace-nowrap op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
+          <span v-if="fireBar.unfired && fireBar.visible" class="flex min-w-0 items-center gap-1 op-micro text-muted-foreground" data-pos-sheet-kitchen>
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span>{{ fireBar.unfired }} ainda não {{ fireBar.unfired === 1 ? "foi" : "foram" }} à cozinha</span>
           </span>
-          <span v-else-if="fireBar.unfired && fireBar.visible" class="flex items-center gap-1 truncate op-micro text-muted-foreground">
-            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.unfired }} ainda não foram à cozinha
+          <span v-else-if="fireBar.fired" class="flex min-w-0 items-center gap-1 op-micro text-success" data-pos-sheet-kitchen>
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span>{{ fireBar.fired }} na cozinha</span>
           </span>
         </span>
         <Icon name="lucide:chevron-up" class="size-5 shrink-0 text-muted-foreground" />
       </button>
-      <!-- Pagamento na zona do polegar, sem abrir a folha (v4: 250 x 64). -->
+      <!-- Com itens a enviar, "Enviar à cozinha" é a primária e o Pagamento fica ao
+           lado, contornado (v4 `pos-tablet-fluxo` 1). Sem nada a enviar, o
+           Pagamento volta a ser o sólido da zona do polegar (v4: 250 x 64). -->
+      <div v-if="sheetFirePrimary" class="flex gap-2">
+        <button
+          type="button"
+          class="flex h-14 min-w-0 flex-[1.6] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-base font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:opacity-50"
+          :disabled="fireBar.disabled || firing"
+          :aria-busy="firing || undefined"
+          data-pos-sheet-fire
+          @click="$emit('fire')"
+        >
+          <Icon :name="firing ? 'lucide:loader-circle' : 'lucide:chef-hat'" class="size-5 shrink-0" :class="firing ? 'animate-spin motion-reduce:animate-none' : ''" />
+          <span>{{ fireBar.label }}</span>
+          <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-full bg-primary-foreground/20 px-1.5 op-label font-bold tnum">{{ fireBar.unfired }}</span>
+        </button>
+        <button
+          type="button"
+          class="flex h-14 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!items.length || loading || saving"
+          data-pos-sheet-primary
+          @click="$emit('prepare')"
+        >
+          <Icon :name="primaryIconName" class="size-5 shrink-0" />
+          <span>{{ primaryText }}</span>
+        </button>
+      </div>
       <button
+        v-else
         type="button"
-        class="flex h-16 w-40 shrink-0 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none sm:w-56"
+        class="flex h-14 w-full shrink-0 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none sm:h-16 sm:w-56"
         :disabled="!items.length || loading || saving"
-        :title="`${primaryText} (F4)`"
         data-pos-sheet-primary
         @click="$emit('prepare')"
       >
@@ -923,8 +1001,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
       class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border py-1.5 pr-2.5 pl-3.5"
     >
       <div class="min-w-0 leading-none">
-        <h3 class="op-title tnum whitespace-nowrap">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
-        <p v-if="items.length" class="mt-1 whitespace-nowrap op-micro text-muted-foreground">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</p>
+        <h3 v-if="sheet" class="truncate op-title tnum whitespace-nowrap" data-pos-sheet-title>{{ tabTitle ? `${tabTitle} · ` : "" }}{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+        <template v-else>
+          <h3 class="op-title tnum whitespace-nowrap">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+          <p v-if="items.length" class="mt-1 whitespace-nowrap op-micro text-muted-foreground">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</p>
+        </template>
       </div>
       <div class="flex-1" />
       <button
@@ -938,13 +1019,13 @@ defineExpose({ focusItem, onDigit, onBackspace });
       >
         <Icon name="lucide:list-checks" class="size-4" aria-hidden="true" />
         <span class="sr-only">Selecionar</span>
-        <OperatorKbd aria-hidden="true">Alt S</OperatorKbd>
+        <OperatorKbd v-if="!coarsePointer" aria-hidden="true">Alt S</OperatorKbd>
       </button>
       <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não enviado é
            trabalho parado. Borda e fundo primários, nunca o sólido: o sólido é do
            Pagamento. A contagem é badge (o número é o dado, o resto é rótulo). -->
+      <div v-if="fireBar.visible" class="flex shrink-0 flex-col items-end gap-0.5">
       <button
-        v-if="fireBar.visible"
         type="button"
         class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border pr-1.5 pl-2.5 op-label font-semibold whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-60"
         :class="fireBar.unfired && !fireBar.disabled
@@ -964,8 +1045,25 @@ defineExpose({ focusItem, onDigit, onBackspace });
           :aria-label="`${fireBar.unfired} item(ns) a enviar`"
           >{{ fireBar.unfired }}</span
         >
-        <OperatorKbd aria-hidden="true">F9</OperatorKbd>
+        <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
       </button>
+      <!-- "envio automático: desligado" (v4 pino 1): o estado das estações desta
+           comanda. O interruptor é por estação (decisão do dono), e mora em
+           Ajustes › Envio à cozinha; o toque aqui leva até ele. -->
+      <button
+        v-if="!sheet"
+        type="button"
+        class="inline-flex items-center gap-1.5 op-micro text-muted-foreground hover:text-foreground"
+        :title="autoFire ? 'Envio automático ligado na estação destes itens (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
+        data-pos-auto-fire
+        @click="$emit('autoFireSettings')"
+      >
+        <span class="relative inline-flex h-3.5 w-6 shrink-0 rounded-full transition" :class="autoFire ? 'bg-primary' : 'bg-muted-foreground/30'" aria-hidden="true">
+          <span class="absolute top-0.5 size-2.5 rounded-full bg-card shadow transition-all" :class="autoFire ? 'left-3' : 'left-0.5'" />
+        </span>
+        envio automático: {{ autoFire ? "ligado" : "desligado" }}
+      </button>
+      </div>
       <button
         v-if="sheet"
         type="button"
@@ -977,10 +1075,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
       </button>
     </header>
 
-    <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote. Só aqui
-         mora Transferir (F10 continua valendo em toda a venda). -->
+    <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote, numa faixa
+         só (v4 `pos-sale4.html` pino 6): "× 2 selecionadas · Transferir F10 ·
+         Desconto · Remover". Enviar só as marcadas e desfazer o envio continuam,
+         como ícones na mesma faixa (o F9 envia todas as novas). -->
     <template v-else-if="!sheet || sheetOpen">
-      <header class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-3 py-1.5">
+      <header class="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border bg-primary/10 px-2 py-1.5" data-pos-selection-bar>
         <button
           type="button"
           class="grid size-10 shrink-0 place-items-center rounded-md transition hover:bg-accent"
@@ -990,54 +1090,29 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
           <Icon name="lucide:x" class="size-4" />
         </button>
-        <p class="shrink-0 op-title tnum whitespace-nowrap">
+        <p class="min-w-0 shrink truncate op-title tnum whitespace-nowrap">
           {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas" }}
         </p>
         <div class="flex-1" />
         <button
           v-if="canMove && hasOpenTab && selection.count"
           type="button"
-          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
           :disabled="loading"
           title="Transferir as linhas marcadas para outra comanda (F10)"
           @click="$emit('move', selection.lineIds)"
         >
           <Icon name="lucide:split" class="size-4" />
           Transferir
-          <OperatorKbd aria-hidden="true">F10</OperatorKbd>
+          <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">F10</OperatorKbd>
         </button>
-      </header>
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <UiButton
-          v-if="fireAction.present"
-          variant="outline"
-          size="sm"
-          class="gap-1.5 bg-card"
-          :disabled="
-            mutationBusy || firing || !selection.canFire || !fireAction.enabled
-          "
-          @click="batchFire"
-          ><Icon name="lucide:chef-hat" class="size-4 text-primary" />{{
-            fireAction.label || "Enviar"
-          }}</UiButton
-        >
-        <UiButton
-          v-if="selection.canUnfire && unfireAction.present"
-          :disabled="mutationBusy || firing || !unfireAction.enabled"
-          variant="ghost"
-          size="sm"
-          class="gap-1.5"
-          @click="batchUnfire"
-          ><Icon name="lucide:undo-2" class="size-3.5" />{{
-            unfireAction.label || "Cancelar envio"
-          }}</UiButton
-        >
         <button
           v-if="!lineAdjustmentsBlocked"
           type="button"
-          class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 op-label transition hover:bg-accent"
+          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border px-2 op-label transition hover:bg-accent disabled:opacity-50"
           :class="discountOpen ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
           :aria-pressed="discountOpen"
+          :disabled="!selection.count"
           @click="toggleDiscount"
         >
           <Icon name="lucide:percent" class="size-4" />
@@ -1045,27 +1120,36 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </button>
         <button
           type="button"
-          class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
           :disabled="mutationBusy || !selection.count"
           @click="batchRemove"
         >
           <Icon name="lucide:trash-2" class="size-4" />Remover
         </button>
-        <span class="flex-1" />
-        <span v-if="selectMode" class="op-micro text-muted-foreground tnum"
-          >{{ selection.units }}
-          {{ selection.units === 1 ? "item" : "itens" }}</span
-        >
         <button
-          v-if="selectMode"
+          v-if="fireAction.present && selection.canFire"
           type="button"
-          class="min-h-9 rounded-md px-2 op-micro text-muted-foreground hover:bg-accent"
-          aria-label="Limpar seleção"
-          @click="clearSelection"
+          class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-primary transition hover:bg-accent disabled:opacity-50"
+          :disabled="mutationBusy || firing || !fireAction.enabled"
+          :aria-label="`Enviar à cozinha só as marcadas`"
+          title="Enviar à cozinha só as marcadas"
+          data-pos-batch-fire
+          @click="batchFire"
         >
-          Limpar
+          <Icon name="lucide:chef-hat" class="size-4" />
         </button>
-      </div>
+        <button
+          v-if="selection.canUnfire && unfireAction.present"
+          type="button"
+          class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent disabled:opacity-50"
+          :disabled="mutationBusy || firing || !unfireAction.enabled"
+          :aria-label="unfireAction.label || 'Cancelar envio à cozinha'"
+          :title="unfireAction.label || 'Cancelar envio à cozinha'"
+          @click="batchUnfire"
+        >
+          <Icon name="lucide:undo-2" class="size-4" />
+        </button>
+      </header>
     </template>
 
     <div
@@ -1117,7 +1201,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             /></span>
           </button>
           <button
-            class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 py-1.5 pr-1 text-left focus-visible:outline-none"
+            class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 py-1.5 pr-3.5 text-left focus-visible:outline-none"
             :class="batchMode ? 'pl-0' : 'pl-3.5'"
             :data-item-select="item.line_id"
             :aria-label="`Editar ${item.name}`"
@@ -1147,7 +1231,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               <!-- O fato da linha, numa linha só (v4): observação, desconto (preço
                    unitário só aqui ou no peso) e o estado na cozinha. -->
               <span
-                v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired'"
+                v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item)"
                 class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
               >
                 <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
@@ -1159,45 +1243,31 @@ defineExpose({ focusItem, onDigit, onBackspace });
                   :title="discountBadge(item)"
                   ><Icon name="lucide:percent" class="size-3.5" aria-hidden="true" /><template v-if="!isWeighedLine(item)">{{ formatBRL(lineListUnitQ(item)) }} </template>{{ compactDiscount(item) }}</span
                 >
+                <!-- O fato da cozinha É a porta do card dela (estação, disparo, estado):
+                     a linha não carrega enfeite à direita (v4). -->
                 <span
                   v-if="lineKitchenState(item) !== 'unfired'"
+                  role="button"
+                  tabindex="-1"
                   class="inline-flex shrink-0 items-center gap-1 rounded-sm px-1"
-                  :class="badgeTone(kitchenBadge(item).tone)"
+                  :class="[badgeTone(kitchenBadge(item).tone), hasKitchenCard(item) ? 'cursor-pointer underline-offset-2 hover:underline' : '']"
+                  :aria-label="hasKitchenCard(item) ? `Ver ${item.name} na cozinha` : undefined"
+                  :data-testid="hasKitchenCard(item) ? 'kitchen-card-open' : undefined"
+                  @click.stop="hasKitchenCard(item) && (kitchenLineId = item.line_id)"
                   ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />{{ kitchenFact(item) }}</span
+                >
+                <span
+                  v-else-if="goesToKitchen(item)"
+                  class="inline-flex shrink-0 items-center gap-1"
+                  :title="`Vai para ${kitchenStations?.[item.sku]} quando for enviada`"
+                  data-pos-line-goes-to-kitchen
+                  ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />vai à cozinha</span
                 >
               </span>
             </span>
             <strong class="op-title tnum">{{
               formatBRL(lineTotalQ(item))
             }}</strong>
-          </button>
-          <button
-            v-if="hasKitchenCard(item)"
-            type="button"
-            class="grid min-h-12 w-9 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
-            :aria-label="`Ver ${item.name} na cozinha`"
-            title="Ver na cozinha"
-            data-testid="kitchen-card-open"
-            @click.stop="kitchenLineId = item.line_id"
-          >
-            <Icon name="lucide:chef-hat" class="size-4" />
-          </button>
-          <button
-            class="grid min-h-12 w-8 shrink-0 place-items-center text-muted-foreground transition hover:text-foreground"
-            :class="expandedLineId === item.line_id || activeLineId === item.line_id ? '' : 'opacity-40 hover:opacity-100 focus-visible:opacity-100'"
-            :aria-label="`Detalhes de ${item.name}`"
-            :aria-expanded="expandedLineId === item.line_id"
-            :aria-controls="detailsId(item.line_id)"
-            @click.stop="toggleDetails(item.line_id)"
-          >
-            <Icon
-              :name="
-                expandedLineId === item.line_id
-                  ? 'lucide:chevron-up'
-                  : 'lucide:chevron-down'
-              "
-              class="size-4"
-            />
           </button>
           <div
             v-if="expandedLineId === item.line_id"
@@ -1280,7 +1350,34 @@ defineExpose({ focusItem, onDigit, onBackspace });
       aria-label="Console do item"
       data-pos-line-editor
     >
-      <template v-if="!batchMode && activeItem">
+      <!-- TOQUE (v4 tablet b): um instrumento só. A caixa grande mostra o número; o
+           numérico 3×4 escreve nele; a coluna à direita tem Desconto, Observação,
+           Remover e Pronto. -->
+      <template v-if="touchEditor && activeItem">
+        <div class="flex items-center gap-3" data-pos-touch-editor>
+          <p class="min-w-0 flex-1 truncate op-label text-muted-foreground">
+            <template v-if="inDiscountMode">Desconto em <b class="font-semibold text-foreground">{{ activeItem.name }}</b></template>
+            <template v-else-if="isWeighedLine(activeItem)">Peça pesada: para trocar, remova e lance a outra etiqueta.</template>
+            <template v-else>Quantidade de <b class="font-semibold text-foreground">{{ activeItem.name }}</b> <span class="tnum">(era {{ qtyWas }})</span></template>
+          </p>
+          <output
+            class="grid h-12 min-w-20 shrink-0 place-items-center rounded-md border-2 border-foreground/80 bg-card px-3 text-3xl font-semibold tnum"
+            :aria-label="inDiscountMode ? 'Desconto' : `Quantidade de ${activeItem.name}`"
+            data-pos-touch-editor-value
+          >{{ touchEditorValue }}</output>
+        </div>
+        <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1 flex items-center gap-2 op-micro text-muted-foreground">
+          <span class="min-w-0 flex-1 truncate">{{ activeAuthorship }}</span>
+          <button
+            v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
+            type="button"
+            class="shrink-0 font-medium text-primary disabled:opacity-50"
+            :disabled="mutationBusy || firing || !unfireAction.enabled"
+            @click="$emit('unfire', activeItem.line_id)"
+          >{{ unfireAction.label }}</button>
+        </p>
+      </template>
+      <template v-else-if="!batchMode && activeItem">
         <p class="flex h-6 items-center gap-1.5 truncate op-micro text-muted-foreground">
           <Icon name="lucide:corner-left-up" class="size-3.5 shrink-0 text-primary" aria-hidden="true" />
           Editando <b class="truncate font-semibold text-foreground">{{ activeItem.name }}</b>
@@ -1376,6 +1473,16 @@ defineExpose({ focusItem, onDigit, onBackspace });
             Observação
           </button>
         </div>
+        <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1.5 flex items-center gap-2 op-micro text-muted-foreground" data-pos-line-authorship>
+          <span class="min-w-0 flex-1 truncate">{{ activeAuthorship }}</span>
+          <button
+            v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
+            type="button"
+            class="shrink-0 font-medium text-primary disabled:opacity-50"
+            :disabled="mutationBusy || firing || !unfireAction.enabled"
+            @click="$emit('unfire', activeItem.line_id)"
+          >{{ unfireAction.label }}</button>
+        </p>
       </template>
 
       <!-- Desconto (da linha ou do lote): formato, valor e motivo. O numérico da tela
@@ -1428,6 +1535,53 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </UiNativeSelect>
       </div>
 
+      <div v-if="touchEditor && activeItem" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
+        <template v-for="(row, rowIndex) in [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['decimal', 0, 'back']]" :key="rowIndex">
+          <button
+            v-for="key in row"
+            :key="String(key)"
+            type="button"
+            class="h-14 rounded-md border border-border bg-card text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40 sm:h-16"
+            :aria-label="typeof key === 'number' ? 'Dígito ' + key : key === 'back' ? 'Apagar último dígito' : 'Vírgula'"
+            :disabled="mutationBusy || !numpadCanType || (key === 'decimal' && numpadMode !== 'disc_brl')"
+            @click="typeof key === 'number' ? onDigit(String(key)) : key === 'back' ? onBackspace() : onComma()"
+          >
+            <Icon v-if="key === 'back'" name="lucide:delete" class="mx-auto size-6" />
+            <template v-else>{{ key === "decimal" ? "," : key }}</template>
+          </button>
+          <button
+            v-if="rowIndex === 0"
+            type="button"
+            class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border px-2 op-label font-semibold transition disabled:opacity-40 sm:h-16"
+            :class="discountOpen || activeItem.discount?.value ? 'border-primary bg-primary/15' : 'border-transparent bg-secondary'"
+            :aria-pressed="discountOpen"
+            :disabled="mutationBusy || lineAdjustmentsBlocked"
+            data-pos-line-discount
+            @click="toggleDiscount"
+          ><Icon name="lucide:percent" class="size-4 shrink-0" /><span>{{ discountOpen ? "Quantidade" : "Desconto" }}</span></button>
+          <button
+            v-else-if="rowIndex === 1"
+            type="button"
+            class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-transparent bg-secondary px-2 op-label font-semibold transition disabled:opacity-40 sm:h-16"
+            :disabled="mutationBusy || lineAdjustmentsBlocked"
+            @click="chooseMode('note')"
+          ><Icon name="lucide:message-square-text" class="size-4 shrink-0" /><span>Observação</span></button>
+          <button
+            v-else-if="rowIndex === 2"
+            type="button"
+            class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 op-label font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-40 sm:h-16"
+            :disabled="mutationBusy"
+            @click="askRemove(activeItem.line_id)"
+          ><Icon name="lucide:trash-2" class="size-4 shrink-0" /><span>Remover</span></button>
+          <button
+            v-else
+            type="button"
+            class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md bg-foreground px-2 op-label font-semibold text-background transition hover:bg-foreground/90 sm:h-16"
+            data-pos-line-editor-close
+            @click="closeEditor"
+          ><Icon name="lucide:check" class="size-4 shrink-0" />Pronto</button>
+        </template>
+      </div>
       <div v-if="numpadVisible" class="mt-2 grid grid-cols-3 gap-1.5" data-pos-line-numpad>
         <button
           v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
@@ -1477,7 +1631,6 @@ defineExpose({ focusItem, onDigit, onBackspace });
       class="hidden h-7 shrink-0 items-center gap-2 overflow-hidden border-t border-border bg-muted/50 px-3.5 op-micro whitespace-nowrap text-muted-foreground md:flex"
       data-pos-keyboard-hint
     >
-      <Icon name="lucide:keyboard" class="size-3.5" aria-hidden="true" />
       Digite para mudar a quantidade <span class="text-border" aria-hidden="true">·</span> Del remove <span class="text-border" aria-hidden="true">·</span> ↑↓ troca a linha
     </p>
 
@@ -1486,6 +1639,51 @@ defineExpose({ focusItem, onDigit, onBackspace });
     <div v-if="batchMode" class="flex shrink-0 items-baseline justify-between border-t border-border px-3.5 py-3">
       <span class="op-label text-muted-foreground">Total parcial</span>
       <strong class="text-xl font-semibold tnum">{{ totalDisplay }}</strong>
+    </div>
+    <!-- FOLHA ABERTA (v4 tablet b): pagar direto daqui, pelos meios eletrônicos que
+         o dispositivo leva à mesa. "Outras formas" abre o Pagamento de sempre. -->
+    <div v-else-if="sheet && sheetOpen && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
+      <div class="mb-2 flex items-baseline gap-2">
+        <span class="op-label text-muted-foreground">Pagar</span>
+        <strong class="text-3xl font-semibold tnum">{{ totalDisplay }}</strong>
+        <span class="flex-1" />
+        <button
+          type="button"
+          class="min-h-10 rounded-md px-2 op-label font-medium text-primary hover:bg-accent disabled:opacity-50"
+          :disabled="!items.length || loading || saving"
+          data-pos-sheet-other-payment
+          @click="$emit('prepare')"
+        >Outras formas</button>
+      </div>
+      <div class="grid gap-2" :class="primaryQuickPayments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
+        <button
+          v-for="method in primaryQuickPayments"
+          :key="method.ref"
+          type="button"
+          class="flex h-14 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          :disabled="!items.length || loading || saving"
+          :data-pos-sheet-pay-method="method.ref"
+          @click="$emit('pay', method.ref)"
+        >
+          <Icon :name="method.icon" class="size-6 shrink-0" />
+          {{ method.label }}
+        </button>
+        <!-- V6-CAIXA: dinheiro na mesa, secundário; a gaveta do Balcão abre pelo
+             cartão que a venda deixa (nunca sozinha longe dela). -->
+        <button
+          v-for="method in secondaryQuickPayments"
+          :key="method.ref"
+          type="button"
+          class="col-span-full flex h-12 items-center justify-center gap-2.5 rounded-lg border border-border bg-card op-label font-semibold transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!items.length || loading || saving"
+          :data-pos-sheet-pay-method="method.ref"
+          @click="$emit('pay', method.ref)"
+        >
+          <Icon :name="method.icon" class="size-5 shrink-0" />
+          {{ method.label }}
+          <span v-if="method.hint" class="font-normal text-muted-foreground">· {{ method.hint }}</span>
+        </button>
+      </div>
     </div>
     <div v-else-if="!sheet || sheetOpen" class="shrink-0 border-t border-border p-3">
       <button

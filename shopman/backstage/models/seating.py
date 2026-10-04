@@ -106,3 +106,34 @@ class SeatingSpot(models.Model):
         if self.active_from and day < self.active_from:
             return False
         return not (self.active_until and day > self.active_until)
+
+
+class FixtureKind(models.TextChoices):
+    """O que não é lugar mas orienta a planta (v4 `salao-mesas4.html`)."""
+
+    SHOWCASE = "showcase", "Vitrine e caixa"
+    ENTRANCE = "entrance", "Entrada"
+
+
+class SeatingFixture(models.Model):
+    """Um elemento fixo desenhado na planta do salão: a vitrine e caixa, a entrada.
+
+    Desenho, não medida: o B.I. não lê nada daqui (não tem lugar nem capacidade),
+    então mexer não reescreve o passado e se edita no lugar, junto do Salvar do
+    salão (``services/seating.save_layout``).
+    """
+
+    kind = models.CharField("tipo", max_length=16, choices=FixtureKind.choices)
+    label = models.CharField("rótulo", max_length=60)
+    plan_x = models.PositiveIntegerField("posição na planta (x)", default=0)
+    plan_y = models.PositiveIntegerField("posição na planta (y)", default=0)
+    width = models.PositiveIntegerField("largura", default=40)
+    height = models.PositiveIntegerField("altura", default=320)
+
+    class Meta:
+        verbose_name = "elemento fixo do salão"
+        verbose_name_plural = "elementos fixos do salão"
+        ordering = ["kind", "pk"]
+
+    def __str__(self) -> str:
+        return self.label
