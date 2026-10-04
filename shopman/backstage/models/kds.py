@@ -136,6 +136,11 @@ class KDSTicket(models.Model):
         "ciente em", null=True, blank=True,
         help_text="Operador deu baixa no card cancelado — sai do board.",
     )
+    # "Visto" da estação (K20): o aviso de pedido novo (ou de cancelamento) para
+    # em TODAS as telas da estação juntas, porque fica gravado aqui e não em cada
+    # dispositivo. No cancelado, vale o "Visto" posterior ao ``cancelled_at``.
+    seen_at = models.DateTimeField("visto em", null=True, blank=True)
+    seen_by = models.CharField("visto por", max_length=150, blank=True, default="")
 
     class Meta:
         verbose_name = "ticket KDS"

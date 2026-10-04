@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import KdsTicketCard from "../../app/components/KdsTicketCard.vue";
+import { useLongPress } from "../../app/composables/useLongPress";
 import type { KDSTicketProjection } from "../../app/types/kds";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui). Reatividade
@@ -12,6 +13,7 @@ vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("nextTick", nextTick);
 vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
+vi.stubGlobal("useLongPress", useLongPress);
 
 function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   return {
@@ -42,8 +44,6 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     previous_tab_ref: "",
-    is_scheduled: false,
-    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
@@ -53,6 +53,14 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     test_order_label: "",
     finish_block_label: "",
     finish_block_reason: "",
+    volumes: 0,
+    volumes_order_ref: "",
+    volumes_revision: "",
+    started_by: "",
+    started_at_display: "",
+    is_preorder: false,
+    due_time_display: "",
+    seen: false,
     ...over,
   };
 }
@@ -114,18 +122,6 @@ describe("KdsTicketCard — render", () => {
       }),
     });
     expect(w.text()).toContain("Massa acabando");
-  });
-
-  it("mostra encomenda futura como prévia, com a DATA, e sem botão de ação", () => {
-    const wrapper = mountCard({
-      ticket: ticket({ is_scheduled: true, status: "scheduled" }),
-      serviceDate: "2026-09-19",
-    });
-    // "libera na data" obrigava a lembrar do seletor lá no topo do cabeçalho.
-    expect(wrapper.text()).toContain("Prévia · começa em 19/09");
-    expect(wrapper.text()).toContain("19/09");
-    expect(wrapper.text()).not.toContain("Agendado");
-    expect(wrapper.find("button[data-kds-action]").exists()).toBe(false);
   });
 
   it("nunca trunca nome de item nem observação: quebram linha", () => {
@@ -291,11 +287,53 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(retirada.text()).toContain("Retirada");
   });
 
-  it("o cliente mora embaixo do código, fora da linha do relógio", () => {
-    const w = mountCard({ ticket: ticket({ customer_name: "Mariana" }) });
+  it("v4 nota 6: o card do dia não mostra cliente, telefone nem canal", () => {
+    const w = mountCard({ ticket: ticket({ customer_name: "+5543993333333" }) });
+    expect(w.get("[data-kds-overline]").text()).toBe("Retirada");
+    expect(w.text()).not.toContain("5543993333333");
+    expect(mountCard({ ticket: ticket({ customer_name: "Mariana" }) }).text()).not.toContain("Mariana");
+  });
+
+  it("a encomenda diz o cliente embaixo do código, fora da linha do relógio", () => {
+    const w = mountCard({ ticket: ticket({ customer_name: "Café Parisiense", is_preorder: true }) });
+    expect(w.get("[data-kds-overline]").text()).toBe("Encomenda · Café Parisiense");
     const html = w.html();
-    expect(html.indexOf("0007")).toBeLessThan(html.indexOf("Mariana"));
-    expect(html.indexOf("Mariana")).toBeLessThan(html.indexOf("1m"));
+    expect(html.indexOf("0007")).toBeLessThan(html.indexOf("Café Parisiense"));
+    expect(html.indexOf("Café Parisiense")).toBeLessThan(html.indexOf("1m"));
+    // Encomenda cujo "cliente" é um telefone cru não mostra o número.
+    const phone = mountCard({ ticket: ticket({ customer_name: "+55 43 99333-3333", is_preorder: true }) });
+    expect(phone.get("[data-kds-overline]").text()).toBe("Encomenda");
+  });
+
+  it("v4 nota 7: quem iniciou e a hora combinada aparecem no card", () => {
+    const w = mountCard({
+      ticket: ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }),
+    });
+    expect(w.get("[data-kds-started]").text()).toBe("iniciado por Rafael às 21:56 · retira às 22:30");
+    expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
+  });
+
+  it("no polegar do celular o ato leva o código: Pronto W07", async () => {
+    document.body.innerHTML = '<div id="thumb"></div>';
+    const w = mount(KdsTicketCard, {
+      props: { ticket: ticket({ order_ref: "WEB-1-W07" }), actionTarget: "#thumb" },
+      global: { stubs },
+      attachTo: document.body,
+    });
+    await nextTick();
+    await nextTick();
+    expect(document.querySelector("#thumb [data-kds-action]")?.textContent).toContain("Pronto W07");
+    w.unmount();
+  });
+
+  it("toque longo no ticket emite hold (desfazer, reabrir, ver o pedido)", async () => {
+    vi.useFakeTimers();
+    const w = mountCard({ ticket: ticket() });
+    const area = w.get("[data-kds-hold]");
+    await area.trigger("pointerdown", { button: 0, pointerType: "touch", clientX: 10, clientY: 10 });
+    vi.advanceTimersByTime(600);
+    expect(w.emitted("hold")).toHaveLength(1);
+    vi.useRealTimers();
   });
 
   it("o botão fica DENTRO da moldura, arredondado, e não uma laje colada na borda", () => {
@@ -358,10 +396,4 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(header.querySelectorAll(".border").length).toBe(1);
   });
 
-  it("prévia agendada ocupa o lugar do botão como TEXTO, não como controle", () => {
-    const w = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }), serviceDate: "2026-09-19" });
-    const inert = w.get("[data-kds-action]");
-    expect(inert.element.tagName).toBe("P");
-    expect(inert.text()).toContain("Prévia · começa em 19/09");
-  });
 });

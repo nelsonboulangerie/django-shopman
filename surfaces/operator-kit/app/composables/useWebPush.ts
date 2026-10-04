@@ -1,5 +1,5 @@
 interface OperatorPushConfig {
-  surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi";
+  surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi" | "kds";
   categories: string[];
 }
 

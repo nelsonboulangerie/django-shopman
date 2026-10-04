@@ -23,8 +23,7 @@ import pytest
 from django.core.cache import cache
 from shopman.orderman.models import Order
 
-from shopman.shop.services import kds, operator_orders, payment_gate
-from shopman.shop.tests._handoff import settle
+from shopman.shop.services import operator_orders, payment_gate
 
 pytestmark = pytest.mark.django_db
 
@@ -109,15 +108,6 @@ def test_cash_on_delivery_dispatches_in_the_manager():
     assert order.status == Order.Status.DISPATCHED
 
 
-def test_cash_on_delivery_dispatches_from_the_expedition_board():
-    order = _cod("COD-KDS")
-
-    assert kds.expedition_block_reason(order, action="dispatch") == ""
-
-    kds.expedition_action(order, action="dispatch", actor="operator:test")
-    assert settle(order) == Order.Status.DISPATCHED
-
-
 def test_cash_on_delivery_also_starts_prep():
     """O gate cobre ``ACCEPTED → PREPARING``, e o COD passa lá também."""
     order = _cod("COD-PREP", status=Order.Status.ACCEPTED)
@@ -175,16 +165,6 @@ def test_unpaid_link_is_blocked_in_the_manager():
     assert order.status == Order.Status.READY
 
 
-def test_unpaid_link_is_blocked_in_the_expedition():
-    order = _unpaid_link("LINK-KDS")
-
-    assert kds.expedition_block_reason(order, action="dispatch") != ""
-    with pytest.raises(ValueError):
-        kds.expedition_action(order, action="dispatch", actor="operator:test")
-    order.refresh_from_db()
-    assert order.status == Order.Status.READY
-
-
 def test_unpaid_link_pickup_is_blocked_at_the_counter_handoff():
     """Retirada: a saída é ``READY → COMPLETED``, e ela também é entrega de bem."""
     order = _unpaid_link("LINK-BALCAO", fulfillment_type="pickup")
@@ -193,7 +173,7 @@ def test_unpaid_link_pickup_is_blocked_at_the_counter_handoff():
         operator_orders.advance_block(order) == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
     )
     with pytest.raises(ValueError):
-        kds.expedition_action(order, action="complete", actor="operator:test")
+        operator_orders.advance_order(order, actor="operator:test")
     order.refresh_from_db()
     assert order.status == Order.Status.READY
 
@@ -211,15 +191,6 @@ def test_unpaid_pix_is_blocked_in_the_manager():
         operator_orders.advance_order(order, actor="operator:test")
 
 
-def test_unpaid_pix_is_blocked_in_the_expedition():
-    order = _unpaid_pix("PIX-KDS")
-
-    with pytest.raises(ValueError):
-        kds.expedition_action(order, action="dispatch", actor="operator:test")
-    order.refresh_from_db()
-    assert order.status == Order.Status.READY
-
-
 # ── (d) pedido pago avança normalmente ─────────────────────────────────────
 
 
@@ -232,36 +203,7 @@ def test_paid_order_advances_in_the_manager():
     assert order.status == Order.Status.DISPATCHED
 
 
-def test_paid_order_advances_in_the_expedition():
-    order = _paid_pix("PIX-OK-KDS")
-
-    assert kds.expedition_block_reason(order, action="dispatch") == ""
-    kds.expedition_action(order, action="dispatch", actor="operator:test")
-    assert settle(order) == Order.Status.DISPATCHED
-
-
 # ── (e) a régua é a MESMA nos dois caminhos ────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "make, action",
-    [
-        (_cod, "dispatch"),
-        (_unpaid_link, "dispatch"),
-        (_unpaid_pix, "dispatch"),
-        (_paid_pix, "dispatch"),
-    ],
-)
-def test_manager_and_expedition_answer_the_same(make, action):
-    order = make()
-
-    bloqueio = operator_orders.advance_block(order)
-    gestor = operator_orders.advance_block_message(bloqueio)
-    saida = kds.expedition_block_reason(order, action=action)
-
-    # Mesmo veredito E mesma frase: duas réguas foi exatamente o problema.
-    assert bool(gestor) == bool(saida)
-    assert gestor == saida
 
 
 # ── O gate não é mais "só em ACCEPTED" ─────────────────────────────────────

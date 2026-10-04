@@ -25,8 +25,6 @@ export interface KDSTicketProjection {
   items: KDSItemProjection[];
   status: string;
   previous_tab_ref: string;
-  is_scheduled: boolean;
-  is_expedition: boolean;
   status_label: string;
   is_cancelled: boolean;
   cancelled_at_display: string;
@@ -41,59 +39,9 @@ export interface KDSTicketProjection {
   volumes_revision: string;
   started_by: string;
   started_at_display: string;
-}
-
-/** An order card in the Saída board (``expedition``: hand over / dispatch). */
-export interface KDSExpeditionCardProjection {
-  pk: number;
-  order_ref: string;
-  channel_icon: string;
-  customer_name: string;
-  fulfillment_icon: string;
-  fulfillment_label: string;
-  is_delivery: boolean;
-  units_count: string;
-  line_count: number;
-  total_display: string;
-  items: KDSItemProjection[];
-  is_scheduled: boolean;
-  is_expedition: boolean;
-  advance_block_label: string;
-  advance_block_reason: string;
-  test_order_label: string;
-  handoff_label: string;
-  handoff_undo_until_iso: string;
-  handoff_token: string;
-}
-
-/** Uma estação do pedido, vista da Saída: em que pé ela está com ele. */
-export interface KDSExitStationChipProjection {
-  station_ref: string;
-  station_name: string;
-  prints: boolean;
-  state: string;
-  state_label: string;
-  paper_label: string;
-  paper_failed: boolean;
-  cancelled_items: number;
-  can_mark_ready: boolean;
-  recall_ticket_pk: number | null;
-}
-
-/** Um pedido que ainda espera alguma estação — a coluna "Em preparo" da Saída. */
-export interface KDSExitPreparingCardProjection {
-  pk: number;
-  order_ref: string;
-  channel_icon: string;
-  customer_name: string;
-  fulfillment_icon: string;
-  fulfillment_label: string;
-  is_delivery: boolean;
-  fired_at_display: string;
-  elapsed_seconds: number;
-  stations: KDSExitStationChipProjection[];
-  is_scheduled: boolean;
-  test_order_label: string;
+  is_preorder: boolean;
+  due_time_display: string;
+  seen: boolean;
 }
 
 /** A KDS instance in the index (station selector). */
@@ -110,16 +58,12 @@ export interface KDSBoardProjection {
   instance_ref: string;
   instance_name: string;
   instance_type: string;
-  is_expedition: boolean;
-  tickets: (KDSTicketProjection | KDSExpeditionCardProjection)[];
+  tickets: KDSTicketProjection[];
   counts: Record<string, number>;
-  service_date: string;
-  service_date_display: string;
-  today: string;
-  available_dates: string[];
   cancelled_tickets: KDSTicketProjection[];
   recent_done: KDSTicketProjection[];
-  preparing: KDSExitPreparingCardProjection[];
+  density: string;
+  sound_enabled: boolean;
 }
 
 /** Privacy-safe order status for a customer-facing ready board. */

@@ -330,8 +330,7 @@ _KITCHEN_FINISHED_STATUSES = frozenset({
 EXPEDITE_PERMISSION = "backstage.operate_kds"
 
 #: Para onde quem só expede leva o pedido pronto: Despachar (entrega) e
-#: Entregar/Retirado (retirada). O mesmo par da Saída da Cozinha
-#: (``kds.EXPEDITION_TRANSITIONS``).
+#: Entregar/Retirado (retirada).
 EXPEDITE_TARGETS = frozenset({Order.Status.DISPATCHED, Order.Status.COMPLETED})
 
 EXPEDITE_SCOPE_REASON = "Quem expede entrega e despacha o pedido pronto. Esta etapa é de quem gerencia pedidos."

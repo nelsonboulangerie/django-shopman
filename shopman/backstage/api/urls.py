@@ -59,11 +59,12 @@ from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
     KDSExitPrintedStationDoneView,
-    KDSExpeditionActionView,
-    KDSExpeditionUndoView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
     KDSPrintedTicketScanView,
+    KDSStationFollowView,
+    KDSStationSeenView,
+    KDSStationSettingsView,
     KDSTicketAcknowledgeView,
     KDSTicketDoneView,
     KDSTicketRecallView,
@@ -302,6 +303,9 @@ urlpatterns = [
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
+    path("kds/<slug:ref>/seen/", KDSStationSeenView.as_view(), name="api-backstage-kds-station-seen"),
+    path("kds/<slug:ref>/settings/", KDSStationSettingsView.as_view(), name="api-backstage-kds-station-settings"),
+    path("kds/<slug:ref>/follow/", KDSStationFollowView.as_view(), name="api-backstage-kds-station-follow"),
     path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
@@ -309,12 +313,6 @@ urlpatterns = [
         "kds/tickets/<int:ticket_pk>/acknowledge/",
         KDSTicketAcknowledgeView.as_view(),
         name="api-backstage-kds-ticket-acknowledge",
-    ),
-    path(
-        "kds/expedition/<int:order_pk>/action/", KDSExpeditionActionView.as_view(), name="api-backstage-kds-expedition"
-    ),
-    path(
-        "kds/expedition/<int:order_pk>/undo/", KDSExpeditionUndoView.as_view(), name="api-backstage-kds-expedition-undo"
     ),
     path(
         "kds/expedition/<int:order_pk>/printed-stations/<slug:station_ref>/done/",
