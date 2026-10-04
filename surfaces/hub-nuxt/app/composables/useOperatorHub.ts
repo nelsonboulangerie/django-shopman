@@ -24,6 +24,7 @@ export async function useOperatorHub() {
   const tiles = computed<HubTileProjection[]>(() => hub.value?.tiles ?? []);
   const queue = computed<HubQueueProjection | null>(() => hub.value?.queue ?? null);
   const operatorName = computed(() => hub.value?.operator_name ?? "");
+  const shopName = computed(() => hub.value?.shop_name ?? "");
 
   let timer: ReturnType<typeof setInterval> | null = null;
   const visible = () => typeof document === "undefined" || document.visibilityState === "visible";
@@ -44,5 +45,5 @@ export async function useOperatorHub() {
     document.removeEventListener("visibilitychange", onVisibility);
   });
 
-  return { data, hub, tiles, queue, operatorName, pending, error, refresh };
+  return { data, hub, tiles, queue, operatorName, shopName, pending, error, refresh };
 }

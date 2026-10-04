@@ -18,10 +18,15 @@ self.addEventListener("push", event => {
   try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
   const title = typeof payload.title === "string" && payload.title ? payload.title : "Novo aviso";
   const tag = typeof payload.tag === "string" && payload.tag ? payload.tag : "shopman-notification";
+  // A Cozinha vibra no bolso (o padrão vem do servidor: atraso = três toques curtos).
+  const vibrate = Array.isArray(payload.vibrate)
+    ? payload.vibrate.filter(value => Number.isFinite(value) && value >= 0 && value <= 2000).slice(0, 10)
+    : undefined;
   event.waitUntil(self.registration.showNotification(title, {
     body: typeof payload.body === "string" ? payload.body : "",
     tag,
-    renotify: payload.severity === "critical",
+    renotify: payload.severity === "critical" || Boolean(vibrate && vibrate.length),
+    vibrate: vibrate && vibrate.length ? vibrate : undefined,
     data: { action_url: shopmanSafeActionUrl(payload.action_url) },
   }));
 });

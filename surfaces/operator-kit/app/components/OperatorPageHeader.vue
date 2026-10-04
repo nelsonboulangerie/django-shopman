@@ -17,7 +17,7 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed, ref, useSlots } from "vue";
+import { computed, ref } from "vue";
 
 import { operatorAppNamed } from "../../appIdentity";
 
@@ -25,7 +25,7 @@ const HUB_BACK = `voltar ${operatorAppNamed("hub", "a")}`;
 
 interface HeaderIdentity { label: string; icon: string; iconSrc: string; color: string }
 
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   title: string;
   /** Linha fina acima do título (ex.: "Posto Saída · este dispositivo"). */
   eyebrow?: string;
@@ -40,8 +40,10 @@ const props = withDefaults(defineProps<{
   searchPlaceholder?: string;
 }>(), { eyebrow: "", filtersWrap: true, search: true, searchPlaceholder: "Buscar pedido, cliente, produto ou tela" });
 
-const slots = useSlots();
-const hasSearch = computed(() => Boolean(slots.search) || props.search);
+// A busca é lida de `$slots` no render, nunca num `computed`: `useSlots()` não é
+// reativo, e um `computed` guardava a ausência do primeiro render (a tela que nasce
+// sem busca e ganha uma depois ficava sem campo e sem lupa; V6 C01). Sem `#search`, a
+// busca padrão da suíte (`search = true`).
 
 const config = useRuntimeConfig().public as { operatorHubUrl?: string; operatorPwa?: { identity?: HeaderIdentity } };
 const identity = config.operatorPwa?.identity;
@@ -109,13 +111,16 @@ const { request: openSearch } = useSuiteSearchRequest();
         <div class="min-w-0">
           <p v-if="eyebrow" class="op-eyebrow truncate text-muted-foreground">{{ eyebrow }}</p>
           <h1 class="truncate text-[20px] leading-none font-semibold tracking-[-0.01em] md:text-[22px]">{{ title }}</h1>
+          <!-- Linha fina SOB o título (prévias v4: "22:03 · sáb 03/10 · lotes fechados
+               hoje"; no celular "06:12 · 6 para finalizar"). Opcional. -->
+          <slot name="subtitle" />
         </div>
         <slot name="status" />
       </div>
 
-      <div v-if="hasSearch" class="hidden w-1 md:block" aria-hidden="true" />
+      <div v-if="$slots.search || search" class="hidden w-1 md:block" aria-hidden="true" />
       <div
-        v-if="hasSearch"
+        v-if="$slots.search || search"
         class="hidden md:block md:w-auto"
         data-page-header-search
       >
@@ -127,7 +132,7 @@ const { request: openSearch } = useSuiteSearchRequest();
       <!-- celular: lupa e ações de polegar na barra de 56px -->
       <div class="flex items-center md:hidden">
         <button
-          v-if="hasSearch"
+          v-if="$slots.search || search"
           type="button"
           class="grid size-12 place-items-center rounded-md text-foreground"
           aria-label="Buscar"

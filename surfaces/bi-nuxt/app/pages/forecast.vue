@@ -62,11 +62,15 @@ const occasionTitle = (occasion: ForecastOccasion) =>
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="O que esperar?">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="error" />
+      </template>
       <template #actions>
         <OperatorPeriodPicker v-model="period" :presets="presets" label="Período que você está planejando" />
         <BiPageMenu />
       </template>
       <template #phone-actions>
+        <BiShareButton />
         <BiPhoneBell />
       </template>
     </OperatorPageHeader>
@@ -270,7 +274,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
         <div class="grid gap-3 sm:grid-cols-3">
           <StatTile
             label="Faturamento provável no período"
-            :value="report.total_revenue_q ? formatMoney(Math.round(report.total_revenue_q.expected)) : '—'"
+            :value="report.total_revenue_q ? formatMoney(Math.round(report.total_revenue_q.expected)) : 'sem dado'"
             :hint="
               report.total_revenue_q
                 ? `entre ${rangeLabel(report.total_revenue_q.low, report.total_revenue_q.high)}`
@@ -279,12 +283,12 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           />
           <StatTile
             label="Pedidos prováveis no período"
-            :value="report.total_orders ? formatInt(Math.round(report.total_orders.expected)) : '—'"
+            :value="report.total_orders ? formatInt(Math.round(report.total_orders.expected)) : 'sem dado'"
             :hint="`${formatInt(openDays.length)} dias de expediente`"
           />
           <StatTile
             label="Troco no período"
-            :value="change?.total_change_q ? formatMoney(Math.round(change.total_change_q.expected)) : '—'"
+            :value="change?.total_change_q ? formatMoney(Math.round(change.total_change_q.expected)) : 'sem dado'"
             :hint="
               change?.total_change_q
                 ? `entre ${rangeLabel(change.total_change_q.low, change.total_change_q.high)}`
@@ -316,6 +320,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
         </section>
       </template>
       </template>
+      <BiSwipeHint />
     </main>
   </div>
 </template>

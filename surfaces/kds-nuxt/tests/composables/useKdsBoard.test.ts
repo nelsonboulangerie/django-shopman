@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import { ref } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { KDS_ALERT, kdsAttentionDecision, useKdsBoard } from "~/composables/useKdsBoard";
+import { KDS_ALERT, kdsAttentionDecision, kdsAttentionIds, useKdsBoard } from "~/composables/useKdsBoard";
 import { boardView } from "~/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "~/types/kds";
 
@@ -33,14 +33,23 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     previous_tab_ref: "",
-    is_scheduled: false,
-    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
     completed_at_display: "",
     kitchen_note: "",
     customer_note: "",
+    test_order_label: "",
+    finish_block_label: "",
+    finish_block_reason: "",
+    volumes: 0,
+    volumes_order_ref: "",
+    volumes_revision: "",
+    started_by: "",
+    started_at_display: "",
+    is_preorder: false,
+    due_time_display: "",
+    seen: false,
     ...over,
   };
 }
@@ -51,15 +60,12 @@ function board(over: Record<string, unknown> = {}) {
       instance_ref: "bancada",
       instance_name: "Bancada",
       instance_type: "prep",
-      is_expedition: false,
       tickets: [ticket()],
       counts: { total: 1 },
-      service_date: "2026-09-15",
-      service_date_display: "Hoje",
-      today: "2026-09-15",
-      available_dates: ["2026-09-15"],
       cancelled_tickets: [],
       recent_done: [],
+      density: "cozy",
+      sound_enabled: true,
       ...over,
     },
   };
@@ -296,69 +302,73 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
     expect(env.sonner.error).toHaveBeenCalled();
   });
 
-  it("future boards are read-only for every mutation path", async () => {
-    env.fetchData.value = board({
-      service_date: "2026-09-16",
-      tickets: [ticket()],
-      recent_done: [ticket({ pk: 9, status: "done" })],
-      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
-    });
-    const { readOnly, start, finalize, recall, acknowledge, view } = useKdsBoard("bancada");
-
-    expect(readOnly.value).toBe(true);
-    start(1);
-    finalize(1);
-    recall(9);
-    acknowledge(7);
-    await flushPromises();
-
-    expect(env.fetchMock).not.toHaveBeenCalled();
-    expect((env.fetchData.value as any).board.tickets).toHaveLength(1);
-    expect((env.fetchData.value as any).board.tickets[0].status).toBe("in_progress");
-    expect(view.value?.cards).toHaveLength(1);
-    expect(env.sonner.success).not.toHaveBeenCalled();
-  });
 });
 
-describe("useKdsBoard — sound preference", () => {
+describe("useKdsBoard — o som é da estação (v4 nota 1)", () => {
   beforeEach(() => env.reset());
 
-  it("toggleSound flips the on/off state", () => {
-    env.fetchData.value = board();
-    const { soundOn, toggleSound } = useKdsBoard("bancada");
-    expect(soundOn.value).toBe(true);
-    toggleSound();
+  it("o som segue o cadastro da estação, não a lembrança do dispositivo", async () => {
+    env.fetchData.value = board({ sound_enabled: false });
+    const { soundOn, board: projected } = useKdsBoard("bancada");
     expect(soundOn.value).toBe(false);
+    projected.value!.sound_enabled = true; // o SSE trouxe o cadastro novo
+    await flushPromises();
+    expect(soundOn.value).toBe(true);
   });
 });
 
-describe("useKdsBoard — atenção por ticket e data", () => {
-  const view = () => boardView(board().board as KDSBoardProjection);
+describe("useKdsBoard — Visto da estação no servidor (K20)", () => {
+  beforeEach(() => env.reset());
 
-  it("avisa na primeira abertura quando já existe trabalho de hoje", () => {
-    expect(kdsAttentionDecision(view(), new Set(), "").shouldAlert).toBe(true);
+  it("Visto grava no servidor os tickets que pediam atenção e cala esta tela na hora", async () => {
+    env.fetchData.value = board({
+      tickets: [ticket({ pk: 1, status: "pending" }), ticket({ pk: 2, status: "pending", seen: true })],
+      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
+    });
+    const { acknowledgeAttention, attentionKeys, attentionPending } = useKdsBoard("bancada");
+    // A atenção só arma depois de montar (client-only); o harness monta na criação.
+    attentionKeys.value = ["active:1", "cancelled:7"];
+    acknowledgeAttention();
+    expect(attentionPending.value).toBe(false);
+    expect((env.fetchData.value as any).board.tickets[0].seen).toBe(true);
+    await flushPromises();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/kds/bancada/seen/",
+      expect.objectContaining({ method: "POST", body: { ticket_pks: [1, 7] } }),
+    );
   });
 
-  it("não repete depois que os mesmos tickets foram vistos", () => {
-    const decision = kdsAttentionDecision(view(), new Set(["active:1"]), "active:1");
-    expect(decision.shouldAlert).toBe(false);
-    expect(decision.shouldStop).toBe(true);
+  it("iniciar também é ver: o ticket iniciado deixa de pedir atenção", () => {
+    env.fetchData.value = board({ tickets: [ticket({ pk: 1, status: "pending" })] });
+    const { start } = useKdsBoard("bancada");
+    start(1);
+    expect((env.fetchData.value as any).board.tickets[0].seen).toBe(true);
+  });
+});
+
+describe("useKdsBoard — atenção por ticket, vista pela estação", () => {
+  const view = (over: Record<string, unknown> = {}) => boardView(board(over).board as KDSBoardProjection);
+
+  it("avisa na primeira abertura quando há ticket que ninguém da estação viu", () => {
+    expect(kdsAttentionDecision(view(), "").shouldAlert).toBe(true);
+  });
+
+  it("não repete o que esta tela já anunciou; cala quando alguém da estação dá Visto", () => {
+    expect(kdsAttentionDecision(view(), "active:1").shouldAlert).toBe(false);
+    const seen = view({ tickets: [ticket({ seen: true })] });
+    expect(kdsAttentionDecision(seen, "active:1")).toEqual({ signature: "", shouldAlert: false, shouldStop: true });
   });
 
   it("avisa quando a identidade muda mesmo que o total continue igual", () => {
-    const current = view();
-    current.cards = [ticket({ pk: 2 })];
-    expect(kdsAttentionDecision(current, new Set(["active:1"]), "active:1").shouldAlert).toBe(true);
+    const current = view({ tickets: [ticket({ pk: 2 })] });
+    expect(kdsAttentionDecision(current, "active:1").shouldAlert).toBe(true);
   });
 
-  it("consulta futura nunca toca e encerra alerta em curso", () => {
-    const current = view();
-    current.serviceDate = "2026-09-16";
-    expect(kdsAttentionDecision(current, new Set(), "active:1")).toEqual({
-      signature: "",
-      shouldAlert: false,
-      shouldStop: true,
-    });
+  it("o cancelamento que ninguém viu também pede atenção; o que sai pela janela de desfazer não", () => {
+    const current = view({ cancelled_tickets: [ticket({ pk: 7, status: "cancelled" })] });
+    expect(kdsAttentionIds(current)).toEqual(["active:1", "cancelled:7"]);
+    const finishing = boardView(board().board as KDSBoardProjection, new Set([1]));
+    expect(kdsAttentionIds(finishing)).toEqual([]);
   });
 });
 

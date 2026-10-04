@@ -95,6 +95,9 @@ class OrderHistoryProjection:
     date_from: str
     date_to: str
     query: str
+    #: O recorte por produto ("Abrir os 44 pedidos" do B.I.): o SKU e o nome dele.
+    sku: str
+    sku_name: str
     facets: tuple[HistoryFacet, ...]
     items: tuple[OrderHistoryRowProjection, ...]
     page: int
@@ -114,6 +117,9 @@ class HistoryFilters:
     payments: tuple[str, ...] = ()
     fulfillments: tuple[str, ...] = ()
     query: str = ""
+    #: Só os pedidos com este produto. Inclui o balcão: o B.I. conta toda venda do
+    #: produto no dia, e o link "Abrir os N pedidos" tem de abrir os mesmos N.
+    sku: str = ""
     page: int = 1
 
 
@@ -137,12 +143,19 @@ def _base_queryset(filters: HistoryFilters):
             payment_method=Coalesce(KT("data__payment__method"), Value(""), output_field=TextField()),
             fulfillment=Coalesce(KT("data__fulfillment_type"), KT("data__delivery_method"), Value(""), output_field=TextField()),
         )
-        .exclude(origin="pos", pos_sales_mode="counter")
         .filter(
             closed_at__gte=_day_start(filters.date_from),
             closed_at__lt=_day_start(filters.date_to + timedelta(days=1)),
         )
     )
+    if filters.sku:
+        # Subconsulta, não join: as contagens dos recortes não podem dobrar o
+        # pedido que tem o produto em duas linhas.
+        from shopman.orderman.models import OrderItem
+
+        qs = qs.filter(pk__in=OrderItem.objects.filter(sku=filters.sku).values("order_id"))
+    else:
+        qs = qs.exclude(origin="pos", pos_sales_mode="counter")
     if filters.query:
         q = filters.query
         qs = qs.filter(
@@ -283,7 +296,7 @@ def build_order_history(filters: HistoryFilters) -> OrderHistoryProjection:
 
     if total:
         total_label = "1 pedido" if total == 1 else f"{total} pedidos"
-    elif facet_qs or filters.query:
+    elif facet_qs or filters.query or filters.sku:
         total_label = "Nenhum pedido com esses filtros"
     else:
         total_label = "Nenhum pedido fechado neste período"
@@ -292,6 +305,8 @@ def build_order_history(filters: HistoryFilters) -> OrderHistoryProjection:
         date_from=filters.date_from.isoformat(),
         date_to=filters.date_to.isoformat(),
         query=filters.query,
+        sku=filters.sku,
+        sku_name=_product_name(filters.sku),
         facets=facets,
         items=tuple(_row(order, channel_labels) for order in orders),
         page=page,
@@ -300,3 +315,11 @@ def build_order_history(filters: HistoryFilters) -> OrderHistoryProjection:
         has_next=start + PAGE_SIZE < total,
         total_label=total_label,
     )
+
+
+def _product_name(sku: str) -> str:
+    if not sku:
+        return ""
+    from shopman.offerman.models import Product
+
+    return Product.objects.filter(sku=sku).values_list("name", flat=True).first() or sku

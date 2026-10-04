@@ -4,7 +4,7 @@
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
-import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
+import { catalogCsv, cellPrice, cellSyncView, cellView, filterRows, letterTile, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions, filtersFromQuery, vocationPendingFilters } from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
 import { realtimeIndicator } from "~/presentation/board";
@@ -66,6 +66,14 @@ const visibleCells = (row: CatalogRowProjection) => keepVisible(row.cells, hidde
 const firstFeedRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
 const channelsCount = computed(() => surfaces.value.filter((s) => s.transactional).length);
 const feedsCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
+const catalogCountLine = computed(() => {
+  const total = matrix.value?.rows?.length ?? 0;
+  const shown = rows.value.length;
+  const products = shown === total ? `${total} ${total === 1 ? "produto" : "produtos"}` : `${shown} de ${total} produtos`;
+  const parts = [products, `${channelsCount.value} ${channelsCount.value === 1 ? "canal" : "canais"}`];
+  if (feedsCount.value) parts.push(`${feedsCount.value} ${feedsCount.value === 1 ? "feed" : "feeds"}`);
+  return parts.join(" · ");
+});
 const query = ref("");
 // Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
 // fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
@@ -88,6 +96,34 @@ const loading = computed(() => pending.value && !matrix.value);
 
 // zoom da foto (clique na thumbnail amplia num lightbox)
 const zoom = ref<{ url: string; name: string } | null>(null);
+// A foto que não carregou vira a letra no quadrado colorido (G20, v3/v4): o texto
+// alternativo do navegador ("Bague") nunca aparece no lugar da imagem.
+const brokenImages = ref<Set<string>>(new Set());
+function imageFailed(sku: string) {
+  brokenImages.value = new Set(brokenImages.value).add(sku);
+}
+// A foto que já falhou antes de a tela hidratar (desenhada no servidor) não dispara
+// mais o `error`: confere as que terminaram sem imagem, ao montar e a cada leitura.
+function sweepBrokenImages() {
+  for (const img of document.querySelectorAll<HTMLImageElement>("img[data-catalog-thumb]")) {
+    if (img.complete && img.naturalWidth === 0 && img.dataset.catalogThumb) imageFailed(img.dataset.catalogThumb);
+  }
+}
+onMounted(() => { nextTick(sweepBrokenImages); });
+watch(() => matrix.value?.rows, () => { if (import.meta.client) nextTick(sweepBrokenImages); });
+// ⋯ do cabeçalho (v3): a última leitura útil, Atualizar e Exportar.
+const headerMenuOpen = ref(false);
+function exportCatalog() {
+  headerMenuOpen.value = false;
+  const csv = catalogCsv(rows.value, visibleSurfaces.value);
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `catalogo-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ── reordenar coleções (pills arrastáveis) ─────────────────────────────────────
 // Override = null → ordem do servidor (determinístico p/ SSR); só é setado durante o
@@ -311,6 +347,26 @@ function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
   setCell(row.sku, cell.surface_ref, { is_sellable: !cell.is_sellable });
 }
+// O "Pausar" por canal do painel (G22): o MESMO interruptor da célula da tabela.
+const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+const detailChannelCells = computed(() => {
+  const row = (matrix.value?.rows ?? []).find((item) => item.sku === detailSku.value);
+  if (!row) return {};
+  return Object.fromEntries(row.cells.filter((cell) => cell.in_listing).map((cell) => [cell.surface_ref, {
+    paused: !cell.is_sellable,
+    enabled: Boolean(cell.action?.enabled ?? true),
+    busy: isBusy(cellKey(row.sku, cell.surface_ref)),
+  }]));
+});
+async function pauseDetailChannel(surface: string, pause: boolean) {
+  const sku = detailSku.value;
+  if (!sku) return;
+  if (!(await setCell(sku, surface, { is_sellable: !pause }))) return;
+  // Relê só a disponibilidade: o rascunho aberto no painel não se perde.
+  const fresh = await fetchProductDetail(sku);
+  if (fresh && detailSku.value === sku) detailAvailability.value = fresh.channel_availability ?? [];
+}
+const detailAvailability = ref<ProductDetailProjection["channel_availability"] | null>(null);
 const editing = ref<{ sku: string; surface: string; action?: Action; original: string } | null>(null);
 const priceInput = ref("");
 async function startEdit(row: CatalogRowProjection, cell: SurfaceCellProjection) {
@@ -411,6 +467,7 @@ async function openDetail(row: CatalogRowProjection, tab = "geral") {
   detailTab.value = tab;
   detailSku.value = row.sku;
   detail.value = null;
+  detailAvailability.value = null;
   detailLoading.value = true;
   try {
     const result = await fetchProductDetail(row.sku);
@@ -529,45 +586,59 @@ useHead({ title: "Catálogo" });
         <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
              declarada no seletor). A escolha persiste por estação. -->
         <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+        <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
+        <div class="relative">
+          <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" aria-haspopup="menu" :aria-expanded="headerMenuOpen" data-catalog-more @click="headerMenuOpen = !headerMenuOpen" />
+          <div v-if="headerMenuOpen" class="fixed inset-0 z-40" @click="headerMenuOpen = false" />
+          <div v-if="headerMenuOpen" class="absolute right-0 z-50 mt-1 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg" role="menu" data-catalog-menu>
+            <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
+              <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
+            </button>
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
+              <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
+            </button>
+          </div>
+        </div>
       </template>
       <template #filters>
         <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
-      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-1.5">
-        <UiFilterChip key="__all" :active="collectionRef === ''" @click="selectCollection('')">Todas</UiFilterChip>
-        <UiFilterChip
+      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-0.5">
+        <!-- abas planas (v3 `depois-gestor-catalogo`): a ativa numa caixa; arrastar reordena -->
+        <button
+          key="__all"
+          type="button"
+          class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 op-label transition"
+          :class="collectionRef === '' ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent'"
+          :aria-pressed="collectionRef === ''"
+          data-collection-tab
+          @click="selectCollection('')"
+        >Todas <span class="tnum text-muted-foreground">{{ matrix?.rows?.length ?? rows.length }}</span></button>
+        <button
           v-for="c in orderedCollections"
           :key="c.ref"
+          type="button"
           :data-dragkey="c.ref"
-          class="cursor-grab touch-none transition-[opacity,box-shadow] active:cursor-grabbing"
-          :class="collDragKey === c.ref ? 'opacity-50 shadow-md' : ''"
-          :active="collectionRef === c.ref"
-          :count="c.product_count"
+          class="inline-flex min-h-control shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 op-label transition-[opacity,box-shadow,background-color] active:cursor-grabbing"
+          :class="[collDragKey === c.ref ? 'opacity-50 shadow-md' : '', collectionRef === c.ref ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent']"
+          :aria-pressed="collectionRef === c.ref"
+          data-collection-tab
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
           @click="selectCollection(c.ref)"
           @pointerdown="collPointerDown(c.ref, $event)"
           @keydown="collKeyDown(c.ref, $event)"
-          aria-keyshortcuts="ArrowUp ArrowDown"
-          :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
         >
-          <template v-if="c.is_smart" #icon>
-            <Icon name="lucide:sparkles" class="size-4 opacity-70" title="Coleção por regra" />
-          </template>
-          {{ c.name }}
-        </UiFilterChip>
+          <Icon v-if="c.is_smart" name="lucide:sparkles" class="size-4 opacity-70" title="Coleção por regra" />
+          {{ c.name }} <span class="tnum text-muted-foreground">{{ c.product_count }}</span>
+        </button>
       </TransitionGroup>
-        <div class="ml-auto flex shrink-0 items-center gap-3 pl-3">
-        <p class="hidden shrink-0 op-micro text-muted-foreground lg:block">
-            <span class="tabular-nums">{{ rows.length }}</span> produto{{ rows.length === 1 ? "" : "s" }}
-            <span class="text-muted-foreground/50">·</span>
-            <span class="tabular-nums">{{ channelsCount }}</span> {{ channelsCount === 1 ? "canal" : "canais" }}
-            <template v-if="feedsCount">
-              <span class="text-muted-foreground/50">·</span>
-              <span class="tabular-nums">{{ feedsCount }}</span> feed{{ feedsCount === 1 ? "" : "s" }}
-            </template>
-          </p>
-          <ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" />
-        </div>
+        <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
+             inteiro: a frase não se corta na borda. -->
+        <p class="ml-auto hidden shrink-0 pl-3 op-micro whitespace-nowrap text-muted-foreground lg:block" data-catalog-counts>
+          <span class="tabular-nums">{{ catalogCountLine }}</span>
+        </p>
       </template>
     </OperatorPageHeader>
 
@@ -644,7 +715,7 @@ useHead({ title: "Catálogo" });
             <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
               <label class="min-h-control flex items-center gap-3">
                 <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
-                <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Produto</span>
+                <span class="op-eyebrow text-muted-foreground">Produto</span>
               </label>
             </th>
             <!-- Superfícies: largura fixa e uniforme (canais + feeds). O que faz caberem
@@ -659,15 +730,17 @@ useHead({ title: "Catálogo" });
               <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
                    Canais o mostra, para religar. -->
               <div class="flex flex-col gap-0.5">
-                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`">
+                <!-- versalete (v3: PDV · SITE · IFOOD · WHATSAPP · META · GOOGLE · TV 1 · TV 2);
+                     o feed com saída pública abre pelo próprio nome -->
+                <span class="flex items-center gap-1 text-muted-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`" data-surface-head>
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
-                  <span class="truncate text-xs">{{ s.short_name }}</span>
                   <a
                     v-if="s.output_path"
                     :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="ml-auto grid min-h-control min-w-control shrink-0 place-items-center text-muted-foreground/50 transition hover:text-foreground"
+                    class="op-eyebrow whitespace-nowrap hover:text-foreground hover:underline"
                     :title="`Abrir ${s.name}`" @click.stop
-                  ><Icon name="lucide:external-link" class="size-3" /></a>
+                  >{{ s.short_name }}</a>
+                  <span v-else class="op-eyebrow whitespace-nowrap">{{ s.short_name }}</span>
                 </span>
                 <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
                      superfície (feed/menuboard) já é dito pelo ícone + title. -->
@@ -721,12 +794,22 @@ useHead({ title: "Catálogo" });
                   <input type="checkbox" :checked="isSelected(row.sku)" class="size-4 shrink-0 rounded border-border accent-foreground" @change="toggleSelect(row.sku)" />
                   <!-- thumbnail: esmaece + P&B quando "fora"; clique amplia a foto -->
                   <img
-                    v-if="row.image_url" :src="row.image_url" :alt="row.name"
+                    v-if="row.image_url && !brokenImages.has(row.sku)" :src="row.image_url" :alt="row.name"
                     class="size-10 shrink-0 cursor-zoom-in rounded-md object-cover ring-1 ring-border transition hover:ring-2 hover:ring-primary/50"
                     :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+                    :data-catalog-thumb="row.sku"
+                    @error="imageFailed(row.sku)"
                     @click.stop.prevent="zoom = { url: row.image_url, name: row.name }"
                   />
-                  <div v-else class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground"><Icon name="lucide:image-off" class="size-4" /></div>
+                  <!-- sem foto (ou foto quebrada): a letra no quadrado colorido (v3/v4) -->
+                  <div
+                    v-else
+                    class="grid size-10 shrink-0 place-items-center rounded-md text-base font-semibold text-white"
+                    :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+                    :style="{ background: letterTile(row.name).color }"
+                    aria-hidden="true"
+                    data-letter-tile
+                  >{{ letterTile(row.name).letter }}</div>
                   <div class="flex min-w-0 flex-col">
                     <span class="flex items-center gap-1.5 truncate font-medium" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground' : 'text-foreground'">
                       <span class="truncate" :class="rowStatuses[row.sku]?.off ? 'line-through decoration-1' : ''">{{ row.name }}</span>
@@ -762,7 +845,7 @@ useHead({ title: "Catálogo" });
                       <span class="shrink-0 font-mono">{{ row.sku }}</span>
                       <span class="shrink-0 text-muted-foreground/40">·</span>
                       <span class="shrink-0 tabular-nums">{{ row.base_price_display }}</span>
-                      <span v-if="row.primary_collection_name" class="truncate rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ row.primary_collection_name }}</span>
+                      <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40">·</span><span class="truncate">{{ row.primary_collection_name }}</span></template>
                     </span>
                   </div>
                 </label>
@@ -1050,11 +1133,15 @@ useHead({ title: "Catálogo" });
       :initial-tab="detailTab"
       :conflict="detailSku ? productConflict(detailSku) : null"
       :error="errorMsg"
+      :channel-cells="detailChannelCells"
+      :live-availability="detailAvailability"
+      :admin-base-url="adminBaseUrl"
       @review-conflict="reviewProductConflict"
       @dirty-change="detailDirty = $event"
       @update:open="(v) => { if (!v) closeDetail(); }"
       @save="saveDetail"
       @set-purchasable="togglePurchasable"
+      @pause-channel="pauseDetailChannel"
     />
 
     <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->

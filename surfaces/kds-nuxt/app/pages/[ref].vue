@@ -2,11 +2,15 @@
 // Quadro da estação, no desenho da prévia v4 (`cozinha-estacao4.html`, celular em
 // `cozinha-celular4.html` (b)). Lê a projection canônica + tempo real (SSE + poll de
 // 15 s) por useKdsBoard; os gestos (iniciar, finalizar, desfazer, reabrir, recebi o
-// cancelamento) passam pelo proxy do Django (CSRF lá) de forma otimista.
+// cancelamento, visto) passam pelo proxy do Django (CSRF lá) de forma otimista.
 //
 // A FILA do cozinheiro: 4 a 6 tickets em foco (3×2 no tablet deitado), o resto vira
 // "+N na fila" e entra no "A fazer" (SUITE-UX §10.3). Ticket longo ocupa duas alturas
-// em vez de cortar. No celular, um ticket inteiro em foco e os seguintes em linhas.
+// em vez de cortar. No celular, um ticket inteiro em foco e os seguintes em linhas, o
+// ato no polegar ("Pronto W07") e desfazer, reabrir e ver o pedido no toque longo.
+//
+// O quadro é sempre o de HOJE (nota 2: a prévia de outra data foi para a Produção/
+// Encomendas). Densidade e som são da estação provisionada (nota 1, Ajustes).
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   boardFilterCounts,
@@ -16,23 +20,16 @@ import {
   matchesBoardFilter,
   realtimeIndicator,
   restSummary,
-  shortDateLabel,
   splitRef,
   type KDSBoardFilter,
 } from "~/presentation/board";
 
 const route = useRoute();
-const router = useRouter();
 const stationRef = computed(() => String(route.params.ref || ""));
-const serviceDate = computed(() => {
-  const value = route.query.date;
-  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
-});
 
 // Write-side é otimista (toque instantâneo) e mora no composable, junto do estado.
 const {
   view,
-  readOnly,
   pending,
   error,
   stationMissing,
@@ -41,7 +38,6 @@ const {
   attentionPending,
   attentionKeys,
   realtime,
-  toggleSound,
   activateAttentionSound,
   acknowledgeAttention,
   start,
@@ -51,16 +47,13 @@ const {
   acknowledge,
   declareVolumes,
   volumesBusy,
-} = useKdsBoard(stationRef.value, serviceDate);
+} = useKdsBoard(stationRef.value);
 
-// A estação de Saída não tem tela na Cozinha (UX-G3, SUITE-UX §15: a Saída é a
-// coluna Saída do Gestor). Aberta pelo endereço, é estação que não existe aqui.
-const notHere = computed(() => stationMissing.value || Boolean(view.value?.isExpedition));
-const isToday = computed(() => Boolean(view.value && view.value.serviceDate === view.value.today));
+const notHere = computed(() => stationMissing.value);
 const isPhone = useMediaQuery("(max-width: 767.98px)");
 
-// O shell (rail, Ajustes) sabe da estação: o selo do Preparo, a data de consulta e a
-// estação deste dispositivo (o item "Preparo" do rail volta para cá).
+// O shell (rail, Ajustes) sabe da estação: o selo do Preparo, a densidade e o som da
+// estação e a estação deste dispositivo (o item "Preparo" do rail volta para cá).
 const { remember } = useKdsStation();
 const boardState = useKdsBoardState();
 watch(
@@ -71,9 +64,10 @@ watch(
     boardState.value = {
       onBoard: true,
       total: current.total,
-      serviceDate: current.serviceDate,
-      today: current.today,
-      availableDates: current.availableDates,
+      stationRef: stationRef.value,
+      stationName: current.instanceName,
+      density: current.density,
+      soundEnabled: current.soundEnabled,
     };
   },
   { immediate: true },
@@ -87,12 +81,15 @@ const eyebrow = computed(() => {
   return /^esta[çc][aã]o\b/i.test(name) ? name : `Estação ${name}`;
 });
 
+// O som é da estação (Ajustes). No cabeçalho fica o ESTADO; o toque destrava o áudio
+// quando o navegador o bloqueou, e nos outros casos leva aos Ajustes, onde se muda.
+const settingsOpen = useKdsSettingsOpen();
 function handleSoundAction() {
-  if (!soundOn.value || soundBlocked.value) {
+  if (soundOn.value && soundBlocked.value) {
     void activateAttentionSound();
     return;
   }
-  toggleSound();
+  settingsOpen.value = true;
 }
 const soundLabel = computed(() => {
   if (soundOn.value && soundBlocked.value) return "Som bloqueado: toque para ativar";
@@ -108,18 +105,6 @@ const emptyTodayLine = computed(() =>
   soundAnnounces.value
     ? "Nenhum pedido na fila agora. O próximo avisa com som."
     : "Nenhum pedido na fila agora. O som está desligado: o próximo pedido aparece aqui sem avisar.",
-);
-
-// Trocar a data é só trocar o endereço (a leitura segue a rota): nada a esperar.
-function backToToday() {
-  const query = { ...route.query };
-  delete query.date;
-  void router.replace({ path: route.path, query });
-}
-const consultLabel = computed(() =>
-  view.value && !isToday.value
-    ? `Consulta: ${view.value.serviceDateDisplay}, ${shortDateLabel(view.value.serviceDate)}`
-    : "",
 );
 
 // Recall: painel de concluídos recentes (desfazer finalização).
@@ -158,7 +143,7 @@ const liveLabel = computed(() => {
   return realtime.value === "polling" ? "Atualiza a cada 15 s" : liveCue.value.label;
 });
 
-// Densidade (Ajustes): quão estreito o ticket pode ser.
+// Densidade da estação (Ajustes): quão estreito o ticket pode ser.
 const { density, option: densityOption } = useKdsDensity();
 
 // Busca: filtra por código, cliente ou item. Recortes: Todos, Entrega, Atrasados.
@@ -170,7 +155,7 @@ function matchesQuery(card: KDSTicketProjection, q: string): boolean {
   const hay = [card.order_ref, card.customer_name, ...card.items.map((i) => i.name)].join(" ").toLowerCase();
   return hay.includes(q);
 }
-const tickets = computed(() => (view.value?.cards ?? []) as KDSTicketProjection[]);
+const tickets = computed(() => view.value?.cards ?? []);
 const filterCounts = computed(() => boardFilterCounts(tickets.value));
 const filteredCards = computed(() => {
   const q = query.value.trim().toLowerCase();
@@ -178,6 +163,10 @@ const filteredCards = computed(() => {
 });
 watch(filterCounts, (counts) => {
   if (filter.value !== "all" && counts[filter.value] === 0) filter.value = "all";
+});
+// No celular não há recortes (prévia v4 b): a fila inteira, a mais urgente primeiro.
+watch(isPhone, (phone) => {
+  if (phone) filter.value = "all";
 });
 
 // A fila em foco: quantos tickets cabem na área (colunas pela densidade, linhas pela
@@ -194,13 +183,15 @@ const slice = computed(() =>
   }),
 );
 const rest = computed(() => restSummary(slice.value.rest));
+// A grade enche a altura (prévia v4: `grid-rows-2 flex-1`): as linhas dividem a área,
+// e o ticket estica até o pé da linha, com o botão no mesmo lugar em todos.
 const gridStyle = computed(() => {
   const columns = `repeat(${grid.value.columns}, minmax(0, 1fr))`;
   if (showsEverything.value) return { gridTemplateColumns: columns, gridAutoRows: "minmax(min-content, auto)" };
   return {
     gridTemplateColumns: columns,
     gridTemplateRows: `repeat(${grid.value.rows}, minmax(min-content, 1fr))`,
-    minHeight: "100%",
+    height: "100%",
   };
 });
 function placementStyle(pk: number) {
@@ -256,6 +247,34 @@ function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
 
+// Toque longo no celular (prévia v4 nota 7): o menu do pedido com desfazer, reabrir
+// e ver o pedido, no lugar dos botões que o tablet mostra no cabeçalho.
+const heldPk = ref<number | null>(null);
+const heldTicket = computed(() => tickets.value.find((card) => card.pk === heldPk.value) ?? null);
+const holdOpen = computed({
+  get: () => heldPk.value != null,
+  set: (value: boolean) => {
+    if (!value) heldPk.value = null;
+  },
+});
+function onHold(pk: number) {
+  heldPk.value = pk;
+}
+
+// O celular da estação pequena leva a estação no bolso: o pedido novo chega por push
+// e vibra com a tela apagada (SUITE-UX §10.3, prévia v4 b). Abrir o quadro no celular
+// segue a estação por um turno (o servidor guarda; seguir outra deixa esta).
+const push = useWebPush();
+onMounted(() => {
+  if (!isPhone.value) return;
+  void ($fetch as (path: string, opts: { method: string; body: Record<string, unknown> }) => Promise<unknown>)(
+    `/api/v1/backstage/kds/${encodeURIComponent(stationRef.value)}/follow/`,
+    { method: "POST", body: {} },
+  ).catch(() => {
+    // Sem seguir, o quadro continua avisando com som enquanto a tela está acesa.
+  });
+});
+
 // Toque num pedido travado por item cancelado: o card já diz o que fazer; o aviso
 // repete PARA ONDE ir. O gesto se chama "Recebi o cancelamento".
 function warnBlocked() {
@@ -276,13 +295,6 @@ function warnLocked(pk: number) {
     <OperatorPageHeader title="Preparo" :eyebrow="eyebrow">
       <template #status>
         <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :detail="liveCue.title" />
-        <span
-          v-if="consultLabel"
-          class="hidden h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold pill-warning md:inline-flex"
-          data-kds-consult
-        >
-          <Icon name="lucide:calendar-search" class="size-3.5" />{{ consultLabel }}
-        </span>
       </template>
       <template #search>
         <OperatorSuiteSearch
@@ -297,26 +309,18 @@ function warnLocked(pk: number) {
       <template #phone-actions>
         <NotificationBell v-if="isPhone" />
       </template>
-      <template #actions>
-        <button
-          v-if="consultLabel"
-          type="button"
-          class="inline-flex h-11 items-center gap-2 rounded-md border border-warning/50 px-3.5 op-label font-semibold text-warning transition hover:bg-warning/10"
-          data-kds-back-today
-          @click="backToToday"
-        >
-          <Icon name="lucide:calendar-check" class="size-4" />Voltar para hoje
-        </button>
+      <!-- Celular (prévia v4 b): a barra de cima é só selo, título, ao vivo, busca e
+           sino; som e reabrir vão para os Ajustes e para o toque longo. -->
+      <template v-if="!isPhone" #actions>
         <button
           type="button"
-          class="relative inline-flex h-11 items-center gap-2 rounded-md px-3 op-label transition"
+          class="relative hidden h-11 items-center gap-2 rounded-md px-3 op-label transition md:inline-flex"
           :class="
             soundOn && soundBlocked
               ? 'border border-warning/50 bg-warning/10 font-semibold text-warning'
               : 'bg-muted text-muted-foreground hover:text-foreground'
           "
-          :aria-label="soundOn && soundBlocked ? 'Som bloqueado. Toque para ativar' : soundOn ? 'Som ativo. Toque para desligar' : 'Som desligado. Toque para ligar'"
-          :aria-pressed="soundOn && !soundBlocked"
+          :aria-label="soundOn && soundBlocked ? 'Som bloqueado. Toque para ativar' : soundOn ? 'Som da estação ligado. Ajustes da estação' : 'Som da estação desligado. Ajustes da estação'"
           data-kds-sound
           @click="handleSoundAction"
         >
@@ -328,9 +332,9 @@ function warnLocked(pk: number) {
           {{ soundLabel }}
         </button>
         <button
-          v-if="view && !readOnly && view.recentDone.length"
+          v-if="view && view.recentDone.length"
           type="button"
-          class="inline-flex h-11 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent"
+          class="hidden h-11 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent md:inline-flex"
           :aria-label="`Reabrir concluídos recentes: ${view.recentDone.length}`"
           title="Concluídos nos últimos 30 minutos"
           data-kds-recall
@@ -382,6 +386,17 @@ function warnLocked(pk: number) {
       </p>
 
       <template v-if="view && !notHere">
+        <!-- Celular com o aviso no bolso ligado (prévia v4 b): o pedido novo toca e vibra
+             mesmo com a tela apagada. Sem push, o convite do kit oferece ligar. -->
+        <p
+          v-if="isPhone && push.active.value"
+          class="flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 op-label font-semibold text-success"
+          data-kds-push-on
+        >
+          <Icon name="lucide:vibrate" class="size-4 shrink-0" />
+          Toca e vibra mesmo com a tela apagada (push)
+        </p>
+
         <!-- AVISOS: pedido novo (Visto) e cancelamentos (Recebi o cancelamento), lado
              a lado do tablet para cima. O vermelho é alerta de verdade só aqui. -->
         <div
@@ -399,12 +414,13 @@ function warnLocked(pk: number) {
             </span>
             <p class="min-w-0 flex-1 basis-[10rem] op-title leading-tight">
               <span class="tabular-nums">{{ attentionTitle }}</span>
-              <span class="block op-label font-normal text-muted-foreground">toca neste dispositivo até alguém dar Visto</span>
+              <span class="block op-label font-normal text-muted-foreground">toca nesta estação até alguém dar Visto</span>
             </p>
             <button
               type="button"
               class="inline-flex h-12 shrink-0 items-center gap-2 rounded-md bg-foreground px-5 op-title text-background transition hover:bg-foreground/90"
-              aria-label="Visto: silenciar o aviso de pedido novo"
+              aria-label="Visto: silenciar o aviso de pedido novo em todas as telas desta estação"
+              data-kds-seen
               @click="acknowledgeAttention"
             >
               <Icon name="lucide:check" class="size-5" />
@@ -434,10 +450,9 @@ function warnLocked(pk: number) {
               </div>
               <button
                 type="button"
-                :disabled="readOnly"
-                class="inline-flex h-12 shrink-0 items-center gap-2 rounded-md border border-destructive/60 px-4 op-title text-destructive transition hover:bg-destructive/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex h-12 shrink-0 items-center gap-2 rounded-md border border-destructive/60 px-4 op-title text-destructive transition hover:bg-destructive/15 active:scale-[0.98]"
                 :aria-label="`Confirmar que a cozinha viu o cancelamento do pedido ${splitRef(t.order_ref).code}`"
-                @click="!readOnly && acknowledge(t.pk)"
+                @click="acknowledge(t.pk)"
               >
                 <Icon name="lucide:check" class="size-5" />
                 Recebi o cancelamento
@@ -446,24 +461,9 @@ function warnLocked(pk: number) {
           </TransitionGroup>
         </div>
 
-        <!-- A FAZER: o que falta somando a fila INTEIRA (inclusive o "+N"). -->
-        <div
-          v-if="view.allDay.length && !isPhone"
-          class="flex min-h-11 shrink-0 items-center gap-2 overflow-x-auto no-scrollbar"
-          data-kds-all-day
-        >
-          <span class="inline-flex w-[86px] shrink-0 items-center gap-1.5 op-eyebrow text-muted-foreground">
-            <Icon name="lucide:clipboard-list" class="size-4" />A fazer
-          </span>
-          <span
-            v-for="entry in view.allDay"
-            :key="entry.name"
-            class="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3"
-          >
-            <b class="text-lg tabular-nums">{{ entry.qty }}×</b>
-            <span class="op-body font-medium">{{ entry.name }}</span>
-          </span>
-        </div>
+        <!-- A FAZER: o que falta somando a fila INTEIRA (inclusive o "+N"), numa linha,
+             sem chip cortado na borda. -->
+        <KdsAllDayStrip v-if="view.allDay.length && !isPhone" :entries="view.allDay" />
 
         <!-- vazio: estação zerada, estado calmo (omotenashi) -->
         <div
@@ -473,42 +473,26 @@ function warnLocked(pk: number) {
           <div class="grid size-16 place-items-center rounded-full bg-success/10 text-success">
             <Icon name="lucide:coffee" class="size-8" />
           </div>
-          <p class="op-display">{{ isToday ? "Tudo em dia" : "Nada agendado" }}</p>
-          <p class="max-w-sm op-body text-muted-foreground">
-            {{
-              isToday
-                ? emptyTodayLine
-                : `Nenhum item desta estação para ${view.serviceDateDisplay.toLowerCase()}.`
-            }}
-          </p>
+          <p class="op-display">Tudo em dia</p>
+          <p class="max-w-sm op-body text-muted-foreground">{{ emptyTodayLine }}</p>
           <button
-            v-if="isToday && !soundAnnounces"
+            v-if="!soundAnnounces"
             type="button"
             class="inline-flex h-11 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent"
             @click="handleSoundAction"
           >
             <Icon name="lucide:volume-2" class="size-4" />
-            Ligar o som
+            {{ soundOn && soundBlocked ? "Ativar o som" : "Ligar o som nos Ajustes" }}
           </button>
         </div>
 
         <template v-else>
-          <!-- cabeça da grade: a ordem e os recortes -->
-          <div class="flex min-h-11 shrink-0 flex-wrap items-center gap-2">
-            <Icon
-              :name="isToday ? 'lucide:arrow-down-wide-narrow' : 'lucide:calendar-search'"
-              class="size-4 text-muted-foreground"
-            />
-            <h2 class="op-eyebrow text-muted-foreground">
-              {{ isToday ? "Mais urgente primeiro" : view.serviceDateDisplay }}
-            </h2>
-            <span class="op-micro text-muted-foreground">
-              {{
-                isToday
-                  ? "· o destacado é o próximo"
-                  : `· ${shortDateLabel(view.serviceDate)}: só para consultar. Nada aqui pode ser iniciado ou finalizado hoje.`
-              }}
-            </span>
+          <!-- cabeça da grade: a ordem e os recortes (do tablet para cima; o celular não
+               tem recortes, prévia v4 b) -->
+          <div v-if="!isPhone" class="flex min-h-11 shrink-0 flex-wrap items-center gap-2">
+            <Icon name="lucide:arrow-down-wide-narrow" class="size-4 text-muted-foreground" />
+            <h2 class="op-eyebrow text-muted-foreground">Mais urgente primeiro</h2>
+            <span class="op-micro text-muted-foreground">· o destacado é o próximo</span>
             <span class="flex-1" />
             <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Recortes da fila">
               <UiFilterChip :active="filter === 'all'" :count="filterCounts.all" :aria-pressed="filter === 'all'" @click="filter = 'all'">
@@ -565,16 +549,15 @@ function warnLocked(pk: number) {
             :blocked-refs="view.blockedRefs"
             :addition-pks="view.additionPks"
             :finishing-pks="view.finishingPks"
-            :service-date="view.serviceDate"
-            :today="view.today"
             :all-day="view.allDay"
             :density="density"
             @open="(pk) => (openTicketPk = pk)"
-            @start="(pk) => !readOnly && start(pk)"
-            @finish="(pk) => !readOnly && finalize(pk)"
+            @start="(pk) => start(pk)"
+            @finish="(pk) => finalize(pk)"
             @undo="(pk) => undoFinish(pk)"
             @blocked="warnBlocked"
             @locked="warnLocked"
+            @hold="onHold"
           />
 
           <!-- tablet e desktop: a fila em foco -->
@@ -590,14 +573,13 @@ function warnLocked(pk: number) {
                   <KdsTicketCard
                     :ticket="card"
                     :density="density"
-                    :next="!query && filter === 'all' && isToday && card.pk === view.nextPk"
+                    :next="!query && filter === 'all' && card.pk === view.nextPk"
                     :blocked="view.blockedRefs.has(card.order_ref)"
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
-                    :service-date="view.serviceDate"
                     @open="openTicketPk = card.pk"
-                    @start="!readOnly && start(card.pk)"
-                    @finish="!readOnly && finalize(card.pk)"
+                    @start="start(card.pk)"
+                    @finish="finalize(card.pk)"
                     @undo="undoFinish(card.pk)"
                     @blocked="warnBlocked"
                     @locked="warnLocked(card.pk)"
@@ -639,14 +621,24 @@ function warnLocked(pk: number) {
       data-focus-obstruction
     />
 
-    <!-- detalhe (aberto pelo card) -->
+    <!-- detalhe (aberto pelo card ou pelo toque longo) -->
     <KdsTicketModal
       :open="openTicket != null"
       :ticket="openTicket"
       :volumes-busy="volumesBusy"
-      :read-only="readOnly"
       @update:open="setModalOpen"
       @volumes="onVolumes"
+    />
+
+    <!-- toque longo no celular: ver o pedido, desfazer, reabrir -->
+    <KdsHoldSheet
+      v-model:open="holdOpen"
+      :ticket="heldTicket"
+      :finishing="heldTicket ? view?.finishingPks.has(heldTicket.pk) ?? false : false"
+      :recent-count="view?.recentDone.length ?? 0"
+      @view="heldTicket && (openTicketPk = heldTicket.pk)"
+      @undo="heldTicket && undoFinish(heldTicket.pk)"
+      @reopen="recallOpen = true"
     />
 
     <!-- recall: concluídos recentes (desfazer finalização) -->
@@ -676,7 +668,7 @@ function warnLocked(pk: number) {
                 </p>
               </div>
               <button
-                v-if="t.volumes_order_ref && !readOnly"
+                v-if="t.volumes_order_ref"
                 type="button"
                 class="ml-auto inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
                 :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
@@ -688,9 +680,8 @@ function warnLocked(pk: number) {
               </button>
               <button
                 type="button"
-                :disabled="readOnly"
-                class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                @click="!readOnly && recall(t.pk)"
+                class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
+                @click="recall(t.pk)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-4" />
                 Reabrir

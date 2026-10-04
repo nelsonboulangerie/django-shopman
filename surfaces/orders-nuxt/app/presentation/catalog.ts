@@ -262,3 +262,38 @@ export function pimSummary(row: CatalogRowProjection): PimSummary {
     missing,
   };
 }
+
+// ── a letra no quadrado colorido (G20) ──────────────────────────────────────────
+// Sem foto, ou com a foto quebrada, o produto aparece como na v3/v4: a inicial num
+// quadrado de cor estável (a mesma cor para o mesmo nome, em toda tela).
+const TILE_COLORS = ["#8a6a2f", "#7a3b2e", "#a0662a", "#6b4a3a", "#8c2f3f", "#a77b2c", "#5f5a2a", "#7d4f22"];
+
+export function letterTile(name: string): { letter: string; color: string } {
+  const clean = (name || "").trim();
+  const letter = (clean.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
+  let hash = 0;
+  for (const ch of clean) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
+  return { letter, color: TILE_COLORS[hash % TILE_COLORS.length]! };
+}
+
+// ── Exportar (⋯ do cabeçalho, v3) ────────────────────────────────────────────
+// O recorte da tela como está: produto, SKU, preço, coleção e o estado em cada coluna
+// visível ("à venda", "pausado"…), na ordem da matriz.
+export function catalogCsv(rows: CatalogRowProjection[], surfaces: SurfaceProjection[]): string {
+  const esc = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const header = ["Produto", "SKU", "Preço", "Coleção", ...surfaces.map((s) => s.name)];
+  const body = rows.map((row) => {
+    const bySurface = new Map(row.cells.map((cell) => [cell.surface_ref, cell]));
+    return [
+      row.name,
+      row.sku,
+      row.base_price_display,
+      row.primary_collection_name,
+      ...surfaces.map((s) => {
+        const cell = bySurface.get(s.ref);
+        return cell ? cellView(row, cell).label : "";
+      }),
+    ].map(esc).join(",");
+  });
+  return [header.map(esc).join(","), ...body].join("\n");
+}

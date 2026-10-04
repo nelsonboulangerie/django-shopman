@@ -1,13 +1,8 @@
-"""A Saída do KDS é outra porta de saída — e a saída tem uma implementação só.
+"""A cozinha responde pelo pedido enquanto ele está na casa, e o painel é do dia.
 
-Três contratos, todos achados na auditoria de 21/09/2026:
+Dois contratos achados na auditoria de 21/09/2026 (a Saída, que era o terceiro,
+mora no Gestor desde SUITE-UX §15 e tem os testes dela lá):
 
-1. "Despachar" pela Saída passa pelo MESMO ``operator_orders.advance_order``
-   do Gestor: fulfillment de entrega avança, a auto-conclusão fica agendada e,
-   quando o pedido pede troco (que só o Gestor sabe perguntar), a Saída
-   recusa com "abra no Gestor" — e o card diz isso antes do toque. Antes ela
-   fazia a transição sozinha: entrega sem auto-conclusão e troco saindo da
-   gaveta sem a linha ``courier_out`` que o acerto exige.
 2. "Desfazer finalização" não reabre ticket de pedido que já saiu da cozinha
    (despachado, concluído, cancelado), e a lista de concluídos não o oferece.
 3. O painel público de retirada é do DIA: pedido esquecido de dias atrás e
@@ -20,84 +15,18 @@ from datetime import datetime, time, timedelta
 
 import pytest
 from django.utils import timezone
-from shopman.orderman.models import Directive, Order, OrderItem, Session
+from shopman.orderman.models import Order, Session
 
 from shopman.backstage.models import KDSInstance, KDSTicket
 from shopman.backstage.projections.kds import build_kds_board, build_kds_customer_status
 from shopman.backstage.services import kds as kds_backstage
 from shopman.backstage.services.exceptions import KDSError
-from shopman.shop.directives import DELIVERY_AUTO_COMPLETE
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Shop
 from shopman.shop.services import kds as kds_core
-from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
-GESTOR_CHANGE = "Abra este pedido no Gestor e informe o troco que o entregador leva."
-
-
-@pytest.fixture
-def expedition(db):
-    Shop.objects.create(name="Loja")
-    Channel.objects.create(ref="web", name="Loja online", config={})
-    return KDSInstance.objects.create(ref="exp-parity", name="Saída", type="expedition")
-
-
-def _cod_order(ref: str, *, change_for_q: int | None = None) -> Order:
-    payment = {"method": "cash", "collection": "on_delivery"}
-    if change_for_q is not None:
-        payment["change_for_q"] = change_for_q
-    order = Order.objects.create(
-        ref=ref,
-        channel_ref="web",
-        session_key=f"sk-{ref}",
-        status=Order.Status.READY,
-        total_q=3000,
-        data={"customer": {"name": "Ana"}, "fulfillment_type": "delivery", "payment": payment},
-    )
-    OrderItem.objects.create(order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=3000, line_total_q=3000)
-    return order
-
-
-def _card(board, ref):
-    return next(card for card in board.tickets if card.order_ref == ref)
-
-
-# ── 1. Despachar pela Saída = despachar pelo Gestor ─────────────────────
-
-
-def test_dispatch_with_change_is_refused_and_the_card_says_so_before_the_tap(expedition):
-    order = _cod_order("EXP-TROCO", change_for_q=5000)
-
-    card = _card(build_kds_board(expedition.ref), "EXP-TROCO")
-    assert card.advance_block_label == "Despachar pelo Gestor"
-    assert card.advance_block_reason == GESTOR_CHANGE
-
-    with pytest.raises(KDSError, match="troco"):
-        kds_backstage.expedition_action(order_id=order.pk, action="dispatch", actor="kds:op")
-    order.refresh_from_db()
-    assert order.status == Order.Status.READY
-
-
-def test_dispatch_without_change_goes_through_the_gestor_service(expedition):
-    order = _cod_order("EXP-SEMTROCO")
-
-    card = _card(build_kds_board(expedition.ref), "EXP-SEMTROCO")
-    assert card.advance_block_label == ""
-
-    status = kds_backstage.expedition_action(order_id=order.pk, action="dispatch", actor="kds:op")
-
-    assert status == Order.Status.DISPATCHED
-    # UX-G2: a saída fica na janela de desfazer e é gravada quando ela vence.
-    assert settle(order) == Order.Status.DISPATCHED
-    # O que o Gestor faz no despacho e a Saída pulava:
-    assert order.fulfillments.get().status == "dispatched"
-    assert Directive.objects.filter(
-        topic=DELIVERY_AUTO_COMPLETE, payload__order_ref="EXP-SEMTROCO", status=Directive.Status.QUEUED
-    ).exists()
-
-
-# ── 2. Desfazer finalização só enquanto a cozinha responde pelo pedido ──────
+# ── Desfazer finalização só enquanto a cozinha responde pelo pedido ──────
 
 
 @pytest.fixture
@@ -151,7 +80,7 @@ def test_recall_block_reason_speaks_the_order_status():
     assert kds_core.recall_block_reason(Order(ref="Y", status=Order.Status.READY)) == ""
 
 
-# ── 3. O painel de retirada é do dia ────────────────────────────────────────
+# ── O painel de retirada é do dia ────────────────────────────────────────
 
 
 def _pickup(ref: str, status: str, *, created_days_ago: int = 0, delivery_date=None) -> Order:

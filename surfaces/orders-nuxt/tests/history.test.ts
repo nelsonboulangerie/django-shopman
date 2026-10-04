@@ -15,7 +15,7 @@ import {
 describe("historyQueryFromRoute / routeQueryFromHistory", () => {
   it("URL limpa é hoje, sem busca e sem recorte", () => {
     const query = historyQueryFromRoute({});
-    expect(query).toEqual({ period: { preset: "day", from: "", to: "" }, q: "", page: 1, filters: {} });
+    expect(query).toEqual({ period: { preset: "day", from: "", to: "" }, q: "", sku: "", page: 1, filters: {} });
     expect(routeQueryFromHistory(query)).toEqual({});
   });
 
@@ -32,6 +32,14 @@ describe("historyQueryFromRoute / routeQueryFromHistory", () => {
     const query = historyQueryFromRoute(route);
     expect(query.filters).toEqual({ status: ["completed", "cancelled"], payment: ["pix", "card"] });
     expect(routeQueryFromHistory(query)).toEqual(route);
+  });
+
+  it("o recorte por produto (o \"Abrir os N pedidos\" do B.I.) vai e volta, e chega ao endpoint", () => {
+    const route = { period: "custom", from: "2026-10-03", to: "2026-10-03", sku: "CRO" };
+    const query = historyQueryFromRoute(route);
+    expect(query.sku).toBe("CRO");
+    expect(routeQueryFromHistory(query)).toEqual(route);
+    expect(historyApiQuery(query, "2026-10-04")).toEqual({ date_from: "2026-10-03", date_to: "2026-10-03", sku: "CRO" });
   });
 
   it("período desconhecido ou data malformada cai no padrão", () => {

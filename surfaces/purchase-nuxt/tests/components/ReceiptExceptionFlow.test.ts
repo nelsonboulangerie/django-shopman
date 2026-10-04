@@ -84,11 +84,19 @@ describe("ReceiptExceptionFlow — a conferência por exceção", () => {
     expect(wrapper.emitted("count")).toEqual([[3]]);
   });
 
-  it("mexer no número depois de declarar desfaz a declaração", async () => {
+  it("contou e bateu: o cartão recolhe numa linha, e Recontar desfaz a declaração (v4 b)", async () => {
     const wrapper = mountFlow(4);
     expect(wrapper.text()).toContain("4 de 4 volumes contados");
-    await wrapper.find('[aria-label="Um volume a mais"]').trigger("click");
+    expect(wrapper.find('[aria-label="Um volume a mais"]').exists()).toBe(false);
+    await buttonWith(wrapper, "Recontar").trigger("click");
     expect(wrapper.emitted("count")).toEqual([[null]]);
+  });
+
+  it("antes de contar: Bipar cada volume e o aviso do que vem depois (v4 a)", async () => {
+    const wrapper = mountFlow(null);
+    expect(wrapper.find("[data-scan-volumes]").text()).toContain("Bipar cada volume");
+    await wrapper.find("[data-scan-volumes]").trigger("click");
+    expect(wrapper.emitted("scan-volumes")).toHaveLength(1);
   });
 
   it("falta só a validade: um toque no atalho grava a data da linha", async () => {

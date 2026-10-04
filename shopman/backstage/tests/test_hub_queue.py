@@ -383,8 +383,9 @@ def test_a_linha_de_estado_do_bloco_concorda_com_a_fila(client):
     assert tiles["kds"]["status_summary"] == "1 pedido nas estações"
     assert tiles["production"]["status_attention"] == "1 lote passou do tempo"
     assert tiles["production"]["status_summary"] == "0 de 1 lote finalizado hoje"
-    # Sem fonte de estado: linha vazia, nunca um número inventado.
-    assert tiles["purchase"]["status_attention"] == "" and tiles["purchase"]["status_summary"] == ""
+    # Sem pedido de compra: o estado calmo, nunca um número inventado (todo bloco tem estado).
+    assert tiles["purchase"]["status_attention"] == ""
+    assert tiles["purchase"]["status_summary"] == "Nenhum pedido em andamento"
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

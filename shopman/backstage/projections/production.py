@@ -236,6 +236,23 @@ class SuggestionMaterialShortageProjection:
 
 
 @dataclass(frozen=True)
+class PlanCarryNoteProjection:
+    """O porquê que o B.I. levou a esta linha ("Levar ao plano", ``bi-sobra4`` pino 3).
+
+    Fatos crus do dia lido; a frase ("No sábado 03/10 acabou às 10:40, ~14 vendas
+    perdidas") é montada no Planejamento.
+    """
+
+    source_day: str
+    verdict: str
+    made: str
+    sold: str
+    leftover: str
+    soldout_at: str
+    lost_estimate: str
+
+
+@dataclass(frozen=True)
 class ProductionSuggestionProjection:
     """A suggested production row from Craftsman demand planning.
 
@@ -271,6 +288,8 @@ class ProductionSuggestionProjection:
     #: é a estação da data planejada, a que ainda não tem histórico.
     season_fallback: bool = False
     current_season_label: str = ""
+    #: O que o B.I. levou a esta linha ("Sobrou ou faltou?" → "Levar ao plano").
+    bi_notes: tuple[PlanCarryNoteProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1296,8 +1315,12 @@ def build_production_board(
         if access.can_view_suggested
         else {}
     )
+    carried = _plan_carry_notes(selected_date) if access.can_view_suggested else {}
     suggestions = tuple(
-        _build_suggestion(suggestion, material_check=material_checks.get(suggestion.recipe.output_sku))
+        replace(
+            _build_suggestion(suggestion, material_check=material_checks.get(suggestion.recipe.output_sku)),
+            bi_notes=carried.get(suggestion.recipe.output_sku, ()),
+        )
         for suggestion in raw_suggestions
     )
     visible_suggestions = suggestions if access.can_view_suggested else ()
@@ -3216,6 +3239,35 @@ def _production_suggestions(selected_date: date) -> list:
 SUGGESTION_WASTE_DISCOUNT_THRESHOLD = Decimal("0.15")
 
 _SEASON_LABELS = {"hot": "estação quente", "cold": "estação fria", "mild": "estação amena"}
+
+
+def _plan_carry_notes(selected_date: date) -> dict[str, tuple[PlanCarryNoteProjection, ...]]:
+    """As notas que o B.I. levou ao dia, por SKU. Falha de leitura = nenhuma nota."""
+    try:
+        from shopman.backstage.services.bi_plan_carry import notes_for
+
+        def text(facts: dict, key: str) -> str:
+            value = facts.get(key) if isinstance(facts, dict) else ""
+            return str(value or "")
+
+        return {
+            sku: tuple(
+                PlanCarryNoteProjection(
+                    source_day=note.source_day.isoformat(),
+                    verdict=note.verdict,
+                    made=text(note.facts, "made"),
+                    sold=text(note.facts, "sold"),
+                    leftover=text(note.facts, "leftover"),
+                    soldout_at=text(note.facts, "soldout_at"),
+                    lost_estimate=text(note.facts, "lost_estimate"),
+                )
+                for note in notes
+            )
+            for sku, notes in notes_for(selected_date).items()
+        }
+    except Exception:
+        logger.exception("plan_carry_notes_failed date=%s", selected_date)
+        return {}
 
 
 def _build_suggestion(

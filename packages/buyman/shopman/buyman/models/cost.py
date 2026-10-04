@@ -16,10 +16,9 @@ class SupplierMaterialCost(models.Model):
     """Custo de um insumo por fornecedor, em centavos **da unidade de compra**.
 
     Uma linha por par (fornecedor, insumo). ``is_preferred`` marca o custo
-    canônico daquele insumo — o que **vai alimentar** o custeio de receita e o
-    ``CostBackend`` do Offerman. Hoje esta tabela não tem leitor no repositório:
-    o backend só será escrito depois da decisão de custo vivo × congelado
-    (docs/decisions/adr-023-cost-live-and-frozen.md).
+    canônico daquele insumo — o que alimenta o custeio de receita: o custo vivo
+    do orquestrador (``RecipeCostBackend``, ADR-023) lê daqui pelo
+    ``CostBackend`` do Offerman.
     Histórico de preço fica para uma fase futura.
 
     **O operador nunca divide** (ADR-024, R2). Ele copia da nota os três números

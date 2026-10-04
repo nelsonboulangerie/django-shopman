@@ -9,9 +9,9 @@ import type {
   ReceiptBlocker,
   ReceiptDocumentAnchor,
   ReceiptFieldAnchor,
+  ReceiptHistoryEntry,
   ReceiptLine,
   ReceiptMode,
-  ReceiptWarningTone,
   SupplierMaterialCost,
 } from "~/types/purchase";
 import {
@@ -33,6 +33,8 @@ import {
   purchaseSuggestionLabel,
   skuRoleBadges,
 } from "~/presentation/purchase";
+import { materialForEan, parseGs1, receiptLineForEan } from "~/presentation/scanning";
+import type { MoreMenuItem } from "~/components/PurchaseMoreMenu.vue";
 import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
 
@@ -94,6 +96,7 @@ const {
   receiptSupplier,
   invoiceStatus,
   receiptLinePreviews,
+  receiptLines,
   receiptRows,
   receiptException,
   receiptInvoiceVolumes,
@@ -131,6 +134,8 @@ const {
   readInvoice,
   confirmReceipt,
   rejectReceipt,
+  rejectReceiptLine,
+  receiptHistory,
   countFilteredRows,
   countDivergentRows,
   countTotals,
@@ -166,12 +171,6 @@ const tonePills: Record<MaterialTone, string> = {
   ok: "pill-success",
   watch: "pill-warning",
   urgent: "pill-destructive",
-};
-
-const receiptWarningClasses: Record<ReceiptWarningTone, string> = {
-  ok: "border-success/25 bg-success/10 text-success",
-  watch: "border-warning/30 bg-warning/10 text-warning",
-  block: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 const requestStatusClasses: Record<PurchaseRequestStatus, string> = {
@@ -740,32 +739,15 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
 const VIEW_TITLES = { panel: "Painel", buy: "Comprar", receive: "Receber", base: "Base" } as const;
 // Celular com uma entrada aberta: a barra de 56px fala do documento, como a prévia v4
 // ("Alto Alegre" e, acima, "NF 12.884 · R$ 2.416,80"). Sem entrada, o nome da seção.
-const phoneReceiptHeader = computed(() => isPhone.value && view.value === "receive" && !receiptIsBlank.value && Boolean(receiptSupplier.value));
+const phoneReceiptHeader = computed(
+  () => isPhone.value && view.value === "receive" && !receiveStart.value && Boolean(receiptSupplier.value),
+);
 const pageTitle = computed(() =>
   phoneReceiptHeader.value ? receiptSupplier.value?.displayName || receiptSupplier.value?.name || VIEW_TITLES.receive : VIEW_TITLES[view.value],
 );
-const pageEyebrow = computed(() => {
-  if (!phoneReceiptHeader.value) return "";
-  return [receiptMode.value === "invoice" ? invoiceNumber.value : "Sem NF", formatMoney(receiptTotalCostQ.value)].filter(Boolean).join(" · ");
-});
-
-// Com a NF lida e o fornecedor certo, o bloco de leitura recolhe numa linha (prévias
-// v3/v4: a conferência é a tela; o documento vira cabeçalho). "Trocar NF" reabre.
-const docExpanded = ref(false);
-const docCompact = computed(
-  () =>
-    receiptMode.value === "invoice" &&
-    invoiceStatus.value.valid &&
-    receiptLinePreviews.value.length > 0 &&
-    Boolean(receiptSupplierRef.value) &&
-    !docExpanded.value,
-);
-watch(
-  () => invoiceStatus.value.accessKey,
-  () => {
-    docExpanded.value = false;
-  },
-);
+// Sem sobrelinha (C14): o documento desce para a linha SOB o título
+// ("NF 12.884 · lida 22:02"), como a prévia v4.
+const pageEyebrow = computed(() => "");
 
 // A hora da última leitura útil da base. O Compras não tem SSE: a leitura acontece ao
 // abrir e em Atualizar, e o ponto diz isso sem fingir ao vivo quando a leitura falha.
@@ -832,6 +814,313 @@ function openCostsMissing() {
 }
 
 onBeforeUnmount(stopInvoiceScanner);
+
+// ── Base: ordenar e o ⋯ (C02) ────────────────────────────────────────────────
+const BASE_SORTS = {
+  name: "Nome",
+  attention: "Situação",
+  stock: "Estoque",
+  coverage: "Cobertura",
+} as const;
+type BaseSort = keyof typeof BASE_SORTS;
+const baseSort = ref<BaseSort>("name");
+const TONE_RANK: Record<MaterialTone, number> = { urgent: 0, watch: 1, ok: 2 };
+const sortedMaterials = computed(() => {
+  const list = [...filteredMaterials.value];
+  const byName = (a: EnrichedMaterial, b: EnrichedMaterial) => a.name.localeCompare(b.name, "pt-BR");
+  if (baseSort.value === "attention") list.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || byName(a, b));
+  else if (baseSort.value === "stock") list.sort((a, b) => a.stockOnHand - b.stockOnHand || byName(a, b));
+  else if (baseSort.value === "coverage") list.sort((a, b) => a.coverageDays - b.coverageDays || byName(a, b));
+  else list.sort(byName);
+  return list;
+});
+const baseMenuItems: MoreMenuItem[] = [
+  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw" },
+  { key: "count", label: "Contagem de estoque", icon: "lucide:clipboard-check" },
+];
+
+// ── Receber (V6-COMPRAS) ─────────────────────────────────────────────────────
+// Tablet (em pé e deitado, 768 a 1279 px): a lista à esquerda e a gaveta do item
+// encaixada à direita (C09). Celular e desktop: a gaveta por cima.
+const splitQuery = useMediaQuery("(min-width: 768px) and (max-width: 1279.98px)");
+const receiveMounted = ref(false);
+onMounted(() => {
+  receiveMounted.value = true;
+});
+const splitDrawer = computed(() => receiveMounted.value && splitQuery.value && view.value === "receive" && !receiptIsBlank.value);
+// Celular: "‹" volta ao começo do Receber com a conferência guardada (v3 a:
+// "Em conferência · Continuar").
+const receiptParked = ref(false);
+const keyEntryOpen = ref(false);
+const ressalvaOpen = ref(false);
+const matchedOpen = ref(false);
+const volumesDraft = ref(0);
+const receiveQuery = ref("");
+const receiveSearchOpen = ref(false);
+const isWideQuery = useMediaQuery("(min-width: 1280px)");
+const isWide = computed(() => receiveMounted.value && isWideQuery.value);
+// O começo do Receber fica na tela enquanto a NF não trouxe itens (digitar a
+// chave não pode sumir com o campo em que se digita).
+const receiveStart = computed(
+  () => (receiptMode.value === "invoice" && receiptRows.value.length === 0) || (isPhone.value && receiptParked.value),
+);
+const exceptionFlowOn = computed(() => receiptMode.value === "invoice" && receiptLinePreviews.value.length > 0);
+const thumbCount = computed(
+  () => isPhone.value && exceptionFlowOn.value && receiptException.value.available && receiptException.value.countedVolumes === null,
+);
+const visibleReceiptRows = computed(() => {
+  const term = receiveQuery.value.trim().toLowerCase();
+  if (!term) return receiptRows.value;
+  return receiptRows.value.filter((row) => row.label.toLowerCase().includes(term));
+});
+watch(
+  () => invoiceStatus.value.accessKey,
+  () => {
+    matchedOpen.value = false;
+    volumesDraft.value = 0;
+  },
+);
+// A hora em que a NF foi lida: "NF 12.884 · lida 22:02" na barra do celular.
+const invoiceReadAt = ref("");
+watch(
+  () => [invoiceStatus.value.accessKey, receiptLinePreviews.value.length] as const,
+  ([key, count]) => {
+    if (key && count && !invoiceReadAt.value) {
+      invoiceReadAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    }
+    if (!key) invoiceReadAt.value = "";
+  },
+  { immediate: true },
+);
+const phoneReceiptSubtitle = computed(() => {
+  if (!phoneReceiptHeader.value) return "";
+  if (receiptMode.value !== "invoice") return ["Sem NF", formatMoney(receiptTotalCostQ.value)].join(" · ");
+  return [invoiceNumber.value, invoiceReadAt.value ? `lida ${invoiceReadAt.value}` : ""].filter(Boolean).join(" · ");
+});
+const phoneVolumesBadge = computed(() => {
+  const view = receiptException.value;
+  if (!view.available || view.countedVolumes === null) return "";
+  return `${view.countedVolumes} de ${view.expectedVolumes}`;
+});
+
+// No tablet, a gaveta encaixada nunca fica vazia: abre o primeiro item pendente.
+watch(
+  () => [splitDrawer.value, receiptRows.value.length] as const,
+  ([split]) => {
+    if (!split || openLineId.value) return;
+    const first = receiptRows.value.find((row) => row.nextStep) ?? receiptRows.value[0];
+    if (first) openLineId.value = first.id;
+  },
+  { immediate: true },
+);
+const openLinePosition = computed(() => {
+  const index = receiptRows.value.findIndex((row) => row.id === openLineId.value);
+  return index >= 0 ? { index: index + 1, total: receiptRows.value.length } : null;
+});
+function stepOpenLine(delta: number) {
+  const index = receiptRows.value.findIndex((row) => row.id === openLineId.value);
+  const next = receiptRows.value[index + delta];
+  if (next) openLineId.value = next.id;
+}
+
+function openKeyEntry() {
+  keyEntryOpen.value = true;
+  void focusInvoiceField();
+}
+function startManualReceipt() {
+  receiptParked.value = false;
+  setReceiptMode("manual");
+  void addAndOpenReceiptLine();
+}
+async function onReadInvoice() {
+  await readInvoice();
+  if (receiptRows.value.length) {
+    receiptParked.value = false;
+    keyEntryOpen.value = false;
+  }
+}
+function onSomethingOff() {
+  matchedOpen.value = true;
+  void nextTick(() => document.querySelector("[data-exception-see-items], [data-exception-matched]")?.scrollIntoView({ block: "start" }));
+}
+async function onRejectLine(lineId: string) {
+  if (await rejectReceiptLine(lineId)) {
+    if (openLineId.value === lineId) openLineId.value = "";
+  }
+}
+
+// O ⋯ do Receber (desktop e tablet) e o ⋮ da barra do celular (C08/C14).
+const receiveMenuItems = computed<MoreMenuItem[]>(() => {
+  const items: MoreMenuItem[] = [];
+  if (!receiptIsBlank.value) items.push({ key: "item", label: "Lançar item", icon: "lucide:plus" });
+  if (receiptMode.value === "invoice") {
+    items.push({ key: "swap-nf", label: "Trocar NF", icon: "lucide:scan-line" });
+    items.push({ key: "manual", label: "Lançar sem NF", icon: "lucide:clipboard-pen-line" });
+  } else {
+    items.push({ key: "invoice", label: "Lançar com NF", icon: "lucide:scan-line" });
+  }
+  if (!receiptIsBlank.value) {
+    items.push({ key: "ressalva", label: "Ressalva geral", icon: "lucide:notebook-pen" });
+    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", divider: true });
+    items.push({ key: "reject", label: "Registrar devolução", icon: "lucide:undo-2", danger: true, divider: true });
+  } else {
+    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", divider: true });
+  }
+  return items;
+});
+function onMoreMenu(key: string) {
+  if (key === "refresh") void refresh();
+  else if (key === "count") openBase("count");
+  else if (key === "item") void addAndOpenReceiptLine();
+  else if (key === "swap-nf") {
+    receiptParked.value = true;
+    keyEntryOpen.value = true;
+    if (!isPhone.value) setReceiptMode("invoice");
+  } else if (key === "manual") setReceiptMode("manual");
+  else if (key === "invoice") setReceiptMode("invoice");
+  else if (key === "ressalva") ressalvaOpen.value = true;
+  else if (key === "reject") {
+    if (!receiptHasRejectionReason.value) ressalvaOpen.value = true;
+    else void onRejectReceipt();
+  }
+}
+
+// O painel da conferência, nos dois lugares (coluna da direita / pé da lista).
+const conferencePanelProps = computed(() => ({
+  ready: receiptConference.value.ready,
+  total: receiptConference.value.total,
+  totalPending: receiptTotalPending.value,
+  pendingLineCount: receiptPendingLines.value.length,
+  mode: receiptMode.value,
+  totalCostQ: receiptTotalCostQ.value,
+  documentLabel: receiptDocumentTitle.value,
+  blank: receiptIsBlank.value,
+  documentBlockers: receiptDocumentBlockers.value,
+  supplierBlockers: receiptSupplierBlockers.value,
+  volumesStep: exceptionFlowOn.value ? "" : receiptVolumesStep.value,
+  // C19: com a conferência por exceção, as pendências de linha moram no fluxo.
+  pendingLines: exceptionFlowOn.value ? [] : receiptPendingLines.value,
+  watchWarnings: uniqueWatchWarnings.value,
+  receiptReady: receiptReady.value,
+  firstBlocker: receiptFirstBlocker.value,
+  busy: readonlyFallback.value || actionPending.value,
+  canReject: receiptHasRejectionReason.value,
+  note: receiptNote.value,
+}));
+
+// ── Entradas de hoje e o comprovante (C13) ────────────────────────────────────
+const todayReceipts = computed(() => (receiptHistory.value ?? []).filter((entry) => entry.receivedToday));
+const receiptSheetEntry = ref<ReceiptHistoryEntry | null>(null);
+function receiptVoucherDocument(entry: ReceiptHistoryEntry): string {
+  return entry.mode === "manual" ? "Sem NF" : invoiceNumberLabel(entry.sourceRef) || entry.sourceRef;
+}
+function receiptHistoryLine(entry: ReceiptHistoryEntry): string {
+  return [
+    receiptVoucherDocument(entry),
+    entry.receivedAtTime,
+    `${entry.lines} ${entry.lines === 1 ? "item" : "itens"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+const sharingReceipt = ref(false);
+async function shareReceipt(entry: ReceiptHistoryEntry) {
+  if (sharingReceipt.value) return;
+  const text = [
+    `Entrada no estoque: ${entry.supplierName || entry.supplierRef}`,
+    `${receiptVoucherDocument(entry)} · ${entry.receivedAtDisplay}`,
+    `${entry.lines} ${entry.lines === 1 ? "item" : "itens"} · ${formatMoney(entry.totalCostQ)}`,
+    entry.operator ? `Recebido por ${entry.operator}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  sharingReceipt.value = true;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Comprovante de entrada", text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    useSonner.success("Comprovante copiado. Cole onde quiser compartilhar.");
+  } catch (error) {
+    // silêncio-deliberado: AbortError é o operador fechando a folha de compartilhar.
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    useSonner.error("Não consegui compartilhar nem copiar o comprovante. Tente de novo.");
+  } finally {
+    sharingReceipt.value = false;
+  }
+}
+
+// ── As câmeras do receber (C11, C17, C21) ────────────────────────────────────
+const eanScanOpen = ref(false);
+const eanTarget = ref<"find" | "line">("find");
+function openEanScanner(target: "find" | "line") {
+  eanTarget.value = target;
+  eanScanOpen.value = true;
+}
+function onEanCode(code: string) {
+  if (eanTarget.value === "line" && openLineId.value) {
+    // Na gaveta: o EAN identifica o item; vira EAN do cadastro ao confirmar.
+    const material = materialForEan(code, materials.value);
+    updateReceiptLine(openLineId.value, { scannedEan: code });
+    if (material) {
+      onSheetSelectMaterial(material.sku);
+      useSonner.success(`EAN de ${material.name}.`);
+    } else {
+      useSonner.success("EAN guardado. Escolha o item: o código passa a identificá-lo.");
+    }
+    return;
+  }
+  const line = receiptLineForEan(code, receiptLines.value, materials.value);
+  if (line) {
+    openReceiptLine(line.id);
+    return;
+  }
+  useSonner.error("Nenhum item desta entrada com este código. Toque em Item para lançar.");
+}
+
+const volumeScanOpen = ref(false);
+const volumeScanCodes = ref<string[]>([]);
+const volumeScanCount = computed(() => volumeScanCodes.value.length);
+function openVolumeScanner() {
+  volumeScanCodes.value = [];
+  volumeScanOpen.value = true;
+}
+function onVolumeCode(code: string) {
+  // Cada leitura é um volume (o mesmo código lido de novo em seguida não conta).
+  volumeScanCodes.value = [...volumeScanCodes.value, code];
+  volumesDraft.value = volumeScanCodes.value.length;
+}
+function finishVolumeScan() {
+  volumeScanOpen.value = false;
+  if (volumeScanCount.value > 0) {
+    volumesDraft.value = volumeScanCount.value;
+    onExceptionCount(volumeScanCount.value);
+  }
+}
+
+const packageScanOpen = ref(false);
+const packageLineId = ref("");
+function openPackageScanner(lineId: string) {
+  packageLineId.value = lineId;
+  packageScanOpen.value = true;
+}
+function onPackageCode(code: string) {
+  const reading = parseGs1(code);
+  if (!reading || (!reading.expiry && !reading.lot)) {
+    useSonner.error("Este código não traz validade nem lote. Escolha a data à mão.");
+    return;
+  }
+  const patch: Partial<ReceiptLine> = {};
+  if (reading.expiry) patch.expiryDate = reading.expiry;
+  if (reading.lot) patch.invoiceLot = reading.lot;
+  updateReceiptLine(packageLineId.value, patch);
+  useSonner.success(
+    [reading.expiry ? `Vence ${formatShortDate(reading.expiry)}` : "", reading.lot ? `lote ${reading.lot}` : ""]
+      .filter(Boolean)
+      .join(" · "),
+  );
+}
 </script>
 
 <template>
@@ -841,8 +1130,28 @@ onBeforeUnmount(stopInvoiceScanner);
          sino. Fica preso no topo enquanto a tela rola. -->
     <div class="sticky top-0 z-30">
       <OperatorPageHeader :title="pageTitle" :eyebrow="pageEyebrow">
+        <!-- Celular com a NF aberta (v4 a): "‹" volta ao começo do Receber, com a
+             conferência guardada em "Em conferência · Continuar". -->
+        <template v-if="phoneReceiptHeader" #lead>
+          <button
+            type="button"
+            class="-ml-2 grid size-11 shrink-0 place-items-center rounded-md text-foreground md:hidden"
+            aria-label="Voltar ao começo do Receber"
+            data-receipt-back
+            @click="receiptParked = true"
+          >
+            <Icon name="lucide:chevron-left" class="size-6" />
+          </button>
+        </template>
+        <template v-if="phoneReceiptSubtitle" #subtitle>
+          <p class="mt-1 flex min-w-0 items-center gap-1.5 op-micro tnum text-muted-foreground md:hidden" data-receipt-subtitle>
+            <span class="size-2 shrink-0 rounded-full bg-success" aria-hidden="true" />
+            <span class="truncate">{{ phoneReceiptSubtitle }}</span>
+          </p>
+        </template>
         <template #status>
           <OperatorLiveStatus
+            v-if="!phoneReceiptHeader"
             :tone="liveTone"
             :time="readAt"
             :label="liveLabel"
@@ -893,32 +1202,70 @@ onBeforeUnmount(stopInvoiceScanner);
             :aria-label="baseSearchPlaceholder"
           />
         </template>
+        <!-- Receber com a conferência aberta: a lupa acha o item da entrada (C08). -->
+        <template v-else-if="view === 'receive' && !receiveStart && !isPhone && (isWide || receiveSearchOpen)" #search>
+          <UiSearchInput
+            v-model="receiveQuery"
+            placeholder="Buscar item da entrada"
+            aria-label="Buscar item da entrada"
+          />
+        </template>
 
         <template #phone-actions>
-          <button
-            type="button"
-            class="grid size-12 place-items-center rounded-md text-foreground"
-            aria-label="Atualizar"
-            @click="refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
-          </button>
-          <PurchasePhoneBell />
+          <!-- Celular com a NF aberta (C14): o selo dos volumes ("9 de 9") e o ⋮; sem
+               Atualizar nem sino na barra do documento. -->
+          <template v-if="phoneReceiptHeader">
+            <span
+              v-if="phoneVolumesBadge"
+              class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 op-label font-semibold pill-success tnum"
+              data-receipt-volumes-badge
+            >
+              <Icon name="lucide:package-check" class="size-4" />
+              {{ phoneVolumesBadge }}
+            </span>
+            <PurchaseMoreMenu vertical :items="receiveMenuItems" label="Mais: trocar NF, sem NF, ressalva, devolução" @select="onMoreMenu" />
+          </template>
+          <template v-else>
+            <button
+              v-if="view === 'panel' || view === 'buy'"
+              type="button"
+              class="grid size-12 place-items-center rounded-md text-foreground"
+              aria-label="Atualizar"
+              @click="refresh()"
+            >
+              <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
+            </button>
+            <PurchasePhoneBell />
+            <PurchaseMoreMenu v-if="view === 'base'" vertical :items="baseMenuItems" label="Mais: atualizar" @select="onMoreMenu" />
+          </template>
         </template>
 
         <!-- No celular só o Receber tem controles na linha de baixo (Com NF / Sem NF);
              Atualizar sobe para a barra de 56px. -->
-        <template v-if="!isPhone || view === 'receive'" #actions>
-          <!-- Receber: o selo da chave lida e o par Com NF / Sem NF. -->
+        <template v-if="!isPhone" #actions>
+          <!-- Receber: o selo da chave lida; o par Com NF / Sem NF só no começo (com a
+               conferência aberta ele mora no ⋯, C08). -->
           <template v-if="view === 'receive'">
+            <!-- Tablet: a busca é uma lupa de 48 px que abre o campo (v3 tablet pino 1). -->
+            <button
+              v-if="!receiveStart && !isWide && !receiveSearchOpen"
+              type="button"
+              class="grid size-12 shrink-0 place-items-center rounded-md text-foreground hover:bg-accent"
+              aria-label="Buscar item da entrada"
+              data-receive-search-lupa
+              @click="receiveSearchOpen = true"
+            >
+              <Icon name="lucide:search" class="size-5" />
+            </button>
             <span
-              v-if="receiptMode === 'invoice' && invoiceStatus.valid && !isPhone"
+              v-if="receiptMode === 'invoice' && invoiceStatus.valid"
               class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 op-label font-semibold pill-success tnum"
+              data-receipt-key-badge
             >
               <Icon name="lucide:check" class="size-4" />
               {{ invoiceKeyLabel }}
             </span>
-            <div class="inline-flex h-control shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Origem da entrada">
+            <div v-if="receiptIsBlank" class="inline-flex h-control shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Origem da entrada">
               <button type="button" class="inline-flex h-full items-center gap-1.5 rounded px-3 op-label transition" :class="receiptMode === 'invoice' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground hover:bg-card/60'" :aria-pressed="receiptMode === 'invoice'" @click="setReceiptMode('invoice')">
                 <Icon name="lucide:scan-line" class="size-4" />
                 Com NF
@@ -932,29 +1279,30 @@ onBeforeUnmount(stopInvoiceScanner);
           <span v-if="view === 'buy'" class="inline-flex h-8 shrink-0 items-center rounded-full px-3 op-label pill-muted tnum">
             {{ purchaseSupplierCount }} {{ purchaseSupplierCount === 1 ? "fornecedor" : "fornecedores" }}
           </span>
-          <UiIconButton v-if="!isPhone" icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+          <!-- Base (v3 pino 4): "Ordenar: Nome" e o ⋯, à direita, na linha do título. -->
+          <label
+            v-if="view === 'base' && baseView === 'materials'"
+            class="relative inline-flex h-control shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+            data-base-sort
+          >
+            <Icon name="lucide:arrow-down-up" class="size-4 text-muted-foreground" aria-hidden="true" />
+            <span aria-hidden="true">{{ BASE_SORTS[baseSort] }}</span>
+            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+            <select v-model="baseSort" class="absolute inset-0 cursor-pointer opacity-0" aria-label="Ordenar insumos">
+              <option v-for="(label, key) in BASE_SORTS" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </label>
+          <UiIconButton v-if="!isPhone && view !== 'base' && view !== 'receive'" icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+          <PurchaseMoreMenu
+            v-if="!isPhone && (view === 'base' || view === 'receive')"
+            :items="view === 'receive' ? receiveMenuItems : baseMenuItems"
+            :label="view === 'receive' ? 'Mais: trocar NF, sem NF, ressalva, devolução' : 'Mais: atualizar'"
+            @select="onMoreMenu"
+          />
         </template>
 
         <!-- Base: Atenção e as métricas de Compras hoje; cada uma leva ao recorte. -->
         <template v-if="view === 'base'" #filters>
-          <nav
-            v-if="isPhone"
-            class="inline-flex h-control shrink-0 items-center gap-1 rounded-md bg-secondary p-1"
-            aria-label="Cadastros da Base"
-          >
-            <button
-              v-for="tab in baseTabs"
-              :key="tab.key"
-              type="button"
-              class="inline-flex h-full shrink-0 items-center gap-1.5 rounded px-3 op-label transition"
-              :class="baseView === tab.key ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
-              :aria-current="baseView === tab.key ? 'page' : undefined"
-              @click="baseView = tab.key"
-            >
-              <Icon :name="tab.icon" class="size-4" />
-              {{ tab.label }}
-            </button>
-          </nav>
           <template v-if="baseView === 'materials'">
             <UiFilterChip :active="onlyAlerts" :count="attentionCount" :aria-pressed="onlyAlerts" @click="onlyAlerts = !onlyAlerts">
               <template #icon><Icon name="lucide:triangle-alert" class="size-4 text-warning" /></template>
@@ -978,7 +1326,29 @@ onBeforeUnmount(stopInvoiceScanner);
             <span class="font-semibold tnum">{{ metrics.approximatePreferred }}</span>
             {{ metrics.approximatePreferred === 1 ? "custo estimado" : "custos estimados" }}
           </UiFilterChip>
-          <span class="ml-auto hidden shrink-0 op-micro text-muted-foreground 2xl:inline">Base: referências usadas pelos fluxos de comprar e receber.</span>
+          <span class="ml-auto hidden shrink-0 op-micro text-muted-foreground xl:inline" data-base-note>Base: referências usadas pelos fluxos de comprar e receber.</span>
+        </template>
+        <template v-if="view === 'base' && isPhone" #below>
+          <!-- Celular (C06): a linha "Atenção · Compras hoje" (recortes) e, embaixo dela,
+               o segmentado inteiro na largura da tela, sem cortar nenhum cadastro. -->
+          <nav
+            v-if="isPhone"
+            class="mx-4 mb-2.5 grid h-control grid-cols-[1fr_1.45fr_1fr_1.2fr] items-center gap-1 rounded-md bg-secondary p-1"
+            aria-label="Cadastros da Base"
+            data-base-tabs-phone
+          >
+            <button
+              v-for="tab in baseTabs"
+              :key="tab.key"
+              type="button"
+              class="inline-flex h-full min-w-0 items-center justify-center rounded px-0.5 op-micro transition"
+              :class="baseView === tab.key ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+              :aria-current="baseView === tab.key ? 'page' : undefined"
+              @click="baseView = tab.key"
+            >
+              <span class="truncate">{{ tab.label }}</span>
+            </button>
+          </nav>
         </template>
       </OperatorPageHeader>
     </div>
@@ -1256,7 +1626,12 @@ onBeforeUnmount(stopInvoiceScanner);
       </section>
 
       <!-- ══ RECEBER ═════════════════════════════════════════════════════════ -->
-      <section v-else-if="view === 'receive'" class="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <section
+        v-else-if="view === 'receive'"
+        class="grid min-h-0 grid-cols-1 gap-4 max-md:flex max-md:min-h-[calc(100dvh-9rem)] max-md:flex-col"
+        :class="splitDrawer ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:items-start' : 'xl:grid-cols-[minmax(0,1fr)_24rem]'"
+        data-receive
+      >
         <div class="min-w-0 space-y-4">
           <!-- Deu certo, e a tela diz isso onde o olho está: no topo, do tamanho
                do que aconteceu, com o que entrou escrito por extenso. O gesto
@@ -1296,82 +1671,101 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
           </section>
 
-          <section v-if="docCompact" class="flex items-center gap-3 rounded-xl border border-success/30 bg-card px-4 py-3" data-receipt-document-compact>
-            <span class="grid size-10 shrink-0 place-items-center rounded-full pill-success">
-              <Icon name="lucide:file-check-2" class="size-5" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <p class="truncate op-title">{{ receiptDocumentTitle }}</p>
-              <p class="truncate op-micro text-muted-foreground tnum">
-                <template v-if="receiptSupplier?.document">{{ receiptSupplier.document }} · </template>{{ invoiceKeyLabel }} · {{ receiptSupplier?.paymentTerm || "prazo a combinar" }}
-              </p>
-            </div>
-            <button type="button" class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 op-label font-semibold hover:bg-accent" @click="docExpanded = true">
-              <Icon name="lucide:scan-line" class="size-4" />
-              Trocar NF
-            </button>
-          </section>
-
-          <section v-else class="rounded-xl border border-border bg-card p-4">
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-              <div class="space-y-3">
-                <!-- Prévia v3 (celular): começar pela câmera. O que se faz é grande e
-                     fica no polegar; digitar a chave e a foto ficam ao lado. -->
-                <button v-if="receiptMode === 'invoice'" type="button" class="flex w-full items-center gap-4 rounded-2xl bg-primary px-4 py-4 text-left text-primary-foreground shadow-sm disabled:opacity-50" :disabled="readonlyFallback || actionPending || scannerOpen" @click="openInvoiceScanner">
-                  <span class="grid size-12 shrink-0 place-items-center rounded-full bg-primary-foreground/15">
-                    <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:scan-line'" class="size-6" :class="actionPending ? 'animate-spin' : ''" />
-                  </span>
-                  <span class="min-w-0">
-                    <span class="block text-[20px] leading-tight font-semibold">{{ actionPending ? "Lendo NF" : "Escanear NF" }}</span>
-                    <span class="block op-label text-primary-foreground/80">QR ou código de barras do DANFE</span>
-                  </span>
-                </button>
-                <p v-if="scannerError" class="rounded-lg border border-warning/35 bg-warning/10 p-3 op-body text-warning">
-                  {{ scannerError }}
+          <!-- ── Começo (v3 celular a): o que se LÊ no alto (a conferência aberta e as
+               entradas de hoje); o que se FAZ no polegar (Escanear NF, Digitar chave,
+               Sem NF). -->
+          <template v-if="receiveStart">
+            <section
+              v-if="receiptRows.length"
+              class="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/6 p-4"
+              data-receipt-in-progress
+            >
+              <span class="grid size-11 shrink-0 place-items-center rounded-full bg-primary/12 text-primary">
+                <Icon name="lucide:list-checks" class="size-5" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="op-eyebrow text-primary">Em conferência</p>
+                <p class="truncate op-title">{{ receiptDocumentTitle || "Entrada aberta" }}</p>
+                <p class="op-micro text-muted-foreground tnum">
+                  {{ receiptConference.ready }} de {{ receiptConference.total }} {{ receiptConference.total === 1 ? "conferido" : "conferidos" }}<template v-if="receiptTotalPending"> · {{ receiptTotalPending }} {{ receiptTotalPending === 1 ? "pendência" : "pendências" }}</template>
                 </p>
-                <label v-if="receiptMode === 'invoice'" data-receipt-anchor="invoice" class="block scroll-mt-4 rounded-md p-0.5 op-label transition-shadow" :class="anchorRing('invoice')">
-                  QR, código de barras ou chave da NF
-                  <textarea v-model="invoiceInput" rows="2" class="mt-1 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body tnum" placeholder="Escaneie, cole ou digite a chave de acesso" />
-                </label>
-                <div v-if="receiptMode === 'invoice'" class="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-title hover:bg-accent disabled:opacity-50"
-                    :disabled="readonlyFallback || actionPending || !invoiceInput.trim()"
-                    @click="readInvoice"
-                  >
-                    <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:file-check-2'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
-                    {{ actionPending ? "Traduzindo" : "Traduzir NF" }}
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-title hover:bg-accent disabled:opacity-50"
-                    :disabled="readonlyFallback || actionPending"
-                    @click="openInvoiceImagePicker"
-                  >
-                    <Icon name="lucide:image-up" class="size-5" />
-                    Ler foto da NF
-                  </button>
-                </div>
-                <input ref="scannerFileInput" class="sr-only" type="file" accept="image/*" capture="environment" @change="readInvoiceImage" />
-                <label v-if="receiptMode !== 'invoice'" class="block op-label">
-                  Referência em papel
-                  <textarea v-model="receiptNote" rows="3" class="mt-1 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body" placeholder="Romaneio, produtor, observação" />
-                </label>
-
-                <div class="flex flex-wrap items-center gap-2">
-                  <span v-if="receiptMode === 'invoice'" class="inline-flex h-8 items-center gap-1.5 rounded-full px-3 op-label font-semibold tnum" :class="invoiceStatus.valid ? 'pill-success' : 'pill-destructive'">
-                    <Icon :name="invoiceStatus.valid ? 'lucide:check' : 'lucide:scan-line'" class="size-4" />
-                    {{ invoiceStatus.valid ? [invoiceNumber, invoiceKeyLabel].filter(Boolean).join(" · ") : "Aguardando NF" }}
-                  </span>
-                  <span v-else class="inline-flex h-8 items-center gap-1.5 rounded-full px-3 op-label font-semibold pill-warning">
-                    <Icon name="lucide:badge-alert" class="size-4" />
-                    Sem documento fiscal
-                  </span>
-                </div>
               </div>
+              <button type="button" class="inline-flex h-11 shrink-0 items-center rounded-full bg-primary px-4 op-label font-semibold text-primary-foreground" data-receipt-continue @click="receiptParked = false">
+                Continuar
+              </button>
+            </section>
 
-              <div class="space-y-3">
+            <section v-if="todayReceipts.length" data-receipts-today>
+              <div class="flex items-baseline justify-between px-1">
+                <h2 class="op-eyebrow text-muted-foreground">Entradas de hoje</h2>
+                <span class="op-micro text-muted-foreground tnum">{{ todayReceipts.length }}</span>
+              </div>
+              <ul class="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                <li v-for="entry in todayReceipts" :key="entry.sourceRef">
+                  <button type="button" class="flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-accent" @click="receiptSheetEntry = entry">
+                    <span class="grid size-9 shrink-0 place-items-center rounded-full pill-success">
+                      <Icon :name="entry.mode === 'manual' ? 'lucide:clipboard-pen-line' : 'lucide:package-check'" class="size-4" />
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate op-title">{{ entry.supplierName || entry.supplierRef }}</span>
+                      <span class="block truncate op-micro text-muted-foreground tnum">{{ receiptHistoryLine(entry) }}</span>
+                    </span>
+                    <span class="shrink-0 op-title tnum">{{ formatMoney(entry.totalCostQ) }}</span>
+                  </button>
+                </li>
+              </ul>
+              <p class="mt-2 px-1 op-micro text-muted-foreground">Toque numa entrada para ver o comprovante e compartilhar.</p>
+            </section>
+
+            <!-- Digitar a chave (ou colar), e a foto da NF: o caminho de quem não tem câmera. -->
+            <section v-if="keyEntryOpen || !isPhone" class="rounded-xl border border-border bg-card p-4" data-receipt-key-entry>
+              <label data-receipt-anchor="invoice" class="block scroll-mt-4 rounded-md p-0.5 op-label transition-shadow" :class="anchorRing('invoice')">
+                QR, código de barras ou chave da NF
+                <textarea v-model="invoiceInput" rows="2" class="mt-1 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body tnum" placeholder="Escaneie, cole ou digite a chave de acesso" />
+              </label>
+              <div class="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-title hover:bg-accent disabled:opacity-50"
+                  :disabled="readonlyFallback || actionPending || !invoiceInput.trim()"
+                  @click="onReadInvoice"
+                >
+                  <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:file-check-2'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
+                  {{ actionPending ? "Traduzindo" : "Traduzir NF" }}
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-title hover:bg-accent disabled:opacity-50"
+                  :disabled="readonlyFallback || actionPending"
+                  @click="openInvoiceImagePicker"
+                >
+                  <Icon name="lucide:image-up" class="size-5" />
+                  Ler foto da NF
+                </button>
+              </div>
+              <p v-if="scannerError" class="mt-2 rounded-lg border border-warning/35 bg-warning/10 p-3 op-body text-warning">
+                {{ scannerError }}
+              </p>
+            </section>
+            <input ref="scannerFileInput" class="sr-only" type="file" accept="image/*" capture="environment" @change="readInvoiceImage" />
+
+            <!-- Desktop e tablet: o "Escanear NF" grande no começo (no celular, no polegar). -->
+            <button v-if="!isPhone" type="button" class="flex w-full items-center gap-4 rounded-2xl bg-primary px-4 py-4 text-left text-primary-foreground shadow-sm disabled:opacity-50" :disabled="readonlyFallback || actionPending || scannerOpen" @click="openInvoiceScanner">
+              <span class="grid size-12 shrink-0 place-items-center rounded-full bg-primary-foreground/15">
+                <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:scan-line'" class="size-6" :class="actionPending ? 'animate-spin' : ''" />
+              </span>
+              <span class="min-w-0">
+                <span class="block text-[20px] leading-tight font-semibold">{{ actionPending ? "Lendo NF" : "Escanear NF" }}</span>
+                <span class="block op-label text-primary-foreground/80">QR ou código de barras do DANFE</span>
+              </span>
+            </button>
+          </template>
+
+          <!-- ── Conferência aberta ─────────────────────────────────────────── -->
+          <template v-else>
+            <!-- Sem NF: o fornecedor e a referência em papel (com NF eles vêm da nota). -->
+            <section v-if="receiptMode !== 'invoice'" class="rounded-xl border border-border bg-card p-4" data-receipt-manual-doc>
+              <div class="grid gap-3 lg:grid-cols-2">
                 <label data-receipt-anchor="supplier" class="block scroll-mt-4 rounded-md p-0.5 op-label transition-shadow" :class="anchorRing('supplier')">
                   Fornecedor
                   <UiNativeSelect :value="receiptSupplierRef" class="mt-1 w-full" @change="onReceiptSupplierChange">
@@ -1379,254 +1773,317 @@ onBeforeUnmount(stopInvoiceScanner);
                     <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
                   </UiNativeSelect>
                 </label>
-                <div class="rounded-lg border border-border bg-background p-3">
-                  <p class="op-eyebrow text-muted-foreground">Documento</p>
-                  <p class="mt-1 op-title tnum">{{ receiptSupplier?.document || "Sem CNPJ no cadastro" }}</p>
-                  <p class="op-micro text-muted-foreground">{{ receiptSupplier?.paymentTerm || "prazo a combinar" }} · {{ receiptSupplier?.leadTimeDays ?? 0 }} {{ (receiptSupplier?.leadTimeDays ?? 0) === 1 ? "dia" : "dias" }}</p>
+                <label class="block op-label">
+                  Referência em papel
+                  <textarea v-model="receiptNote" rows="2" class="mt-1 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body" placeholder="Romaneio, produtor, observação" />
+                </label>
+              </div>
+            </section>
+            <!-- Com NF lida mas sem fornecedor certo: o vínculo antes de tudo. -->
+            <section
+              v-else-if="!receiptSupplierRef || receiptSupplierBlockers.length"
+              class="rounded-xl border border-warning/40 bg-card p-4"
+            >
+              <label data-receipt-anchor="supplier" class="block scroll-mt-4 rounded-md p-0.5 op-label transition-shadow" :class="anchorRing('supplier')">
+                Fornecedor da nota
+                <UiNativeSelect :value="receiptSupplierRef" class="mt-1 w-full" @change="onReceiptSupplierChange">
+                  <option value="">Definir fornecedor</option>
+                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
+                </UiNativeSelect>
+              </label>
+            </section>
+
+            <!-- Recebimento por exceção (com NF): o que bate entra pela contagem de
+                 volumes; a validade é pedida uma linha por vez; só o que não bate
+                 pede atenção (prévia v4). -->
+            <ReceiptExceptionFlow
+              v-if="exceptionFlowOn"
+              v-model:draft="volumesDraft"
+              v-model:matched-open="matchedOpen"
+              :view="receiptException"
+              :materials="materials"
+              :line-count="receiptLinePreviews.length"
+              :total-cost-q="receiptTotalCostQ"
+              :declared-volumes="receiptInvoiceVolumes"
+              :pending="readonlyFallback || actionPending"
+              :volumes-ring="anchorRing('volumes')"
+              :count-in-thumb="isPhone"
+              @count="onExceptionCount"
+              @expiry="onExceptionExpiry"
+              @open="openReceiptLine"
+              @scan-volumes="openVolumeScanner"
+              @read-package="openPackageScanner"
+              @qty="(lineId, qty) => updateReceiptLine(lineId, { purchaseQty: qty })"
+              @reason="(lineId, reason) => updateReceiptLine(lineId, { lineNote: reason })"
+              @reject-line="onRejectLine"
+            />
+
+            <!-- A lista da entrada: no celular com a conferência por exceção ela vive
+                 recolhida no "Ver os N itens" (C19); no tablet ela é a coluna da
+                 esquerda, com a gaveta do item ao lado (C09). -->
+            <section v-if="!(isPhone && exceptionFlowOn)" class="rounded-xl border border-border bg-card" data-receipt-list>
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div class="min-w-0">
+                  <h2 class="op-title">Itens da entrada</h2>
+                  <p class="op-micro text-muted-foreground">{{ receiptConference.label }}</p>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" class="inline-flex min-h-control items-center gap-2 rounded-xl border border-border bg-card px-4 op-label font-semibold hover:bg-accent" @click="addAndOpenReceiptLine">
+                    <Icon name="lucide:plus" class="size-4" />
+                    Item
+                  </button>
+                  <button type="button" class="inline-flex min-h-control items-center gap-2 rounded-xl border border-border bg-card px-4 op-label font-semibold hover:bg-accent" data-scan-ean @click="openEanScanner('find')">
+                    <Icon name="lucide:scan-barcode" class="size-4" />
+                    Ler EAN
+                  </button>
                 </div>
               </div>
-            </div>
-          </section>
 
-          <!-- Recebimento por exceção (com NF): o que bate entra pela contagem de
-               volumes; a validade é pedida uma linha por vez; só o que não bate
-               pede atenção. A lista completa continua logo abaixo. -->
-          <ReceiptExceptionFlow
-            v-if="receiptMode === 'invoice' && receiptLinePreviews.length"
-            :view="receiptException"
-            :materials="materials"
-            :line-count="receiptLinePreviews.length"
-            :total-cost-q="receiptTotalCostQ"
-            :declared-volumes="receiptInvoiceVolumes"
-            :pending="readonlyFallback || actionPending"
-            :volumes-ring="anchorRing('volumes')"
-            @count="onExceptionCount"
-            @expiry="onExceptionExpiry"
-            @open="openReceiptLine"
-          />
-
-          <section class="rounded-xl border border-border bg-card">
-            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div class="min-w-0">
-                <h2 class="op-title">Itens da entrada</h2>
-                <p class="op-micro text-muted-foreground">{{ receiptConference.label }}</p>
-              </div>
-              <button type="button" class="inline-flex min-h-control items-center gap-2 rounded-xl border border-border bg-card px-4 op-label font-semibold hover:bg-accent" @click="addAndOpenReceiptLine">
-                <Icon name="lucide:plus" class="size-4" />
-                Item
-              </button>
-            </div>
-
-            <!-- A LISTA da entrada: uma linha por item, e o que falta dito na
-                 própria linha. Tocar na linha abre a gaveta daquele item.
-
-                 `min-w-0` no item da lista: sem ele a coluna é dimensionada pelo
-                 min-content do nome mais comprido e passa da largura do telefone. -->
-            <ul v-if="receiptRows.length" class="grid min-w-0 grid-cols-1 gap-2 p-3">
-              <li
-                v-for="row in receiptRows"
-                :key="row.id"
-                :data-receipt-line="row.id"
-                class="flex min-w-0 scroll-mt-4 items-stretch gap-1 rounded-xl border pr-1 transition-colors"
-                :class="RECEIPT_LINE_STATUS_ROW[row.status]"
-              >
-                <button
-                  type="button"
-                  class="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-xl py-3 pl-3 text-left"
-                  :aria-label="`Abrir ${row.label}`"
-                  @click="openReceiptLine(row.id)"
+              <!-- `min-w-0` no item da lista: sem ele a coluna é dimensionada pelo
+                   min-content do nome mais comprido e passa da largura do telefone. -->
+              <ul v-if="visibleReceiptRows.length" class="grid min-w-0 grid-cols-1 gap-2 p-3">
+                <li
+                  v-for="row in visibleReceiptRows"
+                  :key="row.id"
+                  :data-receipt-line="row.id"
+                  class="flex min-w-0 scroll-mt-4 items-stretch gap-1 rounded-xl border pr-1 transition-colors"
+                  :class="[RECEIPT_LINE_STATUS_ROW[row.status], splitDrawer && openLineId === row.id ? 'ring-2 ring-primary' : '']"
                 >
-                  <Icon :name="row.statusIcon" class="size-6 shrink-0" :class="RECEIPT_LINE_STATUS_TEXT[row.status]" />
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate op-title">{{ row.label }}</span>
-                    <span v-if="row.digest" class="block truncate op-label font-normal text-muted-foreground tnum">{{ row.digest }}</span>
-                    <!-- A pendência mora na LINHA. Era isto que obrigava a abrir
-                         o item para descobrir que faltava a validade dele. -->
-                    <span v-if="row.nextStep" class="block truncate op-label text-destructive">{{ row.nextStep }}</span>
-                    <span v-else-if="row.note" class="block truncate op-label font-normal text-warning">{{ row.note }}</span>
-                  </span>
-                  <span class="flex shrink-0 flex-col items-end gap-1">
-                    <span v-if="row.total" class="op-title tnum">{{ row.total }}</span>
-                    <span
-                      class="inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold"
-                      :class="RECEIPT_LINE_STATUS_BADGE[row.status]"
-                    >
-                      {{ row.statusLabel }}
+                  <button
+                    type="button"
+                    class="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-xl py-3 pl-3 text-left"
+                    :aria-label="`Abrir ${row.label}`"
+                    @click="openReceiptLine(row.id)"
+                  >
+                    <Icon :name="row.statusIcon" class="size-6 shrink-0" :class="RECEIPT_LINE_STATUS_TEXT[row.status]" />
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate op-title">{{ row.label }}</span>
+                      <span v-if="row.digest" class="block truncate op-label font-normal text-muted-foreground tnum">{{ row.digest }}</span>
+                      <span v-if="row.nextStep" class="block truncate op-label text-destructive">{{ row.nextStep }}</span>
+                      <span v-else-if="row.note" class="block truncate op-label font-normal text-warning">{{ row.note }}</span>
                     </span>
-                  </span>
-                  <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-destructive"
-                  :aria-label="`Remover ${row.label}`"
-                  @click="removeReceiptLine(row.id)"
-                >
-                  <Icon name="lucide:trash-2" class="size-4" />
-                </button>
-              </li>
-            </ul>
-            <p v-else class="px-4 py-8 text-center op-body text-muted-foreground">
-              Nenhum item na entrada ainda. Escaneie a NF, ou toque em "Item" para lançar à mão.
-            </p>
-          </section>
+                    <span class="flex shrink-0 flex-col items-end gap-1">
+                      <span v-if="row.total && !splitDrawer" class="op-title tnum">{{ row.total }}</span>
+                      <span
+                        class="inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold"
+                        :class="RECEIPT_LINE_STATUS_BADGE[row.status]"
+                      >
+                        {{ row.statusLabel }}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    v-if="!splitDrawer"
+                    type="button"
+                    class="inline-flex w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-destructive"
+                    :aria-label="`Remover ${row.label}`"
+                    @click="removeReceiptLine(row.id)"
+                  >
+                    <Icon name="lucide:trash-2" class="size-4" />
+                  </button>
+                </li>
+              </ul>
+              <p v-else-if="receiveQuery.trim()" class="px-4 py-8 text-center op-body text-muted-foreground">
+                Nenhum item da entrada com “{{ receiveQuery.trim() }}”.
+              </p>
+              <p v-else class="px-4 py-8 text-center op-body text-muted-foreground">
+                Nenhum item na entrada ainda. Escaneie a NF, ou toque em "Item" para lançar à mão.
+              </p>
+            </section>
 
-          <!-- A gaveta do item: título fixo no topo, formulário rolando por
-               baixo. Confirmar ali fecha a gaveta e a linha da lista muda de cor
-               na frente do operador. -->
-          <ReceiptLineSheet
-            v-model:open="lineSheetOpen"
-            :preview="openPreview"
-            :materials="materials"
-            :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
-            :pending="actionPending"
-            :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
-            :flash-field="sheetFlashField"
-            @update="onSheetUpdate"
-            @select-material="onSheetSelectMaterial"
-            @accept-suggestion="onSheetAcceptSuggestion"
-            @select-conversion="onSheetSelectConversion"
-            @accept-conversion="onSheetAcceptConversion"
-            @accept-axes="onSheetAcceptAxes"
-            @declare-conversion="onSheetDeclareConversion"
-            @check="onSheetCheck"
-            @remove="removeOpenReceiptLine"
-          />
+            <!-- Tablet: o resumo, Confirmar entrada e Registrar devolução no pé da
+                 coluna da esquerda (v3 tablet, pino 4). -->
+            <ReceiptConferencePanel
+              v-if="splitDrawer"
+              v-bind="conferencePanelProps"
+              @confirm="onConfirmReceipt"
+              @reject="onRejectReceipt"
+              @anchor="focusReceiptAnchor"
+              @line="(id: string) => focusReceiptLine(id)"
+              @ressalva="ressalvaOpen = true"
+            />
+          </template>
         </div>
 
-        <aside class="h-fit min-w-0 rounded-xl border border-border bg-card p-4" data-receipt-conference>
-          <!-- Prévia v3 (tablet): "4 de 7 conferidos · 2 pendências" com a barra. -->
-          <div class="flex items-baseline justify-between gap-2">
-            <p class="op-title tnum">{{ receiptConference.ready }} de {{ receiptConference.total }} {{ receiptConference.total === 1 ? "conferido" : "conferidos" }}</p>
-            <p class="op-label tnum" :class="receiptTotalPending ? 'text-destructive' : 'text-success'">
-              {{ receiptTotalPending ? `${receiptTotalPending} ${receiptTotalPending === 1 ? "pendência" : "pendências"}` : "sem pendência" }}
-            </p>
-          </div>
-          <div class="mt-2 flex h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-            <span class="h-full bg-success" :style="{ width: receiptConference.total ? `${(receiptConference.ready / receiptConference.total) * 100}%` : '0%' }" />
-            <span class="h-full bg-destructive/70" :style="{ width: receiptConference.total ? `${(Math.min(receiptPendingLines.length, receiptConference.total - receiptConference.ready) / receiptConference.total) * 100}%` : '0%' }" />
-          </div>
+        <!-- A gaveta do item. Tablet (em pé e deitado): encaixada ao lado da lista
+             (C09). Celular e desktop: a folha por cima, como antes. -->
+        <ReceiptLineSheet
+          v-if="!receiveStart"
+          v-model:open="lineSheetOpen"
+          :docked="splitDrawer"
+          :preview="openPreview"
+          :position="openLinePosition"
+          :materials="materials"
+          :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
+          :pending="actionPending"
+          :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
+          :flash-field="sheetFlashField"
+          @update="onSheetUpdate"
+          @select-material="onSheetSelectMaterial"
+          @accept-suggestion="onSheetAcceptSuggestion"
+          @select-conversion="onSheetSelectConversion"
+          @accept-conversion="onSheetAcceptConversion"
+          @accept-axes="onSheetAcceptAxes"
+          @declare-conversion="onSheetDeclareConversion"
+          @check="onSheetCheck"
+          @remove="removeOpenReceiptLine"
+          @step="stepOpenLine"
+          @scan-ean="openEanScanner('line')"
+          @read-package="openLineId && openPackageScanner(openLineId)"
+          @reject-line="openLineId && onRejectLine(openLineId)"
+        />
 
-          <dl class="mt-4 grid grid-cols-3 gap-3">
-            <div><dt class="op-micro text-muted-foreground">Origem</dt><dd class="op-title">{{ receiptMode === "invoice" ? "NF" : "Sem NF" }}</dd></div>
-            <div><dt class="op-micro text-muted-foreground">Valor</dt><dd class="op-title tnum">{{ formatMoney(receiptTotalCostQ) }}</dd></div>
-            <div><dt class="op-micro text-muted-foreground">Pendências</dt><dd class="op-title tnum" :class="receiptTotalPending ? 'text-destructive' : 'text-success'">{{ receiptTotalPending }}</dd></div>
-          </dl>
-
-          <div class="mt-4 rounded-lg border border-border bg-background p-3">
-            <p class="op-eyebrow text-muted-foreground">{{ receiptMode === "invoice" ? "Chave NF" : "Fornecedor" }}</p>
-            <p class="mt-1 break-words op-title tnum">
-              <template v-if="receiptMode === 'invoice'">{{ invoiceStatus.valid ? [invoiceNumber, invoiceKeyLabel].filter(Boolean).join(" · ") : "Aguardando NF" }}</template>
-              <template v-else>{{ receiptSupplier?.name || "Definir fornecedor" }}</template>
-            </p>
-          </div>
-
-          <label v-if="receiptMode === 'invoice'" class="mt-4 block op-label">
-            Ressalva geral
-            <textarea v-model="receiptNote" rows="3" class="mt-1 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body" placeholder="Avaria, falta, devolução, observação na NF/CT-e" />
-          </label>
-
-          <!-- Rascunho em branco não tem pendência: tem convite. -->
-          <div v-if="receiptIsBlank" class="mt-4 rounded-lg border border-dashed border-border p-3 op-body text-muted-foreground">
-            Nada em conferência. Escaneie a NF da próxima entrega, ou lance sem NF.
-          </div>
-
-          <!-- Toda pendência é um GESTO: clicar leva ao campo que falta, não a
-               uma acusação parada no rodapé. -->
-          <div v-else-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptVolumesStep || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
-            <button
-              v-for="blocker in receiptDocumentBlockers"
-              :key="blocker"
-              type="button"
-              class="block min-h-control w-full min-w-0 rounded-lg border px-3 py-2 text-left op-label"
-              :class="receiptWarningClasses.block"
-              @click="focusReceiptAnchor('invoice')"
-            >
-              {{ blocker }}
-            </button>
-            <button
-              v-for="blocker in receiptSupplierBlockers"
-              :key="blocker"
-              type="button"
-              class="block min-h-control w-full min-w-0 rounded-lg border px-3 py-2 text-left op-label"
-              :class="receiptWarningClasses.block"
-              @click="focusReceiptAnchor('supplier')"
-            >
-              {{ blocker }}
-            </button>
-            <button
-              v-if="receiptVolumesStep"
-              type="button"
-              class="block min-h-control w-full min-w-0 rounded-lg border px-3 py-2 text-left op-label"
-              :class="receiptWarningClasses.block"
-              @click="focusReceiptAnchor('volumes')"
-            >
-              {{ receiptVolumesStep }}
-            </button>
-            <button
-              v-for="item in receiptPendingLines"
-              :key="`pending-${item.id}`"
-              type="button"
-              class="block min-h-control w-full min-w-0 rounded-lg border px-3 py-2 text-left"
-              :class="receiptWarningClasses[item.tone]"
-              @click="focusReceiptLine(item.id, item.field)"
-            >
-              <span class="block truncate op-label font-semibold">{{ item.label }}</span>
-              <span class="block op-micro opacity-80">{{ item.step }}</span>
-            </button>
-            <div v-for="(warning, index) in uniqueWatchWarnings" :key="`watch-${warning.key}-${index}`" class="rounded-lg border px-3 py-2 op-label" :class="receiptWarningClasses[warning.tone]">{{ warning.label }}</div>
-          </div>
-
-          <div v-if="!receiptIsBlank" class="mt-4 border-t border-border pt-4" data-receipt-confirm-panel>
-            <!-- O botão nunca fica mudo. Se ainda falta algo ele diz o quê, e ao
-                 ser apertado leva até o campo. Com pendência ele é tracejado
-                 (prévia v4): tocável, aponta para o que falta. -->
-            <button
-              type="button"
-              class="hidden h-14 w-full items-center justify-center gap-2 rounded-xl px-3 op-action disabled:opacity-50 md:inline-flex"
-              :class="receiptReady ? 'bg-primary text-primary-foreground' : 'border-2 border-dashed border-primary/50 bg-background text-foreground hover:bg-accent'"
-              :disabled="readonlyFallback || actionPending"
-              @click="onConfirmReceipt"
-            >
-              <Icon :name="actionPending ? 'lucide:loader-circle' : receiptReady ? 'lucide:package-check' : 'lucide:list-checks'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
-              {{ actionPending ? "Confirmando" : "Confirmar entrada" }}
-            </button>
-            <p v-if="!receiptReady && receiptFirstBlocker" class="mt-2 hidden items-start justify-center gap-1.5 op-label font-normal text-muted-foreground md:flex">
-              <Icon name="lucide:arrow-right" class="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                {{ receiptFirstBlocker.step }}{{ receiptFirstBlocker.label ? ` em ${receiptFirstBlocker.label}` : "" }}<template v-if="receiptTotalPending > 1"> · e mais {{ receiptTotalPending - 1 }}</template>
-              </span>
-            </p>
-            <button type="button" class="mt-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-title text-destructive hover:bg-destructive/10 disabled:opacity-50" :disabled="readonlyFallback || !receiptHasRejectionReason || actionPending" @click="onRejectReceipt">
-              <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:undo-2'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
-              {{ actionPending ? "Registrando" : "Registrar devolução" }}
-            </button>
-          </div>
+        <aside v-if="!receiveStart && !splitDrawer && !isPhone" class="h-fit min-w-0" data-receipt-conference>
+          <ReceiptConferencePanel
+            v-bind="conferencePanelProps"
+            @confirm="onConfirmReceipt"
+            @reject="onRejectReceipt"
+            @anchor="focusReceiptAnchor"
+            @line="(id: string) => focusReceiptLine(id)"
+            @ressalva="ressalvaOpen = true"
+          />
         </aside>
 
-        <!-- Celular: "Confirmar entrada" fica no polegar, logo acima da barra das seções
-             (prévias v3/v4 do celular). Mesmo gesto e mesma regra do painel. -->
+        <!-- Celular: o ato da vez no polegar, logo acima da barra das seções
+             (prévias v3/v4). Começo: Escanear NF, Digitar chave, Sem NF. Conferência:
+             "Contei N volumes" + "Algo não bate" enquanto os volumes não foram
+             contados; depois, "Confirmar entrada". -->
         <div
-          v-if="isPhone && !receiptIsBlank"
-          class="sticky bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-20 -mx-3 -mb-3 border-t border-border bg-card px-3 pt-2.5 pb-2 shadow-[0_-6px_14px_rgb(0_0_0/.06)]"
+          v-if="isPhone"
+          class="sticky bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-20 -mx-3 -mb-3 mt-auto border-t border-border bg-card px-3 pt-2.5 pb-2 shadow-[0_-6px_14px_rgb(0_0_0/.06)]"
           data-focus-obstruction
-          data-receipt-confirm-bar
+          data-receipt-thumb
         >
-          <button
-            type="button"
-            class="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl px-3 op-action disabled:opacity-50"
-            :class="receiptReady ? 'bg-primary text-primary-foreground' : 'border-2 border-dashed border-primary/50 bg-background text-foreground'"
-            :disabled="readonlyFallback || actionPending"
-            @click="onConfirmReceipt"
-          >
-            <Icon :name="actionPending ? 'lucide:loader-circle' : receiptReady ? 'lucide:check' : 'lucide:arrow-up'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
-            {{ actionPending ? "Confirmando" : "Confirmar entrada" }}
-          </button>
-          <p v-if="!receiptReady && receiptFirstBlocker" class="mt-1.5 flex items-center justify-center gap-1.5 op-label font-normal text-muted-foreground">
-            <Icon name="lucide:arrow-right" class="size-3.5 shrink-0" />
-            <span class="truncate">{{ receiptFirstBlocker.step }}{{ receiptFirstBlocker.label ? ` em ${receiptFirstBlocker.label}` : "" }}<template v-if="receiptTotalPending > 1"> · e mais {{ receiptTotalPending - 1 }}</template></span>
-          </p>
+          <template v-if="receiveStart">
+            <button type="button" class="flex w-full flex-col items-center gap-1 rounded-2xl bg-primary px-4 py-4 text-primary-foreground shadow-sm disabled:opacity-50" :disabled="readonlyFallback || actionPending || scannerOpen" data-thumb-scan-nf @click="openInvoiceScanner">
+              <span class="grid size-12 place-items-center rounded-full bg-primary-foreground/15">
+                <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:scan-line'" class="size-6" :class="actionPending ? 'animate-spin' : ''" />
+              </span>
+              <span class="text-[20px] leading-tight font-semibold">{{ actionPending ? "Lendo NF" : "Escanear NF" }}</span>
+              <span class="op-label text-primary-foreground/80">QR ou código de barras do DANFE</span>
+            </button>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card op-title hover:bg-accent" data-thumb-type-key @click="openKeyEntry">
+                <Icon name="lucide:keyboard" class="size-5" />
+                Digitar chave
+              </button>
+              <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card op-title hover:bg-accent" data-thumb-manual @click="startManualReceipt">
+                <Icon name="lucide:clipboard-pen-line" class="size-5" />
+                Sem NF
+              </button>
+            </div>
+          </template>
+          <template v-else-if="thumbCount">
+            <button
+              type="button"
+              class="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 op-action text-primary-foreground disabled:opacity-50"
+              :disabled="readonlyFallback || actionPending || volumesDraft <= 0"
+              data-thumb-count
+              @click="onExceptionCount(volumesDraft)"
+            >
+              <Icon name="lucide:check" class="size-5" />
+              Contei {{ volumesDraft }} {{ volumesDraft === 1 ? "volume" : "volumes" }}
+            </button>
+            <button type="button" class="mt-1 flex h-10 w-full items-center justify-center gap-1.5 op-label font-semibold text-muted-foreground" data-thumb-mismatch @click="onSomethingOff">
+              <Icon name="lucide:circle-help" class="size-4" />
+              Algo não bate
+            </button>
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl px-3 op-action disabled:opacity-50"
+              :class="receiptReady ? 'bg-primary text-primary-foreground' : 'border-2 border-dashed border-primary/50 bg-background text-foreground'"
+              :disabled="readonlyFallback || actionPending"
+              data-receipt-confirm-bar
+              @click="onConfirmReceipt"
+            >
+              <Icon :name="actionPending ? 'lucide:loader-circle' : receiptReady ? 'lucide:check' : 'lucide:arrow-up'" class="size-5" :class="actionPending ? 'animate-spin' : ''" />
+              {{ actionPending ? "Confirmando" : "Confirmar entrada" }}
+            </button>
+            <p v-if="!receiptReady && receiptFirstBlocker" class="mt-1.5 flex items-center justify-center gap-1.5 op-label font-normal text-muted-foreground">
+              <Icon name="lucide:arrow-right" class="size-3.5 shrink-0" />
+              <span class="truncate">{{ receiptFirstBlocker.step }}{{ receiptFirstBlocker.label ? ` em ${receiptFirstBlocker.label}` : "" }}<template v-if="receiptTotalPending > 1"> · e mais {{ receiptTotalPending - 1 }}</template></span>
+            </p>
+          </template>
         </div>
+
+        <!-- As câmeras do receber. -->
+        <CodeScannerSheet
+          v-model:open="eanScanOpen"
+          title="Ler EAN"
+          hint="Enquadre o código de barras da caixa ou da embalagem."
+          @code="onEanCode"
+        />
+        <CodeScannerSheet
+          v-model:open="volumeScanOpen"
+          title="Bipar cada volume"
+          hint="Passe a câmera no código de cada caixa, saco ou fardo. Cada leitura conta um volume."
+          continuous
+          :progress="`${volumeScanCount} de ${receiptException.expectedVolumes ?? 0} volumes`"
+          @code="onVolumeCode"
+        >
+          <div class="flex gap-2">
+            <button type="button" class="inline-flex h-12 flex-1 items-center justify-center rounded-xl border border-border bg-card op-title hover:bg-accent" @click="volumeScanCodes = []">
+              Zerar
+            </button>
+            <button type="button" class="inline-flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-xl bg-primary op-title text-primary-foreground" @click="finishVolumeScan">
+              <Icon name="lucide:check" class="size-5" />
+              Usar {{ volumeScanCount }}
+            </button>
+          </div>
+        </CodeScannerSheet>
+        <CodeScannerSheet
+          v-model:open="packageScanOpen"
+          title="Ler da embalagem"
+          hint="Enquadre o código GS1 da caixa (o de barras longo ou o quadradinho): ele traz a validade e o lote."
+          @code="onPackageCode"
+        />
+
+        <!-- O comprovante de uma entrada de hoje, com Compartilhar (v3 celular a). -->
+        <UiSheet :open="receiptSheetEntry != null" @update:open="(v: boolean) => { if (!v) receiptSheetEntry = null }">
+          <UiSheetContent v-if="receiptSheetEntry" side="bottom" data-receipt-voucher>
+            <UiSheetHeader class="border-b border-border p-4">
+              <div class="flex items-start justify-between gap-2">
+                <UiSheetTitle class="text-base">Comprovante de entrada</UiSheetTitle>
+                <UiSheetX />
+              </div>
+              <UiSheetDescription>{{ receiptSheetEntry.supplierName || receiptSheetEntry.supplierRef }}</UiSheetDescription>
+            </UiSheetHeader>
+            <dl class="grid grid-cols-2 gap-3 p-4">
+              <div><dt class="op-micro text-muted-foreground">Documento</dt><dd class="op-title tnum">{{ receiptVoucherDocument(receiptSheetEntry) }}</dd></div>
+              <div><dt class="op-micro text-muted-foreground">Quando</dt><dd class="op-title tnum">{{ receiptSheetEntry.receivedAtDisplay }}</dd></div>
+              <div><dt class="op-micro text-muted-foreground">Itens</dt><dd class="op-title tnum">{{ receiptSheetEntry.lines }}</dd></div>
+              <div><dt class="op-micro text-muted-foreground">Valor</dt><dd class="op-title tnum">{{ formatMoney(receiptSheetEntry.totalCostQ) }}</dd></div>
+              <div class="col-span-2"><dt class="op-micro text-muted-foreground">Recebido por</dt><dd class="op-title">{{ receiptSheetEntry.operator || "não registrado" }}</dd></div>
+            </dl>
+            <div class="border-t border-border p-4">
+              <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary op-title text-primary-foreground" data-receipt-share :disabled="sharingReceipt" @click="shareReceipt(receiptSheetEntry)">
+                <Icon name="lucide:share-2" class="size-5" />
+                Compartilhar
+              </button>
+            </div>
+          </UiSheetContent>
+        </UiSheet>
+
+        <!-- Ressalva geral: recolhida, abre pelo ⋯ ou pelo painel (C19). -->
+        <UiSheet :open="ressalvaOpen" @update:open="(v: boolean) => (ressalvaOpen = v)">
+          <UiSheetContent side="bottom" data-receipt-ressalva>
+            <UiSheetHeader class="border-b border-border p-4">
+              <div class="flex items-start justify-between gap-2">
+                <UiSheetTitle class="text-base">Ressalva geral</UiSheetTitle>
+                <UiSheetX />
+              </div>
+              <UiSheetDescription>Avaria, falta, devolução, observação na NF/CT-e. Vale para a entrada inteira.</UiSheetDescription>
+            </UiSheetHeader>
+            <div class="p-4">
+              <textarea v-model="receiptNote" rows="4" class="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 op-body" placeholder="Avaria, falta, devolução, observação na NF/CT-e" />
+              <button type="button" class="mt-3 inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary op-title text-primary-foreground" @click="ressalvaOpen = false">
+                Pronto
+              </button>
+            </div>
+          </UiSheetContent>
+        </UiSheet>
       </section>
 
       <!-- ══ BASE ════════════════════════════════════════════════════════════ -->
@@ -1637,16 +2094,16 @@ onBeforeUnmount(stopInvoiceScanner);
             <!-- Celular: um cartão por insumo (a tabela de seis colunas não cabe em 390 px). -->
             <ul v-if="isPhone" class="grid grid-cols-1 gap-2" data-material-cards>
               <li
-                v-for="material in filteredMaterials"
+                v-for="material in sortedMaterials"
                 :key="`card-${material.sku}`"
                 class="rounded-xl border bg-card p-3"
                 :class="selectedMaterial?.sku === material.sku ? 'border-primary/50 bg-primary/8' : 'border-border'"
               >
                 <button type="button" class="block w-full min-w-0 text-left" @click="selectMaterial(material.sku)">
                   <span class="block truncate op-title">{{ material.name }}</span>
-                  <span class="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+                  <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
                     <span class="shrink-0 font-mono op-micro text-muted-foreground">{{ material.sku }}</span>
-                    <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="inline-flex h-5 items-center rounded border border-border px-1.5 op-micro text-muted-foreground">{{ badge }}</span>
+                    <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="inline-flex h-5 shrink-0 items-center rounded border border-border px-1.5 op-micro whitespace-nowrap text-muted-foreground">{{ badge }}</span>
                   </span>
                 </button>
                 <div class="mt-2 flex items-end justify-between gap-3">
@@ -1693,13 +2150,15 @@ onBeforeUnmount(stopInvoiceScanner);
             </ul>
             <div v-else class="overflow-hidden rounded-lg border border-border bg-card">
               <div class="overflow-x-auto">
-                <table class="w-full min-w-[56rem] table-fixed op-body">
-                  <colgroup><col><col class="w-28"><col class="w-32"><col class="w-48"><col class="w-32"><col class="w-32"></colgroup>
+                <!-- Cabe do tablet em pé ao desktop (C05): abaixo de xl a Cobertura desce
+                     para baixo do estoque e as colunas encolhem; nada sai da tela. -->
+                <table class="w-full table-fixed op-body" data-base-table>
+                  <colgroup><col><col class="w-24 xl:w-28"><col class="hidden w-32 xl:table-column"><col class="w-40 xl:w-48"><col class="w-28 xl:w-32"><col class="w-28 xl:w-32"></colgroup>
                   <thead class="bg-muted/60 text-left text-muted-foreground">
                     <tr class="h-10">
                       <th class="pr-2 pl-4 op-eyebrow">Insumo</th>
                       <th class="px-3 text-right op-eyebrow">Estoque</th>
-                      <th class="px-3 op-eyebrow">Cobertura</th>
+                      <th class="hidden px-3 op-eyebrow xl:table-cell">Cobertura</th>
                       <th class="px-3 op-eyebrow">Mínimo</th>
                       <th class="px-3 text-right op-eyebrow whitespace-nowrap">Custo-base</th>
                       <th class="px-3 op-eyebrow">Situação</th>
@@ -1707,7 +2166,7 @@ onBeforeUnmount(stopInvoiceScanner);
                   </thead>
                   <tbody>
                     <tr
-                      v-for="material in filteredMaterials"
+                      v-for="material in sortedMaterials"
                       :key="material.sku"
                       class="h-16 border-t border-border transition-colors hover:bg-accent/60"
                       :class="selectedMaterial?.sku === material.sku ? 'bg-primary/8 shadow-[inset_3px_0_0_var(--primary)]' : ''"
@@ -1717,19 +2176,23 @@ onBeforeUnmount(stopInvoiceScanner);
                           <span class="font-semibold">{{ material.name }}</span>
                           <span class="op-micro text-muted-foreground"> · {{ material.category }}<template v-if="material.recipes.length"> · {{ material.recipes.length }} {{ material.recipes.length === 1 ? "receita" : "receitas" }}</template></span>
                         </button>
-                        <div class="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-                          <span class="mr-0.5 shrink-0 font-mono op-micro text-muted-foreground">{{ material.sku }}</span>
-                          <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="inline-flex h-5 items-center rounded border border-border px-1.5 op-micro text-muted-foreground">{{ badge }}</span>
+                        <!-- As etiquetas de papel quebram de linha em vez de sair cortadas (C04). -->
+                        <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5" data-base-role-tags>
+                          <span class="mr-0.5 shrink-0 truncate font-mono op-micro text-muted-foreground">{{ material.sku }}</span>
+                          <span v-for="badge in skuRoleBadges(material.roles)" :key="badge" class="inline-flex h-5 shrink-0 items-center rounded border border-border px-1.5 op-micro whitespace-nowrap text-muted-foreground">{{ badge }}</span>
                         </div>
                       </td>
-                      <td class="px-3 text-right font-medium whitespace-nowrap tnum">{{ formatStockOnHand(material) }}</td>
-                      <td class="px-3 whitespace-nowrap text-muted-foreground tnum">{{ coverageLabel(material.coverageDays) }}</td>
+                      <td class="px-3 text-right font-medium whitespace-nowrap tnum">
+                        {{ formatStockOnHand(material) }}
+                        <span class="block op-micro font-normal text-muted-foreground xl:hidden">{{ coverageLabel(material.coverageDays) }}</span>
+                      </td>
+                      <td class="hidden px-3 whitespace-nowrap text-muted-foreground tnum xl:table-cell">{{ coverageLabel(material.coverageDays) }}</td>
                       <!-- Sem consumo medido, o alvo de reposição é zero e o insumo
                            nunca vira sugestão. O mínimo declarado é o que destrava. -->
                       <td class="px-3 py-2">
                         <div class="flex items-center gap-1.5">
                           <label
-                            class="inline-flex h-10 w-32 items-center gap-1.5 rounded-md bg-card px-2.5"
+                            class="inline-flex h-10 w-full max-w-32 items-center gap-1.5 rounded-md bg-card px-2.5"
                             :class="minStockLineErrors[material.sku] ? 'border-2 border-destructive' : minStockInputs[material.sku] ? 'border-2 border-primary' : 'border border-input'"
                           >
                             <input
@@ -1755,7 +2218,7 @@ onBeforeUnmount(stopInvoiceScanner);
                           {{ minStockLineErrors[material.sku] }}
                         </p>
                       </td>
-                      <td class="px-3 text-right whitespace-nowrap tnum" :class="material.preferredBaseCostQ ? '' : 'text-muted-foreground'">
+                      <td class="px-3 text-right tnum xl:whitespace-nowrap" :class="material.preferredBaseCostQ ? '' : 'text-muted-foreground'">
                         {{ material.preferredBaseCostQ ? `${formatMoney(material.preferredBaseCostQ)} / ${material.unit}` : "sem custo" }}
                       </td>
                       <td class="px-3">

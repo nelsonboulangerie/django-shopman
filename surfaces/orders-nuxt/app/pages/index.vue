@@ -33,9 +33,10 @@ import {
   zoneEmptyText,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
+import type { SwipeAction } from "~/components/SwipeReveal.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import { BOARD_COLUMNS_QUERY, BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
-import { queueGesture, queueItems } from "~/presentation/queue";
+import { QUEUE_FOCUS, QUEUE_SORT_OPTIONS, queueGesture, queueItems, queueScopeCounts, type QueueScope, type QueueSort } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
 const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, markStationReady, recallStation, declareVolumes, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
@@ -72,7 +73,7 @@ definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const router = useRouter();
 const context = useOrdersContext();
-const { query, channel, fulfillment, sort, viewMode, selected } = context;
+const { query, channel, fulfillment, sort, viewMode, scope, queueSort, selected } = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
 watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
@@ -216,6 +217,36 @@ function pickSort(key: SortKey) {
   sort.value = key;
   sortOpen.value = false;
 }
+// A Saída no celular (G16, v4 `cozinha-celular` (a)): entrou pelo "Saída" da barra, as
+// abas são "Prontos para sair" e "Em preparo" (com o ponto de atraso); pelo "Pedidos",
+// as três colunas. Na aba da Saída, o mais antigo expandido e o resto em linhas.
+const phoneExitMode = ref(false);
+const phoneTabs = computed(() => {
+  const byKey = new Map(zones.value.map((zone) => [zone.key, zone]));
+  const tabs = phoneExitMode.value
+    ? [{ key: "expedition", title: "Prontos para sair" }, { key: "prep", title: "Em preparo" }]
+    : zones.value.map((zone) => ({ key: zone.key, title: zone.title }));
+  return tabs.flatMap((tab) => {
+    const zone = byKey.get(tab.key as ZoneView["key"]);
+    return zone ? [{ ...tab, zone, late: lateCount(zone) }] : [];
+  });
+});
+// Puxe para atualizar (celular) e o aviso dos gestos no fim da lista.
+const { pull, refreshing: pullRefreshing, label: pullText } = usePullToRefresh(queueViewport, () => refresh(), isPhone);
+// Deslizar o cartão para a esquerda (G17): Atender (quem gerencia) e Recusar (pedido novo).
+function swipeActions(card: OrderCardProjection): SwipeAction[] {
+  const actions: SwipeAction[] = [];
+  if (canManageOrders.value) {
+    actions.push({ key: "assign", label: card.assigned_operator ? "Liberar" : "Atender", icon: card.assigned_operator ? "lucide:user-minus" : "lucide:user-plus", tone: "info", disabled: isBusy(card.ref) });
+  }
+  const reject = cardAffordances(card).find((aff) => aff.ref === "reject");
+  if (reject) actions.push({ key: "reject", label: "Recusar", icon: "lucide:circle-x", tone: "danger", disabled: isBusy(card.ref) || reject.disabled });
+  return actions;
+}
+function onSwipe(card: OrderCardProjection, key: string) {
+  if (key === "assign") onToggleAssign(card);
+  else if (key === "reject") openReject(card.ref);
+}
 
 // ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
 // O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
@@ -234,8 +265,10 @@ function applyColumnsQuery() {
   if (wanted !== "expedition" && wanted !== "all") return;
   if (wanted === "expedition") boardLayout.showOnly("expedition");
   else boardLayout.showAll();
-  // No celular as colunas são abas: "Saída" abre a aba da Saída; "Pedidos", a da vez.
+  // No celular as colunas são abas: "Saída" abre a Saída da v4 (abas "Prontos para
+  // sair" e "Em preparo"); "Pedidos", as três abas na da vez.
   pickedZone.value = wanted === "expedition" ? "expedition" : null;
+  phoneExitMode.value = wanted === "expedition";
   const { [BOARD_COLUMNS_QUERY]: _applied, ...rest } = route.query;
   void router.replace({ path: route.path, query: rest });
 }
@@ -260,11 +293,11 @@ onMounted(() => { mounted.value = true; });
 const compactHeader = computed(() => mounted.value && (exitPostView.value || (isNarrow.value && !isPhone.value)));
 
 // O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
-// acende "Saída" quando o posto está só com ela. Fora do quadro os selos somem.
+// acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
 const rail = useGestorRail();
 watch(
   () => ({
-    exitPost: isPhone.value ? phoneZone.value === "expedition" : boardLayout.exitPost.value,
+    exitPost: isPhone.value ? phoneExitMode.value || phoneZone.value === "expedition" : boardLayout.exitPost.value,
     intake: zones.value.find((z) => z.key === "intake")?.count ?? 0,
     exit: zones.value.find((z) => z.key === "expedition")?.count ?? 0,
   }),
@@ -328,6 +361,11 @@ function columnWidth(key: string | null): number {
 function onResizeStart(key: string) {
   boardLayout.startResize(key, columnWidth(key), columnWidth(boardLayout.nextOpen(key)));
 }
+// Abrir a faixa da Entrada que pulsa é o "Ciente" do posto Saída (o som para).
+function openColumn(key: string) {
+  if (key === "intake" && attentionPending.value) acknowledgeAttention();
+  boardLayout.open(key);
+}
 function lateCount(zone: ZoneView): number {
   return triaged(zone).filter((card) => timerTone(card.timer_class) === "late").length;
 }
@@ -340,7 +378,29 @@ const queueCards = computed<OrderCardProjection[]>(() => [
   ...tableRows.value.map((row) => row.card),
   ...triagedPreorders.value.flatMap((group) => group.cards),
 ]);
-const queueOrder = computed(() => queueItems(queueCards.value, nowMs.value).map((item) => item.card));
+// O que as setas alcançam: o que a Fila mostra (em "Precisa de você", os 4 em foco).
+const queueOrder = computed(() => {
+  const order = queueItems(queueCards.value, nowMs.value, { scope: scope.value, sort: queueSort.value }).map((item) => item.card);
+  return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
+});
+const scopeCounts = computed(() => queueScopeCounts(queueCards.value, nowMs.value));
+const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
+  { key: "attention", label: "Precisa de você" },
+  { key: "all", label: "Todos" },
+  { key: "late", label: "Atrasados" },
+];
+const queueSortLabel = computed(() => QUEUE_SORT_OPTIONS.find((o) => o.key === queueSort.value)?.label ?? "Urgência");
+function pickQueueSort(key: QueueSort) {
+  queueSort.value = key;
+  sortOpen.value = false;
+}
+// A tecla A aceita o pedido novo em foco; sem ele, o pedido novo mais urgente da Fila.
+const acceptRef = computed(() => {
+  const confirmable = (card: OrderCardProjection) => card.attention === "confirm" && card.can_confirm;
+  const focused = queueOrder.value.find((card) => card.ref === queueFocus.value);
+  if (focused && confirmable(focused)) return focused.ref;
+  return queueOrder.value.find(confirmable)?.ref ?? "";
+});
 const queueFocusPicked = ref("");
 const queueFocus = computed(() => {
   const refs = queueOrder.value.map((card) => card.ref);
@@ -355,7 +415,7 @@ function queueKey(e: KeyboardEvent): boolean {
   }
   if (key === "t") {
     e.preventDefault();
-    viewMode.value = "board";
+    viewMode.value = "table";
     return true;
   }
   if (view.value !== "queue") return false;
@@ -367,6 +427,11 @@ function queueKey(e: KeyboardEvent): boolean {
     const next = key === "ArrowDown" ? Math.min(order.length - 1, index + 1) : Math.max(0, index - 1);
     queueFocusPicked.value = order[next]!.ref;
     document.querySelector(`[data-queue-ref="${CSS.escape(order[next]!.ref)}"]`)?.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  if (key === "a" && acceptRef.value && !isBusy(acceptRef.value)) {
+    e.preventDefault();
+    onAction(acceptRef.value, "confirm");
     return true;
   }
   const card = order[index];
@@ -384,11 +449,6 @@ function queueKey(e: KeyboardEvent): boolean {
     if (!primary || primary.disabled) return false;
     e.preventDefault();
     onAction(card.ref, primary.ref);
-    return true;
-  }
-  if (key === "a" && card.attention === "confirm" && card.can_confirm) {
-    e.preventDefault();
-    onAction(card.ref, "confirm");
     return true;
   }
   return false;
@@ -433,7 +493,8 @@ function onKeydown(e: KeyboardEvent) {
       refresh();
       break;
     case "toggle-view":
-      viewMode.value = view.value === "table" ? "board" : "table";
+      // V: as três colunas (Entrada, Preparo, Saída) e de volta à Fila.
+      viewMode.value = view.value === "board" ? (queueAvailable.value ? "queue" : "table") : "board";
       break;
     case "cycle-sort":
       sort.value = nextSort(sort.value);
@@ -608,6 +669,14 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "undo_ready") undoReady(ref_);
 }
 
+// O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
+// período, motivo e a aprovação do gerente; a leitura da Fila se refaz depois.
+const menuChannels = computed(() => queue.value?.awareness?.menu_channels ?? []);
+const switchRef = ref<string | null>(null);
+const switchTarget = computed(() => menuChannels.value.find((row) => row.ref === switchRef.value)?.switch ?? null);
+const { switchChannel, isSwitching } = useChannelSwitch((ref_) => menuChannels.value.find((row) => row.ref === ref_)?.switch, () => refresh());
+const submitSwitch = (request: Parameters<typeof switchChannel>[1], approval?: Record<string, string>) => switchChannel(switchRef.value!, request, approval);
+
 // claim/release an order ("estou atendendo").
 function onToggleAssign(card: OrderCardProjection) {
   if (card.assigned_operator) unassign(card.ref);
@@ -642,11 +711,13 @@ function printQueue() {
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
     <OperatorPageHeader title="Pedidos" :eyebrow="exitPostView && boardLayout.station.value ? 'Posto Saída · este dispositivo' : ''">
       <template #status>
+        <!-- No celular o título não se corta: o estado vai por extenso só na falha; o
+             resto fica no ponto, na hora e no nome acessível. -->
         <OperatorLiveStatus
           :tone="liveTone"
           :time="readClock"
-          :label="error ? 'Atualização falhou' : realtimeView.label"
-          :detail="realtimeView.title"
+          :label="isPhone && !error ? '' : error ? 'Atualização falhou' : realtimeView.label"
+          :detail="isPhone && !error ? `${realtimeView.label}. ${realtimeView.title}` : realtimeView.title"
         />
       </template>
       <template #search>
@@ -715,39 +786,58 @@ function printQueue() {
         </button>
 
         <template v-if="!compactHeader && !isPhone">
-          <!-- ordenar (a Fila tem ordem própria: tempo contra a meta) -->
-          <div v-if="view !== 'queue'" class="relative">
+          <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+               no quadro e na tabela, a ordem deles -->
+          <div class="relative">
             <button
               type="button"
               class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
               aria-haspopup="menu"
               :aria-expanded="sortOpen"
-              title="Ordenar (atalho: s)"
+              :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
+              data-board-sort
               @click="sortOpen = !sortOpen"
             >
               <Icon name="lucide:arrow-up-down" class="size-4" />
-              <span>{{ sortLabel }}</span>
+              <span>{{ view === "queue" ? queueSortLabel : sortLabel }}</span>
               <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
             </button>
             <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
-            <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
-              <button
-                v-for="opt in SORT_OPTIONS"
-                :key="opt.key"
-                type="button"
-                role="menuitemradio"
-                :aria-checked="sort === opt.key"
-                class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
-                @click="pickSort(opt.key)"
-              >
-                {{ opt.label }}
-                <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
-              </button>
+            <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg" role="menu">
+              <template v-if="view === 'queue'">
+                <button
+                  v-for="opt in QUEUE_SORT_OPTIONS"
+                  :key="opt.key"
+                  type="button"
+                  role="menuitemradio"
+                  :aria-checked="queueSort === opt.key"
+                  class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-1.5 text-left op-body transition hover:bg-accent"
+                  @click="pickQueueSort(opt.key)"
+                >
+                  <span class="flex flex-col"><span>{{ opt.label }}</span><span class="op-micro text-muted-foreground">{{ opt.hint }}</span></span>
+                  <Icon v-if="queueSort === opt.key" name="lucide:check" class="size-4 shrink-0 text-primary" />
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  v-for="opt in SORT_OPTIONS"
+                  :key="opt.key"
+                  type="button"
+                  role="menuitemradio"
+                  :aria-checked="sort === opt.key"
+                  class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
+                  @click="pickSort(opt.key)"
+                >
+                  {{ opt.label }}
+                  <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
+                </button>
+              </template>
             </div>
           </div>
 
-          <!-- visão (v4): Fila | Supervisão, com a tecla; a tabela densa no mesmo trilho.
-               Cada botão tem 44px (alvo da casa); o ativo se destaca pelo cartão. -->
+          <!-- visão (v4): dois segmentos, Fila F | Supervisão T. A Supervisão é a tabela
+               densa com seleção em lote; as três colunas (Entrada, Preparo, Saída) moram
+               no ⋯ e na tecla V, e o posto Saída abre nelas. -->
           <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary" data-view-switch>
             <button
               v-if="queueAvailable"
@@ -766,32 +856,24 @@ function printQueue() {
             <button
               type="button"
               class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-              :class="view === 'board' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-              aria-label="Supervisão: ver em colunas"
-              title="Supervisão: as três colunas (atalho: t)"
-              :aria-pressed="view === 'board'"
-              @click="viewMode = 'board'"
-            >
-              <Icon name="lucide:columns-3" class="size-4" />
-              <span aria-hidden="true">Supervisão</span>
-              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
               :class="view === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-              aria-label="Ver em tabela"
-              title="Tabela (atalho: v)"
+              aria-label="Supervisão: tabela densa, seleção em lote"
+              title="Supervisão: tabela densa, seleção em lote (atalho: t)"
               :aria-pressed="view === 'table'"
+              data-view-supervision
               @click="viewMode = 'table'"
             >
               <Icon name="lucide:table-2" class="size-4" />
+              <span aria-hidden="true">Supervisão</span>
+              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
             </button>
           </div>
         </template>
 
-        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes) -->
-        <div v-if="!isPhone" class="relative">
+        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
+             Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Ciente
+             é tocar a faixa da Entrada que pulsa. -->
+        <div v-if="!isPhone && !exitPostView" class="relative">
           <UiIconButton
             icon="lucide:ellipsis"
             label="Mais ações da fila"
@@ -830,8 +912,30 @@ function printQueue() {
       <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
            seletor só ("+ Canal"). No posto Saída os recortes do fluxo sobem para a
            cabeça da coluna, como na prévia. -->
-      <template v-if="(allCards.length && !exitPostView) || isPhone" #filters>
-        <UiFilterChip :active="channel === 'all' && fulfillment === 'all'" :count="allCards.length" @click="channel = 'all'; fulfillment = 'all'">
+      <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
+           barra de cima, as duas abas e a lista. -->
+      <template v-if="((allCards.length && !exitPostView) || isPhone) && !(isPhone && phoneExitMode)" #filters>
+        <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
+             muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. -->
+        <template v-if="view === 'queue'">
+          <UiFilterChip
+            v-for="opt in QUEUE_SCOPES"
+            :key="opt.key"
+            :active="scope === opt.key"
+            :count="scopeCounts[opt.key]"
+            :data-queue-scope="opt.key"
+            @click="scope = opt.key"
+          >
+            <template v-if="opt.key === 'late'" #icon>
+              <span class="size-2 rounded-full bg-warning" aria-hidden="true" />
+            </template>
+            <template v-else-if="scope === opt.key" #icon>
+              <Icon name="lucide:check" class="size-4 text-primary" />
+            </template>
+            {{ opt.label }}
+          </UiFilterChip>
+        </template>
+        <UiFilterChip v-else :active="channel === 'all' && fulfillment === 'all'" :count="allCards.length" @click="channel = 'all'; fulfillment = 'all'">
           <template v-if="channel === 'all' && fulfillment === 'all'" #icon>
             <Icon name="lucide:check" class="size-4 text-primary" />
           </template>
@@ -960,20 +1064,22 @@ function printQueue() {
       data-board-zone-tabs
     >
       <button
-        v-for="zone in zones"
-        :key="zone.key"
+        v-for="tab in phoneTabs"
+        :key="tab.key"
         type="button"
         role="tab"
-        :aria-selected="phoneZone === zone.key"
+        :aria-selected="phoneZone === tab.key"
         class="flex h-12 flex-1 items-center justify-center gap-1.5 op-body"
-        :class="phoneZone === zone.key ? 'font-semibold text-foreground shadow-[inset_0_-3px_0_var(--primary)]' : 'text-muted-foreground'"
-        @click="pickedZone = zone.key"
+        :class="phoneZone === tab.key ? 'font-semibold text-foreground shadow-[inset_0_-3px_0_var(--primary)]' : 'text-muted-foreground'"
+        :data-phone-tab="tab.key"
+        @click="pickedZone = tab.key"
       >
-        {{ zone.title }}
+        {{ tab.title }}
         <span
           class="tnum"
-          :class="phoneZone === zone.key && triaged(zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
-        >{{ triaged(zone).length }}</span>
+          :class="phoneZone === tab.key && triaged(tab.zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
+        >{{ triaged(tab.zone).length }}</span>
+        <span v-if="phoneExitMode && tab.late" class="size-2 rounded-full bg-warning" :aria-label="`${tab.late} passou da meta`" />
       </button>
     </div>
 
@@ -1015,6 +1121,16 @@ function printQueue() {
     </div>
 
     <section ref="queueViewport" class="flex min-h-0 flex-1 flex-col overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
+      <!-- puxe para atualizar (celular) -->
+      <p
+        v-if="isPhone && (pull > 0 || pullRefreshing)"
+        class="flex shrink-0 items-center justify-center gap-2 overflow-hidden op-micro text-muted-foreground"
+        :style="{ height: `${pullRefreshing ? 40 : pull}px` }"
+        aria-live="polite"
+        data-pull-refresh
+      >
+        <Icon name="lucide:refresh-cw" class="size-4" :class="pullRefreshing ? 'motion-safe:animate-spin' : ''" />{{ pullText }}
+      </p>
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
            fala nesse estado é a identificação que sobe por cima (app.vue). -->
@@ -1043,14 +1159,19 @@ function printQueue() {
           :awareness="queue.awareness"
           :now-ms="nowMs"
           :focus-ref="queueFocus"
+          :accept-ref="acceptRef"
+          :scope="scope"
+          :sort="queueSort"
           :is-busy="isBusy"
           :action-error="actionError"
           :can-open="canManageOrders"
+          :switching="isSwitching"
           @action="onAction"
           @station-ready="onStationReady"
           @focus="(ref_) => (queueFocusPicked = ref_)"
           @dismiss-error="clearActionError"
-          @show-all="viewMode = 'board'"
+          @scope="(next) => (scope = next)"
+          @switch="(ref_) => (switchRef = ref_)"
         />
 
         <!-- Supervisão: o quadro de três colunas -->
@@ -1080,7 +1201,7 @@ function printQueue() {
               :late="lateCount(zone)"
               :summary="stripSummary(zone.key, triaged(zone), nowMs).text"
               :pulse="zone.key === 'intake' && attentionPending"
-              @open="boardLayout.open(zone.key)"
+              @open="openColumn(zone.key)"
             />
             <template v-else>
             <!-- cabeça da coluna (v4): nome em versalete, contagem e a frase do que mora
@@ -1088,8 +1209,8 @@ function printQueue() {
             <div v-if="!isPhone" class="flex min-h-11 items-center gap-2" :class="wideColumn(zone.key) ? '' : 'border-b border-border pb-2'">
               <Icon v-if="!wideColumn(zone.key)" :name="zone.icon" class="size-4 text-muted-foreground" />
               <h2 class="op-eyebrow">{{ zone.title }}</h2>
-              <span class="op-label tnum text-muted-foreground"><b class="font-semibold text-foreground">{{ triaged(zone).length }}</b><template v-if="wideColumn(zone.key)">{{ triaged(zone).length === 1 ? " pedido" : " pedidos" }}</template></span>
-              <span v-if="wideColumn(zone.key)" class="ml-3 hidden items-center gap-1.5 op-micro text-muted-foreground xl:inline-flex" :title="boardLayout.memoryText.value" data-board-layout-memory>
+              <span class="op-label tnum text-muted-foreground"><b class="font-semibold text-foreground">{{ triaged(zone).length }}</b><template v-if="wideColumn(zone.key)">{{ triaged(zone).length === 1 ? " pronto ou quase" : " prontos ou quase" }}</template></span>
+              <span v-if="wideColumn(zone.key)" class="ml-3 hidden items-center gap-1.5 op-micro text-muted-foreground lg:inline-flex" :title="boardLayout.memoryText.value" data-board-layout-memory>
                 <Icon name="lucide:cloud-check" class="size-4" aria-hidden="true" />{{ layoutMemory }}
               </span>
               <span v-else class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
@@ -1124,6 +1245,20 @@ function printQueue() {
               </span>
               <p class="op-label font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
             </div>
+
+            <!-- celular, a Saída da v4: o mais antigo expandido, o resto em linhas de
+                 64px que se deslizam para entregar, e o gesto no polegar. -->
+            <PhoneExitList
+              v-else-if="isPhone && zone.key === 'expedition'"
+              :cards="triaged(zone)"
+              :now-ms="nowMs"
+              :next-ref="zoneNext(zone)"
+              :is-busy="isBusy"
+              :action-error="actionError"
+              :can-open="canManageOrders"
+              @action="onAction"
+              @dismiss-error="clearActionError"
+            />
 
             <!-- posto Saída: a grade da v4 (cartões de altura igual, duas linhas que
                  enchem a tela; o excedente vira a faixa "+N esperando"). -->
@@ -1179,10 +1314,17 @@ function printQueue() {
             </template>
 
             <div v-else class="flex flex-col gap-3" data-zone-cards>
-              <OrderCard
+              <!-- no celular, deslizar o cartão para a esquerda revela Atender e Recusar -->
+              <SwipeReveal
                 v-for="card in triaged(zone)"
                 :key="card.ref"
+                :actions="isPhone ? swipeActions(card) : []"
+                :label="`Pedido ${splitRef(card.ref).code}`"
+                @pick="(key) => onSwipe(card, key)"
+              >
+              <OrderCard
                 :card="card"
+                :swipe-reject="isPhone"
                 :busy="isBusy(card.ref)"
                 :error="actionError(card.ref)"
                 :selected="isSelected(card.ref)"
@@ -1201,6 +1343,10 @@ function printQueue() {
                 @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
                 @volumes="(count) => declareVolumes(card.ref, count, zone.key === 'expedition' ? 'exit' : 'orders')"
               />
+              </SwipeReveal>
+              <p v-if="isPhone && triaged(zone).length" class="flex items-center justify-center gap-1.5 py-1 op-micro text-muted-foreground" data-swipe-hint>
+                <Icon name="lucide:hand" class="size-4" />{{ !canManageOrders ? "Puxe para atualizar" : zone.key === "intake" ? "Deslize para Atender ou Recusar · puxe para atualizar" : "Deslize para Atender · puxe para atualizar" }}
+              </p>
             </div>
             <QueueColumnResizeHandle
               v-if="!isPhone && boardLayout.nextOpen(zone.key)"
@@ -1417,6 +1563,17 @@ function printQueue() {
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+
+    <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->
+    <ChannelSwitchDialog
+      :open="Boolean(switchTarget)"
+      :sw="switchTarget"
+      :managers="queue?.awareness?.managers ?? []"
+      :viewer-name="queue?.awareness?.viewer_name ?? ''"
+      :busy="Boolean(switchRef && isSwitching(switchRef))"
+      :submit="submitSwitch"
+      @update:open="(value: boolean) => { if (!value) switchRef = null; }"
+    />
 
     <!-- saída para entrega (só quando há o que perguntar) -->
     <DispatchDialog

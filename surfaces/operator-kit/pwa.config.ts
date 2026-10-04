@@ -77,8 +77,8 @@ export interface OperatorPwaCapabilityOptions {
    */
   idleReloadPaths?: string[];
   push?: {
-    surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi";
-    categories: Array<"campaign" | "production" | "order" | "purchase" | "report" | "sign_in" | "system">;
+    surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi" | "kds";
+    categories: Array<"campaign" | "production" | "order" | "purchase" | "report" | "kitchen" | "sign_in" | "system">;
   };
 }
 

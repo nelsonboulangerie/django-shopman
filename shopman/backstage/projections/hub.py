@@ -77,6 +77,9 @@ class OperatorHubProjection:
     tiles: tuple[HubTileProjection, ...]
     #: "Precisa de você": a soma das filas dos papéis do operador (`projections/hub_queue.py`).
     queue: HubQueueProjection
+    #: O nome inteiro da casa (``Shop.name``, "Nelson Boulangerie"), para a assinatura
+    #: "Shopman · Nelson Boulangerie" da Central (prévia v4). O nome curto é do PWA.
+    shop_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -200,4 +203,13 @@ def build_operator_hub(user) -> OperatorHubProjection:
         )
         for spec in visible
     )
-    return OperatorHubProjection(operator_name=_operator_name(user), tiles=tiles, queue=queue)
+    return OperatorHubProjection(
+        operator_name=_operator_name(user), tiles=tiles, queue=queue, shop_name=_shop_name()
+    )
+
+
+def _shop_name() -> str:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    return str(getattr(shop, "name", "") or "").strip()

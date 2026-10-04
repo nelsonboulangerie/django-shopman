@@ -112,12 +112,14 @@ def test_compras_conta_pedido_para_enviar_e_pedido_a_caminho(client):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_compras_sem_pedido_fica_sem_linha(client):
+def test_compras_sem_pedido_diz_o_estado_calmo(client):
+    """Todo bloco tem estado (prévia v4, auditoria H05): sem pedido também é um fato."""
     Material.objects.create(sku="SAL", name="Sal", unit="g")
 
     purchase = _tiles(client, _admin("hub-b-compras-vazio"))["purchase"]
 
-    assert purchase["status_attention"] == purchase["status_summary"] == purchase["status_positive"] == ""
+    assert purchase["status_attention"] == purchase["status_positive"] == ""
+    assert purchase["status_summary"] == "Nenhum pedido em andamento"
 
 
 # ── Marketing ─────────────────────────────────────────────────────────────────
@@ -161,10 +163,10 @@ def test_bi_diz_as_vendas_da_janela_padrao_e_a_variacao(client, monkeypatch):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_bi_sem_venda_fica_sem_linha(client):
+def test_bi_sem_venda_diz_o_estado_calmo(client):
     bi = _tiles(client, _admin("hub-b-bi-vazio"))["bi"]
 
-    assert bi["status_summary"] == ""
+    assert bi["status_summary"] == "Sem vendas nos últimos 28 dias"
 
 
 def test_dinheiro_compacto_e_variacao_com_sinal():
