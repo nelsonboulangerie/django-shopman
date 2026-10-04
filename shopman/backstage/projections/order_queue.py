@@ -71,8 +71,8 @@ _DEFAULT_CHANNEL_ICON = "shopping_bag"
 NEXT_ACTION_LABELS: dict[str, str] = {
     "accepted": "Iniciar preparo",
     "preparing": "Marcar pronto",
-    "ready": "Marcar como Retirado",
-    "dispatched": "Marcar como Entregue",
+    "ready": "Marcar como retirado",
+    "dispatched": "Marcar como entregue",
     "delivered": "Concluir",
 }
 
@@ -2531,6 +2531,7 @@ _EVENT_LABELS = {
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
     "concierge_discount": "Desconto da Concierge",
+    "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve

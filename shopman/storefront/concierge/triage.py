@@ -154,7 +154,10 @@ class Triage:
     #: equipe (alergia, decisão do dono em 03/10/2026, ``allergens.py``):
     #: ``allergy_notice`` (respondida com o aviso da casa e os alérgenos
     #: declarados), ``allergy_ask_which`` (alergia sem dizer a quê: pergunta) ou
-    #: ``allergy_notice_after_ask`` (a resposta a essa pergunta, respondida).
+    #: ``allergy_notice_after_ask`` (a resposta a essa pergunta, respondida);
+    #: e no cancelamento: ``self_cancel`` (cancelamento que o cliente poderia
+    #: fazer pelo site; a Concierge pergunta e cancela) ou ``cancel_answer`` (o
+    #: "sim" ou "não" à pergunta de cancelamento).
     answered_by: str = ""
     #: As probabilidades que o Jev deu a cada intenção neste turno (e a de "mais de uma
     #: parte", quando as intenções no plural estão ligadas). Vazio sem Jev. É a primeira
@@ -442,6 +445,7 @@ def decide(
     commercial_authority: bool = False,
     client=None,
     channel_ref: str = "",
+    concierge_answers: str = "",
 ) -> Triage:
     """Intenção, urgência, destino e resumo de um turno.
 
@@ -453,6 +457,12 @@ def decide(
     """
     if previous and set(previous.get("message_ids") or ()) & set(message_ids):
         previous = None
+    if concierge_answers in {"self_cancel", "cancel_answer"}:
+        # Cancelamento conforme a etapa (dono, 03/10/2026): quem chamou já
+        # conferiu, pela régua do site, que o próprio cliente poderia cancelar
+        # (``cancellation.self_cancellable``), ou que a fala responde à pergunta
+        # de cancelamento. A Concierge pergunta e cancela; fora disso, R4.
+        return Triage("order", NOW, ANSWER, rules_summary("order", text), "rules", answered_by=concierge_answers)
     rules_intent, rules_source = classify_rules(text)
     with_jev = classifier() == "jev"
     from .intents import mode as intents_mode
@@ -501,7 +511,8 @@ def decide(
         and intent not in SENSITIVE
         and classify_handoff_request(text) == "order_cancel"
     ):
-        # Regra da casa R4: cancelar pedido é com a equipe (o bot não cancela).
+        # Regra da casa R4: cancelar pedido que o cliente não poderia cancelar
+        # pelo site (em preparo, pago, de outra pessoa) é com a equipe.
         intent, destination, urgency, escalated_by = "order", TEAM, NOW, "cancel_order"
     elif (
         intent == "order"

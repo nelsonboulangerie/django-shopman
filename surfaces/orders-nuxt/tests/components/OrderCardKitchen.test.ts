@@ -94,8 +94,11 @@ describe("OrderCard: a Cozinha no cartão", () => {
         station(),
       ], "Faltam Cafés e Lanches"),
     }));
-    expect(wrapper.get("[data-kitchen-missing]").text()).toBe("Faltam Cafés e Lanches");
+    // v4: um traço por estação e a frase "0 de 2 prontos · faltam Cafés e Lanches".
+    expect(wrapper.get("[data-kitchen-missing]").text()).toBe("faltam Cafés e Lanches");
+    expect(wrapper.get("[data-kitchen]").text()).toContain("0 de 2 prontos");
     expect(wrapper.findAll("[data-kitchen-station]")).toHaveLength(2);
+    expect(wrapper.findAll("[data-kitchen-station]").map((s) => s.attributes("aria-label"))).toEqual(["Lanches: na fila", "Cafés: em preparo"]);
     const ready = wrapper.get("[data-kitchen-ready]");
     expect(ready.text()).toBe("Pronto de Lanches");
     await ready.trigger("click");
@@ -116,10 +119,17 @@ describe("OrderCard: a Cozinha no cartão", () => {
     expect(wrapper.emitted("station-recall")).toEqual([[7]]);
   });
 
-  it("sem Cozinha no pedido: nada de bloco nem menu", () => {
+  it("sem Cozinha no pedido: nada de bloco, e o ⋯ sem Voltar para…", async () => {
     const wrapper = mountCard(card());
     expect(wrapper.find("[data-kitchen]").exists()).toBe(false);
-    expect(wrapper.find("[data-card-menu]").exists()).toBe(false);
+    expect(wrapper.find("[data-kitchen-progress]").exists()).toBe(false);
+    await wrapper.get("[data-card-menu]").trigger("click");
+    expect(wrapper.find("[data-card-recall]").exists()).toBe(false);
+  });
+
+  it("pedido pronto: a barra cheia diz quem concluiu", () => {
+    const wrapper = mountCard(card({ status: "ready", kitchen: kitchen([station({ state: "done", state_label: "pronto" })]) }));
+    expect(wrapper.get("[data-kitchen-progress]").text()).toContain("Cafés pronto");
   });
 
   it("posto de saída: alvos de 48 px", () => {

@@ -54,6 +54,17 @@ describe("QueueColumnStrip", () => {
     expect(nova.find("[data-queue-strip-pulse]").exists()).toBe(true);
     expect(nova.attributes("data-queue-strip-tone")).toBe("new");
   });
+
+  it("a frase da urgência sobrevive ao recolher e entra no nome acessível; atraso fala primeiro", async () => {
+    const entrada = await mountStrip({ title: "Entrada", count: 2, summary: "aceita sozinho em 1:10" });
+    expect(entrada.get("[data-queue-strip-summary]").text()).toBe("aceita sozinho em 1:10");
+    expect(entrada.attributes("aria-label")).toBe("Abrir a coluna Entrada: 2 pedidos, aceita sozinho em 1:10");
+    expect(entrada.find("[data-queue-strip-dot]").exists()).toBe(true);
+
+    const atrasada = await mountStrip({ late: 1, summary: "aceita sozinho em 1:10" });
+    expect(atrasada.find("[data-queue-strip-summary]").exists()).toBe(false);
+    expect(atrasada.get("[data-queue-strip-late]").text()).toBe("1 atrasado");
+  });
 });
 
 describe("QueueColumnResizeHandle", () => {
