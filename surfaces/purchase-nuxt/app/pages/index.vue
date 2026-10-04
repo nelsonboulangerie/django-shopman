@@ -792,6 +792,13 @@ function onKeydown(event: KeyboardEvent) {
   event.preventDefault();
   searchInput.value?.focus();
 }
+// R atualiza a tela, fora de campo de texto e de diálogo aberto.
+onKeyStroke(["r", "R"], (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+  void refresh();
+});
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
@@ -834,8 +841,10 @@ const sortedMaterials = computed(() => {
   else list.sort(byName);
   return list;
 });
+// Atualizar tem a tecla R onde há teclado (a mesma do Marketing e do Gestor).
+const refreshMenuItems: MoreMenuItem[] = [{ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" }];
 const baseMenuItems: MoreMenuItem[] = [
-  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw" },
+  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
   { key: "count", label: "Contagem de estoque", icon: "lucide:clipboard-check" },
 ];
 
@@ -961,10 +970,10 @@ const receiveMenuItems = computed<MoreMenuItem[]>(() => {
   }
   if (!receiptIsBlank.value) {
     items.push({ key: "ressalva", label: "Ressalva geral", icon: "lucide:notebook-pen" });
-    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", divider: true });
+    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R", divider: true });
     items.push({ key: "reject", label: "Registrar devolução", icon: "lucide:undo-2", danger: true, divider: true });
   } else {
-    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", divider: true });
+    items.push({ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R", divider: true });
   }
   return items;
 });
@@ -1227,21 +1236,15 @@ function onPackageCode(code: string) {
             <PurchaseMoreMenu vertical :items="receiveMenuItems" label="Mais: trocar NF, sem NF, ressalva, devolução" @select="onMoreMenu" />
           </template>
           <template v-else>
-            <button
-              v-if="view === 'panel' || view === 'buy'"
-              type="button"
-              class="grid size-12 place-items-center rounded-md text-foreground"
-              aria-label="Atualizar"
-              @click="refresh()"
-            >
-              <Icon name="lucide:refresh-cw" class="size-5" :class="pending ? 'animate-spin' : ''" />
-            </button>
-            <PurchaseMoreMenu v-if="view === 'base'" vertical :items="baseMenuItems" label="Mais: atualizar" @select="onMoreMenu" />
+            <!-- Painel, Comprar e Base: o Atualizar mora no ⋮, nunca solto na barra de
+                 56px (T-06: selo, título, ao vivo, lupa, sino e ⋮). -->
+            <PurchaseMoreMenu v-if="view === 'panel' || view === 'buy'" vertical :items="refreshMenuItems" label="Mais: atualizar" @select="onMoreMenu" />
+            <PurchaseMoreMenu v-else-if="view === 'base'" vertical :items="baseMenuItems" label="Mais: atualizar" @select="onMoreMenu" />
           </template>
         </template>
 
         <!-- No celular só o Receber tem controles na linha de baixo (Com NF / Sem NF);
-             Atualizar sobe para a barra de 56px. -->
+             Atualizar mora no ⋮ da barra de 56px. -->
         <template v-if="!isPhone" #actions>
           <!-- Receber: o selo da chave lida; o par Com NF / Sem NF só no começo (com a
                conferência aberta ele mora no ⋯, C08). -->
