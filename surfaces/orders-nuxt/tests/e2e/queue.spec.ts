@@ -20,7 +20,7 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(queue.locator("[data-queue-progress]")).toContainText("Na Cozinha");
   await expect(queue.locator("[data-queue-system]")).toContainText("Aceito · prazo de confirmação");
   await expect(queue.locator("[data-queue-menu]")).toContainText("Bichon au Citron esgotado");
-  await expect(queue.locator("[data-queue-menu]")).toContainText("iFood recebendo pedidos");
+  await expect(queue.locator("[data-queue-menu]")).toContainText("iFood");
 });
 
 test("Ver todos e T abrem a Supervisão; F volta para a Fila", async ({ page }) => {

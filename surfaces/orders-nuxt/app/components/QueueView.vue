@@ -88,7 +88,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
         <div class="min-w-0">
           <NuxtLink v-if="canOpen" :to="`/${item.card.ref}`" class="block op-figure leading-none hover:underline" :aria-label="`Abrir pedido ${item.card.ref}`">{{ splitRef(item.card.ref).code }}</NuxtLink>
           <p v-else class="op-figure leading-none">{{ splitRef(item.card.ref).code }}</p>
-          <p class="mt-1.5 text-[15px] font-semibold tnum" :class="toneClass(item.tone)" data-queue-time>{{ item.timeLabel }}</p>
+          <p class="mt-1.5 op-title tnum" :class="toneClass(item.tone)" data-queue-time>{{ item.timeLabel }}</p>
           <p class="op-micro text-muted-foreground" data-queue-goal>{{ item.goalLabel }}</p>
         </div>
 
@@ -122,8 +122,8 @@ function cardFor(ref: string): OrderCardProjection | undefined {
               <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2 op-micro font-semibold"><Icon name="lucide:printer" class="size-3.5" />{{ readyStation(item.card)!.station_name }} no papel</span>
               <span class="op-micro text-muted-foreground">{{ item.card.kitchen?.missing_label }}</span>
             </template>
-            <span v-if="item.card.volumes || item.card.items_count" class="op-micro text-muted-foreground">
-              · {{ item.card.volumes ? `${item.card.volumes} ${item.card.volumes === 1 ? "volume" : "volumes"}` : `${item.card.items_count} ${item.card.items_count === 1 ? "item" : "itens"}` }}
+            <span v-if="item.card.volumes || item.card.items_count" class="op-micro text-muted-foreground" data-queue-pack>
+              {{ item.card.volumes ? `${item.card.volumes} ${item.card.volumes === 1 ? "volume" : "volumes"}` : `${item.card.items_count} ${item.card.items_count === 1 ? "item" : "itens"}` }}
             </span>
           </div>
           <div v-if="actionError(item.card.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
@@ -155,7 +155,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
             <button
               v-if="queueGesture(item).secondary"
               type="button"
-              class="inline-flex h-action items-center rounded-md border border-border bg-card px-3 text-[13px] font-semibold text-muted-foreground transition hover:bg-accent disabled:opacity-60"
+              class="inline-flex h-action items-center rounded-md border border-border bg-card px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent disabled:opacity-60"
               :disabled="isBusy(item.card.ref) || queueGesture(item).secondary!.disabled"
               :title="queueGesture(item).secondary!.reason || undefined"
               data-queue-secondary
@@ -224,7 +224,7 @@ function cardFor(ref: string): OrderCardProjection | undefined {
             <button
               v-if="systemUndoOpen(line) && cardFor(line.order_ref)"
               type="button"
-              class="h-9 rounded-md px-3 text-[13px] font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+              class="h-9 rounded-md px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
               :disabled="isBusy(line.order_ref)"
               data-queue-system-undo
               @click="emit('action', line.order_ref, 'undo_ready')"
@@ -250,13 +250,13 @@ function cardFor(ref: string): OrderCardProjection | undefined {
           <template v-for="row in menuChannels" :key="row.ref">
             <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="queue-row transition hover:bg-accent" :title="`Abrir ${row.name} em Canais`" data-queue-channel>
               <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="flex-1 op-body">{{ row.line }}</span>
+              <span class="min-w-0 flex-1 truncate op-body" :title="row.line">{{ row.name }}</span>
               <span class="h-6 rounded-full px-2 op-micro leading-6 font-semibold" :class="row.active ? 'pill-success' : 'bg-muted text-muted-foreground'">{{ row.active ? "ligado" : "desligado" }}</span>
               <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
             </NuxtLink>
             <div v-else class="queue-row" data-queue-channel>
               <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="flex-1 op-body">{{ row.line }}</span>
+              <span class="min-w-0 flex-1 truncate op-body" :title="row.line">{{ row.name }}</span>
               <span class="h-6 rounded-full px-2 op-micro leading-6 font-semibold" :class="row.active ? 'pill-success' : 'bg-muted text-muted-foreground'">{{ row.active ? "ligado" : "desligado" }}</span>
             </div>
           </template>

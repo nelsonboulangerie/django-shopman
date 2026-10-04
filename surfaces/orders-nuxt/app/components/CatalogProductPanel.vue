@@ -555,7 +555,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </div>
               <div v-for="row in availability" :key="row.ref" class="flex min-h-12 items-center gap-3 border-t border-border px-3.5 py-2" data-panel-channel>
                 <Icon :name="channelIcon(row)" class="size-4 shrink-0 text-muted-foreground" />
-                <span class="w-24 shrink-0 truncate op-body">{{ row.name }}</span>
+                <span class="w-32 shrink-0 truncate op-body" :title="row.name">{{ row.name }}</span>
                 <span class="min-w-0 flex-1 op-micro">
                   <b v-if="row.state !== 'available'" class="font-semibold text-destructive">{{ row.state === "paused" ? "Pausado" : row.kind === "display" ? "Fora de estoque" : "Esgotado" }}</b>
                   <span v-else class="text-muted-foreground">À venda</span>

@@ -76,6 +76,9 @@ const { query, channel, fulfillment, sort, viewMode, selected } = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
 watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
+// A pessoa chega depois da primeira leitura (a sessão carrega no cliente): relê a URL
+// antes de o recorte reescrevê-la, para "/?view=board" abrir na Supervisão.
+watch(() => context.state.value.owner, (owner) => { if (owner && route.path === "/") context.readLocation(route.query); });
 watch(context.location, (location) => {
   if (route.path === "/" && JSON.stringify(route.query) !== JSON.stringify(location.query)) void router.replace(location);
 }, { deep: true });
