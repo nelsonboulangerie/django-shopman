@@ -41,7 +41,11 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
-  await expect(page.getByText("Fornada artesanal 01")).toBeVisible();
+  // Do desktop largo para cima a lista é a tabela; abaixo, a lista em cartões.
+  // As duas vêm no HTML e o CSS mostra uma só: a campanha aparece uma vez na tela.
+  const campaignName = page.getByText("Fornada artesanal 01");
+  await expect(campaignName.filter({ visible: true })).toHaveCount(1);
+  await expect(page.locator("[data-campaigns-table]")).toBeHidden();
 
   await page.getByRole("button", { name: /^Nova campanha/ }).filter({ visible: true }).first().click();
   const editor = page.getByRole("dialog").last();
@@ -100,7 +104,7 @@ test("a fila de decisões leva cada cartão ao lugar exato da decisão", async (
   const cards = page.locator("[data-decision]");
   await expect(cards).toHaveCount(2);
   await expect(cards.first()).toContainText("Lote pronto: Pão artesanal");
-  await expect(cards.nth(1)).toContainText("Falhou no Instagram · 1 postagem");
+  await expect(cards.nth(1)).toContainText("Falhou no Instagram · 1 envio");
   await expect(
     page.getByText(/O sistema consultou sem reenviar: publicado/),
   ).toBeVisible();
@@ -254,9 +258,8 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
   await expect(page).toHaveURL(
     /\/announcements\/77\?dispatch=new#review/,
   );
-  await expect(
-    mobileSections(page).getByRole("link", { name: "Ajustes", exact: true }),
-  ).toBeVisible();
+  // A revisão ocupa a tela inteira, sem a barra de seções do polegar (v4, MKT-14).
+  await expect(mobileSections(page)).toHaveCount(0);
   await expect(
     page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),
   ).toBeVisible();
