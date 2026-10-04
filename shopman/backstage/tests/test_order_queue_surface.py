@@ -285,8 +285,9 @@ class OrderQueueSurfaceTests(TestCase):
 
         card = build_order_card(Order.objects.get(pk=order.pk))
 
-        self.assertEqual(card.advance_block_label, "Aguardando pagamento…")
-        self.assertIn("Pagamento", card.advance_block_reason)
+        # G06 (auditoria v4): o bloqueio do Pix escrito como na prévia.
+        self.assertEqual(card.advance_block_label, "Aguardando Pix")
+        self.assertIn("avança sozinho quando cair", card.advance_block_reason)
         # Só esperando pagamento é ampulheta (warning), não alarme (danger):
         # quem não paga a tempo é cancelado e sai do board.
         self.assertEqual(card.payment_tone, "warning")

@@ -145,6 +145,7 @@ from .operations import (
     OrderIFoodHandshakeView,
     OrderNotesView,
     OrderQueueView,
+    OrderRailCountsView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
@@ -555,6 +556,7 @@ urlpatterns = [
     # A arrumação das colunas do Gestor neste posto (SUITE-UX §16).
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
+    path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     # Catalog matrix (produto × superfície)
