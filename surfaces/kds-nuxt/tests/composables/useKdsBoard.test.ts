@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
+import { ref } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { KDS_ALERT, kdsAttentionDecision, useKdsBoard } from "~/composables/useKdsBoard";
 import { boardView } from "~/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "~/types/kds";
 
 const env = installNuxtGlobals();
+// A sessão do operador que o shell já buscou (chave `operator-session`): quem age.
+const operatorSession = ref<{ operator: { id: number } | null } | null>({ operator: { id: 42 } });
+vi.stubGlobal("useNuxtData", () => ({ data: operatorSession }));
 
 function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   return {
@@ -139,6 +143,45 @@ describe("useKdsBoard — start (optimistic + rollback)", () => {
     start(1);
     await flushPromises();
     expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useKdsBoard: quem embalou declara os volumes na estação", () => {
+  beforeEach(() => env.reset());
+
+  it("usa a porta do Gestor com o protocolo de intenção e diz que veio da Cozinha", async () => {
+    const t = ticket({ volumes: 0, volumes_order_ref: "WEB-261004-0007", volumes_revision: "rev-1" });
+    env.fetchData.value = board({ tickets: [t] });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 3)).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/orders/WEB-261004-0007/volumes/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          volumes: 3, surface: "kds", expected_actor_id: 42, base_revision: "rev-1", idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+    expect(env.refresh).toHaveBeenCalled();
+  });
+
+  it("ticket de comanda (sem pedido) não declara", async () => {
+    const t = ticket({ volumes_order_ref: "", volumes_revision: "" });
+    env.fetchData.value = board({ tickets: [t] });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 2)).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recusa do servidor avisa e relê", async () => {
+    const t = ticket({ volumes_order_ref: "WEB-1", volumes_revision: "rev" });
+    env.fetchData.value = board({ tickets: [t] });
+    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "Os volumes deste pedido mudaram." } });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 2)).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalled();
+    expect(env.refresh).toHaveBeenCalled();
   });
 });
 

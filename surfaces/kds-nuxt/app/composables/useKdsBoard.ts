@@ -398,6 +398,37 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     removeFrom(() => data.value?.board?.cancelled_tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/acknowledge/`);
   };
 
+  // Volumes: quem embalou declara, onde estiver (dono, 04/10/2026). A MESMA porta do
+  // Gestor (`orders/<ref>/volumes/`, protocolo de intenção: quem age, a base lida e a
+  // chave da tentativa), com `surface: "kds"` para o histórico dizer de onde veio.
+  // Zero apaga. Não é otimista: o número só muda na tela quando o servidor gravou.
+  const { data: operatorSession } = useNuxtData<{ operator?: { id: number } | null }>("operator-session");
+  const volumesBusy = ref(false);
+  async function declareVolumes(ticket: KDSTicketProjection, volumes: number): Promise<boolean> {
+    if (readOnly.value || volumesBusy.value || !ticket.volumes_order_ref) return false;
+    volumesBusy.value = true;
+    try {
+      await postProxy(`/api/v1/backstage/orders/${encodeURIComponent(ticket.volumes_order_ref)}/volumes/`, {
+        method: "POST",
+        body: {
+          volumes,
+          surface: "kds",
+          expected_actor_id: operatorSession.value?.operator?.id ?? null,
+          base_revision: ticket.volumes_revision,
+          idempotency_key: crypto.randomUUID(),
+        },
+      });
+      await refresh();
+      return true;
+    } catch (err) {
+      useSonner.error(httpErrorMessage(err, "Não deu para gravar os volumes. Tente de novo."));
+      await refresh();
+      return false;
+    } finally {
+      volumesBusy.value = false;
+    }
+  }
+
   onBeforeUnmount(() => {
     flushFinishes();
     if (pollTimer) clearInterval(pollTimer);
@@ -427,5 +458,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     undoFinish,
     recall,
     acknowledge,
+    declareVolumes,
+    volumesBusy,
   };
 }
