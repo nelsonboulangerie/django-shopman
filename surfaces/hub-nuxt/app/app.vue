@@ -597,7 +597,7 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                 </ul>
               </section>
               <!-- Tem mais abaixo (kit): no celular a lista de apps passa da dobra. -->
-              <MoreBelow v-if="isPhone" />
+              <MoreBelow v-if="!railShown" />
             </template>
           </div>
         </div>
