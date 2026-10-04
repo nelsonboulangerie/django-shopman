@@ -1204,8 +1204,9 @@ function onPackageCode(code: string) {
         </template>
         <!-- Receber com a conferência aberta: a lupa acha o item da entrada (C08). -->
         <template v-else-if="view === 'receive' && !receiveStart && !isPhone && (isWide || receiveSearchOpen)" #search>
-          <UiSearchInput
+          <OperatorSuiteSearch
             v-model="receiveQuery"
+            screen-label="filtrando a entrada"
             placeholder="Buscar item da entrada"
             aria-label="Buscar item da entrada"
           />

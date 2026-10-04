@@ -59,7 +59,8 @@ describe("C01: a busca da Base aparece (o kit lê $slots no render)", () => {
   it("o cabeçalho do kit não guarda a busca num computed sobre useSlots()", () => {
     const header = kit("components/OperatorPageHeader.vue");
     expect(header).not.toMatch(/computed\(\(\) => Boolean\(slots\.search\)\)/);
-    expect(header).toContain('v-if="$slots.search"');
+    // Sem `#search`, a busca padrão da suíte (V6-BUSCA): `$slots.search || search`.
+    expect(header).toMatch(/v-if="\$slots\.search(?: \|\| search)?"/);
   });
 });
 
