@@ -1297,6 +1297,18 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sobre “{part}”, não entendi bem. Pode me dizer de outro jeito?",
         )},
     },
+    # Pergunta repetida (OBS0310-R): "você não respondeu", "e a minha pergunta?". A
+    # Concierge responde de novo o que ficou pendente; sem achar o quê, pede para repetir.
+    "CONCIERGE_PARTS_REPEAT_LEAD": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Desculpe, ficou faltando a resposta. Aqui vai:",
+        )},
+    },
+    "CONCIERGE_PARTS_REPEAT_ASK": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?",
+        )},
+    },
     "CONCIERGE_IDENTITY": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",

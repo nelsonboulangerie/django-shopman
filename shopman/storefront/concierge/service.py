@@ -948,7 +948,7 @@ def run_turn(
         # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
         # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
         # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
-        plural = intents_module.enabled_for(binding.subject)
+        plural = intents_module.enabled_for(binding)
         if decision.escalates and not plural:
             meter.layer = metrics.LAYER_TEAM
             mark_handoff(

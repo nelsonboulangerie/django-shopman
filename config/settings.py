@@ -1501,9 +1501,11 @@ SHOPMAN_CONCIERGE = {
     # Intenções no plural (OBS0310-Q, v2 bloco 1): a mensagem vira uma lista de partes, cada
     # parte pelo executor da casa, uma resposta só na ordem do cliente. O Jev decide primeiro;
     # a leitura com o modelo pequeno entra só quando ele hesita ou há mais de uma parte.
-    # `off` (padrão), `subjects` (só os subscribers de CONCIERGE_INTENTS_SUBSCRIBERS: a
-    # coorte do dono) ou `all`.
-    "intents_plural": os.environ.get("CONCIERGE_INTENTS_PLURAL", "off"),
+    # Valem para quem a Concierge JÁ atende (OBS0310-R): `cohort` (padrão, sem env nenhuma:
+    # a coorte atendida em `assist`, `allowed_subjects` da connection; fora dela nada muda),
+    # `off` (interruptor de emergência: desliga para todos), `subjects` (só os subscribers de
+    # CONCIERGE_INTENTS_SUBSCRIBERS, dentro da coorte) ou `all` (também só dentro da coorte).
+    "intents_plural": os.environ.get("CONCIERGE_INTENTS_PLURAL", "cohort"),
     "intents_subjects": [
         value.strip()
         for value in os.environ.get("CONCIERGE_INTENTS_SUBSCRIBERS", "").split(",")
