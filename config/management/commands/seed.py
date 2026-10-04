@@ -10155,6 +10155,20 @@ class Command(BaseCommand):
             context.rain_mm = Decimal(str(round(max(0.0, rng.uniform(-8, 14)), 1)))
             context.sources = {**(context.sources or {}), "weather": "seed"}
             context.save()
+        # Previsão de exemplo para hoje e os dois dias seguintes: o Planejamento
+        # diz "previsão 24 °C e sol" no cabeçalho. Carimbada como previsão de
+        # seed; o arquivo real de previsão (import_weather) sobrescreve.
+        for offset in range(0, 3):
+            day = today + timedelta(days=offset)
+            estacao = 1 if day.month in (12, 1, 2, 3) else 0
+            tmax = Decimal(str(round(22 + estacao * 7 + rng.uniform(-3, 4), 1)))
+            context, _ = DayContext.objects.get_or_create(date=day)
+            context.temp_max_c = tmax
+            context.temp_min_c = tmax - Decimal("9.0")
+            context.temp_avg_c = tmax - Decimal("4.5")
+            context.rain_mm = Decimal(str(round(max(0.0, rng.uniform(-10, 6)), 1)))
+            context.sources = {**(context.sources or {}), "weather": "seed-forecast"}
+            context.save()
 
     def _at(self, day, hour: int):
         """Instante local do dia — o B.I. lê tudo em hora da loja."""

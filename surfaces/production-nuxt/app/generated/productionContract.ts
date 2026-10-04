@@ -80,6 +80,7 @@ export interface OrderCommitmentProjection {
   status: string;
   status_label: string;
   qty_required: string;
+  due_time: string;
 }
 
 /** How much of a base recipe is used by an output SKU recipe. */
@@ -118,6 +119,8 @@ export interface WorkOrderCardProjection {
   committed_qty: string;
   order_commitments: OrderCommitmentProjection[];
   can_void: boolean;
+  position_name: string;
+  created_at_time: string;
 }
 
 /** Aggregate counts for the production board header. */
@@ -164,6 +167,14 @@ export interface SuggestionMaterialShortageProjection {
   fits_quantity: string;
 }
 
+/** Um dia da amostra que sustenta a sugestão, com o desfecho dele. */
+export interface SuggestionDayProjection {
+  date: string;
+  date_display: string;
+  outcome: "soldout" | "leftover" | "ok";
+  soldout_at: string;
+}
+
 /** A suggested production row from Craftsman demand planning. */
 export interface ProductionSuggestionProjection {
   recipe_pk: number;
@@ -189,6 +200,7 @@ export interface ProductionSuggestionProjection {
   fits_quantity: string;
   season_fallback: boolean;
   current_season_label: string;
+  recent_days: SuggestionDayProjection[];
 }
 
 /** A high-volume production matrix row grouped by SKU. */
@@ -205,6 +217,7 @@ export interface ProductionMatrixRowProjection {
   started_qty: string;
   finished_qty: string;
   loss_qty: string;
+  output_unit: string;
 }
 
 /** A matrix row within a base recipe group. */
@@ -248,6 +261,13 @@ export interface ProductionSurfaceAccess {
   can_print_prep: boolean;
 }
 
+/** Ocasião e clima do dia planejado (``DayContext``). Sem dado, campo vazio. */
+export interface ProductionDayContextProjection {
+  occasion: string;
+  weather: string;
+  weather_kind: "forecast" | "measured" | "";
+}
+
 /** Top-level read model for the production board. */
 export interface ProductionBoardProjection {
   selected_date: string;
@@ -270,6 +290,7 @@ export interface ProductionBoardProjection {
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];
   purchase_url: string;
+  day_context: ProductionDayContextProjection | null;
   generated_at: string;
   source_revision: string;
   fresh_until: string;
@@ -547,6 +568,7 @@ export interface QCOrderCardProjection {
   recipe_name: string;
   output_sku: string;
   position_ref: string;
+  position_name: string;
   status: string;
   planned_qty: string;
   started_qty: string;

@@ -7,6 +7,7 @@
 // O invólucro (popover, Esc, foco) é do UiPopover na grade; este componente é
 // só o conteúdo, para ser testável sem o overlay.
 import {
+  DAY_DOT_TONE,
   fittingAlternative,
   shortageLine,
   suggestionBasisLine,
@@ -138,7 +139,7 @@ const HISTORY_TONE = {
           :name="HISTORY_ICON[line.kind]"
           :class="['mt-0.5 size-4 shrink-0', HISTORY_TONE[line.kind]]"
         />
-        <span>
+        <span class="min-w-0 flex-1">
           <span
             :class="
               line.kind === 'soldout' ? 'font-medium text-destructive' : ''
@@ -149,6 +150,29 @@ const HISTORY_TONE = {
             line.note
           }}</span>
         </span>
+        <!-- Um ponto por dia recente da amostra, com a data embaixo (v4 pino 3). -->
+        <ol
+          v-if="line.kind === 'soldout' && suggestion.recent_days?.length"
+          class="flex shrink-0 gap-2.5"
+          aria-label="Desfecho dos últimos dias"
+          data-testid="reason-days"
+        >
+          <li
+            v-for="day in suggestion.recent_days"
+            :key="day.date"
+            class="flex flex-col items-center gap-1"
+            :title="
+              day.outcome === 'soldout'
+                ? `${day.date_display}: acabou${day.soldout_at ? ` às ${day.soldout_at}` : ''}`
+                : day.outcome === 'leftover'
+                  ? `${day.date_display}: sobrou`
+                  : `${day.date_display}: vendeu o planejado`
+            "
+          >
+            <span class="size-3 rounded-full" :class="DAY_DOT_TONE[day.outcome]" />
+            <span class="op-micro tnum text-muted-foreground">{{ day.date_display }}</span>
+          </li>
+        </ol>
       </li>
     </ul>
 

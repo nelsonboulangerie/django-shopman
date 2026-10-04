@@ -125,6 +125,10 @@ class OrderCommitmentProjection:
     status: str
     status_label: str
     qty_required: str
+    # Hora do compromisso ("08:30"): o começo da janela combinada com o cliente
+    # (``Order.data.delivery_time_slot`` lido por ``fulfillment_window``). Vazio
+    # quando o pedido não marcou hora. É o que ordena o lote ("6 un. para 08:30").
+    due_time: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,10 @@ class WorkOrderCardProjection:
     committed_qty: str
     order_commitments: tuple[OrderCommitmentProjection, ...]
     can_void: bool
+    # Nome do posto (forno, bancada) onde o lote foi planejado; vazio sem posto.
+    position_name: str = ""
+    # Hora em que o lote foi planejado ("15:12"), para "Planejado 15:12".
+    created_at_time: str = ""
 
 
 @dataclass(frozen=True)
@@ -236,6 +244,17 @@ class SuggestionMaterialShortageProjection:
 
 
 @dataclass(frozen=True)
+class SuggestionDayProjection:
+    """Um dia da amostra que sustenta a sugestão, com o desfecho dele."""
+
+    date: str  # ISO
+    date_display: str  # "05/09"
+    # ``soldout``: acabou antes de fechar; ``leftover``: sobrou; ``ok``: nem um nem outro.
+    outcome: Literal["soldout", "leftover", "ok"]
+    soldout_at: str  # "10:40" ou ""
+
+
+@dataclass(frozen=True)
 class ProductionSuggestionProjection:
     """A suggested production row from Craftsman demand planning.
 
@@ -271,6 +290,9 @@ class ProductionSuggestionProjection:
     #: é a estação da data planejada, a que ainda não tem histórico.
     season_fallback: bool = False
     current_season_label: str = ""
+    # Os últimos dias da amostra, do mais antigo ao mais recente (até 4): um ponto
+    # por dia no "Por quê" ("acabou às 10:40 em 3 dos últimos 4 sábados").
+    recent_days: tuple[SuggestionDayProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -289,6 +311,9 @@ class ProductionMatrixRowProjection:
     started_qty: str
     finished_qty: str
     loss_qty: str
+    # Unidade do que a linha produz (``un``, ``g``, ``kg``...): base medida em
+    # gramas não se lê como peça ("1.230,77 g", não "1230.77").
+    output_unit: str = ""
 
 
 @dataclass(frozen=True)
@@ -922,10 +947,26 @@ class ProductionBoardProjection:
     # Onde pedir o insumo que falta ("Pedir no Compras"). Vazio quando quem lê
     # não opera Compras ou a superfície não tem URL: o atalho some.
     purchase_url: str = ""
+    # O dia planejado além da loja: ocasião (feriado, véspera, data comercial) e
+    # o clima conhecido (previsão para hoje/futuro, medição para o passado).
+    day_context: ProductionDayContextProjection | None = None
     generated_at: str = ""
     source_revision: str = ""
     fresh_until: str = ""
     contract_version: int = PRODUCTION_CONTRACT_VERSION
+
+
+@dataclass(frozen=True)
+class ProductionDayContextProjection:
+    """Ocasião e clima do dia planejado (``DayContext``). Sem dado, campo vazio."""
+
+    # "Sábado comum, sem feriado", "Sábado, véspera de Dia das Mães". Vazio quando
+    # nenhum calendário cobre a data (não sabemos, não afirmamos).
+    occasion: str
+    # "24 °C e sol" / "18 °C e chuva"; vazio sem a máxima do dia.
+    weather: str
+    # ``forecast`` (hoje ou futuro), ``measured`` (passado) ou "" sem clima.
+    weather_kind: Literal["forecast", "measured", ""]
 
 
 @dataclass(frozen=True)
@@ -1051,6 +1092,8 @@ class QCOrderCardProjection:
     recipe_name: str
     output_sku: str
     position_ref: str
+    # Nome do posto ("Forno 2"): o forneiro lê o forno, não a referência dele.
+    position_name: str
     status: str
     planned_qty: str
     # A fornada REAL que entrou no forno (declarada no start) — "" enquanto
@@ -1301,7 +1344,14 @@ def build_production_board(
         for suggestion in raw_suggestions
     )
     visible_suggestions = suggestions if access.can_view_suggested else ()
-    all_matrix_rows = _build_matrix_rows(matrix_recipes, wo_cards, visible_suggestions)
+    all_matrix_rows = _build_matrix_rows(
+        matrix_recipes,
+        wo_cards,
+        visible_suggestions,
+        output_units=_recipe_output_units(
+            {recipe.pk: recipe for recipe in (*matrix_recipes, *(wo.recipe for wo in wos))}.values()
+        ),
+    )
     base_recipes = _build_group_options(all_matrix_rows)
     matrix_rows = tuple(
         row
@@ -1311,6 +1361,7 @@ def build_production_board(
     matrix_groups = _build_matrix_groups(matrix_rows, base_recipe=base_recipe)
 
     return ProductionBoardProjection(
+        day_context=_production_day_context(selected_date),
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         selected_position_ref=position_ref,
@@ -2041,6 +2092,7 @@ def build_qc_kiosk(
             recipe_name=wo.recipe.name or wo.recipe.ref,
             output_sku=wo.output_sku,
             position_ref=wo.position_ref,
+            position_name=_position_names().get(wo.position_ref or "", ""),
             status=str(wo.status),
             planned_qty=_qty(wo.quantity),
             started_qty=_qty(started_qty) if started_qty is not None else "",
@@ -2713,9 +2765,25 @@ def _prime_order_commitments(work_orders: list[WorkOrder]) -> None:
                     status=order.status,
                     status_label=order_status_label(order.status),
                     qty_required=_qty(_qty_required_for_order(order, work_order.output_sku)),
+                    due_time=_order_due_time(order),
                 )
             )
         work_order._production_order_commitments = tuple(commitments)
+
+
+def _order_due_time(order) -> str:
+    """O começo da janela combinada com o cliente ("08:30"); vazio sem hora marcada."""
+    slot = str((order.data or {}).get("delivery_time_slot") or "").strip()
+    if not slot:
+        return ""
+    try:
+        from shopman.shop.services.fulfillment_window import window_start_time
+
+        start = window_start_time(slot)
+    except Exception:
+        logger.debug("production.order_due_time_failed ref=%s", order.ref, exc_info=True)
+        return ""
+    return start.strftime("%H:%M") if start else ""
 
 
 def _prime_base_recipe_usages(recipes: list[Recipe]) -> None:
@@ -2812,7 +2880,61 @@ def _build_wo_card(
         committed_qty=_qty(committed_qty),
         order_commitments=order_commitments,
         can_void=(access.can_void and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
+        position_name=_position_names().get(wo.position_ref or "", ""),
+        created_at_time=timezone.localtime(wo.created_at).strftime("%H:%M") if wo.created_at else "",
     )
+
+
+def _position_names() -> dict[str, str]:
+    """Nomes dos postos (forno, bancada): poucos, lidos uma vez a cada 30 s."""
+    from django.core.cache import cache
+
+    names = cache.get("production:position_names")
+    if names is None:
+        names = dict(Position.objects.values_list("ref", "name"))
+        cache.set("production:position_names", names, 30)
+    return names
+
+
+def _production_day_context(selected_date: date) -> ProductionDayContextProjection | None:
+    """Ocasião e clima do dia planejado. ``None`` quando não sabemos nada dele."""
+    try:
+        from shopman.backstage.models import DayContext
+
+        context = DayContext.objects.filter(date=selected_date).first()
+    except Exception:
+        logger.debug("production.day_context_failed", exc_info=True)
+        return None
+    if context is None:
+        return None
+    weekday = _WEEKDAY_NAMES[selected_date.weekday()]
+    occasion = ""
+    if context.has_calendar:
+        if context.commercial_name:
+            occasion = f"{weekday}, {context.commercial_name}"
+        elif context.is_holiday:
+            occasion = f"{weekday} de feriado: {context.holiday_name}"
+        elif context.eve_of:
+            occasion = f"{weekday}, véspera de {context.eve_of}"
+        elif context.is_post_special:
+            occasion = f"{weekday}, volta de feriado"
+        else:
+            occasion = f"{weekday} comum, sem feriado"
+    weather = ""
+    weather_kind: Literal["forecast", "measured", ""] = ""
+    if context.temp_max_c is not None:
+        temp = f"{int(Decimal(context.temp_max_c).quantize(Decimal('1'), rounding=ROUND_HALF_UP))} °C"
+        sky = ""
+        if context.rain_mm is not None:
+            sky = " e chuva" if Decimal(context.rain_mm) >= Decimal("1") else " e sol"
+        weather = f"{temp}{sky}"
+        weather_kind = "forecast" if selected_date >= timezone.localdate() else "measured"
+    if not occasion and not weather:
+        return None
+    return ProductionDayContextProjection(occasion=occasion, weather=weather, weather_kind=weather_kind)
+
+
+_WEEKDAY_NAMES = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
 
 
 def _build_production_kds_card(
@@ -3260,6 +3382,43 @@ def _build_suggestion(
         fits_quantity=fits,
         season_fallback=bool(basis.get("season_fallback")),
         current_season_label=_SEASON_LABELS.get(str(basis.get("current_season") or ""), ""),
+        recent_days=_suggestion_recent_days(basis.get("days") or ()),
+    )
+
+
+def _suggestion_recent_days(days) -> tuple[SuggestionDayProjection, ...]:
+    """Os últimos 4 dias da amostra, do mais antigo ao mais recente, com o desfecho."""
+    parsed = []
+    for item in days:
+        try:
+            day = item["date"]
+            sold = _decimal_value(item.get("sold"))
+            wasted = _decimal_value(item.get("wasted"))
+            soldout_at = item.get("soldout_at")
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if isinstance(day, str):
+            try:
+                day = date.fromisoformat(day)
+            except ValueError:
+                continue
+        if soldout_at:
+            outcome = "soldout"
+            soldout_display = soldout_at.strftime("%H:%M") if hasattr(soldout_at, "strftime") else str(soldout_at)[:5]
+        else:
+            soldout_display = ""
+            # Sobra que pesa: acima da mesma régua que desconta a perda na fórmula.
+            outcome = "leftover" if sold > 0 and wasted / sold > SUGGESTION_WASTE_DISCOUNT_THRESHOLD else "ok"
+        parsed.append((day, outcome, soldout_display))
+    parsed.sort(key=lambda entry: entry[0])
+    return tuple(
+        SuggestionDayProjection(
+            date=day.isoformat(),
+            date_display=day.strftime("%d/%m"),
+            outcome=outcome,
+            soldout_at=soldout_display,
+        )
+        for day, outcome, soldout_display in parsed[-4:]
     )
 
 
@@ -3357,7 +3516,10 @@ def _build_matrix_rows(
     recipes: tuple[Recipe, ...],
     work_orders: tuple[WorkOrderCardProjection, ...],
     suggestions: tuple[ProductionSuggestionProjection, ...],
+    *,
+    output_units: dict[int, str] | None = None,
 ) -> tuple[ProductionMatrixRowProjection, ...]:
+    output_units = output_units or {}
     rows: dict[str, dict] = {}
 
     def row_for(output_sku: str) -> dict:
@@ -3413,6 +3575,7 @@ def _build_matrix_rows(
             started_qty=_sum_qty(row["started"], "started_qty"),
             finished_qty=_sum_qty(row["finished"], "finished_qty"),
             loss_qty=_sum_qty(row["finished"], "loss"),
+            output_unit=output_units.get(row["recipe_pk"], "") if row["recipe_pk"] is not None else "",
         )
         # Ordena pelo texto que a bancada lê (o nome), com o SKU como desempate:
         # lista ordenada por chave invisível parece embaralhada.

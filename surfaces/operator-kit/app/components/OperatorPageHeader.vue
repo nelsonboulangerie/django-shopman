@@ -15,7 +15,7 @@
 //
 // A busca é renderizada UMA vez (o atalho "/" segura a referência dela): no celular
 // ela só muda de linha.
-import { computed, nextTick, ref, useSlots } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 import { operatorAppNamed } from "../../appIdentity";
 
@@ -34,8 +34,9 @@ withDefaults(defineProps<{
   filtersWrap?: boolean;
 }>(), { eyebrow: "", filtersWrap: true });
 
-const slots = useSlots();
-const hasSearch = computed(() => Boolean(slots.search));
+// A busca é lida de `$slots` no render, nunca num `computed`: `useSlots()` não é
+// reativo, e um `computed` guardava a ausência do primeiro render (a tela que nasce
+// sem busca e ganha uma depois ficava sem campo e sem lupa; V6 C01).
 
 const config = useRuntimeConfig().public as { operatorHubUrl?: string; operatorPwa?: { identity?: HeaderIdentity } };
 const identity = config.operatorPwa?.identity;
@@ -109,13 +110,16 @@ function openSearch() {
         <div class="min-w-0">
           <p v-if="eyebrow" class="op-eyebrow truncate text-muted-foreground">{{ eyebrow }}</p>
           <h1 class="truncate text-[20px] leading-none font-semibold tracking-[-0.01em] md:text-[22px]">{{ title }}</h1>
+          <!-- Linha fina SOB o título (prévias v4: "22:03 · sáb 03/10 · lotes fechados
+               hoje"; no celular "06:12 · 6 para finalizar"). Opcional. -->
+          <slot name="subtitle" />
         </div>
         <slot name="status" />
       </div>
 
-      <div v-if="hasSearch" class="hidden w-1 md:block" aria-hidden="true" />
+      <div v-if="$slots.search" class="hidden w-1 md:block" aria-hidden="true" />
       <div
-        v-if="hasSearch"
+        v-if="$slots.search"
         ref="searchBox"
         class="order-last w-full pb-2.5 md:order-none md:w-auto md:pb-0"
         :class="searchOpen ? 'block pr-2' : 'hidden md:block'"
@@ -129,7 +133,7 @@ function openSearch() {
       <!-- celular: lupa e ações de polegar na barra de 56px -->
       <div class="flex items-center md:hidden">
         <button
-          v-if="hasSearch"
+          v-if="$slots.search"
           type="button"
           class="grid size-12 place-items-center rounded-md text-foreground"
           :aria-label="searchOpen ? 'Fechar a busca' : 'Buscar'"
